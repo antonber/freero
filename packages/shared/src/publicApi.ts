@@ -26,6 +26,7 @@ export const API_SCOPES = {
   'members:read': 'See who has access to your boards',
   'members:write': 'Invite people to boards, change their access and remove them',
   'audit:read': 'Read the audit log of team workspaces you administer',
+  'webhooks:manage': 'Add, change and remove the webhooks of team workspaces you administer, and read their delivery logs',
   'problems:triage': 'Read the problems people reported (notes, screenshots, diagnostics) and set their status — Freero operators only',
 } as const;
 export type ApiScope = keyof typeof API_SCOPES;

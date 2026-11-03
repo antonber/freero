@@ -2024,7 +2024,9 @@ audit and admin controls are the same code.
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
   `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`, `audit:read`
-  (a team workspace's audit log, for its owners/admins: `api/audit.ts`). Effective
+  (a team workspace's audit log, for its owners/admins: `api/audit.ts`), `webhooks:manage` (its
+  webhooks, for its owners/admins: `api/webhooks.ts` calls webhooks' own service — the admin check,
+  validation and `webhook.*` audit there, #48). Effective
   power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
   write.
 - **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
@@ -2330,7 +2332,11 @@ An endpoint may be **scoped** (KAI-249, `webhook_endpoints.board_id` / `item_id`
 item link): one board's events, or only item and comment events about one item and what sits
 directly in it — events carry `containerId` (the item's `frameId`; `item.deleted` from the stored
 state) for that — e.g. an agent's control-room lane. A scope's board must be one the whole team can
-open, and a scope never widens (no foreign key: a board that is gone just sends nothing).
+open, and a scope never widens (no foreign key: a board that is gone just sends nothing). Or a
+**project** (#48, `webhook_endpoints.project_id`): one the whole team can open (`openToWholeTeam`),
+matched at fan-out against where the board is NOW (`boardsOpenToTheirTeam`'s `projectId`); not with a
+scope. Managed from `/api/v1/workspaces/:id/webhooks` too (`webhooks:manage`), and listed — never
+the secret or the full URL — in the workspace data export (`webhooksWorkspaceExportOf`).
 
 ### Integrations that need no third-party approval (#88; docs/integrations/)
 

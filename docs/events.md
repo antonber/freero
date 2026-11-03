@@ -156,6 +156,22 @@ item and comment events about that item or what sits directly in it (`item.id` o
 else. The board must be one of the workspace's boards its whole team can open (the only ones that
 send webhooks at all); a scope never widens: if the board goes away, the endpoint simply gets nothing.
 
+**A project** (#48, `projectId`; the form's *Project*) instead of a scope: only the events of boards in
+that project of the workspace — one the whole team can open (a private project's boards send nothing
+anyway). A board moved out of the project stops sending at once (where a board is, is checked at
+fan-out), and a project that is gone sends nothing; it never widens to every board.
+
+## Managing webhooks from a script (#48)
+
+`/api/v1/workspaces/{workspaceId}/webhooks` (REST, [api/README.md](api/README.md)) does what the admin
+console does — list, add (`201` with the secret, the only time it is shown), change (URL, events,
+format, `scope`, `projectId`, `enabled`), remove, rotate the secret, send a test, read the delivery
+log, redeliver — with the same validation, SSRF checks and `webhook.*` audit events. It needs a token
+or app with `webhooks:manage` of a person who is an owner or admin of that team workspace (anyone
+else: `403`). URLs are answered shortened and secrets never, except on create and rotate. A
+workspace's data export (`workspace.json`, `webhooks`) lists each webhook's configuration the same
+way, never its secret.
+
 ## Running a receiver locally
 
 `node scripts/lib/webhook-receiver.mjs --port 4502` prints every delivery; with

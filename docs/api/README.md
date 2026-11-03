@@ -38,7 +38,8 @@ from.
 ## Scopes
 
 `boards:read`, `boards:write`, `boards:suggest` (reserved), `comments:write`, `members:read`,
-`members:write`. A call can do what your role on the board allows AND the scope allows.
+`members:write`, `audit:read` and `webhooks:manage` (a team workspace's audit log and webhooks: they work
+only for its owners and admins). A call can do what your role on the board allows AND the scope allows.
 
 Roles on a board are `owner`, `editor`, `commenter` and `viewer`. A **co-owner** (#122) reads
 `role: "editor"` with `coOwner: true` (boards, docs, members): an editor who also manages the
@@ -135,6 +136,10 @@ open boards drop them at once (KAI-224).
   cards with owner and due date, points, who spoke (the MCP `import_meeting_notes`;
   [../integrations/README.md](../integrations/README.md)). Automation recipes (n8n, Make, Zapier)
   and a Power Automate connector made from this API are in [../integrations/](../integrations/).
+- Webhooks (#48): `/workspaces/{workspaceId}/webhooks` lists, adds (the secret is answered once),
+  changes (`scope`: one board or item; `projectId`: one project), removes, rotates, tests a team
+  workspace's webhooks and reads / redelivers their delivery log — for its owners and admins with
+  `webhooks:manage` ([../events.md](../events.md)).
 - Boards (#170): `PATCH /boards/{boardId}` renames a board or changes its description (owners and
   editors); `POST /boards/{boardId}/copy` copies it with its content (`workspaceId`, `projectId`,
   `title`; refused like an export where its content may not be taken out). `POST /boards/{boardId}/groups`

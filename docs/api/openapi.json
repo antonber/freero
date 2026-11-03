@@ -22,6 +22,7 @@
     { "name": "objects", "description": "Object addresses and what links to them" },
     { "name": "docs", "description": "Docs (KAI-162): collaborative documents next to boards, shared and opened like boards" },
     { "name": "trackers", "description": "Issue trackers (#79): a tracker query as linked task cards on a board (docs/trackers.md)" },
+    { "name": "webhooks", "description": "A team workspace’s webhooks (#48): the admin console’s operations for its owners and admins, with a webhooks:manage credential (docs/events.md)" },
     { "name": "audit", "description": "A team workspace’s audit log for SIEMs that pull (#17); pushing streams are set up in the admin console" },
     { "name": "operator", "description": "For Freero’s operators only (OPERATOR_EMAILS): the problems people reported with “Report a problem”. Anyone else gets 404 here." }
   ],
@@ -127,6 +128,270 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks": {
+      "parameters": [{ "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "listWebhooks",
+        "tags": ["webhooks"],
+        "summary": "The workspace’s webhooks",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "description": "Owners and admins of the team workspace. URLs are shown shortened; secrets never.",
+        "responses": {
+          "200": {
+            "description": "Its webhooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["webhooks"],
+                  "properties": { "webhooks": { "type": "array", "items": { "$ref": "#/components/schemas/Webhook" } } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "operationId": "createWebhook",
+        "tags": ["webhooks"],
+        "summary": "Add a webhook (answers its secret, once)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "description": "As in the admin console: events of boards every full member of the workspace can open, signed with HMAC-SHA256 (`json`) or as a chat message. Optionally only one board or item (`scope`) or one project (`projectId`). Audited (`webhook.created`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url", "events"],
+                "properties": {
+                  "url": { "type": "string", "description": "https only; an address on a private network is refused (unless the server allows private endpoints)" },
+                  "description": { "type": "string", "maxLength": 200 },
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "description": "An event type (docs/events.md): board.created, item.created, comment.created …" }
+                  },
+                  "format": { "type": "string", "enum": ["json", "slack", "teams", "discord", "google-chat", "mattermost"] },
+                  "scope": { "type": ["string", "null"], "description": "Only one board, or one item on it: its link or freero:// address (a board the whole team can open)" },
+                  "projectId": { "type": ["string", "null"], "description": "Only the boards of this project (one the whole team can open); not with scope" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The webhook and its secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["webhook", "secret"],
+                  "properties": {
+                    "webhook": { "$ref": "#/components/schemas/Webhook" },
+                    "secret": { "type": "string", "description": "The signing secret (whsec_…): shown this once, never again" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "patch": {
+        "operationId": "updateWebhook",
+        "tags": ["webhooks"],
+        "summary": "Change a webhook (URL, events, format, scope, project, on / off)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "description": "Only what you send changes; `scope` / `projectId` null clears it. Turning it on (`enabled: true`) resets its failure count; waiting deliveries are sent again. Audited (`webhook.updated`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string", "description": "https only; an address on a private network is refused (unless the server allows private endpoints)" },
+                  "description": { "type": "string", "maxLength": 200 },
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "description": "An event type (docs/events.md): board.created, item.created, comment.created …" }
+                  },
+                  "format": { "type": "string", "enum": ["json", "slack", "teams", "discord", "google-chat", "mattermost"] },
+                  "scope": { "type": ["string", "null"], "description": "Only one board, or one item on it: its link or freero:// address (a board the whole team can open)" },
+                  "projectId": { "type": ["string", "null"], "description": "Only the boards of this project (one the whole team can open); not with scope" },
+                  "enabled": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The webhook",
+            "content": {
+              "application/json": { "schema": { "type": "object", "required": ["webhook"], "properties": { "webhook": { "$ref": "#/components/schemas/Webhook" } } } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWebhook",
+        "tags": ["webhooks"],
+        "summary": "Remove a webhook",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["ok"], "properties": { "ok": { "const": true } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/rotate": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "operationId": "rotateWebhookSecret",
+        "tags": ["webhooks"],
+        "summary": "A new signing secret (answered once; the old one stops at once)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "The webhook and its new secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["webhook", "secret"],
+                  "properties": {
+                    "webhook": { "$ref": "#/components/schemas/Webhook" },
+                    "secret": { "type": "string", "description": "The signing secret (whsec_…): shown this once, never again" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/test": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "operationId": "testWebhook",
+        "tags": ["webhooks"],
+        "summary": "Send a test delivery (a ping, within a second)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "202": {
+            "description": "The queued delivery",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["delivery"], "properties": { "delivery": { "$ref": "#/components/schemas/WebhookDelivery" } } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "listWebhookDeliveries",
+        "tags": ["webhooks"],
+        "summary": "The delivery log (the last 100, newest first; kept 30 days)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "Deliveries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["deliveries"],
+                  "properties": { "deliveries": { "type": "array", "items": { "$ref": "#/components/schemas/WebhookDelivery" } } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "deliveryId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "operationId": "redeliverWebhook",
+        "tags": ["webhooks"],
+        "summary": "Send a failed delivery again",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "The delivery, queued again",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["delivery"], "properties": { "delivery": { "$ref": "#/components/schemas/WebhookDelivery" } } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     },
@@ -2101,6 +2366,7 @@
               "members:read": "See who has access to your boards",
               "members:write": "Invite people and change their access",
               "audit:read": "Read the audit log of team workspaces you administer",
+              "webhooks:manage": "Add, change and remove the webhooks of team workspaces you administer, and read their delivery logs",
               "problems:triage": "Read and triage the problems people reported (operators’ personal access tokens only: never granted to apps)"
             }
           }
@@ -2527,7 +2793,7 @@
           "children": { "type": "array", "items": { "$ref": "#/components/schemas/DocBlock" } }
         }
       },
-      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "audit:read", "problems:triage"] },
+      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "audit:read", "webhooks:manage", "problems:triage"] },
       "KanbanFilterRule": {
         "type": "object",
         "required": ["field", "op"],
@@ -2926,6 +3192,46 @@
           "seq": { "type": "integer" },
           "prevHash": { "type": "string" },
           "hash": { "type": "string" }
+        }
+      },
+      "Webhook": {
+        "type": "object",
+        "required": ["id", "url", "description", "events", "format", "enabled", "disabledReason", "consecutiveFailures", "createdAt", "createdBy", "lastDeliveryAt", "scope"],
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string", "description": "Shortened for display (the full URL is never answered)" },
+          "description": { "type": "string" },
+          "events": { "type": "array", "items": { "type": "string" } },
+          "format": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "disabledReason": { "type": ["string", "null"], "description": "Why Freero turned it off (failures in a row)" },
+          "consecutiveFailures": { "type": "integer" },
+          "createdAt": { "type": "integer" },
+          "createdBy": { "type": ["object", "null"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
+          "lastDeliveryAt": { "type": ["integer", "null"] },
+          "scope": {
+            "type": ["object", "null"],
+            "properties": { "boardId": { "type": "string" }, "itemId": { "type": ["string", "null"] }, "boardTitle": { "type": ["string", "null"] } }
+          },
+          "projectId": { "type": ["string", "null"] }
+        }
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "required": ["id", "endpointId", "eventId", "eventType", "status", "attempts", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "endpointId": { "type": "string" },
+          "eventId": { "type": "string", "description": "evt_… or ping" },
+          "eventType": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "delivered", "failed"] },
+          "attempts": { "type": "integer" },
+          "nextAttemptAt": { "type": ["integer", "null"] },
+          "responseStatus": { "type": ["integer", "null"] },
+          "error": { "type": ["string", "null"] },
+          "durationMs": { "type": ["integer", "null"] },
+          "createdAt": { "type": "integer" },
+          "deliveredAt": { "type": ["integer", "null"] }
         }
       },
       "Workspace": {

@@ -258,3 +258,31 @@ it('a workspace’s audit log over the API pages in order by its cursor, and onl
   expect((await call('GET', A, '/workspaces/{workspaceId}/audit', undefined, await token(member.id, ['audit:read']))).status).toBe(403);
   expect((await call('GET', A, '/workspaces/{workspaceId}/audit', undefined, await token(admin.id, ['boards:read']))).status).toBe(403);
 });
+
+it('a workspace’s webhooks over the API: only its owners and admins with a webhooks:manage token manage them, the secret is answered once, and a URL on a private network is refused', async () => {
+  const admin = await createUser({ name: 'Hook admin', email: 'hook-admin@api.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const member = await createUser({ name: 'Hook member', email: 'hook-member@api.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const ws = await createTeamWorkspace(admin.id, 'Hooked');
+  await applyDirectoryMembership(ws.id, member.id, 'member', { overwrite: false });
+  const token = async (userId: string, scopes: ApiScope[]) => (await createPersonalToken(userId, 'password', { name: scopes.join(' '), scopes, expiresInDays: 1 })).secret;
+  const manager = await token(admin.id, ['webhooks:manage']);
+  const W = `/workspaces/${ws.id}/webhooks`;
+  expect((await call('POST', W, '/workspaces/{workspaceId}/webhooks', { url: 'https://hooks.example.com/in', events: ['item.created'] }, await token(admin.id, ['boards:write']))).status).toBe(403);
+  expect((await call('GET', W, '/workspaces/{workspaceId}/webhooks', undefined, await token(member.id, ['webhooks:manage']))).status).toBe(403);
+  expect((await call('POST', W, '/workspaces/{workspaceId}/webhooks', { url: 'https://10.1.2.3/in', events: ['item.created'] }, manager)).status).toBe(400);
+  const made = await call('POST', W, '/workspaces/{workspaceId}/webhooks', { url: 'https://hooks.example.com/in?key=s3cr3t', events: ['item.created'], description: 'CI' }, manager);
+  expect(made.status).toBe(201);
+  expect(made.json.secret).toMatch(/^whsec_/);
+  const H = `${W}/${made.json.webhook.id}`;
+  const listed = await call('GET', W, '/workspaces/{workspaceId}/webhooks', undefined, manager);
+  expect(JSON.stringify(listed.json)).not.toContain(made.json.secret);
+  expect(JSON.stringify(listed.json)).not.toContain('s3cr3t');
+  expect((await call('PATCH', H, '/workspaces/{workspaceId}/webhooks/{webhookId}', { enabled: false }, manager)).json.webhook.enabled).toBe(false);
+  expect((await call('POST', `${H}/rotate`, '/workspaces/{workspaceId}/webhooks/{webhookId}/rotate', undefined, manager)).json.secret).not.toBe(made.json.secret);
+  expect((await call('POST', `${H}/test`, '/workspaces/{workspaceId}/webhooks/{webhookId}/test', undefined, manager)).status).toBe(409); // off
+  await call('PATCH', H, '/workspaces/{workspaceId}/webhooks/{webhookId}', { enabled: true }, manager);
+  const ping = (await call('POST', `${H}/test`, '/workspaces/{workspaceId}/webhooks/{webhookId}/test', undefined, manager)).json.delivery;
+  expect((await call('GET', `${H}/deliveries`, '/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries', undefined, manager)).json.deliveries.map((d: { id: string }) => d.id)).toEqual([ping.id]);
+  await call('DELETE', H, '/workspaces/{workspaceId}/webhooks/{webhookId}', undefined, manager);
+  expect((await call('GET', W, '/workspaces/{workspaceId}/webhooks', undefined, manager)).json.webhooks).toEqual([]);
+});

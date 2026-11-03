@@ -22,6 +22,7 @@ import { backlinksForApi, resolveForApi, searchContent } from './objects';
 import { appendToDoc, createDocFor, listDocs, readDocFor } from './docs';
 import { getFeedback, postStatus, readStatusPost } from './controlRoom';
 import { workspaceAuditFor } from './audit';
+import * as hooks from './webhooks';
 import * as api from './service';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
@@ -102,6 +103,20 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('get', '/workspaces', 'boards:read', async (call) => ({ body: await api.listWorkspaces(call) }));
   // A team workspace's audit log, for SIEMs that pull (#17; owners/admins).
   endpoint('get', '/workspaces/:workspaceId/audit', 'audit:read', async (call) => ({ body: await workspaceAuditFor(call, call.req.params.workspaceId, call.req.query) }));
+  // A team workspace's webhooks (#48; owners/admins), as the admin console manages them.
+  const W = '/workspaces/:workspaceId/webhooks';
+  const ws = (call: api.ApiCall) => call.req.params.workspaceId;
+  const hook = (call: api.ApiCall) => call.req.params.webhookId;
+  endpoint('get', W, 'webhooks:manage', async (call) => ({ body: await hooks.listWebhooksFor(call, ws(call)) }));
+  endpoint('post', W, 'webhooks:manage', async (call) => ({ status: 201, body: await hooks.createWebhookFor(call, ws(call), call.req.body) }));
+  endpoint('patch', `${W}/:webhookId`, 'webhooks:manage', async (call) => ({ body: await hooks.updateWebhookFor(call, ws(call), hook(call), call.req.body) }));
+  endpoint('delete', `${W}/:webhookId`, 'webhooks:manage', async (call) => ({ body: await hooks.deleteWebhookFor(call, ws(call), hook(call)) }));
+  endpoint('post', `${W}/:webhookId/rotate`, 'webhooks:manage', async (call) => ({ body: await hooks.rotateWebhookFor(call, ws(call), hook(call)) }));
+  endpoint('post', `${W}/:webhookId/test`, 'webhooks:manage', async (call) => ({ status: 202, body: await hooks.testWebhookFor(call, ws(call), hook(call)) }));
+  endpoint('get', `${W}/:webhookId/deliveries`, 'webhooks:manage', async (call) => ({ body: await hooks.webhookDeliveriesFor(call, ws(call), hook(call)) }));
+  endpoint('post', `${W}/:webhookId/deliveries/:deliveryId/redeliver`, 'webhooks:manage', async (call) => ({
+    body: await hooks.redeliverWebhookFor(call, ws(call), hook(call), call.req.params.deliveryId),
+  }));
   endpoint('get', '/boards', 'boards:read', async (call) => ({ body: await api.searchBoards(call, call.req.query) }));
   endpoint('post', '/boards', 'boards:write', async (call) => ({ status: 201, body: await api.createBoard(call, body(call.req)) }));
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));

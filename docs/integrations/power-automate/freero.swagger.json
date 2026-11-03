@@ -223,6 +223,513 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/webhooks": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "description": "A team workspace you own or administer",
+          "type": "string"
+        }
+      ],
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "The workspace’s webhooks",
+        "description": "Owners and admins of the team workspace. URLs are shown shortened; secrets never.",
+        "operationId": "listWebhooks",
+        "x-freero-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "Its webhooks",
+            "schema": {
+              "type": "object",
+              "required": [
+                "webhooks"
+              ],
+              "properties": {
+                "webhooks": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Webhook"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Add a webhook (answers its secret, once)",
+        "description": "As in the admin console: events of boards every full member of the workspace can open, signed with HMAC-SHA256 (`json`) or as a chat message. Optionally only one board or item (`scope`) or one project (`projectId`). Audited (`webhook.created`).",
+        "operationId": "createWebhook",
+        "x-freero-scope": "webhooks:manage",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "url",
+                "events"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "https only; an address on a private network is refused (unless the server allows private endpoints)"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "events": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "description": "An event type (docs/events.md): board.created, item.created, comment.created …"
+                  }
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "json",
+                    "slack",
+                    "teams",
+                    "discord",
+                    "google-chat",
+                    "mattermost"
+                  ]
+                },
+                "scope": {
+                  "type": "string",
+                  "description": "Only one board, or one item on it: its link or freero:// address (a board the whole team can open)",
+                  "x-nullable": true
+                },
+                "projectId": {
+                  "type": "string",
+                  "description": "Only the boards of this project (one the whole team can open); not with scope",
+                  "x-nullable": true
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The webhook and its secret",
+            "schema": {
+              "type": "object",
+              "required": [
+                "webhook",
+                "secret"
+              ],
+              "properties": {
+                "webhook": {
+                  "$ref": "#/definitions/Webhook"
+                },
+                "secret": {
+                  "type": "string",
+                  "description": "The signing secret (whsec_…): shown this once, never again"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "description": "A team workspace you own or administer",
+          "type": "string"
+        },
+        {
+          "name": "webhookId",
+          "in": "path",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "delete": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Remove a webhook",
+        "operationId": "deleteWebhook",
+        "x-freero-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "schema": {
+              "type": "object",
+              "required": [
+                "ok"
+              ],
+              "properties": {
+                "ok": {
+                  "enum": [
+                    true
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Change a webhook (URL, events, format, scope, project, on / off)",
+        "description": "Only what you send changes; `scope` / `projectId` null clears it. Turning it on (`enabled: true`) resets its failure count; waiting deliveries are sent again. Audited (`webhook.updated`).",
+        "operationId": "updateWebhook",
+        "x-freero-scope": "webhooks:manage",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "https only; an address on a private network is refused (unless the server allows private endpoints)"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "events": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "description": "An event type (docs/events.md): board.created, item.created, comment.created …"
+                  }
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "json",
+                    "slack",
+                    "teams",
+                    "discord",
+                    "google-chat",
+                    "mattermost"
+                  ]
+                },
+                "scope": {
+                  "type": "string",
+                  "description": "Only one board, or one item on it: its link or freero:// address (a board the whole team can open)",
+                  "x-nullable": true
+                },
+                "projectId": {
+                  "type": "string",
+                  "description": "Only the boards of this project (one the whole team can open); not with scope",
+                  "x-nullable": true
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The webhook",
+            "schema": {
+              "type": "object",
+              "required": [
+                "webhook"
+              ],
+              "properties": {
+                "webhook": {
+                  "$ref": "#/definitions/Webhook"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/rotate": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "description": "A team workspace you own or administer",
+          "type": "string"
+        },
+        {
+          "name": "webhookId",
+          "in": "path",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "A new signing secret (answered once; the old one stops at once)",
+        "operationId": "rotateWebhookSecret",
+        "x-freero-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "The webhook and its new secret",
+            "schema": {
+              "type": "object",
+              "required": [
+                "webhook",
+                "secret"
+              ],
+              "properties": {
+                "webhook": {
+                  "$ref": "#/definitions/Webhook"
+                },
+                "secret": {
+                  "type": "string",
+                  "description": "The signing secret (whsec_…): shown this once, never again"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/test": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "description": "A team workspace you own or administer",
+          "type": "string"
+        },
+        {
+          "name": "webhookId",
+          "in": "path",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Send a test delivery (a ping, within a second)",
+        "operationId": "testWebhook",
+        "x-freero-scope": "webhooks:manage",
+        "responses": {
+          "202": {
+            "description": "The queued delivery",
+            "schema": {
+              "type": "object",
+              "required": [
+                "delivery"
+              ],
+              "properties": {
+                "delivery": {
+                  "$ref": "#/definitions/WebhookDelivery"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "description": "A team workspace you own or administer",
+          "type": "string"
+        },
+        {
+          "name": "webhookId",
+          "in": "path",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "The delivery log (the last 100, newest first; kept 30 days)",
+        "operationId": "listWebhookDeliveries",
+        "x-freero-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "Deliveries",
+            "schema": {
+              "type": "object",
+              "required": [
+                "deliveries"
+              ],
+              "properties": {
+                "deliveries": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/WebhookDelivery"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "description": "A team workspace you own or administer",
+          "type": "string"
+        },
+        {
+          "name": "webhookId",
+          "in": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "deliveryId",
+          "in": "path",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Send a failed delivery again",
+        "operationId": "redeliverWebhook",
+        "x-freero-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "The delivery, queued again",
+            "schema": {
+              "type": "object",
+              "required": [
+                "delivery"
+              ],
+              "properties": {
+                "delivery": {
+                  "$ref": "#/definitions/WebhookDelivery"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/responses/Conflict"
+          }
+        }
+      }
+    },
     "/boards": {
       "get": {
         "tags": [
@@ -3926,6 +4433,7 @@
         "members:read",
         "members:write",
         "audit:read",
+        "webhooks:manage",
         "problems:triage"
       ]
     },
@@ -5108,6 +5616,156 @@
         },
         "hash": {
           "type": "string"
+        }
+      }
+    },
+    "Webhook": {
+      "type": "object",
+      "required": [
+        "id",
+        "url",
+        "description",
+        "events",
+        "format",
+        "enabled",
+        "disabledReason",
+        "consecutiveFailures",
+        "createdAt",
+        "createdBy",
+        "lastDeliveryAt",
+        "scope"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "description": "Shortened for display (the full URL is never answered)"
+        },
+        "description": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "format": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "disabledReason": {
+          "type": "string",
+          "description": "Why Freero turned it off (failures in a row)",
+          "x-nullable": true
+        },
+        "consecutiveFailures": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "integer"
+        },
+        "createdBy": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "x-nullable": true
+        },
+        "lastDeliveryAt": {
+          "type": "integer",
+          "x-nullable": true
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "boardId": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string",
+              "x-nullable": true
+            },
+            "boardTitle": {
+              "type": "string",
+              "x-nullable": true
+            }
+          },
+          "x-nullable": true
+        },
+        "projectId": {
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "WebhookDelivery": {
+      "type": "object",
+      "required": [
+        "id",
+        "endpointId",
+        "eventId",
+        "eventType",
+        "status",
+        "attempts",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "endpointId": {
+          "type": "string"
+        },
+        "eventId": {
+          "type": "string",
+          "description": "evt_… or ping"
+        },
+        "eventType": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "delivered",
+            "failed"
+          ]
+        },
+        "attempts": {
+          "type": "integer"
+        },
+        "nextAttemptAt": {
+          "type": "integer",
+          "x-nullable": true
+        },
+        "responseStatus": {
+          "type": "integer",
+          "x-nullable": true
+        },
+        "error": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "durationMs": {
+          "type": "integer",
+          "x-nullable": true
+        },
+        "createdAt": {
+          "type": "integer"
+        },
+        "deliveredAt": {
+          "type": "integer",
+          "x-nullable": true
         }
       }
     },

@@ -316,10 +316,10 @@ export async function boardReadPolicies(userId: string, boardIds: string[]): Pro
  * with where they are and their title now. Personal boards, boards in private projects and boards
  * taken down by an operator are absent.
  */
-export async function boardsOpenToTheirTeam(boardIds: string[]): Promise<Map<string, { workspaceId: string; title: string }>> {
+export async function boardsOpenToTheirTeam(boardIds: string[]): Promise<Map<string, { workspaceId: string; projectId: string | null; title: string }>> {
   const boards = (await repo.getBoardsIncludingTrash([...new Set(boardIds)])).filter((b) => b.removedAt === null);
   const open = await openToWholeTeam(boards.map((b) => ({ workspaceId: b.workspaceId, projectId: b.projectId })));
-  return new Map(boards.filter((_, i) => open[i]).map((b) => [b.id, { workspaceId: b.workspaceId, title: b.title }]));
+  return new Map(boards.filter((_, i) => open[i]).map((b) => [b.id, { workspaceId: b.workspaceId, projectId: b.projectId, title: b.title }]));
 }
 
 /** Every board id, trash included (operator rebuilds of derived indexes, e.g. references). */
