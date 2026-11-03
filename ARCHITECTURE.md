@@ -130,7 +130,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 | `walkthroughs` collection (one summary per recording) | server `modules/walkthroughs` (realtime's `writeServerCollection`) | `Host.walkthroughs` (REST); the web feature only reads it |
-| A kanban's fields (`KanbanElement.fields`; the group field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the field the board is grouped by — a card's value for it is the column it stands in); server `modules/api` (`update_items` / `add_cards` `fields`, `define_fields`) and `modules/trackers` (an import into a kanban adds the status columns and the Priority field it needs and sets cards' Stage / Priority; pulls set them, adding a priority level; `trackers/kanban.ts`). New kanbans may be created WITH fields and values by templates (the Kit), the CSV import and the kanban feature's `kanban.createFromRows` (rows another feature hands over: the table's "Convert to kanban", laid out by `@freero/shared` `layoutKanbanRows`); words ↔ values go through `@freero/shared` `fieldText.ts`. Every server change to a kanban (API, MCP, tracker import and pull) is laid out with `@freero/shared` `withKanbanLayout` in the same change | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
+| A kanban's fields (`KanbanElement.fields`; the group field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the field the board is grouped by — a card's value for it is the column it stands in); server `modules/api` (`update_items` / `add_cards` `fields`, `define_fields`) and `modules/trackers` (an import into a kanban adds the status columns and the Priority, Sprint (#119) and field-map (#43) fields it needs and sets cards' Stage / Priority / Sprint / mapped values; pulls set them, adding a priority level or sprint and marking closed sprints `readOnly`; `trackers/kanban.ts`). New kanbans may be created WITH fields and values by templates (the Kit), the CSV import and the kanban feature's `kanban.createFromRows` (rows another feature hands over: the table's "Convert to kanban", laid out by `@freero/shared` `layoutKanbanRows`); words ↔ values go through `@freero/shared` `fieldText.ts`. Every server change to a kanban (API, MCP, tracker import and pull) is laid out with `@freero/shared` `withKanbanLayout` in the same change | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
 | A kanban's saved views (`KanbanElement.views` / `activeView`: what cards show, density, colour-by, `groupBy`, `subGroupBy`, other fields' column settings, `filter`, `sort` and the manual order kept while sorted, the view `locked`; since 3a also its table tabs — columns, filter, sort, lock — and the tab everyone starts on; since 3b list, calendar and timeline tabs — a list's fields and grouping, a calendar's date field, a timeline's start / end fields, scale and swimlanes) and swimlane geometry (`lanes`) — read only through `@freero/shared` `views.ts` (`boardView`), `tabs.ts` (`viewTabs`, `projectionView`, `savedTabId`; entries of layouts a client doesn't know are kept when it writes, and so is an `activeView` naming one) and `projections.ts` (where a calendar or timeline places a card, what moving it writes) and `fields.ts` (`groupFieldId`); filters and sorts are evaluated only by `@freero/shared` `query.ts` (the free-form table's typed filter / sort too); the layout itself is `@freero/shared` `layout/kanban.ts` `planKanban` | `features/kanban` (View panel: "Save for everyone", density, group by, swimlanes, sort, lock); it keeps `colorCards` equal to "coloured by column" for older clients. Regrouping writes the old group field's values onto the cards from their positions in the same transaction, a drop into another swimlane writes that row's value (the layout's one write to card values), and the layout drops `manualOrder` once a cleared sort is undone. Server: `modules/api` `configure_view` (the saved view or a tab — `view`, `addView`, `name`, `active`, `remove` —, refused while locked by someone else) | `runCommand('kanban.setCardDisplay' / 'kanban.saveViewForEveryone' / 'kanban.groupBy' / 'kanban.setSwimlanes' / 'kanban.setMyFilter' / 'kanban.setSort' / 'kanban.lockView' / 'kanban.addTab' / 'kanban.addTableTab' / 'kanban.renameTab' / 'kanban.deleteTab')` |
 | A linked view (`KanbanViewElement`, type `kanbanview`, step 3c: a kanban's cards as a table, list, calendar or timeline elsewhere on its board — `sourceId` and one projection view, ids only, never a copy of the cards or their labels) — read only through `@freero/shared` `linkedViews.ts` (`linkedView`, `linkedSource`) | `features/kanban` (the second element of its `element.tsx`; "Add linked view ▸" in a kanban's context menu and tab menu, the View panel: name, layout, lock, "Save for everyone"); server `modules/api` `add_view` (placed beside the kanban, `linkedViewSpot`) and `configure_view` with the linked view's id | `runCommand('kanban.addLinkedView' / 'kanban.setMyLinkedView' / 'kanban.saveLinkedView' / 'kanban.configureLinkedView')`. Its edits write the real cards through `card.setValues`, as a tab's do. Copying keeps `sourceId` (with the kanban copied along, the engine's id remap points the copy at the kanban's copy); pasted onto another board without its kanban it is left out (`pasteContent`; step 3d makes it a cross-board view) |
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
@@ -403,8 +403,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
 - `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
-  unlink }`, present only when the server listed a tracker connection this person may use on this
-  board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
+  unlink, sprints?, issueTypes? }` (the last two additive, #119 / #43), present only when the server
+  listed a tracker connection this person may use on this board (`GET /boards/:id/trackers`).
+  `features/trackers` hides every entry point without it.
+
 - `Host.walkthroughs?` / `Host.decisions?` (additive, KAI-133 / KAI-161; see "Walkthroughs and
   decision snapshots"): absent without a server; guests watch and open but don't record or comment.
   A command's `urlParam` run also gets `args.query` (every URL parameter: a walkthrough's `t`).
@@ -2405,7 +2407,8 @@ target itself:
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
-one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked both ways.
+one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub or Azure DevOps Boards (Services /
+Server, #6), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -2417,12 +2420,24 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   projects, get / create / update / search issues, `changedSince` (polling), backlinks, how a tag
   becomes a label, and webhook verification. Plain HTTP (`http.ts`): untrusted addresses (https,
   no private addresses unless `TRACKER_PRIVATE_ENDPOINTS`, no redirects, size caps), retries with
-  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`.
+  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
+  capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
+  (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
+  `issueTypes`, `parents`. `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
+  fresh reads (at most twice) instead of overwriting.
+- **Field map (#43)**: a connection's `settings` hold the picked estimate / start date fields,
+  issue type per project and `fieldMap` (tracker field id ↔ kanban field NAME and kind). Mapped
+  fields are `custom:<id>` IssueFields, merged like every other; a kanban without a field of that
+  name holds no value (nothing is pushed or cleared), and a pull it can't hold keeps the previous
+  agreement (`syncedBase(…, previous)`), so the value arrives once the field is back.
 - **The mapping and the merge are pure** (`@freero/shared` `trackers.ts`: `issueValuesFromBoard`,
-  `pullableFields`, `canonical`, `mergeField`). Per field against `base`: one-sided changes flow
+  `pullableFields`, `canonical`, `mergeField`, `syncedBase`, `trackerAgreed`). Per field against `base`: one-sided changes flow
   across; the same field changed differently on both sides in one window keeps the tracker's value
   and the board's goes into a comment on the item; a field a side can't hold (a cluster's title)
-  is never written back. The server previews with the same code the send uses.
+  is never written back. The server previews with the same code the send uses. What a sync stores
+  as agreed is what it merged (`syncedBase` for the board, `trackerAgreed` for the tracker) plus
+  the fields it wrote: a change on either side while it ran reaches the other side next time.
 - **One sync path** (`service.ts` `syncLink`), run only by the `trackers` outbox consumer, so a link
   never syncs twice at once: read the issue, read the items from the live board as the linking
   person sees them, merge, write the tracker, write the board through `changeBoard` ("Jira for
@@ -2438,7 +2453,10 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   for everyone through Yjs, kept on version restore (`Y_KEPT_ON_RESTORE`). `BoardChange.collections`
   entries set to `null` delete (owners/editors), so unlinking removes the record. A card whose status
   comes from the tracker moves to the kanban column with that status (`KANBAN_LAYOUT`, shared with
-  the kanban feature). The board side of a send is ONE server change (nobody ever sees part of a
+  the kanban feature). A kanban's Sprint field (#119: "Sprint" / "Cycle" / "Iteration") is written
+  like Priority (`trackers/kanban.ts`): made by an import, its options the project's sprints with
+  closed ones `readOnly` (`FieldOption.readOnly`, `KanbanColumn.readOnly`: kept, never offered by
+  `features/card` and `features/kanban`'s pickers). The board side of a send is ONE server change (nobody ever sees part of a
   cluster linked); like any change the server makes it is not in anyone's Ctrl+Z — "Unlink" undoes it.
 - **Suite primitives**: an issue is an object, `freero://issue/<linkId>` (its board's access); the
   references index adds kind `tracker` from items to it, so its backlinks are its items. Every sync
@@ -2462,9 +2480,12 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   the board yet is retried on the next `board.content`; a reject, an issue imported meanwhile or a
   proposer who lost access leaves a plain card; an undone accept clears the row (the link goes
   when its card does). Sockets never write a link: they can only decide the server's records.
+- **Data exports**: `trackersExportOf` (a person's own connections and the links they made) and
+  `trackersWorkspaceExportOf` (a team's connections) feed `privacy/archive.ts`; never credentials.
 - `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
-  Atlassian OAuth), `mock-linear.mjs` and `mock-github.mjs`, which implement the subset of each
-  public API used, webhooks included.
+  Atlassian OAuth, agile sprints), `mock-linear.mjs` (cycles), `mock-github.mjs` and
+  `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks), which
+  implement the subset of each public API used, webhooks included.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 

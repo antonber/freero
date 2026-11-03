@@ -94,7 +94,10 @@ function FieldControl({ editor, card, kanban, field }: { editor: Editor; card: C
           options={[
             // Grouped by the column field, a card always has a value: the column it is in.
             ...(field.id === COLUMN_FIELD_ID && groupFieldId(kanban) === COLUMN_FIELD_ID ? [] : [{ value: '', label: <span className="fr-card-fields__none">None</span> }]),
-            ...(field.options ?? []).map((o) => ({ value: o.id, label: <Chip option={o} /> })),
+            // A read-only option (a tracker's closed sprint) shows on the card that holds it; nobody picks it.
+            ...(field.options ?? [])
+              .filter((o) => !o.readOnly || o.id === str)
+              .map((o) => ({ value: o.id, label: <Chip option={o} />, ...(o.readOnly ? { disabled: true, description: 'Closed' } : {}) })),
           ]}
           onChange={(v) => set(v || null)}
         />

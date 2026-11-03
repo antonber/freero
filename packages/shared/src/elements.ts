@@ -776,6 +776,8 @@ export interface KanbanColumn {
    * folded away below the board ("N more"). 0 / absent = all.
    */
   limit?: number;
+  /** [additive] A tracker's closed sprint while the board is grouped by Sprint (#119): kept, not offered. */
+  readOnly?: true;
 }
 
 type KanbanGeometry = Pick<KanbanElement, 'colW' | 'columns'>;
