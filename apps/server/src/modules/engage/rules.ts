@@ -4,11 +4,16 @@
 import {
   ENGAGE_MAX_CLOUD_WORDS,
   ENGAGE_MAX_OPTIONS,
+  ENGAGE_MAX_QUIZ_QUESTIONS,
+  ENGAGE_MAX_QUIZ_SECONDS,
   ENGAGE_MAX_WORD_LENGTH,
   ENGAGE_MAX_WORDS,
+  ENGAGE_QUIZ_GRACE_MS,
+  ENGAGE_QUIZ_POINTS,
   type ActivityAnswer,
   type ActivityElement,
   type ActivityResults,
+  type QuizQuestion,
 } from '@freero/shared';
 
 export class AnswerError extends Error {}
@@ -77,9 +82,105 @@ export function cleanAnswer(activity: ActivityElement, raw: unknown): ActivityAn
       if (!Object.keys(ratings).length) throw new AnswerError('Rate at least one statement');
       return { ratings };
     }
+    case 'matrix': {
+      const given = v.positions && typeof v.positions === 'object' && !Array.isArray(v.positions) ? (v.positions as Record<string, unknown>) : {};
+      const positions: Record<string, { x: number; y: number }> = {};
+      for (const [id, p] of Object.entries(given)) {
+        if (!ids.includes(id)) throw new AnswerError('That item isn’t in this matrix any more');
+        const { x, y } = (p ?? {}) as { x?: unknown; y?: unknown };
+        if (!unit(x) || !unit(y)) throw new AnswerError('Place items inside the matrix');
+        positions[id] = { x: round3(x), y: round3(y) };
+      }
+      if (!Object.keys(positions).length) throw new AnswerError('Place at least one item');
+      return { positions };
+    }
     default:
       throw new AnswerError('Ask a question or upvote one instead');
   }
+}
+
+const unit = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1;
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+// ---- quiz (#147) ----
+
+/** A quiz's questions as the server trusts them: unique ids, valid options, at most the cap. */
+export function quizQuestions(a: Pick<ActivityElement, 'questions'>): QuizQuestion[] {
+  const out: QuizQuestion[] = [];
+  for (const q of Array.isArray(a.questions) ? a.questions : []) {
+    if (!q || typeof q.id !== 'string' || !q.id || out.some((x) => x.id === q.id)) continue;
+    out.push({ id: q.id, text: typeof q.text === 'string' ? q.text : '', options: optionsOf(q), seconds: secondsOf(q), multi: q.multi === true });
+    if (out.length >= ENGAGE_MAX_QUIZ_QUESTIONS) break;
+  }
+  return out;
+}
+
+const optionsOf = (q: { options?: unknown }) => {
+  const ids = optionIds({ options: q.options as ActivityElement['options'] });
+  return (Array.isArray(q.options) ? q.options : []).filter((o) => ids.includes(o?.id)).map((o) => ({ id: o.id as string, text: typeof o.text === 'string' ? o.text : '' }));
+};
+const secondsOf = (q: { seconds?: unknown }) =>
+  typeof q.seconds === 'number' && Number.isInteger(q.seconds) && q.seconds > 0 ? Math.min(q.seconds, ENGAGE_MAX_QUIZ_SECONDS) : 0;
+
+/** The question open for answers now, or why there is none (a message fit for people). */
+export function openQuestion(a: ActivityElement, now: number): QuizQuestion | string {
+  const qs = quizQuestions(a);
+  const step = a.quiz?.step ?? -1;
+  if (!a.quiz || step < 0 || step >= qs.length) return 'The quiz hasn’t started yet';
+  if (a.quiz.showAnswer) return 'Wait for the next question';
+  const q = qs[step];
+  if (q.seconds && now > a.quiz.openedAt + q.seconds * 1000 + ENGAGE_QUIZ_GRACE_MS) return 'Time’s up for this question';
+  return q;
+}
+
+/**
+ * A quiz answer: the open question's choices, merged into the person's earlier answers (which
+ * stay as they were), stamped with how long they took on the server's clock.
+ */
+export function cleanQuizAnswer(a: ActivityElement, prev: ActivityAnswer | null, raw: unknown, now: number): ActivityAnswer {
+  const q = openQuestion(a, now);
+  if (typeof q === 'string') throw new AnswerError(q);
+  const v = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const given = v.quiz && typeof v.quiz === 'object' ? (v.quiz as Record<string, unknown>)[q.id] : undefined;
+  const choices = given && typeof given === 'object' && Array.isArray((given as { choices?: unknown }).choices) ? [...new Set((given as { choices: unknown[] }).choices.filter((c): c is string => typeof c === 'string'))] : [];
+  const ids = q.options.map((o) => o.id);
+  if (!choices.length) throw new AnswerError('Pick an answer');
+  if (choices.some((c) => !ids.includes(c))) throw new AnswerError('That answer isn’t in this question');
+  return { quiz: { ...(prev?.quiz ?? {}), [q.id]: { choices: ids.filter((id) => choices.includes(id)), ms: Math.max(0, now - (a.quiz?.openedAt ?? now)) } } };
+}
+
+/** A clean answer key: for questions of this quiz, at least one of their options each. */
+export function cleanKey(a: ActivityElement, raw: unknown): Record<string, string[]> {
+  const given = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const out: Record<string, string[]> = {};
+  for (const q of quizQuestions(a)) {
+    const ids = q.options.map((o) => o.id);
+    const right = Array.isArray(given[q.id]) ? ids.filter((id) => (given[q.id] as unknown[]).includes(id)) : [];
+    if (right.length) out[q.id] = right;
+  }
+  return out;
+}
+
+/** Points for one answer: nothing unless it picked exactly the right options; faster earns more under a time limit. */
+export function quizPoints(q: QuizQuestion, right: readonly string[] | undefined, given: { choices: string[]; ms?: number } | undefined): number {
+  if (!given || !right?.length) return 0;
+  const exact = given.choices.length === right.length && right.every((id) => given.choices.includes(id));
+  if (!exact) return 0;
+  if (!q.seconds) return ENGAGE_QUIZ_POINTS;
+  const used = Math.min(1, Math.max(0, (given.ms ?? 0) / (q.seconds * 1000)));
+  return Math.round(ENGAGE_QUIZ_POINTS / 2 + (ENGAGE_QUIZ_POINTS / 2) * (1 - used));
+}
+
+/** A person's score and how many they got right. */
+export function quizScore(a: ActivityElement, key: Record<string, string[]>, answer: ActivityAnswer | null): { score: number; right: number } {
+  let score = 0;
+  let right = 0;
+  for (const q of quizQuestions(a)) {
+    const p = quizPoints(q, key[q.id], answer?.quiz?.[q.id]);
+    score += p;
+    if (p) right++;
+  }
+  return { score, right };
 }
 
 export interface StoredAnswer {
@@ -112,12 +213,18 @@ export function computeResults(
   questions: StoredQuestion[],
   sealed: boolean,
   now: number,
+  key: Record<string, string[]> = {},
 ): ActivityResults {
   const ids = optionIds(activity);
   const shown = questions.filter((q) => !q.hidden);
   const respondents =
     activity.kind === 'qna' ? new Set(shown.flatMap((q) => [...(q.authorId ? [q.authorId] : []), ...q.voters])).size : answers.length;
   const out: ActivityResults = { activityId: activity.id, respondents, sealed, updatedAt: now };
+  // A quiz runs in the open question by question; only its leaderboard waits for the reveal.
+  if (activity.kind === 'quiz') {
+    out.quiz = quizResults(activity, answers, key, sealed);
+    return out;
+  }
   if (sealed) return out;
   switch (activity.kind) {
     case 'poll': {
@@ -159,11 +266,43 @@ export function computeResults(
       });
       break;
     }
+    case 'matrix':
+      out.matrix = ids.map((optionId) => {
+        const placed = answers.map((a) => a.value.positions?.[optionId]).filter((p): p is { x: number; y: number } => !!p && unit(p.x) && unit(p.y));
+        const n = placed.length;
+        const mean = (f: (p: { x: number; y: number }) => number) => (n ? placed.reduce((s, p) => s + f(p), 0) / n : 0.5);
+        const x = mean((p) => p.x);
+        const y = mean((p) => p.y);
+        const sd = (f: (p: { x: number; y: number }) => number, m: number) => (n ? Math.sqrt(placed.reduce((s, p) => s + (f(p) - m) ** 2, 0) / n) : 0);
+        return { optionId, count: n, x: round3(x), y: round3(y), sx: round3(sd((p) => p.x, x)), sy: round3(sd((p) => p.y, y)) };
+      });
+      break;
     case 'qna':
       out.questions = shown
         .map((q) => ({ id: q.id, text: q.text, ...(q.authorName ? { by: q.authorName } : {}), votes: q.voters.length, answered: q.answered, at: q.createdAt }))
         .sort((x, y) => Number(x.answered) - Number(y.answered) || y.votes - x.votes || x.at - y.at);
       break;
   }
+  return out;
+}
+
+const LEADERBOARD = 10;
+
+function quizResults(a: ActivityElement, answers: StoredAnswer[], key: Record<string, string[]>, sealed: boolean): NonNullable<ActivityResults['quiz']> {
+  const qs = quizQuestions(a);
+  const q = a.quiz && a.quiz.step >= 0 ? qs[a.quiz.step] : undefined;
+  const out: NonNullable<ActivityResults['quiz']> = {
+    questionId: q?.id ?? null,
+    answered: q ? answers.filter((x) => x.value.quiz?.[q.id]).length : 0,
+  };
+  if (q && a.quiz?.showAnswer) {
+    out.correct = key[q.id] ?? [];
+    out.counts = q.options.map((o) => ({ optionId: o.id, count: answers.filter((x) => x.value.quiz?.[q.id]?.choices.includes(o.id)).length }));
+  }
+  if (!sealed)
+    out.leaderboard = answers
+      .map((x) => ({ name: !a.anonymous && x.name ? x.name : 'Someone', ...quizScore(a, key, x.value) }))
+      .sort((x, y) => y.score - x.score || y.right - x.right)
+      .slice(0, LEADERBOARD);
   return out;
 }

@@ -1,6 +1,6 @@
 // Why a workspace's boards are closed to you (WorkspaceSummary.blocked) and what to do about it.
 import { Link } from 'react-router-dom';
-import { ShieldAlert, UserX } from 'lucide-react';
+import { Network, ShieldAlert, UserX } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 
 export function WorkspaceBlockedNotice({ workspace }: { workspace: WorkspaceSummary }) {
@@ -12,6 +12,13 @@ export function WorkspaceBlockedNotice({ workspace }: { workspace: WorkspaceSumm
           {workspace.name} requires two-step verification. Its boards stay closed to you until you{' '}
           <Link to="/settings#two-factor">turn it on in your settings</Link>.
         </span>
+      </div>
+    );
+  if (workspace.blocked === 'ip_not_allowed')
+    return (
+      <div className="fr-dash-blocked" role="status">
+        <Network size={18} aria-hidden />
+        <span>{workspace.name} opens its boards only from its own networks. Connect from the office or the company VPN to work here.</span>
       </div>
     );
   if (workspace.blocked === 'deactivated')

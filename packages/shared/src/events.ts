@@ -146,6 +146,8 @@ export interface WebhookEndpointInfo {
    * Null: every board the whole team can open. `boardTitle` is null once the board is gone.
    */
   scope: { boardId: string; itemId: string | null; boardTitle: string | null } | null;
+  /** [additive, #48] Only events of boards in this project of the workspace (one the whole team can open). Null: no project filter. */
+  projectId?: string | null;
 }
 
 export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed';
@@ -180,6 +182,8 @@ export interface WebhookCreateRequest {
    * copied link `…/board/<id>?el=<item>`, or `freero://board/<id>[#<item>]`). Omit for every board.
    */
   scope?: string | null;
+  /** [additive, #48] Only boards of this project (one the whole team can open), instead of a scope; null clears it. */
+  projectId?: string | null;
 }
 /** Create and rotate answer with the secret — the only time it is shown. */
 export interface WebhookSecretResponse {
@@ -194,6 +198,8 @@ export interface WebhookUpdateRequest {
   enabled?: boolean;
   /** A board or item link as in WebhookCreateRequest; null or '' clears it (every board). */
   scope?: string | null;
+  /** [additive, #48] Only boards of this project (one the whole team can open), instead of a scope; null clears it. */
+  projectId?: string | null;
 }
 export interface WebhookDeliveriesResponse {
   deliveries: WebhookDeliveryInfo[];

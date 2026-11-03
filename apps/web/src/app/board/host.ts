@@ -28,6 +28,7 @@ import {
   saveThumbnail,
   reportExport,
   shareTemplateWith,
+  publishTemplateTo,
   unfurl,
   resolveObjects,
   uploadAttachment,
@@ -56,7 +57,7 @@ export interface HostDeps {
   openShareDialog(): void;
   onTitleChange(title: string): void;
   /** The board's team workspace, when the user is a full member of it (templates can be shared there). */
-  team?: { id: string; name: string } | null;
+  team?: { id: string; name: string; company?: { id: string; name: string } | null } | null;
   /** What the server said about AI on this board for this user (null: AI is off on this server). */
   ai?: BoardAiStatus | null;
   /** Tracker connections this user may use here (empty: no tracker entry points). */
@@ -86,6 +87,18 @@ export function engageOf(boardId: string): HostEngage {
     moderate: (aid, qid, patch) => api.moderateQuestion(boardId, aid, qid, patch),
     reveal: (aid, revealed) => api.revealActivity(boardId, aid, revealed),
     clear: (aid) => api.clearActivity(boardId, aid),
+    setKey: (aid, key) => api.setActivityKey(boardId, aid, key),
+    runQuiz: (aid, run) => api.runQuiz(boardId, aid, run),
+    copyKey: (aid, from) => api.copyActivityKey(boardId, aid, from),
+  };
+}
+
+/** Who presents the board (#146): the server keeps it, so handing over is checked there. */
+export function presentationOf(boardId: string): NonNullable<Host['presentation']> {
+  return {
+    start: (frameId) => api.presentation(boardId, { action: 'start', frameId }),
+    handoff: (to, frameId) => api.presentation(boardId, { action: 'handoff', to, frameId }),
+    end: () => api.presentation(boardId, { action: 'end' }),
   };
 }
 
@@ -139,7 +152,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       canExport: board.permissions.canExport,
       canCopy: board.permissions.canCopy !== false,
       coOwner: board.coOwner === true,
-      team: deps.team ? { name: deps.team.name } : null,
+      team: deps.team ? { name: deps.team.name, company: deps.team.company?.name ?? null } : null,
       call: board.call ?? null,
       jitsiCalls: board.permissions.jitsiCalls === true,
       embeds: embedsOf(board.permissions),
@@ -180,6 +193,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     loadTemplate,
     saveTemplate: saveTemplateFrom(board.id, deps.team?.id ?? null),
     shareTemplate: shareTemplateWith(deps.team?.id ?? null),
+    ...(deps.team?.company ? { publishTemplate: publishTemplateTo(deps.team.company.id) } : {}),
     deleteTemplate,
     versions: versionHistory(board.id),
     activity: {
@@ -191,6 +205,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     fetchImage,
     report: reportOn(board.id),
     engage: engageOf(board.id),
+    icebreakers: { roll: (elementId) => api.rollIcebreaker(board.id, elementId) },
+    presentation: presentationOf(board.id),
     call: callOf(board.id),
     walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: true }),
     decisions: decisionsOf(board.id),
@@ -283,6 +299,7 @@ export function createGuestHost(
     fetchImage: needsAccount('Copying images'),
     // Guests answer live activities when the activity lets visitors in (the server checks).
     engage: engageOf(board.id),
+    presentation: presentationOf(board.id),
     call: { get: () => api.boardCall(board.id), set: needsAccount('Setting the call link') },
     // Visitors watch walkthroughs and open decisions; recording and commenting need an account.
     walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: false }),

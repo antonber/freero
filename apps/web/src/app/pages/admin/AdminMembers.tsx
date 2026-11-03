@@ -3,7 +3,7 @@
 // decides; the controls follow the same rule).
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ShieldAlert, ShieldCheck, UserCheck, UserX } from 'lucide-react';
-import type { AdminMember, WorkspaceRole, WorkspaceSummary } from '@freero/shared';
+import { ADMIN_SCOPES, type AdminMember, type AdminScope, type WorkspaceRole, type WorkspaceSummary } from '@freero/shared';
 import { Avatar, Button, Input, Modal, Select, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -15,6 +15,43 @@ const ROLE_OPTIONS: Array<{ value: WorkspaceRole; label: string }> = [
   { value: 'member', label: 'Member' },
   { value: 'guest', label: 'Guest' },
 ];
+
+const SCOPE_LABELS: Record<AdminScope, string> = { members: 'Members', content: 'Content', security: 'Security' };
+const SCOPE_HINTS: Record<AdminScope, string> = {
+  members: 'People, invites, roles and deactivation',
+  content: 'Sharing policies and every board: inventory, trash, archive, retention, templates',
+  security: 'Sign-in, single sign-on, provisioning, IP allowlist, integrations, exports and the audit log',
+};
+
+/**
+ * What an admin administers (#151). Owners tick the scopes; everyone else sees them. At least one
+ * stays ticked (an admin of nothing is a member).
+ */
+function AdminScopes({ member, editable, onChange }: { member: AdminMember; editable: boolean; onChange: (s: AdminScope[] | null) => void }) {
+  const scopes = member.adminScopes ?? ADMIN_SCOPES;
+  if (!editable) return <div className="fr-admin__muted fr-admin-scopes">{scopes.length === ADMIN_SCOPES.length ? 'All admin areas' : scopes.map((s) => SCOPE_LABELS[s]).join(', ')}</div>;
+  return (
+    <div className="fr-admin-scopes" role="group" aria-label={`What ${member.name} administers`}>
+      {ADMIN_SCOPES.map((s) => {
+        const on = scopes.includes(s);
+        return (
+          <label key={s} className="fr-admin-scopes__item" title={SCOPE_HINTS[s]}>
+            <input
+              type="checkbox"
+              checked={on}
+              disabled={on && scopes.length === 1}
+              onChange={() => {
+                const next = on ? scopes.filter((x) => x !== s) : ADMIN_SCOPES.filter((x) => x === s || scopes.includes(x));
+                onChange(next.length === ADMIN_SCOPES.length ? null : next);
+              }}
+            />
+            {SCOPE_LABELS[s]}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
@@ -56,6 +93,16 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
       load();
     } catch (e) {
       notify(errorText(e, 'Could not change the role'), 'error');
+    }
+  };
+
+  const setScopes = async (m: AdminMember, scopes: AdminScope[] | null) => {
+    try {
+      await api.setWorkspaceRole(workspace.id, m.userId, 'admin', scopes);
+      notify(scopes ? `${m.name} now administers ${scopes.map((s) => SCOPE_LABELS[s].toLowerCase()).join(' and ')}` : `${m.name} administers everything`, 'success');
+      load();
+    } catch (e) {
+      notify(errorText(e, 'Could not change what they administer'), 'error');
     }
   };
 
@@ -162,6 +209,9 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
                   ) : (
                     <span className="fr-admin-role">{ROLE_OPTIONS.find((o) => o.value === m.role)?.label}</span>
                   )}
+                  {m.role === 'admin' ? (
+                    <AdminScopes member={m} editable={owner && !m.deactivated && m.userId !== user?.id} onChange={(s) => void setScopes(m, s)} />
+                  ) : null}
                 </td>
                 <td>
                   {m.twoFactor ? (

@@ -449,3 +449,27 @@ it('what a report sends the model holds the counts and questions, never who answ
   expect(text).toContain('Is it vegan? (4 upvotes)');
   for (const name of ['Annabel', 'Bartholomew', 'Cornelius', 'Dorothea']) expect(text).not.toContain(name);
 });
+
+it('a quiz report gives the model the questions, counts and scores but neither the answer key nor anyone’s name; a matrix report gives each item’s place', () => {
+  const quiz = {
+    kind: 'quiz',
+    question: 'Team quiz',
+    options: [],
+    questions: [{ id: 'q1', text: 'Capital of Peru?', options: [{ id: 'lima', text: 'Lima' }, { id: 'cusco', text: 'Cusco' }] }],
+  } as unknown as ActivityElement;
+  const text = resultsText(quiz, {
+    activityId: 'quiz',
+    respondents: 2,
+    sealed: false,
+    updatedAt: 1,
+    quiz: { questionId: 'q1', answered: 2, correct: ['lima'], counts: [{ optionId: 'lima', count: 1 }, { optionId: 'cusco', count: 1 }], leaderboard: [{ name: 'Annabel', score: 900, right: 1 }] },
+  });
+  expect(text).toContain('Capital of Peru?');
+  expect(text).toContain('Lima: 1, Cusco: 1');
+  expect(text).toContain('Place 1: 900 points');
+  expect(text).not.toContain('Annabel');
+  expect(text).not.toMatch(/right answer|correct/i);
+
+  const matrix = { kind: 'matrix', question: 'Where?', options: [{ id: 'a', text: 'Idea A' }], axes: { x: ['Cheap', 'Costly'], y: ['Minor', 'Major'] } } as unknown as ActivityElement;
+  expect(resultsText(matrix, { activityId: 'm', respondents: 1, sealed: false, updatedAt: 1, matrix: [{ optionId: 'a', count: 1, x: 0.25, y: 0.75, sx: 0, sy: 0 }] })).toContain('Idea A: across 0.25, up 0.75');
+});

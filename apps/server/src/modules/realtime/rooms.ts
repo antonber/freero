@@ -73,6 +73,7 @@ import { guardProtectedLocks } from './protectedLock';
 import { getConfig } from '../../platform/config';
 import { keepSuggestionAuthors, noteSuggestionAuthor, type SuggestionAuthorKey } from './repo';
 import { logError } from '../../platform/log';
+import { currentRequestContext, runWithRequestContext } from '../../platform/requestContext';
 import { isShared, publish, subscribe, subscribedInstances, type Subscription } from '../../platform/pubsub';
 import { getUser, noteSessionActivity } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
@@ -123,8 +124,8 @@ import { emitSuggestionsDecided, emitSuggestionsProposed } from './suggestionEve
 import { emitBoardLeft } from './visits';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
-import { docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
-import type { DocBlock } from '@freero/shared';
+import { applyDocEdit, docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
+import type { DocBlock, DocEdit } from '@freero/shared';
 import type { SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 
 export const MESSAGE_SYNC = 0;
@@ -200,6 +201,12 @@ export interface Admission {
    */
   resolveRole?: () => Promise<Role | null>;
   /**
+   * #156: the client address the socket came from (its upgrade's request context, TRUST_PROXY
+   * applied). Every access refresh is resolved as from this address, so a workspace's IP allowlist
+   * keeps applying to an open socket.
+   */
+  ip?: string | null;
+  /**
    * An anonymous visitor of a board embedded on another site (#2): it publishes no presence (a
    * public page's readers never crowd the board's people) and has no private layer.
    */
@@ -227,6 +234,8 @@ interface Conn {
   coOwner: boolean;
   /** The role the socket's user has on the board, NOT capped by `maxRole`. */
   ownAccess: Role;
+  /** See Admission.ip. */
+  ip: string | null;
   /**
    * The role the socket READS the board's layers with: `ownAccess` as limited by the facilitation
    * session. Equal to `role` except on a capped socket (#89): a live view in an AI assistant shows
@@ -784,6 +793,20 @@ class Room {
       }
   }
 
+  /**
+   * Who is on the board now, by user id -> name: sockets on this instance and presence from other
+   * instances (presence names are the server's own, awareness.ts replaces what clients send).
+   */
+  peopleHere(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const state of this.awareness.getStates().values()) {
+      const u = (state as { user?: { id?: unknown; name?: unknown } } | null)?.user;
+      if (typeof u?.id === 'string') out.set(u.id, typeof u.name === 'string' ? u.name : '');
+    }
+    for (const c of this.conns.values()) if (!out.has(c.userId)) out.set(c.userId, '');
+    return out;
+  }
+
   /** Is the session's facilitator here (a socket on this instance, or presence from another)? */
   private facilitatorPresent(by: string): boolean {
     for (const c of this.conns.values()) if (c.userId === by) return true;
@@ -1001,6 +1024,7 @@ class Room {
       maxRole: a.maxRole,
       coOwner: a.coOwner === true,
       ownAccess: a.role,
+      ip: a.ip ?? null,
       readRole: access === a.role ? eff.role : effectiveAccess(a.role, a.userId, session).role,
       limits: eff.limits,
       participant: (a.kind ?? 'board') === 'board' && isParticipant(eff.role, participationIsOpen(this.doc)),
@@ -1230,11 +1254,14 @@ class Room {
   private async doRefreshAccess(): Promise<void> {
     const conns = [...this.conns.values()];
     const resolved = await Promise.all(
-      conns.map(async (c) => {
-        if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false };
-        const a = await getBoardAccess(this.id, c.userId);
-        return { role: a.role, coOwner: a.coOwner };
-      }),
+      // As from the socket's own address (#156: IP allowlists), not the refresh's trigger.
+      conns.map((c) =>
+        runWithRequestContext({ reqId: `access-refresh:${this.id}`, userId: c.userId, ip: c.ip, userAgent: null }, async () => {
+          if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false };
+          const a = await getBoardAccess(this.id, c.userId);
+          return { role: a.role, coOwner: a.coOwner };
+        }),
+      ),
     );
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
@@ -1477,8 +1504,10 @@ export async function admitSocket(
   ws.on('error', () => ws.terminate());
   const entry = { ws, sessionKey };
   admitting.add(entry);
+  const ip = currentRequestContext()?.ip ?? null; // the upgrade's address (#156)
   try {
-    const a = await authorize();
+    const authorized = await authorize();
+    const a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip };
     if ('code' in a) return ws.close(a.code, a.reason);
     const epoch = accessEpochs.get(a.boardId) ?? 0;
     const room = getRoom(a.boardId);
@@ -1847,6 +1876,29 @@ export async function writeServerCollection(boardId: string, collection: string,
   });
 }
 
+/**
+ * Reads and replaces one entry of a server-written collection of the SHARED doc in one step, with
+ * who is on the board now (#146: the presentation session, checked against its presenter). `update`
+ * returns the new value, null to delete it, or undefined to leave it; it may throw to refuse.
+ */
+export async function updateServerEntry<T>(
+  boardId: string,
+  collection: string,
+  key: string,
+  update: (current: T | undefined, peopleHere: ReadonlyMap<string, string>) => T | null | undefined,
+): Promise<T | null | undefined> {
+  if (!SERVER_COLLECTIONS.includes(collection) || isElementContentCollection(collection)) throw new Error(`realtime: '${collection}' is not a board-level server-written collection`);
+  return withLiveRoom(boardId, async (room) => {
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    const map = room.doc.getMap<T>(collection);
+    const next = update(map.get(key), room.peopleHere());
+    if (next === undefined) return undefined;
+    room.doc.transact(() => (next === null ? map.delete(key) : map.set(key, next)), SERVER_ORIGIN);
+    await room.flush();
+    return next;
+  });
+}
+
 /** An app acting for someone, as other participants see it while it writes (KAI-168). */
 export interface AgentPresence {
   via: ActingApp;
@@ -1921,6 +1973,19 @@ export async function appendDocBlocks(docId: string, actor: BoardActor, blocks: 
   await withLiveRoom(docId, async (room) => {
     room.doc.transact(() => writeDocBlocks(room.doc, blocks, () => newId(16)), new RequestOrigin(actor));
     await room.flush();
+  });
+}
+
+/**
+ * A targeted edit of a doc as `actor` (an owner or editor; the caller checked; #61): applied to the
+ * live document, published and saved before this resolves. DocEditError: nothing changed.
+ */
+export async function editDocBlocks(docId: string, actor: BoardActor, edit: DocEdit): Promise<string[]> {
+  return withLiveRoom(docId, async (room) => {
+    let ids: string[] = [];
+    room.doc.transact(() => (ids = applyDocEdit(room.doc, edit, () => newId(16))), new RequestOrigin(actor));
+    await room.flush();
+    return ids;
   });
 }
 

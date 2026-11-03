@@ -38,7 +38,8 @@ from.
 ## Scopes
 
 `boards:read`, `boards:write`, `boards:suggest` (reserved), `comments:write`, `members:read`,
-`members:write`. A call can do what your role on the board allows AND the scope allows.
+`members:write`, `audit:read` and `webhooks:manage` (a team workspace's audit log and webhooks: they work
+only for its owners and admins). A call can do what your role on the board allows AND the scope allows.
 
 Roles on a board are `owner`, `editor`, `commenter` and `viewer`. A **co-owner** (#122) reads
 `role: "editor"` with `coOwner: true` (boards, docs, members): an editor who also manages the
@@ -135,6 +136,40 @@ open boards drop them at once (KAI-224).
   cards with owner and due date, points, who spoke (the MCP `import_meeting_notes`;
   [../integrations/README.md](../integrations/README.md)). Automation recipes (n8n, Make, Zapier)
   and a Power Automate connector made from this API are in [../integrations/](../integrations/).
+- Video, audio and file items can't be created through the API or MCP (#49): their file must be an
+  upload of the person, checked and counted by Freero's uploads, and an item must never point at a
+  file its creator doesn't own. Pictures can (`image` with a `url`: Freero fetches and keeps its own
+  copy); videos and files are added in the app.
+- Pictures (#33): `POST /boards/{boardId}/export` `{ "format": "png" | "svg" | "pdf", "frameId"?, "scale"? }`
+  answers the board (or a frame) drawn by the server as a file — an export like the app's: the
+  downloads policy and the board's "viewers can copy and export" apply, `board.exported` is recorded,
+  `RATE_LIMIT_BOARD_RENDER` limits it, 5000 items at most (`413 board_too_large`: export a frame).
+  `link: true` answers a single-use download link instead (`GET /exports/{ticket}`, 15 minutes, no
+  token needed: it acts for the credential that asked, checked again when used).
+- Docs (#61): `POST /docs/{docId}/edit` `{ op, blockId, markdown }` changes one part of a doc by
+  the block ids `GET /docs/{docId}` answers — `replace`, `replaceSection` (a heading and its section),
+  `insertBefore`, `insertAfter`, `delete`; `GET /docs/{docId}/comments` reads its threads (the
+  downloads policy applies, like reading the doc), `POST …/comments` `{ text, blockId? }` and
+  `POST …/comments/{threadId}/replies` write them (`comments:write`).
+- Webhooks (#48): `/workspaces/{workspaceId}/webhooks` lists, adds (the secret is answered once),
+  changes (`scope`: one board or item; `projectId`: one project), removes, rotates, tests a team
+  workspace's webhooks and reads / redelivers their delivery log — for its owners and admins with
+  `webhooks:manage` ([../events.md](../events.md)).
+- Boards (#170): `PATCH /boards/{boardId}` renames a board or changes its description (owners and
+  editors); `POST /boards/{boardId}/copy` copies it with its content (`workspaceId`, `projectId`,
+  `title`; refused like an export where its content may not be taken out). `POST /boards/{boardId}/groups`
+  `{ ids }` groups items, `DELETE /boards/{boardId}/groups/{groupId}` ungroups them.
+- Embedding on other sites (#2): `GET /boards/{boardId}/embed` reads the setting and, while it is
+  on, the embed URL and iframe code (`readonly`, `frameId`); `PATCH /boards/{boardId}/embed`
+  `{ "embeddable": true | false }` changes it (owner or co-owner, `boards:write`; the workspace's
+  `boardEmbeds` policy must allow turning it on).
+- Images and embeds by URL (#170): `POST /boards/{boardId}/items` with `{ "type": "image", "url": … }`
+  or `{ "type": "embed", "url": … }` (≤ 20 per call). The server fetches the URL itself — through the
+  same SSRF-safe fetcher as link previews: http(s) on default ports only, every hop's address
+  checked at connect time — and copies an image into your uploads (your quota; never hot-linked);
+  an embed must be an https link on an allow-listed provider. A private, loopback or link-local
+  address answers `422 url_blocked`, anything else that can't be used `422 url_unusable`; nothing
+  is written then.
 - An agent's control room (`/boards/{boardId}/control-room`, the MCP `post_status` / `get_feedback`):
   a person can pause the agent from its lane on the board; until it is resumed every write of that
   token or app on that board answers `423 agent_paused` ([mcp.md](../mcp.md#agent-control-room)).

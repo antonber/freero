@@ -34,9 +34,10 @@ const VIEW_FILTER: Record<BoardView | 'project', BoardFilter> = {
   shared: 'shared',
   mine: 'mine',
   trash: 'trash',
+  archived: 'archived',
   project: 'all',
 };
-const VIEWS: View[] = ['home', 'recent', 'starred', 'shared', 'mine', 'trash', 'project', 'members', 'settings'];
+const VIEWS: View[] = ['home', 'recent', 'starred', 'shared', 'mine', 'trash', 'archived', 'project', 'members', 'settings'];
 const VIEW_TITLE: Record<BoardView, string> = {
   home: 'All boards',
   recent: 'Recently opened',
@@ -44,6 +45,7 @@ const VIEW_TITLE: Record<BoardView, string> = {
   shared: 'Shared with me',
   mine: 'My boards',
   trash: 'Trash',
+  archived: 'Archived',
 };
 const SORTS = ['opened', 'modified', 'name'] as const;
 const LAYOUTS = ['grid', 'list'] as const;
@@ -56,6 +58,7 @@ const EMPTY: Record<BoardView | 'project', { title: string; body: string }> = {
   shared: { title: 'Nothing shared with you yet', body: 'Boards people share with you from outside your workspaces show up here.' },
   mine: { title: 'You haven’t created a board yet', body: 'Start a blank board or pick a template to get going.' },
   trash: { title: 'Trash is empty', body: `Boards you delete stay here for ${TRASH_RETENTION_DAYS} days, so you can restore them.` },
+  archived: { title: 'Nothing archived', body: 'Archive a finished board to keep it, read-only, out of the way. Unarchive it any time.' },
   project: { title: 'This project is empty', body: 'Create a board here, or drag boards onto the project in the sidebar.' },
 };
 
@@ -253,6 +256,16 @@ export function DashboardPage() {
         }
       },
       duplicate: (b) => setPlacing({ mode: 'duplicate', board: b }),
+      // #153: an archived board leaves the default lists; unarchived, it leaves the Archived list.
+      setArchived: async (b, archived) => {
+        try {
+          await api.setBoardArchived(b.id, archived);
+          setBoards((list) => list?.filter((x) => x.id !== b.id) ?? null);
+          notify(archived ? `Archived “${b.title || UNTITLED}” — it’s read-only now, under Archived` : `“${b.title || UNTITLED}” is back`, 'success');
+        } catch (e) {
+          notify(e instanceof ApiError ? e.message : 'Could not change it', 'error');
+        }
+      },
       moveToWorkspace: (b) => setPlacing({ mode: 'move', board: b }),
       toggleStar: async (b) => {
         const starred = !b.starred;
@@ -769,7 +782,9 @@ function EmptyState({
     : closed
       ? blocked === 'two_factor_required'
         ? { title: 'Turn on two-step verification to work here', body: 'This workspace requires it. Once it’s on, you can open and create its boards.' }
-        : { title: 'Your access here is paused', body: 'An admin of this workspace deactivated you. Ask them to reactivate you to open and create its boards.' }
+        : blocked === 'ip_not_allowed'
+          ? { title: 'Not from this network', body: 'This workspace opens its boards only from its own networks. Connect from the office or the company VPN.' }
+          : { title: 'Your access here is paused', body: 'An admin of this workspace deactivated you. Ask them to reactivate you to open and create its boards.' }
     : filtered
       ? { title: 'No boards here', body: 'Nothing matches this owner filter. Try “All”.' }
       : guest && (view === 'home' || view === 'project')

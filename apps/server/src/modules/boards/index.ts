@@ -1,10 +1,10 @@
 // Public API of modules/boards [S2].
 import type { BoardSummary, ObjectKind, Role } from '@freero/shared';
-import { notFound } from '../../platform/http';
+import { forbidden, notFound } from '../../platform/http';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
-import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
+import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayInviteToWorkspace, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
 import {
   boardLetsCopy,
@@ -13,7 +13,11 @@ import {
   cleanTitle,
   createBoard,
   checkEmbeddingChange,
+  cleanSharing,
+  sharingSettingsChanged,
   describeAccess,
+  duplicateBoard,
+  renameBoard,
   embeddingChanged,
   embeddingOf,
   guestRoleFor,
@@ -28,6 +32,12 @@ import {
 } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// Legal holds (#157) keep boards from retention rules (#154).
+export { onBoardRetentionHold, type BoardHoldCheck } from './retention';
+// The admin inventory (#152; modules/admin checks the scope).
+export { inventoryBoards, turnOffLinkForWorkspace, transferForWorkspace, workspaceBoard } from './service';
+// The workspace's trash for its content admins (#153; modules/admin checks the scope).
+export { workspaceTrash, restoreForWorkspace } from './service';
 // The object registry (modules/objects): boards and items, checked like the board page checks them.
 export { registerBoardObjectTypes, boardRoles, elementTitle } from './objects';
 // Created, duplicated, renamed, moved, trashed, restored (the activity feed, KAI-188).
@@ -125,6 +135,19 @@ export async function setBoardEmbeddable(boardId: string, userId: string, embedd
 }
 
 /**
+ * Changes the board's sharing settings (#123: "Editors can share", "Viewers and commenters can copy
+ * and export") as `userId`, by the share dialog's rules: the owner or a co-owner; audited.
+ */
+export async function setBoardSharingSettings(boardId: string, userId: string, sharing: unknown): Promise<void> {
+  const { board, role, coOwner } = await requireAccess(boardId, userId);
+  const patch = cleanSharing(sharing);
+  if (!Object.keys(patch).length) return;
+  if (!managesSharing(role, coOwner)) throw forbidden('Only the board’s owner and co-owners can change its sharing settings');
+  await repo.updateBoardFields(board.id, patch, Date.now());
+  await sharingSettingsChanged(board, userId, patch);
+}
+
+/**
  * Throws a 404/403 HttpError unless the user has at least `min` on the board. `manages` (#122): its
  * owner or a co-owner, who manage its sharing; `editorsCanShare` (#123): the board lets its editors
  * invite people.
@@ -144,6 +167,8 @@ export async function requireBoardAccess(
   coOwner: boolean;
   manages: boolean;
   editorsCanShare: boolean;
+  /** #63: the workspace's guest-invite policy lets them invite guests (sharing with a group that has guests). */
+  mayInviteGuests: boolean;
 }> {
   const { board, role, access, coOwner } = await requireAccess(boardId, userId, min);
   return {
@@ -157,6 +182,7 @@ export async function requireBoardAccess(
     coOwner,
     manages: managesSharing(role, coOwner),
     editorsCanShare: board.editorsCanShare,
+    mayInviteGuests: access.team !== null && mayInviteToWorkspace(access.workspaceRole, 'guest', access.policies),
   };
 }
 
@@ -314,10 +340,10 @@ export async function boardReadPolicies(userId: string, boardIds: string[]): Pro
  * with where they are and their title now. Personal boards, boards in private projects and boards
  * taken down by an operator are absent.
  */
-export async function boardsOpenToTheirTeam(boardIds: string[]): Promise<Map<string, { workspaceId: string; title: string }>> {
+export async function boardsOpenToTheirTeam(boardIds: string[]): Promise<Map<string, { workspaceId: string; projectId: string | null; title: string }>> {
   const boards = (await repo.getBoardsIncludingTrash([...new Set(boardIds)])).filter((b) => b.removedAt === null);
   const open = await openToWholeTeam(boards.map((b) => ({ workspaceId: b.workspaceId, projectId: b.projectId })));
-  return new Map(boards.filter((_, i) => open[i]).map((b) => [b.id, { workspaceId: b.workspaceId, title: b.title }]));
+  return new Map(boards.filter((_, i) => open[i]).map((b) => [b.id, { workspaceId: b.workspaceId, projectId: b.projectId, title: b.title }]));
 }
 
 /** Every board id, trash included (operator rebuilds of derived indexes, e.g. references). */
@@ -333,8 +359,13 @@ export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
 }
 
 /** Board usage of a workspace for its admin console (trash counted apart; owners of live boards). */
-export function workspaceBoardStats(workspaceId: string): ReturnType<typeof repo.workspaceStats> {
-  return repo.workspaceStats(workspaceId, Date.now());
+export function workspaceBoardStats(workspaceId: string, now = Date.now()): ReturnType<typeof repo.workspaceStats> {
+  return repo.workspaceStats(workspaceId, now);
+}
+
+/** Boards and docs created in a workspace in [from, to) (#65: usage trends). */
+export function boardsCreatedIn(workspaceId: string, from: number, to: number): Promise<{ boards: number; docs: number }> {
+  return repo.createdIn(workspaceId, from, to);
 }
 
 export function boardIdsInProject(projectId: string): Promise<string[]> {
@@ -436,6 +467,33 @@ export async function createBoardFor(
     projectId: fields.projectId ?? null,
   }, undefined, kind);
   return summarize(board, ownerId, { starred: false, lastOpenedAt: null });
+}
+
+/**
+ * Renames a board (or doc) and / or changes its description as PATCH /boards/:id does (owners and
+ * editors): `board.renamed` and the activity feed's entry on a new title. Answers it as they see it.
+ */
+export async function updateBoardDetails(boardId: string, userId: string, fields: { title?: unknown; description?: unknown }): Promise<BoardSummary> {
+  const { board } = await requireAccess(boardId, userId, 'editor');
+  const patch: { title?: string; description?: string } = {};
+  if (fields.title !== undefined) patch.title = cleanTitle(fields.title, board.kind === 'doc' ? 'Untitled doc' : undefined);
+  if (fields.description !== undefined) patch.description = cleanDescription(fields.description);
+  await renameBoard(board, userId, patch);
+  const { board: now, role, access } = await requireAccess(board.id, userId);
+  return toSummary(now, userId, role, access);
+}
+
+/**
+ * A copy of the board for `userId`, as "Duplicate" does: the downloads policy and the board's own
+ * "Viewers and commenters can copy and export" apply (a copy takes the content out), the copy goes
+ * where they chose (`where`: a workspace and project they may create boards in) or beside it, and
+ * hidden frames' contents come along only for owners and editors. Their board quota applies.
+ */
+export async function duplicateBoardFor(boardId: string, userId: string, where: { workspaceId?: unknown; projectId?: unknown } = {}): Promise<BoardSummary> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  await requireDownload(board, userId, access, 'duplicate', role);
+  const copy = await duplicateBoard(board, userId, role, where);
+  return summarize(copy, userId, { starred: false, lastOpenedAt: null });
 }
 
 /** Moves the board to the trash, as DELETE /boards/:id (owner only). */

@@ -403,15 +403,18 @@ export class EditorImpl implements Editor {
     return false;
   }
 
-  setFocus(id: string | null): void {
+  setFocus(id: string | null, opts: { hideOutside?: boolean; contentsOnly?: boolean } = {}): void {
     const next = id && this.core.store.getElement(id) ? id : null;
-    if (this.core.ui.getState().focusId === next) return;
-    this.core.ui.setState({ focusId: next, hoverId: null });
+    const hide = !!next && !!opts.hideOutside;
+    const contentsOnly = !!next && !!opts.contentsOnly;
+    const s = this.core.ui.getState();
+    if (s.focusId === next && s.focusHide === hide && s.focusContentsOnly === contentsOnly) return;
+    this.core.ui.setState({ focusId: next, focusHide: hide, focusContentsOnly: contentsOnly, hoverId: null });
     // What is outside the focus can't stay selected (Delete would act on it unseen).
     const sel = this.getSelection();
     const kept = sel.filter((x) => {
       const el = this.getElement(x);
-      return !!el && this.inFocus(el);
+      return !!el && this.inReach(el);
     });
     if (kept.length !== sel.length) this.core.ui.setState({ selection: kept });
   }
@@ -433,10 +436,16 @@ export class EditorImpl implements Editor {
     return false;
   }
 
+  /** [additive, #135] Inside the focus and reachable: with `contentsOnly`, the focused item itself is not. */
+  inReach(el: BoardElement): boolean {
+    if (!this.inFocus(el)) return false;
+    return !(this.core.ui.getState().focusContentsOnly && el.id === this.getFocus());
+  }
+
   /** [additive] What pointers and keys reach: the visible elements, without those outside the focus. */
   getInteractiveElements(): BoardElement[] {
     const visible = this.getVisibleElements();
-    return this.getFocus() ? visible.filter((el) => this.inFocus(el)) : visible;
+    return this.getFocus() ? visible.filter((el) => this.inReach(el)) : visible;
   }
 
   /**
@@ -1267,7 +1276,7 @@ export class EditorImpl implements Editor {
     const store = this.core.store;
     const valid = ids.filter((id) => {
       const el = store.getElement(id);
-      return !!el && !this.isHidden(el) && this.inFocus(el);
+      return !!el && !this.isHidden(el) && this.inReach(el);
     });
     const cur = this.getSelection();
     let next: string[];
@@ -1863,11 +1872,21 @@ export class EditorImpl implements Editor {
 
   // ------------------------------------------------------------------ UI state
   openDock(panelId: string | null): void {
+    if (panelId && this.core.registry.panelsById.get(panelId)?.def.slot === 'dock-bottom') return this.openBottomDock(panelId);
     this.core.ui.setState({ dock: panelId });
   }
 
   getDock(): string | null {
     return this.core.ui.getState().dock;
+  }
+
+  openBottomDock(panelId: string | null): void {
+    if (panelId && this.core.registry.panelsById.get(panelId)?.def.slot !== 'dock-bottom') return console.warn(`Panel '${panelId}' isn't a 'dock-bottom' panel.`);
+    this.core.ui.setState({ bottomDock: panelId });
+  }
+
+  getBottomDock(): string | null {
+    return this.core.ui.getState().bottomDock;
   }
 
   openPanel(id: string, props?: Record<string, unknown>): void {
@@ -1878,6 +1897,7 @@ export class EditorImpl implements Editor {
     }
     if (!this.can(reg.def.minRole ?? 'viewer')) return;
     if (reg.def.slot === 'dock-right') this.openDock(id);
+    else if (reg.def.slot === 'dock-bottom') this.openBottomDock(id);
     else if (reg.def.slot === 'dialog') this.core.ui.setState({ dialog: { id, props } });
     else console.warn(`Panel '${id}' lives in the '${reg.def.slot}' slot, which is always mounted; only dialog and dock panels open.`);
   }
@@ -1886,6 +1906,7 @@ export class EditorImpl implements Editor {
     const s = this.core.ui.getState();
     if (s.dialog && (!id || s.dialog.id === id)) this.core.ui.setState({ dialog: null });
     if (id && s.dock === id) this.openDock(null);
+    if (id && s.bottomDock === id) this.openBottomDock(null);
   }
 
   setChromeHidden(hidden: boolean): void {

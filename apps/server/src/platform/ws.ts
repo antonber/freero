@@ -7,6 +7,7 @@ import type { Config } from './config';
 import { logError } from './log';
 import { wsConnections } from './metrics';
 import { checkRateLimit } from './rateLimit';
+import { createRequestContext, runWithRequestContext } from './requestContext';
 import { requestOriginKind } from './security';
 
 export interface WsRoute {
@@ -48,7 +49,11 @@ export function attachWebSockets(server: Server, routes: WsRoute[], opts?: { app
     const route = sorted.find((r) => pathname.startsWith(r.prefix));
     if (!route) return refuse(socket, '404 Not Found');
     socket.on('error', () => socket.destroy());
-    void (async () => {
+    // #156: a socket's request context carries its client address (TRUST_PROXY applied), so access
+    // decisions made while admitting it (IP allowlists) see where it comes from.
+    const ctx = createRequestContext(req);
+    ctx.ip = opts ? (asExpressRequest(opts.app, req).ip ?? null) : (req.socket.remoteAddress ?? null);
+    void runWithRequestContext(ctx, async () => {
       if (opts) {
         const xreq = asExpressRequest(opts.app, req);
         if (requestOriginKind(req, opts.config, xreq.secure) === 'cross') return refuse(socket, '403 Forbidden');
@@ -63,7 +68,7 @@ export function attachWebSockets(server: Server, routes: WsRoute[], opts?: { app
         ws.once('close', () => wsConnections.dec({ route: route.prefix }));
         route.handle(ws, req);
       });
-    })().catch((e) => {
+    }).catch((e) => {
       logError('websocket upgrade failed', e);
       refuse(socket, '500 Internal Server Error');
     });

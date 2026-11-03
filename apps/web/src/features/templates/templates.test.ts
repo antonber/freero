@@ -49,6 +49,8 @@ const REQUIRED: Record<ElementType, string[]> = {
   kanbanview: ['sourceId', 'view'],
   diagram: ['title', 'layout'],
   chart: ['kind', 'title', 'rows', 'series'],
+  stickypad: ['color'],
+  icebreaker: ['kind', 'title', 'entries', 'color'],
 };
 
 let seq = 0;

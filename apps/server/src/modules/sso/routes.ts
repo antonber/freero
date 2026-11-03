@@ -20,7 +20,7 @@ allowCrossSitePost(/^\/api\/sso\/[^/]+\/saml\/acs$/, 'SAML HTTP-POST binding: th
 
 /** Owners/admins of a TEAM workspace, or of an organisation (#108: for all its workspaces), manage its single sign-on. */
 async function manager(req: Request) {
-  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { organisation: true });
+  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { organisation: true, scope: 'security' });
   if (ws.kind === 'personal') throw badRequest('Single sign-on is set up for a team workspace');
   return ws;
 }

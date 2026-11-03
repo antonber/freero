@@ -228,3 +228,16 @@ export async function anchorsOf(chain: string): Promise<AnchorRow[]> {
   );
   return rows.map((r) => ({ chain: r.chain, seq: Number(r.seq), hash: r.hash, anchoredAt: r.anchored_at.getTime(), mac: r.mac }));
 }
+
+/**
+ * How many events of `action` a workspace's chain holds in [from, to), grouped by one metadata key
+ * (#65: API / MCP calls by app — what the log already records, nothing per person).
+ */
+export async function countByMetadata(workspaceId: string, action: string, from: number, to: number, key: string): Promise<Map<string, number>> {
+  const rows = await query<{ k: string | null; n: number }>(
+    `SELECT metadata ->> $5 AS k, count(*)::int AS n FROM audit_events
+     WHERE chain = $1 AND action = $2 AND created_at >= $3 AND created_at < $4 GROUP BY 1`,
+    [`w:${workspaceId}`, action, new Date(from), new Date(to), key],
+  );
+  return new Map(rows.map((r) => [r.k ?? 'Unknown', r.n]));
+}

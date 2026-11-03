@@ -1,0 +1,85 @@
+.fr-emojipick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 296px;
+}
+
+.fr-emojipick__tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--fr-line);
+  padding-bottom: 6px;
+}
+
+.fr-emojipick__tab {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+  filter: grayscale(0.5);
+  opacity: 0.8;
+}
+
+.fr-emojipick__tab:hover,
+.fr-emojipick__tab[aria-selected='true'] {
+  background: var(--fr-hover);
+  filter: none;
+  opacity: 1;
+}
+
+.fr-emojipick__tab[aria-selected='true'] {
+  background: var(--fr-primary-soft);
+}
+
+.fr-emojipick__grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 2px;
+  max-height: 188px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.fr-emojipick__item {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  font-size: 21px;
+  line-height: 1;
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+  transition: transform 90ms var(--fr-ease);
+}
+
+.fr-emojipick__item:hover,
+.fr-emojipick__item:focus-visible {
+  background: var(--fr-hover);
+  transform: scale(1.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fr-emojipick__item {
+    transition: none;
+  }
+  .fr-emojipick__item:hover {
+    transform: none;
+  }
+}
+
+.fr-emojipick__empty {
+  padding: 18px 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}

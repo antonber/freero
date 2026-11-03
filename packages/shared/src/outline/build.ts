@@ -248,6 +248,8 @@ export function buildOutline(source: OutlineSource, features: OutlineFeature[], 
   const visit = (n: Node) => {
     // Kanban columns keep their own order (top to bottom); sections in declared order.
     if (n.item.kind === 'column') n.kids = [...n.kids].sort((a, b) => (a.bounds?.y ?? 0) - (b.bounds?.y ?? 0));
+    // A group's members are already in reading order; grouping them again would never end.
+    else if (n.item.kind === 'group') n.kids = [...n.kids];
     else if (!n.desc?.sections) n.kids = arrange(n.kids, frameParents.has(n.item.id));
     else n.kids = [...n.kids.filter((k) => k.item.kind === 'column'), ...arrange(n.kids.filter((k) => k.item.kind !== 'column'), false)];
     n.kids.forEach(visit);

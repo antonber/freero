@@ -20,6 +20,8 @@ export interface EndpointRow {
   lastDeliveryAt: number | null;
   /** Only events of this board / item on it (KAI-249), or null: every board. */
   scope: WebhookScope | null;
+  /** Only events of boards in this project (#48), or null. */
+  projectId: string | null;
 }
 export interface WebhookScope {
   boardId: string;
@@ -44,6 +46,7 @@ interface ERow {
   last_delivery_at: Date | null;
   board_id: string | null;
   item_id: string | null;
+  project_id: string | null;
 }
 
 const toEndpoint = (r: ERow): EndpointRow => ({
@@ -63,6 +66,7 @@ const toEndpoint = (r: ERow): EndpointRow => ({
   updatedAt: r.updated_at.getTime(),
   lastDeliveryAt: r.last_delivery_at ? r.last_delivery_at.getTime() : null,
   scope: r.board_id ? { boardId: r.board_id, itemId: r.item_id } : null,
+  projectId: r.project_id ?? null,
 });
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
@@ -78,9 +82,9 @@ export async function lockWorkspaceEndpoints(workspaceId: string): Promise<void>
 
 export async function insertEndpoint(e: EndpointRow): Promise<void> {
   await query(
-    `INSERT INTO webhook_endpoints (id, workspace_id, url_sealed, url_display, description, events, format, secret_sealed, enabled, created_by, created_at, updated_at, board_id, item_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $10, $11, $12)`,
-    [e.id, e.workspaceId, e.urlSealed, e.urlDisplay, e.description, e.events, e.format, e.secretSealed, e.createdBy, new Date(e.createdAt), e.scope?.boardId ?? null, e.scope?.itemId ?? null],
+    `INSERT INTO webhook_endpoints (id, workspace_id, url_sealed, url_display, description, events, format, secret_sealed, enabled, created_by, created_at, updated_at, board_id, item_id, project_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $10, $11, $12, $13)`,
+    [e.id, e.workspaceId, e.urlSealed, e.urlDisplay, e.description, e.events, e.format, e.secretSealed, e.createdBy, new Date(e.createdAt), e.scope?.boardId ?? null, e.scope?.itemId ?? null, e.projectId],
   );
 }
 
@@ -105,7 +109,7 @@ export async function enabledEndpointsIn(workspaceIds: string[]): Promise<Endpoi
  */
 export async function updateEndpoint(
   id: string,
-  patch: { urlSealed?: string; urlDisplay?: string; description?: string; events?: FreeroEventType[]; format?: WebhookFormat; enabled?: boolean; secretSealed?: string; scope?: WebhookScope | null },
+  patch: { urlSealed?: string; urlDisplay?: string; description?: string; events?: FreeroEventType[]; format?: WebhookFormat; enabled?: boolean; secretSealed?: string; scope?: WebhookScope | null; projectId?: string | null },
   now: number,
 ): Promise<EndpointRow | null> {
   const r = await one<ERow>(
@@ -117,6 +121,7 @@ export async function updateEndpoint(
        consecutive_failures = CASE WHEN $7::boolean THEN 0 ELSE consecutive_failures END,
        board_id = CASE WHEN $10::boolean THEN $11::text ELSE board_id END,
        item_id = CASE WHEN $10::boolean THEN $12::text ELSE item_id END,
+       project_id = CASE WHEN $13::boolean THEN $14::text ELSE project_id END,
        updated_at = $9
      WHERE id = $1 RETURNING *`,
     [
@@ -132,6 +137,8 @@ export async function updateEndpoint(
       patch.scope !== undefined,
       patch.scope?.boardId ?? null,
       patch.scope?.itemId ?? null,
+      patch.projectId !== undefined,
+      patch.projectId ?? null,
     ],
   );
   return r ? toEndpoint(r) : null;

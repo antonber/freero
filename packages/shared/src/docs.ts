@@ -18,6 +18,7 @@
 // uses), shared by the editor, the server's reader / writer and the Markdown conversion here.
 // The fragment name is BlockNote's conventional one (also La Suite Docs' and OpenProject's), so a
 // doc stays readable by the other BlockNote + Yjs editors.
+import type { CommentMessageRecord, CommentRecord, CommentStatusRecord } from './elements';
 
 export const DOC_FRAGMENT = 'document-store';
 
@@ -133,6 +134,79 @@ export function docAddresses(blocks: readonly DocBlock[]): Array<{ blockId: stri
     links(block.content, id);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Comments on a doc's blocks, as threads (the editor's comments panel and the public API, #61).
+
+export interface DocCommentMessage {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorColor?: string;
+  text: string;
+  createdAt: number;
+  editedAt?: number;
+}
+
+export interface DocThread {
+  id: string;
+  /** The block it is on (null: the block is gone or the thread is on the doc as a whole). */
+  blockId: string | null;
+  resolved: boolean;
+  createdBy: string;
+  createdAt: number;
+  messages: DocCommentMessage[];
+}
+
+/** Assembles the records into threads, oldest first; deleted threads and messages are gone. */
+export function docThreads(entries: Array<[string, unknown]>): DocThread[] {
+  const threads = new Map<string, DocThread>();
+  const status = new Map<string, CommentStatusRecord>();
+  const dead = new Set<string>();
+  const messages: CommentMessageRecord[] = [];
+  for (const [, raw] of entries) {
+    const r = raw as CommentRecord | null;
+    if (!r || typeof r !== 'object') continue;
+    if (r.kind === 'thread' && typeof r.id === 'string')
+      threads.set(r.id, { id: r.id, blockId: typeof r.elementId === 'string' && r.elementId ? r.elementId : null, resolved: false, createdBy: r.createdBy, createdAt: r.createdAt ?? 0, messages: [] });
+    else if (r.kind === 'status' && typeof r.threadId === 'string') status.set(r.threadId, r);
+    else if (r.kind === 'deleted' && typeof r.threadId === 'string') dead.add(r.messageId ? `${r.threadId}:${r.messageId}` : r.threadId);
+    else if (r.kind === 'message' && typeof r.threadId === 'string' && typeof r.text === 'string') messages.push(r);
+  }
+  for (const m of messages) {
+    const t = threads.get(m.threadId);
+    if (!t || dead.has(`${m.threadId}:${m.id}`)) continue;
+    t.messages.push({ id: m.id, authorId: m.authorId, authorName: m.authorName, authorColor: m.authorColor, text: m.text, createdAt: m.createdAt, editedAt: m.editedAt });
+  }
+  const out: DocThread[] = [];
+  for (const t of threads.values()) {
+    if (dead.has(t.id) || !t.messages.length) continue;
+    t.resolved = status.get(t.id)?.resolved ?? false;
+    t.messages.sort((a, b) => a.createdAt - b.createdAt);
+    out.push(t);
+  }
+  return out.sort((a, b) => a.createdAt - b.createdAt);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Targeted edits of a doc (#61; the public API and MCP edit_doc), applied on the server by
+// realtime/docContent.ts to the document as it is now, in one change.
+
+/**
+ * - `replace`: the block (with what is nested under it) becomes `blocks`; the first new block keeps
+ *   its id, so comments on it stay where they were.
+ * - `replaceSection`: a heading and everything after it up to the next heading of the same or a
+ *   higher level becomes `blocks` (the first keeps the heading's id).
+ * - `insertBefore` / `insertAfter`: `blocks` go next to the block, at its level.
+ * - `delete`: the block and what is nested under it.
+ */
+export type DocEditOp = 'replace' | 'replaceSection' | 'insertBefore' | 'insertAfter' | 'delete';
+export const DOC_EDIT_OPS: readonly DocEditOp[] = ['replace', 'replaceSection', 'insertBefore', 'insertAfter', 'delete'];
+export interface DocEdit {
+  op: DocEditOp;
+  blockId: string;
+  blocks?: DocBlock[];
 }
 
 // ---------------------------------------------------------------------------------------------

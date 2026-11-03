@@ -305,3 +305,68 @@
 .fr-present-notes__field.is-current {
   border-color: var(--fr-primary);
 }
+
+/* Presenter notes in their own window (#146), for a second screen. */
+.fr-present-window {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 28px;
+  background: var(--fr-surface, #fff);
+  color: var(--fr-ink);
+  font-family: var(--fr-font);
+  box-sizing: border-box;
+}
+
+.fr-present-window__head,
+.fr-present-window__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--fr-ink-2);
+}
+
+.fr-present-window__clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.fr-present-window__title {
+  margin: 0;
+  font-size: 24px;
+}
+
+.fr-present-window__notes {
+  flex: 1;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 20px;
+  line-height: 1.5;
+}
+
+.fr-present-window__notes.is-empty {
+  color: var(--fr-ink-3);
+}
+
+.fr-present-window__nav {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.fr-present-window__nav button {
+  padding: 8px 14px;
+  border: 1px solid var(--fr-line);
+  border-radius: 8px;
+  background: var(--fr-surface-2);
+  color: var(--fr-ink);
+  font: 600 14px var(--fr-font);
+  cursor: pointer;
+}
+
+.fr-present-window__nav button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

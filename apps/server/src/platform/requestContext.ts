@@ -10,6 +10,11 @@ export interface RequestContext {
   /** The client address as the app sees it (TRUST_PROXY applied), once the request logger has run. */
   ip: string | null;
   userAgent: string | null;
+  /**
+   * #156: the request acts through this API token or app (apiauth's credential id). The IP
+   * allowlist then lets it through wherever the workspace's admins exempted that credential.
+   */
+  apiCredentialId?: string;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
@@ -43,6 +48,12 @@ export function requestContextOf(req: IncomingMessage): RequestContext | undefin
 export function setRequestUser(req: IncomingMessage, userId: string): void {
   const ctx = byRequest.get(req);
   if (ctx) ctx.userId = userId;
+}
+
+/** apiauth marks a request authenticated by a token or app (#156). */
+export function markApiCredential(req: IncomingMessage, credentialId: string): void {
+  const ctx = byRequest.get(req);
+  if (ctx) ctx.apiCredentialId = credentialId;
 }
 
 /** The authenticated user of a request, if auth has identified one. */

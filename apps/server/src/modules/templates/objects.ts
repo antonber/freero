@@ -3,7 +3,7 @@
 // are a full member of); only the owner manages one. Guests have no templates.
 import { isGuestId, objectKey, type ObjectAction, type ObjectRef } from '@freero/shared';
 import { registerObjectType, type ObjectLookup, type ObjectTypeHandler } from '../objects/index';
-import { teamWorkspaceIdsFor } from '../workspaces/index';
+import { audienceOf } from './audience';
 import * as repo from './repo';
 
 export const templateObjects: ObjectTypeHandler = {
@@ -13,7 +13,7 @@ export const templateObjects: ObjectTypeHandler = {
     if (isGuestId(actor.userId)) return out;
     const ids = refs.filter((r): r is Extract<ObjectRef, { type: 'template' }> => r.type === 'template').map((r) => r.id);
     if (!ids.length) return out;
-    const visible = await repo.visibleAmong(ids, actor.userId, await teamWorkspaceIdsFor(actor.userId));
+    const visible = await repo.visibleAmong(ids, actor.userId, await audienceOf(actor.userId));
     for (const t of visible) {
       const access: ObjectAction = t.ownerId === actor.userId ? 'manage' : 'view';
       out.set(objectKey({ type: 'template', id: t.id }), {

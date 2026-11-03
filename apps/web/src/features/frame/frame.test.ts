@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import type { BoardElement, FrameElement, StickyElement } from '@freero/shared';
+import { describe, expect, it, vi } from 'vitest';
+import { richTextToPlain, type BoardElement, type FrameElement, type StickyElement } from '@freero/shared';
 import { createTestBoard, type NewElement } from '@engine';
 import { membershipPatches, nextFrameIndex, nextFrameTitle, orderFrames, reorderPatches } from './lib/frames';
 import frameManifest from './feature';
 import frameDef from './element';
-import { duplicateSlide, framesInOrder } from './lib/actions';
+import { applyLayout, duplicateSlide, framesInOrder, newSlide } from './lib/actions';
 import { layoutItems, SLIDE_LAYOUTS } from './lib/layouts';
+import { slideSignature, ThumbCache } from './lib/thumbnails';
+import { editSlide, focusChanged, leaveSlide, slideEditStore, stepSlide } from './lib/slideEditor';
 
 const frame = (id: string, index: number, extra: Partial<FrameElement> = {}): FrameElement => ({
   id,
@@ -176,6 +178,106 @@ describe('slides (KAI-126)', () => {
     const copy = duplicateSlide(ed, ids[0])!;
     expect(framesInOrder(ed).map((f) => f.id)).toEqual([ids[0], copy, ids[1], ids[2]]);
     expect(ed.getElements().filter((el) => el.frameId === copy && el.type === 'sticky')).toHaveLength(1);
+    board.destroy();
+  });
+});
+
+describe('slide layouts applied again (#52)', () => {
+  it('a second layout replaces the first instead of piling on top, and what was written moves into it', () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest: frameManifest, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] }] });
+    const [ed] = board.editors('frame');
+    const slide = newSlide(ed, 'title-body')!;
+    const on = () => ed.getElements().filter((el) => el.frameId === slide);
+    const part = (role: string) => on().find((el) => el.layoutRole === role) as (BoardElement & { text: string }) | undefined;
+    ed.update(part('title')!.id, { text: '<b>Q3 results</b>' } as never);
+
+    applyLayout(ed, slide, 'two-columns');
+    // One title (the written one, formatting kept), one of each body column, nothing doubled.
+    expect(on().map((el) => el.layoutRole).sort()).toEqual(['body', 'body2', 'title']);
+    expect(part('title')!.text).toBe('<b>Q3 results</b>');
+
+    // A layout without a title slot: the written title stays on the slide as an ordinary text.
+    applyLayout(ed, slide, 'quote');
+    expect(on().map((el) => String(el.layoutRole ?? 'none')).sort()).toEqual(['caption', 'none', 'quote']);
+    expect(richTextToPlain(String((on().find((el) => !el.layoutRole) as { text?: string }).text))).toBe('Q3 results');
+    board.destroy();
+  });
+});
+
+describe('slide thumbnails (#52)', () => {
+  it('a slide is drawn again after something on it changes, but not for changes elsewhere or while it is still being edited', async () => {
+    vi.useFakeTimers();
+    try {
+      const drawn: string[] = [];
+      const cache = new ThumbCache(async (id) => {
+        drawn.push(id);
+        return `data:image/jpeg;base64,${drawn.length}`;
+      }, 100);
+      const a = frame('A', 0, { updatedAt: 1 });
+      const b = frame('B', 1, { updatedAt: 1 });
+      const onA = [sticky('s', 10, 10, 'A')];
+      cache.request('A', slideSignature(a, onA));
+      cache.request('B', slideSignature(b, []));
+      await vi.advanceTimersByTimeAsync(150);
+      expect(drawn.sort()).toEqual(['A', 'B']);
+
+      // Typing on A: three quick changes, one picture once it settles; B untouched is not redrawn.
+      for (let t = 2; t <= 4; t++) {
+        cache.request('A', slideSignature(a, [{ ...onA[0], updatedAt: t }]));
+        cache.request('B', slideSignature(b, []));
+        await vi.advanceTimersByTimeAsync(30);
+      }
+      await vi.advanceTimersByTimeAsync(150);
+      expect(drawn.filter((id) => id === 'A')).toHaveLength(2);
+      expect(drawn.filter((id) => id === 'B')).toHaveLength(1);
+      expect(cache.url('A')).toBe('data:image/jpeg;base64,3');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('editing one slide on its own (#135)', () => {
+  const setup = () => {
+    const board = createTestBoard({ users: ['ann', 'bob'], features: [{ manifest: frameManifest, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] }] });
+    const [ann, bob] = board.editors('frame');
+    const one = ann.create({ type: 'frame', x: 0, y: 0, w: 1280, h: 720, title: 'One', fill: '#fff', index: 0 } as NewElement);
+    const two = ann.create({ type: 'frame', x: 2000, y: 0, w: 1280, h: 720, title: 'Two', fill: '#fff', index: 1 } as NewElement);
+    const onOne = ['a', 'b'].map((t, i) => ann.create({ type: 'sticky', x: 100 + i * 300, y: 100, w: 100, h: 100, text: t, frameId: one } as NewElement));
+    const onTwo = ann.create({ type: 'sticky', x: 2100, y: 100, w: 100, h: 100, text: 'c', frameId: two } as NewElement);
+    const loose = ann.create({ type: 'sticky', x: 100, y: 1200, w: 100, h: 100, text: 'loose' } as NewElement);
+    return { board, ann, bob, one, two, onOne, onTwo, loose };
+  };
+
+  it('select all and delete inside the slide editor take only what is on that slide: the slide itself, other slides and loose items stay', () => {
+    const { board, ann, one, two, onOne, onTwo, loose } = setup();
+    editSlide(ann, one);
+    ann.runCommand('engine.selectAll');
+    expect(ann.getSelection().sort()).toEqual([...onOne].sort());
+    expect(ann.hitTest({ x: 640, y: 600 })).toBeNull(); // the slide's empty area is the page, not the frame
+    ann.runCommand('engine.delete');
+    expect([one, two, onTwo, loose].every((id) => ann.getElement(id))).toBe(true);
+    expect(onOne.some((id) => ann.getElement(id))).toBe(false);
+    board.destroy();
+  });
+
+  it('nothing about the slide editor reaches the board: others keep their view, and leaving puts this one back where it was', () => {
+    const { board, ann, bob, one, two } = setup();
+    ann.setCamera({ x: -300, y: 900, zoom: 0.4 });
+    const before = JSON.stringify(bob.getElements());
+    editSlide(ann, one);
+    stepSlide(ann, 1);
+    expect(slideEditStore(ann).getState().frameId).toBe(two);
+    expect(ann.getFocus()).toBe(two);
+    expect(bob.getFocus()).toBeNull();
+    expect(JSON.stringify(bob.getElements())).toBe(before);
+    // Esc ends the engine's focus; the slide editor follows and the board comes back as it was.
+    ann.setFocus(null);
+    focusChanged(ann, ann.getFocus());
+    expect(slideEditStore(ann).getState().frameId).toBeNull();
+    expect(ann.getCamera()).toEqual({ x: -300, y: 900, zoom: 0.4 });
+    leaveSlide(ann); // already left: nothing happens
+    expect(ann.getCamera()).toEqual({ x: -300, y: 900, zoom: 0.4 });
     board.destroy();
   });
 });

@@ -259,6 +259,20 @@ export function resultsText(activity: ActivityElement, r: ActivityResults): stri
   if (r.ranking) r.ranking.forEach((x, i) => lines.push(`${i + 1}. ${option.get(x.optionId) ?? '(item)'} (average place ${x.avgRank.toFixed(1)})`));
   if (r.rating) for (const x of r.rating) lines.push(`- ${option.get(x.optionId) ?? '(statement)'}: average ${x.avg.toFixed(1)} of ${activity.scale ?? 5} from ${x.count} ratings`);
   if (r.questions) for (const q of r.questions.slice(0, 200)) lines.push(`- ${oneLine(q.text)} (${q.votes} upvotes${q.answered ? ', answered' : ''})`);
+  // 2×2 matrix (#147): where each item landed on the two axes, and how much people disagreed.
+  if (r.matrix) {
+    const ax = activity.axes ?? { x: ['low', 'high'], y: ['low', 'high'] };
+    lines.push(`Across: ${oneLine(ax.x[0])} (0) to ${oneLine(ax.x[1])} (1); up: ${oneLine(ax.y[0])} (0) to ${oneLine(ax.y[1])} (1)`);
+    for (const m of r.matrix) if (m.count) lines.push(`- ${option.get(m.optionId) ?? '(item)'}: across ${m.x.toFixed(2)}, up ${m.y.toFixed(2)}, spread ${m.sx.toFixed(2)} / ${m.sy.toFixed(2)}, placed by ${m.count}`);
+  }
+  // Quiz (#147): its questions, how the shown question was answered and the scores — never the
+  // answer key (it stays on the server) and never names (the leaderboard by place only).
+  if (r.quiz) {
+    for (const [i, q] of (activity.questions ?? []).entries()) lines.push(`Question ${i + 1}: ${oneLine(q.text)} — answers: ${q.options.map((o) => oneLine(o.text)).join(' / ')}`);
+    const shown = activity.questions?.find((q) => q.id === r.quiz!.questionId);
+    if (shown && r.quiz.counts) lines.push(`Answers to "${oneLine(shown.text)}": ${r.quiz.counts.map((c) => `${oneLine(shown.options.find((o) => o.id === c.optionId)?.text ?? '')}: ${c.count}`).join(', ')}`);
+    if (r.quiz.leaderboard) r.quiz.leaderboard.forEach((x, i) => lines.push(`Place ${i + 1}: ${x.score} points, ${x.right} right of ${activity.questions?.length ?? 0}`));
+  }
   return lines.join('\n');
 }
 
@@ -266,7 +280,7 @@ export function reportTask(prompt: string, results: string): TaskPlan {
   return {
     system: `${PREAMBLE}
 
-Task: write a short report of a live audience activity's results (a poll, word cloud, ranking, rating or Q&A) for the people who ran it. Give a title of at most 8 words, a summary of 1 to 3 sentences, up to 5 themes, up to 5 notable answers (quote or name them from the results) and 2 to 5 suggested next steps. Say only what the results support.${prompt ? ' The instruction says what to focus on.' : ''}
+Task: write a short report of a live audience activity's results (a poll, word cloud, ranking, rating, Q&A, 2×2 matrix or quiz) for the people who ran it. Give a title of at most 8 words, a summary of 1 to 3 sentences, up to 5 themes, up to 5 notable answers (quote or name them from the results) and 2 to 5 suggested next steps. Say only what the results support.${prompt ? ' The instruction says what to focus on.' : ''}
 
 Schema: {"title": string, "summary": string, "themes": [string, …], "notable": [string, …], "next": [string, …]}`,
     user: `${instructionBlock(prompt || 'Write a report of these results.')}\n\n${contentBlock(results)}`,

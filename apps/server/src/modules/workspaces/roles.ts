@@ -1,6 +1,8 @@
 // Pure workspace rules: roles, what a workspace grants on its boards, and the sharing policies.
-import { looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
+import { ADMIN_SCOPES, looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
 import type {
+  AdminScope,
+  InactiveBoardAction,
   LinkAccess,
   OrderedPolicyKey,
   OrganisationPolicyKey,
@@ -26,6 +28,25 @@ export const isManager = (r: WorkspaceRole | null): boolean => r === 'owner' || 
 /** Everyone but guests: creates boards, sees the boards shared with the whole workspace. */
 export const isFullMember = (r: WorkspaceRole | null): boolean => r !== null && r !== 'guest';
 
+// ---- admin scopes (#151) ----
+
+export const isAdminScope = (v: unknown): v is AdminScope => (ADMIN_SCOPES as readonly unknown[]).includes(v);
+
+/** What someone administers: owners everything, an admin their scopes (none stored: everything), others nothing. */
+export function scopesOf(role: WorkspaceRole | null, adminScopes: AdminScope[] | null): AdminScope[] {
+  if (role === 'owner' || (role === 'admin' && !adminScopes)) return [...ADMIN_SCOPES];
+  return role === 'admin' ? ADMIN_SCOPES.filter((s) => adminScopes!.includes(s)) : [];
+}
+
+/**
+ * The role as it counts for board content: an admin who doesn't administer content is a member
+ * there (no editing every board, no private projects, no moving others' boards). The SQL twin is
+ * repo.ts `CONTENT_ROLE` (lists and board access read it from there).
+ */
+export function contentRole(role: WorkspaceRole | null, adminScopes: AdminScope[] | null): WorkspaceRole | null {
+  return role === 'admin' && !scopesOf(role, adminScopes).includes('content') ? 'member' : role;
+}
+
 /** What owners/admins get on every board of their workspace (they administer the content). */
 export const MANAGER_BOARD_ROLE: Role = 'editor';
 export const TEAM_ACCESS_VALUES: TeamAccess[] = ['editor', 'commenter', 'viewer'];
@@ -42,6 +63,7 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   boardEmbeds: 'on',
   linkPassword: 'optional',
   linkMaxDays: null,
+  templatePublishing: 'members',
 };
 
 /** The team access level of a board: its project's own level, else the workspace's. */
@@ -125,7 +147,7 @@ export { looserPolicy };
 // Plus the numeric link lifetime limit (the shorter wins; null: no limit).
 const ORDERED_KEYS = Object.keys(POLICY_STRICTNESS) as OrderedPolicyKey[];
 export const FLOOR_POLICY_KEYS: OrganisationPolicyKey[] = [...ORDERED_KEYS, 'linkMaxDays'];
-export const FLOOR_SETTING_KEYS: OrganisationSecurityKey[] = ['requireTwoFactor', 'sessionMaxHours', 'sessionIdleMinutes'];
+export const FLOOR_SETTING_KEYS: OrganisationSecurityKey[] = ['requireTwoFactor', 'sessionMaxHours', 'sessionIdleMinutes', 'inactiveBoardAction', 'inactiveBoardDays'];
 export type PolicyFloor = Pick<WorkspacePolicies, OrganisationPolicyKey>;
 export type SettingsFloor = Pick<WorkspaceSettings, OrganisationSecurityKey>;
 
@@ -143,7 +165,14 @@ export function strictestPolicies(own: WorkspacePolicies, floor: PolicyFloor | n
 /** The shorter of two optional limits (null: no limit). */
 const shorter = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : Math.min(a, b));
 
-/** A workspace's own security settings raised to its organisation's floors (retention stays the workspace's own). */
+const ACTION_RANK: Record<InactiveBoardAction, number> = { none: 0, archive: 1, trash: 2 };
+
+/**
+ * A workspace's own security settings raised to its organisation's floors (trash, version and
+ * audit retention stay the workspace's own). The inactive-board rule (#154) combines key by key,
+ * like every floor: the stricter action, the shorter period. The IP allowlist (#156) stays the
+ * workspace's own here: the organisation's list applies BESIDES it (`ipListsOf`), never merged.
+ */
 export function strictestSettings(own: WorkspaceSettings, floor: SettingsFloor | null): WorkspaceSettings {
   if (!floor) return own;
   return {
@@ -151,11 +180,19 @@ export function strictestSettings(own: WorkspaceSettings, floor: SettingsFloor |
     requireTwoFactor: own.requireTwoFactor || floor.requireTwoFactor,
     sessionMaxHours: shorter(own.sessionMaxHours, floor.sessionMaxHours),
     sessionIdleMinutes: shorter(own.sessionIdleMinutes, floor.sessionIdleMinutes),
+    inactiveBoardAction: ACTION_RANK[floor.inactiveBoardAction] > ACTION_RANK[own.inactiveBoardAction] ? floor.inactiveBoardAction : own.inactiveBoardAction,
+    inactiveBoardDays: shorter(own.inactiveBoardDays, floor.inactiveBoardDays),
   };
+}
+
+/** The IP allowlists that apply to a workspace's boards (#156): its own and its organisation's, each when set. */
+export function ipListsOf(w: { settings: WorkspaceSettings; organisation: { settings: SettingsFloor } | null }): string[][] {
+  return [w.settings.ipAllowlist, w.organisation?.settings.ipAllowlist ?? []].filter((l) => l.length > 0);
 }
 
 /** Is a requested security setting looser than the organisation's floor? */
 export function looserSetting<K extends OrganisationSecurityKey>(k: K, value: WorkspaceSettings[K], floor: WorkspaceSettings[K]): boolean {
   if (k === 'requireTwoFactor') return floor === true && value !== true;
+  if (k === 'inactiveBoardAction') return ACTION_RANK[value as InactiveBoardAction] < ACTION_RANK[floor as InactiveBoardAction];
   return floor !== null && (value === null || (value as number) > (floor as number));
 }

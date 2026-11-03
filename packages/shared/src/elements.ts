@@ -36,7 +36,9 @@ export type ElementType =
   | 'doc'
   | 'kanbanview'
   | 'diagram'
-  | 'chart';
+  | 'chart'
+  | 'stickypad'
+  | 'icebreaker';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -114,9 +116,20 @@ export interface BaseElement {
   diagramLayer?: string | null;
   /** [additive] Its `locked` was set by its diagram layer's lock, and is cleared with it. */
   layerLocked?: true | null;
+  /**
+   * [additive, #52] A part of a slide layout (features/frame `lib/layouts.ts`): which slot of the
+   * layout it fills. Re-applying a layout to the slide replaces the parts still showing their
+   * placeholder text and moves the ones people filled in into the new layout's matching slot; an
+   * `image` slot's placeholder is replaced by a picture dropped or pasted onto it (features/image),
+   * which keeps the role. Meaningless outside a frame; clients that don't know it ignore it.
+   */
+  layoutRole?: SlideLayoutRole | null;
   createdAt: number;
   updatedAt: number;
 }
+
+/** [additive, #52] Slots of a slide layout (BaseElement.layoutRole). Only ever added to. */
+export type SlideLayoutRole = 'title' | 'subtitle' | 'body' | 'body2' | 'image' | 'number' | 'quote' | 'caption';
 
 export type TextAlign = 'left' | 'center' | 'right';
 export type VerticalAlign = 'top' | 'middle' | 'bottom';
@@ -238,6 +251,34 @@ export interface StickyElement extends BaseElement, TextStyle {
   text: RichText;
   /** Tag ids from the board's `tags` map. */
   tags?: string[];
+}
+
+/**
+ * [#132] A pad of blank stickies of one colour: dragging from it peels off a new sticky (its own
+ * element, made by whoever peels it — a participant's goes to their private layer like any draft).
+ * The pad stays. Older clients that don't know the type show nothing for it.
+ */
+export interface StickyPadElement extends BaseElement {
+  type: 'stickypad';
+  color: StickyColor;
+}
+
+/**
+ * [#150] An icebreaker widget: a wheel of names, dice, or a random speaking order. The element holds
+ * only its set-up; every spin, roll and shuffle is made by the SERVER (POST
+ * /api/boards/:id/icebreakers/:elementId/roll) and published in the `icebreakerResults` collection
+ * (ICEBREAKER_RESULTS_COLLECTION), so every client shows the same result on the same clock.
+ * Older clients that don't know the type show nothing for it.
+ */
+export interface IcebreakerElement extends BaseElement {
+  type: 'icebreaker';
+  kind: 'wheel' | 'dice' | 'speakers';
+  title: string;
+  /** Wheel slices / people to put in order (unused by dice). */
+  entries: string[];
+  /** Dice: how many (1..3). */
+  dice?: number;
+  color: string;
 }
 
 export type ShapeKind =
@@ -551,6 +592,19 @@ export interface CardElement extends BaseElement {
    * back with the field (undo) or when the card returns to that kanban.
    */
   values?: FieldValues;
+  /**
+   * [additive, #142] A flip card's other side: its own text (rich text) and paper colour. Absent /
+   * null: a one-sided card. Written by the card feature (format toolbar "Two-sided", editing the back).
+   */
+  back?: CardBack | null;
+  /** [additive, #142] The back is the side showing, for everyone (shared state; exports show it too). */
+  flipped?: boolean;
+}
+
+/** [#142] The back of a two-sided card. */
+export interface CardBack {
+  title: RichText;
+  color: string;
 }
 
 export interface EmojiElement extends BaseElement {
@@ -934,7 +988,7 @@ export interface FileElement extends BaseElement {
 }
 
 /** Live audience activities (KAI-132). */
-export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna';
+export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna' | 'matrix' | 'quiz';
 export interface ActivityOption {
   id: string;
   text: string;
@@ -968,6 +1022,38 @@ export interface ActivityElement extends BaseElement {
   closed?: boolean;
   /** Accent colour. */
   color: string;
+  /** [additive, #40] Draw the QR code of the phone answer link on the activity (exports keep it). */
+  qr?: boolean;
+  /** [additive, #147] 2×2 matrix: the axes' names, low end then high end (`options` are the items people place). */
+  axes?: { x: [string, string]; y: [string, string] };
+  /**
+   * [additive, #147] Quiz: its questions. Which options are right is NOT here (everyone holds the
+   * board): the server keeps the answer key (PUT …/key) and publishes it per question once shown.
+   */
+  questions?: QuizQuestion[];
+  /** [additive, #147] Quiz: where the facilitator is. Absent / step -1: not started. */
+  quiz?: QuizStep;
+}
+
+/** [#147] One quiz question. */
+export interface QuizQuestion {
+  id: string;
+  text: string;
+  options: ActivityOption[];
+  /** Seconds to answer once the question opens (server clock); absent / 0: no limit. */
+  seconds?: number;
+  /** More than one answer is right (people may pick several); set with the answer key. */
+  multi?: boolean;
+}
+
+/** [#147] The running quiz, written by its facilitator (an editor). */
+export interface QuizStep {
+  /** The question open now (index into `questions`), -1 before the first. */
+  step: number;
+  /** When it opened (server clock, ms): time limits and answer times count from here. */
+  openedAt: number;
+  /** Answers to this question are closed and its right answer and counts are shown. */
+  showAnswer: boolean;
 }
 
 /**
@@ -1138,7 +1224,9 @@ export type BoardElement =
   | DocElement
   | KanbanViewElement
   | DiagramElement
-  | ChartElement;
+  | ChartElement
+  | StickyPadElement
+  | IcebreakerElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

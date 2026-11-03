@@ -146,6 +146,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
 | The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
+| Who presents a board (`presentation` key `session`, #146) | server `modules/presentations` (realtime `updateServerEntry`: start, hand off, end; a socket's write is undone) | `Host.presentation` (`features/present`) |
+| Icebreaker results (`icebreakerResults`, #150) and a quiz's answer key (`engage_keys`, #147) | server `modules/icebreakers` (`writeServerCollection`) and `modules/engage` | `Host.icebreakers.roll`; `Host.engage.setKey` / `runQuiz` |
 | A vote's history (`voting` keys `h:<sessionId>` → `VotingHistoryEntry`: totals only, never ballots) | `features/voting` (archived when the next vote starts or results are cleared; at most `VOTING_HISTORY_MAX`); editors only (`votingRules.ts`) | the results panel's "Past votes" |
 
 ### Host — the one typed contract between app and engine
@@ -169,6 +171,11 @@ engine and features use `editor.host`. Features never import the REST client or 
   The dock has a fixed header strip with its close button; a panel puts its own header (title,
   filters) there by wrapping it in `<DockHeader>` (`@engine`), and its content scrolls below the
   strip, never under the button. Panels never reserve room for the close button themselves.
+- `dock-bottom` panels [#52] render in a strip across the bottom (the slide filmstrip), opened with
+  `editor.openBottomDock(id)` (or `openDock(id)` with its id); one at a time, beside an open right
+  dock, hidden with the chrome. The strip is marked occluding, so `getSafeArea` (fits, placement)
+  leaves it out, and the toolbar, the bottom corners' controls and the right dock end above it.
+  The panel draws its own close button.
 - `dialog` panels mount only while opened with `editor.openPanel(id, props?)` (one at a time,
   also while the chrome is hidden); the component gets `props` and closes with
   `editor.closePanel(id)`. Commands that open feature UI (export, start voting) use this — never a
@@ -608,6 +615,13 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   (`.fr-el--unfocused`) and is out of reach — not hit-tested, marquee'd, lasso'd, selected or
   Tab-walked (`EditorImpl.getInteractiveElements`). Esc, once nothing is selected, ends it; so does
   deleting the item. Exports are unaffected. A diagram's focus mode is built on it.
+  [#135] `setFocus(id, { hideOutside, contentsOnly })`: what is outside isn't drawn at all
+  (`.fr-el--outside`), and the focused item itself is out of reach too (`EditorImpl.inReach`), so
+  only what it contains can be picked, selected or deleted — the slide editor's page.
+- [#52] `PanelSlot` `'dock-bottom'`, `Editor.openBottomDock(id | null)` / `getBottomDock()`, hook
+  `useBottomDock()` (see "Board chrome"). `BaseElement.layoutRole` (`@freero/shared`): the slot of a
+  slide layout an item fills (written by `features/frame` layouts; read by `features/image`, which
+  puts a single dropped / pasted picture in place of an `image` slot's placeholder at its size).
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -802,6 +816,21 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   frame from a 1280 × 720 design; also `frame.applyLayout`), duplicate (right after the original),
   and `FrameElement.skip` — skipped by `present` and unpicked in the PDF export. Speaker notes are
   present's `presenterNotes`, written only through `present.setNote` (present owns them).
+  #52: "Slide deck" opens the filmstrip, a `dock-bottom` panel (`lib/Filmstrip.tsx`: the same deck
+  sideways, drag to reorder, New slide, a slide's options; its notes button opens the side deck).
+  Thumbnails in the filmstrip, the deck and the Frames panel are the slides' real pictures
+  (`lib/thumbnails.ts`: `renderToDataUrl` over the frame's rect, cached per slide by a signature of
+  the frame and what is on it, drawn again a moment after the last change, one render at a time;
+  the block sketch until then). Layouts add Big number and Quote; every part carries `layoutRole`,
+  and applying a layout to a slide that has one replaces it (`relayoutPlan`): parts still showing
+  their placeholder go, text people wrote moves into the new layout's matching slot (kept as an
+  ordinary text when there is none), a picture in the image slot moves into the new image slot.
+  #135: "Edit slide" (double-click a slide in the filmstrip or deck, a slide's menu, a frame's
+  context menu) opens one slide on its own (`lib/slideEditor.ts`): the frame at 100% (smaller only
+  when the window can't show that much), `setFocus(frame, { hideOutside, contentsOnly })`, a
+  top-center bar with previous / next (Page Up / Down) and Done; Esc (or the slide deleted) ends the
+  focus and the bar puts the camera back where it was. Local view state only: nothing is written
+  to the board.
 - Sticky author labels (KAI-112, `features/sticky/decoration.tsx`): a board setting in the
   `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
   from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;
@@ -860,7 +889,28 @@ through `DecompressionStream`, counting the REAL output bytes against per-entry 
 sizes a zip declares are never trusted), with a 20 s deadline checked as it goes; XML with a DOCTYPE
 is refused, external relationships are never followed, legacy binary `.vsd` gets "save as .vsdx".
 Tests build their packages with `lib/vsdxFixture.ts` (hand-written parts; no third-party samples)
-and fuzz them. Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
+and fuzz them. The package plumbing both Office formats share (relationships, part paths, the
+DOCTYPE refusal, picture sniffing) is `lib/opc.ts`.
+
+PowerPoint (`.pptx`, also `.pptm` / `.ppsx` / `.potx`; #136), same importer and dialog: `lib/pptx.ts`
+reads the deck from the published Office Open XML format (presentation → slides in `sldIdLst`
+order → layout → master → theme; no Microsoft code or template) and makes one frame per slide,
+side by side, in the deck's order, after the board's own frames in the deck (`placeImport` numbers
+imported frames after the highest `index`); hidden slides get `skip`. Text boxes and placeholders
+become text (paragraphs, bullets, bold / italic / underline / strike, run colours, size, alignment,
+the theme's heading / body face as serif / sans / mono; a placeholder without its own place or style
+takes its layout's, then its master's), preset shapes Freero shapes (theme style references
+resolved to colours), lines connectors glued where the slide glues them, pictures images (cropped
+like on the slide; one picture used on many slides is stored once), tables tables (cells through
+`insertElements`, so the table feature writes them), groups one `groupId`, the slide background the
+frame's fill (a picture background an image under everything), and the layout's and master's own
+artwork is drawn on each slide unless `showMasterSp="0"`. Speaker notes go to `present.setNote`
+in the same transaction. Charts, SmartArt, other graphic objects and videos without a poster are
+placed as a labelled box of their size, embedded objects as their picture when they keep one; ink
+and linked pictures are left out — all listed in the report. Untrusted input as for Visio (the same
+zip limits, ≤ 300 slides, no DOCTYPE, external relationships never followed, legacy `.ppt` gets
+"save as .pptx"); tests build decks with `lib/pptxFixture.ts` (hand-written parts) and fuzz them.
+Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
 `from-text.insert`.
 
 Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
@@ -1304,9 +1354,9 @@ sso_domain_policies, sso_domain_captures: domain control),
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains, audit_anchors: the append-only audit log
 and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed to workspaces'
-SIEMs; see "Audit log, admin console and workspace policies"), `admin` (no
-table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
+SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
+admin console of team workspaces; see "Audit log, admin console and workspace
+policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
 (ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
@@ -1316,7 +1366,9 @@ credentials that act for a person without their session), `api` (no table: the p
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
-engage_reveals: live audience activities; see "Live activities" below), `trackers`
+engage_reveals, engage_keys: live audience activities; see "Live activities" below), `icebreakers`
+(no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `presentations`
+(no tables: who presents a board, its handoffs, #146), `trackers`
 (tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
@@ -1325,7 +1377,8 @@ document realtime stores; see "Docs and native live embeds"), `site` (no table: 
 marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
+"Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
 Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
@@ -1398,7 +1451,18 @@ reports" below).
   gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
   forever; `boards/init.ts` purges after the workspace's trash retention (`TRASH_RETENTION_DAYS`
   unless the workspace sets `trashRetentionDays`) hourly on every instance as a `platform/jobs`
-  exclusive job, so replicas never purge at once.
+  exclusive job, so replicas never purge at once. `boards.deleted_by` (#153) remembers who trashed
+  it; a workspace's content admins list its whole trash (`GET /workspaces/:id/admin/trash`,
+  metadata only, boards' `workspaceTrash`) and restore any board of it for its owner
+  (`restoreForWorkspace`: that workspace's trash only, the owner's quota, audited `board.restored`
+  with `by: 'admin'`).
+- Archive (#153; `boards.archived_at` / `archived_by`, boards' repo `setArchived`): `POST
+  /boards/:id/archive | unarchive` by its owner (by identity) or an owner / content admin of its
+  workspace (`mayArchive`), audited `board.archived` / `board.unarchived`, live sockets re-resolved.
+  Archived, `members/roles.ts` `resolveRole` caps EVERY role at 'viewer' — the owner's too, so no
+  owner-only action (trash, transfer, move, sharing) works until it is unarchived — and guests at
+  viewer; lists show it only with `filter=archived`; usage counts it apart (`archivedBoards`); no
+  retention rule trashes it (#154).
 - Periodic jobs: `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs, run })` from an init.ts
   (trash purge, account purge). One instance runs a job at a time (a Postgres session advisory
   lock held for the whole run); jobs must be idempotent, since a run can be cut short anywhere.
@@ -1645,6 +1709,21 @@ members with roles owner / admin / member / guest (separate from board roles).
   transfers) re-resolves the live sockets of the affected boards on every instance through
   realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
   that workspace and hands boards they owned there to the remover.
+- **User groups** (#63; `workspaces/groups.ts`, tables `workspace_groups`, `workspace_group_members`,
+  `project_groups`; members' `board_group_grants`): members admins make groups of the workspace's
+  members (leaving the workspace leaves its groups, in `repo.removeMember`); directory (SCIM) groups
+  are listed beside them read-only (scim registers `setDirectoryGroupReader` from its init). A board
+  is shared with a group at a role (`PUT /boards/:id/groups/:groupId`: whoever may invite people;
+  a group with guests in it only by who the workspace's `guestInvites` lets invite guests —
+  `requireBoardAccess().mayInviteGuests`; stopping: owners and co-owners); a project too (its
+  managers; `projectIdsOf` / `projectPeopleIds` count the group's members as the project's). Members'
+  `getMembership` / `membershipsOf` return the HIGHEST of the direct membership and the person's
+  groups' grants — only grants of groups of the board's own workspace, to people still in it — so
+  `resolveRole` (blocked, outside sharing), lists, search and socket admission need nothing new.
+  Every change to a group's membership, a grant or a project's groups re-resolves the boards it
+  reaches on every instance (`refreshBoardAccess`): leaving a group closes a board shared only with
+  it on the next request and on the open socket (4403). Audited: `group.*`, `board.group_shared` /
+  `board.group_unshared`, `project.group_added` / `project.group_removed`.
 - Invites by email reuse the board-invite mechanics (`workspace_invites`, sha256 tokens, link
   `/workspace-invite/<token>`, conversion on `auth.onEmailVerified`).
 - Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),
@@ -1662,6 +1741,19 @@ members with roles owner / admin / member / guest (separate from board roles).
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
   role change) makes everything someone shared with a workspace personal again when they leave it
   or become a guest there (`templates/init.ts`).
+- Company templates (#155; `templates.organisation_id`, `locked`, `retired_at`): its owner
+  publishes a template to the organisation of one of their workspaces (`PATCH /templates/:id
+  { organisationId }`); it then reaches the full members of every attached workspace (the one
+  visibility rule, repo `VISIBLE_TO_USER`, with templates' `audienceOf`: team workspaces + their
+  organisations), labelled with the organisation's name. Who may share with a workspace / publish
+  to an organisation is the policy `templatePublishing` (members / admins: owners and content
+  admins; an organisation's is a floor for its workspaces, like every policy). Owners and content
+  admins of where it is shared or published lock it (its owner can no longer delete, unshare or
+  withdraw it — the repo's writes refuse a locked row), retire it (out of every picker but its
+  owner's) or withdraw it; `GET /workspaces/:id/admin/templates` lists them. Audited in that
+  place's log: `template.published` / `unpublished` / `locked` / `unlocked` / `retired` / `unretired`.
+  In the board's picker (`features/templates`) `Host.publishTemplate` exists when the board's team
+  belongs to an organisation (`board.team.company`).
 - Ownership: `POST /boards/:id/transfer` (team: to a non-guest member; personal: to a board
   member, moving the board to their personal workspace) and `POST /workspaces/:id/transfer`, each
   one transaction; the previous owner becomes editor / admin. Account purge first calls
@@ -2066,7 +2158,9 @@ audit and admin controls are the same code.
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
   `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`, `audit:read`
-  (a team workspace's audit log, for its owners/admins: `api/audit.ts`). Effective
+  (a team workspace's audit log, for its owners/admins: `api/audit.ts`), `webhooks:manage` (its
+  webhooks, for its owners/admins: `api/webhooks.ts` calls webhooks' own service — the admin check,
+  validation and `webhook.*` audit there, #48). Effective
   power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
   write.
 - **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
@@ -2149,6 +2243,39 @@ audit and admin controls are the same code.
   under their center (the app's rule), connectors attached by item id; patches only take fields the
   type has, re-apply the frame rule on moves and move a frame's contents with it. Saved templates
   seed new boards through `changeBoard` (the board is empty, so element ids are kept).
+  **Items from a URL** (#170: `image`, `embed`, `API_URL_ITEM_TYPES`): the server fetches the URL
+  BEFORE planning — unfurl's `importImageFromUrl` (safeFetch, bytes sniffed, `saveUpload` into the
+  person's uploads and quota, never hot-linked; the header's pixel size) and `embedPreview` (an https
+  link on an allow-listed provider, `embedProviderForUrl` over `EmbedProvider.linkHosts` + the
+  operator's `EMBED_EXTRA_ORIGINS`) — and hands `planCreate` what it fetched by input object, so a
+  caller can never set an item's `src` itself. Blocked addresses answer 422 `url_blocked`. They are
+  not proposable (a suggestion would carry a URL nobody fetched). **Boards**: rename
+  (`boards.updateBoardDetails`, the same `renameBoard` as the app's PATCH: `board.renamed` +
+  lifecycle), copy (`boards.duplicateBoardFor`: Duplicate's downloads check, placement and layers),
+  groups (`groupId`, as the editor's Group / Ungroup).
+  **What a request may create at all** is `realtime/view.ts` `REQUEST_CREATABLE`, a
+  `Record<ElementType, true | reason>`: a new element type doesn't compile until someone decides
+  there (#49). `media` and `file` are app-only on purpose — their `src` must be the person's own
+  upload, sniffed and counted by modules/uploads (a file card's download is served through the
+  board), and a request must never point an item at an `/uploads/<name>` it doesn't own; pictures
+  from a URL go through the server's own fetch instead (above). Uploading media / files over the API
+  would need an upload endpoint answering an ownership-checked token the creation presents.
+- **Pictures of a board** (#33, `modules/render`, `api/exports.ts`): no headless browser. `render/svg.ts`
+  draws the reader's view (realtime's `readBoardView`: hidden frames only for those who see them,
+  nobody's private drafts) from the shared element model — one small function per element type,
+  the app's colours and proportions, text wrapped with the layout kit's metrics, a labelled box for
+  what a picture can't show — with uploaded pictures inlined as data URLs (never fetched from
+  elsewhere); `render/raster.ts` rasterises it with resvg-wasm (MPL-2.0, no native code) and the
+  self-hosted Inter faces, and wraps the pixels in a one-page PDF written there. Bounded: 5000 items
+  (413), 8000 px a side and 40 MP (drawn smaller), 40 MB of pictures, `RATE_LIMIT_BOARD_RENDER`.
+  `POST /api/v1/boards/:id/export` is an export: boards' `recordBoardExport` (downloads policy, the
+  board's "viewers can copy and export", `board.exported`) before drawing. MCP `export_board` shows a
+  PNG preview (≤ 1600 px) and answers a single-use download link: an apiauth export ticket
+  (`api_export_tickets`, `frx_…`, sha256 only, 15 minutes, deleted with the app's consent or the
+  personal token), redeemed once at `GET /api/v1/exports/:ticket` (a DELETE … RETURNING), where the
+  credential is re-checked like an embed ticket's and the export checks run again. Files go out as
+  attachments with the sandbox CSP (an SVG never renders as a page of ours); board text in SVG is
+  escaped.
 - **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
   authorised and the apps they registered), from `apiauth.apiDataOf`.
 
@@ -2362,7 +2489,11 @@ An endpoint may be **scoped** (KAI-249, `webhook_endpoints.board_id` / `item_id`
 item link): one board's events, or only item and comment events about one item and what sits
 directly in it — events carry `containerId` (the item's `frameId`; `item.deleted` from the stored
 state) for that — e.g. an agent's control-room lane. A scope's board must be one the whole team can
-open, and a scope never widens (no foreign key: a board that is gone just sends nothing).
+open, and a scope never widens (no foreign key: a board that is gone just sends nothing). Or a
+**project** (#48, `webhook_endpoints.project_id`): one the whole team can open (`openToWholeTeam`),
+matched at fan-out against where the board is NOW (`boardsOpenToTheirTeam`'s `projectId`); not with a
+scope. Managed from `/api/v1/workspaces/:id/webhooks` too (`webhooks:manage`), and listed — never
+the secret or the full URL — in the workspace data export (`webhooksWorkspaceExportOf`).
 
 ### Integrations that need no third-party approval (#88; docs/integrations/)
 
@@ -2536,6 +2667,10 @@ board, including people who join later: it is a deliberate publication of what e
   dialog's "Copy embed code"; everything escaped). Only embeddable boards answer; only public ones
   with their title. `GET /board/:id` of a public embeddable board is served with
   `oembedDiscoveryTag` in its `<head>` (production build only), for unfurlers that read HTML.
+- **API / MCP** (`GET` / `PATCH /api/v1/boards/:id/embed`, MCP `embed_board`): reads the summary's
+  `embeddable` / `permissions.boardEmbeds` / `manageSharing` and `boardEmbedding`'s visitor, builds the
+  code with `boardEmbedCode`, and changes it only through `boards.setBoardEmbeddable` (the share
+  dialog's rule and audit event); a change needs `boards:write` even from the read-scoped MCP tool.
 - **Engine additions**: `?frame=<id>` (zoom to an item without selecting it), `Host.onConnectionEnded`
   (the server closed the socket for good, with its code: the embed page swaps to a card).
 
@@ -2555,7 +2690,12 @@ rules (or needed a generic grants table first). The object registry answers `boa
 boards, each only for its own kind, so `freero://board/<doc id>` resolves to nothing.
 `modules/docs` (no table) holds only what a document has: create (from Markdown, next to a board:
 its workspace/project when the person may create there), export as Markdown (downloads policy,
-audited `doc.exported`), append Markdown (the API). Its audit target is `{ type: 'doc' }`;
+audited `doc.exported`), append Markdown and targeted edits (the API, #61: `editDoc` → realtime's
+`editDocBlocks` → `docContent.applyDocEdit` — replace a block or a heading's section, insert before /
+after, delete — checked against the live document before anything is written; a replace keeps the
+first block's id, so comments on it stay). Comments on a doc over the API (#61, `api/docs.ts`) are
+the boards' records written through `changeBoard` on the doc's room (commenter rules, mention
+notifications) and read with `@freero/shared` `docThreads`, the editor's own assembler. Its audit target is `{ type: 'doc' }`;
 `doc.created` replaces `board.created`.
 
 **One Yjs doc per object, the same rooms.** realtime serves `/ws/docs/:id` next to `/ws/boards/:id`
@@ -2758,6 +2898,46 @@ security and retention settings, sharing policies, the audit log (filters, pagin
 add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
 `admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
 
+**Usage trends** (#65; admin's own table `workspace_usage_daily`, `admin/usage.ts`): the
+`admin:usage-rollup` job (hourly, one instance) upserts each team workspace's row for the UTC day —
+active people over 7 / 30 days (board opens), boards and docs created that day, members and guests,
+and API / MCP calls by app counted from the audit log's `api.call` events (`auditCountsBy`) —
+nothing per person. One row per (workspace, day): a second run replaces the day, never adds to it.
+Rows go with their workspace (cascade) and after `USAGE_HISTORY_MAX_DAYS`. `GET
+…/admin/usage/history` (JSON) and `…/history.csv` (cells formula-safe), any admin; the Overview
+charts 90 days as small multiples with a table view.
+
+**Board inventory** (#152; content admins; admin's `boardInventory`): `GET /workspaces/:id/admin/boards`
+composes boards' `inventoryBoards` (live boards, archived included, with the last activity and whether
+the link lets visitors in, as `resolveGuestRole` decides), members' `memberIdsOfBoards` (guests and
+people outside counted against the workspace's members), realtime's `storedBoardSizes` and the
+project names; filters (link, public, guests, outside, inactive N days, archived) combine with AND,
+sorted and paged in memory. Metadata only — opening a board still needs access. Fixes, each in
+the owning module, scoped to that workspace's boards (404 otherwise) and audited: boards'
+`turnOffLinkForWorkspace` (`board.link_sharing_changed`, `by: 'admin'`), members'
+`removeOutsideMembers` (`board.member_removed`, `reason: 'outside_workspace'`), boards'
+`transferForWorkspace` (transferBoard's rules: a non-guest member, the receiver's quota).
+
+**Admin roles** (#151; `workspace_members.admin_scopes`, workspaces' repo): an admin administers
+`members` (people, invites, roles, deactivation, groups), `content` (sharing policies, the board
+inventory, trash, archive, retention, templates, projects) and/or `security` (sign-in and session
+settings, SSO, provisioning, the IP allowlist, AI / API / webhooks / trackers, exports, the audit log
+and its streams). NULL = all three, so every admin from before keeps meaning everything; owners
+always have all three; a role change away from admin clears the scopes. Only an owner sets them
+(`PATCH /workspaces/:id/members/:userId { role: 'admin', adminScopes }`, audited
+`member.admin_scopes_changed`) — an admin can't widen anyone's, their own included. Every admin
+route names the scope it needs: `requireWorkspace(…, 'admin', { scope })` / `requireWorkspaceRole` /
+admin's `requireAdmin(…, { scope })` answer 403 `admin_scope_required` otherwise; settings are
+checked key by key (`SETTING_SCOPE`: a mixed change is refused whole). Usage, the member list and
+reading settings need none. **An admin without `content` counts as a member wherever board content
+is concerned** (no editing every board, no private projects, no moving or transferring others'
+boards, no deciding access requests): `repo.rolesOf` / `getContentRole` / exported `workspaceRole`
+read the content role (`roles.ts` `contentRole`, SQL twin `CONTENT_ROLE`), so board access, lists,
+search, the public API, projects, templates and `teamMembers` / `boardGatekeepers` agree. The same
+column and checks serve an organisation's admins (org security admins: SSO, provisioning, floors of
+sign-in; content admins: the sharing floors; members admins: its directory). The console hides tabs
+and cards the caller's scopes can't use (`WorkspaceSummary.adminScopes`).
+
 **Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
 enforced by the module that owns the data, wired from that module's `init.ts`:
 - Deactivated members (`workspace_members.deactivated_at`) and the two-step requirement close the
@@ -2766,6 +2946,22 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   everyone who opens the workspace's boards (members, guests, invited outsiders) and is registered
   with auth's `onTwoFactorRequirement`, so members can't turn two-step off; whoever turns the
   requirement on needs it on themselves. `WorkspaceSummary.blocked` tells the dashboard why.
+- IP allowlist (#156; `workspaces.ip_allowlist`, canonical CIDR ranges, `workspaces/ipAllowlist.ts`;
+  security admins): a third reason in the one `blocked` rule — `blockOf` answers `ip_not_allowed`
+  when the request's client address (platform's request context, TRUST_PROXY applied) is outside
+  the workspace's own list or its organisation's (`ipListsOf`: both apply, never merged, so neither
+  widens the other). So REST, lists, search and socket admission follow it; platform/ws.ts gives
+  every upgrade a request context with its address, the room keeps it on the connection
+  (`Admission.ip`) and resolves every access refresh as from it, so a list change closes open
+  sockets from elsewhere (refreshWorkspaceBoards). Where no address is known (jobs, digests) nothing
+  is blocked. The admin console (`requireWorkspace`), sign-in, SSO and SCIM never ask it, so an owner
+  can always fix a wrong list — the break-glass path. Saving a list that leaves out the caller's own
+  address needs `confirmExcludesMe` (409 `ip_allowlist_excludes_you`); `GET …/admin/settings` says
+  `yourIp`. Requests through an API token or app follow the same rule on every board they resolve
+  (REST, MCP, lists, search — all through `boardAccessLoader`) and in apiauth's `useInWorkspace`,
+  except in a workspace whose security admins exempted that credential
+  (`api_workspace_credentials.ip_exempt`, audited `api.credential_ip_exempted`; the request context
+  carries `apiCredentialId`, apiauth registers `setIpExemptionReader` from its init).
 - Session lifetime / idle timeout: **a session belongs to a person, not a workspace**, so the
   strictest limits of the team workspaces someone is a member of (not as a guest) apply to all of
   their sessions (`workspaces.sessionLimitsFor`, given to auth with `setSessionLimits`). Auth checks
@@ -2774,6 +2970,23 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   their sockets. Edits over a board socket count as activity (`auth.noteSessionActivity`).
 - Trash retention: boards' purge job; version-history retention: realtime's prune job (above);
   audit retention: the audit job. All idempotent, one instance at a time.
+- Inactive boards (#154; `inactiveBoardAction` none / archive / trash + `inactiveBoardDays`, content
+  admins): boards' `boards:retention` job (hourly, `boards/retention.ts`) takes each workspace's
+  rule as it applies (workspaces' `inactiveBoardRules`: its own raised to its organisation's floor —
+  the stricter action, the shorter period, combined key by key like every floor; a workspace asking
+  for less gets 403 `organisation_policy`). Last activity = the latest of an edit / rename
+  (`boards.updated_at`, realtime touches it on save), anyone opening it (`board_opens`) and
+  (un)archiving. A board idle for `days − RETENTION_NOTICE_DAYS` gets a notice (one email per owner,
+  `boards.retention_notice_at`, audited `board.retention_notice`); the rule applies only once the
+  board is idle for `days` AND a notice newer than its last activity is at least
+  `RETENTION_NOTICE_DAYS` old — activity makes the notice stale, so the clock restarts. Each board is
+  re-checked in the one UPDATE that archives / trashes it (`applyInactiveRule`: that workspace,
+  still inactive, still noticed), so the job is idempotent and never races an open. Audited
+  `board.archived` / `board.trashed` with no actor and `reason: 'retention'`. Never touched:
+  archived boards (archiving is how a board is kept), taken-down boards, boards a hold check names
+  (`boards.onBoardRetentionHold`, the seam for legal holds, #157; a failing check holds them all)
+  and every board of a workspace with a deletion hold (`workspaceHoldOn`). Board events with no
+  actor reach the event stream as `actor: { kind: 'system' }`.
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 
@@ -3075,7 +3288,51 @@ in the same transaction (`realtime/serverCollections.ts`, like the vote budget).
 answer can never be mapped to a person by any client, and a sealed activity (`results: 'reveal'`)
 publishes only how many answered until an editor reveals it. Names appear only on a poll answered
 while it was not anonymous (kept per answer as given). `engageResults` and `call` are in
-`Y_KEPT_ON_RESTORE`. The answer form is a dialog that `?activity=<id>` opens (phones: the answer link).
+`Y_KEPT_ON_RESTORE`. The answer form (`@ui` `ActivityForm`) is a dialog on the board (`?activity=<id>`
+opens it) and the board-free phone page `/respond/<board>/<activity>` (#40, `app/pages/respond`):
+the activity's `GET` returns the activity itself (`ActivityState.activity`, question as plain text)
+so that page needs no Yjs or canvas, and a visitor joins as a guest inline. Its QR code is encoded
+by the pinned `qrcode` package and drawn as one SVG path (the link dialog, optionally on the
+element so exports keep it, and the full-screen presenter view of one activity).
+A **2×2 matrix** (#147) takes each person's placement of the items (0..1 on two named axes) and
+publishes each item's average place and spread. A **quiz** keeps its answer key on the server
+(`engage_keys`, `PUT …/key`, editors; the element holds only questions and answers, since every
+participant's client holds the board) and is run by the server: `POST …/quiz` (editors) writes
+the element's `quiz` step with the SERVER's clock (`openedAt`), so time limits and answer times are
+fair whatever the clients' clocks; answers to the open question only, before its limit (plus
+`ENGAGE_QUIZ_GRACE_MS`) and before its answer is shown, can't be withdrawn, and score more when
+faster. The board gets per question how many answered, and the right options and counts only once
+shown; the leaderboard (names unless anonymous) only once revealed. Each person's own score comes
+with their `ActivityState`. Copies keep the key without it ever reaching a client: a duplicated board gets its
+quizzes' keys copied on the server (boards' `duplicated` lifecycle event, `sourceId` /
+`sourceRole`) when the copier may edit the original; a pasted, Alt-dragged or template-inserted quiz
+carries only a reference (`copyContent`: source board and activity) and asks `PUT …/key/copy`,
+which copies the key only for an editor of the target who may also edit the source board. So a
+template shared with a team gives its quizzes' keys only to teammates who can edit the board the
+template was made from; everyone else gets the questions without right answers (and is told). Results of any
+kind download as CSV from the format toolbar (what the board shows, formula-guarded).
+
+**Icebreakers** (#150, `modules/icebreakers`, `features/icebreakers`): a wheel of names, dice and a
+random speaking order are `icebreaker` elements holding only their set-up. Every spin, roll and
+shuffle is made by the SERVER (`POST /boards/:id/icebreakers/:elementId/roll`, `crypto.randomInt`)
+and published in the server-written `icebreakerResults` collection (element content, kept on
+restore, left out of backups) with its start on the server's clock and its length; every client
+animates the same frames from that start (`Host.serverNow`) and lands at the same moment (reduced
+motion and exports: the result at once; screen readers: a live caption). Owners and editors spin;
+while a facilitation session runs only its facilitator and the owner (`rollRefusal`); commenters,
+guests and viewers watch. The module owns no tables.
+
+**Who presents** (#146, `modules/presentations`, `features/present`): the slides still follow the
+presenter's presence, but WHO presents is the server-written `presentation` collection (key
+`session`: presenter, since when, the slide it was handed over on, who handed it). `POST
+/boards/:id/presentation` starts (refused while someone else on the board presents, unless the
+caller facilitates or owns the board; a presenter who left no longer holds it), hands off (the
+presenter, the facilitator or the owner, to someone on the board now: realtime's
+`updateServerEntry` reads and writes the entry in one step with who is here, by the server's own
+presence names) and ends. The new presenter's client starts presenting on that slide; the old
+one's stops; whoever followed the old presenter follows the new one. Presenter notes can open in a
+window of their own (a React portal into a popup, so it follows the slide; it closes with the
+presentation).
 
 **Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
 commenters and guests take part in a facilitator's sessions without edit access, like Engage lets

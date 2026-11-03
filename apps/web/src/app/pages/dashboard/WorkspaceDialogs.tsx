@@ -2,7 +2,7 @@
 // board ownership transfer.
 import { useEffect, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
-import type { BoardSummary, ProjectAccess, ProjectSummary, TeamAccess, WorkspaceSummary } from '@freero/shared';
+import type { BoardSummary, ProjectAccess, ProjectSummary, TeamAccess, WorkspaceGroup, WorkspaceSummary } from '@freero/shared';
 import { Avatar, Button, IconButton, Input, Modal, Select, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 
@@ -103,6 +103,9 @@ export function ProjectDialog({
   const [people, setPeople] = useState<Person[]>([]);
   const [everyone, setEveryone] = useState<Person[]>([]);
   const [adding, setAdding] = useState('');
+  // #63: groups the project is shared with, and the workspace's groups to pick from.
+  const [groups, setGroups] = useState<WorkspaceGroup[]>([]);
+  const [allGroups, setAllGroups] = useState<WorkspaceGroup[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -115,6 +118,8 @@ export function ProjectDialog({
     if (project && workspace.kind === 'team') {
       api.listProjectMembers(project.id).then(({ members }) => setPeople(members), () => setPeople([]));
       api.listWorkspaceMembers(workspace.id).then(({ members }) => setEveryone(members), () => setEveryone([]));
+      api.listProjectGroups(project.id).then((r) => setGroups(r.groups), () => setGroups([]));
+      api.listGroups(workspace.id).then((r) => setAllGroups(r.groups), () => setAllGroups([]));
     }
   }, [open, project, workspace]);
 
@@ -156,7 +161,17 @@ export function ProjectDialog({
     }
   };
 
+  const shareWithGroup = async (groupId: string, shared: boolean) => {
+    if (!project) return;
+    try {
+      setGroups((await api.setProjectGroup(project.id, groupId, shared)).groups);
+    } catch (err) {
+      notify(errorText(err, shared ? 'Could not add the group' : 'Could not remove the group'), 'error');
+    }
+  };
+
   const candidates = everyone.filter((m) => !people.some((p) => p.userId === m.userId));
+  const groupCandidates = allGroups.filter((g) => !groups.some((x) => x.id === g.id));
   const team = workspace.kind === 'team';
 
   return (
@@ -221,6 +236,27 @@ export function ProjectDialog({
               options={[{ value: '', label: 'Add someone…', disabled: true }, ...candidates.map((m) => ({ value: m.userId, label: m.name }))]}
               value={adding}
               onChange={(v) => void add(v)}
+            />
+          ) : null}
+          {groups.length || groupCandidates.length ? <h3 className="fr-dash-settings__title">Groups in this project</h3> : null}
+          <ul className="fr-dash-members__list">
+            {groups.map((g) => (
+              <li key={g.id} className="fr-dash-members__row">
+                <span className="fr-dash-members__name">
+                  {g.name} · {g.memberCount} {g.memberCount === 1 ? 'person' : 'people'}
+                </span>
+                <div className="fr-dash-members__actions">
+                  <IconButton size={32} icon={X} label={`Remove ${g.name} from the project`} tooltipSide="top" onClick={() => void shareWithGroup(g.id, false)} />
+                </div>
+              </li>
+            ))}
+          </ul>
+          {groupCandidates.length > 0 ? (
+            <Select<string>
+              aria-label="Add a group to the project"
+              options={[{ value: '', label: 'Add a group…', disabled: true }, ...groupCandidates.map((g) => ({ value: g.id, label: `${g.name} (${g.memberCount})` }))]}
+              value=""
+              onChange={(v) => v && void shareWithGroup(v, true)}
             />
           ) : null}
         </div>

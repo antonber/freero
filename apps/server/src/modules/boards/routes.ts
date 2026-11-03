@@ -33,9 +33,11 @@ import {
   listBoards,
   moveToProject,
   moveToTrash,
+  renameBoard,
   requireAccess,
   requireDownload,
   restoreFromTrash,
+  setBoardArchived,
   summarize,
   toSummary,
   transferBoard,
@@ -101,9 +103,10 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       const { board, role, access, coOwner } = await requireAccess(req.params.id, user.id);
       // The owner and co-owners (#122) manage sharing: the link, its protection, embedding, the settings.
       const manages = managesSharing(role, coOwner);
-      const patch: { title?: string; description?: string; linkAccess?: typeof board.linkAccess; embeddable?: boolean } & Partial<BoardSharingSettings> = {};
-      if (body.title !== undefined) patch.title = cleanTitle(body.title);
-      if (body.description !== undefined) patch.description = cleanDescription(body.description);
+      const details: { title?: string; description?: string } = {};
+      const patch: { linkAccess?: typeof board.linkAccess; embeddable?: boolean } & Partial<BoardSharingSettings> = {};
+      if (body.title !== undefined) details.title = cleanTitle(body.title);
+      if (body.description !== undefined) details.description = cleanDescription(body.description);
       if (body.linkAccess !== undefined) {
         if (!isLinkAccess(body.linkAccess)) throw badRequest('linkAccess must be none, viewer, commenter or editor');
         checkLinkAccessChange(board, manages, access, user, body.linkAccess);
@@ -118,7 +121,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (Object.keys(sharing).length && !manages) throw forbidden('Only the board’s owner and co-owners can change its sharing settings');
       Object.assign(patch, sharing);
       if (hasLinkProtectionPatch(body) && !manages) throw forbidden('Only the board’s owner and co-owners can protect its link');
-      if ((patch.title !== undefined || patch.description !== undefined) && role !== 'owner' && role !== 'editor')
+      if ((details.title !== undefined || details.description !== undefined) && role !== 'owner' && role !== 'editor')
         throw forbidden('You need editor access to rename this board');
       // Validated before anything is stored: the link as the WHOLE change leaves it must meet the
       // workspace's link policy (#39), so a link is never on without the password it requires.
@@ -139,14 +142,8 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       }
       // Protection first: a link turned on in the same request is never live without it.
       if (protection) await applyLinkProtection(board, user.id, protection);
-      if (Object.keys(patch).length > 0)
-        await repo.transaction(async () => {
-          await repo.updateBoardFields(board.id, patch, Date.now());
-          if (patch.title !== undefined && patch.title !== board.title)
-            await repo.appendBoardEvent({ type: 'board.renamed', boardId: board.id, workspaceId: board.workspaceId, actorId: user.id, title: patch.title, from: board.title, to: patch.title });
-        });
-      if (patch.title !== undefined && patch.title !== board.title)
-        await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'renamed', from: board.title, to: patch.title });
+      if (Object.keys(patch).length > 0) await repo.updateBoardFields(board.id, patch, Date.now());
+      await renameBoard(board, user.id, details);
       if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) await linkAccessChanged(board, user.id, patch.linkAccess);
       if (patch.embeddable !== undefined && patch.embeddable !== board.embeddable) await embeddingChanged(board, user.id, patch.embeddable);
       await sharingSettingsChanged(board, user.id, sharing);
@@ -224,6 +221,21 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       res.json({ board: await summarize(board, user.id) } satisfies Out);
     }),
   );
+
+  // #153: archive / unarchive (its owner or a content admin of its workspace).
+  for (const [verb, archived] of [
+    ['archive', true],
+    ['unarchive', false],
+  ] as const)
+    r.post(
+      `/boards/:id/${verb}`,
+      requireUser,
+      handle(async (req, res) => {
+        const user = currentUser(req);
+        const board = await setBoardArchived(req.params.id, user.id, archived);
+        res.json({ board: await summarize(board, user.id) } satisfies Out);
+      }),
+    );
 
   r.delete(
     '/boards/:id/permanent',

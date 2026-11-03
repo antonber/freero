@@ -5,6 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import {
+  IP_NOT_ALLOWED,
   API_CREDENTIAL_BLOCKED,
   API_DISABLED,
   INSUFFICIENT_SCOPE,
@@ -22,10 +23,10 @@ import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
-import { setRequestUser } from '../../platform/requestContext';
+import { currentRequestContext, markApiCredential, setRequestUser } from '../../platform/requestContext';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getAccount, isOperator, isSuspended, signInRestriction } from '../auth/index';
-import { getWorkspaceInfo } from '../workspaces/index';
+import { getWorkspaceInfo, ipAllowedIn } from '../workspaces/index';
 import * as repo from './repo';
 
 export const PERSONAL_PREFIX = 'frp_';
@@ -223,6 +224,8 @@ export async function authenticate(req: Request, resource: string): Promise<ApiC
   }
   setRequestUser(req, account.id);
   const oauth = token.kind === 'access';
+  // #156: board access through this credential honours the workspaces' IP exemptions for it.
+  markApiCredential(req, oauth ? `${token.clientId}:${account.id}` : token.id);
   return {
     tokenId: token.id,
     credentialId: oauth ? `${token.clientId}:${account.id}` : token.id,
@@ -269,7 +272,7 @@ export async function useInWorkspace(cred: ApiCredential, workspaceId: string): 
   if (!ws || ws.kind !== 'team') return;
   if (!(await repo.workspaceApiEnabled(workspaceId)))
     throw new HttpError(403, `${ws.name} has turned off API access to its boards`, API_DISABLED);
-  const blocked = await repo.noteWorkspaceUse({
+  const { blocked, ipExempt } = await repo.noteWorkspaceUse({
     workspaceId,
     credentialId: cred.credentialId,
     userId: cred.account.id,
@@ -279,4 +282,7 @@ export async function useInWorkspace(cred: ApiCredential, workspaceId: string): 
     at: Date.now(),
   });
   if (blocked) throw new HttpError(403, `An admin of ${ws.name} blocked this ${cred.kind === 'oauth' ? 'app' : 'token'} there`, API_CREDENTIAL_BLOCKED);
+  // #156: from outside the workspace's allowed networks only a credential its admins exempted.
+  if (!ipExempt && !(await ipAllowedIn(workspaceId, currentRequestContext()?.ip ?? null)))
+    throw new HttpError(403, `${ws.name} only allows access from its own networks`, IP_NOT_ALLOWED);
 }

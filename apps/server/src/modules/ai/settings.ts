@@ -74,7 +74,7 @@ async function view(workspaceId: string, s: repo.StoredAiSettings): Promise<Work
 /** 404 when AI doesn't exist here, 403 unless an owner/admin of the team workspace. */
 async function requireAiAdmin(workspaceId: string, userId: string): Promise<{ name: string }> {
   requireAiOffered();
-  return requireAdmin(workspaceId, userId);
+  return requireAdmin(workspaceId, userId, { scope: 'security' });
 }
 
 export async function getAiAdmin(workspaceId: string, userId: string): Promise<WorkspaceAiAdmin> {

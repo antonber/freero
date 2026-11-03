@@ -28,7 +28,7 @@ export * from './kanban';
 export * from './kanbanRows';
 export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
 export { layered, spacedFit } from './layered';
-export { measureText, textWidth } from './measure';
+export { measureText, textWidth, wrapLines } from './measure';
 export { translateDraft } from './kit';
 export { parsePlantUml, looksLikePlantUml, type PlantUmlDiagram } from './plantuml';
 // Single fully-specified drafts (the public API creates items one by one with them).

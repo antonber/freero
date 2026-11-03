@@ -49,7 +49,7 @@ const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2
 const higher = (a: Role | null, b: Role | null): Role | null => (!a ? b : !b ? a : ROLE_RANK[a] >= ROLE_RANK[b] ? a : b);
 
 /**
- * The effective role of `userId` on a board, or null for no access.
+ * The effective role of `userId` on a board, or null for no access (at most 'viewer' while archived, #153).
  * - nobody gets anything while the workspace blocks them (deactivated, two-step verification
  *   required and off), not even the board's owner;
  * - the owner is always 'owner';
@@ -59,13 +59,16 @@ const higher = (a: Role | null, b: Role | null): Role | null => (!a ? b : !b ? a
  *   access, people outside it get nothing from memberships or links.
  */
 export function resolveRole(
-  board: { ownerId: string; linkAccess: LinkAccess },
+  board: { ownerId: string; linkAccess: LinkAccess; archivedAt?: number | null },
   userId: string | null,
   memberRole: Role | null,
   ws?: WorkspaceAccess,
 ): Role | null {
   if (!userId) return null;
   if (ws?.blocked) return null;
+  // #153: an archived board is read-only for everyone, its owner included (unarchiving is decided
+  // by who they are — the owner, a content admin — not by this role).
+  if (board.archivedAt) return resolveRole({ ...board, archivedAt: null }, userId, memberRole, ws) && 'viewer';
   if (userId === board.ownerId) return 'owner';
   const outsider = !!ws && !ws.inWorkspace && ws.outsidersBlocked;
   const member: Role | null = outsider ? null : memberRole === 'owner' ? 'editor' : memberRole; // only the board owner is 'owner'
@@ -95,11 +98,11 @@ export const managesSharing = (role: Role | null, coOwner: boolean): boolean => 
  * workspace lets visitors without an account in (and allows outside access at all), and never
  * where its boards are closed to people without two-step verification.
  */
-export function resolveGuestRole(board: { linkAccess: LinkAccess }, ws?: WorkspaceAccess): 'viewer' | 'commenter' | null {
+export function resolveGuestRole(board: { linkAccess: LinkAccess; archivedAt?: number | null }, ws?: WorkspaceAccess): 'viewer' | 'commenter' | null {
   // A workspace that closes its boards (two-step verification required) closes them to guests too.
   if (ws && (!ws.anonymousLinks || ws.outsidersBlocked || ws.blocked)) return null;
   let link = board.linkAccess;
   if (ws && LINK_RANK[link] > LINK_RANK[ws.maxLink]) link = ws.maxLink;
   if (link === 'none') return null;
-  return link === 'viewer' ? 'viewer' : 'commenter';
+  return link === 'viewer' || board.archivedAt ? 'viewer' : 'commenter';
 }

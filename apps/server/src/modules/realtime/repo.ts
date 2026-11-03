@@ -394,6 +394,22 @@ export async function deleteSnapshots(boardId: string, ids: number[]): Promise<n
  * What the stored content of these boards takes (documents, update logs, version history,
  * layers), and the upload names it references (matches of `pattern`'s first group).
  */
+/** boardId -> bytes of its stored document, history and layers (the admin inventory, #152). */
+export async function storedSizesOf(boardIds: string[]): Promise<Map<string, number>> {
+  if (!boardIds.length) return new Map();
+  const rows = await query<{ board_id: string; n: string | number }>(
+    `SELECT board_id, sum(n)::bigint AS n FROM (
+       SELECT board_id, octet_length(state) AS n FROM board_docs WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT board_id, octet_length(data) FROM board_doc_updates WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT board_id, octet_length(state) FROM board_doc_snapshots WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT board_id, octet_length(state) FROM board_layers WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT board_id, octet_length(data) FROM board_layer_updates WHERE board_id = ANY($1::text[])
+     ) s GROUP BY board_id`,
+    [boardIds],
+  );
+  return new Map(rows.map((r) => [r.board_id, Number(r.n)]));
+}
+
 export async function storedContentOf(boardIds: string[], pattern: string): Promise<{ bytes: number; names: string[] }> {
   if (!boardIds.length) return { bytes: 0, names: [] };
   const size = await one<{ n: string | number }>(

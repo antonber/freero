@@ -12,6 +12,8 @@ export default defineOutline({
         due: el.dueDate,
         estimate: el.estimate ?? null,
         assignee: el.assigneeId ? (ctx.personName(el.assigneeId) ?? 'someone') : null,
+        // A flip card (#142): its back, and which side shows.
+        ...(el.back ? { back: ctx.plain(el.back.title), showing: el.flipped ? 'back' : 'front' } : {}),
       };
       const k = el.frameId ? ctx.element(el.frameId) : undefined;
       if (k?.type === 'kanban') {
