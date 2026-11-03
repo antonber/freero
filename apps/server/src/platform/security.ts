@@ -147,28 +147,49 @@ export function allowOpener(path: RegExp, reason: string): void {
   openerPaths.push({ path, reason });
 }
 
-/** Content-Security-Policy for the app's own pages and API responses. */
-export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean, opts: { framable?: boolean; ancestors?: string[] } = {}): string {
-  const ancestors = opts.ancestors ?? (opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors : ["'none'"]);
+/** Where Google Analytics' loader comes from (GA_MEASUREMENT_ID). */
+export const GA_SCRIPT_ORIGIN = 'https://www.googletagmanager.com';
+/** Where it sends what it measures (Google's published CSP sources for GA4). */
+export const GA_CONNECT_SOURCES = ['https://*.google-analytics.com', 'https://*.analytics.google.com', 'https://*.googletagmanager.com'];
+/** App pages that never load analytics (the embeds and their sign-in pages): their CSP never names Google. */
+const NO_ANALYTICS = /^\/embed(\/|$)/;
+
+/**
+ * Content-Security-Policy for the app's own pages and API responses. `selfFramed`: a page only this
+ * origin may frame (the analytics frame, modules/analytics). `analytics: false`: a page that never
+ * loads Google Analytics.
+ */
+export function contentSecurityPolicy(
+  config: Config,
+  host: string | undefined,
+  secure: boolean,
+  opts: { framable?: boolean; ancestors?: string[]; selfFramed?: boolean; analytics?: boolean } = {},
+): string {
+  const ancestors = opts.selfFramed ? ["'self'"] : (opts.ancestors ?? (opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors : ["'none'"]));
   const ws = host ? (secure ? `wss://${host}` : `ws://${host} wss://${host}`) : '';
   const s3 = config.s3?.publicUrl ? new URL(config.s3.publicUrl).origin : '';
+  // Google Analytics, only when GA_MEASUREMENT_ID is set: its loader, where it reports, and the
+  // app's same-origin analytics frame. Never on a page another site may frame (the assistants'
+  // live view, a board embedded anywhere) nor on the embeds' own pages: they load no analytics.
+  const ga = !!config.googleAnalyticsId && !opts.framable && !opts.ancestors && opts.analytics !== false;
   return [
     "default-src 'self'",
-    "script-src 'self'",
-    // React style attributes + Google Fonts stylesheet.
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' data: https://fonts.gstatic.com",
+    ga ? `script-src 'self' ${GA_SCRIPT_ORIGIN}` : "script-src 'self'",
+    // React style attributes. Fonts are self-hosted (scripts/fonts.mjs); data: is an export's
+    // inlined faces.
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
     // Board images may link any https image (pasted URLs); exports render through data:/blob:.
     `img-src 'self' data: blob: https: ${s3}`.trim(),
     // Video and audio items play our own uploads (redirected to the bucket when it serves them);
     // blob: is the file being dropped, read locally for its poster frame before it is uploaded.
     `media-src 'self' blob: ${s3}`.trim(),
     // https: lets "paste an image URL" fetch and re-host the image, and exports inline web fonts.
-    `connect-src 'self' ${ws} https:`.replace(/\s+/g, ' '),
+    `connect-src 'self' ${ws} https:${ga ? ` ${GA_CONNECT_SOURCES.join(' ')}` : ''}`.replace(/\s+/g, ' '),
     "worker-src 'self' blob:",
     // Live embeds in link cards (features/embed): the built-in providers' players and viewers plus
     // the operator's EMBED_EXTRA_ORIGINS — only these origins, only after a click.
-    `frame-src ${[...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
+    `frame-src ${[...(ga ? ["'self'"] : []), ...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -180,7 +201,7 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
 export function securityHeaders(config: Config): RequestHandler {
   return (req, res, next) => {
     const frame = req.method === 'GET' && framable(req.path);
-    res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { framable: frame }));
+    res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { framable: frame, analytics: !NO_ANALYTICS.test(req.path) }));
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!frame) res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');

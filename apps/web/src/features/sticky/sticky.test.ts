@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { StickyElement } from '@freero/shared';
+import { STICKY_COLORS, STICKY_INK, stickyInk, type StickyColor, type StickyElement } from '@freero/shared';
 import { createTestBoard, type FeatureBundle } from '@engine';
 import manifest from './feature';
 import stickyDef from './element';
@@ -7,6 +7,8 @@ import commands from './commands';
 import { DELETED_USER, authorLabel, authorLabelsShown } from './lib/authors';
 import { gridPositions, nextFreeSlot } from './lib/layout';
 import { listItems } from './lib/paste';
+import { setStickyBox } from './lib/actions';
+import { stickyPreset } from './lib/constants';
 
 describe('Tab / Mod+Enter placement', () => {
   const from = { x: 0, y: 0, w: 200, h: 200 };
@@ -85,8 +87,9 @@ describe('pasting onto selected stickies', () => {
 describe('mixed-selection style', () => {
   it('a fill picked for a sticky + shape selection paints the sticky the closest paper, not the default yellow', () => {
     const sticky = { ...stickyDef.defaults(), id: 's', x: 0, y: 0 } as unknown as StickyElement;
-    expect(stickyDef.applySharedStyle!(sticky, { fill: '#2F80ED' })).toEqual({ color: 'blue' });
-    expect(stickyDef.applySharedStyle!(sticky, { fill: '#E5484D' })).toEqual({ color: 'coral' });
+    expect(stickyDef.applySharedStyle!(sticky, { fill: '#2F80ED' })).toEqual({ color: 'royal' });
+    expect(stickyDef.applySharedStyle!(sticky, { fill: '#E5484D' })).toEqual({ color: 'red' });
+    expect(stickyDef.applySharedStyle!(sticky, { fill: '#B5D6FF' })).toEqual({ color: 'blue' });
   });
 });
 
@@ -118,6 +121,49 @@ describe('sticky author labels', () => {
       b.runCommand('sticky.toggleAuthors');
       board.sync();
       expect(authorLabelsShown(a)).toBe(false);
+    } finally {
+      board.destroy();
+    }
+  });
+});
+
+describe('sticky papers and their ink', () => {
+  const lum = (hex: string) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const ratio = (a: string, b: string) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+
+  it('every paper, dark ones included, gets an ink that reads at WCAG AA on it', () => {
+    for (const [name, paper] of Object.entries(STICKY_COLORS)) expect(ratio(paper, stickyInk(name)), name).toBeGreaterThanOrEqual(4.5);
+    expect(stickyInk('navy')).not.toBe(STICKY_INK);
+  });
+
+  it('a new sticky on a dark paper still stores the dark ink, so a client that doesn’t know the paper draws readable text on its yellow fallback', () => {
+    const navy = { ...stickyDef.defaults(), color: 'navy' as StickyColor };
+    expect(navy.textColor).toBe(STICKY_INK);
+    expect(ratio(STICKY_COLORS.yellow, navy.textColor)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('sticky shape and size', () => {
+  it('making a freely resized sticky a rectangle gives it the medium rectangle around the same center', () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest, elements: [stickyDef], tools: [], formats: [], panels: [], commands: [] }] });
+    try {
+      const [ann] = board.editors('sticky');
+      const id = ann.create<'sticky'>({ ...stickyDef.defaults(), x: 0, y: 0, w: 230, h: 230 } as never);
+      const small = ann.create<'sticky'>({ ...stickyDef.defaults(), x: 1000, y: 0, w: 140, h: 140 } as never);
+      setStickyBox(ann, [ann.getElement<StickyElement>(id)!, ann.getElement<StickyElement>(small)!], { shape: 'rect' });
+      const a = ann.getElement<StickyElement>(id)!;
+      expect([a.w, a.h]).toEqual([300, 200]);
+      expect([a.x + a.w / 2, a.y + a.h / 2]).toEqual([115, 115]);
+      // A preset sticky keeps its size and changes shape only.
+      expect(stickyPreset(ann.getElement<StickyElement>(small)!)).toEqual({ shape: 'rect', size: 's' });
+      ann.undo();
+      expect([ann.getElement<StickyElement>(id)!.w, ann.getElement<StickyElement>(small)!.w]).toEqual([230, 140]);
     } finally {
       board.destroy();
     }

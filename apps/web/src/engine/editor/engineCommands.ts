@@ -17,13 +17,17 @@ import {
   PaintBucket,
   Scissors,
   SendToBack,
+  ShieldCheck,
   Trash2,
   Ungroup,
 } from 'lucide-react';
+import { isProtectedLock } from '@freero/shared';
 import type { CommandDefinition, Editor } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { nextZoomStep } from '../camera/camera';
 import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from './boardSettings';
+
+const PROTECTED_NOTE = 'Only the board owner can unlock a protected item.';
 
 /** Commands whose shortcut is display-only: the keyboard path is the native copy/cut/paste event. */
 export const NATIVE_CLIPBOARD_COMMANDS = new Set(['engine.copy', 'engine.cut', 'engine.paste']);
@@ -116,7 +120,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     // Brackets need AltGr on many layouts (handled in matchShortcut); the arrows work on every one.
     // Mod+Shift+] / [ is the tab switch of Chrome and Safari on macOS, which can take it before the
     // board does: Mod+Alt+↑ / ↓ step forward / backward on every platform and layout (KAI-175).
-    { id: 'engine.bringToFront', icon: BringToFront, label: 'Bring to front', shortcut: 'mod+]', extraShortcuts: ['mod+shift+arrowup'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.bringToFront(sel(e)) },
+    { id: 'engine.bringToFront', icon: BringToFront, label: 'Bring to front', shortcut: 'mod+]', extraShortcuts: ['mod+shift+arrowup', 'pageup'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.bringToFront(sel(e)) },
     {
       id: 'engine.bringForward',
       icon: ArrowUp,
@@ -139,7 +143,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       disabledReason: NEEDS_SEL,
       run: (e) => e.sendBackward(sel(e)),
     },
-    { id: 'engine.sendToBack', icon: SendToBack, label: 'Send to back', shortcut: 'mod+[', extraShortcuts: ['mod+shift+arrowdown'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.sendToBack(sel(e)) },
+    { id: 'engine.sendToBack', icon: SendToBack, label: 'Send to back', shortcut: 'mod+[', extraShortcuts: ['mod+shift+arrowdown', 'pagedown'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.sendToBack(sel(e)) },
     {
       id: 'engine.lock',
       icon: Lock,
@@ -151,7 +155,29 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       run: (e) => {
         const els = selected(e);
         const lock = !els.every((el) => el.locked);
-        e.updateMany(els.map((el) => ({ id: el.id, patch: { locked: lock } })));
+        // A protected lock is lifted only by the owner (the server enforces it).
+        const held = !lock && !e.mayProtect() ? els.filter(isProtectedLock) : [];
+        if (held.length) e.host.notify(held.length === els.length ? PROTECTED_NOTE : `${PROTECTED_NOTE} The others are unlocked.`, 'info');
+        const open = els.filter((el) => !held.includes(el));
+        if (open.length) e.updateMany(open.map((el) => ({ id: el.id, patch: lock ? { locked: true } : { locked: false, lockProtected: false } })));
+      },
+    },
+    {
+      // Like a lock, but only the board owner can lift it: a template's frame, a workshop agenda. Mod+Alt+Shift+L — Mod+Shift+P, used for this
+      // elsewhere, opens a private window in Firefox and can't be taken there.
+      id: 'engine.protectLock',
+      icon: ShieldCheck,
+      label: 'Lock for the owner only',
+      shortcut: 'mod+alt+shift+l',
+      menus: ['context'],
+      detail: (e) => (selected(e).length && selected(e).every(isProtectedLock) ? 'on' : undefined),
+      when: (e) => hasSel(e) && e.mayProtect(),
+      disabledReason: 'Only the board owner can do this',
+      run: (e) => {
+        const els = selected(e);
+        const protect = !els.every(isProtectedLock);
+        // Taking protection off leaves an ordinary lock.
+        e.updateMany(els.map((el) => ({ id: el.id, patch: protect ? { locked: true, lockProtected: true } : { lockProtected: false } })));
       },
     },
     {
@@ -170,17 +196,19 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
           .catch(() => e.host.notify(link, 'info'));
       },
     },
-    { id: 'engine.zoomToFit', icon: Maximize, label: 'Zoom to fit', shortcut: 'shift+1', minRole: 'viewer', run: () => user(() => core.editor.zoomToFit()) },
+    // Alt+1 / Alt+2 / Mod+0: the keys people bring from other whiteboards, beside Freero's own.
+    { id: 'engine.zoomToFit', icon: Maximize, label: 'Zoom to fit', shortcut: 'shift+1', extraShortcuts: ['alt+1'], minRole: 'viewer', run: () => user(() => core.editor.zoomToFit()) },
     {
       id: 'engine.zoomToSelection',
       label: 'Zoom to selection',
       shortcut: 'shift+2',
+      extraShortcuts: ['alt+2'],
       minRole: 'viewer',
       when: hasSel,
       disabledReason: NEEDS_SEL,
       run: (e) => user(() => e.zoomToFit(sel(e), { maxZoom: 2 })),
     },
-    { id: 'engine.zoom100', label: 'Zoom to 100%', shortcut: 'shift+0', minRole: 'viewer', run: (e) => user(() => e.zoomTo(1)) },
+    { id: 'engine.zoom100', label: 'Zoom to 100%', shortcut: 'shift+0', extraShortcuts: ['mod+0'], minRole: 'viewer', run: (e) => user(() => e.zoomTo(1)) },
     { id: 'engine.zoomIn', label: 'Zoom in', shortcut: 'mod+=', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, 1))) },
     { id: 'engine.zoomOut', label: 'Zoom out', shortcut: 'mod+-', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, -1))) },
     {

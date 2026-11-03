@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import type { PrivateModeSession } from '@freero/shared';
-import { definePanel, useCanEdit, useCollection, useElements, type Editor } from '@engine';
+import { PRIVATE_MODE_TYPES, type PrivateModeSession } from '@freero/shared';
+import { definePanel, useCanEdit, useCollection, useElements, useParticipant, type Editor } from '@engine';
 import { Button, Toggle } from '@ui';
 import { COLLECTION, canManage, privateRule, revealAndEnd, setAnonymous, shareLeftovers } from './lib/session';
 import './private-mode.css';
@@ -17,16 +17,19 @@ function useSession(): PrivateModeSession | undefined {
 /** Session bar + the placement rule (what this user adds goes private while the session is on). */
 function PrivateModeBar({ editor }: { editor: Editor }) {
   const session = useSession();
-  const canEdit = useCanEdit();
+  const editable = useCanEdit();
+  // A participant (commenter or guest taking part) drafts like an editor while the session runs.
+  const participant = useParticipant();
+  const canEdit = editable || participant;
   const elements = useElements();
 
   useEffect(() => {
-    editor.setPrivatePlacement(session && canEdit ? privateRule(editor, session) : null);
+    editor.setPrivatePlacement(session && canEdit ? privateRule(editor, session) : null, { types: PRIVATE_MODE_TYPES });
     return () => editor.setPrivatePlacement(null);
   }, [editor, session, canEdit]);
 
   const mine = elements.filter((el) => editor.layerOf(el.id) === 'private').length;
-  if (!session) return canEdit && mine > 0 ? <LeftoverBar editor={editor} count={mine} /> : null;
+  if (!session) return editable && mine > 0 ? <LeftoverBar editor={editor} count={mine} /> : null;
   const frame = session.frameId ? editor.getElement(session.frameId) : undefined;
   const where = frame && 'title' in frame && frame.title ? ` in “${frame.title}”` : frame ? ' in a frame' : '';
   const by = session.startedBy === editor.user.id ? 'you reveal' : `${session.startedByName || 'the facilitator'} reveals`;

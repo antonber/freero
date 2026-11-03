@@ -465,6 +465,11 @@ export async function takeInvite(tokenHash: string, now: number): Promise<Invite
   return r ? toInvite(r) : null;
 }
 
+/** Whether a live invite was sent to `email` (an invite-only server lets that address sign up). */
+export async function hasLiveInviteFor(email: string, now: number): Promise<boolean> {
+  return (await query(`SELECT 1 FROM workspace_invites WHERE email = $1 AND expires_at > $2 LIMIT 1`, [email, new Date(now)])).length > 0;
+}
+
 export async function takeInvitesForEmail(email: string, now: number): Promise<InviteRow[]> {
   return (await query<IRow>(`DELETE FROM workspace_invites WHERE email = $1 AND expires_at > $2 RETURNING *`, [email, new Date(now)])).map(toInvite);
 }

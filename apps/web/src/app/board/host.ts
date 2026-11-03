@@ -11,6 +11,7 @@ import {
 } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
+import { track } from '../analytics/bridge';
 import { api, wsBase } from '../api/client';
 import {
   deleteTemplate,
@@ -43,6 +44,10 @@ import {
 import { holdBackup, RESTORE_PATH } from '../lib/pendingBackup';
 import { takeShare } from '../lib/pendingShare';
 import { serverNow, syncServerClock } from './serverClock';
+import { getThemePreference, setThemePreference } from '../lib/theme';
+
+/** The theme for people without an account here: kept in this browser only. */
+const browserTheme: NonNullable<Host['colorTheme']> = { get: getThemePreference, set: setThemePreference };
 
 export interface HostDeps {
   user: HostUser;
@@ -63,6 +68,8 @@ export interface HostDeps {
    * board: a link that just got a password offers its password form in place (#39).
    */
   onAccessLost?: () => void;
+  /** The person's theme (app/lib/theme.ts; saved to their account when they have one). */
+  colorTheme?: Host['colorTheme'];
 }
 
 /** Close code of a board socket whose access ended (y-websocket contract in @freero/shared api.ts). */
@@ -146,8 +153,10 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     reportExport: (format) => reportExport(board.id, format),
     openShareDialog: deps.openShareDialog,
     ...(deps.reportProblem ? { reportProblem: deps.reportProblem } : {}),
+    ...(deps.colorTheme ? { colorTheme: deps.colorTheme } : {}),
     navigate: deps.navigate,
     notify: deps.notify,
+    track,
     serverNow,
     listMembers: () => listMembers(board.id),
     lookupUsers: (ids) => lookupUsers(board.id, ids),
@@ -234,6 +243,7 @@ export function createGuestHost(
     downloadFile: downloadBoardFile(board.id),
     renameBoard: needsAccount('Renaming boards'),
     saveThumbnail: async () => undefined,
+    colorTheme: browserTheme,
     openShareDialog: signUp,
     navigate: (path) => (path === '/app' || path === '/' ? signUp() : deps.navigate(path)),
     notify: deps.notify,
@@ -491,6 +501,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
       deps.onTitleChange(next);
     },
     saveThumbnail: async () => undefined,
+    colorTheme: browserTheme,
     openShareDialog: () => deps.notify('Sharing needs a real board — the local sandbox is offline.', 'info'),
     navigate: deps.navigate,
     notify: deps.notify,

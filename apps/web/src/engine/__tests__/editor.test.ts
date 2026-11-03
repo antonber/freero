@@ -216,3 +216,37 @@ describe('discrete commands', () => {
     expect(core.editor.getElement(id)!.locked).toBeFalsy(); // …only the lock was undone
   });
 });
+
+describe('protected lock', () => {
+  const facilitation = bundle('facilitation', { manifest: { name: 'facilitation', description: 'f', owns: ['facilitation'] } });
+  const board = (role: 'owner' | 'editor') => {
+    core = makeCore({ role, bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>] }), facilitation] });
+    const guarded = core.editor.create({ type: 'sticky', x: 0, y: 0, locked: true, lockProtected: true } as never);
+    const plain = core.editor.create({ type: 'sticky', x: 300, y: 0, locked: true } as never);
+    return { guarded, plain };
+  };
+
+  it("an editor's unlock leaves a protected item locked (ordinary locks beside it open), nothing lets them change it, and they can't protect, not even while facilitating", () => {
+    const { guarded, plain } = board('editor');
+    core.scoped('facilitation').collection('facilitation').set('session', { by: 'u1', byName: 'Tester', startedAt: 1, locked: false, allowedTypes: null, follow: false, cursorsHidden: false });
+    core.editor.select([guarded, plain]);
+    core.editor.runCommand('engine.lock');
+    expect([core.editor.getElement(guarded)!.locked, core.editor.getElement(plain)!.locked]).toEqual([true, false]);
+    // Everything that asks "may I change these?" (moves, handles, typing, participants' drafts) says no.
+    expect([core.editor.mayEdit([guarded]), core.editor.mayEdit([plain])]).toEqual([false, true]);
+    core.editor.select([plain]);
+    core.editor.runCommand('engine.protectLock');
+    expect(core.editor.getElement(plain)!.lockProtected).toBeFalsy();
+  });
+
+  it('the owner protects and lifts protected locks', () => {
+    const { guarded, plain } = board('owner');
+    expect(core.editor.mayEdit([guarded])).toBe(true);
+    core.editor.select([plain]);
+    core.editor.runCommand('engine.protectLock');
+    expect(core.editor.getElement(plain)).toMatchObject({ locked: true, lockProtected: true });
+    core.editor.select([guarded]);
+    core.editor.runCommand('engine.lock');
+    expect(core.editor.getElement(guarded)).toMatchObject({ locked: false, lockProtected: false });
+  });
+});

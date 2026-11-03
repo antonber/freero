@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { isAnonymousAuthor, type BoardElement, type PrivateModeSession } from '@freero/shared';
+import { isAnonymousAuthor, stickyInk, type BoardElement, type PrivateModeSession } from '@freero/shared';
 import { defineDecoration, useCollection, useEditor, useGonePeople, usePeople } from '@engine';
 import { COLLECTION, authorLabel, authorLabelsOn, privateModeRunning, type AuthorLabels } from './lib/authors';
 
@@ -16,7 +16,11 @@ const Label = memo(function Label({ element }: { element: BoardElement }) {
   if (!text) return null;
   const s = Math.max(0.6, Math.min(2, Math.min(element.w, element.h) / 200));
   return (
-    <div className="fr-sticky-author" style={{ ['--s' as string]: s }} title={`Written by ${text}`}>
+    <div
+      className="fr-sticky-author"
+      style={{ ['--s' as string]: s, color: element.type === 'sticky' ? stickyInk(element.color) : undefined }}
+      title={`Written by ${text}`}
+    >
       {text}
     </div>
   );

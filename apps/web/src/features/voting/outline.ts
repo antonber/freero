@@ -21,6 +21,8 @@ export default defineOutline({
       session.active ? 'in progress' : 'ended',
       `${voters(ballots, session, exists).length} voted`,
       `${session.votesPerUser} votes each`,
+      ...(session.maxPerItem ? [`at most ${session.maxPerItem} per item`] : []),
+      ...(session.anonymousBallots ? ['anonymous'] : []),
       ...(showTotals ? [] : ['results hidden until it ends']),
     ].join(' · ');
     if (!showTotals) return { notes: [note] };

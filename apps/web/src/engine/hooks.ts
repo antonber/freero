@@ -250,6 +250,13 @@ export function useFollowing(): FollowTarget | null {
   return useUi((s) => s.following);
 }
 
+/** [additive] This commenter may take part in votes, planning poker and private mode (Editor.isParticipant). */
+export function useParticipant(): boolean {
+  const participant = useUi((s) => s.participant);
+  const canEdit = useCanEdit();
+  return participant && !canEdit;
+}
+
 /** [additive] A facilitator's limits for this user (Editor.getLimits), null when none. */
 export function useLimits(): SessionLimits | null {
   return useUi((s) => s.limits);

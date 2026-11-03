@@ -14,11 +14,15 @@ import {
   FILTER_OPS,
   LAYOUT_LIMITS,
   STICKY_COLORS,
+  STICKY_SHAPES,
+  STICKY_SIZES,
   UNTRUSTED_CONTENT_NOTICE,
   type ApiScope,
   type FieldType,
   type FilterOp,
   type StickyColor,
+  type StickyShape,
+  type StickySize,
   type StructureInput,
   type StructurePlacement,
 } from '@freero/shared';
@@ -97,8 +101,16 @@ const color = z
   .describe('Sticky note color.');
 const text = z.string().min(1).max(LAYOUT_LIMITS.text);
 const link = z.string().max(2000).regex(/^(https?:|mailto:|tel:|#)/i, 'an http(s), mailto: or tel: URL, or #<item id>').optional().describe('Where the item links to: a URL (an issue, a doc, a page), or #<item id> on this board.');
-/** A new sticky: its text, or { text, link?, color? }. */
-const stickyItem = z.union([text, z.object({ text, link, color }).strict()]);
+const stickyShape = z
+  .enum(STICKY_SHAPES as unknown as [StickyShape, ...StickyShape[]])
+  .optional()
+  .describe('square (default) or rect: a rectangle half again as wide as it is tall.');
+const stickySize = z
+  .enum(STICKY_SIZES as unknown as [StickySize, ...StickySize[]])
+  .optional()
+  .describe('s, m (default) or l.');
+/** A new sticky: its text, or { text, link?, color?, shape?, size? }. */
+const stickyItem = z.union([text, z.object({ text, link, color, shape: stickyShape, size: stickySize }).strict()]);
 const cardItem = z
   .object({
     title: text.describe('The card title.'),
@@ -526,14 +538,23 @@ export const TOOLS: McpTool[] = [
     annotations: ADD,
     input: {
       boardId,
-      stickies: z.array(stickyItem).min(1).max(API_MAX_ITEMS_PER_CALL).describe('Each sticky note: its text, or { text, link?, color? }.'),
+      stickies: z.array(stickyItem).min(1).max(API_MAX_ITEMS_PER_CALL).describe('Each sticky note: its text, or { text, link?, color?, shape?, size? }.'),
       title: z.string().max(200).optional().describe('A heading above the grid (not with placement.into a kanban or cluster).'),
       color,
+      shape: stickyShape.describe('Every sticky’s shape unless one says otherwise: square (default) or rect.'),
+      size: stickySize.describe('Every sticky’s size unless one says otherwise: s, m (default) or l.'),
       near,
       placement,
     },
     async run(call, a) {
-      const out = await addStructure(call, a.boardId, { kind: 'stickies', items: a.stickies, ...(a.title ? { title: a.title } : {}), ...(a.color ? { color: a.color } : {}) }, a.near, a.placement);
+      const box = { ...(a.shape ? { shape: a.shape } : {}), ...(a.size ? { size: a.size } : {}) };
+      const out = await addStructure(
+        call,
+        a.boardId,
+        { kind: 'stickies', items: a.stickies, ...(a.title ? { title: a.title } : {}), ...(a.color ? { color: a.color } : {}), ...box },
+        a.near,
+        a.placement,
+      );
       const ids = out.parts?.[0]?.ids ?? out.created;
       const titleId = out.parts?.[0]?.titleId;
       return plain(

@@ -1,4 +1,4 @@
-// The only writer of `audit_events` and `audit_chains` [S4]. Events are only ever inserted, and
+// The only writer of `audit_events`, `audit_chains` and `audit_anchors` [S4]. Events are only ever inserted, and
 // deleted only by pruneChain (the oldest ones of a chain, under the database's append-only trigger).
 import type { AuditMetadata } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
@@ -179,8 +179,49 @@ export async function pruneChain(chain: string, before: number): Promise<number>
     if (!last) return 0; // nothing stored up to there (already pruned)
     await query(`SELECT set_config('freero.audit_prune', 'on', true)`);
     const gone = await query(`DELETE FROM audit_events WHERE chain = $1 AND seq <= $2 RETURNING 1`, [chain, through]);
+    await query(`DELETE FROM audit_anchors WHERE chain = $1 AND seq <= $2`, [chain, through]);
     await query(`SELECT set_config('freero.audit_prune', 'off', true)`);
     await query(`UPDATE audit_chains SET pruned_seq = $2, pruned_hash = $3 WHERE chain = $1`, [chain, through, last.hash]);
     return gone.length;
   });
+}
+
+// ---- anchors: signed checkpoints of chain heads (#17) ----
+
+export interface AnchorRow {
+  chain: string;
+  seq: number;
+  hash: string;
+  anchoredAt: number;
+  mac: string;
+}
+
+/** Chains whose head moved past their newest anchor (or that have none yet), with that head. */
+export async function headsToAnchor(limit: number): Promise<Array<{ chain: string; seq: number; hash: string }>> {
+  const rows = await query<{ chain: string; seq: string | number; hash: string }>(
+    `SELECT c.chain, c.seq, c.hash FROM audit_chains c
+     WHERE c.seq > 0 AND c.seq > COALESCE((SELECT max(a.seq) FROM audit_anchors a WHERE a.chain = c.chain), 0)
+     ORDER BY c.chain LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({ chain: r.chain, seq: Number(r.seq), hash: r.hash }));
+}
+
+export async function insertAnchor(a: AnchorRow): Promise<void> {
+  await query(`INSERT INTO audit_anchors (chain, seq, hash, anchored_at, mac) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`, [
+    a.chain,
+    a.seq,
+    a.hash,
+    new Date(a.anchoredAt),
+    a.mac,
+  ]);
+}
+
+/** A chain's anchors, oldest first. */
+export async function anchorsOf(chain: string): Promise<AnchorRow[]> {
+  const rows = await query<{ chain: string; seq: string | number; hash: string; anchored_at: Date; mac: string }>(
+    `SELECT * FROM audit_anchors WHERE chain = $1 ORDER BY seq`,
+    [chain],
+  );
+  return rows.map((r) => ({ chain: r.chain, seq: Number(r.seq), hash: r.hash, anchoredAt: r.anchored_at.getTime(), mac: r.mac }));
 }

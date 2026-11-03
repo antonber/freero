@@ -1,7 +1,7 @@
 import { Shapes as ShapesIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { looksLikeMermaid, type ShapeElement } from '@freero/shared';
-import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
+import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
 import { anchorOnOutline, ENTITY_FONT, ENTITY_LINE, ENTITY_PAD, entityDivider, hitShape, insetPaths, outlineToward, textBox } from './lib/geometry';
 import { DEFAULT_SIZE } from './lib/constants';
 import { shapeDefaults } from './lib/actions';
@@ -27,30 +27,34 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
   const entity = shape === 'erdEntity';
   const pad = entity ? ENTITY_PAD + sw / 2 : Math.max(4, Math.min(tb.w, tb.h) * 0.07) + sw / 2;
   const transparent = fill === 'transparent';
+  // Unfilled, the outline and text lie on the canvas: their default ink turns light on a dark page
+  // (painted through `color` + currentColor; the doc keeps the authored colour).
+  const ink = transparent ? canvasInk(stroke) : stroke;
+  const textInk = transparent ? canvasInk(element.textColor) : undefined;
   // An entity is a table: title line, a divider, then one attribute per line.
   const divider = entity ? entityDivider(element.fontSize, sw) : 0;
   return (
     <div className="fr-shape">
-      <svg className="fr-shape__svg" width={w} height={h} aria-hidden>
+      <svg className="fr-shape__svg" width={w} height={h} aria-hidden style={{ color: ink }}>
         <path
           d={paths.outline}
           fill={transparent ? 'none' : fill}
           fillOpacity={fillOpacity}
-          stroke={sw > 0 ? stroke : 'none'}
+          stroke={sw > 0 ? 'currentColor' : 'none'}
           strokeWidth={sw}
           strokeDasharray={dashArray(strokeStyle, sw)}
           strokeLinejoin="round"
           strokeLinecap={strokeStyle === 'dotted' ? 'round' : 'butt'}
         />
         {paths.dashed && sw > 0 && (
-          <path d={paths.dashed} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={`${Math.max(6, sw * 3)} ${Math.max(5, sw * 2.5)}`} />
+          <path d={paths.dashed} fill="none" stroke="currentColor" strokeWidth={sw} strokeDasharray={`${Math.max(6, sw * 3)} ${Math.max(5, sw * 2.5)}`} />
         )}
-        {entity && sw > 0 && divider < h - sw && <path d={`M${sw / 2} ${divider}H${w - sw / 2}`} stroke={stroke} strokeWidth={sw} />}
+        {entity && sw > 0 && divider < h - sw && <path d={`M${sw / 2} ${divider}H${w - sw / 2}`} stroke="currentColor" strokeWidth={sw} />}
         {paths.details && sw > 0 && (
           <path
             d={paths.details}
             fill="none"
-            stroke={stroke}
+            stroke="currentColor"
             strokeWidth={sw}
             strokeDasharray={dashArray(strokeStyle, sw)}
             strokeLinecap={strokeStyle === 'dotted' ? 'round' : 'butt'}
@@ -67,9 +71,10 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
               placeholder=""
               fontSize={element.fontSize === 'auto' ? ENTITY_FONT : element.fontSize}
               style={{ lineHeight: ENTITY_LINE }}
+              color={textInk}
             />
           ) : (
-            <ElementText element={textEl} field="text" padding={pad} placeholder="" />
+            <ElementText element={textEl} field="text" padding={pad} placeholder="" color={textInk} />
           )}
         </div>
       )}

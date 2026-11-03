@@ -16,6 +16,7 @@ import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
 import { AdminOverview } from './AdminOverview';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
+import { AdminSiem, siemOffered } from './AdminSiem';
 import { AdminWebhooks, webhooksOffered } from './AdminWebhooks';
 import { AdminTrackers } from './AdminTrackers';
 import './admin.css';
@@ -44,6 +45,8 @@ export function AdminConsolePage() {
   const [ai, setAi] = useState(false);
   // And the Webhooks tab only when it offers webhooks.
   const [hooks, setHooks] = useState(false);
+  // And audit streaming only when it offers that.
+  const [siem, setSiem] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -61,6 +64,7 @@ export function AdminConsolePage() {
     let live = true;
     if (manages) void aiOffered(workspaceId).then((on) => live && setAi(on));
     if (manages) void webhooksOffered(workspaceId).then((on) => live && setHooks(on));
+    if (manages) void siemOffered(workspaceId).then((on) => live && setSiem(on));
     return () => {
       live = false;
     };
@@ -127,7 +131,12 @@ export function AdminConsolePage() {
             {tab === 'api' ? <AdminApi workspace={workspace} /> : null}
             {tab === 'webhooks' ? <AdminWebhooks workspace={workspace} /> : null}
             {tab === 'trackers' ? <AdminTrackers workspace={workspace} /> : null}
-            {tab === 'audit' ? <AdminAudit workspace={workspace} /> : null}
+            {tab === 'audit' ? (
+              <>
+                <AdminAudit workspace={workspace} />
+                {siem ? <AdminSiem workspace={workspace} /> : null}
+              </>
+            ) : null}
           </main>
         </div>
       )}

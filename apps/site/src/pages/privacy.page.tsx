@@ -7,7 +7,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs } from '../lib/site';
 
-const UPDATED = '2026-11-02';
+const UPDATED = '2026-11-03';
 
 export default definePage({
   path: '/privacy',
@@ -124,6 +124,7 @@ export default definePage({
           ['Moderation', 'Reviewing reports, removing content, suspending accounts, handling appeals', 'Legitimate interests (a safe service); legal obligations'],
           ['Emails about your account and boards', 'Verification, security notices, invitations, mentions and digests (you choose which digests you get)', 'Performing our contract; legitimate interests'],
           ['Operating and fixing the service', 'Logs, error reports and aggregate metrics (request counts and timings, never content)', 'Legitimate interests'],
+          ['Measuring how the service is used', L('analyticsPurpose'), L('analyticsBasis')],
           ['Problems you report', 'Reading your note, screenshot and diagnostics to find and fix what went wrong, and telling you when it is fixed', 'Legitimate interests (a working service); your choice to send the report'],
           ['Legal requirements', 'Answering lawful requests, keeping records the law requires', 'Legal obligation'],
         ]}
@@ -171,6 +172,7 @@ export default definePage({
           ['Email delivery', L('mailProvider'), 'Your email address and the message'],
           ['AI model provider', L('aiProvider'), 'Prompts and board content of AI actions you run'],
           ['Error tracking', L('errorReporting'), 'Error details, request method and path, account id'],
+          ['Analytics', L('analyticsProvider'), L('analyticsData')],
           [
             'Web fonts',
             'Google Fonts (Google LLC)',
@@ -211,7 +213,8 @@ export default definePage({
       </p>
 
       <h2 id="cookies">5. Cookies and browser storage</h2>
-      <p>The app uses only cookies it needs to work. None are for advertising or analytics. The marketing pages set no cookies.</p>
+      {/* Google Analytics (GA_MEASUREMENT_ID): consent, cookies, what Google receives, how to withdraw. */}
+      <div>{L('analyticsCookies')}</div>
       <Table
         caption="Cookies"
         stack

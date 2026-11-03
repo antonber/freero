@@ -134,11 +134,15 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A kanban's saved views (`KanbanElement.views` / `activeView`: what cards show, density, colour-by, `groupBy`, `subGroupBy`, other fields' column settings, `filter`, `sort` and the manual order kept while sorted, the view `locked`; since 3a also its table tabs — columns, filter, sort, lock — and the tab everyone starts on; since 3b list, calendar and timeline tabs — a list's fields and grouping, a calendar's date field, a timeline's start / end fields, scale and swimlanes) and swimlane geometry (`lanes`) — read only through `@freero/shared` `views.ts` (`boardView`), `tabs.ts` (`viewTabs`, `projectionView`, `savedTabId`; entries of layouts a client doesn't know are kept when it writes, and so is an `activeView` naming one) and `projections.ts` (where a calendar or timeline places a card, what moving it writes) and `fields.ts` (`groupFieldId`); filters and sorts are evaluated only by `@freero/shared` `query.ts` (the free-form table's typed filter / sort too); the layout itself is `@freero/shared` `layout/kanban.ts` `planKanban` | `features/kanban` (View panel: "Save for everyone", density, group by, swimlanes, sort, lock); it keeps `colorCards` equal to "coloured by column" for older clients. Regrouping writes the old group field's values onto the cards from their positions in the same transaction, a drop into another swimlane writes that row's value (the layout's one write to card values), and the layout drops `manualOrder` once a cleared sort is undone. Server: `modules/api` `configure_view` (the saved view or a tab — `view`, `addView`, `name`, `active`, `remove` —, refused while locked by someone else) | `runCommand('kanban.setCardDisplay' / 'kanban.saveViewForEveryone' / 'kanban.groupBy' / 'kanban.setSwimlanes' / 'kanban.setMyFilter' / 'kanban.setSort' / 'kanban.lockView' / 'kanban.addTab' / 'kanban.addTableTab' / 'kanban.renameTab' / 'kanban.deleteTab')` |
 | A linked view (`KanbanViewElement`, type `kanbanview`, step 3c: a kanban's cards as a table, list, calendar or timeline elsewhere on its board — `sourceId` and one projection view, ids only, never a copy of the cards or their labels) — read only through `@freero/shared` `linkedViews.ts` (`linkedView`, `linkedSource`) | `features/kanban` (the second element of its `element.tsx`; "Add linked view ▸" in a kanban's context menu and tab menu, the View panel: name, layout, lock, "Save for everyone"); server `modules/api` `add_view` (placed beside the kanban, `linkedViewSpot`) and `configure_view` with the linked view's id | `runCommand('kanban.addLinkedView' / 'kanban.setMyLinkedView' / 'kanban.saveLinkedView' / 'kanban.configureLinkedView')`. Its edits write the real cards through `card.setValues`, as a tab's do. Copying keeps `sourceId` (with the kanban copied along, the engine's id remap points the copy at the kanban's copy); pasted onto another board without its kanban it is left out (`pasteContent`; step 3d makes it a cross-board view) |
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
+| An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner only (`@freero/shared` `mayProtect(role)`, the one place co-owners join; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
+| A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
+| The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
+| A vote's history (`voting` keys `h:<sessionId>` → `VotingHistoryEntry`: totals only, never ballots) | `features/voting` (archived when the next vote starts or results are cleared; at most `VOTING_HISTORY_MAX`); editors only (`votingRules.ts`) | the results panel's "Past votes" |
 
 ### Host — the one typed contract between app and engine
 
@@ -191,9 +195,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   step without doing anything. Other continuous interactions (a slider) call
   `editor.beginGesture()/endGesture()`.
 - Only local writes are undoable; undo never reverts another user's change.
-- Role guard: viewers never write the doc; commenters only write `comments`. Every Editor write
-  (including undo/redo, paste, settings) checks the live role (server role message) first and
-  shows a toast instead — the server would otherwise reject the update and everything after it.
+- Role guard: viewers never write the doc; commenters only write `comments` — and, as
+  participants (`Editor.isParticipant`, see "Participants"), their own ballot, planning-poker pick
+  and private-mode drafts. Every Editor write (including undo/redo, paste, settings) checks the live
+  role (server role message) first and shows a toast instead — the server would otherwise reject
+  the update and everything after it.
 
 ### Engine contract additions (additive, `engine/api.ts` / `@engine`)
 
@@ -220,7 +226,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   while its `when` holds (a kanban card's arrows move it between and within columns, where a nudge
   would only be laid back); when no such command applies the arrows work as usual.
 - `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
-  the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
+  the shortcut reference; menus show `shortcut`). Every command's own `shortcut` is tried before
+  any command's extras, so an alias answers only where no command owning that key applies right
+  now (Mod+K: "Link to…" on one selected item, else the palette alias), whatever the feature order.
+  While text is edited, a key press that types a character (Option+1 on a Mac) is never a shortcut. Punctuation shortcuts match the typed character,
   and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
   `mod+<character>`, so Ctrl+[ / Ctrl+] work where brackets need AltGr; Bring to front / Send to
   back also have Ctrl+Shift+↑ / ↓ on every layout.
@@ -296,7 +305,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `boardId` gives the replicas another board's id (two test boards = two boards: a paste from one
   into the other); `board.element(user, id)` is element `id` as replica `user` draws it on the
   canvas (its component inside that replica's engine, selected while that replica selects it), to
-  render with react-dom and test what an element shows and does, its hooks included.
+  render with react-dom and test what an element shows and does, its hooks included. `roles`
+  gives each replica its own role and `participants` (indexes) marks commenters the server lets
+  take part (`Editor.isParticipant`).
 - Collections hold LWW values per key. When several people may change the same logical thing
   at once, give each independent change its own key (one record per message / reaction /
   vote) instead of read-modify-writing one big value. Example: `comments` (layout in
@@ -921,6 +932,16 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
 - `Host.reportProblem?({ role })`: opens the app's "Report a problem" dialog (absent for visitors and
   in the sandbox); `features/problem-report` puts it in the board menu with `mod+alt+p`. `fontEmbedCss(node)`
   is exported for the app's screenshot of the visible page (see "Problem reports").
+- `Host.track?(event: AnalyticsEvent)`: counts a product event from the closed list in
+  `@freero/shared` `analytics.ts` (absent in the sandbox, for guests and in embeds; a no-op unless
+  Google Analytics is on and accepted). See "Analytics".
+- Participants (parity rank 1, see "Participants" under Realtime): `Editor.isParticipant()` /
+  `useParticipant()` (the role message's `participant`), `Editor.mayEdit(ids)` (an editor: any; a
+  participant: only their own drafts — element writes, moves, resizes, text editing and Delete
+  check it), `Editor.setPrivatePlacement(rule, { types })` (the types the rule can make private: a
+  participant may add those when the rule sends them private, and gets the tools that add only
+  them; their drafts join no container). Collections in `PARTICIPANT_WRITABLE` (`voting`,
+  `estimation`) are writable for a participant, shared and private; the server decides which keys.
 
 ### Installable app (PWA, KAI-140)
 
@@ -1018,7 +1039,8 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
   auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
-  pages only, with its origin in their CSP. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
+  pages only, with its origin in their CSP; `GA_MEASUREMENT_ID` adds the Google Analytics runtime
+  (see "Analytics" below). The build itself never contains a script: both are added when served. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
   `scripts/indexnow.mjs` submits the live sitemaps' URLs (or those changed since a day) after a deploy.
 - **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
   written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
@@ -1046,6 +1068,42 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   internal link, the comparison publishing rule); `npm run verify -- --only site` runs it on a real
   server with a real session and with `SITE=false`, and fetches every sitemap URL (200, no
   redirect, no noindex, its own canonical).
+
+## Analytics (Google Analytics 4, `GA_MEASUREMENT_ID`; server `modules/analytics`, web `app/analytics`)
+
+Off unless the operator sets `GA_MEASUREMENT_ID` (the hosted service does; self-hosted servers get
+nothing: no script tag, no frame, `/analytics.js` and `/analytics-frame` answer 404, the CSP is
+byte-for-byte what it was). When on:
+
+- **Consent first (Consent Mode v2, basic).** `app/analytics/runtime.ts` is the one place that
+  decides: nothing from Google loads until the visitor chooses Accept in the banner (Accept and
+  Decline look the same; GPC / Do Not Track count as Decline; the choice lives in local storage
+  under `freero:analytics-consent` for 6 months). Google's tag then starts with all four consent
+  types denied and only `analytics_storage` granted; ad storage, ad user data, ad personalisation
+  and Google signals stay off. Decline (or withdrawing later through "Cookie settings": the site
+  footer, the app's Help menu, the privacy policy) deletes the `_ga*` cookies. The runtime has no
+  imports: `vite.config.ts` (`freero-analytics`) builds it alone into `dist/analytics.js`, and the
+  app imports the same functions.
+- **Marketing pages** (`modules/site`) get `<script src="/analytics.js" data-freero-ga=…>`; the
+  runtime runs Google's tag in the page itself (public content), reporting the path with the query
+  reduced to UTM tags and the referrer reduced to its origin.
+- **The app never runs Google's tag in its own document**, which holds board titles, content,
+  names and links that GA's automatic measurements (outbound clicks, file downloads, the tab title,
+  history changes) would read. The bridge (`app/analytics/bridge.ts`, mounted by `AppAnalytics`)
+  creates a hidden same-origin frame, `/analytics-frame` (only this origin may frame it), after
+  consent and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
+  token removed (`/board/<id>` → `/board`, unknown routes → `/not-found`), a generic title — and
+  events from the closed list `AnalyticsEvent` (`sign_up` / `login` with the method, `board_created`,
+  `template_used` with a built-in template's public id), validated by `analyticsEventParams`.
+  `/embed/*` (the assistants' live view, boards embedded on other sites, their sign-in popup),
+  `/operator*` and `/oauth/*` are never reported and never show the banner. Features
+  count events through `Host.track` (optional; the templates feature is the only user).
+- **Single writers:** the consent choice — `runtime.ts` `saveChoice` (banner buttons); page views —
+  `AppAnalytics` → `reportPage`; events — `track` (AuthContext, `api.createBoard`, `Host.track`).
+- **CSP** (`platform/security.ts`, only with the id; never on a page another site may frame —
+  `allowFraming`, `frameFromAnySite` — nor on `/embed/*`): `script-src` +
+  `https://www.googletagmanager.com`, `connect-src` + Google's collection hosts, `frame-src` +
+  `'self'`. The privacy policy's analytics tokens (`modules/site/legal.ts`) describe exactly this.
 
 ## UI kit (`ui/`) — exports from `@ui`
 
@@ -1122,10 +1180,13 @@ period, orchestrating the owning modules' exports), `notifications` (notificatio
 notification_prefs, pending_mentions, card_due_watch, board_change_digests: inbox, live delivery,
 email digests, due-date reminders, the "changes on your boards" email), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on),
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on;
+sso_domain_policies, sso_domain_captures: domain control),
 `scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
-identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
+identity and data"), `audit` (audit_events, audit_chains, audit_anchors: the append-only audit log
+and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed to workspaces'
+SIEMs; see "Audit log, admin console and workspace policies"), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
 policies"), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
 (ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
@@ -1143,7 +1204,8 @@ see "Issue trackers" below), `search` (search_entries, search_sources: the searc
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
 document realtime stores; see "Docs and native live embeds"), `site` (no table: serves the built
-marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
+endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
@@ -1225,7 +1287,8 @@ reports" below).
   (board sockets) treats it as signed out. Emailed links carry 256-bit single-use tokens stored as
   sha256 and deleted on use (one `DELETE … RETURNING`, so two concurrent uses can't both win).
   Proving an address (verification link, reset, email change, an invite link mailed to it) fires
-  `onEmailVerified`, where members turns that address's pending invites into memberships; an
+  `onEmailVerified` — so does an account born verified (a provider or the organization's directory
+  vouched for it: `insertAccount`), where members turns that address's pending invites into memberships; an
   unverified account never picks up invites and can't invite or share by link.
 - Sign-in methods (`modules/auth`): `oidc.ts` is a generic OpenID Connect relying party
   (openid-client: authorization code + PKCE, state, nonce, id-token validation) configured by issuer
@@ -1497,11 +1560,18 @@ members with roles owner / admin / member / guest (separate from board roles).
   tests, `SSO_DNS_SERVERS` for operators, never skipped). Only a VERIFIED domain counts, and one
   workspace at most holds it: it routes sign-ins (`GET /api/sso/discover`, by domain only), lets the
   workspace's IdP vouch for addresses at it, scopes SCIM provisioning and "Enforce SSO".
-- **SSO** (`sso/signIn.ts`): SP-initiated only. SAML via `@node-saml/node-saml` (signed assertion
-  required, audience = the workspace's entity ID, `validateInResponseTo: always`, assertion-ID
-  replay cache — both in `sso_saml_cache`, per workspace, shared by instances, consumed in one
-  statement) plus our Recipient check on the verified assertion; claims are read only from the
-  verified assertion. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+- **SSO** (`sso/signIn.ts`): SAML via `@node-saml/node-saml` (signed assertion required, audience =
+  the workspace's entity ID, `validateInResponseTo: ifPresent`, assertion-ID replay cache kept until
+  the assertion's NotOnOrAfter — both in `sso_saml_cache`, per workspace, shared by instances,
+  consumed in one statement) plus our Recipient check on the verified assertion; claims are read
+  only from the verified assertion. A response that answers a request must answer one we sent,
+  once. **IdP-initiated** (#107; the IdP's app tile, an unsolicited response — which kind it is comes
+  from the VERIFIED InResponseTo only) is refused (`sso_unsolicited`) unless the connection's
+  `idp_initiated` switch is on (off by default); then its `Destination` must also be this ACS, its
+  RelayState counts only as a same-origin path (`unsolicitedReturnPath`), and the claims are parked
+  on a new flow bound by cookie to the browser that posted, finished by the same same-site GET
+  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). Single logout and encrypted
+  assertions: #13. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
   `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
   a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
   started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
@@ -1514,6 +1584,22 @@ members with roles owner / admin / member / guest (separate from board roles).
   shortens that one session. Enforcing needs a sign-in that went through and an owner as
   break-glass (exempt while still an owner), and ends the domain's non-SSO sessions; pointing the
   connection at another IdP drops enforcement.
+- **Domain control** (#64, `sso/domainControl.ts`; any VERIFIED domain, with or without SSO): only
+  accounts that proved an address at the domain are listed or taken in (an unverified claim is
+  anyone's), and only the one workspace holding the domain verified can. Admins bring existing
+  accounts in: each is emailed, `sso_domain_captures` remembers the address and the date, and the
+  `sso:domain-capture` job makes them members after the grace period if the account still has
+  that address, verified, and the domain is still the workspace's (changing the address is the
+  opt-out); their own boards are never moved. "Add new sign-ups" (`sso_domain_policies`) joins an
+  account the moment it verifies an address there (auth's `onEmailVerified`). "Block other team
+  workspaces" refuses `createTeamWorkspace` through workspaces' `onTeamWorkspaceCreation` seam
+  (403 `workspace_creation_blocked`, naming the admins). Joins use the SSO default role. Audited:
+  `sso.domain_*`, `sso.workspace_creation_refused` (in the managing workspace's log).
+- **Invite-only servers** (`auth/signups.ts`, `SIGNUPS=invite-only`, for self-hosters): signup and a
+  first personal-provider sign-in make an account only for an address something expects —
+  `onSignupExpected` checks registered by members and workspaces (a live invite) and sso (a domain
+  that adds sign-ups), `SIGNUP_DOMAINS`, operators. Directory-made accounts (SSO JIT, SCIM) pass:
+  a workspace that proved the domain vouches for them.
 - **SCIM** (`scim/`): bearer tokens per workspace (sha256; rotate = swap in one step, or overlap).
   Filters (`filter.ts`) and PATCH (`patch.ts`) are generic over the resource JSON, as Okta and
   Entra send them. Provisioned people are accounts at verified domains; groups map, by admins in
@@ -1534,7 +1620,8 @@ members with roles owner / admin / member / guest (separate from board roles).
   enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
   mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
   workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409).
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409),
+  `workspaces.onTeamWorkspaceCreation` (domain control), `auth.onSignupExpected` (invite-only).
 - **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
   under Data (pages/admin/AdminIdentity.tsx).
 
@@ -1795,7 +1882,8 @@ audit and admin controls are the same code.
   accounts and accounts awaiting deletion. 401/403 carry a `WWW-Authenticate` challenge naming the
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
-  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`. Effective
+  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`, `audit:read`
+  (a team workspace's audit log, for its owners/admins: `api/audit.ts`). Effective
   power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
   write.
 - **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
@@ -2375,7 +2463,22 @@ module isn't the natural call and for the operator CLI: modules/audit registers 
   pruned one, so an edited row, a gap, a dropped newest event or oldest events removed outside
   retention all show when the chain is checked (admin console "Integrity", `npm run admin --
   audit:verify <workspace>`). Someone with database write access could rewrite a whole chain and
-  its head; the head hash shown to admins (and in every export) is what they anchor elsewhere.
+  its head consistently; against that, the `audit:anchor` job (hourly) signs every head that moved
+  into `audit_anchors` (append-only; `seal`'s sibling `mac` under SESSION_SECRET, rotation-aware,
+  `chain.ts` `AnchorCheck`), and the check fails when a checkpoint still in retention doesn't match
+  the stored event at its seq — the rewriter can't sign their new head. Streams to a SIEM carry the
+  chain outside the database altogether (below).
+- **Streams to a SIEM** (#17, `modules/siem`, admin console Audit log tab): Splunk HEC, Microsoft
+  Sentinel (Entra ID client credentials → Logs Ingestion API), a generic HTTPS collector (signed
+  like webhooks) or syslog over TLS (certificate verified). Each sink's cursor is the seq of the
+  workspace chain `w:<id>` — handed out under the head's row lock, so seqs commit in order and a
+  cursor never passes an event still in flight. The `siem:deliver` job sends what follows the
+  cursor in order, at least once; a failed batch is retried with backoff, never skipped. Records
+  are the console's `AuditEvent` (admin's `toAuditEvents`) with their hashes, plus an hourly signed
+  `freero.audit.head`. Secrets (tokens, the collector URL, the signing secret) are one sealed blob,
+  never returned. Outbound like webhooks: https / TLS only, our own DNS check against private
+  addresses, no redirects (`SIEM_PRIVATE_ENDPOINTS` for on-prem). `SIEM=false` removes it. SIEMs
+  that pull use `GET /api/v1/workspaces/:id/audit` (`audit:read`, owners/admins; same cursor).
 - No foreign keys: the log outlives the workspaces, boards and accounts it names. Actor names are
   resolved when read (a deleted account reads "Deleted user"); targets keep the label they had.
 - Retention (`audit:retention` job, hourly): each workspace's `auditRetentionDays`, accounts' own
@@ -2617,7 +2720,8 @@ instances and checks all of this with clients on each.
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
 (`realtime/awareness.ts`), so nobody can appear as someone else. Commenters may write only the
-`comments` map, and in it only what they own (`realtime/commentRules.ts`, checked per key against
+`comments` map (participants also their own ballot, pick and drafts: see "Participants" below), and
+in it only what they own (`realtime/commentRules.ts`, checked per key against
 the server's doc): their own messages and reactions, threads they started (and their tombstones),
 deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
 state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
@@ -2642,7 +2746,9 @@ server reads it. While it runs, every EDITOR socket except the facilitator's is 
 owner never is): a socket's `role` in `rooms.ts` is its EFFECTIVE role — its access as limited by
 the session — recomputed whenever the session or the access changes and sent to the client in the
 role message with `limits` (`RoleMessage`, `SessionLimits`). A locked board makes participants
-commenters (comments only; no layer writes); `allowedTypes` limits what they may ADD. Forbidden
+commenters (comments only — plus, while the board lets commenters take part, their own ballot, pick
+and private drafts: "Participants"); `allowedTypes` limits what they may ADD (participants' drafts
+too). Forbidden
 adds, and changes of the session by anyone but its facilitator or the owner, are undone INSIDE the
 transaction that applies the update (`changedKeys` reads the values the transaction replaced), so
 nobody else ever receives them and the sender is sent the correction — dropping the update instead
@@ -2655,17 +2761,34 @@ The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no sock
 presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
 and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
 
-**Vote budget** (KAI-210, `realtime/votingRules.ts`, same compensation in the same transaction,
-shared doc and every layer doc): a socket may write only its OWN ballot (`${sessionId}:${userId}`,
-matching fields) for the RUNNING session, with at most `votesPerUser` votes; a session needs
-`VOTES_PER_USER_MIN..MAX` and keeps its budget for its id; deleting is always allowed (a new vote
-wipes everyone's ballots). Readers still cap a ballot at the budget (`countedVotes`) for values
-older than the rule.
+**Vote budget** (KAI-210, parity rank 5, `realtime/votingRules.ts`, same compensation in the same
+transaction, shared doc and every layer doc): a socket may write only its OWN ballot
+(`${sessionId}:${userId}`, matching fields) for the RUNNING session before its timer (`endsAt`,
+server clock, `VOTE_DEADLINE_GRACE_MS`), with at most `votesPerUser` votes and at most `maxPerItem`
+on one item; a session needs `VOTES_PER_USER_MIN..MAX` (1..99) and keeps what it promised for its
+id (budget, cap, sealing, anonymity, scope, starter); editors may delete any ballot (a new vote
+wipes everyone's) and write the history (`h:` keys), participants only their own ballot. Readers
+still cap a ballot at the budget and the per-item cap (`countedVotes`) for values older than the
+rule. **Anonymous votes** (`anonymousBallots`, default on in the dialog, always sealed): a ballot
+arriving in a private layer is rewritten to the server's stamp (`anonymous: true`, no name or
+colour), a shared "has voted" marker can only be the bare marker (no name, no votes) — rewritten
+inside the transaction, so the name never reaches another socket — and the reveal
+(`layers.ts` → `revealAnonymousBallots`) writes stamped ballots (or those of the running anonymous
+session) under `anon:<n>` voter ids, numbered in an order that depends only on their votes and
+continuing after earlier ones, deleting the markers. So no version, export or outline can say who
+voted for what, the facilitator and owner included; one ballot per person holds because the
+sealed ballot stays keyed by its voter in their own private layer until then. Older clients count
+`anon:<n>` ballots as ordinary ones ("Someone"). The vote's timer: the starter's client (every
+editor's when the starter has left) ends the session when it runs out; the server has stopped
+taking ballots already.
 
-Session features built on these pieces (KAI-130/131/159) add no other server rules:
-planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
-"has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
-writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
+Session features built on these pieces (KAI-130/131/159) add no other server rules for owners and
+editors: planning poker (`features/estimation`) seals each pick in the picker's private layer with
+a shared "has picked" marker and reveals one item at a time (`revealPrivate` with a per-item
+prefix), then writes the agreed value through `card.setEstimate` (cards keep one writer); a
+participant may only pick (`realtime/estimationRules.ts`: its own `v:<round>:<item>:<user>` for the
+current, unrevealed item — a value of the deck in its private layer, the bare marker in the shared
+doc). Retro mode
 (`features/retro`) stores only its step and drives every other feature through commands that take
 args — `templates.insert`, `private-mode.start/reveal`, `timer.start/stop`, `facilitation.start/set/end`,
 `voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
@@ -2688,6 +2811,23 @@ publishes only how many answered until an editor reveals it. Names appear only o
 while it was not anonymous (kept per answer as given). `engageResults` and `call` are in
 `Y_KEPT_ON_RESTORE`. The answer form is a dialog that `?activity=<id>` opens (phones: the answer link).
 
+**Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
+commenters and guests take part in a facilitator's sessions without edit access, like Engage lets
+them answer — but through their socket, because ballots, picks and drafts are layer content. A
+socket whose EFFECTIVE role is commenter (its access, or a facilitator's lock) is a participant
+while the board's switch is open (`facilitation` key `participation`, default open; the owner, the
+facilitator, or any editor while nobody facilitates changes it). `rooms.ts` recomputes it with the
+role and sends it in the role message (`participant: true`). It may write: (1) in the shared doc,
+`comments` (commenter rules) and `PARTICIPANT_WRITABLE` (`voting`, `estimation`) as plain keys —
+`filter.ts` drops anything else whole, then the vote and estimate rules undo, inside the applying
+transaction, whatever is not its own ballot / marker / pick; (2) its OWN private layer: `elements`,
+`comments`, `voting`, `estimation` only (the same confinement), the same vote / estimate rules,
+and `guardDrafts`: a draft only while private mode runs, of `PRIVATE_MODE_TYPES` (and the types a
+facilitator allows), inside private mode's frame when it has one; deleting its drafts is always
+allowed. It runs no layer ops; reveals include its layer while the switch is open. Once revealed a
+draft is ordinary board content it can no longer change (guest sticky editing is a separate policy
+decision). Old clients ignore `participant` and simply don't offer taking part.
+
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
 
 Some content must not reach everyone who can open a board: the ballots of a vote whose results are
@@ -2700,7 +2840,7 @@ only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
-| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`, with their element content: see below), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor — or as a participant: own drafts, ballot and pick only ("Participants") | private-mode drafts (`elements`, with their element content: see below), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
 | `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`, with their element content: table cells…); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
@@ -2721,8 +2861,9 @@ only to connections that may read them:
 - **Reveal** happens on the server: an owner/editor sends `{ type: 'reveal', collection, prefix? }`
   and the instance holding that socket moves those entries out of the private layers into the
   shared doc in one transaction (so it works while authors are offline or on other instances, and
-  nobody sees half a result). Only the layers of people who may still edit the board take part
-  (someone removed or made a viewer keeps theirs). That access check reads the database, so the
+  nobody sees half a result). Only the layers of people who may still edit the board take part,
+  and participants' while the board lets commenters take part (someone removed or made a viewer
+  keeps theirs). That access check reads the database, so the
   revealer's later messages are held until the reveal is applied (it stays in order with them,
   e.g. a vote ending after its ballots). `mine: true` reveals only the sender's own layer.
 - **Anonymous private mode** (#44): the facilitator switches the session's `anonymous` on in the

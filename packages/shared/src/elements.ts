@@ -60,6 +60,12 @@ export interface BaseElement {
   /** Stacking order. Higher = on top. Frames always render below non-frames. */
   z: number;
   locked?: boolean;
+  /**
+   * [additive] With `locked`: a protected lock. Only the board owner (`mayProtect`) may change,
+   * unlock, unprotect or delete the item; the server undoes anyone else's change. A client that
+   * doesn't know the field sees an ordinary lock.
+   */
+  lockProtected?: boolean;
   /** Id of the frame that contains this element, if any. */
   frameId?: string | null;
   /** Elements sharing a groupId are selected/moved together. */
@@ -100,7 +106,26 @@ export interface BaseElement {
 export type TextAlign = 'left' | 'center' | 'right';
 export type VerticalAlign = 'top' | 'middle' | 'bottom';
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
-export type FontFamily = 'sans' | 'serif' | 'mono' | 'hand';
+/**
+ * A board typeface (the web's engine/text/fonts.ts names and loads them). Ids are stored on items,
+ * so they are only ever added; a client that doesn't know one draws Inter.
+ */
+export type FontFamily =
+  | 'sans'
+  | 'serif'
+  | 'mono'
+  | 'hand'
+  | 'legible'
+  | 'rounded'
+  | 'geometric'
+  | 'grotesk'
+  | 'condensed'
+  | 'book'
+  | 'display'
+  | 'slab'
+  | 'typewriter'
+  | 'print'
+  | 'marker';
 
 /**
  * Rich text is stored as a small sanitized HTML subset:
@@ -131,8 +156,66 @@ export const STICKY_COLORS = {
   lime: '#E1F59A',
   gray: '#E6E6EA',
   white: '#FFFFFF',
+  // Saturated papers: bold enough to mark a category from across the board.
+  sun: '#FFC21A',
+  tangerine: '#F28A1E',
+  red: '#D93036',
+  magenta: '#C2338A',
+  purple: '#6A4BE0',
+  royal: '#1F66D1',
+  // Dark papers: their text is light (stickyInk).
+  teal: '#0B7A7C',
+  pine: '#1E7A45',
+  navy: '#1F2A5C',
+  plum: '#5B2A6E',
+  cocoa: '#6B4A32',
+  charcoal: '#2A2938',
 } as const;
+// Keys are only ever ADDED: a client that doesn't know a paper draws it yellow with its stored
+// (dark) text colour, so an old tab still shows a readable note.
 export type StickyColor = keyof typeof STICKY_COLORS;
+
+/**
+ * Sticky shapes and sizes: stored as nothing but `w` / `h`, so every client draws them. A rectangle
+ * is half again as wide as it is tall; S / M / L scale the side (M is the classic 200).
+ */
+export type StickyShape = 'square' | 'rect';
+export type StickySize = 's' | 'm' | 'l';
+export const STICKY_SHAPES: readonly StickyShape[] = ['square', 'rect'];
+export const STICKY_SIZES: readonly StickySize[] = ['s', 'm', 'l'];
+export const STICKY_SIDES: Record<StickySize, number> = { s: 140, m: 200, l: 280 };
+
+/** Width and height of a sticky of `shape` and `size` (default: a medium square). */
+export function stickyDims(shape: StickyShape = 'square', size: StickySize = 'm'): { w: number; h: number } {
+  const side = STICKY_SIDES[size] ?? STICKY_SIDES.m;
+  return { w: shape === 'rect' ? Math.round(side * 1.5) : side, h: side };
+}
+
+/** The ink sticky text is drawn in on light papers (`StickyElement.textColor` as stored). */
+export const STICKY_INK = '#17162B';
+/** The ink on dark papers. */
+export const STICKY_INK_LIGHT = '#FFFFFF';
+
+function luminance(hex: string): number {
+  const ch = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+
+/**
+ * The text colour a sticky of `color` is drawn with: whichever of the two inks reads better on that
+ * paper (WCAG contrast). Decided when drawing, never stored, so `textColor` keeps the dark ink older
+ * clients draw on their yellow fallback.
+ */
+export function stickyInk(color: string): string {
+  return INKS.get(color) ?? STICKY_INK;
+}
+const INKS = new Map<string, string>(
+  Object.entries(STICKY_COLORS).map(([name, paper]) => {
+    const l = luminance(paper);
+    return [name, contrast(l, luminance(STICKY_INK_LIGHT)) > contrast(l, luminance(STICKY_INK)) ? STICKY_INK_LIGHT : STICKY_INK];
+  }),
+);
 
 export interface StickyElement extends BaseElement, TextStyle {
   type: 'sticky';

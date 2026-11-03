@@ -2,7 +2,8 @@
 // Feature format sections first (by order), then the engine's common controls.
 import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
-import { Copy, Ellipsis, Group, Layers, Lock, LockOpen, Share, Trash2, Ungroup } from 'lucide-react';
+import { Copy, Ellipsis, Group, Layers, Lock, LockOpen, Share, ShieldCheck, Trash2, Ungroup } from 'lucide-react';
+import { isProtectedLock } from '@freero/shared';
 import { IconButton, Menu, type MenuItem } from '@ui';
 import { ScopeContext, useCore } from '../context';
 import { useCamera, useRole, useSelectedElements } from '../hooks';
@@ -177,6 +178,8 @@ export function FormatToolbar() {
   placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };
   const locked = els.every((e) => e.locked);
   const someLocked = !locked && els.some((e) => e.locked);
+  // A protected lock (BaseElement.lockProtected) only the owner lifts.
+  const held = locked && els.some(isProtectedLock) && !editor.mayProtect();
   const ids = els.map((e) => e.id);
   const canRun = (id: string) => {
     const reg = core.registry.commands.get(id);
@@ -239,9 +242,10 @@ export function FormatToolbar() {
           <IconButton icon={Ungroup} label="Ungroup" shortcut="Mod+Shift+G" size={32} onClick={() => editor.runCommand('engine.ungroup')} />
         )}
         <IconButton
-          icon={locked ? LockOpen : Lock}
-          label={locked ? 'Unlock' : someLocked ? 'Lock all (some are locked)' : 'Lock'}
+          icon={held ? ShieldCheck : locked ? LockOpen : Lock}
+          label={held ? 'Locked by the board owner' : locked ? 'Unlock' : someLocked ? 'Lock all (some are locked)' : 'Lock'}
           className={someLocked ? 'fr-format__partial' : undefined}
+          disabled={held}
 
           shortcut="Mod+Shift+L"
           size={32}

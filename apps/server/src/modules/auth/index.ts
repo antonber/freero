@@ -8,6 +8,7 @@ import {
   twoFactorEnabledAmong,
   updateUserProfile,
   userIdsAtDomain as repoUserIdsAtDomain,
+  verifiedUsersAtDomain as repoVerifiedUsersAtDomain,
 } from './repo';
 // People's time zones (IANA; absent: not known yet — read as UTC): reminders and email dates.
 export { timeZonesOf } from './repo';
@@ -73,6 +74,8 @@ export {
 export { completeSignIn, safeReturnPath } from './signIn';
 export { resolveDirectoryLogin, provisionDirectoryAccount, DIRECTORY_PROVIDER_PREFIX } from './providers';
 export { onSignInRestriction, signInRestriction, type SignInAttempt, type SignInRestriction } from './restrictions';
+// Invite-only servers (SIGNUPS=invite-only): modules say which addresses are expected (a pending invite…).
+export { onSignupExpected, signupRefusal } from './signups';
 export { endSessionsOf } from './service';
 // Credentials that outlive sessions (modules/apiauth: API tokens, authorised apps): how the session
 // that made one signed in (sign-in restrictions apply to the credential too), and the moment an
@@ -85,6 +88,14 @@ export { isOperator } from './operators';
 /** Ids of the accounts whose address is at `domain` (exactly). */
 export function userIdsAtDomain(domain: string): Promise<string[]> {
   return repoUserIdsAtDomain(domain.toLowerCase());
+}
+
+/**
+ * Accounts at `domain` that PROVED their address (verified), oldest first — what a workspace that
+ * verified the domain may take in (sso domain control, #64). Unverified claims never count.
+ */
+export function verifiedAccountsAtDomain(domain: string, limit = 2000): Promise<Array<{ id: string; name: string; email: string; createdAt: number }>> {
+  return repoVerifiedUsersAtDomain(domain.toLowerCase(), limit);
 }
 
 /** A directory (SCIM) renamed the person: the account's display name follows. */

@@ -65,7 +65,7 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
       if (!Array.isArray(input.items) || !input.items.length || input.items.some((t) => typeof t !== 'string' && (!t || typeof t !== 'object' || typeof t.text !== 'string')))
         throw new LayoutError('stickies needs a non-empty list of texts (or { text, link?, color? })');
       if (input.color !== undefined && !isColor(input.color)) throw new LayoutError(`Unknown sticky color ${String(input.color)}`);
-      return layoutStickies(input.items, input.title, input.color ?? 'yellow', ctx);
+      return layoutStickies(input.items, input.title, input.color ?? 'yellow', ctx, { shape: input.shape, size: input.size });
     case 'clusters':
       if (!Array.isArray(input.clusters) || !input.clusters.length) throw new LayoutError('clusters needs at least one cluster');
       for (const c of input.clusters) {

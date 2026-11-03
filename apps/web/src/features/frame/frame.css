@@ -23,13 +23,14 @@
   text-overflow: ellipsis;
   padding: 1px 4px 1px 0;
   font-weight: 500;
-  color: var(--fr-ink-2);
+  /* On the canvas: light on a dark page (engine canvas.css), as authored in exports. */
+  color: var(--fr-canvas-ink-2, var(--fr-ink-2));
   cursor: default;
   border-radius: 4px;
 }
 
 .fr-frame__title-text:hover {
-  color: var(--fr-ink);
+  color: var(--fr-canvas-ink, var(--fr-ink));
 }
 
 .fr-frame__title.is-selected .fr-frame__title-text {

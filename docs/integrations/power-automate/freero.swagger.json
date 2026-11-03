@@ -144,6 +144,85 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "A team workspace’s audit log in order, after a cursor (for SIEMs that pull)",
+        "description": "Owners and admins of the team workspace only. Events come oldest first after `after` (the `cursor` of the previous page; 0 or absent: from the oldest event retention kept). Poll with the last `cursor` to get what is new; nothing is skipped. Streams that push to Splunk, Microsoft Sentinel, an HTTPS collector or syslog are set up in the admin console.",
+        "operationId": "listWorkspaceAuditEvents",
+        "x-freero-scope": "audit:read",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "The `cursor` of the previous page (an event seq)",
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events",
+            "schema": {
+              "type": "object",
+              "required": [
+                "events",
+                "cursor",
+                "more",
+                "headSeq"
+              ],
+              "properties": {
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/AuditEvent"
+                  }
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Pass as `after` next time"
+                },
+                "more": {
+                  "type": "boolean",
+                  "description": "More events are waiting right now"
+                },
+                "headSeq": {
+                  "type": "integer",
+                  "description": "The newest event’s seq"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
     "/boards": {
       "get": {
         "tags": [
@@ -3409,6 +3488,7 @@
         "comments:write",
         "members:read",
         "members:write",
+        "audit:read",
         "problems:triage"
       ]
     },
@@ -4492,6 +4572,108 @@
         }
       }
     },
+    "AuditEvent": {
+      "type": "object",
+      "description": "One event of a workspace’s audit log, as the admin console shows it. `seq`, `prevHash` and `hash` place it in the workspace’s hash chain (`chain` = \"w:<workspaceId>\"): each hash is sha256 over the event and the previous hash, so a copy kept elsewhere proves nothing before it changed.",
+      "required": [
+        "id",
+        "at",
+        "action",
+        "workspaceId",
+        "actor",
+        "target",
+        "ip",
+        "userAgent",
+        "metadata",
+        "chain",
+        "seq",
+        "prevHash",
+        "hash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "description": "Epoch milliseconds"
+        },
+        "action": {
+          "type": "string",
+          "description": "What happened, e.g. sso.login, member.role_changed"
+        },
+        "workspaceId": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "actor": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "email"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string",
+              "x-nullable": true
+            }
+          },
+          "description": "Who did it (null: Freero itself, or someone not signed in)",
+          "x-nullable": true
+        },
+        "target": {
+          "type": "object",
+          "required": [
+            "type",
+            "id",
+            "label"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string",
+              "x-nullable": true
+            }
+          },
+          "x-nullable": true
+        },
+        "ip": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "userAgent": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "prevHash": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        }
+      }
+    },
     "Workspace": {
       "type": "object",
       "required": [
@@ -4749,11 +4931,20 @@
         },
         "color": {
           "type": "string",
-          "description": "sticky: yellow, lemon, orange, coral, pink, violet, blue, cyan, green, lime, gray, white; card / text: #RRGGBB"
+          "description": "sticky: yellow, lemon, orange, coral, pink, violet, blue, cyan, green, lime, gray, white, sun, tangerine, red, magenta, purple, royal, teal, pine, navy, plum, cocoa, charcoal; card / text: #RRGGBB"
         },
         "shape": {
           "type": "string",
-          "description": "rect, roundRect, ellipse, triangle, diamond, parallelogram, trapezoid, pentagon, hexagon, octagon, star, cross, arrowRight, arrowLeft, chevron, speech, cloud, cylinder, document, terminator, predefinedProcess"
+          "description": "shape: rect, roundRect, ellipse, triangle, diamond, parallelogram, trapezoid, pentagon, hexagon, octagon, star, cross, arrowRight, arrowLeft, chevron, speech, cloud, cylinder, document, terminator, predefinedProcess; sticky: square or rect (a rectangle half again as wide as it is tall; w and h are then ignored)"
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l"
+          ],
+          "description": "sticky: small, medium (default) or large (140, 200 or 280 tall); w and h are then ignored"
         },
         "fill": {
           "type": "string"
@@ -4854,7 +5045,17 @@
           "type": "string"
         },
         "shape": {
-          "type": "string"
+          "type": "string",
+          "description": "shape: its kind; sticky: square or rect (keeps its center)"
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l"
+          ],
+          "description": "sticky: small, medium or large (keeps its center)"
         },
         "status": {
           "type": "string",

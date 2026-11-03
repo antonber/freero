@@ -12,6 +12,7 @@
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   ActivityAnswer,
+  AnalyticsEvent,
   ActivityEntry,
   CatchUpChanges,
   CatchUpSummary,
@@ -98,6 +99,14 @@ export interface HostPersonalViews {
   list(): Promise<Array<{ itemId: string; viewId: string; settings: Record<string, unknown> }>>;
   /** null clears them (back to the saved view). */
   save(itemId: string, viewId: string, settings: Record<string, unknown> | null): Promise<void>;
+}
+
+/** [additive] Light, dark, or whatever the device uses. */
+export type ColorThemeChoice = 'system' | 'light' | 'dark';
+/** [additive] See Host.colorTheme. */
+export interface HostColorTheme {
+  get(): ColorThemeChoice;
+  set(theme: ColorThemeChoice): void;
 }
 
 export interface Host {
@@ -226,6 +235,11 @@ export interface Host {
    * the offline sandbox.
    */
   reportProblem?(context: { role: Role }): void;
+  /**
+   * [additive] The person's app theme (the app keeps it with their account): read it, change it.
+   * Absent where the page follows something else (the live view in an AI assistant).
+   */
+  colorTheme?: HostColorTheme;
   openShareDialog(): void;
   navigate(path: string): void;
   /**
@@ -233,6 +247,13 @@ export interface Host {
    * with an action stay up longer.
    */
   notify(message: string, kind?: 'info' | 'success' | 'error', opts?: NotifyOptions): void;
+  /**
+   * [additive] Counts a product event for the service's analytics (Google Analytics, only where the
+   * server has it on and the person accepted; ARCHITECTURE.md "Analytics"). The events and the
+   * values they may carry are a closed list (`AnalyticsEvent`, @freero/shared): never a title,
+   * content, name or id. Absent (offline sandbox, embeds, tests): nothing is counted.
+   */
+  track?(event: AnalyticsEvent): void;
   /**
    * Current time on the SERVER's clock (ms). Use it for anything shared that is time-based
    * (timers, deadlines) so clients with skewed clocks agree. Falls back to the local clock
@@ -1317,6 +1338,12 @@ export interface Editor {
   getRole(): Role;
   can(minRole: Role): boolean;
   /**
+   * [additive] May this user protect items (`BaseElement.lockProtected`), unprotect them or change
+   * a protected one? The board owner only (`@freero/shared` `mayProtect`). The server enforces it
+   * (realtime/protectedLock.ts); the engine mirrors it in the lock commands and chrome.
+   */
+  mayProtect(): boolean;
+  /**
    * [additive] What a facilitator limits for this user right now (from the server's role message;
    * null: nothing). The server enforces it; the engine mirrors it: a locked board is commenting
    * only (`getRole()` is then 'commenter'), and tools / paste / inserts that would add other types
@@ -1325,6 +1352,21 @@ export interface Editor {
   getLimits(): SessionLimits | null;
   /** [additive] May this user add elements of `type` now (role and facilitator limits)? */
   mayAdd(type: ElementType): boolean;
+  /**
+   * [additive, parity rank 1] This commenter (or guest) may take part in the facilitator's sessions
+   * while the board lets them (the server's role message `participant`; @freero/shared
+   * participation.ts): write their own ballot (`voting`), planning-poker pick (`estimation`) and,
+   * while private mode applies to them, private drafts of the types it makes private. The server
+   * enforces exactly that. False for owners and editors (they may do all of it anyway). Hook:
+   * useParticipant().
+   */
+  isParticipant(): boolean;
+  /**
+   * [additive] May this user change these elements: an editor any, a participant only their own
+   * drafts (in their private layer); nobody but the owner a protected one (`mayProtect`). Element
+   * writes check it and toast otherwise.
+   */
+  mayEdit(ids: readonly string[]): boolean;
   /**
    * [additive] Element types the board's tools add, in toolbar order (each tool's
    * `ToolDefinition.creates`): what a facilitator can allow participants to add.
@@ -1542,8 +1584,11 @@ export interface Editor {
    * feature owns it); null turns it off. Existing private elements stay private until revealed.
    * While a rule is set, this user's cursor is not shown to others where a new sticky would go
    * private (or over their private items), and presence never names private elements.
+   * `types` [additive]: the element types the rule can make private — a participant
+   * (isParticipant) may then add elements of those types that the rule sends private, and gets the
+   * tools that add only them.
    */
-  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null): void;
+  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null, opts?: { types?: readonly ElementType[] }): void;
   /**
    * [additive] This user's PRIVATE copy of a collection the scope owns (same ownership guard as
    * `collection`): synced only between this user's own tabs, never readable by anyone else until

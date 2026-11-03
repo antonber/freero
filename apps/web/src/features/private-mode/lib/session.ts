@@ -9,17 +9,21 @@
 // ending the session never names them. That is why an ended session stays in the collection as
 // `active: false` (the next start replaces it): drafts still on their way at the reveal, shared
 // later from the leftover bar, are anonymous too.
-import type { BoardElement, ElementType, PrivateModeSession } from '@freero/shared';
+//
+// Participants (commenters and guests while the board lets them, Editor.isParticipant) draft too:
+// the same rule places what they add, and the server takes from them only drafts of
+// PRIVATE_MODE_TYPES while a session runs (realtime participation.ts).
+import { PRIVATE_MODE_COLLECTION, PRIVATE_MODE_KEY, PRIVATE_MODE_TYPES, type BoardElement, type ElementType, type PrivateModeSession } from '@freero/shared';
 import type { Editor } from '@engine';
 
-export const COLLECTION = 'privateMode';
-const KEY = 'session';
+export const COLLECTION = PRIVATE_MODE_COLLECTION;
+const KEY = PRIVATE_MODE_KEY;
 
 /**
  * What goes private while the mode is on: content whose whole text lives in the element itself.
  * Not frames (containers) and not tables (their cells live in a shared collection).
  */
-export const PRIVATE_TYPES: ReadonlySet<ElementType> = new Set<ElementType>(['sticky', 'shape', 'text', 'card', 'pen', 'emoji', 'image', 'connector']);
+export const PRIVATE_TYPES: ReadonlySet<ElementType> = new Set<ElementType>(PRIVATE_MODE_TYPES);
 
 export function getSession(editor: Pick<Editor, 'collection'>): PrivateModeSession | undefined {
   const s = editor.collection<PrivateModeSession>(COLLECTION).get(KEY);

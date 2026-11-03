@@ -145,3 +145,26 @@ it('until an operator is named, the privacy policy is visibly a draft that searc
     expect(html).not.toContain('[[freero-legal:');
   });
 });
+
+it('marketing pages load the Google Analytics runtime (consent banner first) only where GA_MEASUREMENT_ID is set', async () => {
+  // This suite's server has no id: no runtime, no Google host anywhere on the page or in its CSP.
+  const plain = await fetch(`${base}/claude`);
+  expect(await plain.text()).not.toMatch(/analytics\.js|googletagmanager|data-freero-ga/);
+  expect(plain.headers.get('content-security-policy')).not.toMatch(/googletagmanager|google-analytics/);
+
+  const withGa: Config = { ...config, googleAnalyticsId: 'G-TEST123' };
+  const app = createApp(withGa);
+  app.use(mountPath, siteRoutes({ config: withGa, onShutdown: () => undefined }));
+  const s = http.createServer(app);
+  await new Promise<void>((r) => s.listen(0, '127.0.0.1', r));
+  try {
+    const b = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    const res = await fetch(`${b}/claude`);
+    expect(await res.text()).toContain('<script src="/analytics.js" data-freero-ga="G-TEST123" defer></script></head>');
+    expect(res.headers.get('content-security-policy')).toContain('https://www.googletagmanager.com');
+    // The site's own 404 too: its footer has "Cookie settings" like every page.
+    expect(await (await fetch(`${b}/vs/nobody`)).text()).toContain('data-freero-ga="G-TEST123"');
+  } finally {
+    await new Promise((r) => s.close(r));
+  }
+});

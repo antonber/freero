@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { OidcErrorCode, SignInProvider } from '@freero/shared';
+import { noteProviderSignIn } from '../../analytics/bridge';
 import { api, providerUrl } from '../../api/client';
 import './ProviderButtons.css';
 
@@ -36,7 +37,7 @@ export function ProviderButtons({ next, verb }: { next: string; verb: string }) 
     <div className="fr-authcard__providers">
       {providers.map((p) => (
         // A full navigation: the provider's page, then back through the callback.
-        <a key={p.id} className="fr-authcard__provider" href={providerUrl(p.id, 'login', next !== '/app' ? next : undefined)}>
+        <a key={p.id} className="fr-authcard__provider" href={providerUrl(p.id, 'login', next !== '/app' ? next : undefined)} onClick={() => noteProviderSignIn(p.id)}>
           <ProviderMark label={p.label} />
           <span>
             {verb} with {p.label}
@@ -60,11 +61,14 @@ const MESSAGES: Record<OidcErrorCode, string> = {
   identity_in_use: 'That account is already connected to another Freero account.',
   provider_linked: 'You already have an account of that provider connected. Disconnect it first to connect another one.',
   wrong_account: 'That’s not the account connected to Freero. Sign in with the one you connected.',
+  signup_closed: 'New accounts on this Freero server are by invitation. Ask someone here to invite your address, then sign up with it.',
   sso_required: 'Your organization signs you in with single sign-on. Continue with SSO below.',
   sso_unavailable: 'Single sign-on isn’t available for this workspace right now. Ask your workspace admin.',
   sso_failed: 'Your organization’s sign-in didn’t go through, or it expired. Please try again.',
   sso_domain: 'Your identity provider signed you in with an address this workspace hasn’t verified. Ask your workspace admin.',
   sso_removed: 'Your organization has removed your access to this workspace. Ask your workspace admin.',
+  sso_unsolicited:
+    'This workspace doesn’t accept sign-ins started from your identity provider’s app list. Enter your work email below to continue with single sign-on.',
   suspended: 'This account has been suspended. We emailed you the reason and how to appeal.',
 };
 

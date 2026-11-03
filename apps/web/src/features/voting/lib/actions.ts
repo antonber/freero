@@ -1,5 +1,9 @@
 // Editor-bound voting actions (shared by panels and commands). Only the voting feature's scoped
 // editor may call these: the `voting` collection is owned by this feature.
+//
+// Who votes: owners, editors, and participants (commenters and guests while the board lets them
+// take part: Editor.isParticipant) — the server holds everyone to their own ballot. Who runs a
+// vote (start, end, clear, the history): owners and editors.
 import { nanoid } from 'nanoid';
 import type { Editor } from '@engine';
 import {
@@ -8,11 +12,14 @@ import {
   clearSession,
   countedVotes,
   endSession,
+  forgetPast,
   getSession,
   isEligible,
+  isOpen,
   retractVote,
   startSession,
   syncSealedMarker,
+  whyNoVote,
   type Ballot,
   type SessionOptions,
   type VotingValue,
@@ -24,6 +31,8 @@ const store = (editor: Editor) => editor.collection<VotingValue>(COLLECTION);
 /** This user's sealed ballots (hidden results): the server shows them to nobody until revealed. */
 const sealed = (editor: Editor) => editor.privateCollection<VotingValue>(COLLECTION);
 const actor = (editor: Editor) => ({ id: editor.user.id, name: editor.user.name, color: editor.user.color });
+/** May this user cast a ballot (the server's rule: votingRules.ts)? */
+export const mayVote = (editor: Editor) => editor.can('editor') || editor.isParticipant();
 
 function existsFor(editor: Editor) {
   const session = getSession(store(editor));
@@ -47,25 +56,32 @@ function afterSealedChange(editor: Editor): void {
 export function vote(editor: Editor, elementId: string): void {
   const s = store(editor);
   const session = getSession(s);
-  if (!session?.active || !editor.can('editor')) return;
-  if (!castVote(s, actor(editor), elementId, existsFor(editor), ballotsFor(editor, session.anonymous)))
-    editor.host.notify(`You've used all ${session.votesPerUser} of your votes. Remove one to vote again.`, 'info');
-  else afterSealedChange(editor);
+  const now = editor.host.serverNow();
+  if (!session?.active || !mayVote(editor)) return;
+  if (!isOpen(session, now)) return editor.host.notify("Time's up: this vote takes no more votes.", 'info');
+  const ballots = ballotsFor(editor, session.anonymous);
+  if (castVote(s, actor(editor), elementId, existsFor(editor), ballots, now)) return afterSealedChange(editor);
+  const current = countedVotes(ballots.get(ballotKey(session.id, editor.user.id)) as Ballot | undefined, session, existsFor(editor));
+  if (whyNoVote(session, current, elementId) === 'item')
+    editor.host.notify(`At most ${session.maxPerItem} of your votes can go to one item.`, 'info');
+  else editor.host.notify(`You've used all ${session.votesPerUser} of your votes. Remove one to vote again.`, 'info');
 }
 
 export function unvote(editor: Editor, elementId: string): void {
   const session = getSession(store(editor));
-  if (!session || !editor.can('editor')) return;
-  if (retractVote(store(editor), actor(editor), elementId, existsFor(editor), ballotsFor(editor, session.anonymous))) afterSealedChange(editor);
+  if (!session || !mayVote(editor)) return;
+  if (retractVote(store(editor), actor(editor), elementId, existsFor(editor), ballotsFor(editor, session.anonymous), editor.host.serverNow())) afterSealedChange(editor);
 }
 
 export function start(editor: Editor, opts: Omit<SessionOptions, 'id'>): void {
   if (!editor.can('editor')) return;
   // Sealed ballots of a session that was cleared before it ended: never revealed, now dropped.
   editor.discardPrivate(COLLECTION);
-  // One update for everyone: old ballots disappear together with the new session appearing.
+  const exists = (id: string) => !!editor.getElement(id);
+  // One update for everyone: old ballots disappear together with the new session appearing (the
+  // ended vote's totals stay in the history).
   editor.transact(() => {
-    startSession(store(editor), { ...opts, id: nanoid(10) }, actor(editor), Date.now());
+    startSession(store(editor), { ...opts, id: nanoid(10) }, actor(editor), editor.host.serverNow(), exists);
   });
 }
 
@@ -73,15 +89,34 @@ export function end(editor: Editor): void {
   if (!editor.can('editor')) return;
   const session = getSession(store(editor));
   // The server moves every voter's sealed ballot into the shared collection (replacing the
-  // markers) before the session reads as ended: results never show half the votes.
+  // markers; without names in an anonymous vote) before the session reads as ended: results never
+  // show half the votes.
   if (session?.active && session.anonymous) editor.revealPrivate(COLLECTION, { prefix: `${session.id}:` });
-  endSession(store(editor), Date.now());
+  endSession(store(editor), editor.host.serverNow());
   editor.openDock(RESULTS_PANEL_ID);
+}
+
+/**
+ * The vote's timer ran out: the starter's client ends it, or every editor's when the starter has
+ * left — the server has stopped taking ballots already (votingRules.ts).
+ * Several clients ending it at once reveal the same ballots: the result is the same.
+ */
+export function endWhenTimeIsUp(editor: Editor, onBoard: (userId: string) => boolean): void {
+  const session = getSession(store(editor));
+  if (!session?.active || !editor.can('editor') || isOpen(session, editor.host.serverNow())) return;
+  if (session.startedBy === editor.user.id || !onBoard(session.startedBy)) end(editor);
 }
 
 export function clear(editor: Editor): void {
   if (!editor.can('editor')) return;
   editor.discardPrivate(COLLECTION);
-  editor.transact(() => clearSession(store(editor)));
+  const exists = (id: string) => !!editor.getElement(id);
+  editor.transact(() => clearSession(store(editor), exists, editor.host.serverNow()));
   if (editor.getDock() === RESULTS_PANEL_ID) editor.openDock(null);
+}
+
+/** Removes a past vote from the history. */
+export function forget(editor: Editor, sessionId: string): void {
+  if (!editor.can('editor')) return;
+  forgetPast(store(editor), sessionId);
 }

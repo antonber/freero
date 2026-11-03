@@ -23,6 +23,7 @@ import { forgetEmbedToken, readEmbedToken, saveEmbedToken } from './embedToken';
 import { frameIsUncovered } from './visibility';
 import '../board/BoardPage.css';
 import './PublicEmbedPage.css';
+import { embedTheme, setThemeOverride } from '../lib/theme';
 
 type Card = 'off' | 'signin' | 'no-access' | 'full' | 'popup-blocked' | 'error';
 type State = { status: 'loading' } | { status: 'card'; card: Card; info?: PublicEmbedInfo } | { status: 'live'; view: PublicEmbedView };
@@ -38,6 +39,11 @@ export default function PublicEmbedPage() {
   const toast = useMemo(() => toastNotify(notify), [notify]);
   const [state, setState] = useState<State>({ status: 'loading' });
   const [info, setInfo] = useState<PublicEmbedInfo | null>(null);
+  // The embedding page's look, not this browser's choice: light unless it asks ?theme=dark.
+  useEffect(() => {
+    setThemeOverride(embedTheme() ?? 'light');
+    return () => setThemeOverride(null);
+  }, []);
   const [editing, setEditing] = useState(false);
   const boardUrl = info?.status === 'on' ? info.boardUrl : `${window.location.origin}/board/${encodeURIComponent(id)}`;
   const openInFreero = useCallback(() => void window.open(boardUrl, '_blank', 'noopener'), [boardUrl]);

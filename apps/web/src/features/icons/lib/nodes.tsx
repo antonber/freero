@@ -48,8 +48,9 @@ export function IconSvg({ nodes, color, strokeWidth, className }: { nodes: unkno
       width="100%"
       height="100%"
       fill="none"
-      stroke={color}
-      color={color}
+      // currentColor: `color` may be a CSS value (a default ink painted light on a dark canvas).
+      stroke="currentColor"
+      style={{ color }}
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"

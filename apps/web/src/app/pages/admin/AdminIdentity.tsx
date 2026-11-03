@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Copy, Download, KeyRound, RefreshCw, RotateCw, ShieldCheck, Trash2 } from 'lucide-react';
-import type { DataExportInfo, ProjectSummary, ScimGroupMapping, ScimSettings, SsoProtocol, SsoSettings, WorkspaceMember, WorkspaceSummary } from '@freero/shared';
+import { DOMAIN_CAPTURE_GRACE_DAYS } from '@freero/shared';
+import type { DataExportInfo, DomainControlSettings, ProjectSummary, ScimGroupMapping, ScimSettings, SsoProtocol, SsoSettings, WorkspaceMember, WorkspaceSummary } from '@freero/shared';
 import { Button, Input, Modal, SegmentedControl, Select, Spinner, TextArea, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 import './identity.css';
@@ -179,6 +180,8 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
         </form>
       </div>
 
+      {verified ? <AdminDomainControl workspace={workspace} key={s.domains.filter((d) => d.verified).map((d) => d.domain).join(',')} /> : null}
+
       <div className="fr-admin-card">
         <h2 className="fr-admin-card__title">2. Connect your identity provider</h2>
         <div className="fr-admin-sso__stack">
@@ -256,6 +259,24 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
               onChange={(on) => void run('enable', () => api.saveSsoConnection(workspace.id, { protocol: c.protocol, enabled: on, defaultRole: c.defaultRole }))}
             />
           </Row>
+          {c.protocol === 'saml' ? (
+            <Row
+              label="Allow sign-in from the identity provider"
+              hint="People can open Freero from its tile in your identity provider’s app list (Okta, Entra ID and others). Each sign-in is accepted once, only signed by your provider and addressed to this workspace. Leave it off if you don’t use app tiles: the tile can link to the sign-in URL above instead."
+            >
+              <Toggle
+                aria-label="Allow sign-in from the identity provider"
+                checked={c.idpInitiated}
+                onChange={(on) =>
+                  void run(
+                    'idp',
+                    () => api.saveSsoConnection(workspace.id, { protocol: c.protocol, enabled: c.enabled, defaultRole: c.defaultRole, idpInitiated: on }),
+                    on ? 'Sign-in from the identity provider is on' : 'Sign-in from the identity provider is off',
+                  )
+                }
+              />
+            </Row>
+          ) : null}
           <Row
             label={
               <>
@@ -305,6 +326,131 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
         />
       </Modal>
     </section>
+  );
+}
+
+// ---- Domain control (#64): accounts at the verified domains, with or without SSO ----
+
+const GRACE_OPTIONS: SelectOption<number>[] = DOMAIN_CAPTURE_GRACE_DAYS.map((d) => ({ value: d, label: `in ${d} days` }));
+
+function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
+  const notify = useToast();
+  const [s, setS] = useState<DomainControlSettings | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [grace, setGrace] = useState<number>(14);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.domainControl(workspace.id).then(setS, (e) => notify(errorText(e, 'Could not load domain control'), 'error'));
+  }, [workspace.id, notify]);
+
+  const run = async (key: string, fn: () => Promise<DomainControlSettings>, ok?: string) => {
+    setBusy(key);
+    try {
+      setS(await fn());
+      if (ok) notify(ok, 'success');
+    } catch (e) {
+      notify(errorText(e, 'That didn’t work'), 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!s) return null;
+  const outside = s.accounts.filter((a) => a.status === 'outside');
+  const domains = s.domains.join(', ');
+  const toggle = (id: string) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  return (
+    <div className="fr-admin-card">
+      <h2 className="fr-admin-card__title">Domain control</h2>
+      <p className="fr-admin-row__hint">
+        For accounts at {domains}. Works with or without single sign-on. People keep their own boards: nothing moves into the workspace unless they move it.
+      </p>
+      <Row label="Add new sign-ups to this workspace" hint={`Anyone who confirms an address at ${domains} joins this workspace right away, and gets an email saying so.`}>
+        <Toggle
+          aria-label="Add new sign-ups to this workspace"
+          checked={s.captureSignups}
+          disabled={busy === 'capture'}
+          onChange={(on) => void run('capture', () => api.setDomainControl(workspace.id, { captureSignups: on }))}
+        />
+      </Row>
+      <Row label="Block other team workspaces" hint={`People at ${domains} can’t create team workspaces of their own. They’re told to ask this workspace’s admins.`}>
+        <Toggle
+          aria-label="Block other team workspaces"
+          checked={s.blockWorkspaces}
+          disabled={busy === 'block'}
+          onChange={(on) => void run('block', () => api.setDomainControl(workspace.id, { blockWorkspaces: on }))}
+        />
+      </Row>
+      <h3 className="fr-admin-domain__heading">Accounts at your domains</h3>
+      {s.accounts.length === 0 ? (
+        <p className="fr-admin-row__hint">No Freero account has confirmed an address at {domains} yet.</p>
+      ) : (
+        <>
+          <ul className="fr-admin-domain__list">
+            {s.accounts.map((a) => (
+              <li key={a.userId} className="fr-admin-domain__item">
+                {a.status === 'outside' ? (
+                  <input type="checkbox" aria-label={`Add ${a.name}`} checked={picked.has(a.userId)} onChange={() => toggle(a.userId)} />
+                ) : (
+                  <span className="fr-admin-domain__check" aria-hidden />
+                )}
+                <span className="fr-admin-domain__who">
+                  <strong>{a.name}</strong>
+                  <span className="fr-admin-row__hint">{a.email}</span>
+                </span>
+                {a.status === 'member' ? (
+                  <span className="fr-admin-pill fr-admin-pill--ok">Member</span>
+                ) : a.status === 'pending' ? (
+                  <>
+                    <span className="fr-admin-pill fr-admin-pill--warn">Joins {a.joinsAt ? new Date(a.joinsAt).toLocaleDateString() : 'soon'}</span>
+                    <Button size="sm" variant="ghost" loading={busy === `cancel-${a.userId}`} onClick={() => void run(`cancel-${a.userId}`, () => api.cancelDomainCapture(workspace.id, a.userId))}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <span className="fr-admin-pill fr-admin-pill--off">Not in this workspace</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {outside.length ? (
+            <div className="fr-admin-domain__actions">
+              <Button size="sm" variant="ghost" onClick={() => setPicked(picked.size === outside.length ? new Set() : new Set(outside.map((a) => a.userId)))}>
+                {picked.size === outside.length ? 'Select none' : 'Select all'}
+              </Button>
+              <Select<number> aria-label="When they join" options={GRACE_OPTIONS} value={grace} onChange={setGrace} width={140} />
+              <Button
+                variant="primary"
+                disabled={!picked.size}
+                loading={busy === 'add'}
+                onClick={() =>
+                  void run('add', async () => {
+                    const r = await api.captureDomainAccounts(workspace.id, [...picked], grace);
+                    setPicked(new Set());
+                    notify(`${r.started} ${r.started === 1 ? 'person was' : 'people were'} emailed and will join in ${grace} days`, 'success');
+                    return r;
+                  })
+                }
+              >
+                Add {picked.size || ''} to the workspace
+              </Button>
+            </div>
+          ) : null}
+          <p className="fr-admin-row__hint">
+            Each person is emailed. When the time is up they become members, unless they changed their account’s email address meanwhile (how someone whose
+            account isn’t a work account opts out).
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 

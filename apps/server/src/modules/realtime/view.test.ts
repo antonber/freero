@@ -138,6 +138,21 @@ it('a commenter’s request may add their own comment, but not one in someone el
   expect(stored.getMap<BoardElement>('elements').get('s')!.x).toBe(0);
 });
 
+it('an editor’s request (API, MCP) can’t change, delete or unprotect a protected item, nor protect one; the owner’s can', async () => {
+  const boardId = (await createBoard(userId, 'Protected', '')).id;
+  const seed = new Y.Doc();
+  seed.getMap('elements').set('p', { ...sticky('p', 0, 1), locked: true, lockProtected: true });
+  seed.getMap('elements').set('free', sticky('free', 300, 2));
+  await initBoardDoc(boardId, Y.encodeStateAsUpdate(seed));
+  const editor = { userId: 'editor1', role: 'editor' as const };
+  for (const change of [{ update: [{ id: 'p', patch: { x: 5 } }] }, { update: [{ id: 'p', patch: { locked: false, lockProtected: false } }] }, { remove: ['p'] }, { update: [{ id: 'free', patch: { locked: true, lockProtected: true } }] }])
+    await expect(changeBoard(boardId, editor, () => ({ change }))).rejects.toThrow(BoardChangeError);
+  await changeBoard(boardId, { userId, role: 'owner' as const }, () => ({ change: { update: [{ id: 'p', patch: { x: 5 } }] } }));
+  const stored = new Y.Doc();
+  Y.applyUpdate(stored, (await snapshotBoardDoc(boardId))!);
+  expect([stored.getMap<BoardElement>('elements').get('p')!.x, stored.getMap<BoardElement>('elements').get('free')!.lockProtected]).toEqual([5, undefined]);
+});
+
 it('deleting a frame on a request deletes what is inside it (at any depth) and the stamps riding on it, nothing else', async () => {
   const boardId = (await createBoard(userId, 'Delete', '')).id;
   const seed = new Y.Doc();
