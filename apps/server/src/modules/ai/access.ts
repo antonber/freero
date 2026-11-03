@@ -65,7 +65,8 @@ export async function decideAi(boardId: string, userId: string): Promise<AiDecis
   const board = await requireBoardAccess(boardId, userId, 'viewer');
   const no = (reason: string): AiDecision => ({ ok: false, reason, role: board.role });
   const ws = await getWorkspaceInfo(board.workspaceId);
-  if (!ws) throw notFound('Board not found');
+  // (An organisation holds no boards; its kind never reaches AI.)
+  if (!ws || ws.kind === 'organisation') throw notFound('Board not found');
   if (!atLeast(board.role, 'editor')) return no('AI actions add to the board, so they need edit access.');
   const base = { boardId, boardTitle: board.title, workspaceId: ws.id, kind: ws.kind, role: board.role };
 
