@@ -1303,7 +1303,8 @@ document realtime stores; see "Docs and native live embeds"), `site` (no table: 
 marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
+"Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
 Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
@@ -2126,6 +2127,22 @@ audit and admin controls are the same code.
   board), and a request must never point an item at an `/uploads/<name>` it doesn't own; pictures
   from a URL go through the server's own fetch instead (above). Uploading media / files over the API
   would need an upload endpoint answering an ownership-checked token the creation presents.
+- **Pictures of a board** (#33, `modules/render`, `api/exports.ts`): no headless browser. `render/svg.ts`
+  draws the reader's view (realtime's `readBoardView`: hidden frames only for those who see them,
+  nobody's private drafts) from the shared element model — one small function per element type,
+  the app's colours and proportions, text wrapped with the layout kit's metrics, a labelled box for
+  what a picture can't show — with uploaded pictures inlined as data URLs (never fetched from
+  elsewhere); `render/raster.ts` rasterises it with resvg-wasm (MPL-2.0, no native code) and the
+  self-hosted Inter faces, and wraps the pixels in a one-page PDF written there. Bounded: 5000 items
+  (413), 8000 px a side and 40 MP (drawn smaller), 40 MB of pictures, `RATE_LIMIT_BOARD_RENDER`.
+  `POST /api/v1/boards/:id/export` is an export: boards' `recordBoardExport` (downloads policy, the
+  board's "viewers can copy and export", `board.exported`) before drawing. MCP `export_board` shows a
+  PNG preview (≤ 1600 px) and answers a single-use download link: an apiauth export ticket
+  (`api_export_tickets`, `frx_…`, sha256 only, 15 minutes, deleted with the app's consent or the
+  personal token), redeemed once at `GET /api/v1/exports/:ticket` (a DELETE … RETURNING), where the
+  credential is re-checked like an embed ticket's and the export checks run again. Files go out as
+  attachments with the sandbox CSP (an SVG never renders as a page of ours); board text in SVG is
+  escaped.
 - **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
   authorised and the apps they registered), from `apiauth.apiDataOf`.
 

@@ -52,7 +52,8 @@ export type RateLimitName =
   | 'slackUnfurl'
   | 'teamsUnfurl'
   | 'listingSubmit'
-  | 'problemReport';
+  | 'problemReport'
+  | 'boardRender';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -501,6 +502,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   teamsUnfurl: '120/1m', // per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes; #113)
   listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
   problemReport: '10/1h', // per person: problem reports sent with "Report a problem" (each may carry a screenshot)
+  boardRender: '30/10m', // per person: boards drawn as PNG / SVG / PDF on the server (the API, MCP export_board; #33)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -548,6 +550,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   teamsUnfurl: 'RATE_LIMIT_TEAMS_UNFURL',
   listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
   problemReport: 'RATE_LIMIT_PROBLEM_REPORT',
+  boardRender: 'RATE_LIMIT_BOARD_RENDER',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */

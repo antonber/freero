@@ -689,6 +689,85 @@
         }
       }
     },
+    "/boards/{boardId}/export": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "exportBoardPicture",
+        "tags": ["boards"],
+        "summary": "The board (or one frame) drawn as PNG, SVG or PDF by the server",
+        "description": "Drawn on the server from the board as you see it — no hidden frame’s contents for viewers, nobody’s private drafts — with no browser involved (#33). An export like the app’s: refused (403 `downloads_restricted`) by the workspace’s downloads policy or the board’s “Viewers and commenters can copy and export”, recorded as `board.exported`, its own rate limit (RATE_LIMIT_BOARD_RENDER). At most 5000 items (413 `board_too_large`: export a frame); pictures are kept within 8000 px a side and 40 megapixels by drawing them smaller. With `link: true` it answers a single-use download link instead (15 minutes; the checks run again when it is used).",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["format"],
+                "properties": {
+                  "format": { "type": "string", "enum": ["png", "svg", "pdf"] },
+                  "frameId": { "type": "string", "description": "Only this frame (or kanban) and what is in it" },
+                  "scale": { "type": "number", "exclusiveMinimum": 0, "maximum": 4, "description": "Pixels per board unit (png default 2, pdf 1.5)" },
+                  "link": { "type": "boolean", "description": "Answer a single-use download link instead of the file" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The picture, as an attachment (`Content-Disposition`)",
+            "content": {
+              "image/png": { "schema": { "type": "string", "format": "binary" } },
+              "image/svg+xml": { "schema": { "type": "string", "format": "binary" } },
+              "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "201": {
+            "description": "A single-use download link (`link: true`)",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["url", "expiresAt"], "properties": { "url": { "type": "string" }, "expiresAt": { "type": "integer" } } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "413": {
+            "description": "`board_too_large`: more items than a picture is drawn of",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/exports/{ticket}": {
+      "parameters": [{ "name": "ticket", "in": "path", "required": true, "description": "The frx_… ticket of a download link", "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "downloadBoardPicture",
+        "tags": ["boards"],
+        "summary": "Download a board picture by its single-use link (no token: the link is the credential)",
+        "description": "Works once, for 15 minutes, acting for the credential that asked for it — as long as that token or app may still act: everything is checked again (the person’s access, the team’s API switch, the downloads policy). Used, expired or unknown: 404 `export_link_gone`.",
+        "x-freero-scope": null,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The picture, as an attachment (`Content-Disposition`)",
+            "content": {
+              "image/png": { "schema": { "type": "string", "format": "binary" } },
+              "image/svg+xml": { "schema": { "type": "string", "format": "binary" } },
+              "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
     "/boards/{boardId}/outline": {
       "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
       "get": {
@@ -3266,7 +3345,7 @@
           "error": { "type": "string" },
           "code": {
             "type": "string",
-            "description": "insufficient_scope, api_disabled, api_credential_blocked, downloads_restricted, sso_required, confirm_required, agent_paused, invalid_token, …"
+            "description": "insufficient_scope, api_disabled, api_credential_blocked, downloads_restricted, sso_required, confirm_required, agent_paused, invalid_token, url_blocked, url_unusable, board_too_large, export_link_gone, …"
           }
         }
       },

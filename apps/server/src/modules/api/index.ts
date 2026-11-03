@@ -62,3 +62,5 @@ export { postStatus, getFeedback, PLACEHOLDER_AGENT, type StatusPost, type TaskS
 export { listDocs, createDocFor, readDocFor, appendToDoc } from './docs';
 // Docs beyond append (#61): targeted edits by block id, comments on blocks.
 export { editDocFor, listDocComments, addDocComment, replyToDocComment } from './docs';
+// Board pictures drawn on the server (#33): PNG / SVG / PDF as an export, and single-use download links.
+export { renderForApi, exportLink } from './exports';

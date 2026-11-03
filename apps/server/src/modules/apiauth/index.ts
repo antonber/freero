@@ -28,6 +28,8 @@ export {
   EMBED_TOKEN_MS,
   type EmbedSession,
 } from './embed';
+// Board pictures drawn on the server (#33): MCP export_board's single-use download links.
+export { mintExportTicket, redeemExportTicket, EXPORT_TICKET_MS } from './embed';
 // The OAuth apps a person develops (a community listing may name one of theirs, modules/marketplace).
 export { listOwnClients as ownOAuthApps, registerClient as registerOAuthApp } from './oauth';
 // The person's API data for their data export (modules/privacy).

@@ -140,6 +140,12 @@ open boards drop them at once (KAI-224).
   upload of the person, checked and counted by Freero's uploads, and an item must never point at a
   file its creator doesn't own. Pictures can (`image` with a `url`: Freero fetches and keeps its own
   copy); videos and files are added in the app.
+- Pictures (#33): `POST /boards/{boardId}/export` `{ "format": "png" | "svg" | "pdf", "frameId"?, "scale"? }`
+  answers the board (or a frame) drawn by the server as a file — an export like the app's: the
+  downloads policy and the board's "viewers can copy and export" apply, `board.exported` is recorded,
+  `RATE_LIMIT_BOARD_RENDER` limits it, 5000 items at most (`413 board_too_large`: export a frame).
+  `link: true` answers a single-use download link instead (`GET /exports/{ticket}`, 15 minutes, no
+  token needed: it acts for the credential that asked, checked again when used).
 - Docs (#61): `POST /docs/{docId}/edit` `{ op, blockId, markdown }` changes one part of a doc by
   the block ids `GET /docs/{docId}` answers — `replace`, `replaceSection` (a heading and its section),
   `insertBefore`, `insertAfter`, `delete`; `GET /docs/{docId}/comments` reads its threads (the

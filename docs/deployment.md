@@ -29,6 +29,14 @@ server's production dependencies, the TypeScript sources (run by `tsx`) and the 
 unprivileged `node` user. The image has a `HEALTHCHECK` on `/healthz`. Pass `FREERO_RELEASE`
 (e.g. the git SHA) so logs and error reports name the release.
 
+Board pictures drawn on the server (PNG / SVG / PDF for the API and MCP `export_board`, #33) need
+no browser and nothing to configure: the server draws SVG from the board's elements and rasterises
+it with resvg compiled to WebAssembly (`@resvg/resvg-wasm`, MPL-2.0; no native binary, no system
+fonts) using the self-hosted Inter faces (`@fontsource/inter`, OFL-1.1). That adds about 7 MB to
+the image (2.5 MB WebAssembly, 4.9 MB of font files) and no system packages. The WebAssembly and the
+fonts load on the first export, not at startup. `RATE_LIMIT_BOARD_RENDER` bounds how often a person
+may draw.
+
 ## Option A — single VM with Docker Compose
 
 Good for small teams and evaluation. `docker-compose.yml` runs the whole stack: Caddy on `:8080`

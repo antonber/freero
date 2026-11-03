@@ -437,7 +437,8 @@ export async function deleteExpired(now: number): Promise<number> {
   const codes = await query(`DELETE FROM oauth_codes WHERE expires_at < $1 RETURNING code_hash`, [new Date(now)]);
   const tokens = await query(`DELETE FROM api_tokens WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
   const embeds = await query(`DELETE FROM api_embed_tokens WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
-  return codes.length + tokens.length + embeds.length;
+  const exports = await query(`DELETE FROM api_export_tickets WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
+  return codes.length + tokens.length + embeds.length + exports.length;
 }
 
 // ---- live board views (MCP Apps, KAI-171) ----
@@ -530,6 +531,41 @@ export async function redeemEmbedTicket(ticketHash: string, tokenHash: string, n
 export async function embedByTokenHash(tokenHash: string): Promise<EmbedRow | null> {
   const r = await one<EmbedDbRow>(`${EMBED_SELECT} WHERE e.token_hash = $1`, [tokenHash]);
   return r ? toEmbed(r) : null;
+}
+
+// ---- board pictures drawn on the server: single-use download tickets (#33) ----
+
+export async function insertExportTicket(e: {
+  id: string;
+  userId: string;
+  boardId: string;
+  credentialId: string;
+  label: string;
+  grantId: string | null;
+  personalTokenId: string | null;
+  issuedVia: string;
+  ticketHash: string;
+  spec: Record<string, unknown>;
+  expiresAt: number;
+  createdAt: number;
+}): Promise<void> {
+  await query(
+    `INSERT INTO api_export_tickets (id, user_id, board_id, credential_id, label, grant_id, personal_token_id, issued_via, ticket_hash, spec, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [e.id, e.userId, e.boardId, e.credentialId, e.label, e.grantId, e.personalTokenId, e.issuedVia, e.ticketHash, JSON.stringify(e.spec), new Date(e.expiresAt), new Date(e.createdAt)],
+  );
+}
+
+/** Redeems a ticket once: it is deleted in the same statement, so a second or late use finds nothing. */
+export async function redeemExportTicket(ticketHash: string, now: number): Promise<(EmbedRow & { spec: Record<string, unknown> }) | null> {
+  const r = await one<Omit<EmbedDbRow, 'max_role'> & { spec: Record<string, unknown> | string }>(
+    `WITH t AS (DELETE FROM api_export_tickets WHERE ticket_hash = $1 AND expires_at > $2 RETURNING *)
+     SELECT t.*, p.paused_at AS parent_paused_at, p.expires_at AS parent_expires_at, g.client_id
+     FROM t LEFT JOIN api_tokens p ON p.id = t.personal_token_id LEFT JOIN oauth_grants g ON g.id = t.grant_id`,
+    [ticketHash, new Date(now)],
+  );
+  if (!r) return null;
+  return { ...toEmbed({ ...r, max_role: 'viewer' }), spec: typeof r.spec === 'string' ? (JSON.parse(r.spec) as Record<string, unknown>) : r.spec };
 }
 
 // ---- workspaces ----

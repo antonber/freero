@@ -1,6 +1,6 @@
 // Public API of modules/boards [S2].
 import type { BoardSummary, ObjectKind, Role } from '@freero/shared';
-import { notFound } from '../../platform/http';
+import { forbidden, notFound } from '../../platform/http';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
@@ -13,6 +13,8 @@ import {
   cleanTitle,
   createBoard,
   checkEmbeddingChange,
+  cleanSharing,
+  sharingSettingsChanged,
   describeAccess,
   duplicateBoard,
   renameBoard,
@@ -124,6 +126,19 @@ export async function setBoardEmbeddable(boardId: string, userId: string, embedd
   if (board.embeddable === embeddable) return;
   await repo.updateBoardFields(board.id, { embeddable }, Date.now());
   await embeddingChanged(board, userId, embeddable);
+}
+
+/**
+ * Changes the board's sharing settings (#123: "Editors can share", "Viewers and commenters can copy
+ * and export") as `userId`, by the share dialog's rules: the owner or a co-owner; audited.
+ */
+export async function setBoardSharingSettings(boardId: string, userId: string, sharing: unknown): Promise<void> {
+  const { board, role, coOwner } = await requireAccess(boardId, userId);
+  const patch = cleanSharing(sharing);
+  if (!Object.keys(patch).length) return;
+  if (!managesSharing(role, coOwner)) throw forbidden('Only the board’s owner and co-owners can change its sharing settings');
+  await repo.updateBoardFields(board.id, patch, Date.now());
+  await sharingSettingsChanged(board, userId, patch);
 }
 
 /**

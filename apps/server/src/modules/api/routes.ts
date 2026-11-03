@@ -23,6 +23,7 @@ import { addDocComment, appendToDoc, createDocFor, editDocFor, listDocComments, 
 import { getFeedback, postStatus, readStatusPost } from './controlRoom';
 import { workspaceAuditFor } from './audit';
 import * as hooks from './webhooks';
+import { exportLink, redeemExport, renderForApi } from './exports';
 import * as api from './service';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
@@ -149,6 +150,45 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('get', '/search', 'boards:read', async (call) => ({ body: await searchContent(call, call.req.query) }));
   endpoint('post', '/objects/resolve', 'boards:read', async (call) => ({ body: await resolveForApi(call, body(call.req).uris) }));
   endpoint('get', '/objects/backlinks', 'boards:read', async (call) => ({ body: await backlinksForApi(call, call.req.query.uri) }));
+
+  // ---- board pictures drawn on the server (#33): PNG / SVG / PDF, an export like the app's ----
+  /** A drawn board as a download: never rendered as a page of ours (an SVG could carry markup). */
+  const sendFile = (res: Response, f: { body: Buffer; contentType: string; filename: string }) => {
+    res.setHeader('Content-Type', f.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${f.filename.replace(/[^ -~]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(f.filename)}`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox");
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(f.body);
+  };
+  endpoint('post', '/boards/:boardId/export', 'boards:read', async (call) => {
+    const b = body(call.req);
+    if (b.link === true) return { status: 201, body: await exportLink(call, call.req.params.boardId, b) };
+    const file = await renderForApi(call, call.req.params.boardId, b);
+    return { send: (res) => sendFile(res, file) };
+  });
+  // The single-use download link (MCP export_board, or link: true above): the ticket is the credential.
+  ENDPOINTS.push({ method: 'get', path: '/exports/:ticket', scope: null });
+  r.get('/exports/:ticket', (req: Request, res: Response, next) => {
+    void (async () => {
+      let call: api.ApiCall | null = null;
+      let boardId: string | undefined;
+      let status = 500;
+      try {
+        const redeemed = await redeemExport(req, req.params.ticket);
+        call = redeemed.call;
+        boardId = redeemed.boardId;
+        const file = await renderForApi(call, boardId, redeemed.spec);
+        status = 200;
+        sendFile(res.status(200), file);
+      } catch (e) {
+        status = e instanceof HttpError ? e.status : 500;
+        next(e);
+      } finally {
+        if (call) await api.recordApiCall(call, 'GET /api/v1/exports/:ticket', status, boardId);
+      }
+    })();
+  });
 
   // ---- reading a board ----
   endpoint('get', '/boards/:boardId/outline', 'boards:read', async (call) => {

@@ -404,6 +404,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_OAUTH_REGISTER` | `20/1h` | Apps registering themselves (OAuth dynamic client registration) per IP. |
 | `RATE_LIMIT_OAUTH_CLIENT_METADATA` | `30/10m` | OAuth client metadata documents fetched for a person's consent screens (only when no fresh copy is stored). |
 | `RATE_LIMIT_TRACKER_SEND` | `60/10m` | Per user: issues created or imported in a tracker, and tracker connections added or tested (each calls the tracker's API). |
+| `RATE_LIMIT_BOARD_RENDER` | `30/10m` | Per user: boards drawn as an image or PDF on the server (`POST /api/v1/boards/:id/export`, MCP `export_board` with png / svg / pdf, its download links) — each reads a whole board and its pictures and rasterises it (#33). |
 | `RATE_LIMIT_BACKUP` | `30/1h` | Per user: board backups (`.freero`) downloaded or restored — each reads or writes a whole board and its files (KAI-137). |
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 | `RATE_LIMIT_SLACK_UNFURL` | `50/1m` | Per Slack workspace: link previews Freero posts with `chat.unfurl` (Slack's own limit for it is about 50 a minute); past it, links stay without a preview. |
