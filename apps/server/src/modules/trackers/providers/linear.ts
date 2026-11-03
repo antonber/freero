@@ -4,8 +4,10 @@
 // wins: "In review" → "In review"); priority is Linear's fixed scale by name; labels are the team's (made when missing);
 // backlinks are issue attachments (one per board item, found again by their URL). Webhooks carry
 // `Linear-Signature` (HMAC-SHA256 of the body) and a `webhookTimestamp` that must be recent.
+// Cycles are Linear's sprints (#119): an issue's cycle by name ("Cycle 12" when it has none), the
+// team's cycles as a kanban's Cycle options (a completed one read-only); a parent is a parent issue.
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { labelKey, TRACKER_PROVIDERS, type IssueStatusCategory, type IssueValues } from '@freero/shared';
+import { labelKey, TRACKER_PROVIDERS, type IssueStatusCategory, type IssueValues, type TrackerSprint } from '@freero/shared';
 import { trackerMessage, TrackerError, type HttpResponse } from '../http';
 import type { Backlink, Credentials, ProviderConnection, RemoteIssue, TrackerProvider } from './types';
 
@@ -15,7 +17,8 @@ const WEBHOOK_MAX_AGE_MS = 60_000;
 
 const ISSUE = `id identifier url title description updatedAt dueDate estimate priority priorityLabel
   state { name type } assignee { name email } labels { nodes { name } } team { id key name }
-  project { name } parent { title }`;
+  project { name } parent { title } cycle { id number name }`;
+const CYCLE = 'id number name startsAt endsAt completedAt';
 
 const CATEGORY: Record<string, IssueStatusCategory> = {
   triage: 'todo',
@@ -56,6 +59,32 @@ interface LinearIssue {
   team?: { id: string; key: string; name?: string };
   project?: { name?: string } | null;
   parent?: { title?: string } | null;
+  cycle?: { id: string; number?: number; name?: string | null } | null;
+}
+
+interface LinearCycle {
+  id: string;
+  number?: number;
+  name?: string | null;
+  startsAt?: string;
+  endsAt?: string;
+  completedAt?: string | null;
+}
+
+/** What people call a cycle: its name, else "Cycle <number>" (Linear's own way). */
+const cycleName = (c: { number?: number; name?: string | null }) => c.name?.trim() || `Cycle ${c.number ?? '?'}`;
+
+function toSprint(c: LinearCycle, now = Date.now()): TrackerSprint {
+  const start = c.startsAt ? Date.parse(c.startsAt) : NaN;
+  const end = c.endsAt ? Date.parse(c.endsAt) : NaN;
+  const state = c.completedAt || end < now ? 'closed' : start <= now ? 'active' : 'future';
+  return { id: c.id, name: cycleName(c), state, startDate: c.startsAt?.slice(0, 10) ?? null, endDate: c.endsAt?.slice(0, 10) ?? null };
+}
+
+async function teamCycles(conn: ProviderConnection, team: string): Promise<TrackerSprint[]> {
+  const d = await gql<{ team: { cycles: { nodes: LinearCycle[] } } | null }>(conn, `query($id: String!) { team(id: $id) { cycles(first: 100) { nodes { ${CYCLE} } } } }`, { id: team }, 'list the team’s cycles');
+  const order = { closed: 0, active: 1, future: 2 };
+  return (d.team?.cycles.nodes ?? []).map((c) => toSprint(c)).sort((a, b) => order[a.state] - order[b.state] || (a.startDate ?? '').localeCompare(b.startDate ?? ''));
 }
 
 async function gql<T>(conn: ProviderConnection, query: string, variables: Record<string, unknown> = {}, what = 'answer'): Promise<T> {
@@ -100,7 +129,9 @@ function toRemote(i: LinearIssue): RemoteIssue {
       labels: (i.labels?.nodes ?? []).map((l) => l.name ?? '').filter(Boolean),
       dueDate: i.dueDate ? i.dueDate.slice(0, 10) : null,
       estimate: typeof i.estimate === 'number' ? i.estimate : null,
+      sprint: i.cycle ? cycleName(i.cycle) : null,
     },
+    project: i.team?.key ?? null,
     assigneeName: i.assignee?.name ?? null,
     updatedAt: i.updatedAt ? Date.parse(i.updatedAt) || 0 : 0,
     // Linear's projects are what other trackers call epics; a sub-issue's parent otherwise.
@@ -196,6 +227,15 @@ async function inputFor(conn: ProviderConnection, team: string, values: IssueVal
     if (id) input.stateId = id;
     else notes.push(`The ${LABEL} team has no ${values.status === 'doing' ? 'started' : values.status === 'done' ? 'completed' : 'unstarted'} state, so the status stayed.`);
   }
+  if (values.sprint !== undefined) {
+    if (values.sprint === null) input.cycleId = null;
+    else {
+      const hit = (await teamCycles(conn, team)).find((c) => labelKey(c.name) === labelKey(values.sprint!));
+      if (!hit) notes.push(`The ${LABEL} team has no cycle “${values.sprint}”, so the cycle stayed.`);
+      else if (hit.state === 'closed') notes.push(`“${hit.name}” is completed in ${LABEL}, so the cycle stayed.`);
+      else input.cycleId = hit.id;
+    }
+  }
   if (values.assignee !== undefined) {
     if (values.assignee === null) input.assigneeId = null;
     else if (!values.assignee.startsWith('~')) {
@@ -221,8 +261,34 @@ const hmacOk = (secret: string, body: Buffer, given: string | undefined): boolea
 
 export const linear: TrackerProvider = {
   kind: 'linear',
-  fields: ['title', 'description', 'status', 'statusName', 'priority', 'assignee', 'labels', 'dueDate', 'estimate'],
+  fields: ['title', 'description', 'status', 'statusName', 'priority', 'assignee', 'labels', 'dueDate', 'estimate', 'sprint'],
   queryLanguage: 'Search',
+  parents: { issueType: null },
+
+  sprints: {
+    fieldName: 'Cycle',
+    async list(conn, project) {
+      return teamCycles(conn, await teamId(conn, project));
+    },
+  },
+
+  async scoped(conn, scope, limit) {
+    const team = await teamId(conn, scope.project);
+    const filter: Record<string, unknown> = { team: { id: { eq: team } } };
+    if (scope.sprint) filter.cycle = { id: { eq: scope.sprint } };
+    if (scope.epic) {
+      const parent = await gql<{ issue: { id: string } | null }>(conn, `query($id: String!) { issue(id: $id) { id } }`, { id: scope.epic }, 'find the parent issue');
+      if (!parent.issue) throw new TrackerError(`${LABEL} has no issue ${scope.epic}.`, 'invalid', 400);
+      filter.parent = { id: { eq: parent.issue.id } };
+    }
+    const d = await gql<{ issues: { nodes: LinearIssue[] } }>(
+      conn,
+      `query($filter: IssueFilter, $first: Int) { issues(filter: $filter, first: $first) { nodes { ${ISSUE} } } }`,
+      { filter, first: Math.min(100, limit) },
+      'list issues',
+    );
+    return d.issues.nodes.map(toRemote);
+  },
 
   authHeaders(creds: Credentials) {
     // Personal API keys go as they are; OAuth access tokens as Bearer.
@@ -263,12 +329,19 @@ export const linear: TrackerProvider = {
       },
       notes,
     );
+    let parentId: string | undefined;
+    if (input.parent) {
+      const p = await gql<{ issue: { id: string } | null }>(conn, `query($id: String!) { issue(id: $id) { id } }`, { id: input.parent }, 'find the parent issue');
+      if (!p.issue) throw new TrackerError(`${LABEL} has no issue ${input.parent}.`, 'invalid', 400);
+      parentId = p.issue.id;
+    }
     const d = await gql<{ issueCreate: { issue: LinearIssue } }>(
       conn,
       `mutation($input: IssueCreateInput!) { issueCreate(input: $input) { issue { ${ISSUE} } } }`,
-      { input: { teamId: team, ...fields } },
+      { input: { teamId: team, ...fields, ...(parentId ? { parentId } : {}) } },
       `create an issue in ${input.project}`,
     );
+
     return { issue: toRemote(d.issueCreate.issue), notes };
   },
 

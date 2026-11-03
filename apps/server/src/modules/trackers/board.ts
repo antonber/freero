@@ -10,8 +10,11 @@ import {
   richTextToPlain,
   timelineLayout,
   TRACKER_PROVIDERS,
+  ISSUE_FIELDS,
   type BoardElement,
   type CardElement,
+  type FieldMapEntry,
+  type TrackerSprint,
   type CommentMessageRecord,
   type CommentThreadRecord,
   type ElementDraft,
@@ -48,7 +51,13 @@ function textOf(el: BoardElement): string {
  * One item as a TrackerSource. `emailOf`: a person's (verified) email by user id; `kanbanOf`: the
  * kanban a card stands in (its Stage and Priority are then the issue's status name and priority).
  */
-export function sourceOf(el: BoardElement, tags: ReadonlyMap<string, Tag>, emailOf: (userId: string) => string | null, kanbanOf?: (el: BoardElement) => KanbanElement | null): TrackerSource {
+export function sourceOf(
+  el: BoardElement,
+  tags: ReadonlyMap<string, Tag>,
+  emailOf: (userId: string) => string | null,
+  kanbanOf?: (el: BoardElement) => KanbanElement | null,
+  map?: readonly FieldMapEntry[],
+): TrackerSource {
   const e = el as unknown as Record<string, unknown>;
   const tagNames = Array.isArray(e.tags) ? (e.tags as unknown[]).flatMap((id) => (typeof id === 'string' && tags.get(id)?.name ? [tags.get(id)!.name] : [])) : [];
   if (el.type === 'card') {
@@ -66,7 +75,7 @@ export function sourceOf(el: BoardElement, tags: ReadonlyMap<string, Tag>, email
         startDate: typeof c.startDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(c.startDate) ? c.startDate.slice(0, 10) : null,
         dueDate: typeof c.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(c.dueDate) ? c.dueDate.slice(0, 10) : null,
         estimate: estimateNumber(c.estimate),
-        ...(k ? cardTrackerFields(k, c) : {}),
+        ...(k ? cardTrackerFields(k, c, { map, emailOf }) : {}),
       },
     };
   }
@@ -120,8 +129,10 @@ export function boardValues(provider: TrackerProvider, sources: TrackerSource[],
     itemUrl: ctx.itemUrl,
   });
   const out: IssueValues = {};
-  for (const f of provider.fields) if (all[f] !== undefined) (out as Record<string, unknown>)[f] = all[f];
+  for (const f of ISSUE_FIELDS) if (provider.fields.includes(f) && all[f] !== undefined) (out as Record<string, unknown>)[f] = all[f];
   if (out.labels) out.labels = [...new Set(out.labels.map(provider.label).filter(Boolean))];
+  // Mapped fields only where the tracker has custom fields (the map can name nothing else).
+  if (all.custom && provider.listFields) out.custom = all.custom;
   return out;
 }
 
@@ -168,6 +179,10 @@ export function planPull(
     newId(): string;
     /** Now (ms), for a roadmap's Now / Next / Later columns. */
     today?: number;
+    /** The tracker's sprints, when the pull brings one (#119: closed ones read-only). */
+    sprints?: readonly TrackerSprint[] | null;
+    /** The connection's field map (#43). */
+    map?: readonly FieldMapEntry[];
   },
 ): PullPlan {
   const patches = new Map<string, Record<string, unknown>>();
@@ -185,10 +200,13 @@ export function planPull(
   if (pull.status !== undefined && ctx.fields.has('status') && pull.status) for (const c of cards) patch(c.id, { status: pull.status });
   // Cards in a kanban: to the column of their new status (by name, else category) and their new
   // Priority (kanban.ts), in this same change.
-  const kanbanPart: Pick<IssueValues, 'status' | 'statusName' | 'priority'> = {
+  const custom = Object.fromEntries(Object.entries(pull.custom ?? {}).filter(([id]) => ctx.fields.has(`custom:${id}`)));
+  const kanbanPart: Pick<IssueValues, 'status' | 'statusName' | 'priority' | 'sprint' | 'custom'> = {
     ...(pull.status && ctx.fields.has('status') ? { status: pull.status } : {}),
     ...(pull.statusName !== undefined && ctx.fields.has('statusName') ? { statusName: pull.statusName } : {}),
     ...(pull.priority !== undefined && ctx.fields.has('priority') ? { priority: pull.priority } : {}),
+    ...(pull.sprint !== undefined && ctx.fields.has('sprint') ? { sprint: pull.sprint } : {}),
+    ...(Object.keys(custom).length ? { custom } : {}),
   };
   if (Object.keys(kanbanPart).length) {
     const moving = new Set(cards.map((c) => c.id));
@@ -198,7 +216,8 @@ export function planPull(
       if (k) byKanban.set(k.id, { k, cards: [...(byKanban.get(k.id)?.cards ?? []), c as CardElement] });
     }
     for (const { k, cards: inK } of byKanban.values()) {
-      const plan = planKanbanPull(view, k, inK, kanbanPart, { newId: ctx.newId, moving });
+      const plan = planKanbanPull(view, k, inK, kanbanPart, { newId: ctx.newId, moving, sprints: ctx.sprints, map: ctx.map, userIdOf: ctx.userIdOf });
+
       for (const [id, p] of plan.cards) patch(id, p);
       if (plan.kanban) patch(k.id, plan.kanban);
     }

@@ -14,8 +14,26 @@
 // Backlinks are remote links with a stable global id per board item. Webhooks are signed with
 // the connection's secret (X-Hub-Signature: sha256=…), as Jira sends them for a webhook with a
 // secret.
+//
+// Sprints (#119) are Jira Software's: an issue's sprint field (found by its schema when connecting)
+// holds every sprint it was in, the open one is its sprint; moving it goes through the agile API
+// (POST /rest/agile/1.0/sprint/{id}/issue, the backlog for none), a closed sprint is never a
+// target. Mapped custom fields (#43: select, multi-select, number, date, text, user) are read and
+// written by field id. A parent (an epic) is `fields.parent` on Cloud, the "Epic Link" field on Data
+// Center when it has one.
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { labelKey, TRACKER_PROVIDERS, type IssueStatusCategory, type IssueValues, type TrackerProject } from '@freero/shared';
+import {
+  labelKey,
+  TRACKER_PROVIDERS,
+  type CustomValue,
+  type FieldMapEntry,
+  type IssueStatusCategory,
+  type IssueValues,
+  type MappedFieldType,
+  type TrackerFieldInfo,
+  type TrackerProject,
+  type TrackerSprint,
+} from '@freero/shared';
 import { getConfig } from '../../../platform/config';
 import { trackerMessage, trackerRequest, TrackerError, type HttpResponse } from '../http';
 import { adfToMarkdown, markdownToAdf, markdownToWiki, wikiToMarkdown } from '../markup';
@@ -40,6 +58,10 @@ const CATEGORY_LABEL: Record<IssueStatusCategory, string> = {
 const ESTIMATE_FIELD_NAMES = ['story point estimate', 'story points', 'story point'];
 /** Jira Cloud's start date is a custom field ("Start date"); found by name like story points. */
 const START_FIELD_NAMES = ['start date', 'start'];
+const SPRINT_SCHEMA = 'com.pyxis.greenhopper.jira:gh-sprint';
+const EPIC_LINK_SCHEMA = 'com.pyxis.greenhopper.jira:gh-epic-link';
+const KEY = /^[A-Z][A-Z0-9_]{0,49}$/i;
+const ISSUE_KEY = /^[A-Z][A-Z0-9_]{0,49}-\d{1,9}$/i;
 
 /** Turns a refused call into Freero's words. 404 is left to the caller. */
 function refused(res: HttpResponse, what: string): TrackerError {
@@ -74,8 +96,72 @@ interface JiraIssue {
   };
 }
 
+const mapOf = (conn: ProviderConnection): FieldMapEntry[] => conn.settings.fieldMap ?? [];
+
 const issueFields = (conn: ProviderConnection) =>
-  ['summary', 'description', 'status', 'priority', 'assignee', 'labels', 'duedate', 'updated', 'project', 'parent', ...(conn.settings.estimateField ? [conn.settings.estimateField] : []), ...(conn.settings.startDateField ? [conn.settings.startDateField] : [])].join(',');
+  [
+    ...new Set([
+      'summary',
+      'description',
+      'status',
+      'priority',
+      'assignee',
+      'labels',
+      'duedate',
+      'updated',
+      'project',
+      'parent',
+      ...(conn.settings.estimateField ? [conn.settings.estimateField] : []),
+      ...(conn.settings.startDateField ? [conn.settings.startDateField] : []),
+      ...(conn.settings.sprintField ? [conn.settings.sprintField] : []),
+      ...mapOf(conn).map((m) => m.tracker),
+    ]),
+  ].join(',');
+
+/** The sprints a sprint field's value names (objects on current sites, "…Sprint@1[id=1,state=ACTIVE,name=…]" strings on older Data Center). */
+function sprintsIn(raw: unknown): Array<{ id: string; name: string; state: TrackerSprint['state'] }> {
+  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return list.flatMap((s) => {
+    if (s && typeof s === 'object') {
+      const o = s as { id?: unknown; name?: unknown; state?: unknown };
+      return o.id !== undefined && typeof o.name === 'string' ? [{ id: String(o.id), name: o.name, state: sprintState(o.state) }] : [];
+    }
+    if (typeof s !== 'string') return [];
+    const field = (k: string) => new RegExp(`[\\[,]${k}=([^,\\]]*)`).exec(s)?.[1];
+    const id = field('id');
+    const name = field('name');
+    return id && name ? [{ id, name, state: sprintState(field('state')) }] : [];
+  });
+}
+const sprintState = (s: unknown): TrackerSprint['state'] => (String(s).toLowerCase() === 'active' ? 'active' : String(s).toLowerCase() === 'closed' ? 'closed' : 'future');
+
+/** An issue's sprint: the open one it is in (active before future), else the last closed one. */
+function currentSprint(raw: unknown): string | null {
+  const all = sprintsIn(raw);
+  return (all.find((s) => s.state === 'active') ?? all.find((s) => s.state === 'future') ?? all.at(-1))?.name ?? null;
+}
+
+/** A mapped Jira field's value in the board's terms. */
+function customOf(conn: ProviderConnection, type: MappedFieldType, raw: unknown): CustomValue {
+  if (raw === null || raw === undefined) return type === 'multiselect' ? [] : null;
+  const label = (x: unknown) => (typeof x === 'string' ? x : x && typeof x === 'object' ? String((x as { value?: unknown; name?: unknown }).value ?? (x as { name?: unknown }).name ?? '') : String(x));
+  switch (type) {
+    case 'select':
+      return label(raw) || null;
+    case 'multiselect':
+      return (Array.isArray(raw) ? raw : [raw]).map(label).filter(Boolean);
+    case 'number':
+      return typeof raw === 'number' ? raw : Number.isFinite(Number(raw)) ? Number(raw) : null;
+    case 'date':
+      return typeof raw === 'string' ? raw.slice(0, 10) : null;
+    case 'person': {
+      const u = raw as { emailAddress?: string; accountId?: string; name?: string };
+      return u.emailAddress?.toLowerCase() ?? `~${u.accountId ?? u.name ?? 'someone'}`;
+    }
+    default:
+      return typeof raw === 'string' ? raw : cloud(conn) ? adfToMarkdown(raw) || null : null;
+  }
+}
 
 function toRemote(conn: ProviderConnection, j: JiraIssue): RemoteIssue {
   const f = j.fields ?? {};
@@ -99,11 +185,64 @@ function toRemote(conn: ProviderConnection, j: JiraIssue): RemoteIssue {
       ...(conn.settings.startDateField ? { startDate: typeof start === 'string' ? start.slice(0, 10) : null } : {}),
       dueDate: typeof f.duedate === 'string' ? f.duedate.slice(0, 10) : null,
       estimate: typeof est === 'number' ? est : null,
+      ...(conn.settings.sprintField ? { sprint: currentSprint(f[conn.settings.sprintField]) } : {}),
+      ...(mapOf(conn).length ? { custom: Object.fromEntries(mapOf(conn).map((m) => [m.tracker, customOf(conn, m.type, f[m.tracker])])) } : {}),
     },
     assigneeName: assignee?.displayName ?? null,
     updatedAt: f.updated ? Date.parse(f.updated) || 0 : 0,
     groups: { team: f.project?.name ?? f.project?.key ?? null, epic: f.parent?.fields?.summary ?? f.parent?.key ?? null },
+    project: f.project?.key ?? (String(j.key).includes('-') ? String(j.key).replace(/-\d+$/, '') : null),
   };
+}
+
+/** A project's sprints, through the agile API: those of its scrum boards, oldest first. */
+async function projectSprints(conn: ProviderConnection, project: string): Promise<TrackerSprint[]> {
+  if (!KEY.test(project)) throw new TrackerError(`${project} isn’t a ${LABEL} project key.`, 'invalid', 400);
+  const boards = await conn.call({ method: 'GET', path: `/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(project)}&maxResults=50` });
+  if (boards.status === 404) throw new TrackerError(`${LABEL} has no sprints here (Jira Software isn’t on this site).`, 'invalid', 404);
+  if (!ok(boards)) throw refused(boards, 'list the project’s boards');
+  const out = new Map<string, TrackerSprint>();
+  for (const b of ((boards.json as { values?: unknown[] })?.values ?? []) as Array<{ id?: unknown; type?: unknown }>) {
+    if (b.id === undefined || (b.type !== undefined && b.type !== 'scrum')) continue;
+    for (let startAt = 0; startAt < 500; ) {
+      const res = await conn.call({ method: 'GET', path: `/rest/agile/1.0/board/${encodeURIComponent(String(b.id))}/sprint?maxResults=50&startAt=${startAt}` });
+      if (!ok(res)) break;
+      const page = res.json as { values?: Array<{ id?: unknown; name?: unknown; state?: unknown; startDate?: unknown; endDate?: unknown }>; isLast?: boolean };
+      const values = page?.values ?? [];
+      for (const s of values)
+        if (s.id !== undefined && typeof s.name === 'string')
+          out.set(String(s.id), {
+            id: String(s.id),
+            name: s.name,
+            state: sprintState(s.state),
+            startDate: typeof s.startDate === 'string' ? s.startDate.slice(0, 10) : null,
+            endDate: typeof s.endDate === 'string' ? s.endDate.slice(0, 10) : null,
+          });
+      if (page?.isLast !== false || !values.length) break;
+      startAt += values.length;
+    }
+  }
+  const order = { closed: 0, active: 1, future: 2 };
+  return [...out.values()].sort((a, b) => order[a.state] - order[b.state] || (a.startDate ?? '9').localeCompare(b.startDate ?? '9') || Number(a.id) - Number(b.id));
+}
+
+/** Puts the issue in the sprint named `name` (a closed one never), or in the backlog for null. */
+async function moveToSprint(conn: ProviderConnection, issue: RemoteIssue, name: string | null, notes: string[]): Promise<void> {
+  if (!conn.settings.sprintField) {
+    if (name) notes.push(`${LABEL} has no sprints on this site, so the sprint wasn’t sent.`);
+    return;
+  }
+  if (name === null) {
+    const res = await conn.call({ method: 'POST', path: '/rest/agile/1.0/backlog/issue', body: { issues: [issue.key] } });
+    if (!ok(res)) throw refused(res, `move ${issue.key} to the backlog`);
+    return;
+  }
+  const sprints = issue.project ? await projectSprints(conn, issue.project) : [];
+  const hit = sprints.find((s) => labelKey(s.name) === labelKey(name));
+  if (!hit) return void notes.push(`${issue.project ?? 'The project'} has no sprint “${name}” in ${LABEL}, so ${issue.key}’s sprint stayed.`);
+  if (hit.state === 'closed') return void notes.push(`“${hit.name}” is closed in ${LABEL}, so ${issue.key}’s sprint stayed.`);
+  const res = await conn.call({ method: 'POST', path: `/rest/agile/1.0/sprint/${encodeURIComponent(hit.id)}/issue`, body: { issues: [issue.key] } });
+  if (!ok(res)) throw refused(res, `move ${issue.key} to ${hit.name}`);
 }
 
 /** Jira's user for an email address (only an exact address match counts). */
@@ -149,6 +288,19 @@ async function fieldsFor(conn: ProviderConnection, values: IssueValues, notes: s
       else notes.push(`No ${LABEL} user has the address ${values.assignee}, so the issue was left unassigned there.`);
     }
   }
+  for (const [id, v] of Object.entries(values.custom ?? {})) {
+    const m = mapOf(conn).find((x) => x.tracker === id);
+    if (!m || v === undefined) continue;
+    if (v === null || (Array.isArray(v) && !v.length)) f[id] = m.type === 'multiselect' ? [] : null;
+    else if (m.type === 'select') f[id] = { value: String(v) };
+    else if (m.type === 'multiselect') f[id] = (Array.isArray(v) ? v : [v]).map((x) => ({ value: String(x) }));
+    else if (m.type === 'person') {
+      if (String(v).startsWith('~')) continue;
+      const user = await findUser(conn, String(v).toLowerCase());
+      if (user) f[id] = user;
+      else notes.push(`No ${LABEL} user has the address ${v}, so ${m.trackerName} stayed.`);
+    } else f[id] = v;
+  }
   return f;
 }
 
@@ -180,9 +332,8 @@ async function sendFields(
     if (bad.length) {
       const rest = { ...fields };
       for (const k of bad) delete rest[k];
-      notes.push(
-        `${LABEL} didn’t accept ${bad.map((k) => FIELD_NAMES[k] ?? (k === conn.settings.estimateField ? 'the estimate' : k)).join(', ')} on this issue (not on its screen), so ${bad.length === 1 ? 'it was' : 'they were'} left out.`,
-      );
+      const nameOf = (k: string) => FIELD_NAMES[k] ?? (k === conn.settings.estimateField ? 'the estimate' : (mapOf(conn).find((m) => m.tracker === k)?.trackerName ?? k));
+      notes.push(`${LABEL} didn’t accept ${bad.map(nameOf).join(', ')} on this issue (not on its screen), so ${bad.length === 1 ? 'it was' : 'they were'} left out.`);
       res = await send(rest);
     }
   }
@@ -238,8 +389,9 @@ const hmacOk = (secret: string, body: Buffer, given: string | undefined): boolea
 
 export const jira: TrackerProvider = {
   kind: 'jira',
-  fields: ['title', 'description', 'status', 'statusName', 'priority', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate'],
+  fields: ['title', 'description', 'status', 'statusName', 'priority', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate', 'sprint'],
   queryLanguage: 'JQL',
+  parents: { issueType: 'Epic' },
 
   authHeaders(creds: Credentials) {
     if (creds.kind === 'oauth') return { authorization: `Bearer ${creds.accessToken}` };
@@ -268,8 +420,12 @@ export const jira: TrackerProvider = {
     });
     let estimateField: string | null = null;
     let startDateField: string | null = null;
+    let sprintField: string | null = null;
+    let epicLinkField: string | null = null;
     if (ok(fields) && Array.isArray(fields.json)) {
-      const list = fields.json as Array<{ id?: string; name?: string }>;
+      const list = fields.json as Array<{ id?: string; name?: string; schema?: { custom?: string } }>;
+      sprintField = list.find((f) => f.id && (f.schema?.custom === SPRINT_SCHEMA || (!f.schema?.custom && f.name?.trim().toLowerCase() === 'sprint')))?.id ?? null;
+      epicLinkField = list.find((f) => f.id && (f.schema?.custom === EPIC_LINK_SCHEMA || f.name?.trim().toLowerCase() === 'epic link'))?.id ?? null;
       for (const name of START_FIELD_NAMES) {
         const hit = list.find((f) => f.name?.trim().toLowerCase() === name && f.id);
         if (hit) {
@@ -287,8 +443,51 @@ export const jira: TrackerProvider = {
     }
     return {
       account: j.emailAddress ?? j.displayName ?? j.name ?? 'Jira user',
-      settings: { estimateField, startDateField },
+      settings: { estimateField, startDateField, sprintField, epicLinkField },
     };
+  },
+
+  async listFields(conn) {
+    const res = await conn.call({ method: 'GET', path: `/rest/api/${v(conn)}/field` });
+    if (!ok(res) || !Array.isArray(res.json)) throw refused(res, 'list its fields');
+    const kind = (s: { type?: string; items?: string; custom?: string } | undefined): MappedFieldType | null => {
+      if (!s?.type || s.custom === SPRINT_SCHEMA || s.custom === EPIC_LINK_SCHEMA) return null;
+      if (s.type === 'option') return 'select';
+      if (s.type === 'array' && (s.items === 'option' || s.items === 'string')) return 'multiselect';
+      if (s.type === 'number') return 'number';
+      if (s.type === 'date' || s.type === 'datetime') return 'date';
+      if (s.type === 'string') return 'text';
+      if (s.type === 'user') return 'person';
+      return null;
+    };
+    return (res.json as Array<{ id?: string; name?: string; custom?: boolean; schema?: { type?: string; items?: string; custom?: string } }>)
+      .filter((f) => f.id && f.name && (f.custom ?? f.id.startsWith('customfield_')))
+      .map((f): TrackerFieldInfo => ({ id: f.id!, name: f.name!, type: kind(f.schema) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  },
+
+  async issueTypes(conn, project) {
+    if (!KEY.test(project)) throw new TrackerError(`${project} isn’t a ${LABEL} project key.`, 'invalid', 400);
+    const res = await conn.call({ method: 'GET', path: `/rest/api/${v(conn)}/issue/createmeta/${encodeURIComponent(project)}/issuetypes?maxResults=100` });
+    if (!ok(res)) throw refused(res, `list the issue types of ${project}`);
+    const j = res.json as { issueTypes?: unknown[]; values?: unknown[] } | null;
+    return ((j?.issueTypes ?? j?.values ?? []) as Array<{ name?: unknown; subtask?: unknown }>).flatMap((t) => (typeof t.name === 'string' && !t.subtask ? [t.name] : []));
+  },
+
+  sprints: { fieldName: 'Sprint', list: projectSprints },
+
+  async scoped(conn, scope, limit) {
+    if (!KEY.test(scope.project)) throw new TrackerError(`${scope.project} isn’t a ${LABEL} project key.`, 'invalid', 400);
+    const clauses = [`project = "${scope.project}"`];
+    if (scope.sprint) {
+      if (!/^\d{1,12}$/.test(scope.sprint)) throw new TrackerError('That isn’t one of the project’s sprints.', 'invalid', 400);
+      clauses.push(`sprint = ${scope.sprint}`);
+    }
+    if (scope.epic) {
+      if (!ISSUE_KEY.test(scope.epic)) throw new TrackerError(`${scope.epic} isn’t a ${LABEL} issue key.`, 'invalid', 400);
+      clauses.push(cloud(conn) || !conn.settings.epicLinkField ? `parent = ${scope.epic}` : `"Epic Link" = ${scope.epic}`);
+    }
+    return jira.search(conn, clauses.join(' AND '), limit);
   },
 
   async listProjects(conn) {
@@ -321,10 +520,13 @@ export const jira: TrackerProvider = {
 
   async createIssue(conn, input: CreateIssueInput) {
     const notes: string[] = [];
-    const { status, statusName, ...rest } = input.values;
+    const { status, statusName, sprint, ...rest } = input.values;
+    if (input.parent && !ISSUE_KEY.test(input.parent)) throw new TrackerError(`${input.parent} isn’t a ${LABEL} issue key.`, 'invalid', 400);
+    const epicLink = !cloud(conn) && conn.settings.epicLinkField ? conn.settings.epicLinkField : null;
     const fields = {
       project: { key: input.project },
       issuetype: { name: input.issueType || 'Task' },
+      ...(input.parent ? (epicLink ? { [epicLink]: input.parent } : { parent: { key: input.parent } }) : {}),
       ...(await fieldsFor(conn, { ...rest, ...(rest.assignee === null ? { assignee: undefined } : {}) }, notes)),
     };
     const res = await sendFields(
@@ -343,8 +545,9 @@ export const jira: TrackerProvider = {
     if (!created?.id) throw new TrackerError(`${LABEL} didn’t say which issue it created.`, 'invalid');
     let issue = await jira.getIssue(conn, String(created.id));
     if (!issue) throw new TrackerError(`${LABEL} created ${created.key ?? 'an issue'} but Freero can’t read it back.`, 'refused');
-    if (status || statusName) {
-      await transition(conn, issue, { category: status, name: statusName }, notes);
+    if (status || statusName || sprint) {
+      if (status || statusName) await transition(conn, issue, { category: status, name: statusName }, notes);
+      if (sprint) await moveToSprint(conn, issue, sprint, notes);
       issue = (await jira.getIssue(conn, issue.id)) ?? issue;
     }
     return { issue, notes };
@@ -352,7 +555,7 @@ export const jira: TrackerProvider = {
 
   async updateIssue(conn, issue, patch) {
     const notes: string[] = [];
-    const { status, statusName, ...rest } = patch;
+    const { status, statusName, sprint, ...rest } = patch;
     const fields = await fieldsFor(conn, rest, notes);
     if (Object.keys(fields).length)
       await sendFields(
@@ -368,8 +571,10 @@ export const jira: TrackerProvider = {
         `change ${issue.key}`,
       );
     if (status || statusName) await transition(conn, issue, { category: status, name: statusName }, notes);
+    if (sprint !== undefined) await moveToSprint(conn, issue, sprint, notes);
     return notes;
   },
+
 
   async priorities(conn) {
     const res = await conn.call({ method: 'GET', path: `/rest/api/${v(conn)}/priority` });

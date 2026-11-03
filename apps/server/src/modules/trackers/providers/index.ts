@@ -1,6 +1,7 @@
 // The trackers Freero syncs with. A new one: a file implementing TrackerProvider (types.ts), a
 // line here and its kind in TRACKER_PROVIDERS (@freero/shared) — nothing else changes.
 import type { TrackerProviderKind } from '@freero/shared';
+import { azure } from './azure';
 import { github } from './github';
 import { jira, jiraOAuth } from './jira';
 import { linear } from './linear';
@@ -10,6 +11,7 @@ const PROVIDERS: Record<TrackerProviderKind, TrackerProvider> = {
   jira,
   linear,
   github,
+  azure,
 };
 const OAUTH: Partial<Record<TrackerProviderKind, OAuthProvider>> = {
   jira: jiraOAuth,

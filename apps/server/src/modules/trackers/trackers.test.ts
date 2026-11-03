@@ -10,6 +10,10 @@ import {
   boardView,
   cardValue,
   collectionSchema,
+  customField,
+  sprintFieldOf,
+  type FieldMapEntry,
+  type TrackerSprint,
   issueValuesFromBoard,
   kanbanColumnAt,
   kanbanLaneAt,
@@ -32,7 +36,9 @@ import { importIntoKanban, kanbanOf, planKanbanImport } from './kanban';
 import type { ProviderConnection, RemoteIssue } from './providers/types';
 import { trackerRequest, TrackerError } from './http';
 import { planRoadmapImport } from './roadmap';
-import { adfToMarkdown, markdownToAdf, markdownToWiki, wikiToMarkdown } from './markup';
+import { adfToMarkdown, htmlToMarkdown, markdownToAdf, markdownToHtml, markdownToWiki, wikiToMarkdown } from './markup';
+import { azure } from './providers/azure';
+
 import { github, managedPart, withManagedPart } from './providers/github';
 import { jira } from './providers/jira';
 import { linear } from './providers/linear';
@@ -74,7 +80,7 @@ it('labels a tracker reorders or re-cases are not mistaken for an edit', () => {
   expect(mergeField('labels', base, { labels: ['ux', 'Checkout'] }, { labels: ['checkout', 'UX'] }, { push: true, pull: true }).decision).toBe('none');
 });
 
-it('board text with markup characters reaches Jira as text, links as links, and reads back the same (ADF and wiki markup)', () => {
+it('board text with markup characters reaches Jira and Azure DevOps as text, links as links, and reads back the same (ADF, wiki markup, HTML)', () => {
   const md = 'Card form *resets* on error {code} | [x]\n\n- Coupon field hidden ([open](https://freero.example/board/b?item=n1))\n- Too many steps';
   const adf = markdownToAdf(md);
   const texts = JSON.stringify(adf);
@@ -86,6 +92,11 @@ it('board text with markup characters reaches Jira as text, links as links, and 
   expect(wiki).toContain('\\*resets\\*');
   expect(wiki).toContain('[open|https://freero.example/board/b?item=n1]');
   expect(wikiToMarkdown(wiki)).toBe(md);
+  // Azure DevOps: HTML from the template only — a note saying <img onerror=…> stays words.
+  const risky = `${md}\n\n<img src=x onerror=alert(1)> & [x](javascript:alert(1))`;
+  const html = markdownToHtml(risky);
+  expect(html).not.toMatch(/<img|href="javascript/i);
+  expect(htmlToMarkdown(html)).toBe(risky);
 });
 
 it('a webhook signed with another secret or altered after signing is refused, and a replayed Linear delivery too', () => {
@@ -103,6 +114,12 @@ it('a webhook signed with another secret or altered after signing is refused, an
   const fresh = Buffer.from(JSON.stringify({ type: 'Issue', data: { id: 'u1', identifier: 'ENG-1' }, webhookTimestamp: now }));
   expect(linear.webhook({ headers: { 'linear-signature': sig(fresh) }, rawBody: fresh, secret, now })).toEqual({ issues: ['u1', 'ENG-1'] });
   expect(linear.webhook({ headers: { 'linear-signature': sig(fresh) }, rawBody: fresh, secret, now: now + 5 * 60_000 })).toBeNull();
+  // Azure DevOps service hooks can't sign: the secret is their basic auth password.
+  const hook = Buffer.from(JSON.stringify({ eventType: 'workitem.updated', resource: { id: 9001, workItemId: 42 } }));
+  const basic = (pw: string) => `Basic ${Buffer.from(`freero:${pw}`).toString('base64')}`;
+  expect(azure.webhook({ headers: { authorization: basic(secret) }, rawBody: hook, secret, now })).toEqual({ issues: ['42'] });
+  expect(azure.webhook({ headers: { authorization: basic('guess') }, rawBody: hook, secret, now })).toBeNull();
+  expect(azure.webhook({ headers: {}, rawBody: hook, secret, now })).toBeNull();
 });
 
 it('what people write in a GitHub issue outside Freero’s section survives Freero’s writes', () => {
@@ -357,6 +374,123 @@ it('issues imported into a kanban with a new status column opening before Done l
   expect(f2.status).toBe('done');
   const n2 = change.create[0] as unknown as CardElement;
   expect(k2.columns[kanbanColumnAt(k2, n2.x + n2.w / 2)].id).toBe('prog');
+});
+
+// ---- sprints (#119), the field map (#43), Azure DevOps (#6) ----
+
+const TEAM: FieldMapEntry = { tracker: 'customfield_10050', trackerName: 'Team', board: 'Team', type: 'select' };
+const teamField = (name: string) => ({ id: 'tf', name, type: 'select' as const, options: [{ id: 'web', label: 'Web', color: '#000' }, { id: 'mob', label: 'Mobile', color: '#000' }] });
+const readCard = (k: KanbanElement, c: CardElement, map: FieldMapEntry[]) => issueValuesFromBoard([sourceOf(c, new Map(), () => null, (x) => kanbanOf(viewOf(k), x), map)], { itemUrl: (id) => id });
+
+it('renaming the kanban field a field map names neither clears the tracker’s value nor loses its change: once the map names it again, the change made meanwhile reaches the card', () => {
+  const can = { push: true, pull: true };
+  const f = customField(TEAM.tracker);
+  const k = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }], { fields: [{ id: 'stage', name: 'Stage', type: 'select' }, teamField('Team')] });
+  const c = cardIn(k, 0, 'c', { values: { tf: 'web' } });
+  const tracker = (team: string): IssueValues => ({ custom: { [TEAM.tracker]: team } });
+  const base = baseOf(readCard(k, c, [TEAM]), tracker('Web'));
+
+  // Someone renames the kanban's Team field to Squad; meanwhile Jira moves the issue to Mobile.
+  const renamed = { ...k, fields: [{ id: 'stage', name: 'Stage', type: 'select' }, teamField('Squad')] } as KanbanElement;
+  const read = readCard(renamed, c, [TEAM]);
+  expect(mergeField(f, base, read, tracker('Mobile'), can).decision).not.toBe('push');
+  const plan = planPull(viewOf(renamed, c), [c], { custom: { [TEAM.tracker]: 'Mobile' } }, { fields: pullableFields([{ type: 'card', card: {} as never }], [TEAM]), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'x', map: [TEAM] });
+  expect(plan.update.find((u) => u.id === 'c')?.patch.values).toBeUndefined();
+  const next = syncedBase(read, read, [f], tracker('Mobile'), base);
+
+  // The admin points the map at Squad: the card gets Mobile, its Web is not sent back.
+  const squad = { ...TEAM, board: 'Squad' };
+  const again = readCard(renamed, c, [squad]);
+  expect(mergeField(f, next, again, tracker('Mobile'), can).decision).toBe('pull');
+  const pulled = planPull(viewOf(renamed, c), [c], { custom: { [TEAM.tracker]: 'Mobile' } }, { fields: pullableFields([{ type: 'card', card: {} as never }], [squad]), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'x', map: [squad] });
+  expect(pulled.update.find((u) => u.id === 'c')?.patch.values).toEqual({ tf: 'mob' });
+});
+
+const SPRINTS: TrackerSprint[] = [
+  { id: '1', name: 'WEB Sprint 1', state: 'closed' },
+  { id: '2', name: 'WEB Sprint 2', state: 'active' },
+  { id: '3', name: 'WEB Sprint 3', state: 'future' },
+];
+
+it('a sprint moved in the tracker moves the card’s Sprint value, adding the sprint the field lacks, and a sprint closed there becomes read-only on the kanban', () => {
+  const sprintDef = { id: 'sp', name: 'Sprint', type: 'select' as const, options: [{ id: 's1', label: 'WEB Sprint 1', color: '#000' }, { id: 's2', label: 'WEB Sprint 2', color: '#000' }] };
+  const k = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }], { fields: [{ id: 'stage', name: 'Stage', type: 'select' }, sprintDef] });
+  const c = cardIn(k, 0, 'c', { values: { sp: 's2' } });
+  const base = baseOf(readCard(k, c, []), { sprint: 'WEB Sprint 2' });
+  expect(mergeField('sprint', base, readCard(k, c, []), { sprint: 'WEB Sprint 3' }, { push: true, pull: true }).decision).toBe('pull');
+  const plan = planPull(viewOf(k, c), [c], { sprint: 'WEB Sprint 3' }, { fields: new Set(['sprint']), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 's3', sprints: SPRINTS });
+  const patched = new Map(plan.update.map((u) => [u.id, u.patch]));
+  const k2 = { ...k, ...patched.get('kb') } as KanbanElement;
+  const field = sprintFieldOf(collectionSchema(k2))!;
+  expect(field.options!.map((o) => [o.label, !!o.readOnly])).toEqual([
+    ['WEB Sprint 1', true],
+    ['WEB Sprint 2', false],
+    ['WEB Sprint 3', false],
+  ]);
+  expect(cardValue(k2, { ...c, ...patched.get('c') } as CardElement, field)).toBe('s3');
+});
+
+it('issues imported by sprint give the kanban one Sprint field with the project’s open sprints, a closed sprint an issue still holds kept but read-only', () => {
+  const k = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }]);
+  let n = 0;
+  const plan = planKanbanImport(k, [{ id: 'a', values: { status: 'todo', sprint: 'WEB Sprint 2' } }, { id: 'b', values: { status: 'todo', sprint: 'WEB Sprint 1' } }], {
+    newId: () => `n${++n}`,
+    priorities: null,
+    sprints: SPRINTS,
+    sprintFieldName: 'Sprint',
+  });
+  const field = sprintFieldOf(collectionSchema(plan.kanban))!;
+  expect(field.options!.map((o) => [o.label, !!o.readOnly])).toEqual([
+    ['WEB Sprint 2', false],
+    ['WEB Sprint 3', false],
+    ['WEB Sprint 1', true],
+  ]);
+  expect(plan.values.get('a')).toEqual({ [field.id]: field.options![0].id });
+  expect(plan.values.get('b')).toEqual({ [field.id]: field.options![2].id });
+  expect(boardView(plan.kanban).card!.show).toContain(field.id);
+  // A second import adds no second field.
+  const again = planKanbanImport(plan.kanban, [{ id: 'c', values: { status: 'todo', sprint: 'WEB Sprint 3' } }], { newId: () => `m${++n}`, priorities: null, sprints: SPRINTS, sprintFieldName: 'Sprint' });
+  expect(collectionSchema(again.kanban).filter((f) => f.name === 'Sprint')).toHaveLength(1);
+});
+
+it('a Jira issue’s sprint is the open one it is in, not a closed sprint it passed through (current sites and older Data Center strings)', async () => {
+  const reply = (fields: Record<string, unknown>) => ({ status: 200, headers: {}, text: '', json: { id: '1', key: 'WEB-1', fields: { summary: 'x', project: { key: 'WEB' }, ...fields } } });
+  const conn = (deployment: string, fields: Record<string, unknown>) =>
+    ({ deployment, site: 'https://acme.example', settings: { sprintField: 'customfield_10020' }, call: async () => reply(fields) }) as unknown as ProviderConnection;
+  const cloudIssue = await jira.getIssue(conn('cloud', { customfield_10020: [{ id: 1, name: 'WEB Sprint 1', state: 'closed' }, { id: 2, name: 'WEB Sprint 2', state: 'active' }] }), '1');
+  expect(cloudIssue?.values.sprint).toBe('WEB Sprint 2');
+  const dc = await jira.getIssue(
+    conn('datacenter', { customfield_10020: ['com.atlassian.greenhopper.service.sprint.Sprint@1a[id=1,rapidViewId=1,state=CLOSED,name=Old,startDate=x]', 'com.atlassian.greenhopper.service.sprint.Sprint@2b[id=4,rapidViewId=1,state=FUTURE,name=Next up,startDate=<null>]'] }),
+    '1',
+  );
+  expect(dc?.values.sprint).toBe('Next up');
+});
+
+it('a write to an Azure DevOps work item names the revision Freero read, and one refused because someone changed the item since is a conflict to merge again, not a failure', async () => {
+  const sent: Array<{ method: string; path: string; body?: unknown; headers?: Record<string, string> }> = [];
+  const conn = {
+    id: 'az',
+    deployment: 'cloud',
+    site: 'https://dev.azure.com/acme',
+    apiBase: 'https://dev.azure.com/acme',
+    settings: {},
+    async call(req: { method: string; path: string; body?: unknown; headers?: Record<string, string> }) {
+      sent.push(req);
+      if (req.method === 'PATCH') return { status: 412, headers: {}, text: '', json: { message: 'TF26071: This work item has been changed by someone else since you opened it.' } };
+      return { status: 200, headers: {}, text: '', json: { id: 7, rev: 5, fields: { 'System.WorkItemType': 'Task', 'System.TeamProject': 'Fabrikam' } } };
+    },
+  } as unknown as ProviderConnection;
+  const issue = { id: '7', key: '#7', url: '', project: 'Fabrikam', version: '3', values: { title: 'Old', description: '', labels: [] }, assigneeName: null, updatedAt: 0 } as RemoteIssue;
+  const err = await azure.updateIssue(conn, issue, { title: 'New' }).catch((e) => e);
+  expect(err).toBeInstanceOf(TrackerError);
+  expect(err.kind).toBe('conflict');
+  const patch = sent.find((r) => r.method === 'PATCH')!;
+  expect(patch.headers?.['content-type']).toBe('application/json-patch+json');
+  // The revision the sync READ (3), not the one fetched just before writing (5).
+  expect(patch.body).toEqual([
+    { op: 'test', path: '/rev', value: 3 },
+    { op: 'add', path: '/fields/System.Title', value: 'New' },
+  ]);
 });
 
 let server: http.Server;
