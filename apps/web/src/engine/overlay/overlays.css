@@ -34,9 +34,24 @@
   border-radius: 2px;
 }
 
-.fr-ov-outline--member {
-  border: 1px solid var(--fr-select);
+/* Every item of a multiple selection: one path in world units (Overlays.tsx MemberOutlines). */
+.fr-ov-members {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.fr-ov-members path {
+  fill: none;
+  stroke: var(--fr-select);
+  stroke-width: 1px;
   opacity: 0.7;
+}
+
+.fr-ov-members path.is-locked {
+  stroke-dasharray: 4 3;
 }
 
 .fr-ov-outline--hover {
@@ -268,18 +283,18 @@
   border-radius: 4px;
   white-space: nowrap;
 }
-.fr-ov-outline--member.is-locked {
-  border-style: dashed;
-}
 
 /* Forced colours: the selection box and handles keep the system highlight (borders stay, fills go). */
 @media (forced-colors: active) {
   .fr-ov-selection,
   .fr-ov-outline--hover,
-  .fr-ov-outline--member,
   .fr-ov-handle,
   .fr-ov-rotate {
     border-color: Highlight;
+    forced-color-adjust: none;
+  }
+  .fr-ov-members path {
+    stroke: Highlight;
     forced-color-adjust: none;
   }
   .fr-ov-handle,

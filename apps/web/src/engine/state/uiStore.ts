@@ -61,6 +61,11 @@ export interface UiState {
   settingsVersion: number;
   /** True while the camera is moving (pan/zoom/animation): lets the world layer use will-change. */
   cameraMoving: boolean;
+  /**
+   * [additive, #131] Zoomed out to low detail (canvas/detail.ts, with hysteresis): the live canvas
+   * paints types' `lowDetail`. Derived from `camera` by the engine (runtime/core.ts); paint only.
+   */
+  lowDetail: boolean;
   /** Small label near the pointer during transforms (e.g. "45°", "240 × 120"). */
   hint: { text: string; x: number; y: number } | null;
   /** Container highlighted as the drop target while dragging. */
@@ -146,6 +151,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     presenceVersion: 0,
     settingsVersion: 0,
     cameraMoving: false,
+    lowDetail: false,
     hint: null,
     dropTargetId: null,
     dragging: null,
