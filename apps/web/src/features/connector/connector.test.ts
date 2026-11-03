@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardElement, ConnectorElement, ConnectorEndpoint } from '@freero/shared';
 import connectorDef from './element';
+import connectorCommands from './commands';
 import { capShape, capTrim, computeRoute, resolveEnds, tAlong, type End } from './lib/geometry';
 import { moveLabel, parsePart, partAt, writeLabel } from './lib/labels';
 import { buildConnector, endpoint, refreshCache, styleFromOptions } from './lib/model';
@@ -156,6 +157,31 @@ describe('attach anywhere on the outline', () => {
       expect(ed.getElement<ConnectorElement>(c)!.start).toMatchObject({ x: 50, y: 100 });
       ed.update(id, { x: 300, y: 40, w: 400, h: 160 });
       expect(ed.getElement<ConnectorElement>(c)!.start).toMatchObject({ x: 400, y: 200 });
+    } finally {
+      board.destroy();
+    }
+  });
+});
+
+describe('lines other features insert (smart drawing, #3)', () => {
+  it('an arrow drawn from one shape to another joins them; one drawn across a single shape stays free', () => {
+    const def = (type: string) => ({ type, Component: () => null, defaults: () => ({ type, w: 100, h: 100 }), resize: 'free' }) as unknown as ElementDefinition;
+    const bundle: FeatureBundle = {
+      manifest: { name: 'connector', description: 'lines' },
+      elements: [def('sticky'), connectorDef as unknown as ElementDefinition],
+      tools: [], formats: [], panels: [], commands: connectorCommands as FeatureBundle['commands'],
+    };
+    const board = createTestBoard({ users: ['ann'], features: [bundle] });
+    try {
+      const [ed] = board.editors('connector');
+      const a = ed.create({ type: 'sticky', x: 0, y: 0 } as never);
+      const b = ed.create({ type: 'sticky', x: 400, y: 0 } as never);
+      ed.runCommand('connector.insert', { id: 'joined', from: { x: 80, y: 50 }, to: { x: 420, y: 60 }, endCap: 'arrow' });
+      expect(ed.getElement<ConnectorElement>('joined')).toMatchObject({ start: { elementId: a }, end: { elementId: b }, endCap: 'arrow', routing: 'straight' });
+      ed.runCommand('connector.insert', { id: 'across', from: { x: 10, y: 50 }, to: { x: 90, y: 50 } });
+      const across = ed.getElement<ConnectorElement>('across')!;
+      expect(across.start.elementId ?? null).toBeNull();
+      expect(across.end.elementId ?? null).toBeNull();
     } finally {
       board.destroy();
     }

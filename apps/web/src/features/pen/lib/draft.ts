@@ -17,6 +17,11 @@ export interface Draft {
    * `points`, comes back.
    */
   line: RawPoint[] | null;
+  /**
+   * Smart drawing: the pen rested at the end of the stroke, which straightened it (`line` is that
+   * straight stroke). Moving on drops it and the freehand path comes back.
+   */
+  held?: boolean;
 }
 
 /** What the draft draws and commits: the straight line while constrained, else the freehand path. */

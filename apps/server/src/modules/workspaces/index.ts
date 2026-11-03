@@ -41,6 +41,8 @@ export {
 } from './directory';
 // Retention / legal holds: a module that must keep a workspace's data registers a check (KAI-51).
 export { onWorkspaceDeletionHold, type DeletionHoldCheck } from './holds';
+// Who may create a team workspace: sso's domain control registers "Block other team workspaces" (#64).
+export { onTeamWorkspaceCreation, type CreationCheck } from './creation';
 // Data exports (modules/privacy).
 export { exportMembershipsOf, exportWorkspaceDirectory, type MembershipExport, type WorkspaceDirectoryExport } from './dataExport';
 

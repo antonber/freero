@@ -89,6 +89,8 @@ Links in emails point at `PUBLIC_URL` (in development: the origin the request ca
 
 | Variable | Default | Description |
 |---|---|---|
+| `SIGNUPS` | `open` | Who may create an account on this server. `open`: anyone. `invite-only`: an address with a live board or workspace invite, at one of `SIGNUP_DOMAINS`, at a domain a workspace here verified with "Add new sign-ups" on, or an operator's (`OPERATOR_EMAILS`); applies to signup with a password and to a first sign-in with Google / Microsoft. Accounts a workspace's own identity provider or directory makes (SSO, SCIM) are vouched for by a workspace that proved the domain, so they pass. Everyone else is told the server is by invitation. |
+| `SIGNUP_DOMAINS` | — | Comma-separated domains (`example.com`) whose addresses may always sign up on an `invite-only` server (your own organization's). |
 | `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
 | `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
 | `SESSION_RECHECK_SECONDS` | `60` | How often each instance re-checks the sessions behind its open board and notification sockets against the database and closes those whose session is gone (deleted by the admin CLI or SQL, expired, account suspended). Sessions ended through the app close their sockets at once; this bounds the delay for everything else. |
@@ -222,6 +224,18 @@ The event stream and workspace webhooks: [events.md](events.md).
 | `WEBHOOK_RETRY_BASE_MS` | `10000` | The first retry's delay; each further one is 4× longer, at most 6 hours. |
 | `WEBHOOK_MAX_ATTEMPTS` | `7` | Attempts per delivery before it is marked failed (it stays in the delivery log, and admins can send it again). |
 | `WEBHOOK_DISABLE_AFTER_FAILURES` | `15` | Failed attempts in a row (any delivery) after which an endpoint is turned off, audited and its creator emailed. |
+
+## Audit log streaming to a SIEM
+
+Owners/admins of a team workspace stream its audit log to Splunk (HTTP Event Collector), Microsoft Sentinel (Logs Ingestion API), an HTTPS collector or syslog over TLS from the admin console (Audit log tab). SIEMs that pull use `GET /api/v1/workspaces/<id>/audit` with an `audit:read` token instead.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SIEM` | `true` | Audit log streaming. `false` is the instance-wide switch: the admin console's streams and their routes are gone (404) and nothing is sent; streams are kept. |
+| `SIEM_PRIVATE_ENDPOINTS` | `false` | Streams may go to plain `http` and private / loopback addresses (a SIEM on your own network). Off: `https` / TLS only, private addresses refused when a stream is added and again when connecting. |
+| `SIEM_TIMEOUT_SECONDS` | `15` | How long one attempt waits for the SIEM. |
+| `SIEM_RETRY_BASE_MS` | `10000` | The first retry's delay after a failed batch; each further one is 4× longer, at most 6 hours. A failed batch is never skipped: the stream waits and resends from the same event. |
+| `SIEM_AZURE_AUTHORITY` | `https://login.microsoftonline.com` | Where Microsoft Sentinel streams get their Entra ID token (`<authority>/<tenant>/oauth2/v2.0/token`). Change it only for tests (sovereign clouds are not supported yet: their Azure Monitor scope differs). |
 
 ## Slack link unfurls
 

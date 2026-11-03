@@ -13,6 +13,10 @@ export {
   recordAuditQuietly,
   listAuditEvents,
   verifyWorkspaceAudit,
+  // SIEM streams (modules/siem, #17): a workspace log in seq order, its head, and a signed head.
+  workspaceEventsAfter,
+  workspaceHeadSeq,
+  signedWorkspaceHead,
   type AuditInput,
   type StoredEvent as StoredAuditEvent,
   type EventFilter as AuditFilter,

@@ -4,7 +4,11 @@
 // - its cache provider lives in Postgres per workspace (sso_saml_cache), so every instance knows
 //   the outstanding requests and the assertions already accepted, and consuming a request ID or
 //   recording an assertion ID is one statement (two copies of one response can't both pass);
-// - SP-initiated only: validateInResponseTo 'always' refuses unsolicited (IdP-initiated) responses;
+// - validateInResponseTo 'ifPresent': a response that names a request must answer one we sent, once;
+//   one that names none (IdP-initiated, from the IdP's app tile) passes the library's checks and is
+//   then accepted only where the workspace allows it (signIn.ts samlAcs), with its Destination
+//   required to be this ACS. Which kind it is comes from the VERIFIED InResponseTo only (a signed
+//   Response's, else the signed assertion's SubjectConfirmationData), never the unsigned envelope;
 // - the verified assertion must be addressed to this workspace's assertion consumer service
 //   (bearer SubjectConfirmationData Recipient), which node-saml 5 only warns about;
 // - claims are read from the VERIFIED assertion only (`getAssertion()`), never the outer response.
@@ -65,7 +69,8 @@ export function samlFor(workspaceId: string, sp: SpUrls, idp: IdpSettings): SAML
     // a signed response is accepted on top but not required (Entra and Okta sign the assertion).
     wantAssertionsSigned: true,
     wantAuthnResponseSigned: false,
-    validateInResponseTo: ValidateInResponseTo.always,
+    // Unsolicited responses are told apart (profile.inResponseTo null) and gated in signIn.ts.
+    validateInResponseTo: ValidateInResponseTo.ifPresent,
     requestIdExpirationPeriodMs: SAML_REQUEST_TTL_MS,
     rejectReplayedAssertions: true,
     cacheProvider: cacheFor(workspaceId),
@@ -159,7 +164,8 @@ export interface SamlClaims {
   name: string | null;
   /** The IdP's SessionNotOnOrAfter, if it set one. */
   sessionNotOnOrAfter: number | null;
-  inResponseTo: string;
+  /** The request it answers, as verified by its signature; null: unsolicited (IdP-initiated). */
+  inResponseTo: string | null;
 }
 
 const EMAIL_ATTRS = [
@@ -212,7 +218,6 @@ export function claimsFromProfile(profile: Profile, acsUrl: string): SamlClaims 
     .flatMap((c) => children(c, 'SubjectConfirmationData'))
     .map((d) => d.$?.Recipient ?? '');
   if (!recipients.some((r) => sameUrl(r, acsUrl))) throw new Error(`the assertion is addressed to ${recipients.join(', ') || 'no recipient'}, not ${acsUrl}`);
-  if (typeof profile.inResponseTo !== 'string') throw new Error('the assertion answers no request');
   const session = children(a, 'AuthnStatement')[0]?.$?.SessionNotOnOrAfter;
   const nameId = profile.nameID;
   const email = attr(profile, EMAIL_ATTRS) ?? (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nameId ?? '') ? nameId : null);
@@ -226,6 +231,23 @@ export function claimsFromProfile(profile: Profile, acsUrl: string): SamlClaims 
     email: email.toLowerCase(),
     name,
     sessionNotOnOrAfter: session ? Date.parse(session) || null : null,
-    inResponseTo: profile.inResponseTo,
+    inResponseTo: typeof profile.inResponseTo === 'string' && profile.inResponseTo ? profile.inResponseTo : null,
   };
 }
+
+const PROTOCOL = 'urn:oasis:names:tc:SAML:2.0:protocol';
+
+/**
+ * The Destination of the posted Response (after the library verified it). Read only to REFUSE an
+ * unsolicited response that isn't addressed to this ACS; null when absent or unreadable.
+ */
+export function responseDestination(samlResponse: string): string | null {
+  const xml = Buffer.from(samlResponse, 'base64').toString('utf8');
+  if (/<!DOCTYPE/i.test(xml)) return null;
+  const doc = new DOMParser({ errorHandler: () => {} }).parseFromString(xml, 'text/xml');
+  const root = doc?.documentElement;
+  if (!root || root.localName !== 'Response' || root.namespaceURI !== PROTOCOL) return null;
+  return root.getAttribute('Destination')?.trim() || null;
+}
+
+export const sameAcs = sameUrl;

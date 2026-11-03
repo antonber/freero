@@ -36,6 +36,7 @@ import type {
   Host,
   HostUser,
   ImportData,
+  LassoMode,
   NewElement,
   Point,
   Rect,
@@ -48,6 +49,7 @@ import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
 import { boundsOf, elementAABB, localToWorld, rectCenter, rectUnion, visualAABB } from '../geometry/geometry';
 import { compareRenderOrder, elementsInRect, hitTestElements, HIT_TOLERANCE_PX } from '../geometry/spatial';
+import { elementsInLasso } from '../geometry/lasso';
 import { findFreeSpot } from '../geometry/freeSpot';
 import {
   clampZoom,
@@ -122,7 +124,9 @@ export class EditorImpl implements Editor {
     privateTypes: readonly ElementType[] | null;
     /** Where content is about to land (reserveSpace): findFreeSpot keeps clear of it. */
     reserved: Set<Rect>;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null, privateTypes: null, reserved: new Set() };
+    /** Work queued with afterGesture(), run once the open gesture's undo step has closed. */
+    afterGesture: Array<() => void>;
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null, privateTypes: null, reserved: new Set(), afterGesture: [] };
 
   /** The private-mode placement rule (read by the engine's layer placement). */
   getPrivateRule(): ((el: BoardElement) => boolean) | null {
@@ -508,6 +512,11 @@ export class EditorImpl implements Editor {
     return elementsInRect(this.getVisibleElements(), rect, mode);
   }
 
+  elementsInLasso(points: Point[], mode: LassoMode = 'inside'): BoardElement[] {
+    const open = this.getVisibleElements().filter((el) => !el.locked);
+    return elementsInLasso(open, points, mode, (t) => this.getDefinition(t));
+  }
+
   getAnchorPoint(id: string, anchor: 'top' | 'right' | 'bottom' | 'left'): Point | null {
     const el = this.getElement(id);
     if (!el) return null;
@@ -864,13 +873,28 @@ export class EditorImpl implements Editor {
 
   endGesture(): void {
     // Containers re-lay out before the step closes: the drop and the re-stack are one undo.
-    if (this.core.store.isOutermostGesture()) this.flushArrange();
+    const outermost = this.core.store.isOutermostGesture();
+    if (outermost) this.flushArrange();
     this.core.store.endGesture();
+    if (outermost) this.runAfterGesture();
   }
 
   cancelGesture(): void {
-    if (this.core.store.isOutermostGesture()) this.shared.arrange.before.clear();
+    if (this.core.store.isOutermostGesture()) {
+      this.shared.arrange.before.clear();
+      this.shared.afterGesture.length = 0;
+    }
     this.core.store.cancelGesture();
+  }
+
+  afterGesture(fn: () => void): void {
+    if (!this.core.store.inGesture()) return fn();
+    this.shared.afterGesture.push(fn);
+  }
+
+  private runAfterGesture(): void {
+    const queued = this.shared.afterGesture.splice(0);
+    for (const fn of queued) fn();
   }
 
   bringToFront(ids: string[]): void {
@@ -1562,7 +1586,7 @@ export class EditorImpl implements Editor {
       prev.def.onCancel?.(ed);
       prev.def.onDeactivate?.(ed);
     }
-    this.core.ui.setState({ toolId: id, hoverId: null, guides: [], gaps: [], marquee: null });
+    this.core.ui.setState({ toolId: id, hoverId: null, guides: [], gaps: [], marquee: null, lasso: null });
 
     reg.def.onActivate?.(this.core.scoped(reg.feature));
   }

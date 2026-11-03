@@ -943,6 +943,31 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
   them; their drafts join no container). Collections in `PARTICIPANT_WRITABLE` (`voting`,
   `estimation`) are writable for a participant, shared and private; the server decides which keys.
 
+Pen tools: lasso (#111) and smart drawing (#3):
+- Lasso: the engine's built-in `lasso` tool (`interaction/selectTool.ts`, `createSelectTool(core,
+  'lasso')`; in the "+" grid and the pen's flyout) is the select tool whose drag on empty canvas
+  draws a freeform loop (`UiState.lasso`, drawn by `overlay/Overlays.tsx`) instead of a marquee;
+  Alt+drag on empty canvas does the same with the select tool, Shift adds. What a loop takes is
+  `Editor.elementsInLasso(points, mode)` (`geometry/lasso.ts`): `'inside'` (default) = items wholly
+  in the loop, or — for a type with `ElementDefinition.lassoPoints(el)` (the pen's centerline) —
+  most of those points; `'touch'` = the marquee's rule (a rectangular loop takes what a marquee
+  over it would). Containers only when wholly inside; locked and hidden items never. The mode is
+  the lasso tool's option (its flyout: Inside / Touching, per browser). A finger draws a loop
+  like any non-select tool, until "pen draws, finger pans" makes fingers pan.
+- Smart drawing (`features/pen`, option `smart` in the pen's flyout, off by default; the pen only,
+  never the highlighter): `lib/recognise.ts` reads a finished stroke as a line, an arrow, a
+  closed rectangle / ellipse / triangle / diamond, a scratch-out, or nothing (pure geometry,
+  deterministic; tests run on frozen strokes in `lib/recordedStrokes.ts`). The ink is created by
+  the stroke's gesture as always; `Editor.afterGesture(fn)` then replaces it in an undo step of its
+  own (`lib/smart.ts`), so Undo once brings the ink back. Shapes go through the shape feature's
+  `shape.insert` command (`{ kind, x, y, w, h, rotation?, stroke?, strokeWidth?, fill?, id? }`),
+  lines and arrows through the connector feature's `connector.insert` (`{ from, to, endCap?,
+  stroke?, strokeWidth?, id? }`, ends attached to the items they land on): each feature stays the
+  single writer of its defaults. A scratch-out over items erases those it mostly covers (never
+  locked items or containers; a toast offers Undo); over nothing it stays ink. Resting the pen
+  650 ms straightens the stroke into a line; a Shift-ruled stroke stays ink. Participants'
+  drafts stay ink.
+
 ### Installable app (PWA, KAI-140)
 
 `apps/web/public/manifest.webmanifest` + icons (rendered from `freero.svg`; maskable source in
@@ -1186,10 +1211,13 @@ period, orchestrating the owning modules' exports), `notifications` (notificatio
 notification_prefs, pending_mentions, card_due_watch, board_change_digests: inbox, live delivery,
 email digests, due-date reminders, the "changes on your boards" email), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on),
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on;
+sso_domain_policies, sso_domain_captures: domain control),
 `scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
-identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
+identity and data"), `audit` (audit_events, audit_chains, audit_anchors: the append-only audit log
+and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed to workspaces'
+SIEMs; see "Audit log, admin console and workspace policies"), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
 policies"), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
 (ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
@@ -1290,7 +1318,8 @@ reports" below).
   (board sockets) treats it as signed out. Emailed links carry 256-bit single-use tokens stored as
   sha256 and deleted on use (one `DELETE … RETURNING`, so two concurrent uses can't both win).
   Proving an address (verification link, reset, email change, an invite link mailed to it) fires
-  `onEmailVerified`, where members turns that address's pending invites into memberships; an
+  `onEmailVerified` — so does an account born verified (a provider or the organization's directory
+  vouched for it: `insertAccount`), where members turns that address's pending invites into memberships; an
   unverified account never picks up invites and can't invite or share by link.
 - Sign-in methods (`modules/auth`): `oidc.ts` is a generic OpenID Connect relying party
   (openid-client: authorization code + PKCE, state, nonce, id-token validation) configured by issuer
@@ -1560,11 +1589,18 @@ members with roles owner / admin / member / guest (separate from board roles).
   tests, `SSO_DNS_SERVERS` for operators, never skipped). Only a VERIFIED domain counts, and one
   workspace at most holds it: it routes sign-ins (`GET /api/sso/discover`, by domain only), lets the
   workspace's IdP vouch for addresses at it, scopes SCIM provisioning and "Enforce SSO".
-- **SSO** (`sso/signIn.ts`): SP-initiated only. SAML via `@node-saml/node-saml` (signed assertion
-  required, audience = the workspace's entity ID, `validateInResponseTo: always`, assertion-ID
-  replay cache — both in `sso_saml_cache`, per workspace, shared by instances, consumed in one
-  statement) plus our Recipient check on the verified assertion; claims are read only from the
-  verified assertion. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+- **SSO** (`sso/signIn.ts`): SAML via `@node-saml/node-saml` (signed assertion required, audience =
+  the workspace's entity ID, `validateInResponseTo: ifPresent`, assertion-ID replay cache kept until
+  the assertion's NotOnOrAfter — both in `sso_saml_cache`, per workspace, shared by instances,
+  consumed in one statement) plus our Recipient check on the verified assertion; claims are read
+  only from the verified assertion. A response that answers a request must answer one we sent,
+  once. **IdP-initiated** (#107; the IdP's app tile, an unsolicited response — which kind it is comes
+  from the VERIFIED InResponseTo only) is refused (`sso_unsolicited`) unless the connection's
+  `idp_initiated` switch is on (off by default); then its `Destination` must also be this ACS, its
+  RelayState counts only as a same-origin path (`unsolicitedReturnPath`), and the claims are parked
+  on a new flow bound by cookie to the browser that posted, finished by the same same-site GET
+  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). Single logout and encrypted
+  assertions: #13. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
   `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
   a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
   started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
@@ -1577,6 +1613,22 @@ members with roles owner / admin / member / guest (separate from board roles).
   shortens that one session. Enforcing needs a sign-in that went through and an owner as
   break-glass (exempt while still an owner), and ends the domain's non-SSO sessions; pointing the
   connection at another IdP drops enforcement.
+- **Domain control** (#64, `sso/domainControl.ts`; any VERIFIED domain, with or without SSO): only
+  accounts that proved an address at the domain are listed or taken in (an unverified claim is
+  anyone's), and only the one workspace holding the domain verified can. Admins bring existing
+  accounts in: each is emailed, `sso_domain_captures` remembers the address and the date, and the
+  `sso:domain-capture` job makes them members after the grace period if the account still has
+  that address, verified, and the domain is still the workspace's (changing the address is the
+  opt-out); their own boards are never moved. "Add new sign-ups" (`sso_domain_policies`) joins an
+  account the moment it verifies an address there (auth's `onEmailVerified`). "Block other team
+  workspaces" refuses `createTeamWorkspace` through workspaces' `onTeamWorkspaceCreation` seam
+  (403 `workspace_creation_blocked`, naming the admins). Joins use the SSO default role. Audited:
+  `sso.domain_*`, `sso.workspace_creation_refused` (in the managing workspace's log).
+- **Invite-only servers** (`auth/signups.ts`, `SIGNUPS=invite-only`, for self-hosters): signup and a
+  first personal-provider sign-in make an account only for an address something expects —
+  `onSignupExpected` checks registered by members and workspaces (a live invite) and sso (a domain
+  that adds sign-ups), `SIGNUP_DOMAINS`, operators. Directory-made accounts (SSO JIT, SCIM) pass:
+  a workspace that proved the domain vouches for them.
 - **SCIM** (`scim/`): bearer tokens per workspace (sha256; rotate = swap in one step, or overlap).
   Filters (`filter.ts`) and PATCH (`patch.ts`) are generic over the resource JSON, as Okta and
   Entra send them. Provisioned people are accounts at verified domains; groups map, by admins in
@@ -1597,7 +1649,8 @@ members with roles owner / admin / member / guest (separate from board roles).
   enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
   mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
   workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409).
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409),
+  `workspaces.onTeamWorkspaceCreation` (domain control), `auth.onSignupExpected` (invite-only).
 - **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
   under Data (pages/admin/AdminIdentity.tsx).
 
@@ -1799,7 +1852,8 @@ audit and admin controls are the same code.
   accounts and accounts awaiting deletion. 401/403 carry a `WWW-Authenticate` challenge naming the
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
-  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`. Effective
+  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`, `audit:read`
+  (a team workspace's audit log, for its owners/admins: `api/audit.ts`). Effective
   power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
   write.
 - **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
@@ -2379,7 +2433,22 @@ module isn't the natural call and for the operator CLI: modules/audit registers 
   pruned one, so an edited row, a gap, a dropped newest event or oldest events removed outside
   retention all show when the chain is checked (admin console "Integrity", `npm run admin --
   audit:verify <workspace>`). Someone with database write access could rewrite a whole chain and
-  its head; the head hash shown to admins (and in every export) is what they anchor elsewhere.
+  its head consistently; against that, the `audit:anchor` job (hourly) signs every head that moved
+  into `audit_anchors` (append-only; `seal`'s sibling `mac` under SESSION_SECRET, rotation-aware,
+  `chain.ts` `AnchorCheck`), and the check fails when a checkpoint still in retention doesn't match
+  the stored event at its seq — the rewriter can't sign their new head. Streams to a SIEM carry the
+  chain outside the database altogether (below).
+- **Streams to a SIEM** (#17, `modules/siem`, admin console Audit log tab): Splunk HEC, Microsoft
+  Sentinel (Entra ID client credentials → Logs Ingestion API), a generic HTTPS collector (signed
+  like webhooks) or syslog over TLS (certificate verified). Each sink's cursor is the seq of the
+  workspace chain `w:<id>` — handed out under the head's row lock, so seqs commit in order and a
+  cursor never passes an event still in flight. The `siem:deliver` job sends what follows the
+  cursor in order, at least once; a failed batch is retried with backoff, never skipped. Records
+  are the console's `AuditEvent` (admin's `toAuditEvents`) with their hashes, plus an hourly signed
+  `freero.audit.head`. Secrets (tokens, the collector URL, the signing secret) are one sealed blob,
+  never returned. Outbound like webhooks: https / TLS only, our own DNS check against private
+  addresses, no redirects (`SIEM_PRIVATE_ENDPOINTS` for on-prem). `SIEM=false` removes it. SIEMs
+  that pull use `GET /api/v1/workspaces/:id/audit` (`audit:read`, owners/admins; same cursor).
 - No foreign keys: the log outlives the workspaces, boards and accounts it names. Actor names are
   resolved when read (a deleted account reads "Deleted user"); targets keep the label they had.
 - Retention (`audit:retention` job, hourly): each workspace's `auditRetentionDays`, accounts' own

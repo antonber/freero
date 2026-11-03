@@ -112,3 +112,57 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Domain control: accounts at the verified domains. */
+.fr-admin-domain__heading {
+  margin: 14px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fr-admin-domain__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  margin: 0 0 10px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+}
+
+.fr-admin-domain__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fr-line);
+}
+
+.fr-admin-domain__item:last-child {
+  border-bottom: 0;
+}
+
+.fr-admin-domain__check {
+  width: 13px;
+}
+
+.fr-admin-domain__who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fr-admin-domain__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fr-admin-domain__actions > :first-child {
+  margin-right: auto;
+}

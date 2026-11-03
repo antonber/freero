@@ -22,6 +22,7 @@
     { "name": "objects", "description": "Object addresses and what links to them" },
     { "name": "docs", "description": "Docs (KAI-162): collaborative documents next to boards, shared and opened like boards" },
     { "name": "trackers", "description": "Issue trackers (#79): a tracker query as linked task cards on a board (docs/trackers.md)" },
+    { "name": "audit", "description": "A team workspace’s audit log for SIEMs that pull (#17); pushing streams are set up in the admin console" },
     { "name": "operator", "description": "For Freero’s operators only (OPERATOR_EMAILS): the problems people reported with “Report a problem”. Anyone else gets 404 here." }
   ],
   "paths": {
@@ -88,6 +89,44 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/audit": {
+      "get": {
+        "operationId": "listWorkspaceAuditEvents",
+        "tags": ["audit"],
+        "summary": "A team workspace’s audit log in order, after a cursor (for SIEMs that pull)",
+        "description": "Owners and admins of the team workspace only. Events come oldest first after `after` (the `cursor` of the previous page; 0 or absent: from the oldest event retention kept). Poll with the last `cursor` to get what is new; nothing is skipped. Streams that push to Splunk, Microsoft Sentinel, an HTTPS collector or syslog are set up in the admin console.",
+        "x-freero-scope": "audit:read",
+        "security": [{ "bearer": ["audit:read"] }],
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "description": "The `cursor` of the previous page (an event seq)", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["events", "cursor", "more", "headSeq"],
+                  "properties": {
+                    "events": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEvent" } },
+                    "cursor": { "type": "string", "description": "Pass as `after` next time" },
+                    "more": { "type": "boolean", "description": "More events are waiting right now" },
+                    "headSeq": { "type": "integer", "description": "The newest event’s seq" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
@@ -1815,6 +1854,7 @@
               "comments:write": "Comment on boards",
               "members:read": "See who has access to your boards",
               "members:write": "Invite people and change their access",
+              "audit:read": "Read the audit log of team workspaces you administer",
               "problems:triage": "Read and triage the problems people reported (operators’ personal access tokens only: never granted to apps)"
             }
           }
@@ -2236,7 +2276,7 @@
           "children": { "type": "array", "items": { "$ref": "#/components/schemas/DocBlock" } }
         }
       },
-      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "problems:triage"] },
+      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "audit:read", "problems:triage"] },
       "KanbanFilterRule": {
         "type": "object",
         "required": ["field", "op"],
@@ -2605,6 +2645,37 @@
         "type": "object",
         "required": ["x", "y", "w", "h"],
         "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" } }
+      },
+      "AuditEvent": {
+        "type": "object",
+        "description": "One event of a workspace’s audit log, as the admin console shows it. `seq`, `prevHash` and `hash` place it in the workspace’s hash chain (`chain` = \"w:<workspaceId>\"): each hash is sha256 over the event and the previous hash, so a copy kept elsewhere proves nothing before it changed.",
+        "required": ["id", "at", "action", "workspaceId", "actor", "target", "ip", "userAgent", "metadata", "chain", "seq", "prevHash", "hash"],
+        "properties": {
+          "id": { "type": "string" },
+          "at": { "type": "integer", "description": "Epoch milliseconds" },
+          "action": { "type": "string", "description": "What happened, e.g. sso.login, member.role_changed" },
+          "workspaceId": { "type": ["string", "null"] },
+          "actor": {
+            "description": "Who did it (null: Freero itself, or someone not signed in)",
+            "oneOf": [
+              { "type": "null" },
+              { "type": "object", "required": ["id", "name", "email"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "email": { "type": ["string", "null"] } } }
+            ]
+          },
+          "target": {
+            "oneOf": [
+              { "type": "null" },
+              { "type": "object", "required": ["type", "id", "label"], "properties": { "type": { "type": "string" }, "id": { "type": "string" }, "label": { "type": ["string", "null"] } } }
+            ]
+          },
+          "ip": { "type": ["string", "null"] },
+          "userAgent": { "type": ["string", "null"] },
+          "metadata": { "type": "object" },
+          "chain": { "type": "string" },
+          "seq": { "type": "integer" },
+          "prevHash": { "type": "string" },
+          "hash": { "type": "string" }
+        }
       },
       "Workspace": {
         "type": "object",

@@ -227,3 +227,12 @@ export function rebakeWidth(
   const world = unpack(el.points).map((pt) => ({ x: el.x + pt.x * sx, y: el.y + pt.y * sy, p: pt.p }));
   return { ...buildStroke(world, width, el.highlighter), strokeWidth: width };
 }
+
+/** The stroke's centerline where it is drawn now (element-local, w × h space). */
+export function strokePoints(el: StrokeShape): Point[] {
+  const sx = el.w / (el.baseW || 1);
+  const sy = el.h / (el.baseH || 1);
+  const out: Point[] = [];
+  for (let i = 0; i + 2 < el.points.length; i += 3) out.push({ x: el.points[i] * sx, y: el.points[i + 1] * sy });
+  return out;
+}

@@ -106,6 +106,8 @@ export interface ConnectionRecord {
   /** Sealed. */
   oidcClientSecret: string | null;
   testedAt: number | null;
+  /** SAML: unsolicited (IdP-initiated) responses are accepted. */
+  idpInitiated: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -123,6 +125,7 @@ interface ConnectionRow {
   oidc_client_id: string | null;
   oidc_client_secret: string | null;
   tested_at: Date | null;
+  idp_initiated: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -140,6 +143,7 @@ const toConnection = (r: ConnectionRow): ConnectionRecord => ({
   oidcClientId: r.oidc_client_id,
   oidcClientSecret: r.oidc_client_secret,
   testedAt: r.tested_at?.getTime() ?? null,
+  idpInitiated: r.idp_initiated,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
 });
@@ -162,8 +166,8 @@ export async function saveConnection(
 ): Promise<void> {
   await query(
     `INSERT INTO sso_connections (workspace_id, protocol, enabled, default_role,
-       saml_entity_id, saml_sso_url, saml_certs, oidc_issuer, oidc_client_id, oidc_client_secret, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+       saml_entity_id, saml_sso_url, saml_certs, oidc_issuer, oidc_client_id, oidc_client_secret, created_at, updated_at, idp_initiated)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $13)
      ON CONFLICT (workspace_id) DO UPDATE SET
        protocol = excluded.protocol, enabled = excluded.enabled,
        enforced = sso_connections.enforced AND excluded.enabled AND NOT $12::boolean,
@@ -171,6 +175,7 @@ export async function saveConnection(
        saml_entity_id = excluded.saml_entity_id, saml_sso_url = excluded.saml_sso_url,
        saml_certs = excluded.saml_certs, oidc_issuer = excluded.oidc_issuer, oidc_client_id = excluded.oidc_client_id,
        oidc_client_secret = excluded.oidc_client_secret,
+       idp_initiated = excluded.idp_initiated,
        tested_at = CASE WHEN $12::boolean THEN NULL ELSE sso_connections.tested_at END,
        updated_at = excluded.updated_at`,
     [
@@ -186,6 +191,7 @@ export async function saveConnection(
       c.oidcClientSecret,
       new Date(now),
       providerChanged,
+      c.idpInitiated,
     ],
   );
 }
@@ -282,6 +288,23 @@ export async function recordSamlResult(workspaceId: string, id: string, requestI
   return rows.length > 0;
 }
 
+/**
+ * An IdP-initiated sign-in: nobody started it here, so the verified claims arrive with the flow —
+ * bound to the browser the identity provider's page posted from (the cookie set on that answer).
+ */
+export async function insertAnsweredSamlFlow(
+  f: { id: string; workspaceId: string; browserHash: string; returnTo: string },
+  result: unknown,
+  now: number,
+  expiresAt: number,
+): Promise<void> {
+  await query(
+    `INSERT INTO sso_flows (id, workspace_id, protocol, browser_hash, return_to, result, created_at, expires_at)
+     VALUES ($1, $2, 'saml', $3, $4, $5, $6, $7)`,
+    [f.id, f.workspaceId, f.browserHash, f.returnTo, JSON.stringify(result), new Date(now), new Date(expiresAt)],
+  );
+}
+
 /** Uses up a SAML flow that has its result, if this browser started it. */
 export async function takeSamlFlow(workspaceId: string, id: string, browserHash: string, now: number): Promise<FlowRecord | null> {
   const r = await one<FlowRow>(
@@ -339,8 +362,94 @@ export async function cacheSaveIfAbsent(workspaceId: string, key: string, value:
   return rows.length > 0;
 }
 
-export async function personalSsoData(userId: string): Promise<Array<{ workspaceId: string; breakGlass: boolean }>> {
-  return (
-    await query<{ workspace_id: string }>(`SELECT workspace_id FROM sso_connections WHERE break_glass_user_id = $1`, [userId])
-  ).map((r) => ({ workspaceId: r.workspace_id, breakGlass: true }));
+// ---- domain control (#64) ----
+
+export interface DomainPolicy {
+  captureSignups: boolean;
+  blockWorkspaces: boolean;
+}
+
+export async function getDomainPolicy(workspaceId: string): Promise<DomainPolicy> {
+  const r = await one<{ capture_signups: boolean; block_workspaces: boolean }>(
+    `SELECT capture_signups, block_workspaces FROM sso_domain_policies WHERE workspace_id = $1`,
+    [workspaceId],
+  );
+  return { captureSignups: r?.capture_signups ?? false, blockWorkspaces: r?.block_workspaces ?? false };
+}
+
+export async function saveDomainPolicy(workspaceId: string, p: DomainPolicy, now: number): Promise<void> {
+  await query(
+    `INSERT INTO sso_domain_policies (workspace_id, capture_signups, block_workspaces, updated_at) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (workspace_id) DO UPDATE SET capture_signups = excluded.capture_signups,
+       block_workspaces = excluded.block_workspaces, updated_at = excluded.updated_at`,
+    [workspaceId, p.captureSignups, p.blockWorkspaces, new Date(now)],
+  );
+}
+
+/** The workspace that holds `domain` verified, with its domain policy — or null. */
+export async function domainOwner(domain: string): Promise<({ workspaceId: string } & DomainPolicy) | null> {
+  const r = await one<{ workspace_id: string; capture_signups: boolean | null; block_workspaces: boolean | null }>(
+    `SELECT d.workspace_id, p.capture_signups, p.block_workspaces FROM sso_domains d
+     LEFT JOIN sso_domain_policies p ON p.workspace_id = d.workspace_id
+     WHERE d.domain = $1 AND d.verified_at IS NOT NULL`,
+    [domain],
+  );
+  return r ? { workspaceId: r.workspace_id, captureSignups: r.capture_signups ?? false, blockWorkspaces: r.block_workspaces ?? false } : null;
+}
+
+export interface CaptureRecord {
+  workspaceId: string;
+  userId: string;
+  email: string;
+  joinsAt: number;
+  startedBy: string | null;
+}
+interface CaptureRow {
+  workspace_id: string;
+  user_id: string;
+  email: string;
+  joins_at: Date;
+  started_by: string | null;
+}
+const toCapture = (r: CaptureRow): CaptureRecord => ({
+  workspaceId: r.workspace_id,
+  userId: r.user_id,
+  email: r.email,
+  joinsAt: r.joins_at.getTime(),
+  startedBy: r.started_by,
+});
+
+/** Starts a capture unless one is pending for that person here; true when started. */
+export async function insertCapture(c: CaptureRecord, now: number): Promise<boolean> {
+  const rows = await query(
+    `INSERT INTO sso_domain_captures (workspace_id, user_id, email, joins_at, started_by, created_at) VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (workspace_id, user_id) DO NOTHING RETURNING 1`,
+    [c.workspaceId, c.userId, c.email, new Date(c.joinsAt), c.startedBy, new Date(now)],
+  );
+  return rows.length > 0;
+}
+
+export async function capturesOf(workspaceId: string): Promise<CaptureRecord[]> {
+  return (await query<CaptureRow>(`SELECT * FROM sso_domain_captures WHERE workspace_id = $1`, [workspaceId])).map(toCapture);
+}
+
+/** Removes a pending capture (cancelled, joined or void); returns it, or null. */
+export async function takeCapture(workspaceId: string, userId: string): Promise<CaptureRecord | null> {
+  const r = await one<CaptureRow>(`DELETE FROM sso_domain_captures WHERE workspace_id = $1 AND user_id = $2 RETURNING *`, [workspaceId, userId]);
+  return r ? toCapture(r) : null;
+}
+
+export async function dueCaptures(now: number, limit: number): Promise<CaptureRecord[]> {
+  return (await query<CaptureRow>(`SELECT * FROM sso_domain_captures WHERE joins_at <= $1 ORDER BY joins_at LIMIT $2`, [new Date(now), limit])).map(toCapture);
+}
+
+export async function personalSsoData(userId: string): Promise<Array<{ workspaceId: string; breakGlass: boolean; joinsAt: number | null }>> {
+  const [glass, captures] = await Promise.all([
+    query<{ workspace_id: string }>(`SELECT workspace_id FROM sso_connections WHERE break_glass_user_id = $1`, [userId]),
+    query<{ workspace_id: string; joins_at: Date }>(`SELECT workspace_id, joins_at FROM sso_domain_captures WHERE user_id = $1`, [userId]),
+  ]);
+  return [
+    ...glass.map((r) => ({ workspaceId: r.workspace_id, breakGlass: true, joinsAt: null })),
+    ...captures.map((r) => ({ workspaceId: r.workspace_id, breakGlass: false, joinsAt: r.joins_at.getTime() })),
+  ];
 }
