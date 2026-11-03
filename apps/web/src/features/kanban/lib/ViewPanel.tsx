@@ -1,28 +1,37 @@
-// The View panel (dock): how a kanban's board view shows its cards. Which fields show (and their
-// order), what colours cards and the filter are this person's own until an editor presses "Save
-// for everyone"; viewers change them for themselves too. Grouping (columns, swimlanes), sorting and
-// density move or resize the real cards on the shared board, so only editors change them, for
-// everyone — and nobody but whoever locked it (and the board's owners) while the view is locked.
+// The View panel (dock): how the tab I look at shows a kanban's cards. On the Board tab, which
+// fields show (and their order), what colours cards and the filter are this person's own until an
+// editor presses "Save for everyone"; viewers change them for themselves too. Grouping (columns,
+// swimlanes), sorting and density move or resize the real cards on the shared board, so only
+// editors change them, for everyone — and nobody but whoever locked it (and the board's owners)
+// while the view is locked. On a table tab, its columns, filter and sort are mine until saved
+// (step 3a). "Save for everyone" also makes the tab I look at the one everyone starts on.
 // Shows the kanban the selection points at, and keeps showing it when the selection moves elsewhere.
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Lock, SlidersHorizontal } from 'lucide-react';
 import {
+  MY_TAB_KEY,
   SHOWABLE_BUILTINS,
   boardView,
   collectionSchema,
   colorableFields,
   overrideBetween,
+  savedTabId,
+  shownTabId,
+  tableColumns,
+  tableView,
   withOverride,
   type CardColorBy,
   type CardDensity,
   type KanbanElement,
+  type TableViewConfig,
 } from '@freero/shared';
 import { DockHeader, richTextToPlain, useCanEdit, useElement, usePeople, usePersonalView, useSelection, type Editor } from '@engine';
 import { Button, IconButton, SegmentedControl, Select, Toggle } from '@ui';
 import { fieldsTarget, FIELD_TYPE_LABELS } from './schema';
 import { groupableFields, setGroupBy, setSwimlanes } from './group';
-import { resetMyView, saveViewForEveryone, setDensity, setMyCardDisplay, setViewLocked, viewEditable } from './view';
-import { FilterSection, SortSection } from './FilterSort';
+import { hasOwnView, resetMyView, saveViewForEveryone, setDensity, setMyCardDisplay, setViewLocked, viewEditable } from './view';
+import { FilterRules, FilterSection, SortRules, SortSection } from './FilterSort';
+import { myTableView, setMyTable, tabsEditable } from './tabs';
 
 const DENSITIES: Array<{ value: CardDensity; label: string }> = [
   { value: 'compact', label: 'Compact' },
@@ -41,7 +50,11 @@ export function ViewPanel({ editor }: { editor: Editor }) {
   const k = found?.type === 'kanban' ? (found as KanbanElement) : null;
   const saved = k ? boardView(k) : null;
   const override = usePersonalView(k?.id, saved?.id ?? '');
+  const tabChoice = usePersonalView(k?.id, MY_TAB_KEY);
   const locker = usePeople(saved?.locked ? [saved.locked.by] : []);
+  const tabId = k ? shownTabId(k, tabChoice) : null;
+  const table = k && tabId ? tableView(k, tabId) : null;
+  if (k && table) return <TablePanel editor={editor} k={k} saved={table} />;
   if (!k || !saved) {
     return (
       <div className="fr-kanban-fields">
@@ -57,7 +70,8 @@ export function ViewPanel({ editor }: { editor: Editor }) {
     );
   }
   const mine = withOverride(saved, override);
-  const own = !!overrideBetween(saved, mine);
+  // Mine: my changes to the board view, or a tab of my own (the board while everyone starts on a table).
+  const own = !!overrideBetween(saved, mine) || tabId !== savedTabId(k);
   const schema = collectionSchema(k);
   const card = mine.card!;
   // Saving for everyone: editors, an unlocked kanban, a view nobody else locked.
@@ -88,25 +102,7 @@ export function ViewPanel({ editor }: { editor: Editor }) {
         <h2 className="fr-kanban-fields__title">View</h2>
         <span className="fr-kanban-fields__of">{richTextToPlain(k.title) || 'Kanban'}</span>
       </DockHeader>
-      <div className={`fr-kanban-view__whose${own ? ' is-own' : ''}`} role="status">
-        {own ? (
-          <>
-            <span>Only you see these changes.</span>
-            <span className="fr-kanban-view__whose-actions">
-              {mayShare && (
-                <Button size="sm" variant="primary" onClick={() => saveViewForEveryone(editor, k.id)}>
-                  Save for everyone
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => resetMyView(editor, k.id)}>
-                Reset
-              </Button>
-            </span>
-          </>
-        ) : (
-          <span>{mayShare ? 'Everyone sees this view. Your changes stay yours until you save them.' : 'Changes you make here are yours alone.'}</span>
-        )}
-      </div>
+      <Whose editor={editor} k={k} own={own} mayShare={mayShare} />
       {canEdit && !k.locked && (
         <div className={`fr-kanban-view__lock${saved.locked ? ' is-locked' : ''}`}>
           {lockedByOther ? (
@@ -215,6 +211,97 @@ export function ViewPanel({ editor }: { editor: Editor }) {
               <Toggle size="sm" checked={false} label={f.name} onChange={() => setShow([...shown.map((x) => x.id), f.id])} />
             </li>
           ))}
+        </ol>
+      </section>
+    </div>
+  );
+}
+
+/** "Only you see these changes · Save for everyone · Reset", or who sees what when nothing is mine. */
+function Whose({ editor, k, own, mayShare }: { editor: Editor; k: KanbanElement; own: boolean; mayShare: boolean }) {
+  return (
+    <div className={`fr-kanban-view__whose${own ? ' is-own' : ''}`} role="status">
+      {own ? (
+        <>
+          <span>Only you see these changes.</span>
+          <span className="fr-kanban-view__whose-actions">
+            {mayShare && (
+              <Button size="sm" variant="primary" onClick={() => saveViewForEveryone(editor, k.id)}>
+                Save for everyone
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => resetMyView(editor, k.id)}>
+              Reset
+            </Button>
+          </span>
+        </>
+      ) : (
+        <span>{mayShare ? 'Everyone sees this view. Your changes stay yours until you save them.' : 'Changes you make here are yours alone.'}</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A table tab's settings: which fields are columns (and their order), the filter and the sort.
+ * All mine until I save them for everyone — and since a table moves no real card, its filter
+ * really leaves rows out and its sort really orders them, for me alone.
+ */
+function TablePanel({ editor, k, saved }: { editor: Editor; k: KanbanElement; saved: TableViewConfig }) {
+  const canEdit = useCanEdit();
+  usePersonalView(k.id, saved.id);
+  const mine = myTableView(editor, k, saved.id) ?? saved;
+  const schema = collectionSchema(k);
+  const own = hasOwnView(editor, k);
+  const mayShare = canEdit && tabsEditable(editor, k, { id: saved.id, name: saved.name, layout: 'table' });
+  const shown = tableColumns(mine, schema);
+  const all = [...SHOWABLE_BUILTINS.map((f) => ({ id: f.id as string, name: f.name })), ...schema.map((f) => ({ id: f.id, name: f.name }))];
+  const name = (id: string) => all.find((f) => f.id === id)?.name ?? id;
+  const setColumns = (columns: string[]) => setMyTable(editor, k.id, saved.id, { columns });
+  return (
+    <div className="fr-kanban-fields fr-kanban-view">
+      <DockHeader className="fr-kanban-fields__head">
+        <h2 className="fr-kanban-fields__title">View</h2>
+        <span className="fr-kanban-fields__of">
+          {richTextToPlain(k.title) || 'Kanban'} · {saved.name}
+        </span>
+      </DockHeader>
+      <Whose editor={editor} k={k} own={own} mayShare={mayShare} />
+      <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-filter">
+        <h3 id="fr-kanban-view-filter" className="fr-kanban-view__heading">
+          Filter
+        </h3>
+        <FilterRules k={k} schema={schema} filter={mine.filter ?? null} onChange={(filter) => setMyTable(editor, k.id, saved.id, { filter })} />
+        <p className="fr-kanban-fields__hint">Leaves rows out of this table only: the board and its cards don’t change.</p>
+      </section>
+      <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-sort">
+        <h3 id="fr-kanban-view-sort" className="fr-kanban-view__heading">
+          Sort
+        </h3>
+        <SortRules schema={schema} sort={mine.sort ?? []} noun="rows" onChange={(sort) => setMyTable(editor, k.id, saved.id, { sort })} />
+        <p className="fr-kanban-fields__hint">Without a sort, rows follow the board: column by column, top to bottom.</p>
+      </section>
+      <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-columns">
+        <h3 id="fr-kanban-view-columns" className="fr-kanban-view__heading">
+          Columns
+        </h3>
+        <ol className="fr-kanban-fields__list fr-kanban-view__fields" aria-label="Columns of the table">
+          {shown.map((id, i) => (
+            <li key={id} className="fr-kanban-view__field">
+              <Toggle size="sm" checked label={name(id)} onChange={() => setColumns(shown.filter((x) => x !== id))} />
+              <span className="fr-kanban-view__move">
+                <IconButton icon={ChevronUp} size={32} label={`Move ${name(id)} left`} disabled={i === 0} onClick={() => setColumns(swap(shown, i, i - 1))} />
+                <IconButton icon={ChevronDown} size={32} label={`Move ${name(id)} right`} disabled={i === shown.length - 1} onClick={() => setColumns(swap(shown, i, i + 1))} />
+              </span>
+            </li>
+          ))}
+          {all
+            .filter((f) => !shown.includes(f.id))
+            .map((f) => (
+              <li key={f.id} className="fr-kanban-view__field">
+                <Toggle size="sm" checked={false} label={f.name} onChange={() => setColumns([...shown, f.id])} />
+              </li>
+            ))}
         </ol>
       </section>
     </div>

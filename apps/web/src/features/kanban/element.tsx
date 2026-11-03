@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -9,6 +9,7 @@ import {
   Gauge,
   ListEnd,
   GripVertical,
+  Maximize2,
   MoreHorizontal,
   Palette,
   Pencil,
@@ -18,7 +19,7 @@ import {
   Trash2,
   UnfoldHorizontal,
 } from 'lucide-react';
-import { NO_GROUP, boardView, collectionSchema, describeFilter, describeSort, groupFieldId, type BoardElement, type CardStatus, type FieldDef, type KanbanColumn, type KanbanElement } from '@freero/shared';
+import { MY_TAB_KEY, NO_GROUP, boardView, collectionSchema, describeFilter, describeSort, groupFieldId, shownTabId, viewTabs, type BoardElement, type CardStatus, type FieldDef, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import {
   defineElement,
   ElementText,
@@ -28,7 +29,10 @@ import {
   useDragPreview,
   useEditor,
   useElements,
+  useIsExporting,
   usePeople,
+  usePersonalView,
+  usePhoneLayout,
   type Editor,
   type ElementRenderProps,
   type NewElement,
@@ -59,9 +63,12 @@ import {
   planLayout,
 } from './lib/layout';
 import { addColumn, columnPart, moveColumn, moveColumnTo, patchColumn, removeColumn, renameColumn, setCollapsed, setColumnLimit, setColumnWidth } from './lib/actions';
-import { CARD_LIMITS, COLUMN_COLOR_NAMES, COLUMN_PALETTE, STATUS_LABELS, VIEW_PANEL, WIP_CHOICES } from './lib/constants';
+import { CARD_LIMITS, COLUMN_COLOR_NAMES, COLUMN_PALETTE, FOCUS_PANEL, STATUS_LABELS, VIEW_PANEL, WIP_CHOICES } from './lib/constants';
 import { columnsAreOptions, groupTitle, storedKey } from './lib/group';
 import { presentCard, presentationKey } from './lib/view';
+import { showsTable } from './lib/tabs';
+import { TabStrip } from './lib/TabStrip';
+import { TableTab } from './lib/TableTab';
 import './kanban.css';
 
 /** Below this zoom text is unreadable: draw only the column blocks. */
@@ -363,7 +370,116 @@ function useColumnTitles(k: KanbanElement): { group: FieldDef | undefined; title
   };
 }
 
-const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: ElementRenderProps<KanbanElement>) {
+/** "Focus": the kanban as a page of its own (lib/Focus.tsx). */
+function FocusButton({ editor, k }: { editor: Editor; k: KanbanElement }) {
+  return (
+    <button
+      type="button"
+      className="fr-kanban__focus"
+      data-fr-interactive=""
+      title="Open in focus mode: all its cards as a list you arrange your way"
+      aria-label="Open in focus mode"
+      onPointerDown={stop}
+      onClick={() => editor.openPanel(FOCUS_PANEL, { id: k.id })}
+    >
+      <Maximize2 size={14} aria-hidden />
+    </button>
+  );
+}
+
+/** The kanban's title band: its title, its tabs, what the board view says (filtered, sorted), and the board's buttons. */
+function Head({ editor, k, selected, lod, tabId, board, canEdit, phone }: { editor: Editor; k: KanbanElement; selected: boolean; lod: boolean; tabId: string; board: boolean; canEdit: boolean; phone: boolean }) {
+  const schema = useMemo(() => collectionSchema(k), [k]);
+  const view = boardView(k);
+  const sortedBy = board && view.sort?.length ? describeSort(view.sort, schema) : '';
+  const filterWords = board && view.filter ? describeFilter(view.filter, schema) : '';
+  const controls = selected && canEdit && !k.locked;
+  return (
+    <div className="fr-kanban__head" style={{ height: HEADER_H }}>
+      {!lod && (
+        <div className="fr-kanban__title">
+          <ElementText
+            element={k}
+            field="title"
+            fontSize={18}
+            fontFamily="sans"
+            align="left"
+            vAlign="middle"
+            color="var(--fr-ink)"
+            padding={{ top: 0, right: 8, bottom: 0, left: 16 }}
+            style={{ fontWeight: 650 }}
+            placeholder="Kanban"
+          />
+        </div>
+      )}
+      {!lod && <TabStrip editor={editor} k={k} shownId={tabId} selected={selected} canEdit={canEdit} />}
+      {!lod && (sortedBy || filterWords) && (
+        <span className="fr-kanban__view-state">
+          {filterWords && (
+            <button type="button" className="fr-kanban__view-chip" data-fr-interactive="" title={`Filtered: ${filterWords}`} onPointerDown={stop} onClick={() => editor.openDock(VIEW_PANEL)}>
+              <Filter size={12} aria-hidden />
+              Filtered
+            </button>
+          )}
+          {sortedBy && (
+            <button
+              type="button"
+              className="fr-kanban__view-chip"
+              data-fr-interactive=""
+              title={`Sorted by ${sortedBy}: each column keeps that order (cards still move between columns)`}
+              onPointerDown={stop}
+              onClick={() => editor.openDock(VIEW_PANEL)}
+            >
+              <ArrowDownUp size={12} aria-hidden />
+              Sorted by {sortedBy}
+            </button>
+          )}
+        </span>
+      )}
+      {controls && board && columnsAreOptions(k) && (
+        <button type="button" className="fr-kanban__add" data-fr-interactive="" onPointerDown={stop} onClick={() => addColumn(editor, k.id)}>
+          <Plus size={14} aria-hidden />
+          Column
+        </button>
+      )}
+      {!lod && (selected || phone) && <FocusButton editor={editor} k={k} />}
+    </div>
+  );
+}
+
+const KanbanView = memo(function KanbanView(props: ElementRenderProps<KanbanElement>) {
+  const { element: k, selected, zoom } = props;
+  const editor = useEditor();
+  const canEdit = useCanEdit();
+  const exporting = useIsExporting();
+  const phone = usePhoneLayout();
+  const tabId = shownTabId(k, usePersonalView(k.id, MY_TAB_KEY));
+  const tab = viewTabs(k).find((t) => t.id === tabId)!;
+  const lod = zoom < LOD_ZOOM;
+  // On a phone (viewing, not editing the board) a kanban opens in focus mode: its cards as a list.
+  const wasSelected = useRef(selected);
+  useEffect(() => {
+    if (selected && !wasSelected.current && phone === 'phone' && !exporting) editor.openPanel(FOCUS_PANEL, { id: k.id });
+    wasSelected.current = selected;
+  }, [selected, phone, exporting, editor, k.id]);
+  if (tab.layout === 'table')
+    return (
+      <div className="fr-kanban is-table">
+        <Head editor={editor} k={k} selected={selected} lod={lod} tabId={tabId} board={false} canEdit={canEdit} phone={!!phone} />
+        {lod ? (
+          <div className="fr-kanban__table-lod" style={{ top: HEADER_H }} aria-hidden>
+            {tab.name}
+          </div>
+        ) : (
+          <TableTab editor={editor} k={k} tabId={tabId} selected={selected && !exporting} name={tab.name} />
+        )}
+      </div>
+    );
+  return <BoardTab {...props} tabId={tabId} phone={!!phone} />;
+});
+
+/** The Board tab: the columns (and swimlanes) the real cards stand in. */
+function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderProps<KanbanElement> & { tabId: string; phone: boolean }) {
   const editor = useEditor();
   const canEdit = useCanEdit();
   const all = useElements();
@@ -371,7 +487,6 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
   const { titles, laneTitles } = useColumnTitles(k);
   const schema = useMemo(() => collectionSchema(k), [k]);
   const view = boardView(k);
-  const sortedBy = view.sort?.length ? describeSort(view.sort, schema) : '';
   const filterWords = view.filter ? describeFilter(view.filter, schema) : '';
   const options = columnsAreOptions(k);
   const slots = useDragPreview(k.id);
@@ -394,53 +509,7 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
 
   return (
     <div className="fr-kanban">
-      <div className="fr-kanban__head" style={{ height: HEADER_H }}>
-        {!lod && (
-          <div className="fr-kanban__title">
-            <ElementText
-              element={k}
-              field="title"
-              fontSize={18}
-              fontFamily="sans"
-              align="left"
-              vAlign="middle"
-              color="var(--fr-ink)"
-              padding={{ top: 0, right: 8, bottom: 0, left: 16 }}
-              style={{ fontWeight: 650 }}
-              placeholder="Kanban"
-            />
-          </div>
-        )}
-        {!lod && (sortedBy || filterWords) && (
-          <span className="fr-kanban__view-state">
-            {filterWords && (
-              <button type="button" className="fr-kanban__view-chip" data-fr-interactive="" title={`Filtered: ${filterWords}`} onPointerDown={stop} onClick={() => editor.openDock(VIEW_PANEL)}>
-                <Filter size={12} aria-hidden />
-                Filtered
-              </button>
-            )}
-            {sortedBy && (
-              <button
-                type="button"
-                className="fr-kanban__view-chip"
-                data-fr-interactive=""
-                title={`Sorted by ${sortedBy}: each column keeps that order (cards still move between columns)`}
-                onPointerDown={stop}
-                onClick={() => editor.openDock(VIEW_PANEL)}
-              >
-                <ArrowDownUp size={12} aria-hidden />
-                Sorted by {sortedBy}
-              </button>
-            )}
-          </span>
-        )}
-        {controls && options && (
-          <button type="button" className="fr-kanban__add" data-fr-interactive="" onPointerDown={stop} onClick={() => addColumn(editor, k.id)}>
-            <Plus size={14} aria-hidden />
-            Column
-          </button>
-        )}
-      </div>
+      <Head editor={editor} k={k} selected={selected} lod={lod} tabId={tabId} board canEdit={canEdit} phone={phone} />
       {k.columns.map((col, i) => {
         const over = !!col.wip && counts[i] > col.wip;
         const title = titles[i];
@@ -544,10 +613,10 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
                   type="button"
                   className="fr-kanban__more"
                   data-fr-interactive=""
-                  disabled={!canEdit || !!k.locked}
-                  title={canEdit && !k.locked ? 'Show every card in this column' : `${m.n} more cards in this column`}
+                  // Editors show them on the board (for everyone); anyone else reads them in focus mode.
+                  title={canEdit && !k.locked ? 'Show every card in this column' : `${m.n} more cards in this column: open in focus mode`}
                   onPointerDown={stop}
-                  onClick={() => setColumnLimit(editor, k.id, k.columns[m.col].id, 0)}
+                  onClick={() => (canEdit && !k.locked ? setColumnLimit(editor, k.id, k.columns[m.col].id, 0) : editor.openPanel(FOCUS_PANEL, { id: k.id }))}
                 >
                   +{m.n} more
                 </button>
@@ -580,7 +649,7 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
       )}
     </div>
   );
-});
+}
 
 export default defineElement({
   type: 'kanban',
@@ -621,7 +690,8 @@ export default defineElement({
   dragPreview: (k, { editor, moving }) => planDrop(k, editor.getElements(), moving),
   // A collapsed column's items, those beyond a column's card limit and the cards the view's filter
   // leaves out stay in it (in the outline, in the WIP count), folded away.
-  hidesMember: (k, el) => inCollapsedColumn(k, el) || beyondLimit(k, el) || filteredOut(k, el),
+  // While I look at a table tab, every item in it is folded away for me alone (the table draws the cards).
+  hidesMember: (k, el, { editor }) => inCollapsedColumn(k, el) || beyondLimit(k, el) || filteredOut(k, el) || showsTable(editor, k),
   // Cards show what the board view says: their colour (by column, by a field, or their own) and
   // the fields chosen, drawn by the card itself. Density changes their height (re-normalised).
   presentChild: (k, child, { editor, personal }) => presentCard(k, child, editor, personal),

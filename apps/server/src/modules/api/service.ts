@@ -494,9 +494,9 @@ async function changeKanban(call: ApiCall, boardId: string, kanbanId: string, pl
 export const defineFields = (call: ApiCall, boardId: string, kanbanId: string, body: unknown) =>
   changeKanban(call, boardId, kanbanId, (view) => planDefineFields(view, kanbanId, body, newElementId));
 
-/** configure_view: the kanban's saved board view, for everyone (kanbans.ts planConfigureView). */
+/** configure_view: a kanban's saved board view or table tab, for everyone (kanbans.ts planConfigureView). */
 export const configureView = (call: ApiCall, boardId: string, kanbanId: string, body: unknown) =>
-  changeKanban(call, boardId, kanbanId, (view, role) => planConfigureView(view, kanbanId, body, { id: call.userId, role }));
+  changeKanban(call, boardId, kanbanId, (view, role) => planConfigureView(view, kanbanId, body, { id: call.userId, role }, newElementId));
 
 /** query_cards: a kanban's cards as rows, filtered and sorted by the board's own rules. A read: the downloads policy applies. */
 export async function queryCards(call: ApiCall, boardId: string, kanbanId: string, q: CardQuery) {

@@ -16,7 +16,22 @@ import {
   NO_GROUP,
   OPS_BY_KIND,
   SHOWABLE_BUILTINS,
+  VIEW_LIMITS,
   boardView,
+  cleanTableView,
+  savedTabId,
+  tabByRef,
+  tabNameProblem,
+  tableColumns,
+  tableView,
+  viewTabs,
+  withSavedTab,
+  withTabRenamed,
+  withTableSaved,
+  withTableTab,
+  withoutTab,
+  type TableViewConfig,
+  type ViewTab,
   cardPasses,
   cardQueryValue,
   cardValue,
@@ -144,6 +159,8 @@ export function kanbanSummary(k: KanbanElement, names: Names) {
       sortText: describeSort(view.sort, schema) || null,
       locked: !!view.locked,
     },
+    // Its tabs (step 3a): the Board, and tables of the same cards; `active` is the one everyone starts on.
+    views: viewTabs(k).map((t) => apiTab(k, t, schema, names)),
   };
 }
 
@@ -414,14 +431,62 @@ function orderOptions(w: Working, f: FieldDef, raw: unknown, at: string, isGroup
  * agent sets is the saved view everyone sees (agents have no personal view). Refused while the
  * kanban is locked, or the view is locked by someone else (its locker and the board's owners may).
  */
-export function planConfigureView(view: BoardView, kid: string, body: unknown, who: { id: string; role: Role }): BoardChange {
+export function planConfigureView(view: BoardView, kid: string, body: unknown, who: { id: string; role: Role }, newId: () => string = () => Math.random().toString(36).slice(2)): BoardChange {
   const k0 = kanbanIn(view, kid);
   if (k0.locked) throw badRequest('That kanban is locked; unlock it first');
   const b = body as Input | null;
-  if (!b || typeof b !== 'object' || Array.isArray(b)) throw badRequest('Send what to change: groupBy, subGroupBy, show, color, density, filter, sort, columns or locked');
-  if (viewLockedFor(boardView(k0), who)) throw badRequest('This kanban’s view is locked by someone else: only they or the board’s owners can change it');
+  if (!b || typeof b !== 'object' || Array.isArray(b))
+    throw badRequest('Send what to change: view or addView (which tab), groupBy, subGroupBy, show, color, density, filter, sort, columns, locked, name, active or remove');
   const w = new Working(view, kid);
   const schema = () => collectionSchema(w.k);
+
+  // The tab the rest of the call configures (step 3a): a new table, one named by id or name, else the board.
+  let tab: ViewTab = viewTabs(k0).find((t) => t.layout === 'board')!;
+  let created = false;
+  if (b.addView !== undefined) {
+    if (b.view !== undefined) throw badRequest('Give view (a tab to change) or addView (a new tab), not both');
+    const a = b.addView as Input | null;
+    const name = a && typeof a.name === 'string' ? a.name.trim() : '';
+    if (!a || typeof a !== 'object' || (a.layout !== undefined && a.layout !== 'table')) throw badRequest('addView is { name, layout: "table" } (more layouts come later)');
+    const problem = tabNameProblem(k0, name);
+    if (problem) throw badRequest(`addView.name: ${problem}`);
+    const t: TableViewConfig = { id: `t${newId().replace(/[^A-Za-z0-9]/g, '').slice(0, 10) || 'tab'}`, name, layout: 'table' };
+    const patch = withTableTab(k0, t);
+    if (!patch) throw badRequest(`A kanban has at most ${VIEW_LIMITS.views} tabs`);
+    w.patch(kid, patch);
+    tab = { id: t.id, name: t.name, layout: 'table' };
+    created = true;
+  } else if (b.view !== undefined) {
+    const t = typeof b.view === 'string' ? tabByRef(k0, b.view) : undefined;
+    if (!t) throw badRequest(`view: no tab “${String(b.view)}” (tabs: ${viewTabs(k0).map((x) => x.name).join(', ')})`);
+    tab = t;
+  }
+  const lockOf = () => (tab.layout === 'board' ? boardView(w.k) : tableView(w.k, tab.id)!);
+  if (!created && viewLockedFor(lockOf(), who)) throw badRequest('This kanban’s view is locked by someone else: only they or the board’s owners can change it');
+  // What any tab takes: its name, whether everyone starts on it, deleting it (tables only).
+  if (b.remove !== undefined) {
+    if (b.remove !== true) throw badRequest('remove must be true (delete the tab)');
+    if (tab.layout === 'board') throw badRequest('The Board tab can’t be deleted (it holds the cards); delete a table tab');
+    const others = Object.keys(b).filter((key) => key !== 'remove' && key !== 'view');
+    if (others.length) throw badRequest(`remove deletes the tab: send ${others.join(', ')} without it`);
+    w.patch(kid, withoutTab(w.k, tab.id)!);
+    return w.change();
+  }
+  if (b.name !== undefined) {
+    if (typeof b.name !== 'string') throw badRequest('name must be the tab’s new name');
+    const problem = tabNameProblem(w.k, b.name, tab.id);
+    if (problem) throw badRequest(`name: ${problem}`);
+    w.patch(kid, withTabRenamed(w.k, tab.id, b.name)!);
+  }
+  if (b.active !== undefined) {
+    if (b.active !== true) throw badRequest('active must be true (the tab everyone starts on); make another tab active instead');
+    w.patch(kid, withSavedTab(w.k, tab.id)!);
+  }
+  if (tab.layout === 'table') {
+    configureTable(w, tab.id, b, who, schema);
+    return w.change();
+  }
+
   const groupable = (ref: unknown, what: string) => {
     const f = typeof ref === 'string' ? fieldByRef(schema(), ref) : undefined;
     if (!f || !isGroupable(f)) throw badRequest(`${what}: “${String(ref)}” isn’t a field the board can be grouped by (single select, person or checkbox: ${schema().filter(isGroupable).map((x) => x.name).join(', ')})`);
@@ -527,6 +592,62 @@ export function planConfigureView(view: BoardView, kid: string, body: unknown, w
   return w.change();
 }
 
+/**
+ * configure_view on a table tab (step 3a): its columns (`show`: fields by name, in order), filter
+ * (which cards are rows; the board is untouched), sort and lock. What moves or sizes the real
+ * cards (grouping, swimlanes, colour, density, column limits) belongs to the Board tab.
+ */
+function configureTable(w: Working, id: string, b: Input, who: { id: string; role: Role }, schema: () => FieldDef[]) {
+  for (const key of ['groupBy', 'subGroupBy', 'color', 'density', 'columns'])
+    if (b[key] !== undefined) throw badRequest(`${key} belongs to the Board tab; a table tab takes show (its columns), filter, sort, locked, name, active or remove`);
+  const saved = () => tableView(w.k, id)!;
+  const save = (next: TableViewConfig) => w.patch(w.kid, withTableSaved(w.k, cleanTableView(next)!));
+  if (b.show !== undefined) {
+    if (!Array.isArray(b.show)) throw badRequest('show must be a list of field names (the table’s columns, after the title)');
+    const columns = [
+      ...new Set(
+        b.show.map((ref, i) => {
+          const f = typeof ref === 'string' ? (SHOWABLE_BUILTINS.find((x) => x.id === ref || norm(x.name) === norm(ref)) ?? fieldByRef(schema(), ref)) : undefined;
+          if (!f) throw badRequest(`show[${i}]: no field “${String(ref)}” a table can show`);
+          return f.id;
+        }),
+      ),
+    ];
+    save({ ...saved(), columns });
+  }
+  if (b.filter !== undefined) save({ ...saved(), filter: readFilter(b.filter, schema()) });
+  if (b.sort !== undefined) {
+    const { sort: _s, ...rest } = saved();
+    const sort = readSort(b.sort, schema());
+    save({ ...rest, ...(sort.length ? { sort } : {}) });
+  }
+  if (b.locked !== undefined) {
+    if (typeof b.locked !== 'boolean') throw badRequest('locked must be true or false');
+    save({ ...saved(), locked: b.locked ? { by: who.id } : null });
+  }
+}
+
+/** A tab as agents read it: its name, layout, whether everyone starts on it, and a table's own settings. */
+function apiTab(k: KanbanElement, t: ViewTab, schema: readonly FieldDef[], names: Names) {
+  const fieldName = (id: string) => queryFields(schema).find((f) => f.id === id)?.name ?? id;
+  const table = t.layout === 'table' ? tableView(k, t.id) : null;
+  return {
+    id: t.id,
+    name: t.name,
+    layout: t.layout,
+    ...(t.id === savedTabId(k) ? { active: true } : {}),
+    ...(table
+      ? {
+          show: tableColumns(table, schema).map(fieldName),
+          filter: table.filter ? { match: table.filter.op === 'or' ? 'any' : 'all', rules: table.filter.rules.map((r) => apiRule(r, schema)) } : null,
+          filterText: describeFilter(table.filter, schema, names) || null,
+          sort: (table.sort ?? []).map((s) => ({ field: fieldName(s.field), dir: s.dir })),
+          locked: !!table.locked,
+        }
+      : {}),
+  };
+}
+
 // ------------------------------------------------------------------ query_cards
 
 export interface CardQuery {
@@ -536,6 +657,8 @@ export interface CardQuery {
   fields?: unknown;
   /** Apply the saved view's filter and sort first (the cards the board shows, in its order). */
   useView?: unknown;
+  /** A tab (id or name) whose saved filter and sort apply first: a table's rows in its order; the Board tab as useView. */
+  view?: unknown;
   limit?: unknown;
   cursor?: unknown;
 }
@@ -553,8 +676,13 @@ export function queryCardRows(view: BoardView, kid: string, q: CardQuery, names:
   const all = elementsOf(view);
   const cards = all.filter((el): el is CardElement => isMember(k, el) && isStackable(el, k.id));
   const filter = readFilter(q.filter, schema, { me });
-  const useView = q.useView === true || q.useView === 'true';
-  const sort = q.sort !== undefined ? readSort(q.sort, schema) : useView ? (saved.sort ?? []) : [];
+  const tab = q.view === undefined || q.view === '' ? null : typeof q.view === 'string' ? tabByRef(k, q.view) : undefined;
+  if (tab === undefined) throw badRequest(`view: no tab “${String(q.view)}” (tabs: ${viewTabs(k).map((t) => t.name).join(', ')})`);
+  const table = tab?.layout === 'table' ? tableView(k, tab.id) : null;
+  const useView = q.useView === true || q.useView === 'true' || !!tab;
+  // The view applied first: a table tab's filter and sort, else the board's.
+  const applied = table ?? saved;
+  const sort = q.sort !== undefined ? readSort(q.sort, schema) : useView ? (applied.sort ?? []) : [];
   const limit = q.limit === undefined ? 100 : Number(q.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw badRequest('limit must be a whole number from 1 to 500');
   const from = q.cursor === undefined || q.cursor === null || q.cursor === '' ? 0 : Number(q.cursor);
@@ -564,7 +692,7 @@ export function queryCardRows(view: BoardView, kid: string, q: CardQuery, names:
 
   const order = new Map(manualOrderOf(k, all).map((id, i) => [id, i]));
   let rows = [...cards].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-  if (useView && saved.filter) rows = rows.filter((c) => cardPasses(k, c, saved.filter, schema));
+  if (useView && applied.filter) rows = rows.filter((c) => cardPasses(k, c, applied.filter, schema));
   if (filter) rows = rows.filter((c) => cardPasses(k, c, filter, schema, { me }));
   if (sort.length) rows = sortCards(k, rows, sort, schema);
 

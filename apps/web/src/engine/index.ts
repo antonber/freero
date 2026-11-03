@@ -45,7 +45,11 @@ export {
   usePeople,
   useGonePeople,
   usePersonalView,
+  useWorldViewport,
+  usePhoneLayout,
 } from './hooks';
+// [additive] True on a phone-sized window (≤ 600 px); needs no board around it (dialogs, tests).
+export { useCompactLayout } from './ui/compact';
 
 // [additive] An element drawn as it would look without being on the board (suggestion ghosts).
 export { ElementPreview } from './canvas/WorldLayer';

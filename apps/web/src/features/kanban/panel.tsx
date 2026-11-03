@@ -35,7 +35,8 @@ import {
 } from '@freero/shared';
 import { DockHeader, definePanel, richTextToPlain, useCanEdit, useElement, useSelection, type Editor } from '@engine';
 import { Button, ColorSwatches, IconButton, Input, Menu, Popover, Select, type MenuItem } from '@ui';
-import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
+import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, FIELDS_PANEL, FOCUS_PANEL, VIEW_PANEL } from './lib/constants';
+import { FocusDialog } from './lib/Focus';
 import { ViewPanel } from './lib/ViewPanel';
 import { addField, addOption, fieldsTarget, moveField, moveOption, patchOption, removeField, removeOption, renameField, FIELD_TYPE_LABELS } from './lib/schema';
 
@@ -326,5 +327,13 @@ export default [
     order: 61,
     minRole: 'viewer',
     Component: ViewPanel,
+  }),
+  // Focus mode: any role (it changes nothing for anyone else; editors' cell edits are card writes).
+  definePanel({
+    id: FOCUS_PANEL,
+    slot: 'dialog',
+    order: 62,
+    minRole: 'viewer',
+    Component: FocusDialog,
   }),
 ];

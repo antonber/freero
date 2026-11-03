@@ -152,7 +152,7 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     }
     const sort = typeof q.sort === 'string' && q.sort ? q.sort.split(',').map((s) => ({ field: s.split(':')[0].trim(), dir: s.split(':')[1]?.trim() === 'desc' ? 'desc' : 'asc' })) : undefined;
     const fields = typeof q.fields === 'string' && q.fields ? q.fields.split(',').map((s) => s.trim()) : undefined;
-    return { body: await api.queryCards(call, call.req.params.boardId, call.req.params.kanbanId, { filter, sort, fields, useView: q.useView, limit: q.limit, cursor: q.cursor }) };
+    return { body: await api.queryCards(call, call.req.params.boardId, call.req.params.kanbanId, { filter, sort, fields, useView: q.useView, view: q.view, limit: q.limit, cursor: q.cursor }) };
   });
 
   // ---- changing items (owners and editors: the realtime write path) ----

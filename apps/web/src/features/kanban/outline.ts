@@ -6,7 +6,7 @@
 // not gone. Cards read their own values, a swimlane's among them (features/card/outline.ts). The
 // board's filter and sort read in words (labels, names); cards the filter leaves out are still
 // listed in their column, marked `filtered` (features/card/outline.ts).
-import { NO_GROUP, boardView, collectionSchema, defineOutline, describeFilter, describeSort, kanbanColumnAt } from '@freero/shared';
+import { NO_GROUP, boardView, collectionSchema, defineOutline, describeFilter, describeSort, kanbanColumnAt, savedTabId, viewTabs } from '@freero/shared';
 
 export default defineOutline({
   kinds: {
@@ -15,6 +15,8 @@ export default defineOutline({
       const view = boardView(k);
       const group = schema.find((f) => f.id === view.groupBy);
       const rows = view.subGroupBy ? schema.find((f) => f.id === view.subGroupBy) : undefined;
+      const tabs = viewTabs(k);
+      const active = savedTabId(k);
       // A person column is named after the person; "No <field>" and checkbox columns by their field.
       const title = (c: (typeof k.columns)[number]) =>
         group?.type === 'person' && c.id !== NO_GROUP ? (ctx.personName(c.id) ?? 'someone') : ctx.plain(c.title);
@@ -27,6 +29,8 @@ export default defineOutline({
           filter: describeFilter(view.filter, schema, ctx.personName) || null,
           sort: describeSort(view.sort, schema) || null,
           'view locked': view.locked ? true : null,
+          // Its tabs once it has more than the board (step 3a): the one everyone starts on marked *.
+          views: tabs.length > 1 ? tabs.map((t) => `${t.name}${t.id === active ? '*' : ''}${t.layout === 'board' ? '' : ` (${t.layout})`}`).join(', ') : null,
         },
         schema: schema.map((f) => ({
           id: f.id,

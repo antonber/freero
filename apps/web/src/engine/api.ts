@@ -824,9 +824,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * it (a collapsed kanban column). Folded members are off the board like `hidden` elements (not
    * drawn, hit-tested, selectable, in bounds) but still part of it: the outline lists them. Never
    * asked for items being dragged right now (dragging a card over a collapsed column keeps it in
-   * hand). Called often: keep it cheap.
+   * hand). Called often: keep it cheap. `editor` (scoped to the defining feature) lets the answer
+   * depend on this viewer's own view settings (`getPersonalView`): a kanban showing a table tab to
+   * this person folds its cards away for them alone. The engine asks again when those settings
+   * change (EditorEvent 'personal-views').
    */
-  hidesMember?(element: ElementOf<T>, member: BoardElement): boolean;
+  hidesMember?(element: ElementOf<T>, member: BoardElement, ctx: { editor: Editor }): boolean;
   /**
    * [additive] Containers only: how `child` should be shown while it sits in this container (a
    * kanban's view: accent colour, field chips, density). Handed to the child's component as
@@ -1249,7 +1252,9 @@ export type EditorEvent =
   /** [additive] The USER moved the camera (wheel, pan, pinch, zoom controls/shortcuts, minimap) — never setCamera. */
   | 'camera-user'
   /** [additive] getFollowing() changed. */
-  | 'follow';
+  | 'follow'
+  /** [additive] This person's own view settings changed (Editor.setPersonalView, or loaded from the server). */
+  | 'personal-views';
 
 /** [additive] Whom this client follows: a user, optionally pinned to one of their tabs. */
 export interface FollowTarget {

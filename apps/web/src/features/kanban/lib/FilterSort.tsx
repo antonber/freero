@@ -173,31 +173,31 @@ function RuleRow({ k, schema, rule, onChange, onRemove }: { k: KanbanElement; sc
   );
 }
 
-/** "Filter": my own filter on top of what is saved (fades for me), saved for everyone with the rest of my view. */
-export function FilterSection({ editor, k, schema, mine, saved, mayShare }: { editor: Editor; k: KanbanElement; schema: readonly FieldDef[]; mine: ViewFilter | null; saved: ViewFilter | null; mayShare: boolean }) {
-  const [draft, setDraft] = useState<FilterRule[]>(mine?.rules ?? []);
-  const [op, setOp] = useState<'and' | 'or'>(mine?.op ?? 'and');
-  // Someone (me elsewhere, Save, Reset) changed my filter: start from it again.
+/**
+ * A filter's rules, edited as a draft (a rule just added has no value yet: it is kept here and
+ * applied once it has one). `onChange` gets the complete rules (null: none). Shared by the View
+ * panel (the board's filter, a table tab's) and focus mode.
+ */
+export function FilterRules({ k, schema, filter, onChange }: { k: KanbanElement; schema: readonly FieldDef[]; filter: ViewFilter | null; onChange: (f: ViewFilter | null) => void }) {
+  const [draft, setDraft] = useState<FilterRule[]>(filter?.rules ?? []);
+  const [op, setOp] = useState<'and' | 'or'>(filter?.op ?? 'and');
+  // Someone (me elsewhere, Save, Reset) changed the filter: start from it again.
   useEffect(() => {
-    if (!sameFilter({ op, rules: draft.filter(complete) }, mine && { op: mine.op, rules: mine.rules })) {
-      setDraft(mine?.rules ?? []);
-      setOp(mine?.op ?? 'and');
+    if (!sameFilter({ op, rules: draft.filter(complete) }, filter && { op: filter.op, rules: filter.rules })) {
+      setDraft(filter?.rules ?? []);
+      setOp(filter?.op ?? 'and');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine]);
+  }, [filter]);
   const commit = (rules: FilterRule[], nextOp = op) => {
     setDraft(rules);
     setOp(nextOp);
     const done = rules.filter(complete);
-    setMyFilter(editor, k.id, done.length ? { op: nextOp, rules: done } : null);
+    onChange(done.length ? { op: nextOp, rules: done } : null);
   };
-  const own = !sameFilter(mine, saved);
   const first = filterable(schema)[0];
   return (
-    <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-filter">
-      <h3 id="fr-kanban-view-filter" className="fr-kanban-view__heading">
-        Filter
-      </h3>
+    <>
       {draft.length > 1 && (
         <label className="fr-kanban-view__row">
           <span>Cards that match</span>
@@ -232,6 +232,19 @@ export function FilterSection({ editor, k, schema, mine, saved, mayShare }: { ed
           Add a rule
         </Button>
       )}
+    </>
+  );
+}
+
+/** "Filter": my own filter on top of what is saved (fades for me), saved for everyone with the rest of my view. */
+export function FilterSection({ editor, k, schema, mine, saved, mayShare }: { editor: Editor; k: KanbanElement; schema: readonly FieldDef[]; mine: ViewFilter | null; saved: ViewFilter | null; mayShare: boolean }) {
+  const own = !sameFilter(mine, saved);
+  return (
+    <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-filter">
+      <h3 id="fr-kanban-view-filter" className="fr-kanban-view__heading">
+        Filter
+      </h3>
+      <FilterRules k={k} schema={schema} filter={mine} onChange={(f) => setMyFilter(editor, k.id, f)} />
       <p className="fr-kanban-fields__hint">
         {own
           ? `Your filter fades the cards it leaves out, for you only.${saved ? ' Cards the saved filter hides stay hidden.' : ''}${mayShare ? ' Save for everyone to hide them on the board.' : ''}`
@@ -243,11 +256,60 @@ export function FilterSection({ editor, k, schema, mine, saved, mayShare }: { ed
   );
 }
 
-/** "Sort": every column in a field's order, for everyone (editors); none = the order people stacked the cards in. */
-export function SortSection({ editor, k, schema, sort, mayShare }: { editor: Editor; k: KanbanElement; schema: readonly FieldDef[]; sort: readonly SortRule[]; mayShare: boolean }) {
+/** A sort's fields (each a tie-breaker), edited in place: `onChange` gets the new sort ([]: none). */
+export function SortRules({ schema, sort, onChange, noun = 'cards' }: { schema: readonly FieldDef[]; sort: readonly SortRule[]; onChange: (s: SortRule[]) => void; noun?: string }) {
   const fields = queryFields(schema).filter((f) => f.sortable && f.id !== '$link');
   const name = (id: string) => queryField(schema, id)?.name ?? id;
-  const set = (next: SortRule[]) => setSort(editor, k.id, next);
+  const set = onChange;
+  return (
+    <>
+      {sort.length > 0 && (
+        <ol className="fr-kanban-fields__list fr-kanban-view__rules" aria-label="Sort order">
+          {sort.map((s, i) => (
+            <li key={s.field} className="fr-kanban-view__rule">
+              <span className="fr-kanban-view__rule-line">
+                <Select
+                  size="sm"
+                  aria-label={i ? 'Then by' : 'Sort by'}
+                  value={s.field}
+                  options={fields.filter((f) => f.id === s.field || !sort.some((x) => x.field === f.id)).map((f) => ({ value: f.id, label: f.name }))}
+                  onChange={(field) => set(sort.map((x, j) => (j === i ? { ...x, field } : x)))}
+                />
+                <SegmentedControl
+                  size="sm"
+                  aria-label={`${name(s.field)}: direction`}
+                  value={s.dir}
+                  options={[
+                    { value: 'asc', label: 'Ascending' },
+                    { value: 'desc', label: 'Descending' },
+                  ]}
+                  onChange={(dir) => set(sort.map((x, j) => (j === i ? { ...x, dir } : x)))}
+                />
+                <IconButton icon={X} size={32} label={`Stop sorting by ${name(s.field)}`} onClick={() => set(sort.filter((_, j) => j !== i))} />
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <span className="fr-kanban-view__whose-actions">
+        {sort.length < 3 && fields.some((f) => !sort.some((s) => s.field === f.id)) && (
+          <Button size="sm" variant="ghost" icon={Plus} onClick={() => set([...sort, { field: fields.find((f) => !sort.some((s) => s.field === f.id))!.id, dir: 'asc' }])}>
+            {sort.length ? 'Then by' : `Sort ${noun}`}
+          </Button>
+        )}
+        {sort.length > 0 && (
+          <Button size="sm" variant="ghost" onClick={() => set([])}>
+            Back to manual order
+          </Button>
+        )}
+      </span>
+    </>
+  );
+}
+
+/** "Sort": every column in a field's order, for everyone (editors); none = the order people stacked the cards in. */
+export function SortSection({ editor, k, schema, sort, mayShare }: { editor: Editor; k: KanbanElement; schema: readonly FieldDef[]; sort: readonly SortRule[]; mayShare: boolean }) {
+  const name = (id: string) => queryField(schema, id)?.name ?? id;
   return (
     <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-sort">
       <h3 id="fr-kanban-view-sort" className="fr-kanban-view__heading">
@@ -257,46 +319,7 @@ export function SortSection({ editor, k, schema, sort, mayShare }: { editor: Edi
         <p className="fr-kanban-view__value">{sort.length ? `By ${sort.map((s) => `${name(s.field)}${s.dir === 'desc' ? ' (descending)' : ''}`).join(', then ')}` : 'Manual order'}</p>
       ) : (
         <>
-          {sort.length > 0 && (
-            <ol className="fr-kanban-fields__list fr-kanban-view__rules" aria-label="Sort order">
-              {sort.map((s, i) => (
-                <li key={s.field} className="fr-kanban-view__rule">
-                  <span className="fr-kanban-view__rule-line">
-                    <Select
-                      size="sm"
-                      aria-label={i ? 'Then by' : 'Sort by'}
-                      value={s.field}
-                      options={fields.filter((f) => f.id === s.field || !sort.some((x) => x.field === f.id)).map((f) => ({ value: f.id, label: f.name }))}
-                      onChange={(field) => set(sort.map((x, j) => (j === i ? { ...x, field } : x)))}
-                    />
-                    <SegmentedControl
-                      size="sm"
-                      aria-label={`${name(s.field)}: direction`}
-                      value={s.dir}
-                      options={[
-                        { value: 'asc', label: 'Ascending' },
-                        { value: 'desc', label: 'Descending' },
-                      ]}
-                      onChange={(dir) => set(sort.map((x, j) => (j === i ? { ...x, dir } : x)))}
-                    />
-                    <IconButton icon={X} size={32} label={`Stop sorting by ${name(s.field)}`} onClick={() => set(sort.filter((_, j) => j !== i))} />
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-          <span className="fr-kanban-view__whose-actions">
-            {sort.length < 3 && fields.some((f) => !sort.some((s) => s.field === f.id)) && (
-              <Button size="sm" variant="ghost" icon={Plus} onClick={() => set([...sort, { field: fields.find((f) => !sort.some((s) => s.field === f.id))!.id, dir: 'asc' }])}>
-                {sort.length ? 'Then by' : 'Sort cards'}
-              </Button>
-            )}
-            {sort.length > 0 && (
-              <Button size="sm" variant="ghost" onClick={() => set([])}>
-                Back to manual order
-              </Button>
-            )}
-          </span>
+          <SortRules schema={schema} sort={sort} onChange={(next) => setSort(editor, k.id, next)} />
           <p className="fr-kanban-fields__hint">
             {sort.length
               ? 'Sorting moves the cards for everyone. Cards still move between columns; back to manual order puts every card where it was.'

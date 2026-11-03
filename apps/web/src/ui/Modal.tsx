@@ -18,15 +18,25 @@ export interface ModalProps {
   /** Close on backdrop click (default true). */
   dismissable?: boolean;
   className?: string;
+  /**
+   * 'page': nearly the whole window (the whole of it on phones), for a full view of something
+   * (a kanban's focus mode); `width` is then its widest. Default 'dialog'.
+   */
+  size?: 'dialog' | 'page';
+  /**
+   * Escape goes to the focused content first (an inline editor cancels its edit); the modal closes
+   * only if the content left it unhandled (no preventDefault / stopPropagation).
+   */
+  escapeToContent?: boolean;
 }
 
 let scrollLocks = 0;
 
-export function Modal({ open, onClose, title, width = 440, footer, children, description, dismissable = true, className }: ModalProps) {
+export function Modal({ open, onClose, title, width = 440, footer, children, description, dismissable = true, className, size = 'dialog', escapeToContent = false }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descId = useId();
-  const depth = useDismissableLayer({ open, onClose, ref: panelRef, closeOnOutside: dismissable });
+  const depth = useDismissableLayer({ open, onClose, ref: panelRef, closeOnOutside: dismissable, escapeToContent });
   useRestoreFocus(open, panelRef);
 
   useEffect(() => {
@@ -76,8 +86,8 @@ export function Modal({ open, onClose, title, width = 440, footer, children, des
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
-        className={`fr-modal fr-anim${className ? ` ${className}` : ''}`}
-        style={{ width }}
+        className={`fr-modal fr-anim${size === 'page' ? ' fr-modal--page' : ''}${className ? ` ${className}` : ''}`}
+        style={size === 'page' ? { maxWidth: width } : { width }}
         onKeyDown={trapTab}
       >
         <header className="fr-modal__header">

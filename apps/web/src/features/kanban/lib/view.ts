@@ -37,8 +37,15 @@ import {
   type SortRule,
   type ViewConfig,
   type ViewFilter,
+  MY_TAB_KEY,
+  savedTabId,
+  tableOverrideBetween,
+  tableView,
+  withSavedTab,
+  withTableSaved,
 } from '@freero/shared';
 import type { ChildPresentation, Editor } from '@engine';
+import { myTab, myTabId, myTableView } from './tabs';
 
 /** The kanban's board view, with this person's own changes when `personal`. */
 export function viewOf(editor: Pick<Editor, 'getPersonalView'>, k: KanbanElement, personal: boolean): ViewConfig {
@@ -47,7 +54,13 @@ export function viewOf(editor: Pick<Editor, 'getPersonalView'>, k: KanbanElement
 }
 
 /** True when this person sees the board view differently from what is saved. */
-export const hasOwnView = (editor: Pick<Editor, 'getPersonalView'>, k: KanbanElement) => !!overrideBetween(boardView(k), viewOf(editor, k, true));
+export function hasOwnView(editor: Pick<Editor, 'getPersonalView'>, k: KanbanElement): boolean {
+  const tab = myTab(editor, k);
+  if (tab.id !== savedTabId(k)) return true;
+  if (tab.layout === 'board') return !!overrideBetween(boardView(k), viewOf(editor, k, true));
+  const saved = tableView(k, tab.id);
+  return !!saved && !!tableOverrideBetween(saved, myTableView(editor, k, tab.id)!);
+}
 
 /**
  * How a card on kanban `k` is shown: its accent (derived, never written), chips and density; faded
@@ -94,22 +107,46 @@ export function setMyCardDisplay(editor: Editor, kid: string, patch: { show?: st
 /** Back to the saved view (drops my own changes). */
 export function resetMyView(editor: Editor, kid: string) {
   const k = editable(editor, kid);
-  if (k) editor.setPersonalView(k.id, boardView(k).id, null);
+  if (!k) return;
+  editor.setPersonalView(k.id, myTabId(editor, k), null);
+  editor.setPersonalView(k.id, MY_TAB_KEY, null);
 }
 
 const writeView = (editor: Editor, k: KanbanElement, view: ViewConfig) => editor.update<KanbanElement>(k.id, savedViews(k, view));
 
 /**
  * "Save for everyone": my view becomes the saved one (one undo step) and my own changes are
- * cleared. Editors, unlocked kanbans, a view not locked by someone else. A filter saying "is me"
- * can't be saved: on the shared board it would mean someone else for each person.
+ * cleared — the tab I look at becomes the tab everyone starts on, with my changes to it (the
+ * board's fields shown and colour, or a table's columns, filter and sort). Editors, unlocked
+ * kanbans, a tab not locked by someone else. A filter saying "is me" can't be saved: on the shared
+ * board it would mean someone else for each person.
  */
 export function saveViewForEveryone(editor: Editor, kid: string): boolean {
   const k = editable(editor, kid);
-  if (!k || !viewEditable(editor, k)) return false;
-  const mine = viewOf(editor, k, true);
-  writeView(editor, k, { ...mine, filter: cleanFilter(mine.filter) });
-  editor.setPersonalView(k.id, mine.id, null);
+  if (!k || !editor.can('editor') || k.locked) return false;
+  const tab = myTab(editor, k);
+  const moveTab = (cur: KanbanElement) => {
+    const patch = savedTabId(cur) !== tab.id ? withSavedTab(cur, tab.id) : null;
+    if (patch) editor.update<KanbanElement>(cur.id, patch);
+  };
+  if (tab.layout === 'board') {
+    if (!viewEditable(editor, k)) return false;
+    const mine = viewOf(editor, k, true);
+    editor.transact(() => {
+      if (overrideBetween(boardView(k), mine)) writeView(editor, k, { ...mine, filter: cleanFilter(mine.filter) });
+      moveTab(editor.getElement<KanbanElement>(k.id)!);
+    });
+  } else {
+    const saved = tableView(k, tab.id);
+    if (!saved || viewLockedFor(saved, { id: editor.user.id, role: editor.can('owner') ? 'owner' : 'editor' })) return false;
+    const mine = myTableView(editor, k, tab.id)!;
+    editor.transact(() => {
+      if (tableOverrideBetween(saved, mine)) editor.update<KanbanElement>(k.id, withTableSaved(k, { ...mine, filter: cleanFilter(mine.filter) }));
+      moveTab(editor.getElement<KanbanElement>(k.id)!);
+    });
+  }
+  editor.setPersonalView(k.id, tab.id, null);
+  editor.setPersonalView(k.id, MY_TAB_KEY, null);
   return true;
 }
 
