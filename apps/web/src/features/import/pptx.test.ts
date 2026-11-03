@@ -184,4 +184,4 @@ it('hostile or broken .pptx files are refused quickly with a reason, never with 
     if (!(outcome instanceof ImportError)) expect(Array.isArray((outcome as { drafts?: unknown }).drafts), `case ${i}: ${String(outcome)}`).toBe(true);
   }
   expect(Date.now() - started).toBeLessThan(15_000);
-});
+}, 30_000); // the body bounds its own time at 15 s; vitest's 5 s default fails it on a busy machine
