@@ -59,7 +59,7 @@ function tableSize(lines: Array<{ text: string; bold?: boolean }>, extra = 0): {
   const widest = Math.max(...lines.map((l) => measureText(l.text || ' ', { fontSize: TABLE_FONT, maxWidth: 100_000, bold: l.bold }).w));
   return {
     w: Math.round(Math.min(560, Math.max(160, widest + 2 * TABLE_PAD + STROKE + 16))),
-    h: Math.round(2 * TABLE_PAD + STROKE + lines.length * TABLE_LINE + 6 + extra),
+    h: Math.round(2 * TABLE_PAD + STROKE + lines.length * TABLE_LINE + 2 + extra),
   };
 }
 
@@ -486,7 +486,7 @@ export function parseStateDiagram(stmts: Statement[]): UmlDiagram {
   for (const s of states.values()) {
     if (s.scope) composites.get(s.scope)!.nodes.push(s.id);
     if (s.kind === 'start') nodes.push({ id: s.id, text: '', shape: 'ellipse', size: { w: 28, h: 28 }, look: { fill: INK, stroke: INK } });
-    else if (s.kind === 'end') nodes.push({ id: s.id, text: '', shape: 'bpmnEnd', size: { w: 34, h: 34 }, look: { fill: '#FFFFFF', stroke: INK } });
+    else if (s.kind === 'end') nodes.push({ id: s.id, text: '', shape: 'bpmnEnd', size: { w: 34, h: 34 }, look: { fill: 'transparent', stroke: INK } });
     else if (s.kind === 'choice') nodes.push({ id: s.id, text: '', shape: 'diamond', size: { w: 44, h: 44 } });
     else if (s.kind === 'fork' || s.kind === 'join')
       nodes.push({ id: s.id, text: '', shape: 'rect', size: across ? { w: 10, h: 96 } : { w: 96, h: 10 }, look: { fill: INK, stroke: INK } });
