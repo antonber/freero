@@ -54,6 +54,8 @@ export function legalFill(config: Config): LegalFill {
       // ", <address>" after the operator's name. A draft shows the gap; terms in force without an
       // address leave the clause out rather than print a placeholder.
       atAddress: l.address ? `, ${escapeHtml(l.address)}` : l.operator ? '' : `, ${unset('postal address')}`,
+      // The address on its own line (the DPA's list of parties): a gap there always shows.
+      postalAddress: l.address ? escapeHtml(l.address) : unset('postal address'),
       jurisdiction: l.jurisdiction ? escapeHtml(l.jurisdiction) : unset('governing law'),
       contact: contact ? mailLink(contact) : unset('contact email'),
       abuseContact: abuse ? mailLink(abuse) : unset('abuse contact email'),
@@ -69,9 +71,13 @@ export function legalFill(config: Config): LegalFill {
       logRetentionDays: l.logDays !== null ? String(l.logDays) : unset('log retention in days'),
       // Processors, as this server is configured right now (never a list someone has to keep in step).
       hosting: l.hosting ? escapeHtml(l.hosting) : unset('hosting provider and region'),
-      mailProvider: config.smtpUrl ? `the email delivery service at ${code(hostOf(config.smtpUrl) ?? 'SMTP')}` : 'no email delivery service (this server sends no email)',
+      // The operator's name for the provider (SITE_LEGAL_MAIL / SITE_LEGAL_STORAGE) with the host the
+      // server really talks to, so a changed SMTP_URL or bucket shows even before the name is updated.
+      mailProvider: config.smtpUrl
+        ? `${l.mail ? `${escapeHtml(l.mail)}, ` : ''}the email delivery service at ${code(hostOf(config.smtpUrl) ?? 'SMTP')}`
+        : 'no email delivery service (this server sends no email)',
       storageProvider: config.s3
-        ? `S3-compatible object storage at ${code(config.s3.endpoint ? (hostOf(config.s3.endpoint) ?? 'S3') : `Amazon S3 (${config.s3.region})`)}`
+        ? `${l.storage ? `${escapeHtml(l.storage)}, ` : ''}S3-compatible object storage at ${code(config.s3.endpoint ? (hostOf(config.s3.endpoint) ?? 'S3') : `Amazon S3 (${config.s3.region})`)}`
         : 'the server’s own disk',
       aiProvider: config.ai.instance
         ? `the AI model provider at ${code(hostOf(config.ai.instance.baseUrl) ?? config.ai.instance.provider)} (model ${code(config.ai.instance.model)})`

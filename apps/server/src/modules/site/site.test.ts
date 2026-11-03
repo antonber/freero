@@ -23,7 +23,7 @@ fs.writeFileSync(path.join(dist, 'robots.txt'), `User-agent: *\nSitemap: ${ORIGI
 fs.mkdirSync(path.join(dist, 'privacy'));
 fs.writeFileSync(
   path.join(dist, 'privacy/index.html'),
-  `<!doctype html><html><head><title>Privacy</title><meta name="robots" content="noindex, follow"/></head><body><aside class="legal-draft" role="note"><strong>Draft: not in effect.</strong> Under legal review.</aside><h1>Privacy policy</h1><p>Operated by [[freero-legal:operator]][[freero-legal:atAddress]]. Write to [[freero-legal:contact]]. Deleted after [[freero-legal:deletionGraceDays]] days.</p></body></html>`,
+  `<!doctype html><html><head><title>Privacy</title><meta name="robots" content="noindex, follow"/></head><body><aside class="legal-draft" role="note"><strong>Draft: not in effect.</strong> Under legal review.</aside><h1>Privacy policy</h1><p class="legal-review" role="note"><strong>Draft — under review.</strong></p><p>Operated by [[freero-legal:operator]][[freero-legal:atAddress]]. Write to [[freero-legal:contact]]. Deleted after [[freero-legal:deletionGraceDays]] days.</p></body></html>`,
 );
 fs.writeFileSync(
   path.join(dist, 'manifest.json'),
@@ -121,7 +121,7 @@ async function servedWith(legal: Partial<Config['site']['legal']>, run: (base: s
   await servedWithSite({ legal: { ...config.site.legal, ...legal } }, run);
 }
 
-it('until an operator is named, the privacy policy is visibly a draft that search engines may not index and sign-up asks nobody to agree; naming one puts it in effect with this server’s own facts', async () => {
+it('until an operator is named, the privacy policy is visibly a draft that search engines may not index and sign-up asks nobody to agree; naming one puts it in effect with this server’s own facts, but never lifts a page’s “under review” line, which only the operator’s approval removes', async () => {
   const draft = await fetch(`${base}/privacy`);
   const draftHtml = await draft.text();
   expect(draftHtml).toContain('Draft: not in effect');
@@ -135,6 +135,7 @@ it('until an operator is named, the privacy policy is visibly a draft that searc
     const res = await fetch(`${live}/privacy`);
     const html = await res.text();
     expect(html).not.toContain('Draft: not in effect');
+    expect(html).toContain('Draft — under review.');
     expect(html).toContain('<meta name="robots" content="index, follow, max-image-preview:large"/>');
     expect(res.headers.get('x-robots-tag')).toBeNull();
     // The operator's facts, escaped as text (no address set: the clause is left out, never a placeholder

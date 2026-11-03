@@ -256,7 +256,7 @@ They are static HTML: canonical links, Open Graph tags, structured data and the 
 | `GA_MEASUREMENT_ID` | — | Google Analytics 4 for the marketing pages and the app: a GA4 web stream's measurement id (`G-…`; a `UA-…` id is refused at startup). Visitors get a consent banner (Accept and Decline side by side; Global Privacy Control or Do Not Track count as Decline) and Google's script loads only after Accept, with Consent Mode v2 (ad storage, ad user data and ad personalisation always denied, Google signals off, cookies at most 13 months). The app reports pages by route with ids removed (`/board/<id>` → `/board`) and generic titles, from a hidden same-origin frame (`/analytics-frame`), never from the page that shows boards; it never runs in the live board view for assistants (`/embed/*`), the operators' console or the OAuth consent screen. Events: `sign_up` and `login` (method only), `board_created`, `template_used` (the public template id). "Cookie settings" in the site's footer and the app's Help menu change the choice. The pages' CSP adds `https://www.googletagmanager.com` to `script-src`, Google's collection hosts to `connect-src` and `'self'` to `frame-src`. The privacy policy describes it (and the cookies) when it is set. Unset: no Google script, banner, frame or CSP change anywhere. In GA's stream settings you may leave enhanced measurement on: in the app it only sees the empty analytics frame. |
 | `SITE_INDEXNOW_KEY` | — | An [IndexNow](https://www.indexnow.org/) key (8–128 letters, digits or dashes; generate one with `openssl rand -hex 16`). The server answers `/<key>.txt` with it, which proves to Bing, Yandex, Seznam, Naver and the other IndexNow engines that you control this host; then `node scripts/indexnow.mjs --site <PUBLIC_URL> [--since YYYY-MM-DD]` after a deploy submits the sitemap's pages (or only those changed since a day). Unset: nothing is served. Google doesn't use IndexNow: submit the sitemap in Search Console. |
 
-### Legal pages and support (`/privacy`, `/terms`, `/acceptable-use`, `/support`)
+### Legal pages and support (`/privacy`, `/terms`, `/acceptable-use`, `/support`, `/security`, `/subprocessors`, `/dpa`)
 
 The privacy policy, terms of service and acceptable use policy are **drafts for legal review**,
 written from what the code does; they describe the hosted service. They are built with tokens for
@@ -274,6 +274,12 @@ agree to anything (`GET /api/site/legal` answers `{ "legal": null }`). Set it on
 been reviewed and adapted by a lawyer. If you run your own Freero with the marketing site on, these
 pages describe the hosted service, not yours: write your own, or leave the operator unset.
 
+The security overview, the subprocessor list and the data processing addendum (`/security`,
+`/subprocessors`, `/dpa`; the last two are legal pages under the same guard) also carry a "Draft —
+under review" line that no setting removes: it goes, with every "to confirm by the operator" mark,
+when the operator has approved the text and deletes `<UnderReview />` / `<ToConfirm />` from the
+page (`apps/site/src/lib/legal.tsx`).
+
 | Variable | Default | Description |
 |---|---|---|
 | `SITE_LEGAL_OPERATOR` | — | The legal name of whoever operates the service, e.g. `Kaiten Gaming LLC`. Setting it puts the legal pages in effect (no draft banner, indexable) and adds "By signing up you agree to…" to sign-up. |
@@ -281,6 +287,8 @@ pages describe the hosted service, not yours: write your own, or leave the opera
 | `SITE_LEGAL_ADDRESS` | — | The operator's postal address, one line. |
 | `SITE_LEGAL_JURISDICTION` | — | The law that governs the terms, as it reads in "governed by the laws of …", e.g. `the State of Delaware, USA`. |
 | `SITE_LEGAL_HOSTING` | — | Who hosts the servers and where, as the privacy policy names it, e.g. `Railway Corporation (United States, US West region)`. |
+| `SITE_LEGAL_STORAGE` | — | Who stores uploaded files and where, as the privacy policy and `/subprocessors` name it, e.g. `Example Storage Inc. (United States)`. Shown before the bucket's host, which the server always adds itself (`S3_ENDPOINT`). Unset: only the host. |
+| `SITE_LEGAL_MAIL` | — | Who delivers email and where, e.g. `Example Mail Inc. (United States)`. Shown before the SMTP server's host (`SMTP_URL`). Unset: only the host. |
 | `SITE_LEGAL_BACKUP_DAYS` | — | The longest a database backup is kept, in days, as the privacy policy states it. Freero doesn't take these backups, your hosting does: set the real number (on Railway, the longest-kept backup schedule, including point-in-time recovery). |
 | `SITE_LEGAL_LOG_DAYS` | — | The longest the hosting keeps request logs, in days, as the privacy policy states it. |
 | `SITE_STATUS_URL` | — | An `https` status page, linked from `/support` ("Service status"). Unset: `/support` says to write to the contact address. |
@@ -376,8 +384,8 @@ get an HTTP 429 the client retries with backoff.
 
 ## Security behaviour (not configurable)
 
-- **Headers** on every response: a Content-Security-Policy (scripts only from the app's origin; styles
-  and fonts from Google Fonts; images from the app, `data:`, `blob:` and `https:` for linked images;
+- **Headers** on every response: a Content-Security-Policy (scripts only from the app's origin, plus
+  Google's tag script where `GA_MEASUREMENT_ID` is set; styles and fonts only from the app; images from the app, `data:`, `blob:` and `https:` for linked images;
   connections to the app, its WebSocket origin and `https:` for "paste an image URL";
   `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`, `Cross-Origin-Opener-Policy`,
