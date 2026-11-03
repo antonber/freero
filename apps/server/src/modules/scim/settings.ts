@@ -9,7 +9,7 @@ import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
 import { recordAudit } from '../audit/index';
-import { projectOfWorkspace } from '../workspaces/index';
+import { attachedWorkspaceIds, getWorkspaceInfo, projectOfWorkspace } from '../workspaces/index';
 import * as repo from './repo';
 import { syncPerson, TOKEN_PREFIX } from './service';
 
@@ -87,7 +87,10 @@ function cleanMapping(v: unknown): ScimGroupMapping | null {
   const m = v as { kind?: unknown; role?: unknown; projectId?: unknown };
   if (m.kind === 'role' && (m.role === 'admin' || m.role === 'member' || m.role === 'guest')) return { kind: 'role', role: m.role };
   if (m.kind === 'project' && typeof m.projectId === 'string' && m.projectId) return { kind: 'project', projectId: m.projectId };
-  throw badRequest('mapping must be null, { kind: "role", role: admin|member|guest } or { kind: "project", projectId }');
+  const w = v as { workspaceId?: unknown };
+  if (m.kind === 'workspace' && typeof w.workspaceId === 'string' && w.workspaceId && (m.role === 'admin' || m.role === 'member' || m.role === 'guest'))
+    return { kind: 'workspace', workspaceId: w.workspaceId, role: m.role };
+  throw badRequest('mapping must be null, { kind: "role", role: admin|member|guest }, { kind: "project", projectId } or { kind: "workspace", workspaceId, role }');
 }
 
 /** Changes what a group grants, and applies it to its members now. */
@@ -96,7 +99,13 @@ export async function mapGroup(workspaceId: string, actorId: string, groupId: st
   const g = await repo.getGroup(workspaceId, groupId);
   if (!g) throw notFound('Group not found');
   if (mapping?.kind === 'project' && !(await projectOfWorkspace(mapping.projectId, workspaceId))) throw badRequest('That project is not in this workspace');
-  const describe = (m: ScimGroupMapping | null) => (!m ? null : m.kind === 'role' ? `role:${m.role}` : `project:${m.projectId}`);
+  // #108: an organisation's groups grant a role in its directory (admins, members) or membership of one of its workspaces.
+  const organisation = (await getWorkspaceInfo(workspaceId))?.kind === 'organisation';
+  if (mapping?.kind === 'workspace' && (!organisation || !(await attachedWorkspaceIds(workspaceId)).includes(mapping.workspaceId)))
+    throw badRequest('That workspace is not in this organisation');
+  if (organisation && mapping?.kind === 'role' && mapping.role === 'guest') throw badRequest('An organisation has admins and members, not guests');
+  const describe = (m: ScimGroupMapping | null) =>
+    !m ? null : m.kind === 'role' ? `role:${m.role}` : m.kind === 'project' ? `project:${m.projectId}` : `workspace:${m.workspaceId}:${m.role}`;
   await repo.transaction(async () => {
     if (!(await repo.setMapping(workspaceId, groupId, mapping, Date.now()))) throw notFound('Group not found');
     await recordAudit({
@@ -108,7 +117,9 @@ export async function mapGroup(workspaceId: string, actorId: string, groupId: st
     });
   });
   const unmapped = g.mapping?.kind === 'project' && (mapping?.kind !== 'project' || mapping.projectId !== g.mapping.projectId) ? [g.mapping.projectId] : [];
+  // A workspace this group no longer grants: its members leave it (unless another group grants it).
+  const left = g.mapping?.kind === 'workspace' && (mapping?.kind !== 'workspace' || mapping.workspaceId !== g.mapping.workspaceId) ? [g.mapping.workspaceId] : [];
   // A role mapping changes everyone's roles (the directory starts or stops owning them).
   const affected = g.mapping?.kind === 'role' || mapping?.kind === 'role' ? (await repo.listUsers(workspaceId)).map((u) => u.userId) : await repo.groupMemberIds(groupId);
-  for (const id of affected) await syncPerson(workspaceId, id, unmapped);
+  for (const id of affected) await syncPerson(workspaceId, id, unmapped, left);
 }

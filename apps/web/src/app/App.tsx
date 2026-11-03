@@ -21,6 +21,7 @@ import { AppsPage, IntegrationPage } from './pages/apps/AppsPage';
 import { CommunityListingPage, SubmitListingPage } from './pages/apps/CommunityPages';
 import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 import { AdminConsolePage } from './pages/admin/AdminConsolePage';
+import { OrgConsolePage } from './pages/admin/OrgConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
 import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
@@ -170,6 +171,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <AdminConsolePage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/org/:organisationId"
+              element={
+                <RequireAuth>
+                  <OrgConsolePage />
                 </RequireAuth>
               }
             />

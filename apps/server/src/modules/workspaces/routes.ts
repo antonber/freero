@@ -5,6 +5,16 @@ import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser } from '../auth/index';
 import { acceptInvite, inviteToWorkspace, listInvites, previewInvite, resendInvite, revokeInvite } from './invites';
 import {
+  addOrganisationMember,
+  attachWorkspace,
+  createOrganisation,
+  deleteOrganisation,
+  detachWorkspace,
+  listOrganisations,
+  organisationWorkspaceMembers,
+  organisationWorkspaces,
+} from './organisations';
+import {
   addProjectMember,
   createProject,
   deleteProject,
@@ -70,6 +80,75 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
     requireUser,
     handle(async (req, res) => {
       res.json({ workspace: await transferWorkspace(req.params.id, currentUser(req).id, req.body?.userId) });
+    }),
+  );
+
+  // ---- organisations (#108) ----
+  r.get(
+    '/organisations',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ organisations: await listOrganisations(currentUser(req).id) });
+    }),
+  );
+
+  r.post(
+    '/organisations',
+    requireUser,
+    rateLimit('boardCreate', 'user'),
+    handle(async (req, res) => {
+      res.status(201).json({ organisation: await createOrganisation(currentUser(req).id, req.body?.name) });
+    }),
+  );
+
+  r.delete(
+    '/organisations/:id',
+    requireUser,
+    handle(async (req, res) => {
+      await deleteOrganisation(req.params.id, currentUser(req).id, req.body?.confirm);
+      res.json({ ok: true });
+    }),
+  );
+
+  r.get(
+    '/organisations/:id/workspaces',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ workspaces: await organisationWorkspaces(req.params.id, currentUser(req).id) });
+    }),
+  );
+
+  r.post(
+    '/organisations/:id/workspaces',
+    requireUser,
+    handle(async (req, res) => {
+      res.status(201).json({ workspace: await attachWorkspace(req.params.id, req.body?.workspaceId, currentUser(req).id) });
+    }),
+  );
+
+  r.delete(
+    '/organisations/:id/workspaces/:workspaceId',
+    requireUser,
+    handle(async (req, res) => {
+      await detachWorkspace(req.params.id, req.params.workspaceId, currentUser(req).id);
+      res.json({ ok: true });
+    }),
+  );
+
+  r.get(
+    '/organisations/:id/workspaces/:workspaceId/members',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ members: await organisationWorkspaceMembers(req.params.id, req.params.workspaceId, currentUser(req).id) });
+    }),
+  );
+
+  r.post(
+    '/organisations/:id/members',
+    requireUser,
+    rateLimit('invite', 'user'),
+    handle(async (req, res) => {
+      res.status(201).json({ member: await addOrganisationMember(req.params.id, currentUser(req).id, req.body ?? {}) });
     }),
   );
 

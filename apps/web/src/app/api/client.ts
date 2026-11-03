@@ -1,5 +1,8 @@
 import type {
   Account,
+  OrganisationSummary,
+  OrganisationWorkspace,
+  OrganisationWorkspaceMember,
   CreateProblemRequest,
   OwnProblemReport,
   ProblemListResponse,
@@ -443,6 +446,20 @@ export const api = {
     request<{ invite: WorkspaceInvite }>('POST', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}/resend`),
   revokeWorkspaceInvite: (id: string, inviteId: string) =>
     request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}`),
+  // organisations above team workspaces (#108); under its own id an organisation also answers the
+  // identity, settings, members and audit calls of a workspace below
+  listOrganisations: () => request<{ organisations: OrganisationSummary[] }>('GET', '/api/organisations'),
+  createOrganisation: (name: string) => request<{ organisation: OrganisationSummary }>('POST', '/api/organisations', { name }),
+  deleteOrganisation: (id: string, confirm: string) => request<{ ok: true }>('DELETE', `/api/organisations/${encodeURIComponent(id)}`, { confirm }),
+  organisationWorkspaces: (id: string) => request<{ workspaces: OrganisationWorkspace[] }>('GET', `/api/organisations/${encodeURIComponent(id)}/workspaces`),
+  attachToOrganisation: (id: string, workspaceId: string) =>
+    request<{ workspace: OrganisationWorkspace }>('POST', `/api/organisations/${encodeURIComponent(id)}/workspaces`, { workspaceId }),
+  detachFromOrganisation: (id: string, workspaceId: string) =>
+    request<{ ok: true }>('DELETE', `/api/organisations/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}`),
+  organisationWorkspaceMembers: (id: string, workspaceId: string) =>
+    request<{ members: OrganisationWorkspaceMember[] }>('GET', `/api/organisations/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}/members`),
+  addOrganisationMember: (id: string, email: string, role: 'admin' | 'member') =>
+    request<{ member: WorkspaceMember }>('POST', `/api/organisations/${encodeURIComponent(id)}/members`, { email, role }),
   // single sign-on, provisioning, data exports (team workspaces: owners/admins)
   ssoSettings: (id: string) => request<SsoSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/sso`),
   addSsoDomain: (id: string, domain: string) => request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domains`, { domain }),
