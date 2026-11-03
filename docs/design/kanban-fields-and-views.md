@@ -1159,7 +1159,7 @@ View tabs, the Table projection and focus mode.
   creating cards *inside* a kanban grows faster than linearly (2,000 in one transaction ~2.5 s,
   5,000 ~16 s in the test harness; outside a kanban 2,000 take 0.2 s). That predates 3a (the same
   without the new fold) and matters for big imports; it belongs with the benchmark script §18 asks
-  for, still not written.
+  for, still not written. (Since measured and fixed: see "Performance (as measured)".)
 - **Tests** (each fails without its change): a table tab folds the cards away for its viewer only —
   out of their selection, the collaborator keeps them, nobody's doc changes — and deleting the tab
   brings them back; Save for everyone on a table tab makes it everyone's tab with its sort, and the
@@ -1235,6 +1235,82 @@ filters stay open there).
   empty row no card — and one undo restores the table and every cell (fails if the kanban and the
   removal are two steps); "Copy as table" gives a row per card in board order (a card moved up by
   hand comes first), typed columns, beside the kanban, which is left as it was.
+
+## Performance (as measured)
+
+The benchmark §18 asks for: `npm run bench:kanban` (`scripts/bench-kanban.mjs`; options
+`--sizes 500,1000,2000,5000 --big 5000 --repeat 3 --only <part of a name> --side web|server
+--json`). It is a script, not a test: it prints medians and checks only that each scenario did
+what it says (a card took its column's status, the sort was saved, cards got shorter…). The web
+side is a real engine session (`createTestBoard`: a real Yjs doc and Editor, every feature as the
+app loads them) run through vite-node with the web app's config; the server side is the pure
+planning every server write to a kanban goes through (`modules/structure` `planStructure` for
+`add_cards` / the API's insert / tracker imports, and `withKanbanLayout`), with tsx. Cards carry
+two field values and half of them a description; "swimlanes + filter + limit" is a kanban in
+swimlanes by Priority, a saved filter (Points > 0) and a 50-card limit on To do. Numbers from one
+Windows laptop (Node 22), median of 3; the trend matters, not the last millisecond.
+
+**The cause** of "creating cards inside a kanban grows faster than linearly" (3a): not the layout —
+`arrange` already ran once per transaction — but the membership lookup. Every new item asks
+`Editor.containerAt` for the container under its center twice (the layer placement and
+`adoptIntoContainers`), and `containerAt` scanned `getVisibleElements()`: inside a transaction
+every write drops the store's ordered cache, so each call re-sorted the whole board and asked
+every kanban card `hidesMember` (column, limit, filter, my tab). n cards → n full scans: O(n²)
+with a heavy constant. The same scan ran for every card `moveBy` moves (its membership rule), so
+regrouping 5,000 cards took 14–24 s. A smaller second cause: `store.maxZ()` (asked by every
+`createMany`) re-sorted the board after each write, which made even loose cards quadratic (5,000 in
+2.8 s); and `planKanban` found each card's patch by scanning the patches made so far, O(n²) in a
+re-lay that touches every card (the server's whole-kanban re-lay).
+
+**The fix** (engine and shared, no API change; behaviour identical):
+- `BoardStore.elementsOfType(type)`: ids by type in every doc, kept across local writes inside a
+  transaction (each write adds its id), dropped by any doc event (end of a transaction, a remote
+  change, undo); readers check the element, so a deletion needs no bookkeeping. The registry lists
+  the container types. `containerAt` asks only those containers and keeps the old answer exactly:
+  hidden ones skipped, the smallest wins, ties by render order. Lookups cost the containers on the
+  board, not the board.
+- `maxZ()` is kept between writes while it is exact: a write that keeps or raises an element's z
+  raises it; one that lowers the highest element, a layer move or a deletion drops it; any doc
+  event drops it (a collaborator's note on top is never under mine).
+- `planKanban` keeps its patches by id too (same order, same output).
+
+Equivalence is guarded by `app/board/kanbanBulk.test.ts` (it passes on the code from before the
+fix, and fails if the index misses a collaborator's kanban, misses a kanban made earlier in the
+same step, picks the frame around the kanban, or the end-of-step re-lay is dropped: 60 cards on a
+kanban in a frame, with swimlanes, a filter and a card limit, stand exactly where the same cards
+created as its members stand, and nothing is left to lay out) and the engine's "a note added right
+after a collaborator added theirs lands on top" (stale `maxZ`).
+
+| Web (engine session) | before | after |
+|---|---:|---:|
+| `Editor.create` × n in one transaction, onto a kanban — 500 / 1k / 2k / 5k | 157 / 594 / 2,371 / 15,680 ms | 17 / 18 / 38 / 100 ms |
+| `createMany` dropped onto a kanban (paste, drop: no `frameId`) — 500 / 1k / 2k / 5k | 111 / 449 / 1,693 / 11,059 ms | 10 / 15 / 36 / 110 ms |
+| `createMany` with `frameId` (templates, `createFromRows`) — 500 / 1k / 2k / 5k | 9 / 16 / 37 / 136 ms | 10 / 13 / 29 / 77 ms |
+| loose cards, no kanban — 500 / 1k / 2k / 5k | 31 / 116 / 437 / 2,771 ms | 3.5 / 5 / 11 / 33 ms |
+| `kanban.createFromRows`, CSV import onto a new kanban — 500 / 1k (one structure holds at most 1,999 rows) | 6 / 9 ms, 6 / 8 ms | 7 / 10 ms, 6 / 7 ms |
+| regroup by Priority, 5,000 cards (plain / swimlanes + filter + limit) | 14,219 / 24,437 ms | 241 / 279 ms |
+| sort by Points, 5,000 cards | 309 / 346 ms | 257 / 291 ms |
+| density compact (every card re-measured), 5,000 cards | 76 / 166 ms | 67 / 107 ms |
+| one card dropped at the top of another column, 5,000 cards (≈1,700 below it shift) | 43 / 25 ms | 30 / 24 ms |
+| an unrelated edit (a sticky elsewhere), 5,000-card kanban on the board | 1.9 / 4.5 ms | 2.1 / 4.2 ms |
+| visible elements (hit tests, culling, marquee), per call | 5.7 / 9.6 ms | 6.8 / 9.2 ms |
+| outline (`getOutline`) | 28 / 36 ms | 34 / 33 ms |
+
+| Server (planning) | before | after |
+|---|---:|---:|
+| `add_cards` into an empty kanban, 500 per call — 500 / 1k / 2k / 5k | 9 / 14 / 24 / 68 ms | 8 / 13 / 25 / 63 ms |
+| `add_cards` of 500 onto a kanban holding 500 … 5,000 | 7–8 ms | 6–8 ms |
+| `update_items`: one card to another column, 5,000 cards (plain / swimlanes + filter + limit) | 19 / 11 ms | 2.3 / 11 ms |
+| a whole-kanban re-lay (`configure_view`), 5,000 cards | 41 / 42 ms | 3.9 / 11 ms |
+
+Against §18: bulk creation is linear (5,000 cards onto a kanban in about 0.1 s, any path); a local
+change re-plans a 5,000-card kanban in 2–4 ms; regroup, sort and display changes of every card
+stay well under a second. Still open: a drop near the top of a very long column rewrites (and
+re-normalizes) every card below it (≈30 ms at 1,700); `getVisibleElements` asks every card
+`hidesMember` (≈7–9 ms per call at 5,000, `showsTable` reading the tabs per card is a third of it)
+— a per-kanban answer cached on the element would cut it, in `features/kanban` (left alone here
+while 3b changes the tab code). The runtime's followers pass and `withChildren` still read the
+ordered board per call; neither is on a bulk path today.
 
 ## Sources (concepts only; nothing copied)
 
