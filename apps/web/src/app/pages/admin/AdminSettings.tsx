@@ -18,6 +18,7 @@ import {
 } from '@freero/shared';
 import { Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
+import { AdminNetworks } from './AdminNetworks';
 import { INACTIVE_ACTION_OPTIONS, LINK_MAX_DAYS_FIELD, parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
@@ -162,6 +163,7 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
         </p>
       </div>
       ) : null}
+      {scopes.includes('security') ? <AdminNetworks workspace={workspace} /> : null}
 
       {scopes.includes('content') ? (
       <div className="fr-admin-card">

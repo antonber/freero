@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import {
   ADMIN_SCOPE_REQUIRED,
   INACTIVE_BOARD_ACTIONS,
+  IP_ALLOWLIST_EXCLUDES_YOU,
   type InactiveBoardAction,
   LINK_MAX_DAYS_LIMIT,
   ORGANISATION_POLICY,
@@ -23,6 +24,8 @@ import {
   type WorkspaceSummary,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
+import { currentRequestContext } from '../../platform/requestContext';
+import { ipAllowed, MAX_RANGES, parseRange } from './ipAllowlist';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
@@ -51,6 +54,7 @@ import {
   isFullMember,
   isManager,
   isAdminScope,
+  ipListsOf,
   isWorkspaceRole,
   LINK_VALUES,
   looserPolicy,
@@ -111,7 +115,28 @@ async function organisationRolesOf(userId: string): Promise<Map<string, Workspac
 function blockOf(w: Workspace | undefined, deactivated: Set<string>, workspaceId: string, twoFactor: () => boolean): WorkspaceBlock | null {
   if (deactivated.has(workspaceId) || (w?.organisation && deactivated.has(w.organisation.id))) return 'deactivated';
   if (w?.kind === 'team' && w.settings.requireTwoFactor && !twoFactor()) return 'two_factor_required';
+  if (w?.kind === 'team' && ipBlocked(w)) return 'ip_not_allowed';
   return null;
+}
+
+/**
+ * #156: the request (or socket) comes from outside the workspace's IP allowlists. Only where a
+ * client address is known: background work (jobs, digests) acts for nobody's network. A request
+ * through an API token or app is checked where it is used (apiauth's useInWorkspace: exemptions).
+ */
+function ipBlocked(w: Workspace): boolean {
+  const lists = ipListsOf(w);
+  if (!lists.length) return false;
+  const ctx = currentRequestContext();
+  if (!ctx?.ip || ctx.apiCredential) return false;
+  return lists.some((l) => !ipAllowed(l, ctx.ip!));
+}
+
+/** May a request from `ip` reach the workspace's boards (#156)? For apiauth's per-workspace check. */
+export async function ipAllowedIn(workspaceId: string, ip: string | null): Promise<boolean> {
+  const w = await repo.getWorkspace(workspaceId);
+  if (!w || w.kind !== 'team' || !ip) return true;
+  return ipListsOf(w).every((l) => ipAllowed(l, ip));
 }
 
 /** The user's deactivations and (only when some of `workspaces` needs it) their two-step status. */
@@ -312,6 +337,7 @@ const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {
   sessionIdleMinutes: 'Sign out after inactivity',
   inactiveBoardAction: 'Boards nobody uses',
   inactiveBoardDays: 'Boards nobody uses, after',
+  ipAllowlist: 'Allowed networks',
 };
 
 // ---- security and retention settings (admin console) ----
@@ -329,6 +355,7 @@ export const SETTING_SCOPE: Record<keyof WorkspaceSettings, AdminScope> = {
   versionRetentionDays: 'content',
   inactiveBoardAction: 'content',
   inactiveBoardDays: 'content',
+  ipAllowlist: 'security',
 };
 
 /** A team workspace's effective settings (its own raised to its organisation's floors); an organisation's floors. */
@@ -359,6 +386,16 @@ function cleanSettings(body: Record<string, unknown>): Partial<WorkspaceSettings
   num('versionRetentionDays', true);
   num('auditRetentionDays', false);
   num('inactiveBoardDays', true);
+  if (body.ipAllowlist !== undefined) {
+    if (!Array.isArray(body.ipAllowlist) || body.ipAllowlist.length > MAX_RANGES) throw badRequest(`ipAllowlist must be a list of at most ${MAX_RANGES} ranges`);
+    const ranges: string[] = [];
+    for (const v of body.ipAllowlist) {
+      const r = typeof v === 'string' ? parseRange(v) : null;
+      if (!r) throw badRequest(`“${String(v).slice(0, 60)}” is not an IP address or a CIDR range (like 203.0.113.0/24 or 2001:db8::/32)`);
+      if (!ranges.includes(r)) ranges.push(r);
+    }
+    out.ipAllowlist = ranges;
+  }
   if (body.inactiveBoardAction !== undefined) {
     if (!(INACTIVE_BOARD_ACTIONS as readonly unknown[]).includes(body.inactiveBoardAction)) throw badRequest('inactiveBoardAction must be none, archive or trash');
     out.inactiveBoardAction = body.inactiveBoardAction as InactiveBoardAction;
@@ -391,7 +428,16 @@ export async function updateSettings(workspaceId: string, userId: string, body: 
     throw badRequest('Choose after how many days without activity boards are archived or moved to the trash');
   if (patch.requireTwoFactor && !workspace.ownSettings.requireTwoFactor && !(await hasTwoFactor(userId)))
     throw forbidden('Turn on two-step verification for your own account first (Settings → Security)');
-  const changed = (Object.keys(patch) as Array<keyof WorkspaceSettings>).filter((k) => patch[k] !== workspace.ownSettings[k]);
+  // #156: a list that leaves out the address you are using now is saved only when you say so (you
+  // would lose the boards, not the console: it stays reachable to fix the list).
+  if (patch.ipAllowlist) {
+    const ip = currentRequestContext()?.ip ?? null;
+    const lists = [patch.ipAllowlist, workspace.kind === 'team' ? (workspace.organisation?.settings.ipAllowlist ?? []) : []].filter((l) => l.length);
+    if (ip && lists.some((l) => !ipAllowed(l, ip)) && body.confirmExcludesMe !== true)
+      throw new HttpError(409, `Your own address (${ip}) isn’t in this list: you couldn’t open the boards from here. Save it anyway?`, IP_ALLOWLIST_EXCLUDES_YOU);
+  }
+  const same = (k: keyof WorkspaceSettings) => String(patch[k]) === String(workspace.ownSettings[k]);
+  const changed = (Object.keys(patch) as Array<keyof WorkspaceSettings>).filter((k) => !same(k));
   if (!changed.length) return workspace.settings;
   await repo.transaction(async () => {
     await repo.updateSettings(workspaceId, patch, Date.now());
@@ -400,10 +446,18 @@ export async function updateSettings(workspaceId: string, userId: string, body: 
       actorId: userId,
       workspaceId,
       target: { type: 'workspace', id: workspaceId, label: workspace.name },
-      metadata: Object.fromEntries(changed.flatMap((k) => [[`${k}.from`, workspace.ownSettings[k]], [`${k}.to`, patch[k]!]])),
+      metadata: Object.fromEntries(
+        changed.flatMap((k) => {
+          const show = (v: unknown) => (Array.isArray(v) ? v.join(', ') : (v as string | number | boolean | null));
+          return [
+            [`${k}.from`, show(workspace.ownSettings[k])],
+            [`${k}.to`, show(patch[k])],
+          ];
+        }),
+      ),
     });
   });
-  if (changed.includes('requireTwoFactor')) await refreshWorkspaceBoards(workspaceId);
+  if (changed.includes('requireTwoFactor') || changed.includes('ipAllowlist')) await refreshWorkspaceBoards(workspaceId);
   return (await repo.getWorkspace(workspaceId))!.settings;
 }
 

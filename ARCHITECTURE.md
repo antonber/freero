@@ -2680,6 +2680,20 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   everyone who opens the workspace's boards (members, guests, invited outsiders) and is registered
   with auth's `onTwoFactorRequirement`, so members can't turn two-step off; whoever turns the
   requirement on needs it on themselves. `WorkspaceSummary.blocked` tells the dashboard why.
+- IP allowlist (#156; `workspaces.ip_allowlist`, canonical CIDR ranges, `workspaces/ipAllowlist.ts`;
+  security admins): a third reason in the one `blocked` rule — `blockOf` answers `ip_not_allowed`
+  when the request's client address (platform's request context, TRUST_PROXY applied) is outside
+  the workspace's own list or its organisation's (`ipListsOf`: both apply, never merged, so neither
+  widens the other). So REST, lists, search and socket admission follow it; platform/ws.ts gives
+  every upgrade a request context with its address, the room keeps it on the connection
+  (`Admission.ip`) and resolves every access refresh as from it, so a list change closes open
+  sockets from elsewhere (refreshWorkspaceBoards). Where no address is known (jobs, digests) nothing
+  is blocked. The admin console (`requireWorkspace`), sign-in, SSO and SCIM never ask it, so an owner
+  can always fix a wrong list — the break-glass path. Saving a list that leaves out the caller's own
+  address needs `confirmExcludesMe` (409 `ip_allowlist_excludes_you`); `GET …/admin/settings` says
+  `yourIp`. Requests through an API token or app (`markApiCredential`) are checked per workspace in
+  apiauth's `useInWorkspace` instead, where a security admin may exempt that credential
+  (`api_workspace_credentials.ip_exempt`, audited `api.credential_ip_exempted`).
 - Session lifetime / idle timeout: **a session belongs to a person, not a workspace**, so the
   strictest limits of the team workspaces someone is a member of (not as a guest) apply to all of
   their sessions (`workspaces.sessionLimitsFor`, given to auth with `setSessionLimits`). Auth checks

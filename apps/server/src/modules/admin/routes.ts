@@ -6,6 +6,7 @@ import type { AdminBoardsResponse, AdminMember, AdminTrashedBoard, AuditEvent, A
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
+import { currentRequestContext } from '../../platform/requestContext';
 import { recordAudit, verifyWorkspaceAudit } from '../audit/index';
 import { currentUser, getUsers, requireUser } from '../auth/index';
 import { linksOutOfPolicy, restoreForWorkspace, transferForWorkspace, turnOffLinkForWorkspace, workspaceBoard, workspaceTrash } from '../boards/index';
@@ -186,7 +187,8 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/admin/settings`,
     requireUser,
     handle(async (req, res) => {
-      res.json({ settings: (await getWorkspaceSettings(req.params.id, currentUser(req).id)) satisfies WorkspaceSettings });
+      // #156: the address the server sees, so the console can warn before a list leaves it out.
+      res.json({ settings: (await getWorkspaceSettings(req.params.id, currentUser(req).id)) satisfies WorkspaceSettings, yourIp: currentRequestContext()?.ip ?? null });
     }),
   );
 

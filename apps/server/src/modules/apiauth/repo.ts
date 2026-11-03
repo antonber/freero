@@ -548,16 +548,34 @@ export async function setWorkspaceApiEnabled(workspaceId: string, enabled: boole
   return before !== enabled;
 }
 
-/** Records that a credential reached the workspace; returns whether an admin blocked it there. */
-export async function noteWorkspaceUse(u: { workspaceId: string; credentialId: string; userId: string; kind: string; label: string; scopes: string[]; at: number }): Promise<boolean> {
-  const r = await one<{ blocked_at: Date | null }>(
+/** Records that a credential reached the workspace; returns whether an admin blocked it there, and (#156) exempted it from the IP allowlist. */
+export async function noteWorkspaceUse(u: {
+  workspaceId: string;
+  credentialId: string;
+  userId: string;
+  kind: string;
+  label: string;
+  scopes: string[];
+  at: number;
+}): Promise<{ blocked: boolean; ipExempt: boolean }> {
+  const r = await one<{ blocked_at: Date | null; ip_exempt: boolean | null }>(
     `INSERT INTO api_workspace_credentials (workspace_id, credential_id, user_id, kind, label, scopes, first_used_at, last_used_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
      ON CONFLICT (workspace_id, credential_id) DO UPDATE SET last_used_at = EXCLUDED.last_used_at, label = EXCLUDED.label, scopes = EXCLUDED.scopes
-     RETURNING blocked_at`,
+     RETURNING blocked_at, ip_exempt`,
     [u.workspaceId, u.credentialId, u.userId, u.kind, u.label, u.scopes.join(' '), new Date(u.at)],
   );
-  return !!r?.blocked_at;
+  return { blocked: !!r?.blocked_at, ipExempt: r?.ip_exempt === true };
+}
+
+/** Exempts (or not) a credential in the workspace from its IP allowlist (#156); null when it never reached it. */
+export async function setWorkspaceCredentialIpExempt(workspaceId: string, credentialId: string, exempt: boolean, by: string): Promise<WorkspaceCredentialRow | null> {
+  const r = await query<{ credential_id: string }>(
+    `UPDATE api_workspace_credentials SET ip_exempt = $3, ip_exempt_by = $4 WHERE workspace_id = $1 AND credential_id = $2 RETURNING credential_id`,
+    [workspaceId, credentialId, exempt, exempt ? by : null],
+  );
+  if (!r.length) return null;
+  return (await workspaceCredentials(workspaceId)).find((c) => c.credentialId === credentialId) ?? null;
 }
 
 export interface WorkspaceCredentialRow {
@@ -569,10 +587,21 @@ export interface WorkspaceCredentialRow {
   firstUsedAt: number;
   lastUsedAt: number;
   blocked: boolean;
+  ipExempt: boolean;
 }
 
 export async function workspaceCredentials(workspaceId: string): Promise<WorkspaceCredentialRow[]> {
-  const rows = await query<{ credential_id: string; user_id: string; kind: 'personal' | 'oauth'; label: string; scopes: string; first_used_at: Date; last_used_at: Date; blocked_at: Date | null }>(
+  const rows = await query<{
+    credential_id: string;
+    user_id: string;
+    kind: 'personal' | 'oauth';
+    label: string;
+    scopes: string;
+    first_used_at: Date;
+    last_used_at: Date;
+    blocked_at: Date | null;
+    ip_exempt: boolean | null;
+  }>(
     `SELECT * FROM api_workspace_credentials WHERE workspace_id = $1 ORDER BY last_used_at DESC LIMIT 500`,
     [workspaceId],
   );
@@ -585,6 +614,7 @@ export async function workspaceCredentials(workspaceId: string): Promise<Workspa
     firstUsedAt: r.first_used_at.getTime(),
     lastUsedAt: r.last_used_at.getTime(),
     blocked: r.blocked_at !== null,
+    ipExempt: r.ip_exempt === true,
   }));
 }
 

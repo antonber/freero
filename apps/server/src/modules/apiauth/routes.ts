@@ -29,7 +29,7 @@ import {
   tokenRequest,
   type AuthorizeParams,
 } from './oauth';
-import { setCredentialBlocked, setWorkspaceApiAccess, workspaceApiInfo } from './workspacePolicy';
+import { setCredentialBlocked, setCredentialIpExempt, setWorkspaceApiAccess, workspaceApiInfo } from './workspacePolicy';
 
 export const mountPath = '/';
 
@@ -203,6 +203,19 @@ export default function apiAuthRoutes(_ctx: ServerContext): Router {
       handle(async (req, res) => {
         if (!req.params.credentialId) throw notFound();
         res.json(await setCredentialBlocked(req.params.id, currentUser(req).id, req.params.credentialId, blocked));
+      }),
+    );
+  // #156: exempt one token or app from the workspace's IP allowlist (POST), or not (DELETE).
+  for (const [method, exempt] of [
+    ['post', true],
+    ['delete', false],
+  ] as const)
+    r[method](
+      '/api/workspaces/:id/admin/api/credentials/:credentialId/ip-exempt',
+      requireUser,
+      handle(async (req, res) => {
+        if (!req.params.credentialId) throw notFound();
+        res.json(await setCredentialIpExempt(req.params.id, currentUser(req).id, req.params.credentialId, exempt));
       }),
     );
   return r;

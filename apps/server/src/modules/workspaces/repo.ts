@@ -52,6 +52,7 @@ interface WsRow {
   audit_retention_days: number;
   inactive_board_action: InactiveBoardAction | null;
   inactive_board_days: number | null;
+  ip_allowlist: string[] | null;
   organisation_id: string | null;
   organisation_attached_at: Date | null;
   created_at: Date;
@@ -73,6 +74,7 @@ interface WsRow {
   org_session_idle_minutes: number | null;
   org_inactive_board_action: InactiveBoardAction | null;
   org_inactive_board_days: number | null;
+  org_ip_allowlist: string[] | null;
 }
 
 /**
@@ -84,7 +86,8 @@ const WS_SELECT = `SELECT w.*, o.name AS org_name, o.external_sharing AS org_ext
     o.live_embeds AS org_live_embeds, o.board_embeds AS org_board_embeds, o.require_two_factor AS org_require_two_factor,
     o.link_password AS org_link_password, o.link_max_days AS org_link_max_days, o.template_publishing AS org_template_publishing,
     o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes,
-    o.inactive_board_action AS org_inactive_board_action, o.inactive_board_days AS org_inactive_board_days
+    o.inactive_board_action AS org_inactive_board_action, o.inactive_board_days AS org_inactive_board_days,
+    o.ip_allowlist AS org_ip_allowlist
   FROM workspaces w LEFT JOIN workspaces o ON o.id = w.organisation_id`;
 
 const publicLinks = (v: 'anyone' | 'signed_in'): WorkspacePolicies['publicLinks'] => (v === 'signed_in' ? 'signedIn' : 'anyone');
@@ -112,6 +115,7 @@ function toWorkspace(r: WsRow): Workspace {
     auditRetentionDays: r.audit_retention_days,
     inactiveBoardAction: r.inactive_board_action ?? 'none',
     inactiveBoardDays: r.inactive_board_days ?? null,
+    ipAllowlist: r.ip_allowlist ?? [],
   };
   const organisation =
     r.organisation_id && r.org_name !== null
@@ -136,6 +140,7 @@ function toWorkspace(r: WsRow): Workspace {
             sessionIdleMinutes: r.org_session_idle_minutes,
             inactiveBoardAction: r.org_inactive_board_action ?? 'none',
             inactiveBoardDays: r.org_inactive_board_days ?? null,
+            ipAllowlist: r.org_ip_allowlist ?? [],
           },
           attachedAt: (r.organisation_attached_at ?? r.updated_at).getTime(),
         }
@@ -297,6 +302,7 @@ export async function updateSettings(id: string, patch: Partial<WorkspaceSetting
     ['auditRetentionDays', 'audit_retention_days'],
     ['inactiveBoardAction', 'inactive_board_action'],
     ['inactiveBoardDays', 'inactive_board_days'],
+    ['ipAllowlist', 'ip_allowlist'],
   ];
   const sets: string[] = [];
   const params: unknown[] = [id, new Date(now)];

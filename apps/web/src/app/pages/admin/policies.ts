@@ -119,7 +119,7 @@ export const LINK_MAX_DAYS_FIELD = {
   ] satisfies SelectOption<string>[],
 };
 
-type NumberSetting = Exclude<keyof WorkspaceSettings, 'requireTwoFactor' | 'inactiveBoardAction'>;
+type NumberSetting = Exclude<keyof WorkspaceSettings, 'requireTwoFactor' | 'inactiveBoardAction' | 'ipAllowlist'>;
 
 /** Select values are strings; '' stands for null (no limit). */
 export const SETTING_FIELDS: Record<NumberSetting, { label: string; hint: string; options: SelectOption<string>[] }> = {

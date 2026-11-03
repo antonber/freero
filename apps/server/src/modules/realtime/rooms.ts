@@ -71,6 +71,7 @@ import { guardProtectedLocks } from './protectedLock';
 import { getConfig } from '../../platform/config';
 import { keepSuggestionAuthors, noteSuggestionAuthor, type SuggestionAuthorKey } from './repo';
 import { logError } from '../../platform/log';
+import { currentRequestContext, runWithRequestContext } from '../../platform/requestContext';
 import { isShared, publish, subscribe, subscribedInstances, type Subscription } from '../../platform/pubsub';
 import { getUser, noteSessionActivity } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
@@ -198,6 +199,12 @@ export interface Admission {
    */
   resolveRole?: () => Promise<Role | null>;
   /**
+   * #156: the client address the socket came from (its upgrade's request context, TRUST_PROXY
+   * applied). Every access refresh is resolved as from this address, so a workspace's IP allowlist
+   * keeps applying to an open socket.
+   */
+  ip?: string | null;
+  /**
    * An anonymous visitor of a board embedded on another site (#2): it publishes no presence (a
    * public page's readers never crowd the board's people) and has no private layer.
    */
@@ -225,6 +232,8 @@ interface Conn {
   coOwner: boolean;
   /** The role the socket's user has on the board, NOT capped by `maxRole`. */
   ownAccess: Role;
+  /** See Admission.ip. */
+  ip: string | null;
   /**
    * The role the socket READS the board's layers with: `ownAccess` as limited by the facilitation
    * session. Equal to `role` except on a capped socket (#89): a live view in an AI assistant shows
@@ -999,6 +1008,7 @@ class Room {
       maxRole: a.maxRole,
       coOwner: a.coOwner === true,
       ownAccess: a.role,
+      ip: a.ip ?? null,
       readRole: access === a.role ? eff.role : effectiveAccess(a.role, a.userId, session).role,
       limits: eff.limits,
       participant: (a.kind ?? 'board') === 'board' && isParticipant(eff.role, participationIsOpen(this.doc)),
@@ -1228,11 +1238,14 @@ class Room {
   private async doRefreshAccess(): Promise<void> {
     const conns = [...this.conns.values()];
     const resolved = await Promise.all(
-      conns.map(async (c) => {
-        if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false };
-        const a = await getBoardAccess(this.id, c.userId);
-        return { role: a.role, coOwner: a.coOwner };
-      }),
+      // As from the socket's own address (#156: IP allowlists), not the refresh's trigger.
+      conns.map((c) =>
+        runWithRequestContext({ reqId: `access-refresh:${this.id}`, userId: c.userId, ip: c.ip, userAgent: null }, async () => {
+          if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false };
+          const a = await getBoardAccess(this.id, c.userId);
+          return { role: a.role, coOwner: a.coOwner };
+        }),
+      ),
     );
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
@@ -1475,8 +1488,10 @@ export async function admitSocket(
   ws.on('error', () => ws.terminate());
   const entry = { ws, sessionKey };
   admitting.add(entry);
+  const ip = currentRequestContext()?.ip ?? null; // the upgrade's address (#156)
   try {
-    const a = await authorize();
+    const authorized = await authorize();
+    const a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip };
     if ('code' in a) return ws.close(a.code, a.reason);
     const epoch = accessEpochs.get(a.boardId) ?? 0;
     const room = getRoom(a.boardId);

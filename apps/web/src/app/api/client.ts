@@ -552,8 +552,9 @@ export const api = {
       'POST',
       `/api/workspaces/${encodeURIComponent(id)}/admin/members/${encodeURIComponent(userId)}/${deactivated ? 'deactivate' : 'reactivate'}`,
     ),
-  workspaceSettings: (id: string) => request<{ settings: WorkspaceSettings }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`),
-  updateWorkspaceSettings: (id: string, patch: Partial<WorkspaceSettings>) =>
+  /** `yourIp` (#156): the address the server sees (for the IP allowlist). */
+  workspaceSettings: (id: string) => request<{ settings: WorkspaceSettings; yourIp?: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`),
+  updateWorkspaceSettings: (id: string, patch: Partial<WorkspaceSettings> & { confirmExcludesMe?: true }) =>
     request<{ settings: WorkspaceSettings }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`, patch),
   auditEvents: (id: string, filter: AuditQuery) =>
     request<{ events: AuditEvent[]; next: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit?${auditQuery(filter)}`),
@@ -858,6 +859,12 @@ export const api = {
     request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision, grant }),
   workspaceApi: (id: string) => request<WorkspaceApiInfo>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/api`),
   setWorkspaceApi: (id: string, enabled: boolean) => request<WorkspaceApiInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/api`, { enabled }),
+  /** #156: exempt a token or app from the workspace's IP allowlist. */
+  setWorkspaceCredentialIpExempt: (id: string, credentialId: string, exempt: boolean) =>
+    request<WorkspaceApiInfo>(
+      exempt ? 'POST' : 'DELETE',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/api/credentials/${encodeURIComponent(credentialId)}/ip-exempt`,
+    ),
   setWorkspaceCredentialBlocked: (id: string, credentialId: string, blocked: boolean) =>
     request<WorkspaceApiInfo>(
       blocked ? 'POST' : 'DELETE',

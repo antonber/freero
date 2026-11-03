@@ -400,7 +400,7 @@ export interface WorkspaceSummary {
 /** The policy keys an organisation sets floors for (teamAccess is a team's own). */
 export type OrganisationPolicyKey = Exclude<keyof WorkspacePolicies, 'teamAccess'>;
 /** The settings an organisation sets floors for: sign-in and sessions, and (#154) the inactive-board rule. */
-export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes' | 'inactiveBoardAction' | 'inactiveBoardDays';
+export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes' | 'inactiveBoardAction' | 'inactiveBoardDays' | 'ipAllowlist';
 /**
  * Each policy an organisation sets a floor for, its values from the loosest to the strictest (the
  * server enforces floors with it; the admin console disables what a floor rules out). A new policy
@@ -2180,6 +2180,8 @@ export const AUDIT_ACTIONS = {
   'api.access_changed': 'Turned API access for the workspace on or off',
   'api.credential_blocked': 'Blocked an API token or app in the workspace',
   'api.credential_unblocked': 'Unblocked an API token or app in the workspace',
+  'api.credential_ip_exempted': 'Let an API token or app reach the workspace from any network',
+  'api.credential_ip_unexempted': 'Put an API token or app back under the IP allowlist',
   'api.call': 'API call',
   // Freero's operators acting on reports (modules/moderation).
   'moderation.board.disable_link': 'Freero turned off a board’s link (moderation)',
@@ -2382,7 +2384,8 @@ export interface SiemSinkInfo {
 // GET   /api/workspaces/:id/admin/trash                  -> { boards: AdminTrashedBoard[] }  (content; #153)
 // POST  /api/workspaces/:id/admin/trash/:boardId/restore -> { ok: true }  (content; audited, the owner's quota)
 // GET   /api/workspaces/:id/admin/settings              -> { settings: WorkspaceSettings }
-// PATCH /api/workspaces/:id/admin/settings  body Partial<WorkspaceSettings> -> { settings }
+// PATCH /api/workspaces/:id/admin/settings  body Partial<WorkspaceSettings> & { confirmExcludesMe?: true } -> { settings }
+//       (GET also answers `yourIp`: the address the server sees, for the IP allowlist, #156)
 // GET   /api/workspaces/:id/audit?action=&actor=&target=&from=&to=&before=&limit=
 //                                                       -> { events: AuditEvent[], next: string | null }
 //       `action`: an action or a prefix ending in '.' ('auth.'); `before`: the `next` of the
@@ -2426,7 +2429,19 @@ export interface WorkspaceSettings {
   inactiveBoardAction: InactiveBoardAction;
   /** [#154] Days without activity before the rule applies (null: no rule). */
   inactiveBoardDays: number | null;
+  /**
+   * [#156] The networks (IPv4 / IPv6 CIDR ranges, or single addresses) the workspace's boards open
+   * from — REST, sockets and the API, as the client address reads behind the trusted proxy. Empty:
+   * anywhere. An organisation's list applies to its workspaces as well (an address must be in both).
+   * The admin console stays reachable from anywhere, so an owner can always fix a wrong list; SSO,
+   * SCIM and sign-in are not limited by it. API tokens and apps can be exempted per workspace.
+   */
+  ipAllowlist: string[];
 }
+/** Error code (409): the IP allowlist being saved leaves out the address you are using; send `confirmExcludesMe: true` to save it anyway. */
+export const IP_ALLOWLIST_EXCLUDES_YOU = 'ip_allowlist_excludes_you';
+/** Error code (403): this network isn't on the workspace's IP allowlist (#156). */
+export const IP_NOT_ALLOWED = 'ip_not_allowed';
 export type InactiveBoardAction = 'none' | 'archive' | 'trash';
 /** Loosest to strictest (#154; an organisation's floor). */
 export const INACTIVE_BOARD_ACTIONS: readonly InactiveBoardAction[] = ['none', 'archive', 'trash'];
@@ -2442,7 +2457,7 @@ export const WORKSPACE_SETTING_LIMITS = {
 } as const;
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 /** Why the workspace's boards are closed to you right now (see WorkspaceSummary.blocked). */
-export type WorkspaceBlock = 'deactivated' | 'two_factor_required';
+export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed';
 export interface AdminMember extends WorkspaceMember {
   deactivated: boolean;
   twoFactor: boolean;

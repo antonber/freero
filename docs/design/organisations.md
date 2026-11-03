@@ -104,6 +104,8 @@ policy is.
 | `sessionMaxHours`, `sessionIdleMinutes` | none → longer → shorter (the smaller limit) |
 | `inactiveBoardAction` (#154) | none → archive → trash |
 | `inactiveBoardDays` (#154) | none → more days → fewer days (the shorter period) |
+| `ipAllowlist` (#156) | both apply: an address must be in the workspace's list (when set) AND the organisation's (when set) |
+| `templatePublishing` (#155) | members → admins |
 
 - A board moved into an attached workspace (#124) is adjusted to the target's EFFECTIVE policies
   (its link lowered or turned off, embedding off), since the move reads the target through the same

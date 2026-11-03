@@ -33,6 +33,15 @@ export function AdminApi({ workspace }: { workspace: WorkspaceSummary }) {
     }
   };
 
+  const exempt = async (id: string, on: boolean, label: string) => {
+    try {
+      setInfo(await api.setWorkspaceCredentialIpExempt(workspace.id, id, on));
+      notify(on ? `“${label}” may reach ${workspace.name} from any network` : `“${label}” follows the allowed networks again`, 'success');
+    } catch (e) {
+      notify(errorText(e, 'Could not change it'), 'error');
+    }
+  };
+
   if (!info) return <Spinner />;
   return (
     <section aria-labelledby="admin-api-title">
@@ -92,6 +101,12 @@ export function AdminApi({ workspace }: { workspace: WorkspaceSummary }) {
                   <td className="fr-admin__muted">{c.scopes.join(', ')}</td>
                   <td className="fr-admin__muted fr-admin__nowrap">{relativeTime(c.lastUsedAt)}</td>
                   <td className="fr-admin-table__actions">
+                    {c.ipExempt !== undefined ? (
+                      <label className="fr-admin-scopes__item" title="Exempt from the workspace's allowed networks (Security)">
+                        <input type="checkbox" checked={c.ipExempt} onChange={() => void exempt(c.id, !c.ipExempt, c.label)} />
+                        Any network
+                      </label>
+                    ) : null}
                     {c.blocked ? (
                       <Button size="sm" icon={CircleCheck} onClick={() => void block(c.id, false, c.label)}>
                         Unblock

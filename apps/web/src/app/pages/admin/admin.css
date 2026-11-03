@@ -780,3 +780,22 @@ td > .fr-admin-pill:first-child {
   margin-top: 10px;
   font-size: 13px;
 }
+
+/* Allowed networks (#156). */
+.fr-admin-networks {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  font: 13px/1.5 var(--fr-font-mono);
+  color: var(--fr-ink);
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+  resize: vertical;
+}
+.fr-admin-networks__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}

@@ -170,7 +170,8 @@ const ACTION_RANK: Record<InactiveBoardAction, number> = { none: 0, archive: 1, 
 /**
  * A workspace's own security settings raised to its organisation's floors (trash, version and
  * audit retention stay the workspace's own). The inactive-board rule (#154) combines key by key,
- * like every floor: the stricter action, the shorter period.
+ * like every floor: the stricter action, the shorter period. The IP allowlist (#156) stays the
+ * workspace's own here: the organisation's list applies BESIDES it (`ipListsOf`), never merged.
  */
 export function strictestSettings(own: WorkspaceSettings, floor: SettingsFloor | null): WorkspaceSettings {
   if (!floor) return own;
@@ -182,6 +183,11 @@ export function strictestSettings(own: WorkspaceSettings, floor: SettingsFloor |
     inactiveBoardAction: ACTION_RANK[floor.inactiveBoardAction] > ACTION_RANK[own.inactiveBoardAction] ? floor.inactiveBoardAction : own.inactiveBoardAction,
     inactiveBoardDays: shorter(own.inactiveBoardDays, floor.inactiveBoardDays),
   };
+}
+
+/** The IP allowlists that apply to a workspace's boards (#156): its own and its organisation's, each when set. */
+export function ipListsOf(w: { settings: WorkspaceSettings; organisation: { settings: SettingsFloor } | null }): string[][] {
+  return [w.settings.ipAllowlist, w.organisation?.settings.ipAllowlist ?? []].filter((l) => l.length > 0);
 }
 
 /** Is a requested security setting looser than the organisation's floor? */
