@@ -421,6 +421,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
+  `Host.aiUnavailable?` (additive, #148): the server's reason when it offers AI on this instance but
+  not to this person on this board (workspace AI off, not allowed, no edit access). Actions added
+  since (a report on an activity, "Summarise" after a meeting import, catch-up, mind-map Expand,
+  walkthrough chapters) show greyed out or say this reason instead of running; with neither
+  `ai` nor `aiUnavailable` (no AI on this server) they don't show at all.
 - `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
   unlink, sprints?, issueTypes? }` (the last two additive, #119 / #43), present only when the server
   listed a tracker connection this person may use on this board (`GET /boards/:id/trackers`).
@@ -875,6 +880,13 @@ docs/board-outline.md):
   are errors naming the line.
 - Mind maps from structure are laid out by `layoutMindTree` (`@freero/shared` layout/mindtree.ts),
   the function `features/mindmap` runs for tidy up / follow / drag: one function, not a copy.
+  A root's `direction: 'down'` (#134) makes a top-down map: children below, sibling columns
+  ordered left to right (`indexMindNodes` sorts them by x; `mindSideIn` says 'down'); switching to
+  or from it re-encodes sibling order on the new axis first. Clients from before it read 'down'
+  as 'left' and would re-lay such a map out to the left when they edit it.
+  "Make a mind map" turns selected stickies into a map around the one picked (removed and
+  inserted in one transaction); "Expand with AI" asks `modules/ai` (`task: 'expand'`, text only)
+  and adds the picked children with `insertOutline` (one undo step).
   Org charts and Auto-layout ▸ Tree / Org chart use `tidyTree`; flowcharts and Auto-layout ▸
   Top-down / Left to right use `layered` (`features/arrange/lib/autoLayout.ts`: selected items and
   the connectors joining them, moved with `moveBy` in one gesture; locked items stay put).
@@ -1317,7 +1329,7 @@ three in "Search, the event stream and webhooks" below — `backup` (no table: `
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
 Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
-(walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
+(walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), and `problems` (problem_reports: “Report a problem”, see "Problem
@@ -1993,6 +2005,26 @@ board and builds `Host.ai` only when it says yes.
   written. The structure goes through `structure/index.ts` `insertStructure` with `target: 'preview'`
   (the app's dialog shows it and inserts it with `Editor.insertElements` + `moveBy`, ONE transaction,
   one undo step) or `'board'` (one attributed server change).
+- **On results people already have** (#148): `cluster` with `by: 'sentiment'` sorts into the fixed
+  `AI_SENTIMENTS` groups only (another title gets the repair turn); `report` reads a live activity's
+  results through `engage/index.ts` `revealedResults` — what everyone on the board sees, never
+  answers or names, and a sealed activity only once revealed (409 `engage_sealed`, before any
+  call); `summarize` with `into: <frameId>` places the note inside that frame (the meeting-notes
+  import's toast offers it as "Summarise", running `ai.summarizeFrame` with the layout's own
+  "Summary" note as `fill`): the app writes the summary into that note (`fillNote`: it keeps what
+  the note said, grows, and moves what is below it down with the frame), or — without one — grows
+  the frame and inserts the preview; either way one undo step.
+- **Catch-up** (#126): `catchup` with `since: 'visit' | 7 | 14 | 30` reads ONLY the change set —
+  `activity/index.ts` `catchUpChanges(boardId, userId, { since })`, the same rows and view rules as
+  "changes since your last visit" (others' attributed bursts, the reader's view, never a private
+  draft) — as numbered lines the model cites; points map back to item and frame ids
+  (`AiActionResponse.catchUp`), unknown numbers are dropped. Always `target: 'preview'`: the reader
+  alone sees it (the AI feature's "Catch me up" dialog, also from the activity bar's "Summarise");
+  "Insert on board" applies the preview. No change in that time, or no earlier visit: refused
+  before any call.
+- **Text-only answers** (#134): `expand` reads one mind-map topic, its path and its children from
+  the reader's view (no private draft but the topic itself) and returns `children` (3–7, repeats of
+  what is there dropped, fewer gets the repair turn); nothing is laid out or placed on the server.
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited
@@ -2430,6 +2462,16 @@ a native range. No third-party recording service, no screen capture. Overlay con
 - Captions: typed (`PUT …/transcript`), or made by the board's AI provider only (`modules/ai`
   `transcribeRecording`: `decideAi`, budgets, downloads policy, `AI_TRANSCRIBE_MODEL` on an
   OpenAI-compatible endpoint; docs/ai.md). Never a browser speech API (it sends audio to the vendor).
+- Summary and chapters (#127): written by the author or an editor (`PUT …/chapters`: moments
+  within the recording, one chapter per moment, in time order), or drafted from the captions by the
+  board's AI provider (`POST …/chapters/draft` → `modules/ai` `draftWalkthroughChapters`: the
+  same decision, downloads policy, rate limits, budgets and audit as every AI action; captions go
+  to the model as untrusted data). A draft is saved nowhere: the dialog fills it in to edit, then
+  saves. Viewers jump from the chapters list or the ticks on the track.
+- Reactions (#127): an emoji (`WALKTHROUGH_REACTIONS`) at a moment (`walkthrough_reactions`,
+  commenters and up with an account; deleted with the reactor's account). Marks on the track group
+  a burst into one mark with counts (`reactionMarks`); who reacted isn't shown, only `mine`. The
+  author is notified (`walkthrough.reaction`) once per person per walkthrough.
 - Open boards learn about changes through the server-written `walkthroughs` collection
   (`SERVER_WRITTEN_COLLECTIONS`, `Y_KEPT_ON_RESTORE`): a summary per walkthrough (title, length,
   counts), never the media URL or the timeline. An object: `freero://walkthrough/<id>`, with the

@@ -1,6 +1,7 @@
 import { definePanel } from '@engine';
 import { CaptionsDialog } from './lib/CaptionsDialog';
-import { CAPTIONS_ID, LIST_ID, START_ID } from './lib/ids';
+import { ChaptersDialog } from './lib/Chapters';
+import { CAPTIONS_ID, CHAPTERS_ID, LIST_ID, START_ID } from './lib/ids';
 import { ListPanel, TopbarButton } from './lib/List';
 import { PlayerOverlay } from './lib/Player';
 import { RecordingOverlay, StartDialog } from './lib/Recording';
@@ -12,6 +13,7 @@ export default [
   /** Choosing camera / voice only and asking for the devices. */
   definePanel({ id: START_ID, slot: 'dialog', order: 0, minRole: 'editor', Component: StartDialog }),
   definePanel({ id: CAPTIONS_ID, slot: 'dialog', order: 0, minRole: 'viewer', Component: CaptionsDialog }),
+  definePanel({ id: CHAPTERS_ID, slot: 'dialog', order: 0, minRole: 'viewer', Component: ChaptersDialog }),
   definePanel({ id: 'walkthrough.recording', slot: 'screen-overlay', order: 40, minRole: 'viewer', Component: RecordingOverlay }),
   definePanel({ id: 'walkthrough.player', slot: 'screen-overlay', order: 41, minRole: 'viewer', Component: PlayerOverlay }),
 ];

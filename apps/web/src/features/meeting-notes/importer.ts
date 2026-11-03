@@ -4,7 +4,7 @@
 // the catch-all file card (12), below the diagram importers (60).
 import { LayoutError } from '@freero/shared';
 import { defineImporter } from '@engine';
-import { importMeetingFile, summary, TRANSCRIPT_FILE } from './lib/insert';
+import { announce, importMeetingFile, TRANSCRIPT_FILE } from './lib/insert';
 
 export default defineImporter({
   id: 'meeting-notes',
@@ -18,7 +18,7 @@ export default defineImporter({
       for (const f of files) {
         const near = data.alongside ? undefined : { x: at.x + i * 40, y: at.y + i++ * 40 };
         await importMeetingFile(editor, f, {}, near).then(
-          (r) => editor.host.notify(summary(r), 'success'),
+          (r) => announce(editor, r),
           (e: unknown) => editor.host.notify(e instanceof LayoutError ? e.message : 'Could not import that transcript', 'error'),
         );
       }

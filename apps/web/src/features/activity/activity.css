@@ -328,3 +328,8 @@ button.fr-activity__changerow:hover,
 .fr-activity-hl.is-current {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--fr-primary) 25%, transparent);
 }
+
+/* "Summarise" where AI is off for this person (#126): dimmed, its tooltip says why. */
+.fr-activity-bar__ai-off {
+  opacity: 0.5;
+}

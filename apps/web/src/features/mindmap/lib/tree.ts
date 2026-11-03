@@ -2,7 +2,7 @@
 // links; `rootId` is a denormalized hint only. Everything here is cycle-safe: a broken or
 // cyclic chain makes the affected nodes orphans (hidden), never an infinite loop.
 
-import { compareMindSiblings, indexMindNodes, mindCx, mindSideOf, type MindDirection, type MindNode, type MindSide, type MindTreeIndex } from '@freero/shared';
+import { compareMindSiblings, indexMindNodes, mindCx, mindGrowsDown, mindSideIn, type MindDirection, type MindNode, type MindSide, type MindTreeIndex } from '@freero/shared';
 
 // The tree model and its ordering rules live in @freero/shared (layout/mindtree.ts), next to the
 // tidy-tree layout that layout from structure runs too: one definition for web and server.
@@ -15,8 +15,13 @@ export const cx = mindCx;
 /** Sibling order: top to bottom, ties by creation. Layout preserves it, so it is stable. */
 export const compareSiblings = compareMindSiblings;
 export const indexNodes = indexMindNodes;
-/** Which side of its parent a node sits on (decided by position, so it survives drags). */
-export const sideOf = mindSideOf;
+/**
+ * Where a node sits from its parent: below it in a top-down map (#134), otherwise the side its
+ * position says (so it survives drags).
+ */
+export const sideOf = mindSideIn;
+/** The map `id` is in grows downwards. */
+export const growsDown = mindGrowsDown;
 
 /** `id` followed by all its descendants (depth-first). */
 export function subtreeIds(index: TreeIndex, id: string): string[] {
@@ -59,19 +64,26 @@ export interface NodeInfo {
   /** Sides on which this node has children (for collapse hubs and edge anchors). */
   kidsRight: boolean;
   kidsLeft: boolean;
+  /** [#134] Its children are below it (a top-down map). */
+  kidsDown: boolean;
+  /** Where it sits from its parent (null: a root or an orphan). */
+  side: Side | null;
 }
 
 export function computeInfo(index: TreeIndex): Map<string, NodeInfo> {
   const out = new Map<string, NodeInfo>();
   const visit = (n: MindNode, root: string, depth: number, hidden: boolean): number => {
     if (out.has(n.id)) return 0; // cycle guard
-    const info: NodeInfo = { hidden, root, depth, childCount: 0, descendantCount: 0, kidsRight: false, kidsLeft: false };
+    const parent = n.parentId ? index.byId.get(n.parentId) : undefined;
+    const info: NodeInfo = { hidden, root, depth, childCount: 0, descendantCount: 0, kidsRight: false, kidsLeft: false, kidsDown: false, side: parent ? sideOf(index, n, parent) : null };
     out.set(n.id, info);
     const ks = index.kids.get(n.id) ?? [];
     info.childCount = ks.length;
     let count = 0;
     for (const k of ks) {
-      if (sideOf(k, n) === 'left') info.kidsLeft = true;
+      const s = sideOf(index, k, n);
+      if (s === 'left') info.kidsLeft = true;
+      else if (s === 'down') info.kidsDown = true;
       else info.kidsRight = true;
       count += 1 + visit(k, root, depth + 1, hidden || !!n.collapsed);
     }
@@ -82,7 +94,7 @@ export function computeInfo(index: TreeIndex): Map<string, NodeInfo> {
   // Whatever wasn't reached from a root is an orphan (its parent was deleted elsewhere).
   for (const n of index.byId.values())
     if (!out.has(n.id))
-      out.set(n.id, { hidden: true, root: null, depth: 0, childCount: 0, descendantCount: 0, kidsRight: false, kidsLeft: false });
+      out.set(n.id, { hidden: true, root: null, depth: 0, childCount: 0, descendantCount: 0, kidsRight: false, kidsLeft: false, kidsDown: false, side: null });
   return out;
 }
 

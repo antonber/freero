@@ -12,7 +12,11 @@
 // summary per walkthrough: title, length, counts), never the timeline or the media URL.
 import {
   isGuestId,
+  MAX_CHAPTER_TITLE,
   MAX_CUE_TEXT,
+  MAX_REACTIONS_PER_PERSON,
+  MAX_WALKTHROUGH_CHAPTERS,
+  MAX_WALKTHROUGH_SUMMARY,
   MAX_TIMELINE_SAMPLES,
   MAX_TRANSCRIPT_CUES,
   MAX_WALKTHROUGH_COMMENT,
@@ -20,18 +24,22 @@ import {
   MAX_WALKTHROUGH_TITLE,
   mentionedUserIds,
   mentionsAsNames,
+  WALKTHROUGH_REACTIONS,
   WALKTHROUGHS_COLLECTION,
   type Role,
   type Walkthrough,
+  type WalkthroughChapter,
+  type WalkthroughChaptersInput,
   type WalkthroughComment,
   type WalkthroughCue,
+  type WalkthroughReaction,
   type WalkthroughSummary,
   type WalkthroughTimeline,
 } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
-import { transcribeRecording, transcriptionUnavailable } from '../ai/index';
+import { draftWalkthroughChapters, transcribeRecording, transcriptionUnavailable } from '../ai/index';
 import { recordAuditQuietly } from '../audit/index';
 import { getUsers } from '../auth/index';
 import { authorizeFileDownload, requireBoardAccess } from '../boards/index';
@@ -56,6 +64,7 @@ const summaryOf = (w: repo.WalkthroughWithCounts): WalkthroughSummary => ({
   views: w.views,
   comments: w.comments,
   captions: !!w.transcript?.length,
+  reactions: w.reactions,
 });
 
 /** Tells every open copy of the board (live, every instance). Never fails the request that changed it. */
@@ -208,6 +217,8 @@ export async function getWalkthrough(boardId: string, id: string, actorId: strin
     timeline: w.timeline,
     transcript: w.transcript,
     transcriptSource: w.transcriptSource,
+    summary: w.summary ?? null,
+    chapters: w.chapters ?? [],
     viewed,
   };
 }
@@ -354,6 +365,94 @@ export async function transcribeWalkthrough(boardId: string, id: string, userId:
   return getWalkthrough(boardId, id, userId);
 }
 
+// ---- summary and chapters (#127) ----
+
+/** Chapters as stored: in time order, within the recording, one per moment, short titles. */
+export function cleanChapters(raw: unknown, durationMs: number): WalkthroughChapter[] {
+  if (!Array.isArray(raw) || raw.length > MAX_WALKTHROUGH_CHAPTERS) throw badRequest(`chapters must be a list of at most ${MAX_WALKTHROUGH_CHAPTERS} chapters`);
+  const byStart = new Map<number, string>();
+  for (const c of raw as Array<Partial<WalkthroughChapter>>) {
+    if (!c || !finite(c.atMs) || typeof c.title !== 'string') throw badRequest('Each chapter is { atMs, title }');
+    const atMs = Math.max(0, Math.round(c.atMs));
+    const title = c.title.replace(/\s+/g, ' ').trim().slice(0, MAX_CHAPTER_TITLE);
+    if (title && atMs < durationMs && !byStart.has(atMs)) byStart.set(atMs, title);
+  }
+  return [...byStart].sort((a, b) => a[0] - b[0]).map(([atMs, title]) => ({ atMs, title }));
+}
+
+/** The author's (or an editor's) summary and chapters; empty ones remove them. */
+export async function setChapters(boardId: string, id: string, userId: string, body: unknown): Promise<Walkthrough> {
+  const w = await found(boardId, id);
+  await requireManage(boardId, w, userId);
+  const b = (body ?? {}) as Partial<WalkthroughChaptersInput>;
+  if (b.summary !== undefined && typeof b.summary !== 'string') throw badRequest('summary must be text');
+  const summary = (b.summary ?? '').trim().slice(0, MAX_WALKTHROUGH_SUMMARY);
+  const chapters = cleanChapters(b.chapters ?? [], w.durationMs);
+  await repo.setChapters(boardId, id, summary || null, chapters.length ? chapters : null);
+  await publish(boardId, id);
+  return getWalkthrough(boardId, id, userId);
+}
+
+/**
+ * A draft summary and chapters from the captions, by the board's AI provider (only when AI is on
+ * for this person here). Saved nowhere: the author edits it, then saves it with setChapters.
+ */
+export async function draftChapters(boardId: string, id: string, userId: string): Promise<WalkthroughChaptersInput> {
+  const w = await found(boardId, id);
+  await requireManage(boardId, w, userId);
+  if (!w.transcript?.length) throw new HttpError(409, 'Add captions first: AI drafts the summary and chapters from them.', 'no_captions');
+  return draftWalkthroughChapters(boardId, userId, w.transcript, w.durationMs);
+}
+
+// ---- reactions at moments (#127) ----
+
+export async function listReactions(boardId: string, id: string, actorId: string): Promise<WalkthroughReaction[]> {
+  await boardFor(boardId, actorId);
+  const w = await found(boardId, id);
+  return (await repo.reactions(w.id)).map((r) => ({ id: r.id, atMs: r.atMs, emoji: r.emoji, mine: r.authorId === actorId }));
+}
+
+/**
+ * An emoji at `atMs` (people who may comment, with an account). The author hears about reactions
+ * like about comments — once per person per walkthrough, not once per click.
+ */
+export async function addReaction(boardId: string, id: string, userId: string, body: unknown): Promise<WalkthroughReaction> {
+  const board = await boardFor(boardId, userId, 'commenter');
+  const w = await found(boardId, id);
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (typeof b.emoji !== 'string' || !(WALKTHROUGH_REACTIONS as readonly string[]).includes(b.emoji)) throw badRequest(`emoji must be one of ${WALKTHROUGH_REACTIONS.join(' ')}`);
+  if (!finite(b.atMs) || b.atMs < 0) throw badRequest('atMs must be a moment of the recording');
+  if ((await repo.countReactionsBy(w.id, userId)) >= MAX_REACTIONS_PER_PERSON) throw new HttpError(409, 'That’s a lot of reactions already. Leave a comment instead?', 'reactions_full');
+  const row: repo.ReactionRow = { id: newId(12), walkthroughId: w.id, authorId: userId, atMs: Math.min(Math.round(b.atMs), w.durationMs), emoji: b.emoji, createdAt: Date.now() };
+  await repo.insertReaction(row);
+  await publish(boardId, id);
+  if (w.authorId !== userId) {
+    try {
+      await notify({
+        userId: w.authorId,
+        type: 'walkthrough.reaction',
+        actorId: userId,
+        boardId,
+        data: { boardTitle: board.title, walkthroughId: w.id, walkthroughTitle: w.title, atMs: row.atMs, excerpt: row.emoji },
+        dedupeKey: `walkthrough-reaction:${w.id}:${userId}`,
+      });
+    } catch (e) {
+      logError('walkthroughs: a reaction notification failed', e);
+    }
+  }
+  return { id: row.id, atMs: row.atMs, emoji: row.emoji, mine: true };
+}
+
+export async function removeReaction(boardId: string, id: string, reactionId: string, userId: string): Promise<void> {
+  const board = await boardFor(boardId, userId);
+  const w = await found(boardId, id);
+  const r = ID.test(reactionId) ? await repo.getReaction(w.id, reactionId) : null;
+  if (!r) throw notFound('Reaction not found');
+  if (r.authorId !== userId && !atLeast(board.role, 'editor')) throw forbidden('Only its author and the board’s editors can remove this reaction');
+  await repo.removeReaction(w.id, reactionId);
+  await publish(boardId, id);
+}
+
 // ---- download (the workspace's downloads policy, audited like a file from the board) ----
 
 export async function openWalkthroughDownload(boardId: string, id: string, actorId: string) {
@@ -382,7 +481,7 @@ export async function walkthroughUploadReferences(among?: readonly string[]): Pr
 
 /** A person's walkthroughs, comments and views (their data export; recordings are in their uploads). */
 export async function walkthroughsExportOf(userId: string) {
-  const [made, comments, views] = await Promise.all([repo.authoredBy(userId), repo.commentsBy(userId), repo.viewsBy(userId)]);
+  const [made, comments, views, reactions] = await Promise.all([repo.authoredBy(userId), repo.commentsBy(userId), repo.viewsBy(userId), repo.reactionsBy(userId)]);
   return {
     walkthroughs: made.map((w) => ({
       id: w.id,
@@ -393,9 +492,12 @@ export async function walkthroughsExportOf(userId: string) {
       createdAt: new Date(w.createdAt).toISOString(),
       timeline: w.timeline,
       transcript: w.transcript,
+      summary: w.summary ?? null,
+      chapters: w.chapters ?? [],
     })),
     comments: comments.map((c) => ({ walkthroughId: c.walkthroughId, walkthroughTitle: c.title, boardId: c.boardId, atMs: c.atMs, text: c.text, createdAt: new Date(c.createdAt).toISOString() })),
     watched: views.map((v) => ({ walkthroughId: v.walkthroughId, at: new Date(v.viewedAt).toISOString() })),
+    reactions: reactions.map((r) => ({ walkthroughId: r.walkthroughId, boardId: r.boardId, atMs: r.atMs, emoji: r.emoji, createdAt: new Date(r.createdAt).toISOString() })),
   };
 }
 

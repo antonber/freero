@@ -17,8 +17,8 @@ const oneLine = (s: string) => s.replace(/\s*\n\s*/g, ' ').trim();
 function firstLevel(index: TreeIndex, root: MindNode): MindNode[] {
   const kids = index.kids.get(root.id) ?? [];
   if (root.direction !== 'both') return kids;
-  const right = kids.filter((k) => sideOf(k, root) === 'right');
-  const left = kids.filter((k) => sideOf(k, root) === 'left');
+  const right = kids.filter((k) => sideOf(index, k, root) === 'right');
+  const left = kids.filter((k) => sideOf(index, k, root) === 'left');
   const out: MindNode[] = [];
   for (let i = 0; i < Math.max(right.length, left.length); i++) {
     if (right[i]) out.push(right[i]);

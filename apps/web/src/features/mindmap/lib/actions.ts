@@ -10,7 +10,7 @@ import { plainToRichText, type Editor, type ElementPatch, type NewElement, type 
 import { layoutTree, LEVEL_GAP, ROOT_GAP, type LayoutOptions } from './layout';
 import { nodeSize } from './measure';
 import { BRANCH_COLORS, ROOT_COLOR } from './constants';
-import { cx, orphanIds, rootOf, sideOf, subtreeIds, type Direction, type MindNode, type Side, type TreeIndex } from './tree';
+import { cx, growsDown, orphanIds, rootOf, sideOf, subtreeIds, type Direction, type MindNode, type Side, type TreeIndex } from './tree';
 import { syncTree } from './store';
 
 export const isNode = (el: BoardElement | undefined | null): el is MindmapElement => el?.type === 'mindmap';
@@ -116,14 +116,15 @@ export function newRoot(at: Point): NewElement<'mindmap'> {
 
 /** Which side a new child of `parent` goes to. */
 function childSide(index: TreeIndex<MindmapElement>, parent: MindmapElement): Side {
+  if (growsDown(index, parent.id)) return 'down';
   if (parent.parentId) {
     const gp = index.byId.get(parent.parentId);
-    return gp ? sideOf(parent, gp) : 'right';
+    return gp ? sideOf(index, parent, gp) : 'right';
   }
   const dir: Direction = parent.direction ?? 'right';
   if (dir !== 'both') return dir;
   const kids = index.kids.get(parent.id) ?? [];
-  const left = kids.filter((k) => sideOf(k, parent) === 'left').length;
+  const left = kids.filter((k) => sideOf(index, k, parent) === 'left').length;
   return left < kids.length - left ? 'left' : 'right';
 }
 
@@ -162,7 +163,7 @@ export function addChild(editor: Editor, parentId: string) {
     const root = parent && rootOf(index, parent.id);
     if (!parent || !root) return null;
     const side = childSide(index, parent);
-    const kids = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(k, parent) === side);
+    const kids = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(index, k, parent) === side);
     const last = kids[kids.length - 1];
     const size = nodeSize('', false);
     const gap = parent.parentId ? LEVEL_GAP : ROOT_GAP;
@@ -173,9 +174,13 @@ export function addChild(editor: Editor, parentId: string) {
         parentId: parent.id,
         rootId: root.id,
         color: parent.parentId ? parent.color : leastUsedColor((index.kids.get(parent.id) ?? []).map((k) => k.color)),
-        x: side === 'right' ? parent.x + parent.w + gap : parent.x - gap - size.w,
-        // Below the current last child: sibling order follows position.
-        y: last ? last.y + last.h + 1 : parent.y + parent.h / 2 - size.h / 2,
+        // Past the current last child: sibling order follows position (left to right in a top-down map).
+        ...(side === 'down'
+          ? { x: last ? last.x + last.w + 1 : parent.x + parent.w / 2 - size.w / 2, y: parent.y + parent.h + gap }
+          : {
+              x: side === 'right' ? parent.x + parent.w + gap : parent.x - gap - size.w,
+              y: last ? last.y + last.h + 1 : parent.y + parent.h / 2 - size.h / 2,
+            }),
       }),
     };
   });
@@ -198,9 +203,10 @@ export function addSibling(editor: Editor, nodeId: string) {
         parentId: parent.id,
         rootId: root.id,
         color: n.color,
-        x: sideOf(n, parent) === 'right' ? n.x : n.x + n.w - size.w,
-        // Center just below this node's center → ordered right after it.
-        y: n.y + n.h / 2 + 0.5 - size.h / 2,
+        // Center just past this node's center → ordered right after it.
+        ...(sideOf(index, n, parent) === 'down'
+          ? { x: n.x + n.w / 2 + 0.5 - size.w / 2, y: n.y }
+          : { x: sideOf(index, n, parent) === 'right' ? n.x : n.x + n.w - size.w, y: n.y + n.h / 2 + 0.5 - size.h / 2 }),
       }),
     };
   });
@@ -255,9 +261,19 @@ export function setBranchColor(editor: Editor, ids: string[], color: string) {
 }
 
 export function setDirection(editor: Editor, rootIds: string[], direction: Direction) {
-  commit(editor, rootIds, () => editor.updateMany(rootIds.map((id) => ({ id, patch: { direction } as ElementPatch }))), {
-    rebalance: direction === 'both',
-  });
+  const index = currentIndex(editor);
+  const patches: Array<{ id: string; patch: ElementPatch }> = rootIds.map((id) => ({ id, patch: { direction } as ElementPatch }));
+  // Turning a map to or from top-down changes which axis orders siblings: every node keeps its
+  // place among its siblings (re-encoded along the new axis; the layout then places it).
+  for (const id of rootIds) {
+    const r = index.byId.get(id);
+    if (!r || (r.direction === 'down') === (direction === 'down')) continue;
+    for (const n of subtreeIds(index, id)) {
+      const kids = index.kids.get(n) ?? [];
+      kids.forEach((k, i) => patches.push({ id: k.id, patch: (direction === 'down' ? { x: r.x + i * 10 - k.w / 2 } : { y: r.y + i * 10 - k.h / 2 }) as ElementPatch }));
+    }
+  }
+  commit(editor, rootIds, () => editor.updateMany(patches), { rebalance: direction === 'both' });
 }
 
 /**
@@ -297,13 +313,14 @@ export function finishDrag(editor: Editor, draggedIds: string[]) {
     // Dropped on a 'both' root: the half it was dropped on decides the side.
     const side: Side =
       !target.parentId && target.direction === 'both' ? (cx(n) < cx(target) ? 'left' : 'right') : childSide(index, target);
-    const siblings = (index.kids.get(target.id) ?? []).filter((k) => k.id !== id && sideOf(k, target) === side);
+    const siblings = (index.kids.get(target.id) ?? []).filter((k) => k.id !== id && sideOf(index, k, target) === side);
     const last = siblings[siblings.length - 1];
     patch(id, {
       parentId: target.id,
       // Appended as the last child on that side (order and side follow position).
-      y: last ? last.y + last.h + 1 : target.y + target.h / 2 - n.h / 2,
-      x: side === 'right' ? cx(target) + 1 : cx(target) - n.w - 1,
+      ...(side === 'down'
+        ? { x: last ? last.x + last.w + 1 : cx(target) - n.w / 2, y: target.y + target.h + 1 }
+        : { y: last ? last.y + last.h + 1 : target.y + target.h / 2 - n.h / 2, x: side === 'right' ? cx(target) + 1 : cx(target) - n.w - 1 }),
     });
     for (const d of subtreeIds(index, id)) patch(d, { rootId: newRoot.id, color });
   }
@@ -332,12 +349,13 @@ export function insertOutline(editor: Editor, roots: OutlineNodeInput[], at: Poi
   const root = parent && rootOf(index, parent.id);
   if (parent && root && !parent.locked) {
     const side = childSide(index, parent);
-    const kids = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(k, parent) === side);
+    const kids = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(index, k, parent) === side);
     const last = kids[kids.length - 1];
     const used = (index.kids.get(parent.id) ?? []).map((k) => k.color);
     const created: NewElement<'mindmap'>[] = [];
-    // Centers just below the last child's, in order (sibling order follows centers).
-    let center = last ? last.y + last.h : parent.y + parent.h / 2;
+    // Centers just past the last child's, in order (sibling order follows centers).
+    const down = side === 'down';
+    let center = last ? (down ? last.x + last.w : last.y + last.h) : down ? parent.x + parent.w / 2 : parent.y + parent.h / 2;
     const add = (n: OutlineNodeInput, under: MindmapElement | NewElement<'mindmap'>, color: string) => {
       const text = plainToRichText(n.text);
       const size = nodeSize(text, false);
@@ -350,8 +368,9 @@ export function insertOutline(editor: Editor, roots: OutlineNodeInput[], at: Poi
         color,
         ...size,
         // Only order and side matter: the layout places it.
-        x: side === 'right' ? under.x! + (under.w ?? 0) + 1 : under.x! - 1 - size.w,
-        y: (center += 1) - size.h / 2,
+        ...(down
+          ? { x: (center += 1) - size.w / 2, y: under.y! + (under.h ?? 0) + 1 }
+          : { x: side === 'right' ? under.x! + (under.w ?? 0) + 1 : under.x! - 1 - size.w, y: (center += 1) - size.h / 2 }),
       };
       created.push(node);
       for (const c of n.children ?? []) add(c, node, color);
@@ -398,13 +417,23 @@ export function navigateFrom(index: TreeIndex, id: string, key: NavKey): string 
   const n = index.byId.get(id);
   if (!n) return null;
   const parent = n.parentId ? index.byId.get(n.parentId) : undefined;
-  const side: Side | null = parent ? sideOf(n, parent) : null;
-  const kidsOn = (s: Side) => (n.collapsed ? [] : (index.kids.get(n.id) ?? []).filter((k) => sideOf(k, n) === s));
+  const side: Side | null = parent ? sideOf(index, n, parent) : null;
+  const kidsOn = (s: Side) => (n.collapsed ? [] : (index.kids.get(n.id) ?? []).filter((k) => sideOf(index, k, n) === s));
   const middle = (ks: MindNode[]) => {
     if (!ks.length) return null;
+    if (growsDown(index, n.id)) return ks.reduce((best, k) => (Math.abs(cx(k) - cx(n)) < Math.abs(cx(best) - cx(n)) ? k : best)).id;
     const c = n.y + n.h / 2;
     return ks.reduce((best, k) => (Math.abs(k.y + k.h / 2 - c) < Math.abs(best.y + best.h / 2 - c) ? k : best)).id;
   };
+  if (growsDown(index, n.id)) {
+    // A top-down map: up to the parent, down into the children, left / right among siblings.
+    if (key === 'ArrowUp') return parent?.id ?? null;
+    if (key === 'ArrowDown') return middle(kidsOn('down'));
+    if (!parent) return null;
+    const row = index.kids.get(parent.id) ?? [];
+    const j = row.findIndex((k) => k.id === id) + (key === 'ArrowLeft' ? -1 : 1);
+    return j >= 0 && j < row.length ? row[j].id : null;
+  }
   if (key === 'ArrowLeft' || key === 'ArrowRight') {
     const dir: Side = key === 'ArrowLeft' ? 'left' : 'right';
     // The arrow points back at the parent (a child sits on its parent's `side`).
@@ -412,7 +441,7 @@ export function navigateFrom(index: TreeIndex, id: string, key: NavKey): string 
     return middle(kidsOn(dir));
   }
   if (!parent) return null;
-  const sibs = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(k, parent) === side);
+  const sibs = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(index, k, parent) === side);
   const i = sibs.findIndex((k) => k.id === id);
   const j = key === 'ArrowUp' ? i - 1 : i + 1;
   return j >= 0 && j < sibs.length ? sibs[j].id : null;
@@ -425,11 +454,16 @@ export function moveAmongSiblings(editor: Editor, id: string, delta: -1 | 1) {
   const parent = n?.parentId ? index.byId.get(n.parentId) : undefined;
   const root = n && rootOf(index, n.id);
   if (!n || !parent || !root || n.locked) return;
-  const side = sideOf(n, parent);
-  const sibs = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(k, parent) === side);
+  const side = sideOf(index, n, parent);
+  const sibs = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(index, k, parent) === side);
   const other = sibs[sibs.indexOf(n) + delta];
   if (!other) return;
   // Order follows position: put this node's center just past the other one's, then re-lay out.
+  if (side === 'down') {
+    const c = cx(other) + delta * 0.5;
+    commit(editor, [root.id], () => editor.update<MindmapElement>(id, { x: c - n.w / 2 }));
+    return;
+  }
   const cy = other.y + other.h / 2 + delta * 0.5;
   commit(editor, [root.id], () => editor.update<MindmapElement>(id, { y: cy - n.h / 2 }));
 }
@@ -449,8 +483,13 @@ export function promote(editor: Editor, id: string) {
   // Branch colors: under the root a branch keeps its color; deeper it takes the new parent's.
   const color = grand.parentId ? grand.color : n.color;
   const patches: Array<{ id: string; patch: ElementPatch }> = [
-    // Same side as the old parent, centered just below it → ordered right after it.
-    { id, patch: { parentId: grand.id, x: parent.x, y: parent.y + parent.h / 2 + 0.5 - n.h / 2 } as ElementPatch },
+    // Same side as the old parent, centered just past it → ordered right after it.
+    {
+      id,
+      patch: (growsDown(index, id)
+        ? { parentId: grand.id, x: cx(parent) + 0.5 - n.w / 2, y: parent.y }
+        : { parentId: grand.id, x: parent.x, y: parent.y + parent.h / 2 + 0.5 - n.h / 2 }) as ElementPatch,
+    },
   ];
   for (const d of subtreeIds(index, id)) {
     if (d === id) patches[0].patch = { ...patches[0].patch, color } as ElementPatch;

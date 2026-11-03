@@ -15,6 +15,8 @@ const DEFAULT: NodeInfo = Object.freeze({
   descendantCount: 0,
   kidsRight: false,
   kidsLeft: false,
+  kidsDown: false,
+  side: null,
 });
 
 let infos = new Map<string, NodeInfo>();
@@ -39,7 +41,9 @@ const same = (a: NodeInfo, b: NodeInfo) =>
   a.childCount === b.childCount &&
   a.descendantCount === b.descendantCount &&
   a.kidsLeft === b.kidsLeft &&
-  a.kidsRight === b.kidsRight;
+  a.kidsRight === b.kidsRight &&
+  a.kidsDown === b.kidsDown &&
+  a.side === b.side;
 
 function notify(id: string) {
   const set = listeners.get(id);

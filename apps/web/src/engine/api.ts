@@ -55,7 +55,9 @@ import type {
   CreateWalkthroughRequest,
   Decision,
   Walkthrough,
+  WalkthroughChaptersInput,
   WalkthroughComment,
+  WalkthroughReaction,
   WalkthroughCue,
   WalkthroughSummary,
   IcebreakerResult,
@@ -384,6 +386,13 @@ export interface Host {
    */
   ai?: HostAi;
   /**
+   * [additive] Why AI can't be used here by this person, in words fit for the UI ("AI is off for
+   * this workspace…", "…need edit access"): set when the server offers AI on this instance but not
+   * to them on this board, so an AI action can show greyed out with the reason. Absent when `ai`
+   * is set, and when AI doesn't exist on this server at all (then no AI entry point shows).
+   */
+  aiUnavailable?: string;
+  /**
    * [additive] Issue trackers (KAI-153/154), present only when the server listed at least one
    * tracker connection this person may use on this board (they can edit, and their team or they
    * themselves connected one). Absent: hide every tracker entry point. Calls reject with a message
@@ -484,6 +493,14 @@ export interface HostWalkthroughs {
   transcribe(id: string): Promise<Walkthrough>;
   /** Saves the recording to this computer, when the board's downloads policy allows (`board.canExport`). */
   download?(id: string, title: string): Promise<void>;
+  /** [additive, #127] The summary and chapters (its author, owners, editors; empty ones remove them). */
+  setChapters?(id: string, body: WalkthroughChaptersInput): Promise<Walkthrough>;
+  /** [additive, #127] A draft from the captions by the board's AI provider, saved nowhere (rejects with the reason). */
+  draftChapters?(id: string): Promise<WalkthroughChaptersInput>;
+  /** [additive, #127] Emoji reactions at moments (who left them isn't said: `mine` only). */
+  reactions?(id: string): Promise<WalkthroughReaction[]>;
+  react?(id: string, reaction: { atMs: number; emoji: string }): Promise<WalkthroughReaction>;
+  unreact?(id: string, reactionId: string): Promise<void>;
 }
 
 /** [additive] `Host.decisions` (wire: @freero/shared decisions.ts). */

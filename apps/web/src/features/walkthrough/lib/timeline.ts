@@ -1,6 +1,6 @@
 // The walkthrough timeline (@freero/shared WalkthroughTimeline): recorded while the narrator talks,
 // replayed against the recording's clock. Pure, so recording and playback agree by construction.
-import { MAX_TIMELINE_SAMPLES, type WalkthroughCue, type WalkthroughTimeline } from '@freero/shared';
+import { MAX_CHAPTER_TITLE, MAX_TIMELINE_SAMPLES, type WalkthroughChapter, type WalkthroughCue, type WalkthroughReaction, type WalkthroughTimeline } from '@freero/shared';
 
 export interface ViewRect {
   x: number;
@@ -169,4 +169,49 @@ export function parseCaptionLines(text: string, durationMs: number): Walkthrough
   }
   starts.sort((a, b) => a.start - b.start);
   return starts.map((s, i) => ({ start: s.start, end: Math.min(durationMs, starts[i + 1]?.start ?? durationMs), text: s.text })).filter((c) => c.end > c.start);
+}
+
+// ---- chapters and reactions (#127) ----
+
+/** "0:00 Intro" lines → chapters in time order (one per moment, within the recording). */
+export function parseChapterLines(text: string, durationMs: number): WalkthroughChapter[] {
+  const byStart = new Map<number, string>();
+  for (const line of text.split('\n')) {
+    const m = /^\s*(?:(\d+):)?(\d{1,2}):(\d{2})\s+(.+?)\s*$/.exec(line);
+    if (!m) continue;
+    const atMs = ((Number(m[1] ?? 0) * 60 + Number(m[2])) * 60 + Number(m[3])) * 1000;
+    if (atMs < durationMs && !byStart.has(atMs)) byStart.set(atMs, m[4].slice(0, MAX_CHAPTER_TITLE));
+  }
+  return [...byStart].sort((a, b) => a[0] - b[0]).map(([atMs, title]) => ({ atMs, title }));
+}
+
+/** The chapter playing at `ms` (the last one started), or null before the first. */
+export function chapterAt(chapters: readonly WalkthroughChapter[] | undefined, ms: number): WalkthroughChapter | null {
+  let cur: WalkthroughChapter | null = null;
+  for (const c of chapters ?? []) if (c.atMs <= ms) cur = c;
+  return cur;
+}
+
+export interface ReactionMark {
+  /** Where on the timeline (ms): the first reaction of the group. */
+  atMs: number;
+  /** Most frequent first: emoji and how many. */
+  counts: Array<{ emoji: string; n: number }>;
+  /** Whether one of them is yours (and its id, to take it back). */
+  mine: string | null;
+}
+
+/**
+ * Reactions grouped into marks on the timeline: those within `slotMs` of a group's first reaction
+ * join it, so a burst of claps at one moment is one mark with a count.
+ */
+export function reactionMarks(reactions: readonly WalkthroughReaction[], durationMs: number, slotMs = Math.max(1000, durationMs / 60)): ReactionMark[] {
+  const marks: Array<{ atMs: number; counts: Map<string, number>; mine: string | null }> = [];
+  for (const r of [...reactions].sort((a, b) => a.atMs - b.atMs)) {
+    let m = marks[marks.length - 1];
+    if (!m || r.atMs - m.atMs > slotMs) marks.push((m = { atMs: r.atMs, counts: new Map(), mine: null }));
+    m.counts.set(r.emoji, (m.counts.get(r.emoji) ?? 0) + 1);
+    if (r.mine && !m.mine) m.mine = r.id;
+  }
+  return marks.map((m) => ({ atMs: m.atMs, mine: m.mine, counts: [...m.counts].map(([emoji, n]) => ({ emoji, n })).sort((a, b) => b.n - a.n) }));
 }
