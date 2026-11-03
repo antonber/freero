@@ -1,6 +1,164 @@
-import { describe, expect, it } from 'vitest';
-import type { PenElement } from '@freero/shared';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { BoardElement, PenElement } from '@freero/shared';
+import { createTestBoard, defineCommands, defineElement, type Editor, type Point, type ToolPointerEvent } from '@engine';
+import penElement from './element';
+import penTool from './tool';
+import { recognise } from './lib/recognise';
+import { RECORDED } from './lib/recordedStrokes';
 import { buildStroke, capturePressure, constrainAngle, radiusAt, rebakeWidth, simplify, strokeDistance, unpack, type RawPoint } from './lib/stroke';
+
+const recorded = (name: string): Point[] => {
+  const flat = RECORDED[name];
+  return Array.from({ length: flat.length / 2 }, (_, i) => ({ x: flat[2 * i], y: flat[2 * i + 1] }));
+};
+
+function bbox(pts: Point[]) {
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+describe('smart drawing: reading a stroke', () => {
+  it('turns sloppy hand-drawn rectangles, ellipses, circles, triangles and diamonds into those shapes where they were drawn', () => {
+    const expected = { rectangle: 'rect', ellipse: 'ellipse', circle: 'ellipse', triangle: 'triangle', diamond: 'diamond' } as const;
+    for (const [name, shape] of Object.entries(expected)) {
+      const pts = recorded(name);
+      const r = recognise(pts);
+      expect(r, name).toMatchObject({ type: 'shape', shape, rotation: 0 });
+      if (r?.type !== 'shape') continue;
+      // The clean shape sits on the drawn one: its box matches the stroke's within a few percent.
+      const b = bbox(pts);
+      const tol = 0.06 * Math.max(b.w, b.h);
+      expect(Math.abs(r.x + r.w / 2 - (b.x + b.w / 2)), name).toBeLessThan(tol);
+      expect(Math.abs(r.y + r.h / 2 - (b.y + b.h / 2)), name).toBeLessThan(tol);
+      expect(Math.abs(r.w - b.w), name).toBeLessThan(2 * tol);
+      expect(Math.abs(r.h - b.h), name).toBeLessThan(2 * tol);
+      if (name === 'circle') expect(r.w).toBe(r.h);
+      // Zoom doesn't change what a drawing is: the same stroke drawn small reads the same.
+      expect(recognise(pts.map((p) => ({ x: p.x / 5, y: p.y / 5 }))), `${name} small`).toMatchObject({ type: 'shape', shape });
+    }
+  });
+
+  it('turns a straight stroke into a line and a stroke ending in a head into an arrow pointing where it was drawn', () => {
+    const line = recorded('line');
+    const r = recognise(line);
+    expect(r).toMatchObject({ type: 'line', arrow: false });
+    if (r?.type === 'line') {
+      expect(Math.hypot(r.from.x - line[0].x, r.from.y - line[0].y)).toBeLessThan(10);
+      // Nearly level: laid exactly level.
+      expect(r.to.y).toBe(r.from.y);
+    }
+    const arrow = recognise(recorded('arrow'));
+    expect(arrow).toMatchObject({ type: 'line', arrow: true });
+    // Tail where the shaft began (100, 300), head at the tip the barbs hang from (460, 260).
+    if (arrow?.type === 'line') {
+      expect(Math.hypot(arrow.from.x - 100, arrow.from.y - 300)).toBeLessThan(15);
+      expect(Math.hypot(arrow.to.x - 460, arrow.to.y - 260)).toBeLessThan(15);
+    }
+    // A long shaft with a small head (heads stay the same size however long the arrow is).
+    const corners = [{ x: 0, y: 0 }, { x: 600, y: 8 }, { x: 572, y: -14 }, { x: 600, y: 8 }, { x: 574, y: 32 }];
+    const long: Point[] = [];
+    for (let i = 1; i < corners.length; i++) {
+      const [a, b] = [corners[i - 1], corners[i]];
+      const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 5);
+      for (let k = 0; k < n; k++) long.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n + Math.sin(long.length * 0.4) });
+    }
+    expect(recognise(long)).toMatchObject({ type: 'line', arrow: true });
+  });
+
+  it('never reads a scribble or a signature as a shape or a line', () => {
+    expect(recognise(recorded('scribble'))?.type).toBe('scribble');
+    expect(recognise(recorded('signature'))).toBeNull();
+  });
+
+  it('leaves strokes smaller than the minimum size as ink', () => {
+    const tiny = recorded('rectangle').map((p) => ({ x: p.x / 20, y: p.y / 20 }));
+    expect(recognise(tiny, 24)).toBeNull();
+  });
+});
+
+describe('smart drawing: the pen tool', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // Stand-in for the shape feature: its `shape.insert` command makes a plain shape element.
+  const shapes = {
+    manifest: { name: 'shape', description: 'shape' },
+    elements: [defineElement<'shape'>({ type: 'shape', resize: 'free', Component: () => null, defaults: () => ({ type: 'shape', w: 100, h: 100 }) as never })],
+    tools: [],
+    formats: [],
+    panels: [],
+    commands: defineCommands([
+      { id: 'shape.insert', label: 'Insert', run: (ed, a) => void ed.create({ ...(a as object), type: 'shape', shape: (a as { kind: string }).kind } as never) },
+    ]),
+  };
+  const pen = { manifest: { name: 'pen', description: 'pen' }, elements: [penElement], tools: [penTool], formats: [], panels: [], commands: [] };
+
+  function drawStroke(editor: Editor, pts: Point[]) {
+    const ev = (p: Point, button = 0) =>
+      ({ editor, point: p, screen: p, shiftKey: false, altKey: false, metaKey: false, button, buttons: 1, pressure: 0.5, pointerType: 'mouse', target: null }) as ToolPointerEvent;
+    editor.beginGesture();
+    penTool.onPointerDown!(ev(pts[0]));
+    for (const p of pts.slice(1)) penTool.onPointerMove!(ev(p, -1));
+    penTool.onPointerUp!(ev(pts[pts.length - 1]));
+    editor.endGesture();
+  }
+  const types = (editor: Editor) => editor.getElements().map((el: BoardElement) => el.type);
+
+  it('a recognised rectangle undoes back to the ink first, and a second undo removes the ink', () => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const board = createTestBoard({ users: ['ann'], features: [pen, shapes] });
+    const [ann] = board.editors('pen');
+    ann.setToolOptions('pen', { smart: true });
+    drawStroke(ann, recorded('rectangle'));
+    expect(types(ann)).toEqual(['shape']);
+    expect(ann.getElements()[0]).toMatchObject({ shape: 'rect', stroke: '#17162B', fill: 'transparent' });
+    ann.undo();
+    expect(types(ann)).toEqual(['pen']);
+    ann.undo();
+    expect(types(ann)).toEqual([]);
+    board.destroy();
+  });
+
+  it('a scribble erases the items it covers but not a locked one or a big one it only crosses; over nothing it stays ink', () => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const sticky = defineElement<'sticky'>({ type: 'sticky', resize: 'free', Component: () => null, defaults: () => ({ type: 'sticky', w: 100, h: 100 }) as never });
+    const board = createTestBoard({ users: ['ann'], features: [pen, { ...shapes, elements: [...shapes.elements, sticky] as never }] });
+    const [ann] = board.editors('pen');
+    ann.setToolOptions('pen', { smart: true });
+    // The recorded scribble zig-zags over x 300…540, y 300…410.
+    const small = ann.create({ type: 'sticky', x: 350, y: 310, w: 100, h: 80 } as never);
+    const locked = ann.create({ type: 'sticky', x: 460, y: 320, w: 50, h: 50, locked: true } as never);
+    const big = ann.create({ type: 'sticky', x: 100, y: 100, w: 800, h: 600 } as never);
+    drawStroke(ann, recorded('scribble'));
+    const ids = ann.getElements().map((el) => el.id);
+    expect(ids).not.toContain(small);
+    expect(ids).toEqual(expect.arrayContaining([locked, big]));
+    expect(types(ann)).not.toContain('pen');
+    ann.undo();
+    expect(ann.getElement(small)).toBeTruthy();
+    board.destroy();
+    const empty = createTestBoard({ users: ['bob'], features: [pen, shapes] });
+    const [bob] = empty.editors('pen');
+    bob.setToolOptions('pen', { smart: true });
+    drawStroke(bob, recorded('scribble'));
+    expect(types(bob)).toEqual(['pen']);
+    empty.destroy();
+  });
+
+  it('with smart drawing off, a rectangle stays the ink that was drawn', () => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const board = createTestBoard({ users: ['ann'], features: [pen, shapes] });
+    const [ann] = board.editors('pen');
+    drawStroke(ann, recorded('rectangle'));
+    expect(types(ann)).toEqual(['pen']);
+    board.destroy();
+  });
+});
 
 const line = (from: { x: number; y: number }, to: { x: number; y: number }, n = 50): RawPoint[] =>
   Array.from({ length: n }, (_, i) => ({ x: from.x + ((to.x - from.x) * i) / (n - 1), y: from.y + ((to.y - from.y) * i) / (n - 1), p: 0.5 }));

@@ -943,6 +943,31 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
   them; their drafts join no container). Collections in `PARTICIPANT_WRITABLE` (`voting`,
   `estimation`) are writable for a participant, shared and private; the server decides which keys.
 
+Pen tools: lasso (#111) and smart drawing (#3):
+- Lasso: the engine's built-in `lasso` tool (`interaction/selectTool.ts`, `createSelectTool(core,
+  'lasso')`; in the "+" grid and the pen's flyout) is the select tool whose drag on empty canvas
+  draws a freeform loop (`UiState.lasso`, drawn by `overlay/Overlays.tsx`) instead of a marquee;
+  Alt+drag on empty canvas does the same with the select tool, Shift adds. What a loop takes is
+  `Editor.elementsInLasso(points, mode)` (`geometry/lasso.ts`): `'inside'` (default) = items wholly
+  in the loop, or — for a type with `ElementDefinition.lassoPoints(el)` (the pen's centerline) —
+  most of those points; `'touch'` = the marquee's rule (a rectangular loop takes what a marquee
+  over it would). Containers only when wholly inside; locked and hidden items never. The mode is
+  the lasso tool's option (its flyout: Inside / Touching, per browser). A finger draws a loop
+  like any non-select tool, until "pen draws, finger pans" makes fingers pan.
+- Smart drawing (`features/pen`, option `smart` in the pen's flyout, off by default; the pen only,
+  never the highlighter): `lib/recognise.ts` reads a finished stroke as a line, an arrow, a
+  closed rectangle / ellipse / triangle / diamond, a scratch-out, or nothing (pure geometry,
+  deterministic; tests run on frozen strokes in `lib/recordedStrokes.ts`). The ink is created by
+  the stroke's gesture as always; `Editor.afterGesture(fn)` then replaces it in an undo step of its
+  own (`lib/smart.ts`), so Undo once brings the ink back. Shapes go through the shape feature's
+  `shape.insert` command (`{ kind, x, y, w, h, rotation?, stroke?, strokeWidth?, fill?, id? }`),
+  lines and arrows through the connector feature's `connector.insert` (`{ from, to, endCap?,
+  stroke?, strokeWidth?, id? }`, ends attached to the items they land on): each feature stays the
+  single writer of its defaults. A scratch-out over items erases those it mostly covers (never
+  locked items or containers; a toast offers Undo); over nothing it stays ink. Resting the pen
+  650 ms straightens the stroke into a line; a Shift-ruled stroke stays ink. Participants'
+  drafts stay ink.
+
 ### Installable app (PWA, KAI-140)
 
 `apps/web/public/manifest.webmanifest` + icons (rendered from `freero.svg`; maskable source in

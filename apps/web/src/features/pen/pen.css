@@ -39,12 +39,19 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 132px;
+  width: 136px;
 }
 
 .fr-pen-options__modes {
   display: flex;
   gap: 2px;
+}
+
+/* Smart drawing switch (#3), under the sizes. */
+.fr-pen-options__smart {
+  padding-top: 8px;
+  border-top: 1px solid var(--fr-line);
+  font-size: 12px;
 }
 
 .fr-pen-options__sizes {

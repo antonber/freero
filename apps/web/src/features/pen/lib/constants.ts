@@ -40,6 +40,8 @@ export interface PenToolOptions {
   highlighterColor?: string;
   penSize?: SizeIndex;
   highlighterSize?: SizeIndex;
+  /** Smart drawing (#3): pen strokes that look like shapes, lines or arrows become them. */
+  smart?: boolean;
 }
 
 export function resolvePenOptions(o: PenToolOptions) {
@@ -52,6 +54,7 @@ export function resolvePenOptions(o: PenToolOptions) {
     size,
     color: highlighter ? (o.highlighterColor ?? HIGHLIGHTER_COLORS[0]) : (o.penColor ?? PEN_COLORS[0]),
     width: (highlighter ? HIGHLIGHTER_WIDTHS : PEN_WIDTHS)[size],
+    smart: !!o.smart,
   };
 }
 

@@ -1,11 +1,11 @@
 // Local (non-synced) UI state for one board session. Written only by the engine (Editor + tools).
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { Role, SessionLimits } from '@freero/shared';
-import type { Camera, FollowTarget, Rect } from '../api';
+import type { Camera, FollowTarget, Point, Rect } from '../api';
 import type { GapGuide, SnapGuide } from '../geometry/snap';
 import type { ConnectionStatus } from '../store/BoardStore';
 
-export type TransformKind = 'translate' | 'resize' | 'rotate' | 'marquee' | 'pan' | 'tool' | null;
+export type TransformKind = 'translate' | 'resize' | 'rotate' | 'marquee' | 'lasso' | 'pan' | 'tool' | null;
 
 export interface EditRequest {
   id: string;
@@ -39,6 +39,8 @@ export interface UiState {
   toolOptions: Record<string, Record<string, unknown>>;
   hoverId: string | null;
   marquee: Rect | null;
+  /** [#111] The loop being drawn by a lasso selection (world points), or null. */
+  lasso: Point[] | null;
   guides: SnapGuide[];
   /** Equal-spacing distance markers while dragging (see geometry/snap). */
   gaps: GapGuide[];
@@ -127,6 +129,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     toolOptions: {},
     hoverId: null,
     marquee: null,
+    lasso: null,
     guides: [],
     gaps: [],
     transforming: null,

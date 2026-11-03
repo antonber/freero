@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { Eraser, Highlighter, PenLine } from 'lucide-react';
+import { Eraser, Highlighter, LassoSelect, PenLine } from 'lucide-react';
 import { defineTool, useCamera, usePointer, useToolOptions, type Editor, type ToolPointerEvent } from '@engine';
-import { ColorSwatches, IconButton } from '@ui';
+import { ColorSwatches, IconButton, Toggle } from '@ui';
 import {
   HIGHLIGHTER_COLOR_NAMES,
   HIGHLIGHTER_COLORS,
@@ -17,6 +17,8 @@ import {
   type SizeIndex,
 } from './lib/constants';
 import { clearDraft, draftPoints, getDraft, startDraft, touchDraft, useDraftVersion, type Draft } from './lib/draft';
+import { recognise, type Recognition } from './lib/recognise';
+import { applyRecognition } from './lib/smart';
 import { buildStroke, capturePressure, constrainAngle, simplify, straightStroke, strokePath } from './lib/stroke';
 
 /** Minimum screen distance between captured points. */
@@ -26,13 +28,22 @@ const STRAIGHT_STEP_PX = 4;
 /** Simplification tolerance in screen px (converted to world units at commit). */
 const SIMPLIFY_PX = 0.6;
 const ERASER_TOOL = 'eraser';
+/** The engine's lasso tool (#111), offered beside the eraser. */
+const LASSO_TOOL = 'lasso';
+/** Smart drawing: strokes smaller than this on screen (px) stay ink (dots, ticks, small writing). */
+const MIN_SMART_PX = 24;
+/** Smart drawing: resting the pen this long (ms) at the end of a stroke straightens it… */
+const HOLD_MS = 650;
+/** …as long as it stays within this many screen px. */
+const HOLD_SLOP_PX = 5;
 
 /** Shift held: a straight stroke from the first point to the pointer, on a 15° step; else freehand. */
 function constrain(d: Draft, e: ToolPointerEvent, lifted = false) {
   if (!e.shiftKey) {
-    d.line = null;
+    if (!d.held) d.line = null;
     return;
   }
+  d.held = false;
   const start = d.points[0];
   // An even ruler line: the stylus' current pressure (a lifted pen reports 0, so keep the last
   // one), or the plain width without a stylus.
@@ -44,19 +55,68 @@ function constrain(d: Draft, e: ToolPointerEvent, lifted = false) {
   d.line = straightStroke(start, constrainAngle(start, e.point), p, STRAIGHT_STEP_PX / e.editor.getCamera().zoom);
 }
 
+// ---- hold to straighten (smart drawing): a timer, since a resting pointer sends no events.
+let hold: { timer: ReturnType<typeof setTimeout>; at: { x: number; y: number } } | null = null;
+
+function stopHold() {
+  if (hold) clearTimeout(hold.timer);
+  hold = null;
+}
+
+/** (Re)starts the rest timer at the pointer; moving on past the slop undoes a straightening. */
+function watchHold(editor: Editor, d: Draft, screen: { x: number; y: number }) {
+  if (hold && Math.hypot(screen.x - hold.at.x, screen.y - hold.at.y) <= HOLD_SLOP_PX) return;
+  stopHold();
+  if (d.held) {
+    d.held = false;
+    d.line = null;
+  }
+  if (d.highlighter || !resolvePenOptions(editor.getToolOptions<PenToolOptions>(TOOL_ID)).smart) return;
+  hold = {
+    at: screen,
+    timer: setTimeout(() => {
+      hold = null;
+      const cur = getDraft();
+      if (cur !== d || d.line || d.points.length < 2) return;
+      const zoom = editor.getCamera().zoom;
+      const start = d.points[0];
+      const end = d.points[d.points.length - 1];
+      if (Math.hypot(end.x - start.x, end.y - start.y) * zoom < MIN_SMART_PX) return;
+      d.held = true;
+      d.line = straightStroke(start, end, d.realPressure ? end.p : 0.5, STRAIGHT_STEP_PX / zoom);
+      touchDraft();
+    }, HOLD_MS),
+  };
+}
+
+/** What smart drawing makes of the finished draft, or null to keep the ink as drawn. */
+function reading(editor: Editor, d: Draft): Recognition | null {
+  if (d.highlighter || !resolvePenOptions(editor.getToolOptions<PenToolOptions>(TOOL_ID)).smart) return null;
+  // Only editors make shapes and lines; a participant's draft stays ink.
+  if (!editor.can('editor')) return null;
+  if (d.held && d.line) return { type: 'line', from: d.line[0], to: d.line[d.line.length - 1], arrow: false };
+  // A Shift-ruled stroke is a straight line of ink on purpose.
+  if (d.line) return null;
+  return recognise(d.points, MIN_SMART_PX / editor.getCamera().zoom);
+}
+
 function commit(editor: Editor) {
   const d = getDraft();
+  stopHold();
   clearDraft();
   if (!d || !d.points.length) return;
   const tolerance = SIMPLIFY_PX / editor.getCamera().zoom;
   const points = simplify(draftPoints(d), tolerance);
-  editor.create<'pen'>({
+  const inkId = editor.create<'pen'>({
     type: 'pen',
     ...buildStroke(points, d.width, d.highlighter),
     stroke: d.color,
     strokeWidth: d.width,
     highlighter: d.highlighter,
   });
+  const r = inkId ? reading(editor, d) : null;
+  // The clean version is its own undo step after the stroke's: Undo once brings the ink back.
+  if (r) editor.afterGesture(() => applyRecognition(editor, inkId, r, { color: d.color, width: d.width }));
 }
 
 function DraftStroke() {
@@ -111,6 +171,7 @@ function PenOptions({ editor }: { editor: Editor }) {
           onClick={() => set({ mode: 'highlighter' })}
         />
         <IconButton icon={Eraser} label="Eraser" shortcut="E" size={32} onClick={() => editor.setTool(ERASER_TOOL)} />
+        <IconButton icon={LassoSelect} label="Lasso" size={32} onClick={() => editor.setTool(LASSO_TOOL)} />
       </div>
       <ColorSwatches
         colors={o.highlighter ? HIGHLIGHTER_COLORS : PEN_COLORS}
@@ -139,6 +200,11 @@ function PenOptions({ editor }: { editor: Editor }) {
           );
         })}
       </div>
+      {!o.highlighter && (
+        <div className="fr-pen-options__smart" title="Rough rectangles, circles, triangles, diamonds, lines and arrows become clean ones. Rest the pen at the end of a stroke to straighten it; scribble over items to erase them.">
+          <Toggle size="sm" label="Smart drawing" checked={o.smart} onChange={(smart) => set({ smart })} />
+        </div>
+      )}
     </div>
   );
 }
@@ -160,7 +226,7 @@ export default defineTool({
     if (e.button !== 0) return;
     const o = resolvePenOptions(e.editor.getToolOptions<PenToolOptions>(TOOL_ID));
     const realPressure = e.pointerType === 'pen' && e.pressure > 0;
-    startDraft({
+    const d: Draft = {
       points: [{ x: e.point.x, y: e.point.y, p: realPressure ? e.pressure : 0.5 }],
       color: o.color,
       width: o.width,
@@ -168,7 +234,9 @@ export default defineTool({
       lastScreen: e.screen,
       realPressure,
       line: null,
-    });
+    };
+    startDraft(d);
+    watchHold(e.editor, d, e.screen);
   },
 
   onPointerMove(e) {
@@ -180,6 +248,7 @@ export default defineTool({
     const p = capturePressure({ pressure: e.pressure, real: d.realPressure }, prev.p, dist, d.highlighter);
     d.points.push({ x: e.point.x, y: e.point.y, p });
     d.lastScreen = e.screen;
+    watchHold(e.editor, d, e.screen);
     constrain(d, e);
     touchDraft();
   },
@@ -195,10 +264,12 @@ export default defineTool({
   },
 
   onCancel() {
+    stopHold();
     clearDraft();
   },
 
   onDeactivate() {
+    stopHold();
     clearDraft();
   },
 
