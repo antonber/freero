@@ -2,6 +2,7 @@
 // (straight / elbow / curved), caps, hit-testing and bounds. No React, no editor.
 import type { BoardElement, CapStyle, ConnectorElement, ConnectorRouting } from '@freero/shared';
 import type { Point, Rect } from '@engine';
+import type { Hop } from './jumps';
 import { routeAround } from './router';
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';
@@ -606,8 +607,25 @@ export function capShape(cap: CapStyle, tip: Point, dir: Point, strokeWidth: num
 // ---------------------------------------------------------------------------------- svg path
 const fmt = (n: number) => Math.round(n * 100) / 100;
 
-/** SVG path data for a route, with both ends pulled back by the cap trims. */
-export function routePath(route: Route, trimStart: number, trimEnd: number, rounded: boolean): string {
+/**
+ * The arc of one line jump (lineJumps' Hop) on the segment from `a` to `b`: it bulges up on lines
+ * that run across, left on lines that run down, whichever way the line travels.
+ */
+function hopArc(a: Point, b: Point, hop: Hop): string {
+  const u = unit(sub(b, a));
+  const p = add(a, mul(u, hop.from));
+  const q = add(a, mul(u, hop.to));
+  // A merged hop (crossings close together) is one long arc, as high as a single one.
+  const rx = (hop.to - hop.from) / 2;
+  const ry = Math.min(rx, hop.r);
+  // sweep-flag 1 bulges toward (u.y, -u.x) on screen.
+  const sweep = Math.abs(u.x) >= Math.abs(u.y) ? (u.x > 0 ? 1 : 0) : u.y > 0 ? 0 : 1;
+  const rot = fmt((Math.atan2(u.y, u.x) * 180) / Math.PI);
+  return ` L${fmt(p.x)} ${fmt(p.y)} A${fmt(rx)} ${fmt(ry)} ${rot} 0 ${sweep} ${fmt(q.x)} ${fmt(q.y)}`;
+}
+
+/** SVG path data for a route, with both ends pulled back by the cap trims and its line jumps drawn in. */
+export function routePath(route: Route, trimStart: number, trimEnd: number, rounded: boolean, hops: Hop[] = []): string {
   if (route.cubics) {
     const cs = route.cubics.map((c) => [...c] as [Point, Point, Point, Point]);
     const first = cs[0];
@@ -625,6 +643,8 @@ export function routePath(route: Route, trimStart: number, trimEnd: number, roun
   let d = `M${fmt(pts[0].x)} ${fmt(pts[0].y)}`;
   for (let i = 1; i < n; i++) {
     const p = pts[i];
+    // Hops sit on the untrimmed route, clear of its bends and line ends.
+    for (const hop of hops) if (hop.seg === i - 1) d += hopArc(route.poly[i - 1], route.poly[i], hop);
     if (rounded && i < n - 1) {
       const prev = pts[i - 1];
       const next = pts[i + 1];

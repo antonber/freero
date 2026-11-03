@@ -2,7 +2,7 @@
 // `project_members` [S4].
 import type { ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
-import type { InvitableWorkspaceRole } from './roles';
+import { NO_FLOOR_POLICIES, strictestPolicies, strictestSettings, type InvitableWorkspaceRole, type PolicyFloor, type SettingsFloor } from './roles';
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
 
@@ -13,8 +13,17 @@ export interface Workspace {
   name: string;
   kind: WorkspaceKind;
   personalOf: string | null;
+  /**
+   * The EFFECTIVE policies and settings: the workspace's own, raised to its organisation's floors
+   * (#108). Every access decision reads these; only the admin screens need `own…`.
+   */
   policies: WorkspacePolicies;
   settings: WorkspaceSettings;
+  /** What the workspace itself set (for an organisation: its floors). */
+  ownPolicies: WorkspacePolicies;
+  ownSettings: WorkspaceSettings;
+  /** The organisation a team workspace is attached to, with its floors. */
+  organisation: { id: string; name: string; policies: PolicyFloor; settings: SettingsFloor; attachedAt: number } | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -40,38 +49,98 @@ interface WsRow {
   trash_retention_days: number;
   version_retention_days: number | null;
   audit_retention_days: number;
+  organisation_id: string | null;
+  organisation_attached_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // The organisation's row, joined (WS_SELECT).
+  org_name: string | null;
+  org_external_sharing: WorkspacePolicies['externalSharing'] | null;
+  org_link_sharing: WorkspacePolicies['linkSharing'] | null;
+  org_guest_invites: WorkspacePolicies['guestInvites'] | null;
+  org_downloads: WorkspacePolicies['downloads'] | null;
+  org_public_links: 'anyone' | 'signed_in' | null;
+  org_live_embeds: 'on' | 'off' | null;
+  org_board_embeds: 'on' | 'off' | null;
+  org_link_password: 'optional' | 'required' | null;
+  org_link_max_days: number | null;
+  org_require_two_factor: boolean | null;
+  org_session_max_hours: number | null;
+  org_session_idle_minutes: number | null;
 }
 
-const toWorkspace = (r: WsRow): Workspace => ({
-  id: r.id,
-  name: r.name,
-  kind: r.kind,
-  personalOf: r.personal_of,
-  policies: {
+/**
+ * Every read of a workspace goes through this: the row with its organisation's floors, so the
+ * effective policies are computed in one place (toWorkspace) and no reader can miss a floor.
+ */
+const WS_SELECT = `SELECT w.*, o.name AS org_name, o.external_sharing AS org_external_sharing, o.link_sharing AS org_link_sharing,
+    o.guest_invites AS org_guest_invites, o.downloads AS org_downloads, o.public_links AS org_public_links,
+    o.live_embeds AS org_live_embeds, o.board_embeds AS org_board_embeds, o.require_two_factor AS org_require_two_factor,
+    o.link_password AS org_link_password, o.link_max_days AS org_link_max_days,
+    o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes
+  FROM workspaces w LEFT JOIN workspaces o ON o.id = w.organisation_id`;
+
+const publicLinks = (v: 'anyone' | 'signed_in'): WorkspacePolicies['publicLinks'] => (v === 'signed_in' ? 'signedIn' : 'anyone');
+
+function toWorkspace(r: WsRow): Workspace {
+  const ownPolicies: WorkspacePolicies = {
     externalSharing: r.external_sharing,
     linkSharing: r.link_sharing,
     guestInvites: r.guest_invites,
     downloads: r.downloads,
     teamAccess: r.team_access,
-    publicLinks: r.public_links === 'signed_in' ? 'signedIn' : 'anyone',
+    publicLinks: publicLinks(r.public_links),
     liveEmbeds: r.live_embeds === 'off' ? 'off' : 'on',
     boardEmbeds: r.board_embeds === 'off' ? 'off' : 'on',
     linkPassword: r.link_password === 'required' ? 'required' : 'optional',
     linkMaxDays: r.link_max_days ?? null,
-  },
-  settings: {
+  };
+  const ownSettings: WorkspaceSettings = {
     requireTwoFactor: r.require_two_factor,
     sessionMaxHours: r.session_max_hours,
     sessionIdleMinutes: r.session_idle_minutes,
     trashRetentionDays: r.trash_retention_days,
     versionRetentionDays: r.version_retention_days,
     auditRetentionDays: r.audit_retention_days,
-  },
-  createdAt: r.created_at.getTime(),
-  updatedAt: r.updated_at.getTime(),
-});
+  };
+  const organisation =
+    r.organisation_id && r.org_name !== null
+      ? {
+          id: r.organisation_id,
+          name: r.org_name,
+          policies: {
+            externalSharing: r.org_external_sharing ?? NO_FLOOR_POLICIES.externalSharing,
+            linkSharing: r.org_link_sharing ?? NO_FLOOR_POLICIES.linkSharing,
+            guestInvites: r.org_guest_invites ?? NO_FLOOR_POLICIES.guestInvites,
+            downloads: r.org_downloads ?? NO_FLOOR_POLICIES.downloads,
+            publicLinks: r.org_public_links ? publicLinks(r.org_public_links) : NO_FLOOR_POLICIES.publicLinks,
+            liveEmbeds: r.org_live_embeds ?? NO_FLOOR_POLICIES.liveEmbeds,
+            boardEmbeds: r.org_board_embeds ?? NO_FLOOR_POLICIES.boardEmbeds,
+            linkPassword: r.org_link_password ?? NO_FLOOR_POLICIES.linkPassword,
+            linkMaxDays: r.org_link_max_days ?? null,
+          },
+          settings: {
+            requireTwoFactor: r.org_require_two_factor ?? false,
+            sessionMaxHours: r.org_session_max_hours,
+            sessionIdleMinutes: r.org_session_idle_minutes,
+          },
+          attachedAt: (r.organisation_attached_at ?? r.updated_at).getTime(),
+        }
+      : null;
+  return {
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    personalOf: r.personal_of,
+    policies: strictestPolicies(ownPolicies, organisation?.policies ?? null),
+    settings: strictestSettings(ownSettings, organisation?.settings ?? null),
+    ownPolicies,
+    ownSettings,
+    organisation,
+    createdAt: r.created_at.getTime(),
+    updatedAt: r.updated_at.getTime(),
+  };
+}
 
 /**
  * The user's personal workspace id, creating it (with them as its owner) if missing. One
@@ -108,30 +177,49 @@ export async function insertTeam(id: string, name: string, ownerId: string, now:
 }
 
 export async function getWorkspace(id: string): Promise<Workspace | null> {
-  const r = await one<WsRow>(`SELECT * FROM workspaces WHERE id = $1`, [id]);
+  const r = await one<WsRow>(`${WS_SELECT} WHERE w.id = $1`, [id]);
   return r ? toWorkspace(r) : null;
 }
 
 export async function getWorkspaces(ids: string[]): Promise<Workspace[]> {
   if (ids.length === 0) return [];
-  return (await query<WsRow>(`SELECT * FROM workspaces WHERE id = ANY($1::text[])`, [ids])).map(toWorkspace);
+  return (await query<WsRow>(`${WS_SELECT} WHERE w.id = ANY($1::text[])`, [ids])).map(toWorkspace);
 }
 
-/** Every workspace the user is in, with their role and the member count. */
-export async function workspacesOf(userId: string): Promise<Array<{ workspace: Workspace; role: WorkspaceRole; memberCount: number }>> {
+type WithRole = { workspace: Workspace; role: WorkspaceRole; memberCount: number };
+
+/**
+ * Every WORKSPACE the user is in (personal and team; never an organisation's directory row), with
+ * their role and the member count.
+ */
+export function workspacesOf(userId: string): Promise<WithRole[]> {
+  return withRoles(userId, false);
+}
+
+/** The organisations whose directory the user is in, with their role and its member count. */
+export function organisationsOf(userId: string): Promise<WithRole[]> {
+  return withRoles(userId, true);
+}
+
+async function withRoles(userId: string, organisations: boolean): Promise<WithRole[]> {
   const rows = await query<WsRow & { role: WorkspaceRole; member_count: number }>(
-    `SELECT w.*, m.role, (SELECT count(*)::int FROM workspace_members c WHERE c.workspace_id = w.id) AS member_count
-     FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
-     WHERE m.user_id = $1 ORDER BY (w.kind = 'personal') DESC, w.name, w.id`,
-    [userId],
+    `SELECT x.*, m.role, (SELECT count(*)::int FROM workspace_members c WHERE c.workspace_id = x.id) AS member_count
+     FROM workspace_members m JOIN (${WS_SELECT}) x ON x.id = m.workspace_id
+     WHERE m.user_id = $1 AND (x.kind = 'organisation') = $2
+     ORDER BY (x.kind = 'personal') DESC, x.name, x.id`,
+    [userId, organisations],
   );
   return rows.map((r) => ({ workspace: toWorkspace(r), role: r.role, memberCount: r.member_count }));
 }
 
-/** workspaceId -> role, for every workspace the user is in. */
+/**
+ * workspaceId -> role, for every WORKSPACE the user is in. Never an organisation: an org role
+ * reaches no board (lists, search, board access and the public API read this).
+ */
 export async function rolesOf(userId: string): Promise<Map<string, WorkspaceRole>> {
   const rows = await query<{ workspace_id: string; role: WorkspaceRole }>(
-    `SELECT workspace_id, role FROM workspace_members WHERE user_id = $1`,
+    `SELECT m.workspace_id, m.role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+     WHERE m.user_id = $1 AND w.kind <> 'organisation'`,
     [userId],
   );
   return new Map(rows.map((r) => [r.workspace_id, r.role]));
@@ -189,36 +277,51 @@ export async function updateSettings(id: string, patch: Partial<WorkspaceSetting
   await query(`UPDATE workspaces SET ${sets.join(', ')}, updated_at = $2 WHERE id = $1`, params);
 }
 
+// Session and two-step policies apply to the people of TEAM workspaces (not their guests) and of
+// organisations' directories; a team workspace's own limit is raised to its organisation's floor
+// (LEAST ignores NULL, which means no limit).
+const EFFECTIVE_LIMITS = `FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+     LEFT JOIN workspaces o ON o.id = w.organisation_id
+     WHERE m.role <> 'guest' AND w.kind IN ('team', 'organisation')`;
+
 /**
- * The strictest session limits over the TEAM workspaces the user is a member of (not as a guest;
- * deactivated or not): the policy that applies to all their sessions. Nulls when none sets one.
+ * The strictest session limits over the team workspaces (and organisations) the user is a member
+ * of (not as a guest; deactivated or not), each raised to its organisation's floor: the policy
+ * that applies to all their sessions. Nulls when none sets one.
  */
 export async function sessionLimitsFor(userId: string): Promise<{ maxHours: number | null; idleMinutes: number | null }> {
   const r = await one<{ max_hours: number | null; idle_minutes: number | null }>(
-    `SELECT min(w.session_max_hours) AS max_hours, min(w.session_idle_minutes) AS idle_minutes
-     FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
-     WHERE m.user_id = $1 AND m.role <> 'guest' AND w.kind = 'team'`,
+    `SELECT min(LEAST(w.session_max_hours, o.session_max_hours)) AS max_hours,
+       min(LEAST(w.session_idle_minutes, o.session_idle_minutes)) AS idle_minutes
+     ${EFFECTIVE_LIMITS} AND m.user_id = $1`,
     [userId],
   );
   return { maxHours: r?.max_hours ?? null, idleMinutes: r?.idle_minutes ?? null };
 }
 
-/** Every person some team workspace limits sessions for, with their strictest limits (the enforcement job). */
+/** Every person some team workspace (or its organisation) limits sessions for, with their strictest limits (the enforcement job). */
 export async function allSessionLimits(): Promise<Array<{ userId: string; maxHours: number | null; idleMinutes: number | null }>> {
   const rows = await query<{ user_id: string; max_hours: number | null; idle_minutes: number | null }>(
-    `SELECT m.user_id, min(w.session_max_hours) AS max_hours, min(w.session_idle_minutes) AS idle_minutes
-     FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id
-     WHERE (w.session_max_hours IS NOT NULL OR w.session_idle_minutes IS NOT NULL) AND w.kind = 'team' AND m.role <> 'guest'
+    `SELECT m.user_id, min(LEAST(w.session_max_hours, o.session_max_hours)) AS max_hours,
+       min(LEAST(w.session_idle_minutes, o.session_idle_minutes)) AS idle_minutes
+     ${EFFECTIVE_LIMITS}
+       AND (w.session_max_hours IS NOT NULL OR w.session_idle_minutes IS NOT NULL OR o.session_max_hours IS NOT NULL OR o.session_idle_minutes IS NOT NULL)
      GROUP BY m.user_id ORDER BY m.user_id`,
   );
   return rows.map((r) => ({ userId: r.user_id, maxHours: r.max_hours, idleMinutes: r.idle_minutes }));
 }
 
-/** Names of the team workspaces the user is in (any role) that require two-step verification. */
+/**
+ * Names of the team workspaces the user is in (any role) that require two-step verification,
+ * themselves or through their organisation, and of the organisations requiring it whose directory
+ * they are in.
+ */
 export async function twoFactorRequiredBy(userId: string): Promise<string[]> {
   const rows = await query<{ name: string }>(
-    `SELECT w.name FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
-     WHERE m.user_id = $1 AND w.require_two_factor AND w.kind = 'team' ORDER BY w.name`,
+    `SELECT DISTINCT w.name FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+     LEFT JOIN workspaces o ON o.id = w.organisation_id
+     WHERE m.user_id = $1 AND w.kind IN ('team', 'organisation') AND (w.require_two_factor OR coalesce(o.require_two_factor, false))
+     ORDER BY w.name`,
     [userId],
   );
   return rows.map((r) => r.name);
@@ -246,6 +349,75 @@ export async function deleteTeam(id: string): Promise<boolean> {
 export async function lockWorkspace(id: string, mode: 'update' | 'share'): Promise<boolean> {
   const sql = mode === 'update' ? `SELECT 1 FROM workspaces WHERE id = $1 FOR UPDATE` : `SELECT 1 FROM workspaces WHERE id = $1 FOR SHARE`;
   return (await one(sql, [id])) !== null;
+}
+
+// ---- organisations (#108) ----
+
+/** An organisation with its creator as owner, starting with no floors (inside a transaction). */
+export async function insertOrganisation(id: string, name: string, ownerId: string, now: number): Promise<void> {
+  await query(
+    `INSERT INTO workspaces (id, name, kind, created_by, created_at, updated_at, guest_invites) VALUES ($1, $2, 'organisation', $3, $4, $4, $5)`,
+    [id, name, ownerId, new Date(now), NO_FLOOR_POLICIES.guestInvites],
+  );
+  await query(`INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES ($1, $2, 'owner', $3)`, [id, ownerId, new Date(now)]);
+}
+
+/** Attaches a team workspace to an organisation (or detaches it: null). False if it is not a team workspace. */
+export async function setOrganisation(workspaceId: string, organisationId: string | null, now: number): Promise<boolean> {
+  return (
+    await query(
+      `UPDATE workspaces SET organisation_id = $2::text,
+         organisation_attached_at = CASE WHEN $2::text IS NULL THEN NULL ELSE $3::timestamptz END
+       WHERE id = $1 AND kind = 'team' RETURNING 1`,
+      [workspaceId, organisationId, new Date(now)],
+    )
+  ).length > 0;
+}
+
+/** The team workspaces attached to an organisation, oldest attachment first. */
+export async function attachedWorkspaces(organisationId: string): Promise<Workspace[]> {
+  return (await query<WsRow>(`${WS_SELECT} WHERE w.organisation_id = $1 ORDER BY w.organisation_attached_at, w.id`, [organisationId])).map(toWorkspace);
+}
+
+/** workspaceId -> its organisation's id, for those of `workspaceIds` that are attached to one. */
+export async function organisationIdsOf(workspaceIds: string[]): Promise<Map<string, string>> {
+  if (workspaceIds.length === 0) return new Map();
+  const rows = await query<{ id: string; organisation_id: string }>(
+    `SELECT id, organisation_id FROM workspaces WHERE id = ANY($1::text[]) AND organisation_id IS NOT NULL`,
+    [workspaceIds],
+  );
+  return new Map(rows.map((r) => [r.id, r.organisation_id]));
+}
+
+/** Deletes an organisation (its directory cascades). False if it is not there or a workspace is still attached. */
+export async function deleteOrganisation(id: string): Promise<boolean> {
+  return (
+    await query(
+      `DELETE FROM workspaces WHERE id = $1 AND kind = 'organisation' AND NOT EXISTS (SELECT 1 FROM workspaces a WHERE a.organisation_id = $1) RETURNING 1`,
+      [id],
+    )
+  ).length > 0;
+}
+
+/** How many organisations the user owns. */
+export async function countOwnedOrganisations(userId: string): Promise<number> {
+  const r = await one<{ n: number }>(
+    `SELECT count(*)::int AS n FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+     WHERE m.user_id = $1 AND m.role = 'owner' AND w.kind = 'organisation'`,
+    [userId],
+  );
+  return r?.n ?? 0;
+}
+
+/** Organisations whose directory the user is in, with their role there. */
+export async function organisationMembershipsOf(userId: string): Promise<Array<{ workspaceId: string; role: WorkspaceRole }>> {
+  return (
+    await query<{ workspace_id: string; role: WorkspaceRole }>(
+      `SELECT m.workspace_id, m.role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+       WHERE m.user_id = $1 AND w.kind = 'organisation' ORDER BY m.workspace_id`,
+      [userId],
+    )
+  ).map((r) => ({ workspaceId: r.workspace_id, role: r.role }));
 }
 
 /** How many team workspaces the user owns (the workspace quota). */

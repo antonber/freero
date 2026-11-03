@@ -1,8 +1,18 @@
 // Security (two-step requirement, session policy, sharing policies) and data retention settings
-// of a team workspace. The server validates and enforces all of them; changes apply at once.
+// of a team workspace. The server validates and enforces all of them; changes apply at once. For
+// an organisation (#108) the same controls set FLOORS for its workspaces; in an attached workspace
+// choices looser than the organisation's floor are shown but disabled (the server refuses them).
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { LinkComplianceIssue, WorkspacePolicies, WorkspaceSettings, WorkspaceSummary } from '@freero/shared';
+import {
+  looserPolicy,
+  POLICY_STRICTNESS,
+  type LinkComplianceIssue,
+  type OrderedPolicyKey,
+  type WorkspacePolicies,
+  type WorkspaceSettings,
+  type WorkspaceSummary,
+} from '@freero/shared';
 import { Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { LINK_MAX_DAYS_FIELD, parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
@@ -44,13 +54,30 @@ function Row({ label, hint, children }: { label: string; hint: ReactNode; childr
   );
 }
 
-/** A numeric setting as a Select; a value set elsewhere (the API) that isn't a preset still shows. */
-function SettingSelect({ field, settings, save }: { field: keyof typeof SETTING_FIELDS; settings: WorkspaceSettings; save: ReturnType<typeof useSettings>['save'] }) {
+/**
+ * A numeric setting as a Select; a value set elsewhere (the API) that isn't a preset still shows.
+ * `floor` (an organisation's limit): longer limits, and none, can't be chosen.
+ */
+function SettingSelect({
+  field,
+  settings,
+  save,
+  floor = null,
+  by,
+}: {
+  field: keyof typeof SETTING_FIELDS;
+  settings: WorkspaceSettings;
+  save: ReturnType<typeof useSettings>['save'];
+  floor?: number | null;
+  by?: string;
+}) {
   const f = SETTING_FIELDS[field];
   const value = settingValue(settings[field]);
-  const options: SelectOption<string>[] = f.options.some((o) => o.value === value) ? f.options : [...f.options, { value, label: value }];
+  const all: SelectOption<string>[] = f.options.some((o) => o.value === value) ? f.options : [...f.options, { value, label: value }];
+  const options = floor === null ? all : all.map((o) => ({ ...o, disabled: o.value === '' || Number(o.value) > floor }));
+  const hint = floor === null ? f.hint : `${f.hint} ${by} allows at most ${all.find((o) => o.value === String(floor))?.label ?? floor}.`;
   return (
-    <Row label={f.label} hint={f.hint}>
+    <Row label={f.label} hint={hint}>
       <Select<string> aria-label={f.label} options={options} value={value} onChange={(v) => void save({ [field]: parseSetting(v) }, 'Saved — it applies right away')} width={230} />
     </Row>
   );
@@ -61,6 +88,10 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
   const { settings, save } = useSettings(workspace.id);
   const [policies, setPolicies] = useState(workspace.policies);
   useEffect(() => setPolicies(workspace.policies), [workspace.policies]);
+  const org = workspace.kind === 'organisation';
+  const floor = workspace.organisation ?? null;
+  const floorOf = (key: keyof WorkspacePolicies) => (floor && key !== 'teamAccess' && key !== 'linkMaxDays' ? floor.policies[key as OrderedPolicyKey] : null);
+  const maxDaysFloor = floor?.policies.linkMaxDays ?? null;
 
   const setPolicy = async <K extends keyof WorkspacePolicies>(key: K, value: WorkspacePolicies[K]) => {
     const prev = policies;
@@ -80,28 +111,44 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
   return (
     <section aria-labelledby="admin-security-title">
       <h1 id="admin-security-title" className="fr-admin__title">
-        Security
+        {org ? 'Policies' : 'Security'}
       </h1>
+      {org ? (
+        <p className="fr-admin__intro">
+          What you set here is the least every workspace in {workspace.name} gets: a workspace can choose something stricter, never looser,
+          and a stricter choice here applies to all of them at once.
+        </p>
+      ) : floor ? (
+        <p className="fr-admin__intro">
+          {floor.name} sets the least this workspace gets: choices looser than its policies are greyed out. You can still be stricter.
+        </p>
+      ) : null}
 
       <div className="fr-admin-card">
         <h2 className="fr-admin-card__title">Sign-in</h2>
         <Row
           label="Require two-step verification"
           hint={
-            <>
-              Anyone without it — members, guests and people invited from outside — can’t open this workspace’s boards until they turn it on
-              in <Link to="/settings#two-factor">their settings</Link>, and members can’t turn it off. Turn it on for yourself first.
-            </>
+            org ? (
+              <>Nobody without it can open the boards of the organisation’s workspaces, and their members can’t turn it off. Turn it on for yourself first.</>
+            ) : (
+              <>
+                Anyone without it — members, guests and people invited from outside — can’t open this workspace’s boards until they turn it on
+                in <Link to="/settings#two-factor">their settings</Link>, and members can’t turn it off. Turn it on for yourself first.
+                {floor?.settings.requireTwoFactor ? ` ${floor.name} requires it.` : ''}
+              </>
+            )
           }
         >
           <Toggle
             aria-label="Require two-step verification"
             checked={settings.requireTwoFactor}
+            disabled={!!floor?.settings.requireTwoFactor}
             onChange={(on) => void save({ requireTwoFactor: on }, on ? 'Two-step verification is now required' : 'Two-step verification is no longer required')}
           />
         </Row>
-        <SettingSelect field="sessionMaxHours" settings={settings} save={save} />
-        <SettingSelect field="sessionIdleMinutes" settings={settings} save={save} />
+        <SettingSelect field="sessionMaxHours" settings={settings} save={save} floor={floor?.settings.sessionMaxHours ?? null} by={floor?.name} />
+        <SettingSelect field="sessionIdleMinutes" settings={settings} save={save} floor={floor?.settings.sessionIdleMinutes ?? null} by={floor?.name} />
         <p className="fr-admin-card__note">
           A sign-in belongs to a person, not to a workspace: someone in several workspaces gets the strictest of their session policies
           on all their devices. Guests keep their own account’s settings. Single sign-on follows the same policy; an identity provider’s own
@@ -111,21 +158,35 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
 
       <div className="fr-admin-card">
         <h2 className="fr-admin-card__title">Sharing</h2>
-        {POLICY_FIELDS.map((f) => (
-          <Row key={f.key} label={f.label} hint={f.hint}>
-            <Select<string>
-              aria-label={f.label}
-              options={f.options}
-              value={policies[f.key]}
-              onChange={(v) => void setPolicy(f.key, v as WorkspacePolicies[typeof f.key])}
-              width={230}
-            />
-          </Row>
-        ))}
-        <Row label={LINK_MAX_DAYS_FIELD.label} hint={LINK_MAX_DAYS_FIELD.hint}>
-          <Select<string> aria-label={LINK_MAX_DAYS_FIELD.label} options={maxDaysOptions} value={maxDays} onChange={(v) => void setPolicy('linkMaxDays', parseSetting(v))} width={230} />
+        {POLICY_FIELDS.filter((f) => !org || f.key !== 'teamAccess').map((f) => {
+          const least = floorOf(f.key);
+          const key = f.key as OrderedPolicyKey;
+          const options = least === null ? f.options : f.options.map((o) => ({ ...o, disabled: looserPolicy(key, o.value as never, least as never) }));
+          // Only a floor that rules something out is worth a word (the loosest value is no floor).
+          const binding = least !== null && least !== POLICY_STRICTNESS[key][0];
+          const hint = binding ? `${f.hint} Set by ${floor!.name}: ${f.options.find((o) => o.value === least)?.label} at most.` : f.hint;
+          return (
+            <Row key={f.key} label={f.label} hint={hint}>
+              <Select<string>
+                aria-label={f.label}
+                options={options}
+                value={policies[f.key]}
+                onChange={(v) => void setPolicy(f.key, v as WorkspacePolicies[typeof f.key])}
+                width={230}
+              />
+            </Row>
+          );
+        })}
+        <Row label={LINK_MAX_DAYS_FIELD.label} hint={maxDaysFloor === null ? LINK_MAX_DAYS_FIELD.hint : `${LINK_MAX_DAYS_FIELD.hint} Set by ${floor!.name}: ${maxDaysFloor} days at most.`}>
+          <Select<string>
+            aria-label={LINK_MAX_DAYS_FIELD.label}
+            options={maxDaysFloor === null ? maxDaysOptions : maxDaysOptions.map((o) => ({ ...o, disabled: o.value === '' || Number(o.value) > maxDaysFloor }))}
+            value={maxDays}
+            onChange={(v) => void setPolicy('linkMaxDays', parseSetting(v))}
+            width={230}
+          />
         </Row>
-        <LinkCompliance workspaceId={workspace.id} policies={policies} />
+        {org ? null : <LinkCompliance workspaceId={workspace.id} policies={policies} />}
       </div>
     </section>
   );
@@ -176,14 +237,16 @@ function LinkCompliance({ workspaceId, policies }: { workspaceId: string; polici
 export function AdminRetention({ workspace }: { workspace: WorkspaceSummary }) {
   const { settings, save } = useSettings(workspace.id);
   if (!settings) return <Spinner />;
+  // An organisation holds no boards: only its own (merged) audit log has a retention.
+  const org = workspace.kind === 'organisation';
   return (
     <section aria-labelledby="admin-retention-title">
       <h1 id="admin-retention-title" className="fr-admin__title">
         Data retention
       </h1>
       <div className="fr-admin-card">
-        <SettingSelect field="trashRetentionDays" settings={settings} save={save} />
-        <SettingSelect field="versionRetentionDays" settings={settings} save={save} />
+        {org ? null : <SettingSelect field="trashRetentionDays" settings={settings} save={save} />}
+        {org ? null : <SettingSelect field="versionRetentionDays" settings={settings} save={save} />}
         <SettingSelect field="auditRetentionDays" settings={settings} save={save} />
         <p className="fr-admin-card__note">Freero applies these every hour. What is removed can’t be brought back.</p>
       </div>

@@ -8,8 +8,11 @@ import { ExternalLink } from 'lucide-react';
 import { Button, Logo } from '@ui';
 import '../board/BoardPage.css';
 
-/** Pages made to run framed: a board embedded on another site, and the live view in an AI assistant. */
-const FRAMABLE = /^\/embed\/(b|board)\//;
+/**
+ * Pages made to run framed: a board embedded on another site, the live view in an AI assistant, and
+ * the Microsoft Teams tab and its configuration page (framed by Teams only).
+ */
+const FRAMABLE = /^\/(embed\/(b|board)\/|teams\/b\/|teams\/config\/?$)/;
 
 const framed = (() => {
   try {

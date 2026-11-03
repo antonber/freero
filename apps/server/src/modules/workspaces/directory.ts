@@ -6,11 +6,13 @@
 // directory never changes an owner's role, and never deactivates the last active owner.
 import type { WorkspaceRole } from '@freero/shared';
 import { HttpError, notFound } from '../../platform/http';
+import { recordAudit } from '../audit/index';
+import { getUser } from '../auth/index';
 import { boardIdsInProject } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
-import { recordMembershipChange } from './events';
+import { membershipChanged, recordMembershipChange } from './events';
 import * as repo from './repo';
-import { refreshWorkspaceBoards } from './service';
+import { refreshWorkspaceBoards, removeMemberByDirectory } from './service';
 
 export type DirectoryRole = Exclude<WorkspaceRole, 'owner'>;
 
@@ -70,6 +72,42 @@ export async function setDirectoryDeactivated(
   });
   if (changed) await refreshWorkspaceBoards(workspaceId);
   return changed;
+}
+
+const RANK: Record<WorkspaceRole, number> = { guest: 1, member: 2, admin: 3, owner: 4 };
+
+/**
+ * An organisation's directory grants (role) or withdraws (null) membership of one of ITS team
+ * workspaces (#108: SCIM groups mapped to the workspace). A grant adds the person or raises their
+ * role, never lowers it and never touches an owner; a withdrawal removes them unless they own it.
+ * Nothing happens for a workspace that is not attached to `organisationId`. Recorded in the
+ * workspace's log (and so the organisation's), with the directory as actor.
+ */
+export async function setDirectoryWorkspaceMembership(organisationId: string, workspaceId: string, userId: string, role: DirectoryRole | null): Promise<void> {
+  const ws = await repo.getWorkspace(workspaceId);
+  if (!ws || ws.kind !== 'team' || ws.organisation?.id !== organisationId) return;
+  const metadata = { via: 'scim', organisationId };
+  if (role === null) {
+    await removeMemberByDirectory(workspaceId, userId, metadata);
+    return;
+  }
+  const before = await repo.transaction(async () => {
+    if (!(await repo.lockWorkspace(workspaceId, 'update'))) return 'none' as const;
+    const b = await repo.getRole(workspaceId, userId);
+    if (b !== null && RANK[b] >= RANK[role]) return 'none' as const;
+    if (!(await repo.grantAtLeast(workspaceId, userId, role, Date.now()))) return 'none' as const;
+    if (b !== null) await recordMembershipChange(workspaceId, userId);
+    const target = { type: 'user', id: userId, label: (await getUser(userId))?.email ?? null };
+    await recordAudit(
+      b === null
+        ? { action: 'member.joined', workspaceId, actorId: null, target, metadata: { ...metadata, role } }
+        : { action: 'member.role_changed', workspaceId, actorId: null, target, metadata: { ...metadata, from: b, to: role } },
+    );
+    return b;
+  });
+  if (before === 'none') return;
+  await refreshWorkspaceBoards(workspaceId);
+  if (before !== null) await membershipChanged({ workspaceId, userId, role });
 }
 
 /** Whether the person is a deactivated member of the workspace (SSO won't let them in there). */

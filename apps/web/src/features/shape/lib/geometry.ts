@@ -901,6 +901,22 @@ export function entityDivider(fontSize: number | 'auto', strokeWidth: number): n
   return Math.round(ENTITY_PAD + strokeWidth / 2 + fs * ENTITY_LINE) + 0.5;
 }
 
+/**
+ * y (local) of a class's two dividers (`compartments`): under its name line, and above its first
+ * operation (a line with "("), or under its last line when it has none (at least one line below
+ * the name: an empty attribute compartment). One line per text line:
+ * class boxes are sized so members don't wrap.
+ */
+export function classDividers(plain: string, fontSize: number | 'auto', strokeWidth: number): number[] {
+  const fs = fontSize === 'auto' ? ENTITY_FONT : fontSize;
+  const lines = plain.split('\n');
+  const first = entityDivider(fontSize, strokeWidth);
+  const firstOp = lines.findIndex((l, i) => i > 0 && l.includes('('));
+  // Without operations, the attribute compartment is at least one line tall (even when empty).
+  const attrs = firstOp < 0 ? Math.max(1, lines.length - 1) : firstOp - 1;
+  return [first, first + attrs * fs * ENTITY_LINE];
+}
+
 const fmt = (n: number) => String(Math.round(n * 100) / 100);
 
 /** SVG path data, offset by (dx, dy). */

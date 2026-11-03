@@ -74,7 +74,7 @@ export const monthOf = (at = Date.now()) => new Date(at).toISOString().slice(0, 
 
 /** Kinds clustering sorts into groups (notes; titles and other text boxes stay where they are). */
 const CLUSTERABLE = new Set(['sticky', 'card']);
-const DIAGRAMS: AiDiagramKind[] = ['flowchart', 'sequence', 'mindmap'];
+const DIAGRAMS: AiDiagramKind[] = ['flowchart', 'sequence', 'mindmap', 'class', 'er', 'state', 'orgchart', 'kanban'];
 
 function parseActionRequest(body: unknown): AiActionRequest {
   const b = (body ?? {}) as Partial<AiActionRequest>;

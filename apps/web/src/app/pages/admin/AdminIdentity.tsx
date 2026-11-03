@@ -6,7 +6,18 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Copy, Download, KeyRound, RefreshCw, RotateCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { DOMAIN_CAPTURE_GRACE_DAYS } from '@freero/shared';
-import type { DataExportInfo, DomainControlSettings, ProjectSummary, ScimGroupMapping, ScimSettings, SsoProtocol, SsoSettings, WorkspaceMember, WorkspaceSummary } from '@freero/shared';
+import type {
+  AdminMember,
+  DataExportInfo,
+  DomainControlSettings,
+  OrganisationWorkspace,
+  ProjectSummary,
+  ScimGroupMapping,
+  ScimSettings,
+  SsoProtocol,
+  SsoSettings,
+  WorkspaceSummary,
+} from '@freero/shared';
 import { Button, Input, Modal, SegmentedControl, Select, Spinner, TextArea, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 import './identity.css';
@@ -51,6 +62,9 @@ const ROLE_OPTIONS: SelectOption<'member' | 'guest' | 'admin'>[] = [
   { value: 'admin', label: 'Admin' },
 ];
 
+/** How the identity tabs name where people land: a team workspace, or an organisation's directory (#108). */
+const placeOf = (w: WorkspaceSummary) => (w.kind === 'organisation' ? 'the organisation' : 'this workspace');
+
 // ---- Single sign-on ----
 
 export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
@@ -64,7 +78,7 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
   const [clientId, setClientId] = useState('');
   const [secret, setSecret] = useState('');
   const [defaultRole, setDefaultRole] = useState<'member' | 'guest' | 'admin'>('member');
-  const [owners, setOwners] = useState<WorkspaceMember[]>([]);
+  const [owners, setOwners] = useState<AdminMember[]>([]);
   const [breakGlass, setBreakGlass] = useState('');
   const [confirmEnforce, setConfirmEnforce] = useState(false);
 
@@ -82,7 +96,7 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
 
   useEffect(() => {
     api.ssoSettings(workspace.id).then(load, (e) => notify(errorText(e, 'Could not load single sign-on'), 'error'));
-    api.listWorkspaceMembers(workspace.id).then(({ members }) => setOwners(members.filter((m) => m.role === 'owner')), () => setOwners([]));
+    api.adminMembers(workspace.id).then(({ members }) => setOwners(members.filter((m) => m.role === 'owner')), () => setOwners([]));
   }, [workspace.id, load, notify]);
 
   const run = async (key: string, fn: () => Promise<SsoSettings>, ok?: string) => {
@@ -130,8 +144,10 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
         Single sign-on
       </h1>
       <p className="fr-admin__intro">
-        People with an address at a verified domain sign in through your identity provider (SAML 2.0 or OpenID Connect). Their first sign-in adds them to
-        this workspace. Their sessions follow the <Link to={`?tab=security`}>session policy</Link>.
+        People with an address at a verified domain sign in through your identity provider (SAML 2.0 or OpenID Connect). Their first sign-in adds them to{' '}
+        {placeOf(workspace)}
+        {workspace.kind === 'organisation' ? ', whichever of its workspaces they work in' : ''}. Their sessions follow the{' '}
+        <Link to={`?tab=security`}>session policy</Link>.
       </p>
 
       <div className="fr-admin-card">
@@ -229,8 +245,14 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
               />
             </>
           )}
-          <Row label="New people join as" hint="Role of people whose first sign-in adds them to the workspace.">
-            <Select aria-label="Default role" options={ROLE_OPTIONS} value={defaultRole} onChange={setDefaultRole} width={160} />
+          <Row label="New people join as" hint={`Role of people whose first sign-in adds them to ${placeOf(workspace)}.`}>
+            <Select
+              aria-label="Default role"
+              options={ROLE_OPTIONS.map((o) => ({ ...o, disabled: o.value === 'guest' && workspace.kind === 'organisation' }))}
+              value={defaultRole}
+              onChange={setDefaultRole}
+              width={160}
+            />
           </Row>
           <div>
             <Button type="submit" variant="primary" loading={busy === 'save'} disabled={protocol === 'saml' ? !metadata.trim() && !c?.saml : !issuer.trim() || !clientId.trim()}>
@@ -371,17 +393,17 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
     <div className="fr-admin-card">
       <h2 className="fr-admin-card__title">Domain control</h2>
       <p className="fr-admin-row__hint">
-        For accounts at {domains}. Works with or without single sign-on. People keep their own boards: nothing moves into the workspace unless they move it.
+        For accounts at {domains}. Works with or without single sign-on. People keep their own boards: nothing moves into {placeOf(workspace)} unless they move it.
       </p>
-      <Row label="Add new sign-ups to this workspace" hint={`Anyone who confirms an address at ${domains} joins this workspace right away, and gets an email saying so.`}>
+      <Row label={`Add new sign-ups to ${placeOf(workspace)}`} hint={`Anyone who confirms an address at ${domains} joins ${placeOf(workspace)} right away, and gets an email saying so.`}>
         <Toggle
-          aria-label="Add new sign-ups to this workspace"
+          aria-label={`Add new sign-ups to ${placeOf(workspace)}`}
           checked={s.captureSignups}
           disabled={busy === 'capture'}
           onChange={(on) => void run('capture', () => api.setDomainControl(workspace.id, { captureSignups: on }))}
         />
       </Row>
-      <Row label="Block other team workspaces" hint={`People at ${domains} can’t create team workspaces of their own. They’re told to ask this workspace’s admins.`}>
+      <Row label="Block other team workspaces" hint={`People at ${domains} can’t create team workspaces of their own. They’re told to ask the admins of ${placeOf(workspace)}.`}>
         <Toggle
           aria-label="Block other team workspaces"
           checked={s.blockWorkspaces}
@@ -460,26 +482,36 @@ export function AdminProvisioning({ workspace }: { workspace: WorkspaceSummary }
   const notify = useToast();
   const [s, setS] = useState<ScimSettings | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  // An organisation's groups grant membership of its workspaces instead of projects (#108).
+  const [teams, setTeams] = useState<OrganisationWorkspace[]>([]);
   const [shown, setShown] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const org = workspace.kind === 'organisation';
 
   useEffect(() => {
     api.scimSettings(workspace.id).then(setS, (e) => notify(errorText(e, 'Could not load provisioning'), 'error'));
-    api.listProjects(workspace.id).then(({ projects }) => setProjects(projects), () => setProjects([]));
-  }, [workspace.id, notify]);
+    if (org) api.organisationWorkspaces(workspace.id).then(({ workspaces }) => setTeams(workspaces), () => setTeams([]));
+    else api.listProjects(workspace.id).then(({ projects }) => setProjects(projects), () => setProjects([]));
+  }, [workspace.id, notify, org]);
 
   if (!s) return <Spinner />;
   const mappingOptions: SelectOption<string>[] = [
     { value: '', label: 'Nothing (just listed)' },
-    { value: 'role:admin', label: 'Role: admin' },
-    { value: 'role:member', label: 'Role: member' },
-    { value: 'role:guest', label: 'Role: guest' },
+    { value: 'role:admin', label: org ? 'Organisation admin' : 'Role: admin' },
+    { value: 'role:member', label: org ? 'Organisation member' : 'Role: member' },
+    ...(org ? [] : [{ value: 'role:guest', label: 'Role: guest' }]),
     ...projects.map((p) => ({ value: `project:${p.id}`, label: `Project: ${p.name}` })),
+    ...teams.flatMap((t) => [
+      { value: `workspace:${t.id}:member`, label: `${t.name}: member` },
+      { value: `workspace:${t.id}:admin`, label: `${t.name}: admin` },
+    ]),
   ];
-  const mappingValue = (m: ScimGroupMapping | null) => (!m ? '' : m.kind === 'role' ? `role:${m.role}` : `project:${m.projectId}`);
+  const mappingValue = (m: ScimGroupMapping | null) =>
+    !m ? '' : m.kind === 'role' ? `role:${m.role}` : m.kind === 'project' ? `project:${m.projectId}` : `workspace:${m.workspaceId}:${m.role}`;
   const toMapping = (v: string): ScimGroupMapping | null => {
     if (!v) return null;
-    const [kind, rest] = v.split(':');
+    const [kind, rest, role] = v.split(':');
+    if (kind === 'workspace') return { kind: 'workspace', workspaceId: rest, role: role as 'admin' | 'member' };
     return kind === 'role' ? { kind: 'role', role: rest as 'admin' | 'member' | 'guest' } : { kind: 'project', projectId: rest };
   };
 
@@ -551,7 +583,12 @@ export function AdminProvisioning({ workspace }: { workspace: WorkspaceSummary }
               />
             </Row>
           ))}
-          <p className="fr-admin-card__note">Once a group grants a role, the directory decides the roles of the people it provisioned (owners excepted).</p>
+          <p className="fr-admin-card__note">
+            Once a group grants a role, the directory decides the roles of the people it provisioned (owners excepted).
+            {org
+              ? ' A group that grants a workspace makes its members members there, and leaving the group takes them out again (owners stay).'
+              : ''}
+          </p>
         </div>
       ) : null}
 

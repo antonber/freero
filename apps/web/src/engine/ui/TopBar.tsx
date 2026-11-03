@@ -189,6 +189,16 @@ function BoardMenu() {
               />
               <span className="fr-boardmenu__hint">Hold {isMac ? '⌘' : 'Ctrl'} while dragging to switch it for one move</span>
             </div>
+            <div className="fr-boardmenu__section">
+              <Toggle
+                size="sm"
+                checked={settings.lineJumps}
+                onChange={(lineJumps) => set({ lineJumps })}
+                label="Line jumps"
+                aria-label="Line jumps"
+              />
+              <span className="fr-boardmenu__hint">Where connectors cross, the one on top hops over the other</span>
+            </div>
 
             <div className="fr-boardmenu__divider" />
           </>

@@ -50,6 +50,7 @@ export type RateLimitName =
   | 'backup'
   | 'walkthroughComment'
   | 'slackUnfurl'
+  | 'teamsUnfurl'
   | 'listingSubmit'
   | 'problemReport';
 
@@ -66,6 +67,13 @@ export interface TrackersConfig {
   /** Atlassian's authorization server and API gateway (overridden only to test against a mock). */
   jiraAuthUrl: string;
   jiraApiUrl: string;
+  /** Asana and monday.com OAuth apps the operator registered (#120, #121), or null: tokens only. */
+  asanaOAuth: { clientId: string; clientSecret: string } | null;
+  mondayOAuth: { clientId: string; clientSecret: string } | null;
+  /** Asana's app (OAuth and API: <url>/api/1.0) and monday.com's authorization server (overridden only to test against a mock). */
+  asanaUrl: string;
+  mondayAuthUrl: string;
+  mondayApiUrl: string;
 }
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
@@ -400,6 +408,17 @@ export interface Config {
    */
   slack: { signingSecret: string; botToken: string; apiUrl: string } | null;
   /**
+   * The operator's Microsoft Teams app (modules/teams, #112, #113; docs/integrations/teams.md). Off
+   * (null) unless TEAMS_APP_ID is set: then the app package is offered and the Teams pages may be
+   * framed by Teams. `bot`: the Azure Bot behind link previews, only with TEAMS_BOT_ID.
+   */
+  teams: { appId: string; bot: { id: string; openIdMetadataUrl: string } | null } | null;
+  /**
+   * The operator's Microsoft 365 Copilot agent (modules/teams copilot.ts, #114): its app id and the
+   * OAuth registration Copilot signs people in with. Off (null) unless both are set.
+   */
+  copilot: { appId: string; oauthReferenceId: string } | null;
+  /**
    * Further https origins boards may frame as live embeds (KAI-127), besides the built-in providers
    * (`EMBED_PROVIDERS` in @freero/shared): a link on one of them is framed as given, sandboxed.
    * Added to the CSP `frame-src`.
@@ -479,6 +498,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   backup: '30/1h', // per user: board backups downloaded or restored (each reads or writes a whole board and its files, KAI-137)
   walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
   slackUnfurl: '50/1m', // per Slack workspace: link previews Freero posts there (chat.unfurl is Slack's tier 3, about 50 a minute; #88)
+  teamsUnfurl: '120/1m', // per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes; #113)
   listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
   problemReport: '10/1h', // per person: problem reports sent with "Report a problem" (each may carry a screenshot)
 };
@@ -525,6 +545,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   backup: 'RATE_LIMIT_BACKUP',
   walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
   slackUnfurl: 'RATE_LIMIT_SLACK_UNFURL',
+  teamsUnfurl: 'RATE_LIMIT_TEAMS_UNFURL',
   listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
   problemReport: 'RATE_LIMIT_PROBLEM_REPORT',
 };
@@ -819,6 +840,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const jiraClientId = str('TRACKER_JIRA_CLIENT_ID');
   const jiraClientSecret = str('TRACKER_JIRA_CLIENT_SECRET');
   if (!!jiraClientId !== !!jiraClientSecret) problems.push('TRACKER_JIRA_CLIENT_ID and TRACKER_JIRA_CLIENT_SECRET go together (the Jira Cloud OAuth app)');
+  const pair = (id: string, secret: string, what: string) => {
+    const a = str(id);
+    const b = str(secret);
+    if (!!a !== !!b) problems.push(`${id} and ${secret} go together (${what})`);
+    return a && b ? { clientId: a, clientSecret: b } : null;
+  };
   const trackers: TrackersConfig = {
     privateEndpoints: bool('TRACKER_PRIVATE_ENDPOINTS', false),
     pollMs: int('TRACKER_POLL_SECONDS', 60, 5, 86_400) * 1000,
@@ -826,6 +853,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jiraOAuth: jiraClientId && jiraClientSecret ? { clientId: jiraClientId, clientSecret: jiraClientSecret } : null,
     jiraAuthUrl: (url('TRACKER_JIRA_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.atlassian.com').replace(/\/+$/, ''),
     jiraApiUrl: (url('TRACKER_JIRA_API_URL', ['https:', 'http:']) ?? 'https://api.atlassian.com').replace(/\/+$/, ''),
+    asanaOAuth: pair('TRACKER_ASANA_CLIENT_ID', 'TRACKER_ASANA_CLIENT_SECRET', 'the Asana OAuth app'),
+    mondayOAuth: pair('TRACKER_MONDAY_CLIENT_ID', 'TRACKER_MONDAY_CLIENT_SECRET', 'the monday.com OAuth app'),
+    asanaUrl: (url('TRACKER_ASANA_URL', ['https:', 'http:']) ?? 'https://app.asana.com').replace(/\/+$/, ''),
+    mondayAuthUrl: (url('TRACKER_MONDAY_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.monday.com').replace(/\/+$/, ''),
+    mondayApiUrl: (url('TRACKER_MONDAY_API_URL', ['https:', 'http:']) ?? 'https://api.monday.com').replace(/\/+$/, ''),
   };
   // Slack link unfurls: both halves of the operator's Slack app, or off. One without the other is a
   // mistake worth saying out loud rather than a silently missing feature.
@@ -836,6 +868,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (botToken && !botToken.startsWith('xoxb-')) problems.push('SLACK_BOT_TOKEN must be the app’s bot token (xoxb-…)');
     const apiUrl = (url('SLACK_API_URL', ['https:', 'http:']) ?? 'https://slack.com/api').replace(/\/+$/, '');
     return signingSecret && botToken ? { signingSecret, botToken, apiUrl } : null;
+  };
+  // Microsoft Teams and Microsoft 365 Copilot: app ids are GUIDs (the app manifest's `id`, the
+  // Entra application id of the Azure Bot). The bot needs the Teams app it belongs to.
+  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const guid = (name: string): string | null => {
+    const v = str(name);
+    if (v !== null && !GUID.test(v)) {
+      problems.push(`${name} must be a GUID such as 00000000-0000-0000-0000-000000000000`);
+      return null;
+    }
+    return v?.toLowerCase() ?? null;
+  };
+  const teamsApp = (): Config['teams'] => {
+    const appId = guid('TEAMS_APP_ID');
+    const botId = guid('TEAMS_BOT_ID');
+    const openIdMetadataUrl = url('TEAMS_BOT_OPENID_METADATA_URL', ['https:', 'http:']) ?? 'https://login.botframework.com/v1/.well-known/openidconfiguration';
+    if (botId && !appId) problems.push('TEAMS_BOT_ID needs TEAMS_APP_ID: the bot is part of the Teams app');
+    return appId ? { appId, bot: botId ? { id: botId, openIdMetadataUrl } : null } : null;
+  };
+  const copilotApp = (): Config['copilot'] => {
+    const appId = guid('COPILOT_APP_ID');
+    const oauthReferenceId = str('COPILOT_OAUTH_REFERENCE_ID');
+    if (!appId !== !oauthReferenceId) problems.push('COPILOT_APP_ID and COPILOT_OAUTH_REFERENCE_ID go together (the Copilot agent needs both)');
+    if (oauthReferenceId && !/^[A-Za-z0-9+/=_.-]{8,512}$/.test(oauthReferenceId)) problems.push('COPILOT_OAUTH_REFERENCE_ID must be the OAuth client registration id from the Teams Developer Portal');
+    return appId && oauthReferenceId ? { appId, oauthReferenceId } : null;
   };
   const ai: AiConfig = {
     instance: aiInstance,
@@ -945,6 +1002,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       azureAuthority: (url('SIEM_AZURE_AUTHORITY', ['https:', 'http:']) ?? 'https://login.microsoftonline.com').replace(/[/]+$/, ''),
     },
     slack: slackApp(),
+    teams: teamsApp(),
+    copilot: copilotApp(),
     embedExtraOrigins,
     appFrameAncestors,
   };

@@ -129,7 +129,23 @@ const framable = (path: string) => framablePaths.some((p) => p.path.test(path));
  */
 export function frameFromAnySite(req: Request, res: Response, config: Config, reason: string): void {
   if (reason.trim().length < 10) throw new Error('frameFromAnySite needs a reason');
-  res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { ancestors: ['*'] }));
+  setFrameAncestors(req, res, config, ['*']);
+}
+
+/**
+ * Lets the pages of `ancestors` (CSP `frame-ancestors` sources, https only) frame this one
+ * response: the Microsoft Teams app's pages (modules/teams), framed by Teams itself and no one
+ * else, decided per page (a board's tab only while the board allows embedding). The same rules as
+ * frameFromAnySite apply: no session cookie, editing only after a person acts inside the frame.
+ */
+export function frameFromOrigins(req: Request, res: Response, config: Config, ancestors: readonly string[], reason: string): void {
+  if (reason.trim().length < 10) throw new Error('frameFromOrigins needs a reason');
+  if (!ancestors.length || ancestors.some((a) => !/^https:\/\/(\*\.)?[a-z0-9.-]+$/.test(a))) throw new Error('frameFromOrigins takes https origins (optionally *.host)');
+  setFrameAncestors(req, res, config, [...ancestors]);
+}
+
+function setFrameAncestors(req: Request, res: Response, config: Config, ancestors: string[]): void {
+  res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { ancestors }));
   res.removeHeader('X-Frame-Options');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 }
@@ -151,8 +167,8 @@ export function allowOpener(path: RegExp, reason: string): void {
 export const GA_SCRIPT_ORIGIN = 'https://www.googletagmanager.com';
 /** Where it sends what it measures (Google's published CSP sources for GA4). */
 export const GA_CONNECT_SOURCES = ['https://*.google-analytics.com', 'https://*.analytics.google.com', 'https://*.googletagmanager.com'];
-/** App pages that never load analytics (the embeds and their sign-in pages): their CSP never names Google. */
-const NO_ANALYTICS = /^\/embed(\/|$)/;
+/** App pages that never load analytics (the embeds, the Teams app's pages and their sign-in pages): their CSP never names Google. */
+const NO_ANALYTICS = /^\/(embed|teams)(\/|$)/;
 
 /**
  * Content-Security-Policy for the app's own pages and API responses. `selfFramed`: a page only this

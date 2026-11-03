@@ -167,9 +167,10 @@ interface GroupRow {
   workspace_id: string;
   display_name: string;
   external_id: string | null;
-  mapping_kind: 'role' | 'project' | null;
+  mapping_kind: 'role' | 'project' | 'workspace' | null;
   mapping_role: 'admin' | 'member' | 'guest' | null;
   mapping_project_id: string | null;
+  mapping_workspace_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -183,7 +184,9 @@ const toGroup = (r: GroupRow): ScimGroup => ({
       ? { kind: 'role', role: r.mapping_role }
       : r.mapping_kind === 'project' && r.mapping_project_id
         ? { kind: 'project', projectId: r.mapping_project_id }
-        : null,
+        : r.mapping_kind === 'workspace' && r.mapping_workspace_id && r.mapping_role
+          ? { kind: 'workspace', workspaceId: r.mapping_workspace_id, role: r.mapping_role }
+          : null,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
 });
@@ -226,8 +229,17 @@ export async function setMapping(workspaceId: string, id: string, m: ScimGroupMa
   try {
     return (
       await query(
-        `UPDATE scim_groups SET mapping_kind = $3, mapping_role = $4, mapping_project_id = $5, updated_at = $6 WHERE workspace_id = $1 AND id = $2 RETURNING 1`,
-        [workspaceId, id, m?.kind ?? null, m?.kind === 'role' ? m.role : null, m?.kind === 'project' ? m.projectId : null, new Date(now)],
+        `UPDATE scim_groups SET mapping_kind = $3, mapping_role = $4, mapping_project_id = $5, updated_at = $6, mapping_workspace_id = $7
+         WHERE workspace_id = $1 AND id = $2 RETURNING 1`,
+        [
+          workspaceId,
+          id,
+          m?.kind ?? null,
+          m?.kind === 'role' || m?.kind === 'workspace' ? m.role : null,
+          m?.kind === 'project' ? m.projectId : null,
+          new Date(now),
+          m?.kind === 'workspace' ? m.workspaceId : null,
+        ],
       )
     ).length > 0;
   } catch (e) {

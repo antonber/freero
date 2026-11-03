@@ -17,10 +17,15 @@ import { storedBoardContent } from '../realtime/index';
 import { uploadBytesOf } from '../uploads/index';
 import { requireWorkspace, workspaceAdminFacts } from '../workspaces/index';
 
-/** 404 unless the caller is in the workspace, 403 unless an owner/admin, 400 for a personal workspace. */
-export async function requireAdmin(workspaceId: string, userId: string): Promise<{ name: string }> {
-  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin');
-  if (workspace.kind !== 'team') throw badRequest('Your personal workspace has no admin console');
+/**
+ * 404 unless the caller is in the workspace, 403 unless an owner/admin, 400 for a personal
+ * workspace. An organisation (#108) answers 404 unless the caller opts in with
+ * `organisation: true`: its members, settings, audit log and audit streams do; tabs about boards
+ * and integrations (AI, webhooks, trackers, usage) don't.
+ */
+export async function requireAdmin(workspaceId: string, userId: string, { organisation = false }: { organisation?: boolean } = {}): Promise<{ name: string }> {
+  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin', { organisation });
+  if (workspace.kind === 'personal') throw badRequest('Your personal workspace has no admin console');
   return { name: workspace.name };
 }
 

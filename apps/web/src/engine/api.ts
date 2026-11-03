@@ -49,6 +49,7 @@ import type {
   TrackerProject,
   TrackerSendRequest,
   TrackerSendResponse,
+  TrackerSprint,
   VerticalAlign,
   CreateDecisionRequest,
   CreateWalkthroughRequest,
@@ -514,6 +515,10 @@ export interface HostTrackers {
   send(request: TrackerSendRequest): Promise<TrackerSendResponse>;
   /** Issues matching a query become linked cards (issues already here are skipped). */
   importIssues(request: TrackerImportRequest): Promise<TrackerImportResponse>;
+  /** [additive] A project's sprints / cycles / iterations (#119); `fieldName` null: the tracker has none. */
+  sprints?(connectionId: string, project: string): Promise<{ sprints: TrackerSprint[]; fieldName: string | null }>;
+  /** [additive] The issue types a project can create (#43), and the connection's preferred one. */
+  issueTypes?(connectionId: string, project: string): Promise<{ issueTypes: string[]; preferred: string | null }>;
   /** Syncs one linked issue now. */
   sync(linkId: string): Promise<void>;
   /** Stops syncing: the items lose their badge, the issue stays in the tracker. */

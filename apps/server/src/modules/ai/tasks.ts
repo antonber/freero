@@ -19,6 +19,7 @@ import {
   LAYOUT_LIMITS,
   richTextToPlain,
   LayoutError,
+  layoutStructure,
   parseIndentedList,
   parseMermaid,
   type ActivityElement,
@@ -495,20 +496,104 @@ Schema: {"mermaid": string}`,
   mindmap: `Write a mind map as an indented outline: the first line is the central topic, then "- " bullets indented by two spaces per level. At most 4 levels and 40 lines.
 
 Schema: {"outline": string}`,
+  class: `Write a Mermaid class diagram. First line "classDiagram". A class with members: "class Order {", then one member per line ("+String id", "-List~Item~ items", "+total() Money"), then "}". Relations: "A <|-- B" (B is a kind of A), "A *-- B" (A is made of B), "A o-- B" (A has B), "A --> B" (A uses B), "A ..> B" (A depends on B), "A ..|> B" (A implements B); multiplicities in quotes and a label after a colon: A "1" --> "*" B : places. Class names are single words. No styling, notes or namespaces. At most 25 classes.
+
+Schema: {"mermaid": string}`,
+  er: `Write a Mermaid entity-relationship diagram. First line "erDiagram". Relationships: "CUSTOMER ||--o{ ORDER : places". Each side of the line says how many: "||" exactly one, "|o" or "o|" zero or one, "}|" or "|{" one or more, "}o" or "o{" zero or more; "--" when the child can't exist without the parent, ".." otherwise. Attributes: "ORDER {", then one "type name" per line with PK, FK or UK after keys ("int id PK", "int customer_id FK"), then "}". Entity names in capitals, no spaces. At most 20 entities.
+
+Schema: {"mermaid": string}`,
+  state: `Write a Mermaid state diagram. First line "stateDiagram-v2". "[*] --> First" is where it starts, "Last --> [*]" where it ends; transitions "A --> B : event". A long name: state "Waiting for payment" as Waiting. A group of states: "state Shipping {", its states and transitions (with their own [*]), "}". A decision: "state check <<choice>>". No styling or notes. At most 30 states.
+
+Schema: {"mermaid": string}`,
+  orgchart: `List the people of the organisation the instruction describes: each with a "name", a "title" and the name of the person they report to as "manager" (empty for the one person at the top). Every manager is one of the names. At most 60 people.
+
+Schema: {"people": [{"name": string, "title": string, "manager": string}]}`,
+  kanban: `Lay the work out as a kanban board: a short "title", then columns left to right (for work in progress usually "To do", "Doing", "Done"), each with its cards as short task titles (at most 10 words each). 2 to 8 columns, at most 15 cards per column.
+
+Schema: {"title": string, "columns": [{"title": string, "cards": [string]}]}`,
 };
+
+const DIAGRAM_NAMES: Record<AiDiagramKind, string> = {
+  flowchart: 'flowchart',
+  sequence: 'sequence diagram',
+  mindmap: 'mind map',
+  class: 'class diagram',
+  er: 'entity-relationship diagram',
+  state: 'state diagram',
+  orgchart: 'org chart',
+  kanban: 'kanban board',
+};
+
+/** What each Mermaid kind of diagram must parse as. */
+const MERMAID_AS: Partial<Record<AiDiagramKind, string>> = { flowchart: 'graph', sequence: 'sequence', class: 'class', er: 'er', state: 'state' };
+
+const DIAGRAM_SCHEMAS: Partial<Record<AiDiagramKind, Record<string, unknown>>> = {
+  mindmap: schemaObject({ outline: { type: 'string' } }, ['outline']),
+  orgchart: schemaObject(
+    { people: { type: 'array', items: schemaObject({ name: { type: 'string' }, title: { type: 'string' }, manager: { type: 'string' } }, ['name', 'title', 'manager']) } },
+    ['people'],
+  ),
+  kanban: schemaObject(
+    { title: { type: 'string' }, columns: { type: 'array', items: schemaObject({ title: { type: 'string' }, cards: { type: 'array', items: { type: 'string' } } }, ['title', 'cards']) } },
+    ['title', 'columns'],
+  ),
+};
+
+/** The structure must lay out (an org chart's managers exist and don't go round in a circle …). */
+function mustLayOut(structure: StructureInput): void {
+  let n = 0;
+  try {
+    layoutStructure(structure, { newId: () => `check${n++}` });
+  } catch (e) {
+    if (e instanceof LayoutError) throw new InvalidOutput(`${e.message}.`);
+    throw e;
+  }
+}
+
+function acceptOrgChart(o: Record<string, unknown>): { structure: StructureInput; summary: string } {
+  const people = (Array.isArray(o.people) ? o.people : [])
+    .slice(0, 60)
+    .map((p) => {
+      const r = p && typeof p === 'object' ? (p as Record<string, unknown>) : {};
+      return { name: str(r.name, 100), title: str(r.title, 100), manager: str(r.manager, 100) };
+    })
+    .filter((p) => p.name);
+  if (!people.length) throw new InvalidOutput('"people" was empty.');
+  const structure: StructureInput = { kind: 'orgchart', people: people.map((p) => ({ name: p.name, ...(p.title ? { title: p.title } : {}), manager: p.manager || null })) };
+  mustLayOut(structure);
+  return { structure, summary: `Org chart: ${people.length} ${people.length === 1 ? 'person' : 'people'}` };
+}
+
+function acceptKanban(o: Record<string, unknown>): { structure: StructureInput; summary: string } {
+  const columns = (Array.isArray(o.columns) ? o.columns : [])
+    .slice(0, 8)
+    .map((c) => {
+      const r = c && typeof c === 'object' ? (c as Record<string, unknown>) : {};
+      return { title: str(r.title, 60), items: (Array.isArray(r.cards) ? r.cards : []).map((t) => str(t, 200)).filter(Boolean).slice(0, 15) };
+    })
+    .filter((c) => c.title);
+  if (columns.length < 2) throw new InvalidOutput('A kanban needs at least two columns, each with a "title".');
+  const title = str(o.title, 100);
+  const structure: StructureInput = { kind: 'kanban', ...(title ? { title } : {}), columns };
+  mustLayOut(structure);
+  const cards = columns.reduce((s, c) => s + c.items.length, 0);
+  return { structure, summary: `Kanban${title ? ` ${title}` : ''}: ${columns.length} columns, ${cards} card${cards === 1 ? '' : 's'}` };
+}
 
 export function diagramTask(kind: AiDiagramKind, prompt: string, context: string | null): TaskPlan {
   const key = kind === 'mindmap' ? 'outline' : 'mermaid';
   return {
     system: `${PREAMBLE}
 
-Task: draw a ${kind === 'mindmap' ? 'mind map' : kind === 'sequence' ? 'sequence diagram' : 'flowchart'} of what the instruction describes${context ? ', using the board content as its material' : ''}.
+Task: draw a ${DIAGRAM_NAMES[kind]} of what the instruction describes${context ? ', using the board content as its material' : ''}.
 
 ${DIAGRAM_RULES[kind]}`,
     user: `${instructionBlock(prompt || 'Turn this into a diagram.')}${context ? `\n\n${contentBlock(context)}` : ''}`,
-    schema: schemaObject({ [key]: { type: 'string' } }, [key]),
+    schema: DIAGRAM_SCHEMAS[kind] ?? schemaObject({ mermaid: { type: 'string' } }, ['mermaid']),
     accept(json) {
       const o = obj(json);
+      if (kind === 'orgchart') return acceptOrgChart(o);
+      if (kind === 'kanban') return acceptKanban(o);
       const source = typeof o[key] === 'string' ? (o[key] as string).trim().replace(/^```(?:mermaid)?\s*/i, '').replace(/```\s*$/, '') : '';
       if (!source) throw new InvalidOutput(`"${key}" was empty.`);
       if (source.length > 20_000) throw new InvalidOutput(`"${key}" is too long; keep it under 20000 characters.`);
@@ -526,12 +611,19 @@ ${DIAGRAM_RULES[kind]}`,
         if (e instanceof LayoutError) throw new InvalidOutput(`The Mermaid source can't be read: ${e.message}. Use only the syntax listed.`);
         throw e;
       }
+      if (MERMAID_AS[kind] && parsed.kind !== MERMAID_AS[kind]) throw new InvalidOutput(`That is not a ${DIAGRAM_NAMES[kind]}: start with the first line given.`);
       const summary =
         parsed.kind === 'sequence'
           ? `Sequence diagram: ${parsed.diagram.participants.length} participants, ${parsed.diagram.steps.length} steps`
           : parsed.kind === 'mindmap'
             ? `Mind map: ${parsed.root.text}`
-            : `Flowchart: ${parsed.nodes.length} steps, ${parsed.edges.length} connections`;
+            : parsed.kind === 'class'
+              ? `Class diagram: ${parsed.nodes.length} classes, ${parsed.edges.length} relations`
+              : parsed.kind === 'er'
+                ? `ER diagram: ${parsed.nodes.length} entities, ${parsed.edges.length} relationships`
+                : parsed.kind === 'state'
+                  ? `State diagram: ${parsed.nodes.length} states, ${parsed.edges.length} transitions`
+                  : `Flowchart: ${parsed.nodes.length} steps, ${parsed.edges.length} connections`;
       if (source.length > LAYOUT_LIMITS.source) throw new InvalidOutput('The diagram is too large.');
       return { structure: { kind: 'mermaid', source }, summary };
     },

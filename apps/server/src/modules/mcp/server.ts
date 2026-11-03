@@ -89,6 +89,38 @@ async function audited<T>(req: Request, cred: ApiCredential, what: string, board
   }
 }
 
+/** A tool as `tools/list` describes it to clients. */
+export interface McpToolDescription {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations: Record<string, unknown>;
+  /** The scopes it needs (any one of them). */
+  scopes: ApiScope[];
+}
+
+/**
+ * The tools this server offers right now, described as `tools/list` describes them (JSON Schema of
+ * their input), for clients that must be given them ahead of time — the Microsoft 365 Copilot
+ * agent's package (modules/teams) lists them statically. `names`: only these, in this order.
+ */
+export function mcpToolDescriptions(names?: readonly string[]): McpToolDescription[] {
+  const offered = TOOLS.filter((t) => !t.available || t.available());
+  const picked = names ? names.flatMap((n) => offered.filter((t) => t.name === n)) : offered;
+  return picked.map((t) => {
+    const { $schema: _schema, ...inputSchema } = z.toJSONSchema(z.object(t.input), { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
+    return {
+      name: t.name,
+      title: t.title,
+      description: t.description,
+      inputSchema,
+      annotations: { title: t.title, ...t.annotations },
+      scopes: Array.isArray(t.scope) ? t.scope : [t.scope],
+    };
+  });
+}
+
 export function buildServer(req: Request, cred: ApiCredential): McpServer {
   const server = new McpServer({ name: SERVER_NAME, title: 'Freero', version: SERVER_VERSION }, { instructions: INSTRUCTIONS, capabilities: { logging: {} } });
 

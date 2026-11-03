@@ -10,6 +10,10 @@ import {
   boardView,
   cardValue,
   collectionSchema,
+  customField,
+  sprintFieldOf,
+  type FieldMapEntry,
+  type TrackerSprint,
   issueValuesFromBoard,
   kanbanColumnAt,
   kanbanLaneAt,
@@ -17,6 +21,7 @@ import {
   priorityFieldOf,
   pullableFields,
   syncedBase,
+  trackerAgreed,
   type BoardElement,
   type CardElement,
   type ElementDraft,
@@ -32,10 +37,14 @@ import { importIntoKanban, kanbanOf, planKanbanImport } from './kanban';
 import type { ProviderConnection, RemoteIssue } from './providers/types';
 import { trackerRequest, TrackerError } from './http';
 import { planRoadmapImport } from './roadmap';
-import { adfToMarkdown, markdownToAdf, markdownToWiki, wikiToMarkdown } from './markup';
+import { adfToMarkdown, asanaHtmlToMarkdown, htmlToMarkdown, markdownToAdf, markdownToAsanaHtml, markdownToHtml, markdownToWiki, wikiToMarkdown } from './markup';
+import { asana } from './providers/asana';
+import { azure } from './providers/azure';
+
 import { github, managedPart, withManagedPart } from './providers/github';
 import { jira } from './providers/jira';
 import { linear } from './providers/linear';
+import { monday } from './providers/monday';
 
 const card = (title: string): IssueValues => ({ title, description: '', status: 'todo', labels: ['ux'], dueDate: null });
 
@@ -69,12 +78,23 @@ it('a date changed on the board while a sync was pulling the title from Jira is 
   expect(mergeField('title', base, afterWrite, tracker, can).decision).toBe('none');
 });
 
+it('a status changed in the tracker while a sync was writing the board’s new title is pulled by the next sync, not taken as agreed', () => {
+  const can = { push: true, pull: true };
+  // The sync merged (todo), pushed the title; someone moved the issue before it read it back.
+  const board = card('One-click pay');
+  const merged = card('Pay with one click');
+  const readBack = { ...card('One-click pay'), status: 'done' as const };
+  const base = syncedBase(board, board, [], trackerAgreed(merged, readBack, ['title']));
+  expect(mergeField('status', base, board, readBack, can)).toMatchObject({ decision: 'pull' });
+  expect(mergeField('title', base, board, readBack, can).decision).toBe('none');
+});
+
 it('labels a tracker reorders or re-cases are not mistaken for an edit', () => {
   const base = baseOf({ labels: ['ux', 'Checkout'] }, { labels: ['ux', 'Checkout'] });
   expect(mergeField('labels', base, { labels: ['ux', 'Checkout'] }, { labels: ['checkout', 'UX'] }, { push: true, pull: true }).decision).toBe('none');
 });
 
-it('board text with markup characters reaches Jira as text, links as links, and reads back the same (ADF and wiki markup)', () => {
+it('board text with markup characters reaches Jira, Azure DevOps and Asana as text, links as links, and reads back the same (ADF, wiki markup, HTML, Asana rich text)', () => {
   const md = 'Card form *resets* on error {code} | [x]\n\n- Coupon field hidden ([open](https://freero.example/board/b?item=n1))\n- Too many steps';
   const adf = markdownToAdf(md);
   const texts = JSON.stringify(adf);
@@ -86,6 +106,16 @@ it('board text with markup characters reaches Jira as text, links as links, and 
   expect(wiki).toContain('\\*resets\\*');
   expect(wiki).toContain('[open|https://freero.example/board/b?item=n1]');
   expect(wikiToMarkdown(wiki)).toBe(md);
+  // Azure DevOps: HTML from the template only — a note saying <img onerror=…> stays words.
+  const risky = `${md}\n\n<img src=x onerror=alert(1)> & [x](javascript:alert(1))`;
+  const html = markdownToHtml(risky);
+  expect(html).not.toMatch(/<img|href="javascript/i);
+  expect(htmlToMarkdown(html)).toBe(risky);
+  // Asana: its rich text (a <body>, newlines, no <p>), from the same escaped template.
+  const notes = markdownToAsanaHtml(risky);
+  expect(notes.startsWith('<body>') && notes.endsWith('</body>')).toBe(true);
+  expect(notes).not.toMatch(/<img|<p>|<br|href="javascript/i);
+  expect(asanaHtmlToMarkdown(notes)).toBe(risky);
 });
 
 it('a webhook signed with another secret or altered after signing is refused, and a replayed Linear delivery too', () => {
@@ -103,6 +133,12 @@ it('a webhook signed with another secret or altered after signing is refused, an
   const fresh = Buffer.from(JSON.stringify({ type: 'Issue', data: { id: 'u1', identifier: 'ENG-1' }, webhookTimestamp: now }));
   expect(linear.webhook({ headers: { 'linear-signature': sig(fresh) }, rawBody: fresh, secret, now })).toEqual({ issues: ['u1', 'ENG-1'] });
   expect(linear.webhook({ headers: { 'linear-signature': sig(fresh) }, rawBody: fresh, secret, now: now + 5 * 60_000 })).toBeNull();
+  // Azure DevOps service hooks can't sign: the secret is their basic auth password.
+  const hook = Buffer.from(JSON.stringify({ eventType: 'workitem.updated', resource: { id: 9001, workItemId: 42 } }));
+  const basic = (pw: string) => `Basic ${Buffer.from(`freero:${pw}`).toString('base64')}`;
+  expect(azure.webhook({ headers: { authorization: basic(secret) }, rawBody: hook, secret, now })).toEqual({ issues: ['42'] });
+  expect(azure.webhook({ headers: { authorization: basic('guess') }, rawBody: hook, secret, now })).toBeNull();
+  expect(azure.webhook({ headers: {}, rawBody: hook, secret, now })).toBeNull();
 });
 
 it('what people write in a GitHub issue outside Freero’s section survives Freero’s writes', () => {
@@ -359,6 +395,123 @@ it('issues imported into a kanban with a new status column opening before Done l
   expect(k2.columns[kanbanColumnAt(k2, n2.x + n2.w / 2)].id).toBe('prog');
 });
 
+// ---- sprints (#119), the field map (#43), Azure DevOps (#6) ----
+
+const TEAM: FieldMapEntry = { tracker: 'customfield_10050', trackerName: 'Team', board: 'Team', type: 'select' };
+const teamField = (name: string) => ({ id: 'tf', name, type: 'select' as const, options: [{ id: 'web', label: 'Web', color: '#000' }, { id: 'mob', label: 'Mobile', color: '#000' }] });
+const readCard = (k: KanbanElement, c: CardElement, map: FieldMapEntry[]) => issueValuesFromBoard([sourceOf(c, new Map(), () => null, (x) => kanbanOf(viewOf(k), x), map)], { itemUrl: (id) => id });
+
+it('renaming the kanban field a field map names neither clears the tracker’s value nor loses its change: once the map names it again, the change made meanwhile reaches the card', () => {
+  const can = { push: true, pull: true };
+  const f = customField(TEAM.tracker);
+  const k = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }], { fields: [{ id: 'stage', name: 'Stage', type: 'select' }, teamField('Team')] });
+  const c = cardIn(k, 0, 'c', { values: { tf: 'web' } });
+  const tracker = (team: string): IssueValues => ({ custom: { [TEAM.tracker]: team } });
+  const base = baseOf(readCard(k, c, [TEAM]), tracker('Web'));
+
+  // Someone renames the kanban's Team field to Squad; meanwhile Jira moves the issue to Mobile.
+  const renamed = { ...k, fields: [{ id: 'stage', name: 'Stage', type: 'select' }, teamField('Squad')] } as KanbanElement;
+  const read = readCard(renamed, c, [TEAM]);
+  expect(mergeField(f, base, read, tracker('Mobile'), can).decision).not.toBe('push');
+  const plan = planPull(viewOf(renamed, c), [c], { custom: { [TEAM.tracker]: 'Mobile' } }, { fields: pullableFields([{ type: 'card', card: {} as never }], [TEAM]), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'x', map: [TEAM] });
+  expect(plan.update.find((u) => u.id === 'c')?.patch.values).toBeUndefined();
+  const next = syncedBase(read, read, [f], tracker('Mobile'), base);
+
+  // The admin points the map at Squad: the card gets Mobile, its Web is not sent back.
+  const squad = { ...TEAM, board: 'Squad' };
+  const again = readCard(renamed, c, [squad]);
+  expect(mergeField(f, next, again, tracker('Mobile'), can).decision).toBe('pull');
+  const pulled = planPull(viewOf(renamed, c), [c], { custom: { [TEAM.tracker]: 'Mobile' } }, { fields: pullableFields([{ type: 'card', card: {} as never }], [squad]), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'x', map: [squad] });
+  expect(pulled.update.find((u) => u.id === 'c')?.patch.values).toEqual({ tf: 'mob' });
+});
+
+const SPRINTS: TrackerSprint[] = [
+  { id: '1', name: 'WEB Sprint 1', state: 'closed' },
+  { id: '2', name: 'WEB Sprint 2', state: 'active' },
+  { id: '3', name: 'WEB Sprint 3', state: 'future' },
+];
+
+it('a sprint moved in the tracker moves the card’s Sprint value, adding the sprint the field lacks, and a sprint closed there becomes read-only on the kanban', () => {
+  const sprintDef = { id: 'sp', name: 'Sprint', type: 'select' as const, options: [{ id: 's1', label: 'WEB Sprint 1', color: '#000' }, { id: 's2', label: 'WEB Sprint 2', color: '#000' }] };
+  const k = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }], { fields: [{ id: 'stage', name: 'Stage', type: 'select' }, sprintDef] });
+  const c = cardIn(k, 0, 'c', { values: { sp: 's2' } });
+  const base = baseOf(readCard(k, c, []), { sprint: 'WEB Sprint 2' });
+  expect(mergeField('sprint', base, readCard(k, c, []), { sprint: 'WEB Sprint 3' }, { push: true, pull: true }).decision).toBe('pull');
+  const plan = planPull(viewOf(k, c), [c], { sprint: 'WEB Sprint 3' }, { fields: new Set(['sprint']), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 's3', sprints: SPRINTS });
+  const patched = new Map(plan.update.map((u) => [u.id, u.patch]));
+  const k2 = { ...k, ...patched.get('kb') } as KanbanElement;
+  const field = sprintFieldOf(collectionSchema(k2))!;
+  expect(field.options!.map((o) => [o.label, !!o.readOnly])).toEqual([
+    ['WEB Sprint 1', true],
+    ['WEB Sprint 2', false],
+    ['WEB Sprint 3', false],
+  ]);
+  expect(cardValue(k2, { ...c, ...patched.get('c') } as CardElement, field)).toBe('s3');
+});
+
+it('issues imported by sprint give the kanban one Sprint field with the project’s open sprints, a closed sprint an issue still holds kept but read-only', () => {
+  const k = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }]);
+  let n = 0;
+  const plan = planKanbanImport(k, [{ id: 'a', values: { status: 'todo', sprint: 'WEB Sprint 2' } }, { id: 'b', values: { status: 'todo', sprint: 'WEB Sprint 1' } }], {
+    newId: () => `n${++n}`,
+    priorities: null,
+    sprints: SPRINTS,
+    sprintFieldName: 'Sprint',
+  });
+  const field = sprintFieldOf(collectionSchema(plan.kanban))!;
+  expect(field.options!.map((o) => [o.label, !!o.readOnly])).toEqual([
+    ['WEB Sprint 2', false],
+    ['WEB Sprint 3', false],
+    ['WEB Sprint 1', true],
+  ]);
+  expect(plan.values.get('a')).toEqual({ [field.id]: field.options![0].id });
+  expect(plan.values.get('b')).toEqual({ [field.id]: field.options![2].id });
+  expect(boardView(plan.kanban).card!.show).toContain(field.id);
+  // A second import adds no second field.
+  const again = planKanbanImport(plan.kanban, [{ id: 'c', values: { status: 'todo', sprint: 'WEB Sprint 3' } }], { newId: () => `m${++n}`, priorities: null, sprints: SPRINTS, sprintFieldName: 'Sprint' });
+  expect(collectionSchema(again.kanban).filter((f) => f.name === 'Sprint')).toHaveLength(1);
+});
+
+it('a Jira issue’s sprint is the open one it is in, not a closed sprint it passed through (current sites and older Data Center strings)', async () => {
+  const reply = (fields: Record<string, unknown>) => ({ status: 200, headers: {}, text: '', json: { id: '1', key: 'WEB-1', fields: { summary: 'x', project: { key: 'WEB' }, ...fields } } });
+  const conn = (deployment: string, fields: Record<string, unknown>) =>
+    ({ deployment, site: 'https://acme.example', settings: { sprintField: 'customfield_10020' }, call: async () => reply(fields) }) as unknown as ProviderConnection;
+  const cloudIssue = await jira.getIssue(conn('cloud', { customfield_10020: [{ id: 1, name: 'WEB Sprint 1', state: 'closed' }, { id: 2, name: 'WEB Sprint 2', state: 'active' }] }), '1');
+  expect(cloudIssue?.values.sprint).toBe('WEB Sprint 2');
+  const dc = await jira.getIssue(
+    conn('datacenter', { customfield_10020: ['com.atlassian.greenhopper.service.sprint.Sprint@1a[id=1,rapidViewId=1,state=CLOSED,name=Old,startDate=x]', 'com.atlassian.greenhopper.service.sprint.Sprint@2b[id=4,rapidViewId=1,state=FUTURE,name=Next up,startDate=<null>]'] }),
+    '1',
+  );
+  expect(dc?.values.sprint).toBe('Next up');
+});
+
+it('a write to an Azure DevOps work item names the revision Freero read, and one refused because someone changed the item since is a conflict to merge again, not a failure', async () => {
+  const sent: Array<{ method: string; path: string; body?: unknown; headers?: Record<string, string> }> = [];
+  const conn = {
+    id: 'az',
+    deployment: 'cloud',
+    site: 'https://dev.azure.com/acme',
+    apiBase: 'https://dev.azure.com/acme',
+    settings: {},
+    async call(req: { method: string; path: string; body?: unknown; headers?: Record<string, string> }) {
+      sent.push(req);
+      if (req.method === 'PATCH') return { status: 412, headers: {}, text: '', json: { message: 'TF26071: This work item has been changed by someone else since you opened it.' } };
+      return { status: 200, headers: {}, text: '', json: { id: 7, rev: 5, fields: { 'System.WorkItemType': 'Task', 'System.TeamProject': 'Fabrikam' } } };
+    },
+  } as unknown as ProviderConnection;
+  const issue = { id: '7', key: '#7', url: '', project: 'Fabrikam', version: '3', values: { title: 'Old', description: '', labels: [] }, assigneeName: null, updatedAt: 0 } as RemoteIssue;
+  const err = await azure.updateIssue(conn, issue, { title: 'New' }).catch((e) => e);
+  expect(err).toBeInstanceOf(TrackerError);
+  expect(err.kind).toBe('conflict');
+  const patch = sent.find((r) => r.method === 'PATCH')!;
+  expect(patch.headers?.['content-type']).toBe('application/json-patch+json');
+  // The revision the sync READ (3), not the one fetched just before writing (5).
+  expect(patch.body).toEqual([
+    { op: 'test', path: '/rev', value: 3 },
+    { op: 'add', path: '/fields/System.Title', value: 'New' },
+  ]);
+});
+
 let server: http.Server;
 let port = 0;
 const answers: Array<{ status: number; headers?: Record<string, string> }> = [];
@@ -387,4 +540,130 @@ it('a tracker that answers 429 is asked again after the wait it named; a longer 
   // An admin-typed private address is never called unless the operator allows private trackers.
   await expect(trackerRequest({ method: 'GET', url: `https://127.0.0.1:${port}/x` }, { allowPrivate: false })).rejects.toMatchObject({ kind: 'refused' });
   await expect(trackerRequest({ method: 'GET', url: `http://jira.example.com/x` }, { allowPrivate: false })).rejects.toMatchObject({ kind: 'invalid' });
+});
+
+// ---- Asana (#120) and monday.com (#121) ----
+
+type Sent = { method: string; path: string; body?: unknown; headers?: Record<string, string> };
+const fakeConn = (provider: 'asana' | 'monday', answer: (r: Sent) => { status?: number; json: unknown }, settings: Record<string, unknown> = {}) => {
+  const sent: Sent[] = [];
+  const conn = {
+    id: provider,
+    provider,
+    deployment: null,
+    site: provider === 'asana' ? 'https://app.asana.com' : 'https://monday.com',
+    apiBase: provider === 'asana' ? 'https://app.asana.com/api/1.0' : 'https://api.monday.com',
+    settings,
+    async call(req: Sent) {
+      sent.push(req);
+      const a = answer(req);
+      return { status: a.status ?? 200, headers: {}, text: JSON.stringify(a.json), json: a.json };
+    },
+  } as unknown as ProviderConnection;
+  return { conn, sent };
+};
+
+it('an Asana handshake is answered only while Freero is registering that webhook and only once, and a delivery not signed with the secret it issued is refused', () => {
+  const now = Date.now();
+  const empty = Buffer.alloc(0);
+  const handshake = { 'x-hook-secret': 'b7e4c1d0a9f8e7d6' };
+  // Registering: the secret goes back in the answer and is kept.
+  expect(asana.webhook({ headers: handshake, rawBody: empty, secret: 's', now, hook: { pending: true, secret: null } })).toEqual({
+    issues: [],
+    handshake: { headers: { 'X-Hook-Secret': 'b7e4c1d0a9f8e7d6' }, keep: 'b7e4c1d0a9f8e7d6' },
+  });
+  // Not registering, or a secret already kept: a stranger can't swap it for their own.
+  expect(asana.webhook({ headers: handshake, rawBody: empty, secret: 's', now, hook: { pending: false, secret: null } })).toBeNull();
+  expect(asana.webhook({ headers: handshake, rawBody: empty, secret: 's', now, hook: { pending: true, secret: 'b7e4c1d0a9f8e7d6' } })).toBeNull();
+  const body = Buffer.from(JSON.stringify({ events: [{ action: 'changed', resource: { gid: '1201', resource_type: 'task' } }, { action: 'added', resource: { gid: '77', resource_type: 'story' }, parent: { gid: '1202', resource_type: 'task' } }] }));
+  const sig = (s: string, b = body) => createHmac('sha256', s).update(b).digest('hex');
+  const hook = { pending: false, secret: 'issued-by-asana' };
+  expect(asana.webhook({ headers: { 'x-hook-signature': sig('issued-by-asana') }, rawBody: body, secret: 's', now, hook })).toEqual({ issues: ['1201', '1202'] });
+  // Signed with the connection's own secret (not the one Asana issued), altered, or unsigned: refused.
+  expect(asana.webhook({ headers: { 'x-hook-signature': sig('s') }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(asana.webhook({ headers: { 'x-hook-signature': sig('issued-by-asana') }, rawBody: Buffer.from(body.toString().replace('1201', '1299')), secret: 's', now, hook })).toBeNull();
+  expect(asana.webhook({ headers: {}, rawBody: body, secret: 's', now, hook })).toBeNull();
+  // monday.com: its challenge is echoed only while Freero registers the webhook.
+  const challenge = Buffer.from(JSON.stringify({ challenge: 'c-123' }));
+  expect(monday.webhook({ headers: {}, rawBody: challenge, secret: 's', now, hook: { pending: true, secret: null } })).toEqual({ issues: [], handshake: { body: { challenge: 'c-123' } } });
+  expect(monday.webhook({ headers: {}, rawBody: challenge, secret: 's', now, hook: { pending: false, secret: null } })).toBeNull();
+});
+
+it('a title pushed to Asana or monday.com writes only the title, so a field someone changed there in the meantime is not written over', async () => {
+  const task = {
+    gid: '1201',
+    name: 'Old',
+    html_notes: '<body>Edited in Asana a moment ago</body>',
+    completed: false,
+    due_on: '2026-12-01',
+    memberships: [{ project: { gid: '900', name: 'Launch' }, section: { gid: '901', name: 'To do' } }],
+    workspace: { gid: '1' },
+  };
+  const a = fakeConn('asana', (r) => ({ json: { data: r.method === 'GET' ? task : {} } }));
+  const issue = { id: '1201', key: '1201', url: '', project: '900', values: { title: 'Old', description: '', labels: [] }, assigneeName: null, updatedAt: 0 } as RemoteIssue;
+  await asana.updateIssue(a.conn, issue, { title: 'New' });
+  const put = a.sent.filter((r) => r.method !== 'GET');
+  expect(put).toEqual([{ method: 'PUT', path: '/tasks/1201', body: { data: { name: 'New' } } }]);
+
+  const item = {
+    id: '7001',
+    name: 'Old',
+    board: { id: '5001', name: 'Roadmap', columns: [{ id: 'status', title: 'Status', type: 'status', settings_str: '{"labels":{"0":"Working on it","1":"Done"},"done_colors":[1]}' }, { id: 'date4', title: 'Due', type: 'date' }], groups: [] },
+    column_values: [{ id: 'status', type: 'status', text: 'Done', value: '{"index":1}' }],
+    updates: [],
+  };
+  const m = fakeConn('monday', (r) => ({ json: { data: /items \(ids/.test(String((r.body as { query: string }).query)) ? { items: [item] } : { change_multiple_column_values: { id: '7001' } } } }));
+  await monday.updateIssue(m.conn, { ...issue, id: '7001', key: '7001', project: '5001' }, { title: 'New' });
+  const writes = m.sent.map((r) => r.body as { query: string; variables: Record<string, unknown> }).filter((b) => /mutation/.test(b.query));
+  expect(writes).toHaveLength(1);
+  expect(JSON.parse(String(writes[0].variables.values))).toEqual({ name: 'New' });
+});
+
+it('a card moved to the In progress column moves its done Asana task to that section and reopens it; a monday.com item takes the label of the column, by name', async () => {
+  const task = {
+    gid: '1201',
+    name: 'Ship it',
+    completed: true,
+    memberships: [{ project: { gid: '900', name: 'Launch' }, section: { gid: '903', name: 'Done' } }],
+    workspace: { gid: '1' },
+  };
+  const sections = [
+    { gid: '901', name: 'To do' },
+    { gid: '902', name: 'In progress' },
+    { gid: '903', name: 'Done' },
+  ];
+  const a = fakeConn('asana', (r) => ({ json: { data: r.path.startsWith('/projects/900/sections') ? sections : r.method === 'GET' ? task : {} } }));
+  const issue = { id: '1201', key: '1201', url: '', project: '900', values: { title: 'Ship it', description: '', labels: [] }, assigneeName: null, updatedAt: 0 } as RemoteIssue;
+  await asana.updateIssue(a.conn, issue, { statusName: 'In progress', status: 'doing' });
+  const writes = a.sent.filter((r) => r.method !== 'GET');
+  expect(writes).toContainEqual({ method: 'POST', path: '/sections/902/addTask', body: { data: { task: '1201' } } });
+  expect(writes).toContainEqual({ method: 'PUT', path: '/tasks/1201', body: { data: { completed: false } } });
+
+  const item = {
+    id: '7001',
+    name: 'Ship it',
+    board: { id: '5001', name: 'Roadmap', columns: [{ id: 'status', title: 'Status', type: 'status', settings_str: '{"labels":{"0":"Working on it","1":"Done","2":"Stuck"},"done_colors":[1]}' }], groups: [] },
+    column_values: [{ id: 'status', type: 'status', text: 'Done', value: '{"index":1}' }],
+    updates: [],
+  };
+  const m = fakeConn('monday', (r) => ({ json: { data: /items \(ids/.test(String((r.body as { query: string }).query)) ? { items: [item] } : { change_multiple_column_values: { id: '7001' } } } }));
+  await monday.updateIssue(m.conn, { ...issue, id: '7001', key: '7001', project: '5001' }, { statusName: 'Stuck', status: 'doing' });
+  const w = m.sent.map((r) => r.body as { query: string; variables: Record<string, unknown> }).find((b) => /change_multiple_column_values/.test(b.query))!;
+  expect(JSON.parse(String(w.variables.values))).toEqual({ status: { label: 'Stuck' } });
+  // Read back, the label marked done in the column's settings is done; another is in progress.
+  const read = fakeConn('monday', (r) => ({ json: { data: /users/.test(String((r.body as { query: string }).query)) ? { users: [] } : { items: [{ ...item, column_values: [{ id: 'status', type: 'status', text: 'Stuck', value: '{"index":2}' }] }] } } }));
+  expect((await monday.getIssue(read.conn, '7001'))?.values).toMatchObject({ statusName: 'Stuck', status: 'doing' });
+});
+
+it('a spent monday.com complexity budget is waited out when it resets in a moment and handed back as a wait otherwise, never read as an answer', async () => {
+  const spent = (s: number) => ({ errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: s } }] });
+  const answers = [spent(1), { data: { items: [] } }];
+  const soon = fakeConn('monday', () => ({ json: answers.shift() }));
+  expect(await monday.getIssue(soon.conn, '7001')).toBeNull();
+  expect(soon.sent).toHaveLength(2);
+  const later = fakeConn('monday', () => ({ json: spent(40) }));
+  const err = await monday.getIssue(later.conn, '7001').catch((e) => e);
+  expect(err).toBeInstanceOf(TrackerError);
+  expect(err).toMatchObject({ kind: 'rate', retryAfterMs: 40_000 });
+  expect(later.sent).toHaveLength(1);
 });

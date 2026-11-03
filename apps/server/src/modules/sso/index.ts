@@ -4,6 +4,8 @@ import * as repo from './repo';
 
 // The organization's own addresses (SCIM provisions only these).
 export { isOrganizationEmail, verifiedDomainsOf } from './domains';
+// Other modules' tests that need a verified domain (DNS answered in-process).
+export { verifyDomainForTests } from './domains';
 
 /** The role people get when they join the workspace through its directory (SSO default, else member). */
 export async function defaultJoinRole(workspaceId: string): Promise<'admin' | 'member' | 'guest'> {

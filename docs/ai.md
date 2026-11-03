@@ -18,11 +18,11 @@ What it can do today (KAI-102), from the AI button in the selection toolbar, the
 | Expand a mind-map topic | the topic, the path from the centre to it, and what is under it already | nothing until you choose: 3 to 7 ideas, questions or sub-topics to tick, added under the topic in one undo step |
 | Walkthrough summary and chapters | a walkthrough's captions (its author or an editor asks) | nothing until saved: a draft summary and chapter list to edit, then save |
 | Write a report | a live activity's results as everyone on the board sees them: counts, words, questions — never who answered; a sealed activity only after it is revealed | a note beside the activity with themes, notable answers and next steps |
-| Diagram from text | your prompt (and the selection, if any) | a flowchart, sequence diagram or mind map with attached connectors |
+| Diagram from text | your prompt (and the selection, if any) | a flowchart, sequence, class (UML), entity-relationship or state diagram, a mind map, an org chart or a kanban board, with attached connectors |
 
 Every action is **previewed first**: nothing touches the board until the person clicks Insert, and
 the result then lands as one step they can undo. The model never places anything: it returns
-structure (a list, groups, Mermaid, an outline), which Freero's own layout places on free space.
+structure (a list, groups, Mermaid, an outline, people and their managers, columns of cards), which Freero's own layout places on free space.
 
 ## What happens to your data
 

@@ -24,7 +24,13 @@ import { appUrl } from '../../platform/mail';
 import { recordAudit } from '../audit/index';
 import { endSessionsOf, provisionDirectoryAccount, setAccountName } from '../auth/index';
 import { defaultJoinRole, isOrganizationEmail } from '../sso/index';
-import { applyDirectoryMembership, setDirectoryDeactivated, setDirectoryProjectMembership, type DirectoryRole } from '../workspaces/index';
+import {
+  applyDirectoryMembership,
+  setDirectoryDeactivated,
+  setDirectoryProjectMembership,
+  setDirectoryWorkspaceMembership,
+  type DirectoryRole,
+} from '../workspaces/index';
 import { getKey } from './filter';
 import { scimBool } from './patch';
 import * as repo from './repo';
@@ -107,8 +113,13 @@ const RANK: Record<DirectoryRole, number> = { guest: 1, member: 2, admin: 3 };
  * the directory-managed projects their groups map to. `alsoProjects`: projects a change just
  * unmapped. Never reactivates someone (only the directory's active: false -> true does, below; an
  * admin's deactivation stands).
+ *
+ * An organisation's directory (#108) also grants membership of its workspaces: a member of a group
+ * mapped to one gets at least that role there; `leftWorkspaces` (a group they left, or a mapping
+ * that changed) are withdrawn unless another of their groups still grants them. Deactivating them
+ * in the organisation (inactive) closes all its workspaces at once, without removing anyone.
  */
-export async function syncPerson(workspaceId: string, userId: string, alsoProjects: string[] = []): Promise<void> {
+export async function syncPerson(workspaceId: string, userId: string, alsoProjects: string[] = [], leftWorkspaces: string[] = []): Promise<void> {
   const su = await repo.getUser(workspaceId, userId);
   if (!su) return;
   if (!su.active) {
@@ -123,6 +134,14 @@ export async function syncPerson(workspaceId: string, userId: string, alsoProjec
   const wanted = new Set(mine.flatMap((g) => (g.mapping?.kind === 'project' ? [g.mapping.projectId] : [])));
   const managed = new Set([...all.flatMap((g) => (g.mapping?.kind === 'project' ? [g.mapping.projectId] : [])), ...alsoProjects]);
   for (const p of managed) await setDirectoryProjectMembership(p, userId, wanted.has(p));
+  const grants = new Map<string, DirectoryRole>();
+  for (const g of mine)
+    if (g.mapping?.kind === 'workspace') {
+      const had = grants.get(g.mapping.workspaceId);
+      if (!had || RANK[g.mapping.role] > RANK[had]) grants.set(g.mapping.workspaceId, g.mapping.role);
+    }
+  for (const [ws, r] of grants) await setDirectoryWorkspaceMembership(workspaceId, ws, userId, r);
+  for (const ws of new Set(leftWorkspaces)) if (!grants.has(ws)) await setDirectoryWorkspaceMembership(workspaceId, ws, userId, null);
 }
 
 /** The admin console's deactivation, by the directory (SCIM errors for its refusals). True when it changed. */
@@ -246,7 +265,10 @@ export async function setGroupMembers(workspaceId: string, groupId: string, want
   const add = [...want].filter((id) => !current.has(id));
   const remove = [...current].filter((id) => !want.has(id));
   await repo.changeMembers(groupId, workspaceId, add, remove);
-  for (const id of [...add, ...remove]) await syncPerson(workspaceId, id);
+  const mapping = (await repo.getGroup(workspaceId, groupId))?.mapping;
+  const left = mapping?.kind === 'workspace' ? [mapping.workspaceId] : [];
+  for (const id of add) await syncPerson(workspaceId, id);
+  for (const id of remove) await syncPerson(workspaceId, id, [], left);
 }
 
 export async function replaceGroup(workspaceId: string, groupId: string, body: unknown, { members }: { members: boolean }): Promise<repo.ScimGroup> {
@@ -269,7 +291,8 @@ export async function deleteGroup(workspaceId: string, groupId: string): Promise
   const members = await repo.groupMemberIds(groupId);
   await repo.deleteGroup(workspaceId, groupId);
   const unmapped = g.mapping?.kind === 'project' ? [g.mapping.projectId] : [];
-  for (const id of members) await syncPerson(workspaceId, id, unmapped);
+  const left = g.mapping?.kind === 'workspace' ? [g.mapping.workspaceId] : [];
+  for (const id of members) await syncPerson(workspaceId, id, unmapped, left);
 }
 
 // ---- tokens (admins, in the app) ----

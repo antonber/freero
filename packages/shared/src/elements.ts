@@ -330,6 +330,13 @@ export interface ShapeElement extends BaseElement, TextStyle {
   strokeWidth: number;
   strokeStyle: StrokeStyle;
   text: RichText;
+  /**
+   * [additive] A `umlClass` whose text is the whole class: its name on the first line, then its
+   * attributes, then its operations (the lines with a "("), drawn as compartments with a divider
+   * under the name and one above the operations. Absent: the name alone in the top compartment
+   * (clients that don't know this draw it that way).
+   */
+  compartments?: boolean;
 }
 
 export interface TextElement extends BaseElement {
@@ -776,6 +783,8 @@ export interface KanbanColumn {
    * folded away below the board ("N more"). 0 / absent = all.
    */
   limit?: number;
+  /** [additive] A tracker's closed sprint while the board is grouped by Sprint (#119): kept, not offered. */
+  readOnly?: true;
 }
 
 type KanbanGeometry = Pick<KanbanElement, 'colW' | 'columns'>;
