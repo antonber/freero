@@ -326,7 +326,7 @@ export interface BoardMember {
 // POST /api/auth/logout   -> { ok: true }                     (clears cookie)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
-// PATCH /api/auth/me      body { name?, color?, avatarUrl? } -> AuthResponse
+// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone? } -> AuthResponse
 // PUT  /api/auth/me/avatar raw image body (PNG/JPEG/GIF/WebP) -> AuthResponse (resized server-side)
 // DELETE /api/auth/me/avatar -> AuthResponse
 //
@@ -482,6 +482,11 @@ export const SSO_REQUIRED = 'sso_required';
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
   emailVerified: boolean;
+  /**
+   * IANA time zone ("Europe/Berlin"): due-date reminders, the "changes on your boards" email and
+   * dates in emails follow it. Null until the app detects it from the browser (or you pick one).
+   */
+  timeZone: string | null;
   /** Set while the account is scheduled for deletion: it is purged at this instant unless restored. */
   deletionScheduledFor: number | null;
 }
@@ -956,8 +961,56 @@ export interface ActivityEntry {
   startedAt: number;
   /** When the burst ended (entries are ordered by it). */
   at: number;
+  /**
+   * kind 'edit': the items it added or changed, to find them on the board (some may be gone since;
+   * at most MAX_ACTIVITY_ITEMS per entry, `moreItems` when there were more), and how many it removed.
+   * Absent on entries recorded before items were kept.
+   */
+  items?: string[];
+  moreItems?: boolean;
+  removedItems?: number;
 }
 export interface ActivityResponse { entries: ActivityEntry[]; hasMore: boolean }
+/** Most items an activity entry keeps (per list: added, changed, removed). */
+export const MAX_ACTIVITY_ITEMS = 200;
+
+// ---- Changes since your last visit ----
+// The server keeps when each person last had a board open (their last socket on it closed). When
+// others changed it since, the board offers "See recent changes": what they added, changed and
+// removed, read from the activity feed (attributed changes only: your own edits are never news,
+// an app acting for you is), as you may see it now.
+// GET /api/boards/:id/catch-up          -> CatchUpSummary  (accounts; cheap: activity rows only)
+// GET /api/boards/:id/catch-up/changes  -> CatchUpChanges  (the items, with their text; removed ones
+//     as they read at the last version kept before your visit)
+export interface CatchUpSummary {
+  /** When you last had the board open (null: never, or before Freero kept it). */
+  since: number | null;
+  /** Net over everyone else's changes since then. */
+  counts: { added: number; changed: number; removed: number; comments: number };
+  /** Who made them (most active first; an app acting for someone is named "<app> for <person>"). */
+  people: Array<{ id: string | null; name: string; color: string; avatarUrl: string | null }>;
+}
+export interface CatchUpItem {
+  id: string;
+  /** Element type ('sticky', 'card', …). */
+  kind: string;
+  /** Its text now (a removed item: then; '' when unknown). */
+  text: string;
+  /** A changed item: its text before, when it differs. */
+  before?: string;
+  frame?: string;
+  /** Who changed it (names, last one first). */
+  by: string[];
+  at: number;
+}
+export interface CatchUpChanges extends CatchUpSummary {
+  added: CatchUpItem[];
+  changed: CatchUpItem[];
+  removed: CatchUpItem[];
+  /** More items changed than are listed (each list holds at most MAX_CATCH_UP_ITEMS). */
+  truncated: boolean;
+}
+export const MAX_CATCH_UP_ITEMS = 300;
 
 // ---- Board people ----
 // GET /api/boards/:id/people?ids=a,b,c -> { people: BoardPerson[] }  (any role on the board)
@@ -970,9 +1023,11 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 // GET  /api/notifications?before=<ms>&limit=<n> -> NotificationsResponse  (newest first; 30 by default)
 // POST /api/notifications/read   body { ids?: string[] } -> { unread }  (no ids: mark all read)
 // GET  /api/notifications/prefs  -> NotificationPrefs
-// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, emailAll?: boolean } -> NotificationPrefs
-// POST /api/notifications/unsubscribe?token=<t>  (no session needed: the signed link from a digest
-//      email, also its RFC 8058 one-click target) -> { ok: true, email } | 400
+// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, emailAll?: boolean,
+//      boardChanges?: BoardChangesFrequency } -> NotificationPrefs
+// POST /api/notifications/unsubscribe?token=<t>[&list=board-changes]  (no session needed: the signed
+//      link from a digest email, also its RFC 8058 one-click target) -> { ok: true, email, list } | 400
+//      (list 'board-changes': the "changes on your boards" email only; else every notification email)
 // WebSocket /ws/notifications (session cookie): the server sends a JSON NotificationsLiveMessage
 //      whenever the user's notifications change, whichever instance created them.
 //
@@ -1025,7 +1080,14 @@ export interface NotificationPrefs {
   /** Master switch for notification emails (the one-click unsubscribe turns it off). */
   emailAll: boolean;
   types: NotificationTypePref[];
+  /**
+   * "Changes on your boards": an email summarising what others changed on boards you own or
+   * starred, off unless you choose a frequency (daily: each morning; weekly: Monday morning, in
+   * your time zone). Its own unsubscribe link turns only it off; `emailAll` off stops it too.
+   */
+  boardChanges: BoardChangesFrequency;
 }
+export type BoardChangesFrequency = 'off' | 'daily' | 'weekly';
 export type NotificationsLiveMessage = { type: 'changed'; unread: number };
 
 // ---- Uploads ----
