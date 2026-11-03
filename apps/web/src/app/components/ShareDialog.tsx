@@ -6,6 +6,7 @@ import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, ty
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { copyText } from '../lib/hooks';
+import { EmbedSettings } from './EmbedSettings';
 import { LinkedFrom } from './LinkedFrom';
 import { LinkProtection } from './LinkProtection';
 import './ShareDialog.css';
@@ -461,6 +462,16 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
             </section>
             {isOwner && !board.linkBlocked && board.linkProtection && (linkAccess !== 'none' || board.linkProtection.storedAccess !== 'none') ? (
               <LinkProtection
+                board={board}
+                onChange={(updated) => {
+                  setBoard(updated);
+                  onBoardChange?.(updated);
+                }}
+              />
+            ) : null}
+
+            {board.kind !== 'doc' ? (
+              <EmbedSettings
                 board={board}
                 onChange={(updated) => {
                   setBoard(updated);

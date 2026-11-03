@@ -51,6 +51,10 @@ import type {
   GuestBoardInfo,
   GuestInfo,
   EmbedRedeemResponse,
+  BoardOutlineResponse,
+  PublicEmbedInfo,
+  PublicEmbedMember,
+  PublicEmbedToken,
   GuestJoinResponse,
   AccessRequestState,
   BoardAccessRequest,
@@ -350,6 +354,12 @@ export const api = {
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
   // A live board view inside an AI assistant (KAI-171): the tool call's single-use ticket.
   redeemEmbed: (ticket: string) => request<EmbedRedeemResponse>('POST', '/api/embed/redeem', { ticket }),
+  // A board embedded on another site (#2): what it shows, the sign-in popup's token, who it acts for.
+  // The board's frames as the share dialog's embed options list them (frame titles survive any budget).
+  boardOutline: (id: string) => request<BoardOutlineResponse>('GET', `/api/boards/${encodeURIComponent(id)}/outline?comments=0&budget=2000`),
+  publicEmbed: (id: string) => request<PublicEmbedInfo>('GET', `/api/embed/b/${encodeURIComponent(id)}`),
+  publicEmbedToken: (id: string, readonly: boolean) => request<PublicEmbedToken>('POST', `/api/embed/b/${encodeURIComponent(id)}/token`, { readonly }),
+  publicEmbedMember: (id: string, token: string) => request<PublicEmbedMember>('POST', `/api/embed/b/${encodeURIComponent(id)}/me`, { token }),
 
   // activity
   boardActivity: (id: string, before?: number) =>

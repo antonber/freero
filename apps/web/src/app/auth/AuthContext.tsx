@@ -27,6 +27,17 @@ export interface AuthValue {
 /** Other tabs of the app hear about session/profile changes here and re-check the session. */
 const CHANNEL = 'freero:auth';
 
+/**
+ * Tells the other tabs to re-check the session — from a page that arrived signed in without this
+ * tab's login() (a provider sign-in redirect): the embed sign-in popup is waiting for it (#2).
+ */
+export function announceSessionChange(): void {
+  if (typeof BroadcastChannel === 'undefined') return;
+  const ch = new BroadcastChannel(CHANNEL);
+  ch.postMessage('changed');
+  ch.close();
+}
+
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
