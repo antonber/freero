@@ -13,13 +13,17 @@ export default defineCommands([
     label: 'Start voting…',
     menus: ['board'],
     when: (editor) => !session(editor)?.active,
-    // Other features (a retro's vote phase) may start it directly: args { votesPerUser, hideResults?, title? }.
+    // Other features (a retro's vote phase) may start it directly: args { votesPerUser, hideResults?,
+    // anonymous? (default true, as in the dialog), maxPerItem?, minutes?, title? }.
     run: (editor, args) => {
       if (typeof args?.votesPerUser !== 'number') return editor.openPanel(START_DIALOG_ID);
       start(editor, {
         title: typeof args.title === 'string' ? args.title : 'Vote',
         votesPerUser: args.votesPerUser,
         hideResults: args.hideResults !== false,
+        anonymous: args.anonymous !== false,
+        maxPerItem: typeof args.maxPerItem === 'number' ? args.maxPerItem : null,
+        durationMs: typeof args.minutes === 'number' ? args.minutes * 60_000 : null,
         elementIds: null,
       });
     },

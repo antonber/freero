@@ -1,6 +1,6 @@
-import { MousePointer2, Presentation, X } from 'lucide-react';
+import { MousePointer2, Presentation, UsersRound, X } from 'lucide-react';
 import { defineCommands } from '@engine';
-import { canManage, change, end, getSession, patchFromArgs, start, useCursorPrefs } from './lib/session';
+import { canManage, canSetParticipation, change, end, getSession, isParticipationOpen, patchFromArgs, setParticipation, start, useCursorPrefs } from './lib/session';
 
 export default defineCommands([
   {
@@ -34,6 +34,18 @@ export default defineCommands([
     },
     disabledReason: 'Only the facilitator or the board owner can end it',
     run: (editor) => end(editor),
+  },
+  {
+    // Parity rank 1: commenters and guests vote, estimate and write private drafts (their own only).
+    id: 'facilitation.toggleParticipation',
+    icon: UsersRound,
+    label: 'Commenters and guests take part',
+    menus: ['board'],
+    detail: (editor) => (isParticipationOpen(editor) ? 'on' : 'off'),
+    when: (editor) => canSetParticipation(editor),
+    disabledReason: 'Only the facilitator or the board owner can change it',
+    // Args (other features): { open: boolean }.
+    run: (editor, args) => setParticipation(editor, typeof args?.open === 'boolean' ? args.open : !isParticipationOpen(editor)),
   },
   {
     id: 'facilitation.toggleCursors',

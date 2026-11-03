@@ -3,13 +3,18 @@
 //   viewer       -> drop
 //   commenter    -> apply only if every top-level type it touches is in COMMENTER_WRITABLE, and
 //                   every `comments` record it writes is one it may write (commentRules.ts)
+//   participant  -> a commenter who may take part (participation.ts): PARTICIPANT_WRITABLE too, as
+//                   plain keys of those maps (no nested types); which keys it may write there is
+//                   judged by the compensating guards inside the transaction that applies it
+//                   (votingRules.ts, estimationRules.ts)
 import * as Y from 'yjs';
-import { COMMENTER_WRITABLE, type Role } from '@freero/shared';
+import { COMMENTER_WRITABLE, PARTICIPANT_WRITABLE, type Role } from '@freero/shared';
 import { commenterMayChangeComments, type KeyChange } from './commentRules';
 
 export type UpdateDecision = 'apply' | 'drop';
 
 const COMMENTER_SET: ReadonlySet<string> = new Set(COMMENTER_WRITABLE);
+const PARTICIPANT_SET: ReadonlySet<string> = new Set(PARTICIPANT_WRITABLE);
 
 /** Name under which `type`'s top-level ancestor is registered in doc.share, or null if unknown. */
 export function rootName(doc: Y.Doc, type: Y.AbstractType<unknown>): string | null {
@@ -24,6 +29,7 @@ export function rootName(doc: Y.Doc, type: Y.AbstractType<unknown>): string | nu
 }
 
 const COMMENTS = 'comments';
+const NONE: ReadonlySet<string> = new Set();
 
 /**
  * A commenter's update: confined to COMMENTER_WRITABLE, and in `comments` only plain records the
@@ -32,7 +38,14 @@ const COMMENTS = 'comments';
  * a commenter writes there is moved into that layer (elementContent.ts), so the rules judge it
  * against what the layer holds, as if it were in the shared doc: authorship holds in layers too.
  */
-export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string, authorNames?: ReadonlySet<string>, layered?: Y.Map<unknown>): boolean {
+export function commenterMayApply(
+  doc: Y.Doc,
+  update: Uint8Array,
+  userId: string,
+  authorNames?: ReadonlySet<string>,
+  layered?: Y.Map<unknown>,
+  extraRoots: ReadonlySet<string> = NONE,
+): boolean {
   const names = new Set<string | null>();
   const scratch = new Y.Doc();
   const changedKeys = new Set<string>();
@@ -40,9 +53,11 @@ export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(doc));
     const scratchComments = scratch.getMap<unknown>(COMMENTS);
+    const extra = new Set<unknown>([...extraRoots].map((n) => scratch.getMap<unknown>(n)));
     scratch.on('afterTransaction', (tr: Y.Transaction) => {
       for (const [t, keys] of tr.changed) {
         names.add(rootName(scratch, t as Y.AbstractType<unknown>));
+        if (extra.has(t)) continue;
         if ((t as unknown) !== scratchComments) nested = true;
         else for (const k of keys) if (k !== null) changedKeys.add(k);
       }
@@ -50,7 +65,7 @@ export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string
     });
     Y.applyUpdate(scratch, update);
     if (scratch.store.pendingStructs !== null || scratch.store.pendingDs !== null) return false;
-    for (const n of names) if (n === null || !COMMENTER_SET.has(n)) return false;
+    for (const n of names) if (n === null || !(COMMENTER_SET.has(n) || extraRoots.has(n))) return false;
     if (!changedKeys.size) return !nested;
     if (nested) return false;
     const live = doc.getMap<unknown>(COMMENTS);
@@ -71,14 +86,25 @@ export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string
   }
 }
 
-/** `authorNames`: the names a commenter's new comment messages may carry (commentRules.ts); `layered`: see commenterMayApply. */
-export function decideUpdate(role: Role, doc: Y.Doc, update: Uint8Array, userId: string, authorNames?: ReadonlySet<string>, layered?: Y.Map<unknown>): UpdateDecision {
+/**
+ * `authorNames`: the names a commenter's new comment messages may carry (commentRules.ts); `layered`:
+ * see commenterMayApply; `participant`: the commenter may take part (PARTICIPANT_WRITABLE, see the header).
+ */
+export function decideUpdate(
+  role: Role,
+  doc: Y.Doc,
+  update: Uint8Array,
+  userId: string,
+  authorNames?: ReadonlySet<string>,
+  layered?: Y.Map<unknown>,
+  participant = false,
+): UpdateDecision {
   switch (role) {
     case 'owner':
     case 'editor':
       return 'apply';
     case 'commenter':
-      return commenterMayApply(doc, update, userId, authorNames, layered) ? 'apply' : 'drop';
+      return commenterMayApply(doc, update, userId, authorNames, layered, participant ? PARTICIPANT_SET : NONE) ? 'apply' : 'drop';
     default:
       return 'drop';
   }

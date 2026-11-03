@@ -61,7 +61,8 @@ export function start(editor: Editor, itemIds: string[], deck: Deck): void {
 export function pick(editor: Editor, value: string): void {
   const round = getRound(editor);
   const itemId = round && currentItem(round);
-  if (!round || !itemId || round.revealed || !editor.can('editor') || !round.deck.values.includes(value)) return;
+  // Editors, and participants (their own pick only: realtime estimationRules.ts).
+  if (!round || !itemId || round.revealed || !(editor.can('editor') || editor.isParticipant()) || !round.deck.values.includes(value)) return;
   const key = voteKey(round.id, itemId, editor.user.id);
   const me = { roundId: round.id, itemId, userId: editor.user.id, userName: editor.user.name, userColor: editor.user.color };
   const mine = sealed(editor).get(key) as Estimate | undefined;

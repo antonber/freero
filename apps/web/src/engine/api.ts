@@ -1320,6 +1320,20 @@ export interface Editor {
   /** [additive] May this user add elements of `type` now (role and facilitator limits)? */
   mayAdd(type: ElementType): boolean;
   /**
+   * [additive, parity rank 1] This commenter (or guest) may take part in the facilitator's sessions
+   * while the board lets them (the server's role message `participant`; @freero/shared
+   * participation.ts): write their own ballot (`voting`), planning-poker pick (`estimation`) and,
+   * while private mode applies to them, private drafts of the types it makes private. The server
+   * enforces exactly that. False for owners and editors (they may do all of it anyway). Hook:
+   * useParticipant().
+   */
+  isParticipant(): boolean;
+  /**
+   * [additive] May this user change these elements: an editor any, a participant only their own
+   * drafts (in their private layer). Element writes check it and toast otherwise.
+   */
+  mayEdit(ids: readonly string[]): boolean;
+  /**
    * [additive] Element types the board's tools add, in toolbar order (each tool's
    * `ToolDefinition.creates`): what a facilitator can allow participants to add.
    */
@@ -1536,8 +1550,11 @@ export interface Editor {
    * feature owns it); null turns it off. Existing private elements stay private until revealed.
    * While a rule is set, this user's cursor is not shown to others where a new sticky would go
    * private (or over their private items), and presence never names private elements.
+   * `types` [additive]: the element types the rule can make private — a participant
+   * (isParticipant) may then add elements of those types that the rule sends private, and gets the
+   * tools that add only them.
    */
-  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null): void;
+  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null, opts?: { types?: readonly ElementType[] }): void;
   /**
    * [additive] This user's PRIVATE copy of a collection the scope owns (same ownership guard as
    * `collection`): synced only between this user's own tabs, never readable by anyone else until

@@ -139,6 +139,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
+| The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
+| A vote's history (`voting` keys `h:<sessionId>` → `VotingHistoryEntry`: totals only, never ballots) | `features/voting` (archived when the next vote starts or results are cleared; at most `VOTING_HISTORY_MAX`); editors only (`votingRules.ts`) | the results panel's "Past votes" |
 
 ### Host — the one typed contract between app and engine
 
@@ -191,9 +193,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   step without doing anything. Other continuous interactions (a slider) call
   `editor.beginGesture()/endGesture()`.
 - Only local writes are undoable; undo never reverts another user's change.
-- Role guard: viewers never write the doc; commenters only write `comments`. Every Editor write
-  (including undo/redo, paste, settings) checks the live role (server role message) first and
-  shows a toast instead — the server would otherwise reject the update and everything after it.
+- Role guard: viewers never write the doc; commenters only write `comments` — and, as
+  participants (`Editor.isParticipant`, see "Participants"), their own ballot, planning-poker pick
+  and private-mode drafts. Every Editor write (including undo/redo, paste, settings) checks the live
+  role (server role message) first and shows a toast instead — the server would otherwise reject
+  the update and everything after it.
 
 ### Engine contract additions (additive, `engine/api.ts` / `@engine`)
 
@@ -296,7 +300,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `boardId` gives the replicas another board's id (two test boards = two boards: a paste from one
   into the other); `board.element(user, id)` is element `id` as replica `user` draws it on the
   canvas (its component inside that replica's engine, selected while that replica selects it), to
-  render with react-dom and test what an element shows and does, its hooks included.
+  render with react-dom and test what an element shows and does, its hooks included. `roles`
+  gives each replica its own role and `participants` (indexes) marks commenters the server lets
+  take part (`Editor.isParticipant`).
 - Collections hold LWW values per key. When several people may change the same logical thing
   at once, give each independent change its own key (one record per message / reaction /
   vote) instead of read-modify-writing one big value. Example: `comments` (layout in
@@ -921,6 +927,13 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
 - `Host.reportProblem?({ role })`: opens the app's "Report a problem" dialog (absent for visitors and
   in the sandbox); `features/problem-report` puts it in the board menu with `mod+alt+p`. `fontEmbedCss(node)`
   is exported for the app's screenshot of the visible page (see "Problem reports").
+- Participants (parity rank 1, see "Participants" under Realtime): `Editor.isParticipant()` /
+  `useParticipant()` (the role message's `participant`), `Editor.mayEdit(ids)` (an editor: any; a
+  participant: only their own drafts — element writes, moves, resizes, text editing and Delete
+  check it), `Editor.setPrivatePlacement(rule, { types })` (the types the rule can make private: a
+  participant may add those when the rule sends them private, and gets the tools that add only
+  them; their drafts join no container). Collections in `PARTICIPANT_WRITABLE` (`voting`,
+  `estimation`) are writable for a participant, shared and private; the server decides which keys.
 
 ### Installable app (PWA, KAI-140)
 
@@ -2556,7 +2569,8 @@ instances and checks all of this with clients on each.
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
 (`realtime/awareness.ts`), so nobody can appear as someone else. Commenters may write only the
-`comments` map, and in it only what they own (`realtime/commentRules.ts`, checked per key against
+`comments` map (participants also their own ballot, pick and drafts: see "Participants" below), and
+in it only what they own (`realtime/commentRules.ts`, checked per key against
 the server's doc): their own messages and reactions, threads they started (and their tombstones),
 deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
 state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
@@ -2581,7 +2595,9 @@ server reads it. While it runs, every EDITOR socket except the facilitator's is 
 owner never is): a socket's `role` in `rooms.ts` is its EFFECTIVE role — its access as limited by
 the session — recomputed whenever the session or the access changes and sent to the client in the
 role message with `limits` (`RoleMessage`, `SessionLimits`). A locked board makes participants
-commenters (comments only; no layer writes); `allowedTypes` limits what they may ADD. Forbidden
+commenters (comments only — plus, while the board lets commenters take part, their own ballot, pick
+and private drafts: "Participants"); `allowedTypes` limits what they may ADD (participants' drafts
+too). Forbidden
 adds, and changes of the session by anyone but its facilitator or the owner, are undone INSIDE the
 transaction that applies the update (`changedKeys` reads the values the transaction replaced), so
 nobody else ever receives them and the sender is sent the correction — dropping the update instead
@@ -2594,17 +2610,34 @@ The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no sock
 presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
 and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
 
-**Vote budget** (KAI-210, `realtime/votingRules.ts`, same compensation in the same transaction,
-shared doc and every layer doc): a socket may write only its OWN ballot (`${sessionId}:${userId}`,
-matching fields) for the RUNNING session, with at most `votesPerUser` votes; a session needs
-`VOTES_PER_USER_MIN..MAX` and keeps its budget for its id; deleting is always allowed (a new vote
-wipes everyone's ballots). Readers still cap a ballot at the budget (`countedVotes`) for values
-older than the rule.
+**Vote budget** (KAI-210, parity rank 5, `realtime/votingRules.ts`, same compensation in the same
+transaction, shared doc and every layer doc): a socket may write only its OWN ballot
+(`${sessionId}:${userId}`, matching fields) for the RUNNING session before its timer (`endsAt`,
+server clock, `VOTE_DEADLINE_GRACE_MS`), with at most `votesPerUser` votes and at most `maxPerItem`
+on one item; a session needs `VOTES_PER_USER_MIN..MAX` (1..99) and keeps what it promised for its
+id (budget, cap, sealing, anonymity, scope, starter); editors may delete any ballot (a new vote
+wipes everyone's) and write the history (`h:` keys), participants only their own ballot. Readers
+still cap a ballot at the budget and the per-item cap (`countedVotes`) for values older than the
+rule. **Anonymous votes** (`anonymousBallots`, default on in the dialog, always sealed): a ballot
+arriving in a private layer is rewritten to the server's stamp (`anonymous: true`, no name or
+colour), a shared "has voted" marker can only be the bare marker (no name, no votes) — rewritten
+inside the transaction, so the name never reaches another socket — and the reveal
+(`layers.ts` → `revealAnonymousBallots`) writes stamped ballots (or those of the running anonymous
+session) under `anon:<n>` voter ids, numbered in an order that depends only on their votes and
+continuing after earlier ones, deleting the markers. So no version, export or outline can say who
+voted for what, the facilitator and owner included; one ballot per person holds because the
+sealed ballot stays keyed by its voter in their own private layer until then. Older clients count
+`anon:<n>` ballots as ordinary ones ("Someone"). The vote's timer: the starter's client (every
+editor's when the starter has left) ends the session when it runs out; the server has stopped
+taking ballots already.
 
-Session features built on these pieces (KAI-130/131/159) add no other server rules:
-planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
-"has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
-writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
+Session features built on these pieces (KAI-130/131/159) add no other server rules for owners and
+editors: planning poker (`features/estimation`) seals each pick in the picker's private layer with
+a shared "has picked" marker and reveals one item at a time (`revealPrivate` with a per-item
+prefix), then writes the agreed value through `card.setEstimate` (cards keep one writer); a
+participant may only pick (`realtime/estimationRules.ts`: its own `v:<round>:<item>:<user>` for the
+current, unrevealed item — a value of the deck in its private layer, the bare marker in the shared
+doc). Retro mode
 (`features/retro`) stores only its step and drives every other feature through commands that take
 args — `templates.insert`, `private-mode.start/reveal`, `timer.start/stop`, `facilitation.start/set/end`,
 `voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
@@ -2627,6 +2660,23 @@ publishes only how many answered until an editor reveals it. Names appear only o
 while it was not anonymous (kept per answer as given). `engageResults` and `call` are in
 `Y_KEPT_ON_RESTORE`. The answer form is a dialog that `?activity=<id>` opens (phones: the answer link).
 
+**Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
+commenters and guests take part in a facilitator's sessions without edit access, like Engage lets
+them answer — but through their socket, because ballots, picks and drafts are layer content. A
+socket whose EFFECTIVE role is commenter (its access, or a facilitator's lock) is a participant
+while the board's switch is open (`facilitation` key `participation`, default open; the owner, the
+facilitator, or any editor while nobody facilitates changes it). `rooms.ts` recomputes it with the
+role and sends it in the role message (`participant: true`). It may write: (1) in the shared doc,
+`comments` (commenter rules) and `PARTICIPANT_WRITABLE` (`voting`, `estimation`) as plain keys —
+`filter.ts` drops anything else whole, then the vote and estimate rules undo, inside the applying
+transaction, whatever is not its own ballot / marker / pick; (2) its OWN private layer: `elements`,
+`comments`, `voting`, `estimation` only (the same confinement), the same vote / estimate rules,
+and `guardDrafts`: a draft only while private mode runs, of `PRIVATE_MODE_TYPES` (and the types a
+facilitator allows), inside private mode's frame when it has one; deleting its drafts is always
+allowed. It runs no layer ops; reveals include its layer while the switch is open. Once revealed a
+draft is ordinary board content it can no longer change (guest sticky editing is a separate policy
+decision). Old clients ignore `participant` and simply don't offer taking part.
+
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
 
 Some content must not reach everyone who can open a board: the ballots of a vote whose results are
@@ -2639,7 +2689,7 @@ only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
-| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`, with their element content: see below), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor — or as a participant: own drafts, ballot and pick only ("Participants") | private-mode drafts (`elements`, with their element content: see below), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
 | `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`, with their element content: table cells…); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
@@ -2660,8 +2710,9 @@ only to connections that may read them:
 - **Reveal** happens on the server: an owner/editor sends `{ type: 'reveal', collection, prefix? }`
   and the instance holding that socket moves those entries out of the private layers into the
   shared doc in one transaction (so it works while authors are offline or on other instances, and
-  nobody sees half a result). Only the layers of people who may still edit the board take part
-  (someone removed or made a viewer keeps theirs). That access check reads the database, so the
+  nobody sees half a result). Only the layers of people who may still edit the board take part,
+  and participants' while the board lets commenters take part (someone removed or made a viewer
+  keeps theirs). That access check reads the database, so the
   revealer's later messages are held until the reveal is applied (it stays in order with them,
   e.g. a vote ending after its ballots). `mine: true` reveals only the sender's own layer.
 - **Anonymous private mode** (#44): the facilitator switches the session's `anonymous` on in the

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Eye, RotateCcw, Spade, Check, X } from 'lucide-react';
 import type { BoardElement } from '@freero/shared';
-import { definePanel, useCanEdit, useCollection, useElement, usePeers, usePrivateCollection, useCamera, type Editor } from '@engine';
+import { definePanel, useCanEdit, useCollection, useParticipant, useElement, usePeers, usePrivateCollection, useCamera, type Editor } from '@engine';
 import { AvatarStack, Button, Input, Modal, SegmentedControl, Tooltip } from '@ui';
 import { accept, canManage, COLLECTION, currentItem, end, goTo, itemsToEstimate, pick, reveal, revote, start } from './lib/actions';
 import { DECKS, ROUND_KEY, estimatesOf, parseCustomDeck, readRound, results, voteKey, type DeckKind, type Estimate, type EstimationValue, type Round } from './lib/model';
@@ -98,7 +98,10 @@ function StartDialog({ editor }: { editor: Editor }) {
 function RoundBar({ editor }: { editor: Editor }) {
   const { round, entries } = useRound();
   const sealedEntries = usePrivateCollection<EstimationValue>(COLLECTION);
+  // Editors pick, and so do commenters and guests while the board lets them take part.
   const canEdit = useCanEdit();
+  const participant = useParticipant();
+  const canPick = canEdit || participant;
   const peers = usePeers();
   const itemId = round ? currentItem(round) : null;
   const item = useElement(itemId ?? '');
@@ -160,14 +163,14 @@ function RoundBar({ editor }: { editor: Editor }) {
 
       {!round.revealed && (
         <div className="fr-est-bar__deck" role="group" aria-label="Your estimate">
-          {canEdit ? (
+          {canPick ? (
             round.deck.values.map((v) => (
               <button key={v} type="button" className={`fr-est-card${mine === v ? ' is-mine' : ''}`} aria-pressed={mine === v} onClick={() => pick(editor, v)}>
                 {v}
               </button>
             ))
           ) : (
-            <span className="fr-est-bar__muted">Only people who can edit the board pick cards.</span>
+            <span className="fr-est-bar__muted">You can watch: picking cards is not open to you on this board.</span>
           )}
         </div>
       )}

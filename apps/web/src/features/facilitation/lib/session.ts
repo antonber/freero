@@ -3,7 +3,15 @@
 // (apps/server/src/modules/realtime/facilitation.ts); this client only writes it and applies the
 // two parts that are views (following the facilitator, hidden cursors).
 import { create } from 'zustand';
-import { FACILITATION_COLLECTION, FACILITATION_KEY, type ElementType, type FacilitationSession } from '@freero/shared';
+import {
+  FACILITATION_COLLECTION,
+  FACILITATION_KEY,
+  PARTICIPATION_KEY,
+  participationOpen,
+  type ElementType,
+  type FacilitationSession,
+  type ParticipationSetting,
+} from '@freero/shared';
 import type { Editor } from '@engine';
 
 export type SessionPatch = Partial<Pick<FacilitationSession, 'locked' | 'allowedTypes' | 'follow' | 'cursorsHidden'>>;
@@ -69,6 +77,26 @@ export function patchFromArgs(args: Record<string, unknown> | undefined): Sessio
   if (args.allowedTypes === null) out.allowedTypes = null;
   else if (Array.isArray(args.allowedTypes)) out.allowedTypes = args.allowedTypes.filter((t): t is ElementType => typeof t === 'string');
   return out;
+}
+
+// ---------------------------------------------------------------- participation (parity rank 1)
+// Whether commenters and guests may take part in votes, planning poker and private mode (their own
+// ballot, pick and drafts: @freero/shared participation.ts). Open unless switched off; the server
+// reads it and lets the owner, the facilitator, or any editor while nobody facilitates change it.
+
+export const isParticipationOpen = (editor: Pick<Editor, 'collection'>) => participationOpen(store(editor).get(PARTICIPATION_KEY));
+
+/** May this user switch it (the server allows exactly these)? */
+export function canSetParticipation(editor: Editor): boolean {
+  if (!editor.can('editor')) return false;
+  const s = getSession(editor);
+  return editor.getRole() === 'owner' || !s || s.by === editor.user.id;
+}
+
+export function setParticipation(editor: Editor, open: boolean): void {
+  if (!canSetParticipation(editor) || isParticipationOpen(editor) === open) return;
+  const value: ParticipationSetting = { open, by: editor.user.id, at: editor.host.serverNow() };
+  editor.collection<ParticipationSetting>(FACILITATION_COLLECTION).set(PARTICIPATION_KEY, value);
 }
 
 /** "Hide cursors" for myself (local, any role; remembered per browser). */

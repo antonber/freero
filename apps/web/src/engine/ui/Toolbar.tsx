@@ -33,10 +33,14 @@ export function Toolbar() {
   const viewOnly = compact && (!canEdit || !phoneEditing);
   // A facilitator's limits hide the tools that add what participants may not add (Editor.getLimits).
   useStore(core.ui, (s) => s.limits);
+  // A participant drafting in private mode gets the tools that add what they may draft.
+  const participant = useStore(core.ui, (s) => s.participant);
+  useStore(core.ui, (s) => s.draftVersion);
+  const drafting = participant && !canEdit;
   const allowed = (t: Registered<ToolDefinition>) =>
-    ROLE_RANK[role] >= ROLE_RANK[t.def.minRole ?? 'editor'] &&
+    editor.canUseTool(t.def) &&
     editor.toolAllowed(t.def.id) &&
-    (!viewOnly || ROLE_RANK[t.def.minRole ?? 'editor'] <= ROLE_RANK.commenter);
+    (!viewOnly || drafting || ROLE_RANK[t.def.minRole ?? 'editor'] <= ROLE_RANK.commenter);
   const tools = core.registry.tools.filter(allowed);
   const main = tools.filter((t) => t.def.placement === 'main');
   const more = tools.filter((t) => t.def.placement === 'more');
