@@ -48,32 +48,32 @@ export function SharePage() {
   };
 
   return (
-    <div className="fr-share">
-      <div className="fr-share__card">
+    <div className="fr-sharein">
+      <div className="fr-sharein__card">
         <Logo size={28} withWordmark />
         <h1>Add to a board</h1>
         {nothing ? (
-          <p className="fr-share__note">Nothing arrived that Freero can place: share images, a link or text.</p>
+          <p className="fr-sharein__note">Nothing arrived that Freero can place: share images, a link or text.</p>
         ) : (
-          <div className="fr-share__what" aria-label="Shared">
+          <div className="fr-sharein__what" aria-label="Shared">
             {shared.images.map((src) => (
               <img key={src} src={src} alt="" />
             ))}
             {shared.link ? (
-              <p className="fr-share__link">
+              <p className="fr-sharein__link">
                 <Link2 size={16} aria-hidden /> <span>{shared.link}</span>
               </p>
             ) : null}
-            {shared.text ? <p className="fr-share__text">{shared.text}</p> : null}
+            {shared.text ? <p className="fr-sharein__text">{shared.text}</p> : null}
           </div>
         )}
         {shared.failed ? (
-          <p className="fr-share__note">
+          <p className="fr-sharein__note">
             {shared.failed === 1 ? 'One file wasn’t an image Freero could store' : `${shared.failed} files weren’t images Freero could store`} (or your upload quota is full).
           </p>
         ) : null}
         {error ? (
-          <p className="fr-share__error" role="alert">
+          <p className="fr-sharein__error" role="alert">
             {error}
           </p>
         ) : null}
@@ -86,7 +86,7 @@ export function SharePage() {
             {boards === null ? (
               <Spinner size={20} />
             ) : boards.length ? (
-              <ul className="fr-share__boards">
+              <ul className="fr-sharein__boards">
                 {boards.map((b) => (
                   <li key={b.id}>
                     <button type="button" onClick={() => open(b.id)} disabled={busy}>
@@ -96,7 +96,7 @@ export function SharePage() {
                 ))}
               </ul>
             ) : (
-              <p className="fr-share__note">No boards you can edit yet.</p>
+              <p className="fr-sharein__note">No boards you can edit yet.</p>
             )}
           </>
         )}

@@ -16,6 +16,7 @@ interface UserRow {
   deletion_scheduled_for: Date | null;
   suspended_at: Date | null;
   password_via_link_at: Date | null;
+  time_zone: string | null;
   color_theme: ColorThemePreference;
 }
 
@@ -38,6 +39,7 @@ const toUser = (r: UserRow): UserWithHash => ({
   createdAt: r.created_at.getTime(),
   emailVerified: r.email_verified_at !== null,
   deletionScheduledFor: r.deletion_scheduled_for?.getTime() ?? null,
+  timeZone: r.time_zone ?? null,
   theme: r.color_theme,
   passwordHash: r.password_hash,
   passwordViaLink: r.password_via_link_at !== null,
@@ -85,17 +87,24 @@ export async function countUsers(): Promise<number> {
 /** Changes only the given fields, in one statement (no read-modify-write that could drop a concurrent edit). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; color?: string; avatarUrl?: string | null; theme?: ColorThemePreference },
+  patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string; theme?: ColorThemePreference },
 ): Promise<void> {
   await query(
     `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
-       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END,
-       color_theme = COALESCE($6, color_theme),
+       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END, time_zone = COALESCE($6, time_zone),
+       color_theme = COALESCE($7, color_theme),
        previous_names = CASE WHEN $2 IS NULL OR $2 = name THEN previous_names
                              ELSE (ARRAY[name] || array_remove(previous_names, name))[1:5] END
      WHERE id = $1`,
-    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null, patch.theme ?? null],
+    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null, patch.timeZone ?? null, patch.theme ?? null],
   );
+}
+
+/** Time zones of these accounts (absent: not known yet, or no such account). */
+export async function timeZonesOf(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await query<{ id: string; time_zone: string }>(`SELECT id, time_zone FROM users WHERE id = ANY($1::text[]) AND time_zone IS NOT NULL`, [ids]);
+  return new Map(rows.map((r) => [r.id, r.time_zone]));
 }
 
 /** The account's current name and the few it had before (comment authorship, KAI-187). */

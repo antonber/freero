@@ -25,7 +25,20 @@ function stored(): ColorThemePreference {
 }
 
 let preference: ColorThemePreference = stored();
-let override: ColorTheme | null = null;
+
+/**
+ * A board embedded on another page (/embed/b/…, /embed/board/…) doesn't follow this browser's
+ * choice: light, unless the embedding page asks with ?theme=dark (or #…&theme=dark). Its page
+ * keeps the override while mounted (setThemeOverride); this is what the first paint shows (as
+ * public/theme-boot.js does).
+ */
+export function embedTheme(loc: Pick<Location, 'pathname' | 'search' | 'hash'> | null = typeof location === 'undefined' ? null : location): ColorTheme | null {
+  if (!loc || !/^\/embed\/(b|board)\//.test(loc.pathname)) return null;
+  const asked = new URLSearchParams(loc.search).get('theme') ?? new URLSearchParams(loc.hash.slice(1)).get('theme');
+  return asked === 'dark' ? 'dark' : 'light';
+}
+
+let override: ColorTheme | null = embedTheme();
 const listeners = new Set<() => void>();
 const media = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 

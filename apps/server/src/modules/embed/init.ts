@@ -5,10 +5,12 @@
 // token expires (ws.ts); opening one again goes through the assistant, i.e. a fresh tool call.
 import type { ServerContext } from '../../platform/context';
 import { HttpError } from '../../platform/http';
+import { scheduleExclusiveJob } from '../../platform/jobs';
 import { log, logError } from '../../platform/log';
 import { authenticateEmbedKey, EMBED_SESSION_PREFIX, useInWorkspace } from '../apiauth/index';
 import { boardWorkspaceId } from '../boards/index';
 import { endSessionSockets, liveSessionKeys } from '../realtime/index';
+import { purgeExpiredMemberTokens } from './public';
 
 /** The views behind this instance's sockets that must close now. */
 export async function viewsToClose(): Promise<string[]> {
@@ -32,7 +34,11 @@ export async function viewsToClose(): Promise<string[]> {
   return gone;
 }
 
+/** Expired tokens of boards embedded on other sites (#2) are cleared hourly, by one instance at a time. */
+const TOKEN_CLEANUP_LOCK_KEY = 7_202_611_251; // arbitrary, constant across releases
+
 export default function initEmbed(ctx: ServerContext): void {
+  scheduleExclusiveJob(ctx, { name: 'embed:tokens', lockKey: TOKEN_CLEANUP_LOCK_KEY, intervalMs: 3_600_000, firstRunMs: 90_000, run: () => purgeExpiredMemberTokens() });
   let running: Promise<unknown> = Promise.resolve();
   const timer = setInterval(() => {
     running = running.then(viewsToClose).then(

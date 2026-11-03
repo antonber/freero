@@ -33,6 +33,11 @@ export type LegalKey =
   | 'aiWorkspaces'
   | 'errorReporting'
   | 'analytics'
+  | 'analyticsCookies'
+  | 'analyticsProvider'
+  | 'analyticsData'
+  | 'analyticsPurpose'
+  | 'analyticsBasis'
   | 'status';
 
 /** A token in running text (a fragment, so pages can write `<p>Run by {L('operator')}.</p>`). */

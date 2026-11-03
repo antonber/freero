@@ -6,7 +6,9 @@ import {
   ballotKey,
   ballotsOf,
   castVote,
+  endSession,
   getSession,
+  historyOf,
   retractVote,
   startSession,
   tally,
@@ -103,6 +105,29 @@ describe('voting', () => {
     expect(r.entries().map(([k]) => k)).toEqual(['session']);
     // Ana gets her full allowance again.
     for (let i = 0; i < 3; i++) expect(castVote(r, ana, 's1', exists)).toBe(true);
+  });
+
+  it("the next vote keeps the ended vote's totals in the history — never its ballots — and drops the oldest past votes", () => {
+    const r = boardWithSession(3);
+    castVote(r, ana, 's1', exists);
+    castVote(r, ben, 's1', exists);
+    castVote(r, ben, 's2', exists);
+    endSession(r, 5);
+    startSession(r, { id: 'sess2', title: 'Round 2', votesPerUser: 3, hideResults: true, elementIds: null }, ana, 6, exists);
+    const [past] = historyOf(r.entries());
+    expect(past.totals).toEqual([['s1', 2], ['s2', 1]]);
+    expect(past.voters).toBe(2);
+    expect(JSON.stringify(past)).not.toContain('"ben"'); // a voter (Ana started the vote: its session says so)
+    expect(r.entries().some(([k]) => k.startsWith('sess1:'))).toBe(false);
+
+    for (let i = 3; i < 30; i++) {
+      castVote(r, ana, 's3', exists);
+      endSession(r, i * 10);
+      startSession(r, { id: `sess${i}`, title: `Round ${i}`, votesPerUser: 3, hideResults: false, elementIds: null }, ana, i * 10 + 1, exists);
+    }
+    const kept = historyOf(r.entries());
+    expect(kept).toHaveLength(20);
+    expect(kept[0].session.id).toBe('sess28'); // the newest ended vote; sess29 still runs
   });
 
   it('with hidden results, the other replicas learn only that someone voted, never on what, until the vote ends', () => {

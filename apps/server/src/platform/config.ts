@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isGaMeasurementId } from '@freero/shared';
 
 export type RateLimitName =
   | 'api'
@@ -217,6 +218,11 @@ export interface Config {
    */
   sessionRecheckMs: number;
   /**
+   * The most visitors without an account one instance lets watch one board through embeds on
+   * other sites at a time (#60); later ones get a card with a link instead of the live board.
+   */
+  embedMaxVisitors: number;
+  /**
    * How long a "lost my authenticator" recovery waits before two-step verification can be removed
    * (the owner is mailed at the start and before the end, and can cancel). At least a day in production.
    */
@@ -292,6 +298,13 @@ export interface Config {
    * addresses only.
    */
   oauthClientMetadataLoopback: boolean;
+  /**
+   * Google Analytics 4 (GA_MEASUREMENT_ID, `G-…`): the marketing pages and the app measure page
+   * views and a few product events with it, only after the visitor accepts in the consent banner
+   * (modules/analytics; ARCHITECTURE.md "Analytics"). Null: no Google script, no banner, no CSP
+   * change, anywhere.
+   */
+  googleAnalyticsId: string | null;
   /**
    * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
    * marketing page is served and robots.txt keeps crawlers off the whole instance.
@@ -590,6 +603,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else analyticsAttrs[key] = i < 0 ? '' : pair.slice(i + 1).trim();
   }
   const siteAnalytics = analyticsSrc ? { src: analyticsSrc, attrs: analyticsAttrs } : null;
+  // GA_MEASUREMENT_ID=G-…: a GA4 web stream. A Universal Analytics id (UA-…) or a typo would load
+  // nothing and fail silently, so it is refused here.
+  const gaId = str('GA_MEASUREMENT_ID')?.toUpperCase() ?? null;
+  if (gaId !== null && !isGaMeasurementId(gaId))
+    problems.push(`GA_MEASUREMENT_ID must be a Google Analytics 4 measurement id such as G-AB12CD34EF (got "${gaId.slice(0, 40)}"; Universal Analytics UA-… ids no longer work)`);
   // IndexNow's own rule for a key: 8 to 128 characters of a-z, A-Z, 0-9 and dashes. Anything else
   // would make every submission fail later, far from the cause.
   const indexNowKey = str('SITE_INDEXNOW_KEY');
@@ -836,6 +854,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
     sessionRecheckMs: int('SESSION_RECHECK_SECONDS', 60, 1, 3600) * 1000,
+    embedMaxVisitors: int('EMBED_MAX_VISITORS_PER_BOARD', 200, 0, 100_000),
     // Shorter than a day only outside production (tests); see docs/configuration.md.
     twoFactorRecoveryDelayMs: int('TWO_FACTOR_RECOVERY_DELAY_SECONDS', 7 * 86_400, production ? 86_400 : 1, 90 * 86_400) * 1000,
     twoFactorUndoMs: int('TWO_FACTOR_UNDO_HOURS', 72, 1, 14 * 24) * 3_600_000,
@@ -860,6 +879,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicApi: bool('PUBLIC_API', true),
     openaiAppsChallenge: str('OPENAI_APPS_CHALLENGE'),
     oauthClientMetadataLoopback: bool('OAUTH_CLIENT_METADATA_LOOPBACK', false),
+    googleAnalyticsId: gaId !== null && isGaMeasurementId(gaId) ? gaId : null,
     site: {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Account, User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
+import { takeProviderSignIn, track } from '../analytics/bridge';
 import { api } from '../api/client';
 import { setThemePreference } from '../lib/theme';
 
@@ -16,8 +17,8 @@ export interface AuthValue {
   logout(): Promise<void>;
   /** Re-fetches the session. */
   refresh(): Promise<Account | null>;
-  /** Saves name/color; every open tab (boards included) picks the change up. */
-  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>>): Promise<Account>;
+  /** Saves name/color/time zone/theme; every open tab (boards included) picks the change up. */
+  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }): Promise<Account>;
   /**
    * Adopts an account the server just returned (avatar change, password reset sign-in, restore)
    * — or null after it signed this tab out (deletion) — and tells the other tabs.
@@ -27,6 +28,17 @@ export interface AuthValue {
 
 /** Other tabs of the app hear about session/profile changes here and re-check the session. */
 const CHANNEL = 'freero:auth';
+
+/**
+ * Tells the other tabs to re-check the session — from a page that arrived signed in without this
+ * tab's login() (a provider sign-in redirect): the embed sign-in popup is waiting for it (#2).
+ */
+export function announceSessionChange(): void {
+  if (typeof BroadcastChannel === 'undefined') return;
+  const ch = new BroadcastChannel(CHANNEL);
+  ch.postMessage('changed');
+  ch.close();
+}
 
 const AuthContext = createContext<AuthValue | null>(null);
 
@@ -72,9 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await api.login({ email: email.trim(), password });
+    takeProviderSignIn(); // a provider sign-in abandoned in this tab doesn't count instead
     if (!('user' in res)) return null;
     setUser(res.user);
     announce();
+    track({ name: 'login', method: 'password' });
     return res.user;
   }, [announce]);
 
@@ -82,6 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { user } = await api.loginTwoFactor(code);
     setUser(user);
     announce();
+    // The second step of a password sign-in, or of one through a provider (noted when it started).
+    track({ name: 'login', method: takeProviderSignIn() ?? 'password' });
     return user;
   }, [announce]);
 
@@ -89,6 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { user } = await api.signup({ name: name.trim(), email: email.trim(), password });
     setUser(user);
     announce();
+    takeProviderSignIn();
+    track({ name: 'sign_up', method: 'password' });
     return user;
   }, [announce]);
 
@@ -101,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [announce]);
 
-  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>>) => {
+  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) => {
     const { user } = await api.updateMe(patch);
     setUser(user);
     announce();
@@ -118,12 +136,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (accountTheme) setThemePreference(accountTheme);
   }, [accountTheme]);
+  // An account whose time zone isn't known yet takes this browser's (reminders, email dates); a
+  // zone chosen in the profile is never overwritten. Once per tab and account.
+  const zoneSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || user.timeZone || user.deletionScheduledFor || zoneSent.current === user.id) return;
+    const zone = browserTimeZone();
+    if (!zone) return;
+    zoneSent.current = user.id;
+    Promise.resolve(zone).then((timeZone) => api.updateMe({ timeZone })).then(
+      ({ user: next }) => setUser((cur) => (cur && cur.id === next.id ? next : cur)),
+      () => undefined, // tried again next time the app loads
+    );
+  }, [user]);
 
   const value = useMemo<AuthValue>(
     () => ({ user, loading, login, completeTwoFactor, signup, logout, refresh, updateProfile, adopt }),
     [user, loading, login, completeTwoFactor, signup, logout, refresh, updateProfile, adopt],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+/** The browser's IANA time zone ("Europe/Berlin"), or null when it doesn't say. */
+export function browserTimeZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
 }
 
 export function useAuth(): AuthValue {

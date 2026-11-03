@@ -24,6 +24,7 @@ import {
   type ElementContentRule,
   SUGGESTIONS_COLLECTION,
   WS_CLOSE_BOARD_REMOVED,
+  WS_CLOSE_EMBED_FULL,
   WS_MESSAGE_LAYER,
   WS_MESSAGE_LAYER_OP,
   WS_MESSAGE_ROLE,
@@ -106,6 +107,8 @@ export class BoardStore {
   readonly layers: Record<BoardLayer, LayerDoc>;
 
   status: ConnectionStatus;
+  /** Why the server closed the socket for good ('denied' / 'removed'), or null. */
+  ended: { code: number; reason: string } | null = null;
   synced = false;
   serverRole: Role | null = null;
   /**
@@ -115,6 +118,8 @@ export class BoardStore {
   serverReadRole: Role | null = null;
   /** A facilitator's limits for this user, from the same role message (null: none). */
   serverLimits: SessionLimits | null = null;
+  /** This commenter may take part: own ballot, pick and private-mode drafts (RoleMessage.participant). */
+  serverParticipant = false;
 
   private history: UndoHistory;
   private placement: Placement = (_el, current) => current ?? 'shared';
@@ -184,6 +189,7 @@ export class BoardStore {
             this.serverRole = m.role;
             this.serverReadRole = m.readRole ?? null;
             this.serverLimits = m.limits && typeof m.limits === 'object' ? m.limits : null;
+            this.serverParticipant = m.participant === true;
             this.emit(this.roleListeners);
           }
         } catch {
@@ -216,8 +222,9 @@ export class BoardStore {
         this.emit(this.statusListeners);
       });
       provider.on('connection-close', (event: CloseEvent | null) => {
-        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED)) {
+        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || event.code === WS_CLOSE_EMBED_FULL)) {
           this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : 'denied';
+          this.ended = { code: event.code, reason: event.reason };
           provider.shouldConnect = false;
           provider.disconnect();
           this.emit(this.statusListeners);
@@ -226,6 +233,7 @@ export class BoardStore {
           this.serverRole = 'viewer';
           this.serverReadRole = null;
           this.serverLimits = null;
+          this.serverParticipant = false;
           this.emit(this.roleListeners);
         }
       });

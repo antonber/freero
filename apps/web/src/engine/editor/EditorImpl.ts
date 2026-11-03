@@ -5,7 +5,9 @@ import {
   acceptClosure,
   buildOutline,
   COMMENTER_WRITABLE,
+  isProtectedLock,
   mayProtect,
+  PARTICIPANT_WRITABLE,
   pendingSuggestions,
   rejectClosure,
   suggestedElement,
@@ -116,9 +118,11 @@ export class EditorImpl implements Editor {
     remeasurePending: boolean;
     /** New elements matching this go to the private layer (setPrivatePlacement). */
     privateRule: ((el: BoardElement) => boolean) | null;
+    /** The types `privateRule` can make private (setPrivatePlacement opts): what a participant may draft. */
+    privateTypes: readonly ElementType[] | null;
     /** Where content is about to land (reserveSpace): findFreeSpot keeps clear of it. */
     reserved: Set<Rect>;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null, reserved: new Set() };
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null, privateTypes: null, reserved: new Set() };
 
   /** The private-mode placement rule (read by the engine's layer placement). */
   getPrivateRule(): ((el: BoardElement) => boolean) | null {
@@ -227,9 +231,47 @@ export class EditorImpl implements Editor {
     return ROLE_RANK[this.getRole()] >= ROLE_RANK[minRole];
   }
 
-  /** True if the user may edit board content; otherwise shows a (rate-limited) toast. */
-  guardWrite(): boolean {
+  isParticipant(): boolean {
+    return !this.can('editor') && this.core.store.serverParticipant;
+  }
+
+  /** Is `id` one of this participant's own drafts (in their private layer)? */
+  private ownDraft(id: string): boolean {
+    return this.isParticipant() && this.core.store.layerOf(id) === 'private';
+  }
+
+  mayEdit(ids: readonly string[]): boolean {
+    // A protected lock (BaseElement.lockProtected) holds for everyone but the owner (mayProtect).
+    if (!this.mayProtect() && ids.some((id) => isProtectedLock(this.getElement(id)))) return false;
     if (this.can('editor')) return true;
+    return ids.length > 0 && ids.every((id) => this.ownDraft(id));
+  }
+
+  /** Would a participant's new element `el` go private now (private mode's rule)? Then they may add it. */
+  private mayDraft(el: BoardElement): boolean {
+    const rule = this.shared.privateRule;
+    return this.isParticipant() && !!rule && !!this.shared.privateTypes?.includes(el.type) && rule(el);
+  }
+
+  /**
+   * May this tool be picked: its role, or — for a participant while private mode applies to them —
+   * a tool that only adds types they may draft (never an act-now tool: an upload is not a draft).
+   */
+  canUseTool(def: ToolDefinition): boolean {
+    if (this.can(def.minRole ?? 'editor')) return true;
+    const types = this.shared.privateTypes;
+    if (!this.isParticipant() || !this.shared.privateRule || !types || def.onSelect) return false;
+    const creates = this.toolCreates(def);
+    return creates.length > 0 && creates.every((t) => types.includes(t));
+  }
+
+  /**
+   * True if the user may edit board content — or, given `ids`, those elements (a participant's own
+   * drafts: Editor.mayEdit); otherwise shows a (rate-limited) toast.
+   */
+  guardWrite(ids?: readonly string[]): boolean {
+    if (this.can('editor')) return true;
+    if (ids && this.mayEdit(ids)) return true;
     const role = this.getRole();
     const limits = this.getLimits();
     this.deny(
@@ -584,10 +626,13 @@ export class EditorImpl implements Editor {
   }
 
   createMany(els: NewElement[], opts?: { select?: boolean }): string[] {
-    if (!els.length || !this.guardWrite() || !this.guardAdd(els.map((e) => e.type))) return [];
+    if (!els.length) return [];
     const now = Date.now();
     let z = this.core.store.maxZ();
     let built = els.map((e) => this.build(e, ++z, now));
+    // A participant adds only drafts that go private (participation.ts on the server).
+    const drafting = !this.can('editor') && built.every((el) => this.mayDraft(el));
+    if ((!drafting && !this.guardWrite()) || !this.guardAdd(els.map((e) => e.type))) return [];
     // Created by a grid-snapping tool's pointer event: land on the grid like a snapped drag
     // (top-left of everything created at once, moved together).
     const grid = this.core.interaction.createGrid;
@@ -600,7 +645,8 @@ export class EditorImpl implements Editor {
     this.core.store.transact(() => {
       this.touched(built.map((b) => b.id), true);
       for (const el of built) this.core.store.setElement(el);
-      this.adoptIntoContainers(built.map((b) => b.id));
+      // A participant's draft joins no container: laying one out would write the shared board.
+      if (!drafting) this.adoptIntoContainers(built.map((b) => b.id));
       this.settle();
     });
     const ids = built.map((b) => b.id);
@@ -613,7 +659,7 @@ export class EditorImpl implements Editor {
   }
 
   updateMany(patches: Array<{ id: string; patch: ElementPatch }>): void {
-    if (!patches.length || !this.guardWrite()) return;
+    if (!patches.length || !this.guardWrite(patches.map((p) => p.id))) return;
     const store = this.core.store;
     const now = Date.now();
     const next: BoardElement[] = [];
@@ -740,8 +786,9 @@ export class EditorImpl implements Editor {
   }
 
   remove(ids: string[]): void {
-    if (!ids.length || !this.guardWrite()) return;
+    if (!ids.length) return;
     const all = this.withDependents(ids);
+    if (!this.guardWrite(all)) return;
     const editing = this.getEditingId();
     if (editing && all.includes(editing)) this.stopEditing();
     this.core.store.transact(() => {
@@ -774,7 +821,7 @@ export class EditorImpl implements Editor {
   }
 
   moveBy(moves: Array<{ id: string; dx: number; dy: number }>): void {
-    if (!moves.length || !this.guardWrite()) return;
+    if (!moves.length || !this.guardWrite(this.withChildren(moves.map((m) => m.id)))) return;
     const delta = new Map<string, Point>();
     for (const m of moves) if ((m.dx || m.dy) && Number.isFinite(m.dx) && Number.isFinite(m.dy)) delta.set(m.id, { x: m.dx, y: m.dy });
     // A container's children travel with it, unless they were given their own move.
@@ -1212,7 +1259,7 @@ export class EditorImpl implements Editor {
     const def = this.getDefinition(el.type);
     const part = opts.part ?? null;
     if (!def || (!def.textField && !part)) return;
-    if (!this.guardWrite()) return;
+    if (!this.guardWrite([id])) return;
     if (el.locked) {
       this.host.notify('Unlock this item to edit it.', 'info');
       return;
@@ -1492,7 +1539,7 @@ export class EditorImpl implements Editor {
       console.warn(`Unknown tool '${id}'`);
       return;
     }
-    if (!this.can(reg.def.minRole ?? 'editor')) {
+    if (!this.canUseTool(reg.def)) {
       this.guardWrite();
       return;
     }
@@ -1577,6 +1624,8 @@ export class EditorImpl implements Editor {
         canWrite: (n) => {
           if (this.can('editor')) return true;
           if (this.getRole() === 'commenter' && (COMMENTER_WRITABLE as readonly string[]).includes(n)) return true;
+          // A participant's own ballot / pick (the server checks which keys: votingRules, estimationRules).
+          if (this.isParticipant() && (PARTICIPANT_WRITABLE as readonly string[]).includes(n)) return true;
           return this.guardWrite();
         },
       });
@@ -1595,8 +1644,8 @@ export class EditorImpl implements Editor {
         this.scope,
         {
           ownerOf: (n) => this.core.registry.collectionOwners.get(n),
-          // The server accepts private-layer writes from owners/editors only.
-          canWrite: () => this.guardWrite(),
+          // The server accepts private-layer writes from owners/editors, and a participant's own ballot / pick.
+          canWrite: (n) => (this.isParticipant() && (PARTICIPANT_WRITABLE as readonly string[]).includes(n)) || this.guardWrite(),
         },
         'private',
       );
@@ -1610,8 +1659,13 @@ export class EditorImpl implements Editor {
     return this.core.store.layerOf(id);
   }
 
-  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null): void {
+  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null, opts?: { types?: readonly ElementType[] }): void {
     this.shared.privateRule = rule;
+    this.shared.privateTypes = rule ? (opts?.types ?? null) : null;
+    this.core.ui.setState((s) => ({ draftVersion: s.draftVersion + 1 }));
+    // Private mode ended: a participant puts down the drafting tool it no longer may use.
+    const tool = this.core.registry.toolsById.get(this.getToolId());
+    if (tool && !this.canUseTool(tool.def)) this.setTool('select');
   }
 
   revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean; anonymous?: boolean }): void {

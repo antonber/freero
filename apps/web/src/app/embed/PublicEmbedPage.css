@@ -1,0 +1,25 @@
+/* A board embedded on another site (#2): the bar in the board's top-right card. */
+.fr-embedbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Frames are often short (a wiki column): the card shrinks with them. */
+.fr-embedcard {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+@media (max-height: 420px) {
+  .fr-embedcard .fr-boarderror__card {
+    padding: 20px 24px;
+  }
+  .fr-embedcard .fr-boarderror__card h1 {
+    margin-top: 10px;
+    font-size: 18px;
+  }
+  .fr-embedcard .fr-boarderror__card p {
+    margin-bottom: 14px;
+  }
+}

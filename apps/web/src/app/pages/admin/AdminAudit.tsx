@@ -10,7 +10,7 @@ const CATEGORIES: SelectOption<string>[] = [
   { value: '', label: 'All events' },
   { value: 'auth.,account.', label: 'Sign-ins and accounts' },
   { value: 'member.,workspace.transferred,workspace.owner_inherited', label: 'Members and roles' },
-  { value: 'workspace.policies_changed,workspace.settings_changed,board.link_sharing_changed', label: 'Policies and sharing' },
+  { value: 'workspace.policies_changed,workspace.settings_changed,board.link_sharing_changed,board.embedding_changed', label: 'Policies and sharing' },
   { value: 'board.member_invited,board.member_role_changed,board.member_removed', label: 'Board sharing' },
   { value: 'board.exported,board.duplicated,board.download_refused,template.saved,audit.exported', label: 'Exports and copies' },
   { value: 'api.', label: 'API tokens, apps and calls' },

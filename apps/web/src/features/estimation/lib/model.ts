@@ -9,6 +9,7 @@
 //
 // One key per voter per item, so concurrent picks never overwrite each other, and a second tab of
 // the same person replaces their pick instead of adding one.
+import { ESTIMATION_ROUND_KEY, estimateKey, estimatePrefix } from '@freero/shared';
 
 export type DeckKind = 'fibonacci' | 'tshirt' | 'custom';
 
@@ -62,9 +63,10 @@ export interface Estimate {
 
 export type EstimationValue = Round | Estimate;
 
-export const ROUND_KEY = 'round';
-export const voteKey = (roundId: string, itemId: string, userId: string) => `v:${roundId}:${itemId}:${userId}`;
-export const itemPrefix = (roundId: string, itemId: string) => `v:${roundId}:${itemId}:`;
+// The key format is shared with the server, which holds participants to their own pick (estimationRules.ts).
+export const ROUND_KEY = ESTIMATION_ROUND_KEY;
+export const voteKey = estimateKey;
+export const itemPrefix = estimatePrefix;
 
 export function readRound(v: unknown): Round | undefined {
   const r = v as Partial<Round> | undefined;

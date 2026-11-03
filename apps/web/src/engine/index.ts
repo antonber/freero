@@ -34,6 +34,7 @@ export {
   useFormatToolbarRect,
   useFollowing,
   useLimits,
+  useParticipant,
   useCursorsHidden,
   useEditingPart,
   useViewHidden,

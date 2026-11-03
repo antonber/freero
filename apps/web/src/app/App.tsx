@@ -1,9 +1,11 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { ToastProvider } from '@ui';
+import { AppAnalytics } from './analytics/AppAnalytics';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { GuestGate } from './board/GuestGate';
+import { FrameGuard } from './embed/FrameGuard';
 import { FullPageSpinner } from './components/FullPageSpinner';
 import { AppUpdates } from './pwa/AppUpdates';
 import { AuthPage } from './pages/auth/AuthPage';
@@ -33,6 +35,10 @@ const OperatorPreviewPage = lazy(() => import('./pages/operator/OperatorPreviewP
 const DecisionPage = lazy(() => import('./pages/decision/DecisionPage'));
 // A live board view inside an AI assistant (MCP Apps, KAI-171).
 const EmbedBoardPage = lazy(() => import('./embed/EmbedBoardPage'));
+// A board embedded live on another site (#2), its sign-in popup and the tab that signs in for it.
+const PublicEmbedPage = lazy(() => import('./embed/PublicEmbedPage'));
+const EmbedConnectPage = lazy(() => import('./embed/EmbedConnectPage'));
+const EmbedSignedInPage = lazy(() => import('./embed/EmbedSignedInPage'));
 // Docs (KAI-162): the page and its editor load on demand.
 const DocPage = lazy(() => import('./pages/doc/DocPage'));
 
@@ -42,8 +48,11 @@ export function App() {
       <ToastProvider>
         <AppUpdates />
         <AuthProvider>
+          {/* Google Analytics where the server has it on (GA_MEASUREMENT_ID): consent first, redacted pages. */}
+          <AppAnalytics />
           {/* "Report a problem": its dialog and shortcut, for every signed-in page. */}
           <ProblemReportProvider>
+          <FrameGuard>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<AuthPage mode="login" />} />
@@ -193,8 +202,33 @@ export function App() {
                 </RequireAuth>
               }
             />
+            <Route
+              path="/embed/b/:id"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                  <PublicEmbedPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/embed/connect/:id"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Signing in" />}>
+                  <EmbedConnectPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/embed/signed-in"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Signing in" />}>
+                  <EmbedSignedInPage />
+                </Suspense>
+              }
+            />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          </FrameGuard>
           </ProblemReportProvider>
         </AuthProvider>
       </ToastProvider>

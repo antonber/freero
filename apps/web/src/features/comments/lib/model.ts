@@ -1,6 +1,7 @@
 // Pure comment logic: the keyed record layout of the `comments` collection (one small record
 // per key — see CommentRecord in @freero/shared), assembling records into threads, pin
 // geometry, activity/unread and list filtering.
+import { mentionedUserIds } from '@freero/shared';
 import type {
   BoardElement,
   CommentMessage,
@@ -209,11 +210,19 @@ export function isUnread(t: CommentThread, seenAt: number | undefined, myId: str
   return t.messages.some((m) => m.authorId !== myId && messageActivity(m) > (seenAt ?? 0));
 }
 
-export type ThreadFilter = 'open' | 'resolved' | 'mine';
+export type ThreadFilter = 'open' | 'unread' | 'mentions' | 'resolved' | 'mine';
 
-export function listThreads(threads: CommentThread[], filter: ThreadFilter, myId: string): CommentThread[] {
+/** Someone else @mentioned you in the thread (resolved ones too: it was still about you). */
+export function mentionsMe(t: CommentThread, myId: string): boolean {
+  return t.messages.some((m) => m.authorId !== myId && mentionedUserIds(m.text).includes(myId));
+}
+
+/** `seen`: when you last looked at each thread (the 'unread' filter: open threads with news, like the badge). */
+export function listThreads(threads: CommentThread[], filter: ThreadFilter, myId: string, seen: Record<string, number> = {}): CommentThread[] {
   const keep = threads.filter((t) => {
     if (filter === 'open') return !t.resolved;
+    if (filter === 'unread') return !t.resolved && isUnread(t, seen[t.id], myId);
+    if (filter === 'mentions') return mentionsMe(t, myId);
     if (filter === 'resolved') return t.resolved;
     return t.messages.some((m) => m.authorId === myId);
   });

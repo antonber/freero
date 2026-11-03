@@ -8,13 +8,19 @@
 // until it is revealed; it lives in a layer doc that is simply never sent to that connection.
 //
 //   storage name   wire name   who may read                  who may write
-//   'u:<userId>'   'private'   that user's sockets           …while their role is owner/editor
+//   'u:<userId>'   'private'   that user's sockets           …while their role is owner/editor, or
+//                                                            as a participant (participation.ts:
+//                                                            own ballot, pick and drafts only)
 //   'editors'      'editors'   owner/editor sockets          owner/editor sockets
 //
 // Revealing moves entries from the private layers into the shared doc on the server (an owner or
 // editor asks with a LayerOp), so it works while their authors are offline. Only the layers of
-// people who may still edit the board take part (someone removed or made a viewer meanwhile keeps
-// their drafts to themselves; compaction deletes a removed member's layer).
+// people who may still edit the board, or take part as participants, are revealed (someone removed
+// or made a viewer meanwhile keeps their drafts to themselves; compaction deletes a removed
+// member's layer).
+//
+// Ballots of an anonymous vote (votingRules.ts) are revealed without their voters: under `anon:<n>`
+// voter ids, in an order that depends only on their votes, with the "has voted" markers deleted.
 //
 // An anonymous reveal (#44: the op says so, or the draft was written during an anonymous private
 // mode and already carries ANONYMOUS_AUTHOR, attribution.ts) writes each draft into the shared doc
@@ -27,9 +33,10 @@
 // and relays layer updates like the shared doc's, re-checking access per receiving socket. The
 // instance where a change is made (a socket's write, or a reveal) publishes and saves it.
 import * as Y from 'yjs';
-import { ANONYMOUS_AUTHOR, isAnonymousAuthor, isElementContentCollection, Y_ELEMENTS, type BoardLayer, type LayerOp, type Role } from '@freero/shared';
+import { ANONYMOUS_AUTHOR, isAnonymousAuthor, isElementContentCollection, VOTING_COLLECTION, Y_ELEMENTS, type BoardLayer, type LayerOp, type Role } from '@freero/shared';
 import { COMMENTS_COLLECTION } from './comments';
 import { contentOf, type ContentEntry } from './elementContent';
+import { isAnonymousBallot, revealAnonymousBallots } from './votingRules';
 
 export const EDITORS_LAYER = 'editors';
 export const privateLayerOf = (userId: string) => `u:${userId}`;
@@ -62,6 +69,11 @@ export function wireNameFor(name: string, who: LayerReader): BoardLayer | null {
 
 export function mayWriteLayer(name: string, who: LayerReader): boolean {
   return wireNameFor(name, who) !== null && canEdit(who.role);
+}
+
+/** A participant (participation.ts) writes its own private layer only, under the participant rules. */
+export function participantMayWriteLayer(name: string, who: LayerReader & { participant: boolean }): boolean {
+  return who.participant && name === privateLayerOf(who.userId);
 }
 
 export function mayRunLayerOp(who: LayerReader): boolean {
@@ -111,6 +123,8 @@ export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc
   if (isElementContentCollection(op.collection)) return 0;
   const prefix = op.prefix ?? '';
   const drafts = op.collection === Y_ELEMENTS;
+  const ballots = op.collection === VOTING_COLLECTION;
+  const anonymousBallots: unknown[] = [];
   const hits: Array<{ doc: Y.Doc; keys: string[]; content: ContentEntry[] }> = [];
   const reveal: Array<[string, unknown]> = [];
   const revealContent: ContentEntry[] = [];
@@ -126,7 +140,8 @@ export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc
       if (drafts && isObj(value) && (op.anonymous || isAnonymousAuthor(value.createdBy))) {
         anonymous.add(key);
         reveal.push([key, anonymized(value, now)]);
-      } else reveal.push([key, value]);
+      } else if (ballots && isAnonymousBallot(value, main)) anonymousBallots.push(value);
+      else reveal.push([key, value]);
     }
     if (!keys.length) continue;
     const content = drafts ? contentOf(doc, new Set(keys), [main]) : [];
@@ -136,10 +151,11 @@ export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc
     hits.push({ doc, keys, content });
   }
   if (!hits.length) return 0;
-  if (op.type === 'reveal' && (reveal.length || revealContent.length)) {
+  if (op.type === 'reveal' && (reveal.length || revealContent.length || anonymousBallots.length)) {
     const target = main.getMap<unknown>(op.collection);
     main.transact(() => {
       for (const [key, value] of reveal) target.set(key, value);
+      if (anonymousBallots.length) revealAnonymousBallots(target, anonymousBallots);
       for (const c of revealContent) main.getMap<unknown>(c.name).set(c.key, c.value);
     }, origin);
   }

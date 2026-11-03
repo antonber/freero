@@ -14,7 +14,11 @@ export const DOCK_ID = 'templates';
  */
 export async function addTemplate(editor: Editor, def: TemplateDef): Promise<string[]> {
   if (def.load) await def.load();
-  return insertTemplate(editor, def);
+  const ids = insertTemplate(editor, def);
+  // Built-in templates only (saved ones go through insertSavedTemplate): their ids are the public
+  // catalog's, the slugs of their pages on the site.
+  if (ids.length) editor.host.track?.({ name: 'template_used', template: def.id });
+  return ids;
 }
 
 /** Inserts a template whose content is at hand (no `load`, or after it resolved). */

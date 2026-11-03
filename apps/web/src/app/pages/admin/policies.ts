@@ -68,6 +68,15 @@ export const POLICY_FIELDS: Array<{
     ],
   },
   {
+    key: 'boardEmbeds',
+    label: 'Embedding boards on other sites',
+    hint: 'Whether board owners can embed their boards live in wikis, docs and websites. An embed never shows more than the board’s sharing allows. Off: no board shows on any other site, and embeds already placed stop working.',
+    options: [
+      { value: 'on', label: 'Allowed' },
+      { value: 'off', label: 'Off' },
+    ],
+  },
+  {
     key: 'downloads',
     label: 'Export, download and copy',
     hint: 'Who may export boards as images or PDF, duplicate them or save them as templates.',

@@ -430,6 +430,7 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port, opt
     if (msg.type === 'role') {
       client.role = msg.role;
       client.limits = msg.limits ?? null; // a facilitator's limits (KAI-129)
+      client.participant = msg.participant === true; // may take part as a commenter (parity rank 1)
     }
   };
   provider.on('connection-close', (event) => event && client.closeCodes.push(event.code));
@@ -4216,6 +4217,78 @@ async function teamsChecks() {
       assert(has('workspace.policies_changed', (e) => e.metadata['teamAccess.to'] === 'viewer'), 'no team access level event');
       assert(has('board.guest_joined', (e) => e.actor === null && e.metadata.name === 'Lee'), 'no guest join event');
       assert(has('board.access_requested', (e) => e.actor?.id === M.id) && has('board.access_approved', (e) => e.actor?.id === O.id), 'no access request events');
+    });
+
+    await check('participants (parity rank 1): a guest on the link votes, picks a planning-poker card and writes private drafts — its own only, nothing else — an anonymous vote is revealed with no trace of who voted for what, and closing participation shuts them out live', async () => {
+      const o = await layerClient(O, board.id, port);
+      const g = await layerClient(G, board.id, port);
+      assert(g.role === 'commenter' && g.participant === true, `guest role ${g.role}, participant ${g.participant}`);
+      assert(o.participant !== true, 'an owner reads as a participant');
+      const oBytes = [];
+      o.doc.on('update', (u) => oBytes.push(Buffer.from(u)));
+      const vote = { id: 'pv', active: true, title: 'Pick one', votesPerUser: 3, elementIds: null, anonymous: true, anonymousBallots: true, startedBy: O.id, startedAt: Date.now(), endedAt: null };
+      o.doc.transact(() => {
+        o.doc.getMap('elements').set('pv-a', { id: 'pv-a', type: 'sticky', x: 9000, y: 9000, w: 100, h: 100, z: 1, rotation: 0, text: 'option A' });
+        o.doc.getMap('voting').set('session', vote);
+        o.doc.getMap('estimation').set('round', { id: 'pr', itemIds: ['pv-a'], index: 0, deck: { kind: 'fibonacci', values: ['1', '2', '3'] }, revealed: false, startedBy: O.id, startedByName: O.name, startedAt: Date.now() });
+        o.doc.getMap('privateMode').set('session', { active: true, startedBy: O.id, startedByName: O.name, startedAt: Date.now(), frameId: null });
+      });
+      await waitFor(() => g.doc.getMap('privateMode').get('session')?.active === true, 5000, 'the guest to see the sessions');
+      const key = `pv:${G.id}`;
+      // The guest's own ballot (sealed, an older client's form with its name), marker, pick and draft…
+      g.layers.private.getMap('voting').set(key, { sessionId: 'pv', userId: G.id, elementIds: ['pv-a', 'pv-a'], userName: G.name });
+      g.doc.getMap('voting').set(key, { sessionId: 'pv', userId: G.id, elementIds: [], sealed: true, userName: G.name });
+      g.layers.private.getMap('estimation').set(`v:pr:pv-a:${G.id}`, { roundId: 'pr', itemId: 'pv-a', userId: G.id, userName: G.name, userColor: '#123', value: '3' });
+      g.doc.getMap('estimation').set(`v:pr:pv-a:${G.id}`, { roundId: 'pr', itemId: 'pv-a', userId: G.id, userName: G.name, userColor: '#123', sealed: true });
+      g.layers.private.getMap('elements').set('pv-draft', { id: 'pv-draft', type: 'sticky', x: 9200, y: 9000, w: 100, h: 100, z: 2, rotation: 0, text: 'guest idea' });
+      // …and what it may not do: end the vote, add to the shared board, open the round's cards.
+      // (Last: an update reaching outside what a participant may write is dropped whole, like a commenter's.)
+      g.doc.getMap('voting').set('session', { ...vote, active: false, endedAt: Date.now() });
+      g.doc.getMap('estimation').set('round', { ...o.doc.getMap('estimation').get('round'), revealed: true });
+      g.doc.getMap('elements').set('pv-forged', { id: 'pv-forged', type: 'sticky', x: 0, y: 0, w: 10, h: 10, z: 3, rotation: 0, text: 'not allowed' });
+      await settled(g, [o]);
+      await waitFor(() => g.layers.private.getMap('voting').get(key)?.anonymous === true, 5000, "the server to stamp the guest's sealed ballot");
+      assert(g.layers.private.getMap('voting').get(key).userName === undefined, 'the sealed anonymous ballot kept its name');
+      assert(g.layers.private.getMap('elements').has('pv-draft') && g.layers.private.getMap('estimation').has(`v:pr:pv-a:${G.id}`), "the guest's draft or pick was refused");
+      assert(o.doc.getMap('voting').get('session').active === true, 'a guest ended the vote');
+      assert(o.doc.getMap('estimation').get('round').revealed === false, "a guest revealed the round's cards");
+      assert(!o.doc.getMap('elements').has('pv-forged'), 'a guest added to the shared board');
+      const marker = o.doc.getMap('voting').get(key);
+      assert(marker?.sealed === true && marker.userName === undefined && marker.elementIds.length === 0, `marker ${JSON.stringify(marker)}`);
+      assert(o.doc.getMap('estimation').get(`v:pr:pv-a:${G.id}`)?.value === undefined, "the guest's pick reached the owner before the reveal");
+
+      // The owner reveals: the guest's draft and pick are part of it, the ballot is nobody's.
+      o.layerOp({ type: 'reveal', collection: 'estimation', prefix: 'v:pr:pv-a:' });
+      o.layerOp({ type: 'reveal', collection: 'elements' });
+      o.layerOp({ type: 'reveal', collection: 'voting', prefix: 'pv:' });
+      o.doc.getMap('voting').set('session', { ...vote, active: false, endedAt: Date.now() });
+      await waitFor(() => o.doc.getMap('voting').has('pv:anon:0'), 5000, 'the anonymous ballot to be revealed');
+      await waitFor(() => o.doc.getMap('elements').get('pv-draft')?.text === 'guest idea', 5000, "the guest's draft to be revealed");
+      assert(o.doc.getMap('estimation').get(`v:pr:pv-a:${G.id}`)?.value === '3', "the guest's pick was not revealed");
+      const ballots = [...o.doc.getMap('voting').entries()].filter(([k]) => k.startsWith('pv:'));
+      assert(JSON.stringify(ballots) === JSON.stringify([['pv:anon:0', { sessionId: 'pv', userId: 'anon:0', elementIds: ['pv-a', 'pv-a'] }]]), JSON.stringify(ballots));
+      await settled(o);
+      assert(!oBytes.some((b) => b.includes(Buffer.from(`"userName":"${G.name}"`)) && b.includes(Buffer.from('"sessionId":"pv"'))), "the owner's socket received a ballot naming the guest");
+
+      // Participation closed (the owner): the guest is no longer a participant, and its ballot is refused.
+      o.doc.transact(() => {
+        o.doc.getMap('facilitation').set('participation', { open: false, by: O.id, at: Date.now() });
+        o.doc.getMap('voting').set('session', { ...vote, id: 'pv2', anonymous: false, anonymousBallots: false });
+      });
+      const g2 = await layerClient(G, board.id, port);
+      await waitFor(() => g.participant === false && g2.participant === false, 5000, 'the guest to stop being a participant');
+      g2.doc.getMap('voting').set(`pv2:${G.id}`, { sessionId: 'pv2', userId: G.id, elementIds: ['pv-a'] });
+      await settled(g2, [o]);
+      assert(!o.doc.getMap('voting').has(`pv2:${G.id}`), 'a guest voted with participation closed');
+      o.doc.transact(() => {
+        o.doc.getMap('facilitation').delete('participation');
+        for (const k of [...o.doc.getMap('voting').keys()]) o.doc.getMap('voting').delete(k);
+        o.doc.getMap('estimation').delete('round');
+        o.doc.getMap('privateMode').delete('session');
+        for (const id of ['pv-a', 'pv-draft']) o.doc.getMap('elements').delete(id);
+      });
+      await settled(o);
+      for (const c of [o, g, g2]) c.destroy();
     });
 
     await check('turning the link off drops a connected guest at once; guest joins are rate-limited per IP', async () => {

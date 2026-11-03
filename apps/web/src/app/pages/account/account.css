@@ -460,6 +460,43 @@
   gap: 2px;
 }
 
+/* "Changes on your boards": Off / Daily / Weekly beside its description. */
+.fr-acct-prefs__digest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-acct-prefs__digest.is-off {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.fr-acct-tz {
+  max-width: 360px;
+  margin-top: 16px;
+}
+
+.fr-acct-tz__select {
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.fr-acct-tz__select:focus-visible {
+  outline: none;
+  border-color: var(--fr-primary);
+  box-shadow: var(--fr-focus-ring);
+}
+
 @media (max-width: 600px) {
   .fr-acct-form__grid {
     grid-template-columns: 1fr;

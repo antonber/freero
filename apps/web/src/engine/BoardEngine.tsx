@@ -119,8 +119,9 @@ function BoardView({ core, location }: { core: EngineCore; location?: BoardEngin
 }
 
 /**
- * Once the viewport is measured and the doc is synced: honor ?item=<id> (select + zoom to it) and
- * ?dock=<panelId>, otherwise fit the content (or center the origin on an empty board).
+ * Once the viewport is measured and the doc is synced: honor ?frame=<id> (zoom to it), ?item=<id>
+ * (select + zoom to it) and ?dock=<panelId>, otherwise fit the content (or center the origin on an
+ * empty board).
  */
 function useInitialView(core: EngineCore) {
   useEffect(() => {
@@ -136,7 +137,11 @@ function useInitialView(core: EngineCore) {
       const editor = core.editor;
       // ?item=<id> (Copy link to item); ?el=<id> is the older spelling, still honored.
       const el = params.get('item') ?? params.get('el');
-      if (el && editor.getElement(el)) {
+      // ?frame=<id>: start looking at one item, unselected (a board embedded at a frame, #2).
+      const frame = params.get('frame');
+      if (frame && editor.getElement(frame)) {
+        editor.zoomToFit([frame], { animate: false, padding: 24 });
+      } else if (el && editor.getElement(el)) {
         editor.select([el]);
         editor.zoomToFit([el], { animate: false, maxZoom: 1, padding: 160 });
       } else if (editor.getElements().length) {

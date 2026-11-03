@@ -3,6 +3,7 @@ import { scheduleExclusiveJob } from '../../platform/jobs';
 import { logError } from '../../platform/log';
 import { onAccessDecided, onAccessRequested, onBoardShared, onInviteAccepted } from '../members/index';
 import { onCardAssignment, onCommentMessage } from '../realtime/index';
+import * as boardChanges from './boardChanges';
 import * as cards from './cards';
 import { cardChangesSettled, commentMessagesHandled, digestRuns } from './metrics';
 import * as service from './service';
@@ -40,6 +41,8 @@ export default function initNotifications(ctx: ServerContext): void {
       // Due-date reminders first, so one due now goes out in this run's digest.
       await cards.sendDueReminders();
       const sent = await service.sendDigests();
+      // "Changes on your boards" (opt-in, daily / weekly in each person's time zone).
+      await boardChanges.sendBoardChangeDigests();
       digestRuns.inc();
       return sent;
     },

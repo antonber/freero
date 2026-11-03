@@ -28,7 +28,7 @@ vi.mock('../api/client', async (importOriginal) => {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const ada: Account = { id: 'u1', name: 'Ada', email: 'ada@example.com', color: '#5F3DC4', avatarUrl: null, createdAt: 0, emailVerified: true, deletionScheduledFor: null };
+const ada: Account = { id: 'u1', name: 'Ada', email: 'ada@example.com', color: '#5F3DC4', avatarUrl: null, createdAt: 0, emailVerified: true, deletionScheduledFor: null, timeZone: 'UTC' };
 let root: Root;
 let host: HTMLDivElement;
 

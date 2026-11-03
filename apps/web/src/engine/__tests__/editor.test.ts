@@ -226,12 +226,14 @@ describe('protected lock', () => {
     return { guarded, plain };
   };
 
-  it("an editor's unlock leaves a protected item locked (ordinary locks beside it open), and an editor can't protect, not even while facilitating", () => {
+  it("an editor's unlock leaves a protected item locked (ordinary locks beside it open), nothing lets them change it, and they can't protect, not even while facilitating", () => {
     const { guarded, plain } = board('editor');
     core.scoped('facilitation').collection('facilitation').set('session', { by: 'u1', byName: 'Tester', startedAt: 1, locked: false, allowedTypes: null, follow: false, cursorsHidden: false });
     core.editor.select([guarded, plain]);
     core.editor.runCommand('engine.lock');
     expect([core.editor.getElement(guarded)!.locked, core.editor.getElement(plain)!.locked]).toEqual([true, false]);
+    // Everything that asks "may I change these?" (moves, handles, typing, participants' drafts) says no.
+    expect([core.editor.mayEdit([guarded]), core.editor.mayEdit([plain])]).toEqual([false, true]);
     core.editor.select([plain]);
     core.editor.runCommand('engine.protectLock');
     expect(core.editor.getElement(plain)!.lockProtected).toBeFalsy();
@@ -239,6 +241,7 @@ describe('protected lock', () => {
 
   it('the owner protects and lifts protected locks', () => {
     const { guarded, plain } = board('owner');
+    expect(core.editor.mayEdit([guarded])).toBe(true);
     core.editor.select([plain]);
     core.editor.runCommand('engine.protectLock');
     expect(core.editor.getElement(plain)).toMatchObject({ locked: true, lockProtected: true });

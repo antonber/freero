@@ -18,7 +18,7 @@ export default definePage({
   faq: [
     {
       q: 'How does dot voting work in Freero?',
-      a: 'The facilitator starts voting from the board menu and sets the votes per person. Everyone spends them on sticky notes, cards or shapes; results can stay hidden until the facilitator shows them as a ranked list.',
+      a: 'The facilitator starts voting from the board menu and sets the votes per person. Everyone spends them on sticky notes, cards or shapes, guests who joined by link and people who can only comment included; votes are anonymous by default and results stay hidden until the facilitator shows them as a ranked list.',
     },
     {
       q: 'Can I keep participants from moving things around?',

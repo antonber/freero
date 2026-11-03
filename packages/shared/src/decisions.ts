@@ -82,7 +82,8 @@ export const MAX_DECISION_CHANGES = 50;
 
 // ---- "what changed", from the outlines of both (pure: the server computes it) ----
 
-interface Flat {
+/** One item of an outline as "what changed" compares it (`flattenOutline`). */
+export interface OutlineEntry {
   kind: string;
   /** What the item says (title, text, table rows, fields, tags, link), as one comparable string. */
   sig: string;
@@ -100,8 +101,9 @@ function readable(item: OutlineItem): string {
   return t.length > 160 ? `${t.slice(0, 159)}…` : t;
 }
 
-function flatten(outline: BoardOutline): Map<string, Flat> {
-  const out = new Map<string, Flat>();
+/** Every item of an outline (frames' contents at any depth, connectors), by id, as comparable entries. */
+export function flattenOutline(outline: BoardOutline): Map<string, OutlineEntry> {
+  const out = new Map<string, OutlineEntry>();
   const walk = (items: OutlineItem[], frame: string | undefined) => {
     for (const it of items) {
       if (!SYNTHETIC.test(it.id)) {
@@ -123,9 +125,9 @@ function flatten(outline: BoardOutline): Map<string, Flat> {
  * not a change of substance; its text, table rows, fields, tags, link and frame are.
  */
 export function diffOutlines(before: BoardOutline, after: BoardOutline, since: number, max = MAX_DECISION_CHANGES): DecisionChanges {
-  const a = flatten(before);
-  const b = flatten(after);
-  const item = (id: string, f: Flat): DecisionChangeItem => ({ id, kind: f.kind, text: f.text, ...(f.frame ? { frame: f.frame } : {}) });
+  const a = flattenOutline(before);
+  const b = flattenOutline(after);
+  const item = (id: string, f: OutlineEntry): DecisionChangeItem => ({ id, kind: f.kind, text: f.text, ...(f.frame ? { frame: f.frame } : {}) });
   const added: DecisionChangeItem[] = [];
   const removed: DecisionChangeItem[] = [];
   const changed: DecisionChangeItem[] = [];

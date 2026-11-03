@@ -6,6 +6,7 @@ import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { log } from '../../platform/log';
 import { contentSecurityPolicy } from '../../platform/security';
+import { withAnalyticsRuntime } from '../analytics/index';
 import { userFromCookieHeader } from '../auth/index';
 import type { SiteLegal } from '@freero/shared';
 import { legalFill, withLegal } from './legal';
@@ -51,7 +52,8 @@ export default function siteRoutes({ config }: ServerContext): Router {
     res.setHeader('Cache-Control', 'no-cache');
     // A draft of terms is never a search result, whatever a cached copy of its markup says.
     if (site?.legal.has(key) && !legal.inEffect) res.setHeader('X-Robots-Tag', 'noindex');
-    res.status(status).type('html').send(withAnalytics(textFor(req, key, raw), analytics));
+    // Google Analytics (GA_MEASUREMENT_ID): its consent banner, and Google's script once accepted.
+    res.status(status).type('html').send(withAnalyticsRuntime(withAnalytics(textFor(req, key, raw), analytics), config));
   };
 
   // For the app's sign-up page: the terms people agree to, once they are in effect.

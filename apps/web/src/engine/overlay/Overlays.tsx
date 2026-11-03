@@ -68,7 +68,8 @@ function SelectionOverlay() {
   const transforming = useStore(core.ui, (s) => s.transforming);
   const editingId = useStore(core.ui, (s) => s.editingId);
   if (!els.length) return null;
-  const canEdit = role === 'editor' || role === 'owner';
+  // A participant resizes their own drafts too (Editor.mayEdit).
+  const canEdit = role === 'editor' || role === 'owner' || core.editor.mayEdit(els.map((e) => e.id));
   const single = els.length === 1;
   // A type that draws its own selection chrome (connector endpoints) gets no box from us.
   const ownFrame = (el: BoardElement) => core.editor.getDefinition(el.type)?.selectionFrame === false;

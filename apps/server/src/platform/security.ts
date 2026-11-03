@@ -5,7 +5,7 @@
 // Requests with neither header come from non-browser clients (curl, server-to-server), which
 // cannot ride a victim's cookies, so they pass. WebSocket upgrades get the same Origin check.
 import type { IncomingMessage } from 'node:http';
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import { EMBED_FRAME_ORIGINS } from '@freero/shared';
 import type { Config } from './config';
 
@@ -119,13 +119,62 @@ export function allowFraming(path: RegExp, reason: string): void {
 }
 const framable = (path: string) => framablePaths.some((p) => p.path.test(path));
 
-/** Content-Security-Policy for the app's own pages and API responses. */
-export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean, opts: { framable?: boolean } = {}): string {
+/**
+ * Lets ANY site frame this one response: a board embedded live on another site (#2,
+ * modules/embed `/embed/b/:id`), decided per board by the handler (its owner allows embedding and
+ * its workspace's policy is on). Only for a page that acts on nobody's session cookie — the embed
+ * signs in with its own board-bound token from a first-party popup — and starts editing only
+ * after a click inside the frame. Every other response keeps frame-ancestors 'none' and
+ * X-Frame-Options DENY. Say why in `reason` (read in review).
+ */
+export function frameFromAnySite(req: Request, res: Response, config: Config, reason: string): void {
+  if (reason.trim().length < 10) throw new Error('frameFromAnySite needs a reason');
+  res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { ancestors: ['*'] }));
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+}
+
+const openerPaths: Array<{ path: RegExp; reason: string }> = [];
+
+/**
+ * Keeps `window.opener` for the app's pages under `path` (Cross-Origin-Opener-Policy unsafe-none
+ * instead of same-origin): the popup a board embedded on another site opens to sign in
+ * (modules/embed `/embed/connect/`) hands its token back to the frame that opened it, by
+ * postMessage to Freero's own origin only. Never framable. Say why in `reason`.
+ */
+export function allowOpener(path: RegExp, reason: string): void {
+  if (reason.trim().length < 10) throw new Error('allowOpener needs a reason');
+  openerPaths.push({ path, reason });
+}
+
+/** Where Google Analytics' loader comes from (GA_MEASUREMENT_ID). */
+export const GA_SCRIPT_ORIGIN = 'https://www.googletagmanager.com';
+/** Where it sends what it measures (Google's published CSP sources for GA4). */
+export const GA_CONNECT_SOURCES = ['https://*.google-analytics.com', 'https://*.analytics.google.com', 'https://*.googletagmanager.com'];
+/** App pages that never load analytics (the embeds and their sign-in pages): their CSP never names Google. */
+const NO_ANALYTICS = /^\/embed(\/|$)/;
+
+/**
+ * Content-Security-Policy for the app's own pages and API responses. `selfFramed`: a page only this
+ * origin may frame (the analytics frame, modules/analytics). `analytics: false`: a page that never
+ * loads Google Analytics.
+ */
+export function contentSecurityPolicy(
+  config: Config,
+  host: string | undefined,
+  secure: boolean,
+  opts: { framable?: boolean; ancestors?: string[]; selfFramed?: boolean; analytics?: boolean } = {},
+): string {
+  const ancestors = opts.selfFramed ? ["'self'"] : (opts.ancestors ?? (opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors : ["'none'"]));
   const ws = host ? (secure ? `wss://${host}` : `ws://${host} wss://${host}`) : '';
   const s3 = config.s3?.publicUrl ? new URL(config.s3.publicUrl).origin : '';
+  // Google Analytics, only when GA_MEASUREMENT_ID is set: its loader, where it reports, and the
+  // app's same-origin analytics frame. Never on a page another site may frame (the assistants'
+  // live view, a board embedded anywhere) nor on the embeds' own pages: they load no analytics.
+  const ga = !!config.googleAnalyticsId && !opts.framable && !opts.ancestors && opts.analytics !== false;
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    ga ? `script-src 'self' ${GA_SCRIPT_ORIGIN}` : "script-src 'self'",
     // React style attributes. Fonts are self-hosted (scripts/fonts.mjs); data: is an export's
     // inlined faces.
     "style-src 'self' 'unsafe-inline'",
@@ -136,15 +185,15 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
     // blob: is the file being dropped, read locally for its poster frame before it is uploaded.
     `media-src 'self' blob: ${s3}`.trim(),
     // https: lets "paste an image URL" fetch and re-host the image, and exports inline web fonts.
-    `connect-src 'self' ${ws} https:`.replace(/\s+/g, ' '),
+    `connect-src 'self' ${ws} https:${ga ? ` ${GA_CONNECT_SOURCES.join(' ')}` : ''}`.replace(/\s+/g, ' '),
     "worker-src 'self' blob:",
     // Live embeds in link cards (features/embed): the built-in providers' players and viewers plus
     // the operator's EMBED_EXTRA_ORIGINS — only these origins, only after a click.
-    `frame-src ${[...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
+    `frame-src ${[...(ga ? ["'self'"] : []), ...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    `frame-ancestors ${opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors.join(' ') : "'none'"}`,
+    `frame-ancestors ${ancestors.join(' ')}`,
     ...(secure ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 }
@@ -152,11 +201,11 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
 export function securityHeaders(config: Config): RequestHandler {
   return (req, res, next) => {
     const frame = req.method === 'GET' && framable(req.path);
-    res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { framable: frame }));
+    res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { framable: frame, analytics: !NO_ANALYTICS.test(req.path) }));
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!frame) res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Opener-Policy', req.method === 'GET' && openerPaths.some((p) => p.path.test(req.path)) ? 'unsafe-none' : 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', frame ? 'cross-origin' : 'same-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
     if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');

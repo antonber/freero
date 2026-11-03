@@ -5,8 +5,9 @@ import { logError } from '../../platform/log';
 import { getGuests, getUser } from '../auth/index';
 import { onBoardLifecycle } from '../boards/index';
 import { onAccessDecided, onBoardShared } from '../members/index';
-import { onBoardChange, onCommentMessage, onSuggestionsProposed, onVersionRestored } from '../realtime/index';
+import { onBoardChange, onBoardLeft, onCommentMessage, onSuggestionsProposed, onVersionRestored } from '../realtime/index';
 import { onTrackerActivity } from '../trackers/index';
+import * as catchUp from './catchUp';
 import * as service from './service';
 
 const PRUNE_LOCK_KEY = 7_202_610_432; // arbitrary, constant across releases
@@ -33,6 +34,8 @@ export default function initActivity(ctx: ServerContext): void {
     onSuggestionsProposed((e) => void service.recordSuggestions(e).catch((err) => logError('activity: could not record suggestions', err))),
     // Tracker sync (KAI-153): items sent to a tracker, issues imported, syncs and failed syncs.
     onTrackerActivity((e) => void service.recordTrackerEvent(e).catch((err) => logError('activity: could not record tracker sync', err))),
+    // Changes since your last visit: when an account's board socket closes.
+    onBoardLeft((e) => void catchUp.onBoardLeft(e).catch((err) => logError('activity: could not record a last visit', err))),
   ];
   // Ended bursts are written soon after (each instance writes its own sockets' bursts).
   const timer = setInterval(() => void service.flushBursts(), Math.min(15_000, ctx.config.activityIdleMs / 2));

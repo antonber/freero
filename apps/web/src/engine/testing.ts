@@ -23,6 +23,13 @@ export interface TestBoardOptions {
   features?: Array<FeatureManifest | FeatureBundle>;
   /** Role of every replica (default 'owner'). */
   role?: Role;
+  /** [additive] Role of each replica by its index (overrides `role`): a commenter next to an owner. */
+  roles?: Role[];
+  /**
+   * [additive] Replicas (by index) whose server says they may take part as participants
+   * (RoleMessage.participant): commenters voting, picking and drafting their own.
+   */
+  participants?: number[];
   /** Clock used for Host.serverNow (default Date.now). */
   now?: () => number;
   /** [additive] The board's title as the replicas open it (default 'Test'); renameBoard changes it. */
@@ -59,11 +66,11 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
   let templateSeq = 0;
   // Personal view settings live "on the server" too: per user, so a user's replicas share them.
   const personal = new Map<string, Map<string, { itemId: string; viewId: string; settings: Record<string, unknown> }>>();
-  const cores: EngineCore[] = opts.users.map((u) => {
+  const cores: EngineCore[] = opts.users.map((u, index) => {
     const user: HostUser = typeof u === 'string' ? { id: u, name: u, color: '#5b3ff0', avatarUrl: null } : u;
     const host: Host = {
       user,
-      board: { id: opts.boardId ?? 'test-board', title: opts.title ?? 'Test', role: opts.role ?? 'owner' },
+      board: { id: opts.boardId ?? 'test-board', title: opts.title ?? 'Test', role: opts.roles?.[index] ?? opts.role ?? 'owner' },
       syncUrl: '',
       personalViews: {
         list: async () =>
@@ -123,6 +130,10 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
     };
     const core = createCore(host, bundles);
     core.ui.setState({ viewport: { width: 1000, height: 800 }, camera: { x: 0, y: 0, zoom: 1 } });
+    if (opts.participants?.includes(index)) {
+      core.store.serverParticipant = true;
+      core.ui.setState({ participant: true });
+    }
     return core;
   });
   return {

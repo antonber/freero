@@ -77,6 +77,10 @@ export interface UiState {
   following: FollowTarget | null;
   /** What a facilitator limits for this user (the server's role message), null: nothing. */
   limits: SessionLimits | null;
+  /** This commenter may take part (the server's role message `participant`; Editor.isParticipant). */
+  participant: boolean;
+  /** Bumped when private mode's placement changes (setPrivatePlacement): what a participant may draft. */
+  draftVersion: number;
   /** Other people's cursors hidden for this viewer (Editor.setCursorsHidden). */
   cursorsHidden: boolean;
   /** Elements hidden for this viewer only (Editor.setViewHidden). Replaced, never mutated. */
@@ -146,6 +150,8 @@ export function createUiStore(init: { role: Role }): UiStore {
     dialog: null,
     following: null,
     limits: null,
+    participant: false,
+    draftVersion: 0,
     cursorsHidden: false,
     viewHidden: new Set<string>(),
     phoneEditing: false,
