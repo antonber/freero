@@ -277,8 +277,8 @@ export default definePage({
       <h2 id="appsec">11. Application security</h2>
       <ul>
         <li>
-          A strict Content-Security-Policy (scripts only from Freero itself, plus Google’s tag script where analytics is on, loaded only after a visitor
-          accepts it), frame-ancestors none,
+          A strict Content-Security-Policy (scripts only from Freero itself, plus Google’s tag script where analytics is on, never on embedded
+          boards), frame-ancestors none,
           nosniff, a strict referrer policy and a restrictive permissions policy on every response.
         </li>
         <li>Every state-changing request and WebSocket upgrade from another site is refused (cross-site request forgery and WebSocket hijacking).</li>
