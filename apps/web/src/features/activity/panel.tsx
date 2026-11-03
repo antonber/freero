@@ -220,11 +220,17 @@ function CatchUpBar({ editor }: PanelProps) {
       {/* #126: the AI feature's written catch-up of the same changes (greyed out with why when AI is off here). */}
       {(editor.host.ai || editor.host.aiUnavailable) && (
         <Tooltip content={editor.host.aiUnavailable ?? 'A short written summary of these changes, just for you'} side="bottom">
-          <span>
-            <Button size="sm" variant="secondary" icon={Sparkles} disabled={!editor.host.ai} onClick={() => editor.runCommand('ai.catchUp', { since: 'visit' })}>
-              Summarise
-            </Button>
-          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={Sparkles}
+            // Not `disabled`: hovering and clicking still say why (the command explains).
+            aria-disabled={!editor.host.ai || undefined}
+            className={editor.host.ai ? undefined : 'fr-activity-bar__ai-off'}
+            onClick={() => editor.runCommand('ai.catchUp', { since: 'visit' })}
+          >
+            Summarise
+          </Button>
         </Tooltip>
       )}
       <IconButton icon={X} size={32} label="Dismiss" onClick={() => dismiss(editor)} />

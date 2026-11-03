@@ -20,7 +20,8 @@ export function CatchUpDialog({ editor, props }: PanelProps) {
   const [since, setSince] = useState<AiCatchUpSince>(asSince(props?.since));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<AiActionResponse | null>(null);
+  // Coming back from an item it cites: the same summary again, no new request.
+  const [result, setResult] = useState<AiActionResponse | null>(props?.result && typeof props.result === 'object' ? (props.result as AiActionResponse) : null);
   const close = () => editor.closePanel(CATCH_UP_DIALOG);
 
   const run = async () => {
@@ -36,14 +37,17 @@ export function CatchUpDialog({ editor, props }: PanelProps) {
     }
   };
 
-  /** Opens a cited item (or frame) on the board; removed ones can't be. */
+  /** Opens a cited item (or frame) on the board — the dialog steps aside, a toast brings it back. */
   const open = (id: string) => {
     if (!editor.getElement(id)) {
       editor.host.notify('That item isn’t on the board any more.', 'info');
       return;
     }
+    const kept = result;
+    close();
     editor.select([id]);
     editor.zoomToFit([id], { animate: true, padding: 160, maxZoom: Math.max(1, editor.getCamera().zoom) });
+    if (kept) editor.host.notify('Showing it on the board.', 'info', { action: { label: 'Back to the catch-up', run: () => editor.openPanel(CATCH_UP_DIALOG, { result: kept }) } });
   };
 
   const insert = () => {
