@@ -65,6 +65,8 @@ export const commentPeopleIn = (view: BoardView): Set<string> => commentPeople(v
 export { onCommentMessage, type CommentMessageEvent } from './comments';
 // Element changes applied from this instance's sockets or requests, attributed to their user (activity feed).
 export { onBoardChange, type BoardChangeEvent, type ElementChange } from './changes';
+// An account's board socket on this instance closed ("changes since your last visit", modules/activity).
+export { onBoardLeft, type BoardLeftEvent } from './visits';
 // Task cards assigned / given a due date, attributed to who did it (notifications, KAI-135).
 export { onCardAssignment, type CardAssignmentEvent } from './cards';
 // Version restores (the activity feed, KAI-188).
