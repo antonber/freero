@@ -180,7 +180,8 @@ export function fieldsTarget(editor: Pick<Editor, 'getSelection' | 'getElement'>
   const sel = editor.getSelection();
   if (sel.length !== 1) return null;
   const el = editor.getElement(sel[0]);
-  const k = el?.type === 'kanban' ? el : el?.frameId ? editor.getElement(el.frameId) : undefined;
+  // A linked view (step 3c) points at the kanban it shows.
+  const k = el?.type === 'kanban' ? el : el?.type === 'kanbanview' ? editor.getElement(el.sourceId) : el?.frameId ? editor.getElement(el.frameId) : undefined;
   return k?.type === 'kanban' ? k : null;
 }
 

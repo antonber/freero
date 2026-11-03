@@ -1,14 +1,16 @@
 // The kanban header's tabs (steps 3a, 3b): Board and the kanban's tables, lists, calendars and
 // timelines. Clicking one looks at it, for me only (the board and everyone else's view don't change)
 // until I save my view for everyone. The tab I look at has a menu: rename it, delete it (any but the
-// board), open the kanban in focus mode. "+ View" adds a tab of a layout for everyone (editors).
+// board), open the kanban in focus mode, place it beside the kanban as a linked view (step 3c). "+ View"
+// adds a tab of a layout for everyone (editors).
 import { useRef, useState } from 'react';
-import { CalendarDays, GanttChart, Kanban as BoardIcon, List, Maximize2, MoreHorizontal, Pencil, Plus, Table2, Trash2, type LucideIcon } from 'lucide-react';
+import { CalendarDays, GanttChart, Kanban as BoardIcon, Link2, List, Maximize2, MoreHorizontal, Pencil, Plus, Table2, Trash2, type LucideIcon } from 'lucide-react';
 import { LAYOUT_NAMES, PROJECTION_LAYOUTS, savedTabId, viewTabs, type KanbanElement, type ProjectionLayout, type ViewLayout, type ViewTab } from '@freero/shared';
 import type { Editor } from '@engine';
 import { Menu, type MenuItem } from '@ui';
 import { FOCUS_PANEL } from './constants';
 import { addTab, deleteTab, renameTab, switchTab, tabsEditable } from './tabs';
+import { addLinkedView } from './linked';
 
 /** Each layout's icon (its tabs, "+ View", focus mode). */
 export const LAYOUT_ICONS: Record<ViewLayout, LucideIcon> = { board: BoardIcon, table: Table2, list: List, calendar: CalendarDays, timeline: GanttChart };
@@ -74,9 +76,25 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
   const [adding, setAdding] = useState<HTMLElement | null>(null);
   const mayAdd = selected && canEdit && tabsEditable(editor, k);
   if (tabs.length < 2 && !mayAdd) return null;
+  // A linked view beside the kanban (step 3c): this tab as I see it, or — from the board — a layout.
+  const linked = (tab: ViewTab): MenuItem[] =>
+    !canEdit || !editor.mayAdd('kanbanview')
+      ? []
+      : tab.layout === 'board'
+        ? [
+            {
+              id: 'linked',
+              label: 'Add linked view',
+              icon: Link2,
+              onSelect: () => undefined,
+              submenu: PROJECTION_LAYOUTS.map((layout) => ({ id: `linked-${layout}`, label: LAYOUT_NAMES[layout], icon: LAYOUT_ICONS[layout], onSelect: () => void addLinkedView(editor, k.id, layout) })),
+            },
+          ]
+        : [{ id: 'linked', label: 'Add as linked view', icon: Link2, onSelect: () => void addLinkedView(editor, k.id, tab.layout as ProjectionLayout, { from: tab.id }) }];
   const items = (tab: ViewTab): MenuItem[] => [
     ...(canEdit && tabsEditable(editor, k, tab) ? [{ id: 'rename', label: 'Rename tab', icon: Pencil, onSelect: () => setRenaming(tab.id) }] : []),
     { id: 'focus', label: 'Open in focus mode', icon: Maximize2, onSelect: () => editor.openPanel(FOCUS_PANEL, { id: k.id }) },
+    ...linked(tab),
     ...(tab.layout !== 'board' && canEdit && tabsEditable(editor, k, tab)
       ? [{ divider: true as const }, { id: 'delete', label: 'Delete tab', icon: Trash2, danger: true, onSelect: () => deleteTab(editor, k.id, tab.id) }]
       : []),

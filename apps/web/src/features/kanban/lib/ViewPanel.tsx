@@ -10,7 +10,11 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Lock, SlidersHorizontal } from 'lucide-react';
 import {
+  LAYOUT_NAMES,
+  LINKED_VIEW_KEY,
   MY_TAB_KEY,
+  PROJECTION_LAYOUTS,
+  linkedView,
   SHOWABLE_BUILTINS,
   boardView,
   collectionSchema,
@@ -30,6 +34,8 @@ import {
   type CardColorBy,
   type CardDensity,
   type KanbanElement,
+  type KanbanViewElement,
+  type ProjectionLayout,
   type ProjectionView,
   type TimelineScale,
 } from '@freero/shared';
@@ -40,22 +46,30 @@ import { groupableFields, setGroupBy, setSwimlanes } from './group';
 import { hasOwnView, resetMyView, saveViewForEveryone, setDensity, setMyCardDisplay, setViewLocked, viewEditable } from './view';
 import { FilterRules, FilterSection, SortRules, SortSection } from './FilterSort';
 import { myView, setMyView, tabsEditable } from './tabs';
+import { hasOwnLinkedView, linkedEditable, myLinkedView, renameLinkedView, resetMyLinkedView, saveLinkedViewForEveryone, selectedLinkedView, setLinkedLayout, setLinkedLocked, setMyLinkedView } from './linked';
 
 const DENSITIES: Array<{ value: CardDensity; label: string }> = [
   { value: 'compact', label: 'Compact' },
   { value: 'comfortable', label: 'Comfortable' },
 ];
 
+/** What the panel shows: a selected linked view (step 3c), else the kanban the selection points at. */
+const viewTarget = (editor: Editor) => selectedLinkedView(editor)?.id ?? fieldsTarget(editor)?.id ?? null;
+
 export function ViewPanel({ editor }: { editor: Editor }) {
   const selection = useSelection();
-  const canEdit = useCanEdit();
-  const [kid, setKid] = useState<string | null>(() => fieldsTarget(editor)?.id ?? null);
+  const [id, setId] = useState<string | null>(() => viewTarget(editor));
   useEffect(() => {
-    const t = fieldsTarget(editor);
-    if (t) setKid(t.id);
+    const t = viewTarget(editor);
+    if (t) setId(t);
   }, [editor, selection]);
-  const found = useElement(kid);
-  const k = found?.type === 'kanban' ? (found as KanbanElement) : null;
+  const found = useElement(id);
+  if (found?.type === 'kanbanview') return <LinkedViewPanel editor={editor} lv={found as KanbanViewElement} />;
+  return <KanbanViewPanel editor={editor} k={found?.type === 'kanban' ? (found as KanbanElement) : null} />;
+}
+
+function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | null }) {
+  const canEdit = useCanEdit();
   const saved = k ? boardView(k) : null;
   const override = usePersonalView(k?.id, saved?.id ?? '');
   const tabChoice = usePersonalView(k?.id, MY_TAB_KEY);
@@ -110,7 +124,7 @@ export function ViewPanel({ editor }: { editor: Editor }) {
         <h2 className="fr-kanban-fields__title">View</h2>
         <span className="fr-kanban-fields__of">{richTextToPlain(k.title) || 'Kanban'}</span>
       </DockHeader>
-      <Whose editor={editor} k={k} own={own} mayShare={mayShare} />
+      <Whose own={own} mayShare={mayShare} onSave={() => saveViewForEveryone(editor, k.id)} onReset={() => resetMyView(editor, k.id)} />
       {canEdit && !k.locked && (
         <div className={`fr-kanban-view__lock${saved.locked ? ' is-locked' : ''}`}>
           {lockedByOther ? (
@@ -226,7 +240,7 @@ export function ViewPanel({ editor }: { editor: Editor }) {
 }
 
 /** "Only you see these changes · Save for everyone · Reset", or who sees what when nothing is mine. */
-function Whose({ editor, k, own, mayShare }: { editor: Editor; k: KanbanElement; own: boolean; mayShare: boolean }) {
+function Whose({ own, mayShare, onSave, onReset, noun = 'view' }: { own: boolean; mayShare: boolean; onSave: () => void; onReset: () => void; noun?: string }) {
   return (
     <div className={`fr-kanban-view__whose${own ? ' is-own' : ''}`} role="status">
       {own ? (
@@ -234,17 +248,17 @@ function Whose({ editor, k, own, mayShare }: { editor: Editor; k: KanbanElement;
           <span>Only you see these changes.</span>
           <span className="fr-kanban-view__whose-actions">
             {mayShare && (
-              <Button size="sm" variant="primary" onClick={() => saveViewForEveryone(editor, k.id)}>
+              <Button size="sm" variant="primary" onClick={onSave}>
                 Save for everyone
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => resetMyView(editor, k.id)}>
+            <Button size="sm" variant="ghost" onClick={onReset}>
               Reset
             </Button>
           </span>
         </>
       ) : (
-        <span>{mayShare ? 'Everyone sees this view. Your changes stay yours until you save them.' : 'Changes you make here are yours alone.'}</span>
+        <span>{mayShare ? `Everyone sees this ${noun}. Your changes stay yours until you save them.` : 'Changes you make here are yours alone.'}</span>
       )}
     </div>
   );
@@ -257,25 +271,13 @@ const SCALE_CHOICES: Array<{ value: TimelineScale; label: string }> = [
   { value: 'quarter', label: 'Quarters' },
 ];
 
-/**
- * A projection tab's settings (a table, list, calendar or timeline): its filter and sort; a
- * table's or a list's columns, a list's grouping, the date fields a calendar or a timeline places
- * cards by, a timeline's scale and swimlanes. All mine until I save them for everyone — and since
- * a projection moves no real card, its filter really leaves cards out and its sort really orders
- * them, for me alone.
- */
+/** A kanban's projection tab (a table, list, calendar or timeline): its settings, mine until saved. */
 function ProjectionPanel({ editor, k, saved }: { editor: Editor; k: KanbanElement; saved: ProjectionView }) {
   const canEdit = useCanEdit();
   usePersonalView(k.id, saved.id);
   const mine = myView(editor, k, saved.id) ?? saved;
-  const schema = collectionSchema(k);
   const own = hasOwnView(editor, k);
   const mayShare = canEdit && tabsEditable(editor, k, { id: saved.id, name: saved.name, layout: saved.layout });
-  const set = (patch: Record<string, unknown>) => setMyView(editor, k.id, saved.id, patch);
-  const noun = saved.layout === 'table' || saved.layout === 'list' ? 'rows' : 'cards';
-  const NONE = '';
-  const dates = dateFields(schema).map((f) => ({ value: f.id, label: f.name }));
-  const groups = projectionGroupFields(schema).map((f) => ({ value: f.id, label: f.name }));
   return (
     <div className="fr-kanban-fields fr-kanban-view">
       <DockHeader className="fr-kanban-fields__head">
@@ -284,7 +286,126 @@ function ProjectionPanel({ editor, k, saved }: { editor: Editor; k: KanbanElemen
           {richTextToPlain(k.title) || 'Kanban'} · {saved.name}
         </span>
       </DockHeader>
-      <Whose editor={editor} k={k} own={own} mayShare={mayShare} />
+      <Whose own={own} mayShare={mayShare} onSave={() => saveViewForEveryone(editor, k.id)} onReset={() => resetMyView(editor, k.id)} />
+      <ProjectionSettings k={k} mine={mine} scope="tab" set={(patch) => setMyView(editor, k.id, saved.id, patch)} />
+    </div>
+  );
+}
+
+/**
+ * A linked view's settings (step 3c): the same as a tab of its layout (mine until I save them for
+ * everyone), and, for editors, its name, its layout and its lock — saved changes.
+ */
+function LinkedViewPanel({ editor, lv }: { editor: Editor; lv: KanbanViewElement }) {
+  const canEdit = useCanEdit();
+  usePersonalView(lv.id, LINKED_VIEW_KEY);
+  const found = useElement(lv.sourceId);
+  const k = found?.type === 'kanban' ? (found as KanbanElement) : null;
+  const saved = linkedView(lv);
+  const mine = myLinkedView(editor, lv);
+  const own = hasOwnLinkedView(editor, lv);
+  const mayShare = canEdit && linkedEditable(editor, lv);
+  const locker = usePeople(saved.locked ? [saved.locked.by] : []);
+  const lockedBy = saved.locked ? (saved.locked.by === editor.user.id ? 'you' : (locker[saved.locked.by]?.name ?? 'someone')) : '';
+  const lockedByOther = !!saved.locked && canEdit && !lv.locked && !mayShare;
+  return (
+    <div className="fr-kanban-fields fr-kanban-view">
+      <DockHeader className="fr-kanban-fields__head">
+        <h2 className="fr-kanban-fields__title">View</h2>
+        <span className="fr-kanban-fields__of">
+          {saved.name}
+          {k ? ` · linked to ${richTextToPlain(k.title) || 'Kanban'}` : ''}
+        </span>
+      </DockHeader>
+      {!k ? (
+        <div className="fr-kanban-fields__empty">
+          <SlidersHorizontal size={28} strokeWidth={1.5} aria-hidden />
+          <strong>Its kanban isn’t on the board</strong>
+          <span>{canEdit ? 'It was deleted. Undo brings it back.' : 'It was deleted, or is somewhere on the board you can’t see.'}</span>
+        </div>
+      ) : (
+        <>
+          <Whose own={own} mayShare={mayShare} noun="linked view" onSave={() => saveLinkedViewForEveryone(editor, lv.id)} onReset={() => resetMyLinkedView(editor, lv.id)} />
+          {canEdit && !lv.locked && (
+            <div className={`fr-kanban-view__lock${saved.locked ? ' is-locked' : ''}`}>
+              {lockedByOther ? (
+                <>
+                  <Lock size={14} aria-hidden />
+                  <span>Locked by {lockedBy}: the view stays as saved. You can still change it for yourself.</span>
+                </>
+              ) : (
+                <Toggle size="sm" checked={!!saved.locked} label={saved.locked ? `View locked by ${lockedBy}` : 'Lock this view'} onChange={(on) => setLinkedLocked(editor, lv.id, on)} />
+              )}
+            </div>
+          )}
+          {mayShare && (
+            <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-linked">
+              <h3 id="fr-kanban-view-linked" className="fr-kanban-view__heading">
+                Linked view
+              </h3>
+              <label className="fr-kanban-view__row">
+                <span>Name</span>
+                <NameInput key={saved.name} name={saved.name} onCommit={(name) => renameLinkedView(editor, lv.id, name)} />
+              </label>
+              <label className="fr-kanban-view__row">
+                <span>Show as</span>
+                <Select<ProjectionLayout> size="sm" aria-label="Show the cards as" value={saved.layout} options={PROJECTION_LAYOUTS.map((l) => ({ value: l, label: LAYOUT_NAMES[l] }))} onChange={(l) => setLinkedLayout(editor, lv.id, l)} />
+              </label>
+              <p className="fr-kanban-fields__hint">Changes the view for everyone. Its filter and sort stay; edits in it change the kanban’s real cards.</p>
+            </section>
+          )}
+          <ProjectionSettings k={k} mine={mine} scope="view" set={(patch) => setMyLinkedView(editor, lv.id, patch)} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A text box that commits its name on Enter or when left (Escape puts the saved one back). */
+function NameInput({ name, onCommit }: { name: string; onCommit: (name: string) => string | null }) {
+  const [draft, setDraft] = useState(name);
+  const [problem, setProblem] = useState<string | null>(null);
+  const commit = () => {
+    if (draft.trim() === name) return;
+    setProblem(onCommit(draft));
+  };
+  return (
+    <input
+      className="fr-kanban-view__name"
+      aria-label="Name of the linked view"
+      aria-invalid={!!problem}
+      title={problem ?? undefined}
+      value={draft}
+      maxLength={60}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        setProblem(null);
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') setDraft(name);
+      }}
+    />
+  );
+}
+
+/**
+ * A projection's settings (a kanban's table, list, calendar or timeline tab, or a linked view): its
+ * filter and sort; a table's or a list's columns, a list's grouping, the date fields a calendar or
+ * a timeline places cards by, a timeline's scale and swimlanes. All mine until I save them for
+ * everyone — and since a projection moves no real card, its filter really leaves cards out and its
+ * sort really orders them, for me alone.
+ */
+function ProjectionSettings({ k, mine, set, scope }: { k: KanbanElement; mine: ProjectionView; set: (patch: Record<string, unknown>) => void; scope: 'tab' | 'view' }) {
+  const schema = collectionSchema(k);
+  const noun = mine.layout === 'table' || mine.layout === 'list' ? 'rows' : 'cards';
+  const NONE = '';
+  const dates = dateFields(schema).map((f) => ({ value: f.id, label: f.name }));
+  const groups = projectionGroupFields(schema).map((f) => ({ value: f.id, label: f.name }));
+  return (
+    <>
       {mine.layout === 'calendar' && (
         <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-dates">
           <h3 id="fr-kanban-view-dates" className="fr-kanban-view__heading">
@@ -338,7 +459,7 @@ function ProjectionPanel({ editor, k, saved }: { editor: Editor; k: KanbanElemen
           Filter
         </h3>
         <FilterRules k={k} schema={schema} filter={mine.filter ?? null} onChange={(filter) => set({ filter })} />
-        <p className="fr-kanban-fields__hint">Leaves {noun} out of this tab only: the board and its cards don’t change.</p>
+        <p className="fr-kanban-fields__hint">Leaves {noun} out of this {scope} only: the board and its cards don’t change.</p>
       </section>
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-sort">
         <h3 id="fr-kanban-view-sort" className="fr-kanban-view__heading">
@@ -354,7 +475,7 @@ function ProjectionPanel({ editor, k, saved }: { editor: Editor; k: KanbanElemen
         </p>
       </section>
       {(mine.layout === 'table' || mine.layout === 'list') && <ColumnsSection k={k} schema={schema} shown={mine.layout === 'table' ? tableColumns(mine, schema) : listColumns(k, mine, schema)} onChange={(columns) => set({ columns })} list={mine.layout === 'list'} />}
-    </div>
+    </>
   );
 }
 

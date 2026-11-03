@@ -9,6 +9,7 @@ import {
   Gauge,
   ListEnd,
   GripVertical,
+  Link2,
   Maximize2,
   MoreHorizontal,
   Palette,
@@ -19,7 +20,7 @@ import {
   Trash2,
   UnfoldHorizontal,
 } from 'lucide-react';
-import { MY_TAB_KEY, NO_GROUP, boardView, collectionSchema, describeFilter, describeSort, groupFieldId, shownTabId, viewTabs, type BoardElement, type CardStatus, type FieldDef, type KanbanColumn, type KanbanElement } from '@freero/shared';
+import { LINKED_VIEW_MIN, LINKED_VIEW_SIZES, MY_TAB_KEY, NO_GROUP, linkedView as linkedView_, newLinkedView, boardView, collectionSchema, describeFilter, describeSort, groupFieldId, shownTabId, viewTabs, type BoardElement, type CardStatus, type FieldDef, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import {
   defineElement,
   ElementText,
@@ -34,6 +35,7 @@ import {
   usePersonalView,
   usePhoneLayout,
   type Editor,
+  type ElementDefinition,
   type ElementRenderProps,
   type NewElement,
 } from '@engine';
@@ -69,6 +71,8 @@ import { presentCard, presentationKey } from './lib/view';
 import { showsProjection } from './lib/tabs';
 import { TabStrip } from './lib/TabStrip';
 import { ProjectionTab } from './lib/ProjectionTab';
+import { LinkedViewElement } from './lib/LinkedView';
+import { sourceOf } from './lib/linked';
 import './kanban.css';
 
 /** Below this zoom text is unreadable: draw only the column blocks. */
@@ -651,7 +655,7 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
   );
 }
 
-export default defineElement({
+const kanban = defineElement({
   type: 'kanban',
   label: { one: 'Kanban board', many: 'Kanban boards' },
   icon: SquareKanbanIcon,
@@ -698,3 +702,32 @@ export default defineElement({
   presentChild: (k, child, { editor, personal }) => presentCard(k, child, editor, personal),
   presentationKey,
 });
+
+/**
+ * A linked view (step 3c, lib/LinkedView.tsx): a kanban elsewhere on the board as a table, list,
+ * calendar or timeline in a box of its own. Not a container: the cards stay the kanban's. Copying it
+ * within the board keeps its link (with its kanban copied along, the copy shows the kanban's copy);
+ * pasting it onto another board, without its kanban, is refused for now — linked views across
+ * boards are step 3d.
+ */
+const linkedView = defineElement({
+  type: 'kanbanview',
+  label: { one: 'Linked view', many: 'Linked views' },
+  icon: Link2,
+  resize: 'free',
+  rotatable: false,
+  minSize: LINKED_VIEW_MIN,
+  defaults: (): Omit<NewElement<'kanbanview'>, 'x' | 'y'> => ({ type: 'kanbanview', ...LINKED_VIEW_SIZES.table, sourceId: '', view: newLinkedView('table') }),
+  Component: LinkedViewElement,
+  toPlainText: (lv) => linkedView_(lv).name,
+  // Which board it was copied from, so a paste can tell a copy on the same board from one onto another.
+  copyContent: (_lv, editor) => ({ board: editor.boardId }),
+  pasteContent(lv, content, editor) {
+    const from = content && typeof content === 'object' ? (content as { board?: unknown }).board : undefined;
+    if (typeof from !== 'string' || from === editor.boardId || sourceOf(editor, lv)) return;
+    editor.remove([lv.id]);
+    editor.host.notify('Linked views stay on the board of their kanban for now: copy the kanban itself to take its cards along.', 'info');
+  },
+});
+
+export default [kanban, linkedView] as unknown as ElementDefinition[];
