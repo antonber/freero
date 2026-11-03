@@ -467,6 +467,43 @@ export interface WorkspaceMember {
   /** [additive, #151] An admin's scopes (null: all three; absent for everyone else). */
   adminScopes?: AdminScope[] | null;
 }
+// ---- User groups (#63) ----
+// A group belongs to one team workspace and holds members of it. Members admins (and owners) make
+// and fill groups; anyone who may share a board or manage a project picks a group like a person.
+// Access follows the group: joining or leaving it changes what someone opens at once, live sockets
+// included. Directory (SCIM) groups are listed beside them, read-only (Provisioning manages those).
+// GET    /api/workspaces/:id/groups -> { groups: WorkspaceGroup[], directory: DirectoryGroup[] }  (members, not guests)
+// POST   /api/workspaces/:id/groups  body { name } -> { group }                 (members admins)
+// PATCH  /api/groups/:id  body { name } -> { group }; DELETE /api/groups/:id -> { ok: true }   (members admins)
+// GET    /api/groups/:id/members -> { members: WorkspaceMember[] }              (members, not guests)
+// PUT    /api/groups/:id/members/:userId -> { group }; DELETE … -> { group }    (members admins; a member of the workspace)
+// GET    /api/boards/:id/groups -> { groups: BoardGroupGrant[] }                (anyone with access)
+// PUT    /api/boards/:id/groups/:groupId  body { role } -> { groups }           (who may invite people to it;
+//        a group of the board's own workspace; one with guests in it only by who the workspace's
+//        guest-invite policy lets invite guests)
+// DELETE /api/boards/:id/groups/:groupId -> { groups }                         (owners and co-owners)
+// GET    /api/projects/:id/groups -> { groups: WorkspaceGroup[] }; PUT / DELETE /api/projects/:id/groups/:groupId (who manages the project)
+export interface WorkspaceGroup {
+  id: string;
+  workspaceId: string;
+  name: string;
+  memberCount: number;
+  /** Members who are the workspace's guests (sharing with such a group is inviting guests). */
+  guestCount: number;
+  createdAt: number;
+}
+export interface DirectoryGroup {
+  id: string;
+  name: string;
+  memberCount: number;
+}
+export interface BoardGroupGrant {
+  groupId: string;
+  name: string;
+  role: 'editor' | 'commenter' | 'viewer';
+  memberCount: number;
+}
+
 export interface WorkspaceInvite {
   id: string;
   email: string;
@@ -2042,6 +2079,15 @@ export const AUDIT_ACTIONS = {
   'member.joined': 'Joined the workspace',
   'member.role_changed': 'Changed a member’s role',
   'member.admin_scopes_changed': 'Changed what an admin administers',
+  'group.created': 'Created a group',
+  'group.renamed': 'Renamed a group',
+  'group.deleted': 'Deleted a group',
+  'group.member_added': 'Added someone to a group',
+  'group.member_removed': 'Removed someone from a group',
+  'board.group_shared': 'Shared a board with a group',
+  'board.group_unshared': 'Stopped sharing a board with a group',
+  'project.group_added': 'Shared a project with a group',
+  'project.group_removed': 'Stopped sharing a project with a group',
   'member.removed': 'Removed a member',
   'member.left': 'Left the workspace',
   'member.deactivated': 'Deactivated a member',

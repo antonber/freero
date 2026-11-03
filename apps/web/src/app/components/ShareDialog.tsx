@@ -9,6 +9,7 @@ import { copyText } from '../lib/hooks';
 import { EmbedSettings } from './EmbedSettings';
 import { LinkedFrom } from './LinkedFrom';
 import { LinkProtection } from './LinkProtection';
+import { ShareGroups } from './ShareGroups';
 import { SharingSettings } from './SharingSettings';
 import './ShareDialog.css';
 
@@ -444,6 +445,8 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                 })}
               </ul>
             </section>
+
+            {board.team ? <ShareGroups board={board} /> : null}
 
             {board.team ? (
               <section className="fr-share__link" aria-label="Team access">

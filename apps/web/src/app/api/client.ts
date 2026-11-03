@@ -4,6 +4,9 @@ import type {
   AdminBoardsResponse,
   AdminScope,
   AdminTrashedBoard,
+  BoardGroupGrant,
+  DirectoryGroup,
+  WorkspaceGroup,
   OrganisationSummary,
   OrganisationWorkspace,
   OrganisationWorkspaceMember,
@@ -602,6 +605,25 @@ export const api = {
     request<{ ok: true }>('PUT', `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
   removeProjectMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
+  /** #63: groups a project is shared with, and sharing it with one (or stopping). */
+  listProjectGroups: (id: string) => request<{ groups: WorkspaceGroup[] }>('GET', `/api/projects/${encodeURIComponent(id)}/groups`),
+  setProjectGroup: (id: string, groupId: string, shared: boolean) =>
+    request<{ groups: WorkspaceGroup[] }>(shared ? 'PUT' : 'DELETE', `/api/projects/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupId)}`),
+
+  // user groups (#63)
+  listGroups: (workspaceId: string) =>
+    request<{ groups: WorkspaceGroup[]; directory: DirectoryGroup[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/groups`),
+  createGroup: (workspaceId: string, name: string) => request<{ group: WorkspaceGroup }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/groups`, { name }),
+  renameGroup: (id: string, name: string) => request<{ group: WorkspaceGroup }>('PATCH', `/api/groups/${encodeURIComponent(id)}`, { name }),
+  deleteGroup: (id: string) => request<{ ok: true }>('DELETE', `/api/groups/${encodeURIComponent(id)}`),
+  listGroupMembers: (id: string) => request<{ members: WorkspaceMember[] }>('GET', `/api/groups/${encodeURIComponent(id)}/members`),
+  setGroupMember: (id: string, userId: string, member: boolean) =>
+    request<{ group: WorkspaceGroup }>(member ? 'PUT' : 'DELETE', `/api/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
+  listBoardGroups: (boardId: string) => request<{ groups: BoardGroupGrant[] }>('GET', `/api/boards/${encodeURIComponent(boardId)}/groups`),
+  shareBoardWithGroup: (boardId: string, groupId: string, role: BoardGroupGrant['role']) =>
+    request<{ groups: BoardGroupGrant[] }>('PUT', `/api/boards/${encodeURIComponent(boardId)}/groups/${encodeURIComponent(groupId)}`, { role }),
+  unshareBoardGroup: (boardId: string, groupId: string) =>
+    request<{ groups: BoardGroupGrant[] }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/groups/${encodeURIComponent(groupId)}`),
 
   // version history (editors and owners)
   listVersions: (boardId: string) => request<{ versions: BoardVersion[] }>('GET', `/api/boards/${boardId}/versions`),

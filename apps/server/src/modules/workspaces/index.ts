@@ -29,7 +29,10 @@ export { onMembershipChanged, WORKSPACE_MEMBERSHIP_TOPIC, type MembershipChanged
 export { createTeamWorkspace, updateWorkspace, transferWorkspace, removeMember as removeWorkspaceMember, changeRole as changeWorkspaceRole } from './service';
 export { createProject } from './projects';
 export { inviteToWorkspace } from './invites';
-export { mayDownload, mayShareExternally, isFullMember } from './roles';
+export { mayDownload, mayShareExternally, isFullMember, mayInvite as mayInviteToWorkspace } from './roles';
+// User groups (#63): groups of a workspace; boards and projects shared with them.
+export { groupOfWorkspace, setDirectoryGroupReader, createGroup, setGroupMember } from './groups';
+export { setProjectGroup } from './projects';
 // The organization's directory (SSO just-in-time sign-in, SCIM provisioning).
 export {
   applyDirectoryMembership,

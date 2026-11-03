@@ -1573,6 +1573,21 @@ members with roles owner / admin / member / guest (separate from board roles).
   transfers) re-resolves the live sockets of the affected boards on every instance through
   realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
   that workspace and hands boards they owned there to the remover.
+- **User groups** (#63; `workspaces/groups.ts`, tables `workspace_groups`, `workspace_group_members`,
+  `project_groups`; members' `board_group_grants`): members admins make groups of the workspace's
+  members (leaving the workspace leaves its groups, in `repo.removeMember`); directory (SCIM) groups
+  are listed beside them read-only (scim registers `setDirectoryGroupReader` from its init). A board
+  is shared with a group at a role (`PUT /boards/:id/groups/:groupId`: whoever may invite people;
+  a group with guests in it only by who the workspace's `guestInvites` lets invite guests —
+  `requireBoardAccess().mayInviteGuests`; stopping: owners and co-owners); a project too (its
+  managers; `projectIdsOf` / `projectPeopleIds` count the group's members as the project's). Members'
+  `getMembership` / `membershipsOf` return the HIGHEST of the direct membership and the person's
+  groups' grants — only grants of groups of the board's own workspace, to people still in it — so
+  `resolveRole` (blocked, outside sharing), lists, search and socket admission need nothing new.
+  Every change to a group's membership, a grant or a project's groups re-resolves the boards it
+  reaches on every instance (`refreshBoardAccess`): leaving a group closes a board shared only with
+  it on the next request and on the open socket (4403). Audited: `group.*`, `board.group_shared` /
+  `board.group_unshared`, `project.group_added` / `project.group_removed`.
 - Invites by email reuse the board-invite mechanics (`workspace_invites`, sha256 tokens, link
   `/workspace-invite/<token>`, conversion on `auth.onEmailVerified`).
 - Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),

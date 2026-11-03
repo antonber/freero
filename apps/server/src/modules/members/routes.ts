@@ -9,6 +9,7 @@ import { commentPeopleOf } from '../realtime/index';
 import { decideRequest, listRequests, requestAccess, requestState, withdrawRequest } from './accessRequests';
 import { acceptInvite, listPending, previewInvite, resendInvite } from './invites';
 import * as repo from './repo';
+import { listBoardGroups, shareBoardWithGroup, unshareBoardGroup } from './groups';
 import { inviteBoardMember, listBoardMembers, removeBoardMember, requireMayInvite, setBoardMemberRole } from './service';
 
 const MAX_PEOPLE = 100;
@@ -165,6 +166,30 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       await removeBoardMember(req.params.id, currentUser(req).id, req.params.userId);
       res.json({ ok: true });
+    }),
+  );
+
+  // #63: boards shared with groups of their workspace.
+  r.get(
+    '/boards/:id/groups',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ groups: await listBoardGroups(req.params.id, currentUser(req).id) });
+    }),
+  );
+  r.put(
+    '/boards/:id/groups/:groupId',
+    requireUser,
+    rateLimit('invite', 'user'),
+    handle(async (req, res) => {
+      res.json({ groups: await shareBoardWithGroup(req.params.id, currentUser(req).id, req.params.groupId, req.body?.role) });
+    }),
+  );
+  r.delete(
+    '/boards/:id/groups/:groupId',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ groups: await unshareBoardGroup(req.params.id, currentUser(req).id, req.params.groupId) });
     }),
   );
 

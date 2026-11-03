@@ -1,7 +1,7 @@
 // Projects: folders of boards inside a workspace. An open project ('workspace') is seen by every
 // member; a private one only by its members and the workspace's owners/admins — and so are the
 // boards in it (roles.ts teamRole). Its creator and the workspace's owners/admins manage it.
-import type { ProjectAccess, ProjectSummary, TeamAccess, WorkspaceRole } from '@freero/shared';
+import type { ProjectAccess, ProjectSummary, TeamAccess, WorkspaceGroup, WorkspaceRole } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
@@ -163,6 +163,33 @@ export async function addProjectMember(projectId: string, actorId: string, targe
   if (!(await repo.addProjectMember(projectId, targetId, Date.now()))) throw notFound('Project not found');
   await recordAuditQuietly({ action: 'project.member_added', workspaceId: project.workspaceId, actorId, target: projectTarget(project), metadata: { userId: targetId } });
   await refreshProjectBoards(projectId);
+}
+
+// ---- projects shared with groups (#63) ----
+
+/** The groups a project is shared with (anyone who sees the project). */
+export async function listProjectGroups(projectId: string, userId: string): Promise<WorkspaceGroup[]> {
+  const { project } = await visibleProject(projectId, userId);
+  const ids = new Set(await repo.projectGroupIds(projectId));
+  return (await repo.groupsIn(project.workspaceId)).filter((g) => ids.has(g.id));
+}
+
+/** Shares a project with a group of its workspace, or stops (who manages the project); its boards follow live. */
+export async function setProjectGroup(projectId: string, actorId: string, groupId: string, shared: boolean): Promise<WorkspaceGroup[]> {
+  const { project } = await manageable(projectId, actorId);
+  const group = await repo.getGroup(groupId);
+  if (!group || group.workspaceId !== project.workspaceId) throw notFound('That group is not in this workspace');
+  const changed = shared ? await repo.addProjectGroup(projectId, groupId, Date.now()) : await repo.removeProjectGroup(projectId, groupId);
+  if (changed)
+    await recordAuditQuietly({
+      action: shared ? 'project.group_added' : 'project.group_removed',
+      workspaceId: project.workspaceId,
+      actorId,
+      target: projectTarget(project),
+      metadata: { groupId, group: group.name },
+    });
+  if (changed) await refreshProjectBoards(projectId);
+  return listProjectGroups(projectId, actorId);
 }
 
 export async function removeProjectMember(projectId: string, actorId: string, targetId: string): Promise<void> {

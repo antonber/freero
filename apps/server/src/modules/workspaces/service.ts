@@ -796,7 +796,7 @@ export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: st
   const [members, project, inProject, orgMembers] = await Promise.all([
     repo.listMembers(ws.id),
     place.projectId ? repo.getProject(place.projectId) : Promise.resolve(null),
-    place.projectId ? repo.projectMemberIds(place.projectId) : Promise.resolve([] as string[]),
+    place.projectId ? repo.projectPeopleIds(place.projectId) : Promise.resolve([] as string[]),
     ws.organisation ? repo.listMembers(ws.organisation.id) : Promise.resolve([] as repo.MemberRow[]),
   ]);
   const inP = new Set(inProject);

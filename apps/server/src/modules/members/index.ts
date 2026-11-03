@@ -8,10 +8,17 @@ import type { Membership } from './roles';
 
 export { resolveRole, resolveGuestRole, resolveCoOwner, managesSharing, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess, type Membership } from './roles';
 
-/** The user's direct membership on a board — its role and whether it is a co-owner's (#122) — or null. */
+const RANK = { viewer: 1, commenter: 2, editor: 3 } as const;
+const higher = <R extends keyof typeof RANK>(a: R | undefined, b: R | undefined): R | undefined => (!a ? b : !b ? a : RANK[a] >= RANK[b] ? a : b);
+
+/**
+ * The user's membership on a board — the highest of their direct membership and what their groups
+ * were given there (#63) — and whether it is a co-owner's (#122: only ever a direct one), or null.
+ */
 export async function getMembership(boardId: string, userId: string): Promise<Membership | null> {
-  const m = await repo.getMembership(boardId, userId);
-  return m ? { role: m.role, coOwner: m.coOwner } : null;
+  const [m, groups] = await Promise.all([repo.getMembership(boardId, userId), repo.groupRolesOf(userId, boardId)]);
+  const role = higher(m?.role, groups.get(boardId));
+  return role ? { role, coOwner: !!m?.coOwner && role === 'editor' } : null;
 }
 
 /** The boards the user co-owns through a membership (#122; the resolver still decides whether it counts). */
@@ -54,6 +61,7 @@ export { requestAccess, decideRequest as decideAccessRequest, requestOutcomes as
 export { invitedEmails } from './invites';
 // Sharing a board (its routes and the public API use the same rules).
 export { listBoardMembers, inviteBoardMember, setBoardMemberRole, removeBoardMember } from './service';
+export { listBoardGroups, shareBoardWithGroup, unshareBoardGroup } from './groups';
 // Membership changes, appended to the outbox with the change (the event stream, modules/events; KAI-150).
 export { MEMBER_EVENTS_TOPIC, type MemberEventRecord } from './repo';
 
@@ -102,7 +110,15 @@ export async function memberIdsOf(boardId: string): Promise<string[]> {
   return (await repo.listByBoard(boardId)).map((m) => m.userId);
 }
 
-/** boardId -> membership role for every board the user was invited to. */
+/** boardId -> membership role for every board the user was invited to, or (#63) one of their groups was. */
 export async function membershipsOf(userId: string): Promise<Map<string, Role>> {
-  return new Map((await repo.listByUser(userId)).map((m) => [m.boardId, m.role]));
+  const [direct, groups] = await Promise.all([repo.listByUser(userId), repo.groupRolesOf(userId)]);
+  const out = new Map<string, 'editor' | 'commenter' | 'viewer'>(groups);
+  for (const m of direct) out.set(m.boardId, higher(m.role, out.get(m.boardId))!);
+  return out;
+}
+
+/** Boards shared with a group (#63: its membership changes re-resolve them). */
+export function boardIdsGrantedTo(groupId: string): Promise<string[]> {
+  return repo.boardIdsGrantedTo(groupId);
 }

@@ -1,7 +1,7 @@
-// The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects` and
-// `project_members` [S4].
+// The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects`,
+// `project_members` and (#63) `workspace_groups`, `workspace_group_members`, `project_groups` [S4].
 import type { AdminScope, InactiveBoardAction, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
-import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
+import { isForeignKeyViolation, isUniqueViolation, one, query, tx } from '../../platform/db';
 import { NO_FLOOR_POLICIES, strictestPolicies, strictestSettings, type InvitableWorkspaceRole, type PolicyFloor, type SettingsFloor } from './roles';
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
@@ -594,6 +594,8 @@ export async function removeMember(workspaceId: string, userId: string): Promise
     workspaceId,
     userId,
   ]);
+  // #63: leaving the workspace leaves its groups (their grants reach nobody outside it).
+  await query(`DELETE FROM workspace_group_members WHERE user_id = $2 AND group_id IN (SELECT id FROM workspace_groups WHERE workspace_id = $1)`, [workspaceId, userId]);
   return (await query(`DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`, [workspaceId, userId])).length > 0;
 }
 
@@ -811,14 +813,141 @@ export async function lockProject(id: string, mode: 'update' | 'share'): Promise
 }
 
 /** Ids of the projects (among `workspaceIds`) the user is a member of. */
+/** Projects the user is in: added to it, or (#63) in a group of its workspace the project is shared with. */
 export async function projectIdsOf(userId: string, workspaceIds: string[]): Promise<Set<string>> {
   if (workspaceIds.length === 0) return new Set();
   const rows = await query<{ project_id: string }>(
     `SELECT pm.project_id FROM project_members pm JOIN projects p ON p.id = pm.project_id
-     WHERE pm.user_id = $1 AND p.workspace_id = ANY($2::text[])`,
+     WHERE pm.user_id = $1 AND p.workspace_id = ANY($2::text[])
+     UNION
+     SELECT pg.project_id FROM project_groups pg JOIN projects p ON p.id = pg.project_id
+       JOIN workspace_groups g ON g.id = pg.group_id AND g.workspace_id = p.workspace_id
+       JOIN workspace_group_members gm ON gm.group_id = g.id AND gm.user_id = $1
+     WHERE p.workspace_id = ANY($2::text[])`,
     [userId, workspaceIds],
   );
   return new Set(rows.map((r) => r.project_id));
+}
+
+/** Everyone in a project: added to it, or in a group it is shared with (#63; who the team gives its boards). */
+export async function projectPeopleIds(projectId: string): Promise<string[]> {
+  return (
+    await query<{ user_id: string }>(
+      `SELECT user_id FROM project_members WHERE project_id = $1
+       UNION SELECT gm.user_id FROM project_groups pg JOIN projects p ON p.id = pg.project_id
+         JOIN workspace_groups g ON g.id = pg.group_id AND g.workspace_id = p.workspace_id
+         JOIN workspace_group_members gm ON gm.group_id = g.id WHERE pg.project_id = $1`,
+      [projectId],
+    )
+  ).map((r) => r.user_id);
+}
+
+// ---- groups (#63) ----
+
+export interface GroupRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  createdAt: number;
+  memberCount: number;
+  guestCount: number;
+}
+const GROUP_SELECT = `SELECT g.id, g.workspace_id, g.name, g.created_at,
+    (SELECT count(*)::int FROM workspace_group_members gm WHERE gm.group_id = g.id) AS member_count,
+    (SELECT count(*)::int FROM workspace_group_members gm JOIN workspace_members m ON m.workspace_id = g.workspace_id AND m.user_id = gm.user_id
+      WHERE gm.group_id = g.id AND m.role = 'guest') AS guest_count
+  FROM workspace_groups g`;
+const toGroup = (r: { id: string; workspace_id: string; name: string; created_at: Date; member_count: number; guest_count: number }): GroupRow => ({
+  id: r.id,
+  workspaceId: r.workspace_id,
+  name: r.name,
+  createdAt: r.created_at.getTime(),
+  memberCount: r.member_count,
+  guestCount: r.guest_count,
+});
+
+/** A new group; false when the workspace already has one of that name (any case). */
+export async function insertGroup(id: string, workspaceId: string, name: string, by: string, now: number): Promise<boolean> {
+  try {
+    await query(`INSERT INTO workspace_groups (id, workspace_id, name, created_by, created_at) VALUES ($1, $2, $3, $4, $5)`, [id, workspaceId, name, by, new Date(now)]);
+    return true;
+  } catch (e) {
+    if (isUniqueViolation(e, 'workspace_groups_name')) return false;
+    throw e;
+  }
+}
+
+/** Renames a group: true, false when it is gone, 'taken' when the name is another group's. */
+export async function renameGroup(id: string, name: string): Promise<boolean | 'taken'> {
+  try {
+    return (await query(`UPDATE workspace_groups SET name = $2 WHERE id = $1 RETURNING 1`, [id, name])).length > 0;
+  } catch (e) {
+    if (isUniqueViolation(e, 'workspace_groups_name')) return 'taken';
+    throw e;
+  }
+}
+
+export async function deleteGroup(id: string): Promise<boolean> {
+  return (await query(`DELETE FROM workspace_groups WHERE id = $1 RETURNING 1`, [id])).length > 0;
+}
+
+export async function getGroup(id: string): Promise<GroupRow | null> {
+  const r = await one<Parameters<typeof toGroup>[0]>(`${GROUP_SELECT} WHERE g.id = $1`, [id]);
+  return r ? toGroup(r) : null;
+}
+
+export async function groupsIn(workspaceId: string): Promise<GroupRow[]> {
+  return (await query<Parameters<typeof toGroup>[0]>(`${GROUP_SELECT} WHERE g.workspace_id = $1 ORDER BY lower(g.name), g.id`, [workspaceId])).map(toGroup);
+}
+
+export async function groupMemberIds(groupId: string): Promise<string[]> {
+  return (await query<{ user_id: string }>(`SELECT user_id FROM workspace_group_members WHERE group_id = $1 ORDER BY added_at, user_id`, [groupId])).map((r) => r.user_id);
+}
+
+/** Adds a member to a group; false when already in it, or the group (or user) is gone. */
+export async function addGroupMember(groupId: string, userId: string, now: number): Promise<boolean> {
+  try {
+    return (await query(`INSERT INTO workspace_group_members (group_id, user_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING 1`, [groupId, userId, new Date(now)])).length > 0;
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return false;
+    throw e;
+  }
+}
+
+export async function removeGroupMember(groupId: string, userId: string): Promise<boolean> {
+  return (await query(`DELETE FROM workspace_group_members WHERE group_id = $1 AND user_id = $2 RETURNING 1`, [groupId, userId])).length > 0;
+}
+
+/** The groups of a workspace the user is in. */
+export async function groupIdsOf(workspaceId: string, userId: string): Promise<string[]> {
+  return (
+    await query<{ id: string }>(
+      `SELECT g.id FROM workspace_groups g JOIN workspace_group_members gm ON gm.group_id = g.id WHERE g.workspace_id = $1 AND gm.user_id = $2`,
+      [workspaceId, userId],
+    )
+  ).map((r) => r.id);
+}
+
+export async function addProjectGroup(projectId: string, groupId: string, now: number): Promise<boolean> {
+  try {
+    return (await query(`INSERT INTO project_groups (project_id, group_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING 1`, [projectId, groupId, new Date(now)])).length > 0;
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return false;
+    throw e;
+  }
+}
+
+export async function removeProjectGroup(projectId: string, groupId: string): Promise<boolean> {
+  return (await query(`DELETE FROM project_groups WHERE project_id = $1 AND group_id = $2 RETURNING 1`, [projectId, groupId])).length > 0;
+}
+
+export async function projectGroupIds(projectId: string): Promise<string[]> {
+  return (await query<{ group_id: string }>(`SELECT group_id FROM project_groups WHERE project_id = $1`, [projectId])).map((r) => r.group_id);
+}
+
+/** Projects shared with a group (its boards follow the group's membership). */
+export async function projectIdsOfGroup(groupId: string): Promise<string[]> {
+  return (await query<{ project_id: string }>(`SELECT project_id FROM project_groups WHERE group_id = $1`, [groupId])).map((r) => r.project_id);
 }
 
 export async function projectMemberIds(projectId: string): Promise<string[]> {

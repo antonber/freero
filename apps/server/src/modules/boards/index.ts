@@ -4,7 +4,7 @@ import { notFound } from '../../platform/http';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
-import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
+import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayInviteToWorkspace, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
 import {
   boardLetsCopy,
@@ -150,6 +150,8 @@ export async function requireBoardAccess(
   coOwner: boolean;
   manages: boolean;
   editorsCanShare: boolean;
+  /** #63: the workspace's guest-invite policy lets them invite guests (sharing with a group that has guests). */
+  mayInviteGuests: boolean;
 }> {
   const { board, role, access, coOwner } = await requireAccess(boardId, userId, min);
   return {
@@ -163,6 +165,7 @@ export async function requireBoardAccess(
     coOwner,
     manages: managesSharing(role, coOwner),
     editorsCanShare: board.editorsCanShare,
+    mayInviteGuests: access.team !== null && mayInviteToWorkspace(access.workspaceRole, 'guest', access.policies),
   };
 }
 

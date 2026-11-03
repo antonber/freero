@@ -1,4 +1,4 @@
-// The only writer of `board_members`, `board_invites` and `board_access_requests` [S4].
+// The only writer of `board_members`, `board_invites`, `board_access_requests` and (#63) `board_group_grants` [S4].
 import { randomUUID } from 'node:crypto';
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
 import { appendOutbox } from '../../platform/outbox';
@@ -100,6 +100,73 @@ export async function getMembership(boardId: string, userId: string): Promise<Me
 
 export async function listByBoard(boardId: string): Promise<MemberRow[]> {
   return (await query<Row>(`SELECT * FROM board_members WHERE board_id = $1 ORDER BY created_at`, [boardId])).map(toRow);
+}
+
+// ---- boards shared with groups (#63) ----
+
+const RANK: Record<MemberRole, number> = { viewer: 1, commenter: 2, editor: 3 };
+
+/**
+ * What a person's groups give them: grants of groups of the BOARD'S OWN workspace (a board moved
+ * elsewhere leaves its old team's groups behind), to people still in that workspace.
+ */
+const GROUP_GRANTS = `SELECT gg.board_id, gg.role FROM board_group_grants gg
+  JOIN boards b ON b.id = gg.board_id
+  JOIN workspace_groups g ON g.id = gg.group_id AND g.workspace_id = b.workspace_id
+  JOIN workspace_group_members gm ON gm.group_id = g.id
+  JOIN workspace_members wm ON wm.workspace_id = g.workspace_id AND wm.user_id = gm.user_id
+  WHERE gm.user_id = $1`;
+
+/** boardId -> the highest role the user's groups give them there. */
+export async function groupRolesOf(userId: string, boardId?: string): Promise<Map<string, MemberRole>> {
+  const rows = await query<{ board_id: string; role: MemberRole }>(boardId ? `${GROUP_GRANTS} AND gg.board_id = $2` : GROUP_GRANTS, boardId ? [userId, boardId] : [userId]);
+  const out = new Map<string, MemberRole>();
+  for (const r of rows) if (!out.has(r.board_id) || RANK[r.role] > RANK[out.get(r.board_id)!]) out.set(r.board_id, r.role);
+  return out;
+}
+
+export interface GrantRow {
+  groupId: string;
+  name: string;
+  role: MemberRole;
+  memberCount: number;
+}
+
+/** The groups a board is shared with (only its own workspace's count). */
+export async function grantsOf(boardId: string): Promise<GrantRow[]> {
+  return (
+    await query<{ group_id: string; name: string; role: MemberRole; member_count: number }>(
+      `SELECT gg.group_id, g.name, gg.role, (SELECT count(*)::int FROM workspace_group_members gm WHERE gm.group_id = g.id) AS member_count
+       FROM board_group_grants gg JOIN boards b ON b.id = gg.board_id JOIN workspace_groups g ON g.id = gg.group_id AND g.workspace_id = b.workspace_id
+       WHERE gg.board_id = $1 ORDER BY lower(g.name), g.id`,
+      [boardId],
+    )
+  ).map((r) => ({ groupId: r.group_id, name: r.name, role: r.role, memberCount: r.member_count }));
+}
+
+/** Shares the board with a group at `role` (or changes the role); the role it had, or null when new. False when the board or group is gone. */
+export async function upsertGrant(boardId: string, groupId: string, role: MemberRole, by: string, now: number): Promise<MemberRole | null | false> {
+  try {
+    const before = await one<{ role: MemberRole }>(`SELECT role FROM board_group_grants WHERE board_id = $1 AND group_id = $2`, [boardId, groupId]);
+    await query(
+      `INSERT INTO board_group_grants (board_id, group_id, role, granted_by, created_at) VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (board_id, group_id) DO UPDATE SET role = excluded.role`,
+      [boardId, groupId, role, by, new Date(now)],
+    );
+    return before?.role ?? null;
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return false;
+    throw e;
+  }
+}
+
+export async function deleteGrant(boardId: string, groupId: string): Promise<MemberRole | null> {
+  return (await one<{ role: MemberRole }>(`DELETE FROM board_group_grants WHERE board_id = $1 AND group_id = $2 RETURNING role`, [boardId, groupId]))?.role ?? null;
+}
+
+/** Boards shared with a group (its membership changes re-resolve them). */
+export async function boardIdsGrantedTo(groupId: string): Promise<string[]> {
+  return (await query<{ board_id: string }>(`SELECT board_id FROM board_group_grants WHERE group_id = $1`, [groupId])).map((r) => r.board_id);
 }
 
 /** The memberships of several boards (the admin inventory, #152). */

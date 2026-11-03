@@ -668,3 +668,43 @@ td > .fr-admin-pill:first-child {
   gap: 8px;
   margin-top: 10px;
 }
+
+/* User groups (#63). */
+.fr-admin-groups {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.fr-admin-groups__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fr-admin-groups__name {
+  flex: 1;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  color: var(--fr-ink);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.fr-admin-groups__members {
+  margin-top: 10px;
+}
+.fr-admin-groups__people {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.fr-admin-groups__add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
