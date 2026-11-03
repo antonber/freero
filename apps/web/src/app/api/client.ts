@@ -83,6 +83,8 @@ import type {
   ScimGroupMapping,
   ScimSettings,
   DomainControlSettings,
+  SiemSinkInfo,
+  SiemSinkInput,
   SsoConnectionInput,
   SsoDiscovery,
   SsoSettings,
@@ -598,6 +600,14 @@ export const api = {
   resolveObjects: (uris: string[]) => request<ResolveObjectsResponse>('POST', '/api/objects/resolve', { uris }),
   backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
 
+  // audit streaming to a SIEM (#17): owners/admins; 404 when the server has none
+  siemSinks: (id: string) => request<{ sinks: SiemSinkInfo[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`),
+  createSiemSink: (id: string, body: SiemSinkInput) =>
+    request<{ sink: SiemSinkInfo; signingSecret?: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`, body),
+  updateSiemSink: (id: string, sinkId: string, patch: Partial<SiemSinkInput> & { rotateSigningSecret?: boolean }) =>
+    request<{ sink: SiemSinkInfo; signingSecret?: string }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/siem/${encodeURIComponent(sinkId)}`, patch),
+  testSiemSink: (id: string, sinkId: string) => request<{ sink: SiemSinkInfo }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/siem/${encodeURIComponent(sinkId)}/test`),
+  deleteSiemSink: (id: string, sinkId: string) => request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/admin/siem/${encodeURIComponent(sinkId)}`),
   // webhooks (KAI-105): a team workspace's endpoints (owners/admins; 404 when the server has none)
   webhooks: (id: string) => request<WebhooksAdminResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks`),
   createWebhook: (id: string, body: WebhookCreateRequest) => request<WebhookSecretResponse>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks`, body),

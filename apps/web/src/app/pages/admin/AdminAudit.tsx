@@ -192,7 +192,8 @@ export function AdminAudit({ workspace }: { workspace: WorkspaceSummary }) {
           <div className="fr-admin-row__text">
             <span className="fr-admin-row__label">Integrity</span>
             <span className="fr-admin-row__hint">
-              Re-checks every stored event against the one before it and against the newest event the log recorded.
+              Re-checks every stored event against the one before it, against the newest event the log recorded, and against the hourly checkpoints the
+              server signs.
             </span>
           </div>
           <div className="fr-admin-row__control">
@@ -208,6 +209,9 @@ export function AdminAudit({ workspace }: { workspace: WorkspaceSummary }) {
               {integrity.ok
                 ? `Intact: ${integrity.events} event${integrity.events === 1 ? '' : 's'} checked.`
                 : `Not intact: ${integrity.problem}.`}
+              {integrity.anchors.checked
+                ? ` Matches ${integrity.anchors.checked} signed checkpoint${integrity.anchors.checked === 1 ? '' : 's'} (newest ${new Date(integrity.anchors.lastAt ?? 0).toLocaleString()}).`
+                : ''}
               {integrity.headHash ? (
                 <>
                   {' '}
