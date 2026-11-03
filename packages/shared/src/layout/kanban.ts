@@ -126,10 +126,15 @@ export function planKanban(k: KanbanElement, all: readonly BoardElement[], previ
   const inner = k.colW - 2 * pad;
   const items = all.filter((el) => isStackable(el, k.id));
   const patches: KanbanPatch[] = [];
+  // By id too: a re-lay of every card asks for each one's patch (a scan per card was O(n²)).
+  const patchOf = new Map<string, Record<string, unknown>>();
   const own = (id: string): Record<string, unknown> => {
-    let p = patches.find((x) => x.id === id);
-    if (!p) patches.push((p = { id, patch: {} }));
-    return p.patch;
+    let p = patchOf.get(id);
+    if (!p) {
+      patchOf.set(id, (p = {}));
+      patches.push({ id, patch: p });
+    }
+    return p;
   };
   const { view, schema } = contextOf(k);
   // Where the board itself was (it may have moved in the same change, carrying its items).
