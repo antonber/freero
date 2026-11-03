@@ -290,9 +290,10 @@ pages describe the hosted service, not yours: write your own, or leave the opera
 
 The security overview, the subprocessor list and the data processing addendum (`/security`,
 `/subprocessors`, `/dpa`; the last two are legal pages under the same guard) also carry a "Draft —
-under review" line that no setting removes: it goes, with every "to confirm by the operator" mark,
-when the operator has approved the text and deletes `<UnderReview />` / `<ToConfirm />` from the
-page (`apps/site/src/lib/legal.tsx`).
+under review" line and stay `noindex` and out of the sitemap, which no setting changes: that ends,
+with every "to confirm by the operator" mark, when the operator has approved the text and removes
+the page's `underReview: true` and its `<ToConfirm />` marks (`apps/site/src/lib/define.ts`,
+`apps/site/src/lib/legal.tsx`).
 
 | Variable | Default | Description |
 |---|---|---|

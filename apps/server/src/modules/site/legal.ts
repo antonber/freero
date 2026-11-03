@@ -136,9 +136,15 @@ function analyticsText(config: Config): Record<'analytics' | 'analyticsCookies' 
   };
 }
 
-/** A page with its tokens filled; a legal page also loses its draft banner and noindex once in effect. */
-export function withLegal(html: string, fill: LegalFill, legalPage: boolean): string {
+/**
+ * A page with its tokens filled; a legal page also loses its draft banner and noindex once in
+ * effect, except that a page still under review (not approved by the operator) stays noindex.
+ */
+export function withLegal(html: string, fill: LegalFill, legalPage: boolean, underReview = false): string {
   let out = html.includes('[[freero-legal:') ? html.replace(TOKEN, (m, key: string) => fill.values[key] ?? m) : html;
-  if (legalPage && fill.inEffect) out = out.replace(BANNER, '').replace(DRAFT_ROBOTS, INDEX_ROBOTS);
+  if (legalPage && fill.inEffect) {
+    out = out.replace(BANNER, '');
+    if (!underReview) out = out.replace(DRAFT_ROBOTS, INDEX_ROBOTS);
+  }
   return out;
 }

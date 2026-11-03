@@ -45,7 +45,8 @@ Public pages: [security overview](https://freero.app/security),
 
 | Question | Answer | Source |
 |---|---|---|
-| SSO? | SAML 2.0 and OpenID Connect per team workspace, verified domains, SP-initiated only, enforceable with a break-glass owner. | docs/operations.md "Workspace single sign-on", ARCHITECTURE.md "Enterprise identity" |
+| SSO? | SAML 2.0 and OpenID Connect per team workspace, verified domains, enforceable with a break-glass owner. IdP-initiated SAML off by default, per-workspace switch (Destination check, replay cache, same-origin RelayState). No single logout or encrypted assertions yet (#13). | docs/operations.md "Workspace single sign-on", ARCHITECTURE.md "Enterprise identity" |
+| Domain control? | Per verified domain: capture existing accounts (emailed first, opt out by changing address), auto-join new sign-ups, block other team workspaces. Self-hosters can also run invite-only (`SIGNUPS=invite-only`). | ARCHITECTURE.md "Domain control", docs/configuration.md |
 | SCIM? | SCIM 2.0 users and groups; deprovisioning ends access and sessions. | same |
 | MFA? | TOTP with recovery codes; workspaces can require it for everyone opening their boards. | ARCHITECTURE.md "Audit log, admin console and workspace policies" |
 | Session management? | Default 30 days; per-workspace maximum (1 h–90 d) and idle timeout (15 min–30 d); session list and revoke; new-device emails. | `WORKSPACE_SETTING_LIMITS` in packages/shared/src/api.ts |
@@ -57,8 +58,8 @@ Public pages: [security overview](https://freero.app/security),
 
 | Question | Answer | Source |
 |---|---|---|
-| Audit log? | Append-only (DB trigger), SHA-256 hash chain per workspace, integrity check, CSV/JSON export with hashes, 365-day default retention (30–3,650). | ARCHITECTURE.md "Audit log" |
-| SIEM integration? | Not yet (#17); export, or workspace webhooks for board events. | docs/parity.md |
+| Audit log? | Append-only (DB trigger), SHA-256 hash chain per workspace, hourly signed checkpoints of chain heads, integrity check, CSV/JSON export with hashes, 365-day default retention (30–3,650). | ARCHITECTURE.md "Audit log" |
+| SIEM integration? | Push streams per workspace: Splunk HEC, Microsoft Sentinel (Logs Ingestion API), signed HTTPS collector, syslog over TLS; ordered, at least once, with hashes and hourly signed heads. Pull: `GET /api/v1/workspaces/{id}/audit` (`audit:read`). | docs/operations.md "Audit log streams (SIEM)" |
 | Application logs? | Structured JSON, no bodies, query strings, cookies or tokens; kept by Railway up to 90 days (`SITE_LEGAL_LOG_DAYS`; Railway's actual retention: **TO CONFIRM**). | docs/operations.md "Logs" |
 | Monitoring and alerting? | `/healthz`, `/readyz`, Prometheus metrics; alerting on the hosted service: **TO CONFIRM**. Error tracking: none configured. | docs/operations.md "Monitoring" |
 

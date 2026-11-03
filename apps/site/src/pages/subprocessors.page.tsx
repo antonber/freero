@@ -1,4 +1,4 @@
-// DRAFT FOR LEGAL REVIEW, and under review until the operator approves it (<UnderReview />). Written
+// DRAFT FOR LEGAL REVIEW, and under review until the operator approves it (`underReview: true`). Written
 // from the server's configuration and the production deployment as far as the repository and the
 // public service show it (2026-11-03); anything they don't show is marked <ToConfirm />. Providers the
 // server is configured with are `L(...)` tokens (modules/site/legal.ts), so turning on AI or error
@@ -6,7 +6,7 @@
 import type { ReactNode } from 'react';
 import { Table } from '../components/ui';
 import { definePage } from '../lib/define';
-import { L, LegalArticle, ToConfirm, UnderReview } from '../lib/legal';
+import { L, LegalArticle, ToConfirm } from '../lib/legal';
 import { abs, docsUrl } from '../lib/site';
 
 const UPDATED = '2026-11-03';
@@ -27,6 +27,7 @@ export default definePage({
   title: 'Subprocessors · Freero',
   description: 'The companies that process personal data for the hosted Freero service: what each does, which data it handles, where, and how you hear of changes.',
   updated: UPDATED,
+  underReview: true,
   legal: true,
   closingCta: false,
   body: () => (
@@ -35,7 +36,6 @@ export default definePage({
       updated={UPDATED}
       intro={
         <>
-          <UnderReview />
           <p>
             These are the companies that process personal data on behalf of {L('operator')} to run the Freero service at <a href={abs('/')}>{abs('/')}</a>.
             For organizations that use the service under our <a href="/dpa">data processing addendum</a>, they are our subprocessors. How we protect the data
@@ -157,8 +157,8 @@ export default definePage({
           <strong>A workspace’s own AI provider</strong>, where this service lets team workspaces connect one (see the AI row above).
         </li>
         <li>
-          <strong>Issue trackers</strong> (Jira, Linear, GitHub), <strong>webhooks</strong> to addresses your admins choose, and <strong>Slack</strong> link
-          previews.
+          <strong>Issue trackers</strong> (Jira, Linear, GitHub), <strong>webhooks</strong> and <strong>audit log streams to your SIEM</strong> at
+          addresses your admins choose, and <strong>Slack</strong> link previews.
         </li>
         <li>
           <strong>Embedded content</strong> on a board (videos, design files, documents), which loads from its own site only after someone clicks it, and{' '}

@@ -1,10 +1,10 @@
-// DRAFT FOR LEGAL REVIEW, and under review until the operator approves it (<UnderReview />). Written
+// DRAFT FOR LEGAL REVIEW, and under review until the operator approves it (`underReview: true`). Written
 // for this service from what it does (the security overview, the subprocessor list, the privacy
 // policy's data map) by someone who is not a lawyer; it is not legal advice and copies no other
 // company's agreement. The parties' facts are `L(...)` tokens (modules/site/legal.ts); commitments
 // the operator still has to make are marked <ToConfirm />.
 import { definePage } from '../lib/define';
-import { L, LegalArticle, ToConfirm, UnderReview } from '../lib/legal';
+import { L, LegalArticle, ToConfirm } from '../lib/legal';
 import { abs } from '../lib/site';
 
 const UPDATED = '2026-11-03';
@@ -15,6 +15,7 @@ export default definePage({
   title: 'Data processing addendum (DPA) · Freero',
   description: 'The data processing addendum for organizations using the hosted Freero service: GDPR and UK GDPR Article 28 terms with the standard contractual clauses.',
   updated: UPDATED,
+  underReview: true,
   legal: true,
   closingCta: false,
   body: () => (
@@ -23,7 +24,6 @@ export default definePage({
       updated={UPDATED}
       intro={
         <>
-          <UnderReview />
           <p>
             This data processing addendum (“DPA”) applies when an organization uses the Freero service at <a href={abs('/')}>{abs('/')}</a> and, in doing so,
             has {L('operator')} (“we”, “us”) process personal data for it. It adds to the <a href="/terms">terms of service</a> (the “Agreement”) the terms
@@ -339,8 +339,8 @@ export default definePage({
           withholds (private drafts, hidden frames) never reaches people, apps or indexes that may not see it.
         </li>
         <li>
-          <strong>Logging and audit:</strong> an append-only, hash-chained audit log per workspace with an integrity check and export; request logs without
-          request bodies, query strings, cookies or tokens.
+          <strong>Logging and audit:</strong> an append-only, hash-chained audit log per workspace with signed hourly checkpoints, an integrity check, export,
+          and streaming to the Customer’s SIEM; request logs without request bodies, query strings, cookies or tokens.
         </li>
         <li>
           <strong>Availability and recovery:</strong> automated database backups kept up to {L('backupRetentionDays')} days, health-checked rolling deploys,

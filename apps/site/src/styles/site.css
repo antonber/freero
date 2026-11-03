@@ -425,7 +425,7 @@ pre {
   font-weight: 600;
 }
 .legal-review {
-  margin: 0 0 20px;
+  margin: 24px 0 0;
   padding: 10px 14px;
   border-left: 4px solid var(--fr-warning);
   background: var(--fr-warning-soft);

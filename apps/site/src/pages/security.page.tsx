@@ -1,11 +1,11 @@
 // The security overview for buyers and reviewers (#109): how the hosted service and the software
 // protect data, written from the code and the docs it links (docs/deployment.md "Encryption at
 // rest", docs/operations.md, ARCHITECTURE.md), never from plans. Under review until the operator
-// approves it (<UnderReview />); facts about the hosted service the repository and the public service
+// approves it (`underReview: true`); facts about the hosted service the repository and the public service
 // don't show are marked <ToConfirm />. Deployment facts are `L(...)` tokens (modules/site/legal.ts).
 import { Table } from '../components/ui';
 import { definePage } from '../lib/define';
-import { L, LegalArticle, ToConfirm, UnderReview } from '../lib/legal';
+import { L, LegalArticle, ToConfirm } from '../lib/legal';
 import { abs, docsUrl, SOURCE_REPO } from '../lib/site';
 
 const UPDATED = '2026-11-03';
@@ -18,6 +18,7 @@ export default definePage({
   description:
     'How the hosted Freero service and the open-source software protect data: hosting, encryption, SSO, SCIM, audit log, backups, incidents and AI.',
   updated: UPDATED,
+  underReview: true,
   closingCta: false,
   faq: [
     {
@@ -39,7 +40,6 @@ export default definePage({
       updated={UPDATED}
       intro={
         <>
-          <UnderReview />
           <p>
             How the Freero service at <a href={abs('/')}>{abs('/')}</a>, operated by {L('operator')}, protects the data people put in it, and how the same
             software protects a server you run yourself. Everything here describes what the code does today; you can check each point in{' '}
@@ -85,7 +85,7 @@ export default definePage({
           ['In transit', 'HTTPS only, HSTS for a year including subdomains, TLS certificates from Let’s Encrypt'],
           ['At rest', <>Credentials hashed, secrets sealed with AES-256-GCM, storage encryption by the hosting provider <ToConfirm /></>],
           ['Sign-in', 'Passwords (scrypt), Google, two-step verification, SAML and OpenID Connect SSO per workspace, SCIM 2.0'],
-          ['Audit', <>Append-only, hash-chained per workspace, exportable, kept {L('auditRetentionDays')} days by default</>],
+          ['Audit', <>Append-only, hash-chained per workspace, signed hourly checkpoints, streams to your SIEM, kept {L('auditRetentionDays')} days by default</>],
           ['Backups', <>Automated database backups by the hosting provider, kept up to {L('backupRetentionDays')} days</>],
           ['Certifications', 'None yet (no SOC 2, ISO 27001, HIPAA or PCI DSS)'],
           ['Source code', 'Public, MIT licensed'],
@@ -110,8 +110,8 @@ export default definePage({
         <li>AI: {L('aiProvider')}. {L('aiWorkspaces')}</li>
         <li>Error tracking: {L('errorReporting')}</li>
         <li>
-          What people and workspaces connect themselves: AI assistants and apps over MCP or the API, issue trackers, webhooks, Slack link previews; and link
-          previews and embeds on boards (see <a href="/subprocessors#chosen">services you choose</a>).
+          What people and workspaces connect themselves: AI assistants and apps over MCP or the API, issue trackers, webhooks, audit log streams to a
+          workspace’s SIEM, Slack link previews; and link previews and embeds on boards (see <a href="/subprocessors#chosen">services you choose</a>).
         </li>
       </ul>
 
@@ -138,7 +138,7 @@ export default definePage({
         </li>
         <li>
           <strong>Secrets are sealed by the application</strong> with AES-256-GCM: two-step verification keys, single sign-on client secrets, AI keys,
-          tracker credentials, webhook addresses and signing secrets, board call links. The key is derived per purpose from the server’s one secret, which can
+          tracker credentials, webhook addresses and signing secrets, SIEM stream credentials, board call links. The key is derived per purpose from the server’s one secret, which can
           be rotated without breaking sign-ins or links (<a href={docsUrl('docs/operations.md')}>rotation steps</a>).
         </li>
         <li>
@@ -158,13 +158,20 @@ export default definePage({
         <li>Passwords of at least 8 characters, hashed with scrypt; sign-in is rate-limited per address and per network, with uniform timing for unknown addresses.</li>
         <li>Continue with Google; two-step verification with an authenticator app and recovery codes, and a safe recovery path when the phone is lost.</li>
         <li>
-          <strong>Single sign-on per team workspace</strong>, SAML 2.0 or OpenID Connect, for domains the workspace has proven with a DNS record. Sign-ins
-          start at Freero (identity-provider-initiated SAML is refused); assertions must be signed and are checked for audience, recipient, time and replay.
-          “Enforce SSO” keeps one owner as break-glass and also covers tokens and apps made without SSO.
+          <strong>Single sign-on per team workspace</strong>, SAML 2.0 or OpenID Connect, for domains the workspace has proven with a DNS record.
+          Assertions must be signed and are checked for audience, recipient, time and replay; a response to a sign-in must answer one Freero started, once.
+          Sign-in from the identity provider’s own app tile (IdP-initiated SAML) is refused unless the workspace turns it on; then the response must also
+          name Freero as its destination, and its return path can only be a page of Freero. “Enforce SSO” keeps one owner as break-glass and also covers
+          tokens and apps made without SSO.
         </li>
         <li>
           <strong>SCIM 2.0 provisioning</strong> from directories such as Okta and Microsoft Entra ID: groups map to workspace roles, and deprovisioning ends a
           person’s access, sessions and tokens at once.
+        </li>
+        <li>
+          <strong>Domain control</strong> for a verified domain, with or without SSO: admins bring existing accounts at the domain into the workspace (each
+          person is emailed first and can opt out by changing their address), new sign-ups at the domain can join automatically, and creating other team
+          workspaces with a domain address can be blocked.
         </li>
         <li>
           <strong>Session policies</strong> per workspace: a maximum session length (1 hour to 90 days; 30 days by default), an idle timeout (15 minutes to 30
@@ -235,10 +242,19 @@ export default definePage({
           a hash chain (SHA-256), so an edited, missing or reordered entry shows when the chain is checked.
         </li>
         <li>
-          Admins filter it, check its integrity in the admin console and export it as CSV or JSON with each entry’s hashes, so it can be verified
-          independently and the newest hash kept elsewhere. Retention per workspace: 30 to 3,650 days, {L('auditRetentionDays')} by default.
+          Every hour the server signs a checkpoint of each chain’s newest entry, so even someone able to rewrite the database can’t rewrite a chain without
+          the check failing, unless they also hold the server’s secret.
         </li>
-        <li>Streaming to a SIEM is not available yet: export the log, or use workspace webhooks for board events.</li>
+        <li>
+          Admins filter it, check its integrity in the admin console and export it as CSV or JSON with each entry’s hashes, so it can be verified
+          independently. Retention per workspace: 30 to 3,650 days, {L('auditRetentionDays')} by default.
+        </li>
+        <li>
+          <strong>Streaming to your SIEM</strong>: Splunk (HTTP Event Collector), Microsoft Sentinel, any HTTPS collector (requests signed like webhooks) or
+          syslog over TLS, in order and at least once, with every entry’s hashes and a signed chain head every hour, so the chain also lives outside
+          Freero. Stream credentials are sealed and never shown again; streams go only to HTTPS or TLS endpoints on the public internet. SIEMs that pull use
+          the audit log in the REST API (an <code>audit:read</code> token of a workspace owner or admin).
+        </li>
       </ul>
 
       <h2 id="logging">10. Logging and monitoring</h2>
@@ -360,10 +376,9 @@ export default definePage({
       <ul>
         <li>No SOC 2 report, ISO 27001 certificate or other third-party attestation, and no HIPAA or PCI DSS compliance.</li>
         <li>No independent penetration test and no automated dependency vulnerability scanning.</li>
-        <li>No streaming of the audit log to a SIEM, and the audit log is not yet in the REST API.</li>
         <li>No choice of data region, no second region and no service-level agreement.</li>
         <li>No customer-managed encryption keys on the hosted service.</li>
-        <li>No identity-provider-initiated SAML sign-in.</li>
+        <li>No SAML single logout and no encrypted SAML assertions.</li>
       </ul>
 
       <h2 id="self-hosting">19. Hosting it yourself</h2>

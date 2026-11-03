@@ -22,6 +22,8 @@ interface Manifest {
   assetsPrefix: string;
   /** Pages built as drafts of legal terms (legal.ts lifts the draft once the operator is set). */
   legal?: string[];
+  /** Drafts the operator hasn't approved (apps/site `underReview`): noindex whatever the legal settings. */
+  underReview?: string[];
 }
 
 export interface Site {
@@ -33,6 +35,7 @@ export interface Site {
   assetsPrefix: string;
   assetsDir: string;
   legal: Set<string>;
+  underReview: Set<string>;
 }
 
 /** Reads a built site, or null when there is none (dev without `npm run build -w @freero/site`). */
@@ -50,6 +53,7 @@ export function loadSite(dist: string): Site | null {
     assetsPrefix: m.assetsPrefix,
     assetsDir: path.join(dist, m.assetsPrefix.replace(/^\/+|\/+$/g, '')),
     legal: new Set(m.legal ?? []),
+    underReview: new Set(m.underReview ?? []),
   };
 }
 

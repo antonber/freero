@@ -84,9 +84,8 @@ export function DraftBanner() {
 }
 
 /**
- * The trust pages (/security, /subprocessors, /dpa) stay visibly under review until the operator
- * has had them reviewed and approves them: unlike the banner above, the server never removes this
- * line, whatever SITE_LEGAL_OPERATOR says. Approving a page = deleting <UnderReview /> from it.
+ * Shown on a page with `underReview: true` (lib/define.ts) until the operator approves it. Unlike the
+ * banner above, the server never removes it, whatever SITE_LEGAL_OPERATOR says.
  */
 export function UnderReview() {
   return (

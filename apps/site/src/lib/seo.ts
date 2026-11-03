@@ -97,7 +97,8 @@ export function sitemaps(pages: PageDef[]): Array<{ path: string; xml: string }>
   // Legal pages are built as drafts (noindex) that only the server puts in effect, so a deployment
   // without an operator would list pages it tells crawlers not to index; they are linked from every
   // page's footer instead.
-  for (const p of pages.filter((p) => p.index !== false && !p.legal)) {
+  // Pages under review are drafts nobody approved yet: not offered to search engines either.
+  for (const p of pages.filter((p) => p.index !== false && !p.legal && !p.underReview)) {
     const g = p.sitemap ?? 'pages';
     groups.set(g, [...(groups.get(g) ?? []), p]);
   }
