@@ -1,6 +1,6 @@
-import { ClipboardList, FileText, Lightbulb, Shapes, Workflow } from 'lucide-react';
+import { ClipboardList, FileText, History, Lightbulb, Shapes, Workflow } from 'lucide-react';
 import { defineCommands } from '@engine';
-import { AI_DIALOG, aiAvailable, aiOfferedHere, aiOrExplain, clusterable, openAi, selectedElements } from './lib/actions';
+import { AI_DIALOG, aiAvailable, aiOfferedHere, aiOrExplain, CATCH_UP_DIALOG, clusterable, openAi, selectedElements } from './lib/actions';
 
 // Every entry point hides itself unless the server offered AI on this board for this person (and
 // they can edit). In the right-click and board menus they fold into one "AI ▸" submenu. Not in the
@@ -37,6 +37,20 @@ export default defineCommands([
     palette: false,
     when: aiAvailable,
     run: (editor) => openAi(editor, 'summarize'),
+  },
+  {
+    // #126: a written catch-up of what others changed (the activity feature's catch-up bar runs it
+    // with { since: 'visit' }).
+    id: 'ai.catchUp',
+    label: 'Catch me up…',
+    icon: History,
+    group: 'AI',
+    menus: ['board'],
+    palette: false,
+    when: aiOfferedHere,
+    run: (editor, args) => {
+      if (aiOrExplain(editor)) editor.openPanel(CATCH_UP_DIALOG, { since: args?.since ?? 'visit' });
+    },
   },
   {
     // #148: a report of a live activity's results (the server reads only results everyone sees).

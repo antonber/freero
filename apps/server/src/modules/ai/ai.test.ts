@@ -11,7 +11,8 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { listAuditEvents } from '../audit/index';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
-import { readBoardView, initBoardDoc } from '../realtime/index';
+import { flushActivityBursts, recordBoardChanges } from '../activity/index';
+import { readBoardView, initBoardDoc, initBoardLayer } from '../realtime/index';
 import { createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../workspaces/index';
 import * as repo from './repo';
 import { monthOf, runAiAction } from './service';
@@ -269,6 +270,51 @@ it('a workspace endpoint on a private or loopback address is refused unless the 
   const ws = await team(owner);
   for (const baseUrl of ['http://127.0.0.1:11434/v1', 'https://169.254.169.254/v1', 'https://localhost/v1', 'http://example.com/v1'])
     await expect(updateAiSettings(ws, owner.id, { source: 'workspace', provider: 'openai', baseUrl, model: 'm' })).rejects.toMatchObject({ status: 400 });
+});
+
+// ---- catch-up (#126) ----
+
+/** A board where Bob changed things a week ago: one public sticky, and one his feed row names that is only his private draft. */
+async function boardBobChanged(ann: Account, bob: Account) {
+  const ws = await team(ann, [[bob, 'member']]);
+  const boardId = await boardWith(ann.id, [sticky('pub', 0, 0, 'Caterer booked for Friday', { createdBy: bob.id }), sticky('old', 300, 0, 'Ann’s own note')], ws);
+  const layer = new Y.Doc();
+  layer.getMap('elements').set('draft', sticky('draft', 600, 0, 'SECRET salary numbers', { createdBy: bob.id }));
+  await initBoardLayer(boardId, `u:${bob.id}`, Y.encodeStateAsUpdate(layer));
+  await updateAiSettings(ws, ann.id, { enabled: true, source: 'instance' });
+  const t = Date.now() - 2 * 86_400_000;
+  const change = (id: string) => ({ id, op: 'add' as const, type: 'sticky', frameId: null });
+  recordBoardChanges({ boardId, actorId: bob.id, actorName: bob.name, layer: 'shared', changes: [change('pub'), change('draft')], frameTitles: {} }, t);
+  await flushActivityBursts(t + getConfig().activityIdleMs + 1);
+  return boardId;
+}
+
+it('a catch-up shows the model only what changed that the reader may see — never another person’s private draft — and its points open the items they cite', async () => {
+  const [ann, bob] = await Promise.all([user('Ann'), user('Bob')]);
+  const boardId = await boardBobChanged(ann, bob);
+  replies = [JSON.stringify({ title: 'Catering sorted', summary: 'Bob booked the caterer.', points: [{ text: 'The caterer is booked for Friday.', items: [1, 7], frames: [3] }] })];
+
+  const res = await runAiAction(boardId, ann.id, { task: 'catchup', since: 7, target: 'board' });
+
+  const sent = JSON.stringify(seen[0].body.messages);
+  expect(sent).toContain('Caterer booked for Friday');
+  expect(sent).not.toContain('SECRET');
+  expect(sent).not.toContain('Ann’s own note'); // the change set only, not the rest of the board
+  // Shown to her alone: a preview to insert if she wants, whatever was asked.
+  expect(res.target).toBe('preview');
+  expect((await elementsOf(boardId, ann.id)).map((e) => e.id).sort()).toEqual(['old', 'pub']);
+  // Numbers the model wasn't shown cite nothing.
+  expect(res.catchUp?.points).toEqual([{ text: 'The caterer is booked for Friday.', ids: ['pub'] }]);
+  expect(res.catchUp?.items.pub).toMatchObject({ kind: 'sticky', text: 'Caterer booked for Friday' });
+});
+
+it('a catch-up with no earlier visit to compare with, or with nothing others changed in that time, answers without calling the model', async () => {
+  const [ann, bob] = await Promise.all([user('Quiet'), user('Away')]);
+  const boardId = await boardBobChanged(ann, bob);
+
+  await expect(runAiAction(boardId, ann.id, { task: 'catchup', since: 'visit' })).rejects.toMatchObject({ status: 400 });
+  await expect(runAiAction(boardId, bob.id, { task: 'catchup', since: 7 })).rejects.toMatchObject({ status: 422, code: 'ai_nothing' });
+  expect(seen).toHaveLength(0);
 });
 
 // ---- AI on results you already have (#148) ----

@@ -4,6 +4,7 @@
 // that reaches the model is recorded in the audit log — task, model,
 // tokens and outcome, never the prompt or board content.
 import {
+  AI_CATCH_UP_SINCE,
   AI_LIMITS,
   MAX_SUGGESTION_DESCRIPTION,
   renderOutlineMarkdown,
@@ -12,12 +13,12 @@ import {
   unionRects,
   type AiActionRequest,
   type AiActionResponse,
+  type AiCatchUp,
   type AiDiagramKind,
   type AuditValue,
   type BoardOutline,
   type OutlineItem,
   type Point,
-  type StructureInput,
   type SuggestionAuthor,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
@@ -27,6 +28,7 @@ import { consumeRateLimit } from '../../platform/rateLimit';
 import { recordAudit } from '../audit/index';
 import { getUser } from '../auth/index';
 import { requireBoardDownload } from '../boards/index';
+import { catchUpChanges } from '../activity/index';
 import { revealedResults } from '../engage/index';
 import { boardOutline } from '../outline/index';
 import { readBoardView } from '../realtime/index';
@@ -45,6 +47,8 @@ import {
   summarizeTask,
   TASKS,
   type ClusterItem,
+  catchUpTask,
+  type Accepted,
   type TaskPlan,
 } from './tasks';
 
@@ -55,7 +59,10 @@ const TASK_DESCRIPTIONS: Record<AiActionRequest['task'], string> = {
   summarize: 'Summary',
   diagram: 'Diagram',
   report: 'Report',
+  catchup: 'Catch-up',
 };
+
+const DAY = 86_400_000;
 
 /** Calendar month (UTC) usage is counted in. */
 export const monthOf = (at = Date.now()) => new Date(at).toISOString().slice(0, 7);
@@ -74,6 +81,7 @@ function parseActionRequest(body: unknown): AiActionRequest {
     throw badRequest(`ids must be a list of at most ${AI_LIMITS.ids} element ids`);
   if (b.diagram !== undefined && !DIAGRAMS.includes(b.diagram)) throw badRequest(`diagram must be one of ${DIAGRAMS.join(', ')}`);
   if (b.by !== undefined && b.by !== 'theme' && b.by !== 'sentiment') throw badRequest('by must be theme or sentiment');
+  if (b.since !== undefined && !AI_CATCH_UP_SINCE.includes(b.since)) throw badRequest(`since must be one of ${AI_CATCH_UP_SINCE.join(', ')}`);
   if (b.into !== undefined && (typeof b.into !== 'string' || !b.into || b.into.length > 200)) throw badRequest('into must be a frame id');
   if (b.target !== undefined && b.target !== 'board' && b.target !== 'preview' && b.target !== 'suggestions')
     throw badRequest('target must be board, preview or suggestions');
@@ -90,6 +98,7 @@ function parseActionRequest(body: unknown): AiActionRequest {
     diagram: b.diagram,
     by: b.by,
     into: b.into,
+    since: b.task === 'catchup' ? (b.since ?? 'visit') : undefined,
     target: b.target ?? 'preview',
     near: b.near,
     at: b.at,
@@ -209,9 +218,7 @@ async function rightmostOf(boardId: string, userId: string, role: AiGrant['role'
 
 // ---- asking the model ----
 
-interface Asked {
-  structure: StructureInput;
-  summary: string;
+interface Asked extends Accepted {
   usage: { inputTokens: number; outputTokens: number };
 }
 
@@ -282,7 +289,7 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
   // "downloads" policy applies (KAI-197), as for exports and machine reads — the one shared check,
   // 403 downloads_restricted, audited as board.download_refused (via 'ai'). Ideas from a prompt
   // alone read nothing.
-  if (req.task === 'cluster' || req.task === 'summarize' || req.task === 'report' || ids) await requireBoardDownload(boardId, userId, 'ai');
+  if (req.task === 'cluster' || req.task === 'summarize' || req.task === 'report' || req.task === 'catchup' || ids) await requireBoardDownload(boardId, userId, 'ai');
 
   let plan: TaskPlan;
   let near = req.near;
@@ -291,6 +298,7 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
   // is never written (or previewed for writing) by one person's AI action: it is proposed, and
   // the people who can edit the board accept or reject it (suggestions, KAI-169).
   let target = req.target ?? 'preview';
+  let catchUpFrom: Pick<AiCatchUp, 'since' | 'counts'> | null = null;
   switch (req.task) {
     case 'ideas':
       plan = ideasTask(prompt, ids ? await readContent(boardId, userId, ids) : null);
@@ -309,6 +317,20 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
       if (!content.trim()) throw badRequest('There is nothing to summarise here');
       plan = summarizeTask(prompt, content, ids ? 'selection' : 'board');
       if (ids && !near && !req.into) near = await rightmostOf(boardId, userId, g.role, ids);
+      break;
+    }
+    case 'catchup': {
+      // The change set only, as the reader may see the board now; private to them: a preview they
+      // may insert, never written for them.
+      target = 'preview';
+      const from = req.since === 'visit' ? undefined : Date.now() - (req.since as number) * DAY;
+      const changes = await catchUpChanges(boardId, userId, { since: from });
+      if (changes.since === null) throw badRequest('There’s no earlier visit of yours to compare with yet: pick a number of days instead.');
+      const c = changes.counts;
+      if (!c.added && !c.changed && !c.removed && !c.comments)
+        throw new HttpError(422, req.since === 'visit' ? 'Nobody else changed the board since your last visit.' : `Nobody else changed the board in the last ${req.since} days.`, 'ai_nothing');
+      catchUpFrom = { since: changes.since, counts: c };
+      plan = catchUpTask(prompt, changes, req.since === 'visit' ? 'since their last visit' : `in the last ${req.since} days`);
       break;
     }
     case 'report': {
@@ -352,5 +374,11 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
     throw e;
   }
   await auditAi(g, userId, { ...meta, ...tokens, outcome: 'ok', created: placed.created.length, moved: placed.moved.length });
-  return { ...placed, task: req.task, summary: asked.summary, usage: asked.usage };
+  return {
+    ...placed,
+    task: req.task,
+    summary: asked.summary,
+    usage: asked.usage,
+    ...(catchUpFrom && asked.catchUp ? { catchUp: { ...catchUpFrom, ...asked.catchUp } } : {}),
+  };
 }

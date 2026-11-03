@@ -100,6 +100,18 @@ export function answer(system, user) {
       points: items.slice(0, 5).map((t) => `Raised: ${t}`),
     });
   }
+  if (/Task: catch the person up/.test(system)) {
+    const items = String(content)
+      .split('\n')
+      .map((l) => /^(\d+)\. (\w+)(?: in F(\d+))?.*?, by ([^:]+): (.*)$/.exec(l))
+      .filter(Boolean)
+      .map((m) => ({ n: Number(m[1]), frame: m[3] ? Number(m[3]) : null, by: m[4], text: m[5] }));
+    return JSON.stringify({
+      title: 'While you were away',
+      summary: `${[...new Set(items.map((i) => i.by))].join(' and ') || 'Others'} made ${items.length} change${items.length === 1 ? '' : 's'}.`,
+      points: items.slice(0, 4).map((i) => ({ text: `${i.by} worked on “${i.text.slice(0, 40)}”.`, items: [i.n], frames: i.frame ? [i.frame] : [] })),
+    });
+  }
   if (/Task: write a short report of a live audience activity/.test(system)) {
     const lines = String(content).split('\n');
     const top = lines.filter((l) => /^- /.test(l)).slice(0, 3).map((l) => l.slice(2));

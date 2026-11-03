@@ -4,6 +4,7 @@ import { type AiActionResponse, type AiTask, type BoardElement } from '@freero/s
 import type { Editor } from '@engine';
 
 export const AI_DIALOG = 'ai.dialog';
+export const CATCH_UP_DIALOG = 'ai.catch-up';
 
 /** Kinds clustering sorts (the server moves these into groups; titles stay put). */
 const CLUSTERABLE = new Set(['sticky', 'card']);

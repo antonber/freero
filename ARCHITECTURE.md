@@ -1886,6 +1886,14 @@ board and builds `Host.ai` only when it says yes.
   call); `summarize` with `into: <frameId>` places the note inside that frame (the meeting-notes
   import's toast offers it as "Summarise", running `ai.summarizeFrame`), and the app grows the frame
   before inserting the preview, in the same undo step.
+- **Catch-up** (#126): `catchup` with `since: 'visit' | 7 | 14 | 30` reads ONLY the change set —
+  `activity/index.ts` `catchUpChanges(boardId, userId, { since })`, the same rows and view rules as
+  "changes since your last visit" (others' attributed bursts, the reader's view, never a private
+  draft) — as numbered lines the model cites; points map back to item and frame ids
+  (`AiActionResponse.catchUp`), unknown numbers are dropped. Always `target: 'preview'`: the reader
+  alone sees it (the AI feature's "Catch me up" dialog, also from the activity bar's "Summarise");
+  "Insert on board" applies the preview. No change in that time, or no earlier visit: refused
+  before any call.
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited

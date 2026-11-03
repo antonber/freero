@@ -6,7 +6,8 @@ import { FileText, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
 import { AI_LIMITS, type AiActionResponse, type AiClusterBy, type AiDiagramKind, type AiTask, type BoardElement } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
 import { Button, ElementsPreview, Modal, SegmentedControl, TextArea } from '@ui';
-import { AI_DIALOG, applyPreview, clusterable, suggestedTask } from './lib/actions';
+import { AI_DIALOG, applyPreview, CATCH_UP_DIALOG, clusterable, suggestedTask } from './lib/actions';
+import { CatchUpDialog } from './lib/CatchUp';
 import './ai.css';
 
 const TASKS: Array<{ value: AiTask; label: string; icon: typeof Lightbulb }> = [
@@ -32,6 +33,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 function hint(task: AiTask, selected: number, sortable: number, into: boolean, by: AiClusterBy): string {
   switch (task) {
+    case 'catchup':
+      return 'A summary of what others changed, just for you.';
     case 'report':
       return 'A note beside the activity with themes, notable answers and suggested next steps, from the results everyone can see.';
     case 'ideas':
@@ -49,6 +52,7 @@ function hint(task: AiTask, selected: number, sortable: number, into: boolean, b
 
 const PLACEHOLDER: Record<AiTask, string> = {
   report: 'Optional: what to focus on, e.g. what to do next quarter',
+  catchup: 'Optional: what to focus on',
   ideas: 'e.g. Icebreakers for a remote team retro',
   cluster: 'Optional: how to group them, e.g. by customer pain',
   summarize: 'Optional: what to focus on, e.g. decisions and owners',
@@ -205,11 +209,14 @@ function AiDialog({ editor, props }: PanelProps) {
   );
 }
 
-export default definePanel({
-  id: AI_DIALOG,
-  slot: 'dialog',
-  order: 60,
-  minRole: 'editor',
-  Component: AiDialog,
-});
+export default [
+  definePanel({
+    id: AI_DIALOG,
+    slot: 'dialog',
+    order: 60,
+    minRole: 'editor',
+    Component: AiDialog,
+  }),
+  definePanel({ id: CATCH_UP_DIALOG, slot: 'dialog', order: 61, minRole: 'editor', Component: CatchUpDialog }),
+];
 

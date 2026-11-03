@@ -21,8 +21,10 @@ import {
   type ActivityElement,
   type ActivityResults,
   type AiClusterBy,
+  type AiCatchUp,
   type AiDiagramKind,
   type AiTask,
+  type CatchUpChanges,
   type StructureInput,
 } from '@freero/shared';
 
@@ -34,7 +36,14 @@ export interface TaskPlan {
   user: string;
   schema: Record<string, unknown>;
   /** The parsed JSON → a structure and a one-line description; throws InvalidOutput. */
-  accept(json: unknown): { structure: StructureInput; summary: string };
+  accept(json: unknown): Accepted;
+}
+
+export interface Accepted {
+  structure: StructureInput;
+  summary: string;
+  /** catchup (#126): the points with their citations, mapped to ids. */
+  catchUp?: Pick<AiCatchUp, 'points' | 'items'>;
 }
 
 /** One JSON string with < and > escaped: board text can't end the envelope it sits in. */
@@ -274,6 +283,96 @@ Schema: {"title": string, "summary": string, "themes": [string, …], "notable":
   };
 }
 
+// ---- catch-up (#126) ----
+
+/** Most changed items one catch-up shows the model (newest first: the lists are sorted so). */
+export const CATCH_UP_MAX_ITEMS = 200;
+
+/**
+ * What changed, as numbered lines the model cites by number — only the change set (what others
+ * added, changed, removed, and how many comments), never the rest of the board.
+ */
+export function catchUpTask(prompt: string, changes: CatchUpChanges, sinceWords: string): TaskPlan {
+  type Ref = AiCatchUp['items'][string] & { id: string };
+  const refs: Ref[] = [];
+  const frames: Array<{ id: string; title: string }> = [];
+  const frameNo = (id: string | undefined, title: string | undefined) => {
+    if (!id) return '';
+    let i = frames.findIndex((f) => f.id === id);
+    if (i < 0) i = frames.push({ id, title: title || 'Untitled frame' }) - 1;
+    return ` in F${i + 1}`;
+  };
+  const lines: string[] = [];
+  const section = (head: string, list: CatchUpChanges['added'], op: 'added' | 'changed' | 'removed') => {
+    if (!list.length) return;
+    lines.push(`${head}:`);
+    for (const it of list) {
+      if (refs.length >= CATCH_UP_MAX_ITEMS) return;
+      refs.push({ id: it.id, kind: it.kind, text: clip(oneLine(it.text), 200), ...(it.frameId ? { frameId: it.frameId } : {}), ...(op === 'removed' ? { removed: true } : {}) });
+      const where = op === 'removed' ? (it.frame ? ` in frame "${clip(oneLine(it.frame), 80)}"` : '') : frameNo(it.frameId, it.frame);
+      const what = op === 'changed' && it.before !== undefined ? `was "${clip(oneLine(it.before), 200)}", now "${clip(oneLine(it.text), 200)}"` : clip(oneLine(it.text), 200) || '(no text)';
+      lines.push(`${refs.length}. ${it.kind}${where}, by ${it.by.join(', ') || 'someone'}: ${what}`);
+    }
+  };
+  section('Added', changes.added, 'added');
+  section('Changed', changes.changed, 'changed');
+  section('Removed', changes.removed, 'removed');
+  if (changes.counts.comments) lines.push(`New comments: ${changes.counts.comments}`);
+  const left = changes.counts.added + changes.counts.changed + changes.counts.removed - refs.length;
+  if (left > 0 || changes.truncated) lines.push(`(${left > 0 ? left : 'More'} other changes are not listed.)`);
+  const head = frames.length ? [`Frames: ${frames.map((f, i) => `F${i + 1} "${clip(oneLine(f.title), 80)}"`).join('; ')}`] : [];
+  return {
+    system: `${PREAMBLE}
+
+Task: catch the person up on what other people changed on the board ${sinceWords}. The board content lists ONLY those changes: numbered items that were added, changed or removed, and frames named F1, F2 …. Give a title of at most 8 words, a summary of 1 to 3 sentences, and up to 7 points, most important first. Each point says what happened in one sentence and cites the numbered items (and frames) it is about. Say only what the list supports; don't describe parts of the board that aren't listed.${prompt ? ' The instruction says what to focus on.' : ''}
+
+Schema: {"title": string, "summary": string, "points": [{"text": string, "items": [integer, …], "frames": [integer, …]}, …]}`,
+    user: `${instructionBlock(prompt || 'What changed?')}\n\n${contentBlock([...head, ...lines].join('\n'))}`,
+    schema: schemaObject(
+      {
+        title: { type: 'string' },
+        summary: { type: 'string' },
+        points: {
+          type: 'array',
+          items: schemaObject({ text: { type: 'string' }, items: { type: 'array', items: { type: 'integer' } }, frames: { type: 'array', items: { type: 'integer' } } }, ['text', 'items', 'frames']),
+        },
+      },
+      ['title', 'summary', 'points'],
+    ),
+    accept(json) {
+      const o = obj(json);
+      const summary = typeof o.summary === 'string' ? clip(o.summary.trim(), 1500) : '';
+      if (!summary) throw new InvalidOutput('"summary" was empty.');
+      const items: AiCatchUp['items'] = {};
+      const points: AiCatchUp['points'] = [];
+      const nums = (v: unknown, max: number) =>
+        [...new Set((Array.isArray(v) ? v : []).map((n) => (typeof n === 'string' ? Number(n.replace(/^F/i, '')) : n)))].filter((n): n is number => Number.isInteger(n) && n >= 1 && n <= max);
+      for (const raw of Array.isArray(o.points) ? o.points.slice(0, 7) : []) {
+        if (!raw || typeof raw !== 'object') continue;
+        const p = raw as Record<string, unknown>;
+        const text = str(p.text, 300);
+        if (!text) continue;
+        // Only items and frames it was shown, by their numbers.
+        const ids: string[] = [];
+        for (const n of nums(p.items, refs.length)) {
+          const { id, ...ref } = refs[n - 1];
+          items[id] = ref;
+          ids.push(id);
+        }
+        for (const n of nums(p.frames, frames.length)) {
+          const f = frames[n - 1];
+          items[f.id] = { kind: 'frame', text: f.title };
+          ids.push(f.id);
+        }
+        points.push({ text, ids });
+      }
+      const title = str(o.title, 100) || 'What changed';
+      const text = points.length ? `${summary}\n\n${points.map((p) => `• ${p.text}`).join('\n')}` : summary;
+      return { structure: { kind: 'note', title, text }, summary, catchUp: { points, items } };
+    },
+  };
+}
+
 // ---- diagram ----
 
 const DIAGRAM_RULES: Record<AiDiagramKind, string> = {
@@ -330,4 +429,4 @@ ${DIAGRAM_RULES[kind]}`,
 }
 
 /** The tasks a request may name. */
-export const TASKS: readonly AiTask[] = ['ideas', 'cluster', 'summarize', 'diagram', 'report'];
+export const TASKS: readonly AiTask[] = ['ideas', 'cluster', 'summarize', 'diagram', 'report', 'catchup'];
