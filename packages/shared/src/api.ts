@@ -311,12 +311,33 @@ export interface WorkspaceSummary {
 /** The policy keys an organisation sets floors for (teamAccess is a team's own). */
 export type OrganisationPolicyKey = Exclude<keyof WorkspacePolicies, 'teamAccess'>;
 export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes';
+/**
+ * Each policy an organisation sets a floor for, its values from the loosest to the strictest (the
+ * server enforces floors with it; the admin console disables what a floor rules out). A new policy
+ * that limits sharing adds itself here, or attached workspaces could loosen it.
+ */
+export const POLICY_STRICTNESS: { [K in OrganisationPolicyKey]: ReadonlyArray<WorkspacePolicies[K]> } = {
+  externalSharing: ['anyone', 'admins', 'none'],
+  linkSharing: ['editor', 'commenter', 'viewer', 'none'],
+  guestInvites: ['members', 'admins'],
+  downloads: ['anyone', 'members', 'admins'],
+  publicLinks: ['anyone', 'signedIn'],
+  liveEmbeds: ['on', 'off'],
+  boardEmbeds: ['on', 'off'],
+};
+/** Is `value` looser than the organisation's `floor` for policy `k`? */
+export function looserPolicy<K extends OrganisationPolicyKey>(k: K, value: WorkspacePolicies[K], floor: WorkspacePolicies[K]): boolean {
+  const order = POLICY_STRICTNESS[k] as ReadonlyArray<string>;
+  return order.indexOf(value) < order.indexOf(floor);
+}
 export interface WorkspaceOrganisation {
   id: string;
   name: string;
   policies: Pick<WorkspacePolicies, OrganisationPolicyKey>;
   settings: Pick<WorkspaceSettings, OrganisationSecurityKey>;
   attachedAt: number;
+  /** Your role in the organisation (null: not in its directory). Owners/admins open its console. */
+  yourRole: WorkspaceRole | null;
 }
 /** An organisation as its people see it; shaped like a workspace so the admin console's tabs serve it. */
 export interface OrganisationSummary extends Omit<WorkspaceSummary, 'kind' | 'organisation'> {

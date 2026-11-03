@@ -1,4 +1,5 @@
 // Pure workspace rules: roles, what a workspace grants on its boards, and the sharing policies.
+import { looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
 import type {
   LinkAccess,
   OrganisationPolicyKey,
@@ -116,19 +117,8 @@ export function mayRemove(actor: WorkspaceRole | null, target: WorkspaceRole): b
 
 // ---- organisation floors (#108) ----
 
-/**
- * Each policy an organisation sets a floor for, its values from the loosest to the strictest. A
- * new policy that limits sharing adds itself here, or attached workspaces could loosen it.
- */
-export const POLICY_STRICTNESS: { [K in OrganisationPolicyKey]: ReadonlyArray<WorkspacePolicies[K]> } = {
-  externalSharing: ['anyone', 'admins', 'none'],
-  linkSharing: ['editor', 'commenter', 'viewer', 'none'],
-  guestInvites: ['members', 'admins'],
-  downloads: ['anyone', 'members', 'admins'],
-  publicLinks: ['anyone', 'signedIn'],
-  liveEmbeds: ['on', 'off'],
-  boardEmbeds: ['on', 'off'],
-};
+// The order of every floored policy, loosest to strictest, is POLICY_STRICTNESS in @freero/shared.
+export { looserPolicy };
 export const FLOOR_POLICY_KEYS = Object.keys(POLICY_STRICTNESS) as OrganisationPolicyKey[];
 export const FLOOR_SETTING_KEYS: OrganisationSecurityKey[] = ['requireTwoFactor', 'sessionMaxHours', 'sessionIdleMinutes'];
 export type PolicyFloor = Pick<WorkspacePolicies, OrganisationPolicyKey>;
@@ -136,13 +126,6 @@ export type SettingsFloor = Pick<WorkspaceSettings, OrganisationSecurityKey>;
 
 /** What a new organisation starts with: the loosest value of every key, i.e. no floor at all. */
 export const NO_FLOOR_POLICIES = Object.fromEntries(FLOOR_POLICY_KEYS.map((k) => [k, POLICY_STRICTNESS[k][0]])) as PolicyFloor;
-
-const strictness = (k: OrganisationPolicyKey, v: string) => (POLICY_STRICTNESS[k] as ReadonlyArray<string>).indexOf(v);
-
-/** Is `value` looser than the organisation's `floor` for policy `k`? */
-export function looserPolicy<K extends OrganisationPolicyKey>(k: K, value: WorkspacePolicies[K], floor: WorkspacePolicies[K]): boolean {
-  return strictness(k, value) < strictness(k, floor);
-}
 
 /** A workspace's own policies raised to its organisation's floors, key by key (the effective policies). */
 export function strictestPolicies(own: WorkspacePolicies, floor: PolicyFloor | null): WorkspacePolicies {

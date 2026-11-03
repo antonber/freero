@@ -69,7 +69,13 @@ export function ensurePersonalWorkspace(userId: string): Promise<string> {
   return repo.ensurePersonal(userId, newId(12), Date.now());
 }
 
-const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number, blocked: WorkspaceBlock | null): WorkspaceSummary => ({
+const toSummary = (
+  w: Workspace,
+  role: WorkspaceRole,
+  memberCount: number,
+  blocked: WorkspaceBlock | null,
+  orgRoles: Map<string, WorkspaceRole>,
+): WorkspaceSummary => ({
   id: w.id,
   name: w.name,
   kind: w.kind,
@@ -78,8 +84,13 @@ const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number, block
   policies: w.policies,
   createdAt: w.createdAt,
   blocked,
-  organisation: w.organisation,
+  organisation: w.organisation && { ...w.organisation, yourRole: orgRoles.get(w.organisation.id) ?? null },
 });
+
+/** The user's role in each organisation whose directory they are in. */
+async function organisationRolesOf(userId: string): Promise<Map<string, WorkspaceRole>> {
+  return new Map((await repo.organisationMembershipsOf(userId)).map((m) => [m.workspaceId, m.role]));
+}
 
 /**
  * Why a workspace's boards are closed to the user, or null. One rule for lists, summaries and
@@ -102,9 +113,9 @@ async function blockInputs(userId: string, workspaces: Array<Workspace | undefin
 
 export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
   await ensurePersonalWorkspace(userId);
-  const rows = await repo.workspacesOf(userId);
+  const [rows, orgRoles] = await Promise.all([repo.workspacesOf(userId), organisationRolesOf(userId)]);
   const b = await blockInputs(userId, rows.map((r) => r.workspace));
-  return rows.map((r) => toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor)));
+  return rows.map((r) => toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor), orgRoles));
 }
 
 /** A workspace's summary for the user, or (for an organisation's id) the organisation's. */
@@ -112,7 +123,7 @@ export async function workspaceSummary(workspaceId: string, userId: string): Pro
   const row = (await repo.workspacesOf(userId)).find((r) => r.workspace.id === workspaceId);
   if (!row) return organisationSummary(workspaceId, userId);
   const b = await blockInputs(userId, [row.workspace]);
-  return toSummary(row.workspace, row.role, row.memberCount, blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor));
+  return toSummary(row.workspace, row.role, row.memberCount, blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor), await organisationRolesOf(userId));
 }
 
 const ROLE_RANK: Record<WorkspaceRole, number> = { guest: 1, member: 2, admin: 3, owner: 4 };
