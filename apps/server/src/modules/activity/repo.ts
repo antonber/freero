@@ -51,6 +51,12 @@ export interface ActivitySummary {
   version?: string | null;
   /** Done by an app or token for the actor (the public API, MCP; KAI-168): its name. */
   app?: string;
+  /**
+   * kind 'edit': which items (ids only, never content), at most MAX_ACTIVITY_ITEMS per list —
+   * `more` when a list was cut. Removed ones keep their type (they are gone from the board).
+   * Absent on rows stored before they were kept.
+   */
+  ids?: { added?: string[]; changed?: string[]; removed?: Record<string, string>; more?: boolean };
 }
 
 export interface ActivityRow {
@@ -119,6 +125,50 @@ export async function recent(boardIds: string[], editorBoardIds: string[], befor
       [boardIds, editorBoardIds, before === null ? null : new Date(before), limit],
     )
   ).map(toRow);
+}
+
+/**
+ * Rows of `kinds` that ended after `since` on `boardIds` (editors-only rows only for
+ * `editorBoardIds`), oldest first, at most `limit`. "Changes since your last visit" and the
+ * "changes on your boards" email; the caller leaves out the reader's own.
+ */
+export async function since(
+  boardIds: string[],
+  editorBoardIds: string[],
+  since: number,
+  kinds: ActivityKind[],
+  limit: number,
+): Promise<ActivityRow[]> {
+  if (boardIds.length === 0) return [];
+  return (
+    await query<Row>(
+      `SELECT * FROM board_activity
+       WHERE board_id = ANY($1::text[]) AND (audience = 'all' OR board_id = ANY($2::text[]))
+         AND ended_at > $3 AND kind = ANY($4::text[])
+       ORDER BY ended_at, id LIMIT $5`,
+      [boardIds, editorBoardIds, new Date(since), kinds, limit],
+    )
+  ).map(toRow);
+}
+
+// ---- last visits (board_seen) ----
+
+/** The account stopped looking at the board at `at` (an earlier moment never moves it back). */
+export async function markSeen(boardId: string, userId: string, at: number): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO board_seen (board_id, user_id, seen_at) VALUES ($1, $2, $3)
+       ON CONFLICT (board_id, user_id) DO UPDATE SET seen_at = GREATEST(board_seen.seen_at, excluded.seen_at)`,
+      [boardId, userId, new Date(at)],
+    );
+  } catch (e) {
+    if (!isForeignKeyViolation(e)) throw e; // the board or the account is gone
+  }
+}
+
+export async function seenAt(boardId: string, userId: string): Promise<number | null> {
+  const r = await one<{ seen_at: Date }>(`SELECT seen_at FROM board_seen WHERE board_id = $1 AND user_id = $2`, [boardId, userId]);
+  return r ? r.seen_at.getTime() : null;
 }
 
 /** Deletes rows that ended before `before` (retention); returns how many. */
