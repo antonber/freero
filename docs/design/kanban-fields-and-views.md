@@ -1,9 +1,9 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **steps 2a–2f, 3a and 3e built** (schema foundation, card display, group by and swimlanes,
-filter and sort, agents and API, fields from trackers / templates / CSV; view tabs, the Table tab
-and focus mode; table ↔ kanban conversion; see the "as built" sections below); the rest of phase 3
-proposed. The
+Status: **steps 2a–2f, 3a, 3b and 3e built** (schema foundation, card display, group by and
+swimlanes, filter and sort, agents and API, fields from trackers / templates / CSV; view tabs, the
+Table tab and focus mode; List, Calendar and Timeline tabs; table ↔ kanban conversion; see the "as
+built" sections below); the rest of phase 3 proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -1176,6 +1176,118 @@ tabs of layouts they don't know and keep them when they write), grouped sections
 in a table tab (the design's `groupBy` / `table.columns[].w`), comment and "open details" from a
 row, "Save to view" from focus mode where it can apply, linked views (`kanbanview`, 3c), the
 5,000-card benchmark.
+
+## Step 3b as built
+
+List, Calendar and Timeline, as tabs on the canvas and as layouts of focus mode.
+
+- **Model** (`@freero/shared` `tabs.ts`): `ViewTab.layout` is `board | table | list | calendar |
+  timeline`. Every tab but the board is a *projection* (`ProjectionView`): `id`, `name`, `filter`,
+  `sort`, `locked`, and per layout — a list `columns` (fields after the title; default what the
+  board's cards show) and `groupBy` (absent: as the board; `null`: none; any single select, person
+  or checkbox and the card's own **Status** and **Assignee**, which a projection may group by since
+  it moves no card); a calendar `date` (`$due` by default, `$start` or a date field); a timeline
+  `start` / `end` (`$start` / `$due` by default, or date fields), `scale` (the timeline element's
+  day / week / month / quarter) and `lanesBy`. Field ids are only shape-checked when stored and read
+  past when deleted (`calendarDateField`, `timelineFields`, `listGroupField`), as the board view
+  reads past a deleted group field. A person's own changes to any of these are a personal override
+  under the tab's id, as a table's (`LAYOUT_SETTINGS` says which keys each layout has); "Save for
+  everyone" saves them with the tab (one undo step). The design's `ViewConfig` shape (`calendar: {
+  date, end }`, `timeline: { start, end, scale, lanesBy }`) is flattened onto the tab, like 3a's
+  table settings. **Not built**: a calendar span (`calendar.end`): a card sits on one day.
+- **Placement** (`@freero/shared` `projections.ts`, pure): a calendar's days (`calendarDays`,
+  `monthWeeks`, `monthStart`, Monday-first), a timeline bar (`barSpanOf`: both dates; one of them
+  alone is a one-day bar; a start after the end reads from the earlier) and the range it draws
+  (`timelineRange`: a week before the first bar or today to three weeks after the last, at most
+  1,500 days). It sits on the timeline *element's* day arithmetic and axis (`timelineLayout`:
+  `dayOf`, `isoOf`, `mondayOf`, `axisTicks`, `PX_PER_DAY`, `DEFAULT_DAYS`) so a "day" and a "week"
+  mean the same in both. The timeline element itself is not used: its bars are separate elements
+  laid out by `planTimeline`, while a tab draws the kanban's cards and moves nothing.
+- **What a move writes** — always one `card.setValues` (the card feature's write path; one undo
+  step, live for everyone): a calendar drop / key writes the date field (`calendarMoveValues`); a
+  card has one start and one due date and `card.setValues` refuses a start after the due date, so
+  a move that would invert them carries the other date along by the same days (the card keeps its
+  length) instead of silently doing nothing. A timeline move writes both ends, a resize one end
+  never past the other (`editBar`), and **both dates are always written** (`spanValues`), so a
+  card with only a due date gains the start its one-day bar showed. Dragging a card into the
+  calendar's "No date" aside clears the date; dragging one from the timeline's aside onto a row
+  gives it `DEFAULT_DAYS[scale]` days from where it lands. No geometry is written: a projection
+  never moves a real card (a list's group change of the board's column field moves it through
+  `kanban.moveToColumn`, as card details do).
+- **List** (`lib/ListView.tsx`): the 3a grid in a lighter dress (`is-list`: no cell rules, a wide
+  title, chips) with group header rows — so the same keyboard walk, cell editors, screen-reader
+  labels and windowing — plus **Alt+↑ / Alt+↓** on a row: the card to the group above / below
+  (the field's groups in order: a select's options with "No <field>" first, unchecked / checked,
+  people the list has), and the active cell follows the card. The design's "inline title edit" is
+  the grid's title cell.
+- **Calendar** (`lib/CalendarView.tsx`): a month (or week) grid, Monday first, prev / next / Today,
+  the undated cards aside ("No due date", windowed). A day shows the cards that fit and "+N more"
+  (a windowed popover); in a week a day's cards scroll. Dragging (mouse, pen) lights the day under
+  the pointer; touch taps a card for its dates. Keys: the days are a `role="grid"` (arrows walk
+  days, Page Up / Down months, Home / End the week, Enter into the day's cards, ↑ / ↓ between them,
+  Escape back); on a card **Alt + ← / →** moves it a day, **Alt + ↑ / ↓** a week (focus follows it),
+  Enter opens the **dates popover** (a date input, Save, "No date"). Labels: "Fix login, Due date:
+  Tuesday, November 4, 2026" with the keys as its description; a day "Tuesday, …, today: 3 cards".
+- **Timeline** (`lib/TimelineView.tsx`): a row per dated card (by start unless sorted) with its
+  title held at the left, the axis of the timeline element (two header rows, the today line),
+  swimlanes as header rows, the undated cards aside. Dragging a bar moves it, its ends resize it
+  (screen pixels per day measured on the track, so it works at any canvas zoom); a short bar says
+  its title beside it. Keys: ↑ / ↓ walk the bars, Home / End; **Alt + ← / →** moves a bar a day,
+  **Alt + Shift + ← / →** moves its end; Enter opens the dates popover (start and end). Windowed
+  both ways: the rows in view (and, on the canvas, in the window: `useWorldViewport`), the axis
+  labels in view.
+- **On the canvas** (`lib/ProjectionTab.tsx`): any tab but the board draws inside the kanban's box
+  (the box keeps the board's size), takes pointer, wheel and keys only while the kanban is selected
+  (`data-fr-interactive`, `-scrollable`, `-keyboard-trap`), and folds the cards away for its viewer
+  alone (`hidesMember`: the viewer's tab is not the board — 3a asked "is it a table"). "+ View" (was
+  "+ Table") offers the four layouts; the tab menu deletes any but the board. The View panel shows
+  each layout's settings (date field; start, end, scale, swimlanes; groups; columns) above filter
+  and sort.
+- **Focus mode**: a layout switch (Table, List, Calendar, Timeline) with each layout's settings,
+  all personal (`_focus`). It opens the way the tab I look at shows the cards (its layout and
+  settings; "As in <tab>" resets to it), else as a table — **on phones as a list** (the 3a grid
+  stood in for one). On phones the calendar is the week as an agenda (days one under another, big
+  tap targets, the undated cards below), the timeline a narrow label column and a tap for dates.
+  **Not built**: horizontal swipe between calendar weeks (the arrows do it).
+- **Agents**: `configure_view` `addView.layout` takes `list`, `calendar`, `timeline` with their
+  settings in the same call: `show` and `groupBy` (nullable now: a list without groups) on a list,
+  `date` on a calendar, `start`, `end`, `scale` and `subGroupBy` (its swimlanes, the name the board
+  uses) on a timeline, by field name; a setting of another layout is refused naming what the tab
+  takes, a field that isn't a date with the date fields named. The kanban summary's `views` carry
+  each tab's settings by name. `query_cards` with `view` applies any tab's filter and sort, and a
+  calendar's or timeline's cards come in date order unless it is sorted (undated last). The outline
+  reads `views: Board*, Launches (calendar by Launch), Plan (timeline from Start date to Due date in
+  lanes by Team)`. **Addition**: `update_items` takes a card's `startDate` (refused after its due
+  date) — without it an agent could not place a bar's start. MCP schemas stay fixed-depth, no
+  `$ref` (mcp.test.ts); OpenAPI, the Power Automate connector, docs/mcp.md, the API README and the
+  outline doc updated.
+- **Rollout**: 3a clients skip tabs of the new layouts (`cleanTableView` takes tables only) and keep
+  them when they write; while everyone starts on a calendar they start on the Board, cards in
+  place. But a 3a client writes `activeView: savedTabId(k)`, which for it is the board, whenever it
+  adds, renames, saves or deletes a *table* tab: an editor on a stale 3a tab doing that while
+  everyone starts on a calendar moves everyone back to the Board (nothing is lost; "Save for
+  everyone" puts it back). 3b's writers keep an `activeView` naming a stored entry of any layout
+  (`keptActive`), so the next layout won't have this problem with 3b clients. Clients from 2b to 2f
+  read only the board view (as before). A 3a client's tab limit counts only the tabs it knows. New
+  personal keys: none (the tabs' ids, as 3a).
+- **Performance**: 1,000 dated cards open in focus mode's timeline with fewer than 60 bars drawn
+  and a calendar day of 1,000 cards shows a few and "+N more", in tests. A calendar month draws at
+  most its 42 days times what fits; the undated asides and the "+N more" popover are windowed.
+  Grouping and placement are recomputed when the kanban's cards change, not on unrelated edits.
+- **Tests** (each fails without its change, checked by mutation): in the calendar Alt+→ moves a
+  due date a day for everyone in one undo step and a move before the start carries the start along;
+  on the timeline Alt+Shift+→ moves only the end and Alt+→ both, each one undo step, and a
+  due-only card gains its start; in a list grouped by Stage Alt+↓ moves the real card into Doing in
+  one undo step; 1,000 dated cards draw only what is on screen (timeline and calendar); adding a
+  calendar tab while everyone starts on a newer client's tab keeps them on it and its entry, and
+  looking at the calendar folds the cards away for its viewer alone; an agent adds a calendar on a
+  date field and a timeline with swimlanes without moving a card, the outline says what places
+  their cards, `query_cards` reads the calendar in date order and the timeline with the start set
+  by `update_items`, and a non-date field is refused.
+
+Left: a calendar span (`calendar.end`), linked views (3c), dependencies drawn on a timeline tab,
+grouped sections and column widths in a table tab, "Save to view" from focus mode, the 5,000-card
+benchmark (another agent).
 
 ## Step 3e as built
 

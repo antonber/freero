@@ -90,11 +90,15 @@ open boards drop them at once (KAI-224).
   adds, renames, reorders and deletes fields and options (by name / label or id, all or nothing);
   `PATCH …/kanbans/{kanbanId}/view` sets grouping, swimlanes, what cards show, a filter, a sort,
   column limits and the view lock, for everyone — or, with `view` (a tab by name or id) or `addView`
-  (`{ "name": "Hot list", "layout": "table" }`), a table tab's columns (`show`), filter, sort and lock,
-  plus `name`, `active: true` (the tab everyone starts on) and `remove: true`; `GET` answers the
-  kanban's tabs as `views`; `GET …/kanbans/{kanbanId}/cards` reads its cards as
+  (`{ "name": "Hot list", "layout": "table" }`; layouts `table`, `list`, `calendar`, `timeline`),
+  that tab's settings: any tab's filter, sort and lock; a table's columns (`show`); a list's fields
+  (`show`) and groups (`groupBy`, null: none); a calendar's date field (`date`: "Due date", "Start
+  date" or a date field); a timeline's `start` and `end` date fields, `scale` and swimlanes
+  (`subGroupBy`) — none of which moves a card —, plus `name`, `active: true` (the tab everyone starts
+  on) and `remove: true`; `GET` answers the kanban's tabs as `views` (skip a tab whose `layout` you
+  don't know: more may come); `GET …/kanbans/{kanbanId}/cards` reads its cards as
   rows (`filter` as JSON, `sort=Points:desc,Title`, `fields`, `useView`, `view` — a tab whose filter
-  and sort apply —, `limit` ≤ 500, `cursor`), by
+  and sort apply; a calendar's or timeline's cards come in date order —, `limit` ≤ 500, `cursor`), by
   the rules the board itself uses. A card's `fields` (on `PATCH` an item, or new cards placed into a
   kanban) by name; a value of the field the kanban is grouped by moves the card to that column, of
   its swimlane field to that row, and the kanban is laid out again in the same change.
