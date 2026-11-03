@@ -288,12 +288,12 @@ agree to anything (`GET /api/site/legal` answers `{ "legal": null }`). Set it on
 been reviewed and adapted by a lawyer. If you run your own Freero with the marketing site on, these
 pages describe the hosted service, not yours: write your own, or leave the operator unset.
 
-The security overview, the subprocessor list and the data processing addendum (`/security`,
-`/subprocessors`, `/dpa`; the last two are legal pages under the same guard) also carry a "Draft —
-under review" line and stay `noindex` and out of the sitemap, which no setting changes: that ends,
-with every "to confirm by the operator" mark, when the operator has approved the text and removes
-the page's `underReview: true` and its `<ToConfirm />` marks (`apps/site/src/lib/define.ts`,
-`apps/site/src/lib/legal.tsx`).
+The subprocessor list and the data processing addendum (`/subprocessors`, `/dpa`) are legal pages
+under the same guard. A page marked `underReview: true` (`apps/site/src/lib/define.ts`) also
+carries a "Draft — under review" line and stays `noindex` and out of the sitemap, which no setting
+changes: that ends, with every "to confirm by the operator" mark, when the operator has approved
+the text and removes the flag and its `<ToConfirm />` marks (`apps/site/src/lib/legal.tsx`). The
+hosted service's `/security`, `/subprocessors` and `/dpa` were approved on 2026-11-03.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -302,7 +302,7 @@ the page's `underReview: true` and its `<ToConfirm />` marks (`apps/site/src/lib
 | `SITE_LEGAL_ADDRESS` | — | The operator's postal address, one line. |
 | `SITE_LEGAL_JURISDICTION` | — | The law that governs the terms, as it reads in "governed by the laws of …", e.g. `the State of Delaware, USA`. |
 | `SITE_LEGAL_HOSTING` | — | Who hosts the servers and where, as the privacy policy names it, e.g. `Railway Corporation (United States, US West region)`. |
-| `SITE_LEGAL_STORAGE` | — | Who stores uploaded files and where, as the privacy policy and `/subprocessors` name it, e.g. `Example Storage Inc. (United States)`. Shown before the bucket's host, which the server always adds itself (`S3_ENDPOINT`). Unset: only the host. |
+| `SITE_LEGAL_STORAGE` | — | Who stores uploaded files and where, as the privacy policy and `/subprocessors` name it, e.g. `Example Storage Inc. (United States)` (the hosted service: `Railway Corporation (Railway Storage Buckets, run on Tigris Data's servers; United States, US West, California)`). Shown before the bucket's host, which the server always adds itself (`S3_ENDPOINT`). Unset: only the host. |
 | `SITE_LEGAL_MAIL` | — | Who delivers email and where, e.g. `Example Mail Inc. (United States)`. Shown before the SMTP server's host (`SMTP_URL`). Unset: only the host. |
 | `SITE_LEGAL_BACKUP_DAYS` | — | The longest a database backup is kept, in days, as the privacy policy states it. Freero doesn't take these backups, your hosting does: set the real number (on Railway, the longest-kept backup schedule, including point-in-time recovery). |
 | `SITE_LEGAL_LOG_DAYS` | — | The longest the hosting keeps request logs, in days, as the privacy policy states it. |

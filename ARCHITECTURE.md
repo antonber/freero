@@ -1078,14 +1078,16 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `X-Robots-Tag: noindex`, and `GET /api/site/legal` answers `null`, so the app's sign-up asks
   nobody to agree to a draft. A page about the deployment never hard-codes a value the server
   knows from its configuration.
-- **The trust pack** (#109: `/security`, `/subprocessors`, `/dpa`, plus `SECURITY.md`) is written
-  from the code and the production deployment as the repository and the public service show it.
-  Until the operator approves it, each page is `underReview: true` (`PageDef`): the build shows
-  "Draft — under review", makes it `noindex` and leaves it out of the sitemap (still linked from
-  the footer), and the manifest's `underReview` list keeps the server from lifting that `noindex`
-  (and adds `X-Robots-Tag`) even once the legal pages are in effect; no setting removes either.
-  `<ToConfirm />` marks every statement the repository can't confirm. Approving = removing the
-  flag and the marks (after fixing any statement that turned out wrong).
+- **The trust pack** (#109: `/security`, `/subprocessors`, `/dpa`, plus `SECURITY.md` and
+  docs/security-questionnaire.md) is written from the code and the production deployment; what the
+  repository can't show is the operator's word (approved 2026-11-03) or the providers' own
+  documentation, never a guess. A page the operator hasn't approved yet is `underReview: true`
+  (`PageDef`): the build shows "Draft — under review", makes it `noindex` and leaves it out of the
+  sitemap (still linked from the footer), and the manifest's `underReview` list keeps the server
+  from lifting that `noindex` (and adds `X-Robots-Tag`) even once the legal pages are in effect; no
+  setting removes either. `<ToConfirm />` marks each statement in such a draft the repository can't
+  confirm. Approving = removing the flag and the marks (after fixing any statement that turned out
+  wrong); none of the trust pages carries either today.
 - **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
   like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
   and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
