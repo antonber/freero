@@ -115,7 +115,7 @@ function parseActionRequest(body: unknown): AiActionRequest {
 
 // ---- audit ----
 
-async function auditAi(g: AiGrant, userId: string, metadata: Record<string, AuditValue>): Promise<void> {
+export async function auditAi(g: AiGrant, userId: string, metadata: Record<string, AuditValue>): Promise<void> {
   // A team board's request goes to the workspace's log. A personal board's to the person's own
   // log only: never fanned out to their teams (it names a personal board).
   await recordAudit({
@@ -246,7 +246,7 @@ async function rightmostOf(boardId: string, userId: string, role: AiGrant['role'
 
 // ---- asking the model ----
 
-interface Asked extends Accepted {
+export interface Asked extends Accepted {
   usage: { inputTokens: number; outputTokens: number };
 }
 
@@ -254,7 +254,7 @@ interface Asked extends Accepted {
  * Asks once; an answer that fails validation gets ONE repair turn naming what was wrong. Every
  * call is metered, also when it fails.
  */
-async function ask(g: AiGrant, userId: string, plan: TaskPlan, usage: Asked['usage']): Promise<Asked> {
+export async function ask(g: AiGrant, userId: string, plan: TaskPlan, usage: Asked['usage']): Promise<Asked> {
   const c = getConfig().ai;
   let calls = 0;
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: plan.user }];

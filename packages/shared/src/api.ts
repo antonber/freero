@@ -1275,6 +1275,7 @@ export type NotificationType =
   | 'card.due_soon'
   | 'walkthrough.mention'
   | 'walkthrough.comment'
+  | 'walkthrough.reaction'
   | 'agent.blocked'
   | 'problem.fixed';
 

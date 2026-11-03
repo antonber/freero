@@ -109,6 +109,18 @@ export function answer(system, user) {
         : [`Try a pilot for ${topic}`, `Ask users about ${topic}`, `Pair ${topic} with a launch event`, `Measure ${topic} weekly`, `Share ${topic} early`];
     return JSON.stringify({ items });
   }
+  if (/captions of a recorded walkthrough/.test(system)) {
+    const cues = String(content)
+      .split('\n')
+      .map((l) => /^\[(\d+)s\] (.*)$/.exec(l))
+      .filter(Boolean)
+      .map((m) => ({ start: Number(m[1]), text: m[2] }));
+    const picked = cues.filter((_, i) => i % 2 === 0).slice(0, 6);
+    return JSON.stringify({
+      summary: `A walkthrough in ${cues.length} parts, starting with “${(cues[0]?.text ?? 'an introduction').slice(0, 50)}”.`,
+      chapters: (picked.length >= 2 ? picked : [{ start: 0, text: 'Introduction' }, { start: 1, text: 'The rest' }]).map((c, i) => ({ start: i ? c.start : 0, title: c.text.split(' ').slice(0, 5).join(' ') })),
+    });
+  }
   if (/Task: catch the person up/.test(system)) {
     const items = String(content)
       .split('\n')

@@ -1253,7 +1253,7 @@ marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Anal
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
-(walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
+(walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), and `problems` (problem_reports: “Report a problem”, see "Problem
@@ -2304,6 +2304,16 @@ a native range. No third-party recording service, no screen capture. Overlay con
 - Captions: typed (`PUT …/transcript`), or made by the board's AI provider only (`modules/ai`
   `transcribeRecording`: `decideAi`, budgets, downloads policy, `AI_TRANSCRIBE_MODEL` on an
   OpenAI-compatible endpoint; docs/ai.md). Never a browser speech API (it sends audio to the vendor).
+- Summary and chapters (#127): written by the author or an editor (`PUT …/chapters`: moments
+  within the recording, one chapter per moment, in time order), or drafted from the captions by the
+  board's AI provider (`POST …/chapters/draft` → `modules/ai` `draftWalkthroughChapters`: the
+  same decision, downloads policy, rate limits, budgets and audit as every AI action; captions go
+  to the model as untrusted data). A draft is saved nowhere: the dialog fills it in to edit, then
+  saves. Viewers jump from the chapters list or the ticks on the track.
+- Reactions (#127): an emoji (`WALKTHROUGH_REACTIONS`) at a moment (`walkthrough_reactions`,
+  commenters and up with an account; deleted with the reactor's account). Marks on the track group
+  a burst into one mark with counts (`reactionMarks`); who reacted isn't shown, only `mine`. The
+  author is notified (`walkthrough.reaction`) once per person per walkthrough.
 - Open boards learn about changes through the server-written `walkthroughs` collection
   (`SERVER_WRITTEN_COLLECTIONS`, `Y_KEPT_ON_RESTORE`): a summary per walkthrough (title, length,
   counts), never the media URL or the timeline. An object: `freero://walkthrough/<id>`, with the

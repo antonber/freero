@@ -54,7 +54,9 @@ import type {
   CreateWalkthroughRequest,
   Decision,
   Walkthrough,
+  WalkthroughChaptersInput,
   WalkthroughComment,
+  WalkthroughReaction,
   WalkthroughCue,
   WalkthroughSummary,
 } from '@freero/shared';
@@ -471,6 +473,14 @@ export interface HostWalkthroughs {
   transcribe(id: string): Promise<Walkthrough>;
   /** Saves the recording to this computer, when the board's downloads policy allows (`board.canExport`). */
   download?(id: string, title: string): Promise<void>;
+  /** [additive, #127] The summary and chapters (its author, owners, editors; empty ones remove them). */
+  setChapters?(id: string, body: WalkthroughChaptersInput): Promise<Walkthrough>;
+  /** [additive, #127] A draft from the captions by the board's AI provider, saved nowhere (rejects with the reason). */
+  draftChapters?(id: string): Promise<WalkthroughChaptersInput>;
+  /** [additive, #127] Emoji reactions at moments (who left them isn't said: `mine` only). */
+  reactions?(id: string): Promise<WalkthroughReaction[]>;
+  react?(id: string, reaction: { atMs: number; emoji: string }): Promise<WalkthroughReaction>;
+  unreact?(id: string, reactionId: string): Promise<void>;
 }
 
 /** [additive] `Host.decisions` (wire: @freero/shared decisions.ts). */

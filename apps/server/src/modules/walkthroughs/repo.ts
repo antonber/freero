@@ -1,5 +1,6 @@
-// The only writer of `walkthroughs`, `walkthrough_views` and `walkthrough_comments` (KAI-133).
-import type { WalkthroughCue, WalkthroughTimeline } from '@freero/shared';
+// The only writer of `walkthroughs`, `walkthrough_views`, `walkthrough_comments` (KAI-133) and
+// `walkthrough_reactions` (#127).
+import type { WalkthroughChapter, WalkthroughCue, WalkthroughTimeline } from '@freero/shared';
 import { one, query } from '../../platform/db';
 
 export interface WalkthroughRow {
@@ -14,12 +15,15 @@ export interface WalkthroughRow {
   transcript: WalkthroughCue[] | null;
   transcriptSource: 'ai' | 'manual' | null;
   createdAt: number;
+  summary?: string | null;
+  chapters?: WalkthroughChapter[] | null;
 }
 
 /** A row with its counts. */
 export interface WalkthroughWithCounts extends WalkthroughRow {
   views: number;
   comments: number;
+  reactions: number;
 }
 
 interface Raw {
@@ -34,8 +38,11 @@ interface Raw {
   transcript: WalkthroughCue[] | string | null;
   transcript_source: 'ai' | 'manual' | null;
   created_at: Date;
+  summary?: string | null;
+  chapters?: WalkthroughChapter[] | string | null;
   views?: number | string;
   comments?: number | string;
+  reactions?: number | string;
 }
 
 const json = <T>(v: T | string): T => (typeof v === 'string' ? (JSON.parse(v) as T) : v);
@@ -51,13 +58,17 @@ const toRow = (r: Raw): WalkthroughWithCounts => ({
   transcript: r.transcript === null ? null : json(r.transcript),
   transcriptSource: r.transcript_source,
   createdAt: new Date(r.created_at).getTime(),
+  summary: r.summary ?? null,
+  chapters: r.chapters === null || r.chapters === undefined ? null : json(r.chapters),
   views: Number(r.views ?? 0),
   comments: Number(r.comments ?? 0),
+  reactions: Number(r.reactions ?? 0),
 });
 
 const SELECT = `SELECT w.*,
   (SELECT count(*) FROM walkthrough_views v WHERE v.walkthrough_id = w.id) AS views,
-  (SELECT count(*) FROM walkthrough_comments c WHERE c.walkthrough_id = w.id) AS comments
+  (SELECT count(*) FROM walkthrough_comments c WHERE c.walkthrough_id = w.id) AS comments,
+  (SELECT count(*) FROM walkthrough_reactions x WHERE x.walkthrough_id = w.id) AS reactions
   FROM walkthroughs w`;
 
 export async function insert(w: WalkthroughRow): Promise<void> {
@@ -98,6 +109,13 @@ export async function setTranscript(boardId: string, id: string, cues: Walkthrou
         cues === null ? null : source,
       ])
     ).length > 0
+  );
+}
+
+export async function setChapters(boardId: string, id: string, summary: string | null, chapters: WalkthroughChapter[] | null): Promise<boolean> {
+  return (
+    (await query(`UPDATE walkthroughs SET summary = $3, chapters = $4 WHERE board_id = $1 AND id = $2 RETURNING id`, [boardId, id, summary, chapters === null ? null : JSON.stringify(chapters)]))
+      .length > 0
   );
 }
 
@@ -202,4 +220,65 @@ export async function mediaUrls(urls: readonly string[] | null): Promise<string[
     ? await query<{ media_url: string }>(`SELECT DISTINCT media_url FROM walkthroughs WHERE media_url = ANY($1::text[])`, [urls])
     : await query<{ media_url: string }>(`SELECT DISTINCT media_url FROM walkthroughs`);
   return rows.map((r) => r.media_url);
+}
+
+// ---- reactions (#127) ----
+
+export interface ReactionRow {
+  id: string;
+  walkthroughId: string;
+  authorId: string;
+  atMs: number;
+  emoji: string;
+  createdAt: number;
+}
+
+interface RawReaction {
+  id: string;
+  walkthrough_id: string;
+  author_id: string;
+  at_ms: number;
+  emoji: string;
+  created_at: Date;
+}
+
+const toReaction = (r: RawReaction): ReactionRow => ({ id: r.id, walkthroughId: r.walkthrough_id, authorId: r.author_id, atMs: Number(r.at_ms), emoji: r.emoji, createdAt: new Date(r.created_at).getTime() });
+
+export async function insertReaction(r: ReactionRow): Promise<void> {
+  await query(`INSERT INTO walkthrough_reactions (id, walkthrough_id, author_id, at_ms, emoji, created_at) VALUES ($1, $2, $3, $4, $5, $6)`, [
+    r.id,
+    r.walkthroughId,
+    r.authorId,
+    r.atMs,
+    r.emoji,
+    new Date(r.createdAt),
+  ]);
+}
+
+export async function reactions(walkthroughId: string): Promise<ReactionRow[]> {
+  return (await query<RawReaction>(`SELECT * FROM walkthrough_reactions WHERE walkthrough_id = $1 ORDER BY at_ms, created_at, id`, [walkthroughId])).map(toReaction);
+}
+
+export async function getReaction(walkthroughId: string, id: string): Promise<ReactionRow | null> {
+  const r = await one<RawReaction>(`SELECT * FROM walkthrough_reactions WHERE walkthrough_id = $1 AND id = $2`, [walkthroughId, id]);
+  return r ? toReaction(r) : null;
+}
+
+export async function countReactionsBy(walkthroughId: string, authorId: string): Promise<number> {
+  const r = await one<{ n: string }>(`SELECT count(*) AS n FROM walkthrough_reactions WHERE walkthrough_id = $1 AND author_id = $2`, [walkthroughId, authorId]);
+  return Number(r?.n ?? 0);
+}
+
+export async function removeReaction(walkthroughId: string, id: string): Promise<boolean> {
+  return (await query(`DELETE FROM walkthrough_reactions WHERE walkthrough_id = $1 AND id = $2 RETURNING id`, [walkthroughId, id])).length > 0;
+}
+
+/** A person's reactions, for their data export. */
+export async function reactionsBy(authorId: string): Promise<Array<ReactionRow & { boardId: string }>> {
+  return (
+    await query<RawReaction & { board_id: string }>(
+      `SELECT x.*, w.board_id FROM walkthrough_reactions x JOIN walkthroughs w ON w.id = x.walkthrough_id WHERE x.author_id = $1 ORDER BY x.created_at`,
+      [authorId],
+    )
+  ).map((r) => ({ ...toReaction(r), boardId: r.board_id }));
 }

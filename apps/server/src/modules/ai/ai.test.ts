@@ -18,6 +18,7 @@ import * as repo from './repo';
 import { monthOf, runAiAction } from './service';
 import { getAiAdmin, updateAiSettings } from './settings';
 import { resultsText } from './tasks';
+import { draftWalkthroughChapters } from './walkthrough';
 
 // ---- the stub provider ----
 
@@ -344,6 +345,36 @@ it('expanding a topic reads the path to it and what is under it — never someon
   // Nothing was placed: the app adds them under the topic itself.
   expect(res.created).toEqual([]);
   expect((await elementsOf(boardId, ann.id)).map((e) => e.id).sort()).toEqual(['blog', 'mkt', 'root']);
+});
+
+// ---- walkthrough summary and chapters (#127) ----
+
+it('a chapters draft is never asked of the provider while the workspace has AI off or its budget used up; once allowed, chapters past the end of the recording are dropped', async () => {
+  const owner = await user('Narrator');
+  const ws = await team(owner);
+  const boardId = await boardWith(owner.id, [], ws);
+  const cues = [
+    { start: 0, end: 4000, text: 'Welcome to the roadmap' },
+    { start: 4000, end: 9000, text: 'Next, what we shipped' },
+  ];
+  await expect(draftWalkthroughChapters(boardId, owner.id, cues, 10_000)).rejects.toMatchObject({ status: 403, code: 'ai_unavailable' });
+  await updateAiSettings(ws, owner.id, { enabled: true, source: 'instance', monthlyTokenBudget: 1000 });
+  await repo.addUsage({ workspaceId: ws, userId: owner.id, month: monthOf(), source: 'instance', inputTokens: 1000, outputTokens: 0 });
+  await expect(draftWalkthroughChapters(boardId, owner.id, cues, 10_000)).rejects.toMatchObject({ status: 429, code: 'ai_budget' });
+  expect(seen).toHaveLength(0);
+
+  await updateAiSettings(ws, owner.id, { monthlyTokenBudget: null });
+  replies = [JSON.stringify({ summary: 'A tour of the roadmap.', chapters: [{ start: 3, title: 'Welcome' }, { start: 4, title: 'Shipped' }, { start: 60, title: 'Made up' }] })];
+  const draft = await draftWalkthroughChapters(boardId, owner.id, cues, 10_000);
+
+  expect(seen[0].body.messages.find((m) => m.role === 'user')!.content).toContain('Next, what we shipped');
+  expect(draft).toEqual({
+    summary: 'A tour of the roadmap.',
+    chapters: [
+      { atMs: 0, title: 'Welcome' },
+      { atMs: 4000, title: 'Shipped' },
+    ],
+  });
 });
 
 // ---- AI on results you already have (#148) ----

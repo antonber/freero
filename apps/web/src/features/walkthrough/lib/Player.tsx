@@ -3,14 +3,16 @@
 // the voice. The viewer's own pan or zoom takes the camera back (the bar offers "Back to their
 // view"); pausing leaves the camera alone; playing again returns to the recorded path.
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Captions, CaptionsOff, Download, Flag, LocateFixed, MessageSquareText, Pause, PenLine, Play, X } from 'lucide-react';
+import { BookOpenText, Captions, CaptionsOff, Download, Flag, ListOrdered, LocateFixed, MessageSquareText, Pause, PenLine, Play, X } from 'lucide-react';
 import { formatWalkthroughTime, WALKTHROUGHS_COLLECTION, type Walkthrough, type WalkthroughSummary } from '@freero/shared';
 import { useCamera, useCollection, usePeople, type Editor, type PanelProps } from '@engine';
 import { Avatar, IconButton, Spinner } from '@ui';
+import { ChaptersList } from './Chapters';
 import { Comments, useWalkthroughComments } from './Comments';
-import { CAPTIONS_ID } from './ids';
+import { CAPTIONS_ID, CHAPTERS_ID } from './ids';
 import { closeWalkthrough, usePlayer } from './playback';
-import { cameraShowing, cueAt, pointerAt, viewAt } from './timeline';
+import { ReactButton, useWalkthroughReactions } from './Reactions';
+import { cameraShowing, chapterAt, cueAt, pointerAt, reactionMarks, viewAt } from './timeline';
 
 const STEP_MS = 5000;
 
@@ -36,6 +38,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
   const followingRef = useRef(true);
   const [captionsOn, setCaptionsOn] = useState(true);
   const [showComments, setShowComments] = useState(false);
+  const [showChapters, setShowChapters] = useState(false);
   const [problem, setProblem] = useState<string | null>(w.mediaRemoved ? 'Freero’s moderators removed this recording.' : null);
   const counted = useRef(false);
   const lastApplied = useRef<number | null>(null);
@@ -44,6 +47,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
   const author = (w.authorId && people[w.authorId]) || null;
   const summary = new Map(useCollection<WalkthroughSummary>(WALKTHROUGHS_COLLECTION)).get(w.id);
   const comments = useWalkthroughComments(editor, w.id, summary?.comments ?? w.comments);
+  const reactions = useWalkthroughReactions(editor, w.id, summary?.reactions ?? w.reactions ?? 0);
   useCamera(); // the narrator's pointer moves on screen with the camera
 
   const setFollowing = (on: boolean) => {
@@ -167,6 +171,9 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
   const color = author?.color ?? '#5b3ff0';
   const hasCaptions = !!w.transcript?.length;
   const markers = comments.list ?? [];
+  const marks = reactionMarks(reactions.list, w.durationMs);
+  const chapters = w.chapters ?? [];
+  const chapter = chapterAt(chapters, t);
 
   return (
     <>
@@ -222,11 +229,44 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
       )}
 
       {showComments && <Comments editor={editor} w={w} t={t} state={comments} onSeek={seek} onClose={() => setShowComments(false)} />}
+      {showChapters && !showComments && <ChaptersList editor={editor} w={w} t={t} onSeek={seek} onClose={() => setShowChapters(false)} />}
 
       <div className="fr-walkthrough-bar is-playing" role="region" aria-label={`Walkthrough: ${w.title}`} onKeyDown={onKeyDown} data-fr-occludes="" data-fr-interactive="">
         <IconButton ref={playButton} icon={playing ? Pause : Play} label={playing ? 'Pause (Space)' : 'Play (Space)'} onClick={toggle} disabled={!!problem} />
         <span className="fr-walkthrough-bar__time">{formatWalkthroughTime(t)}</span>
+        {chapter && (
+          <span className="fr-walkthrough-bar__chapter-name" title={chapter.title}>
+            {chapter.title}
+          </span>
+        )}
         <div className="fr-walkthrough-bar__track">
+          {chapters.map((c) =>
+            c.atMs > 0 ? (
+              <button
+                key={`c${c.atMs}`}
+                type="button"
+                className="fr-walkthrough-bar__chapter"
+                style={{ left: `${(c.atMs / w.durationMs) * 100}%` }}
+                title={`${formatWalkthroughTime(c.atMs)} ${c.title}`}
+                aria-label={`Go to the chapter “${c.title}” at ${formatWalkthroughTime(c.atMs)}`}
+                onClick={() => seek(c.atMs)}
+              />
+            ) : null,
+          )}
+          {marks.map((m) => (
+            <button
+              key={`r${m.atMs}`}
+              type="button"
+              className={`fr-walkthrough-bar__reaction${m.mine ? ' is-mine' : ''}`}
+              style={{ left: `${(m.atMs / w.durationMs) * 100}%` }}
+              title={`${m.counts.map((c) => `${c.emoji} ${c.n}`).join('  ')} at ${formatWalkthroughTime(m.atMs)}`}
+              aria-label={`Reactions at ${formatWalkthroughTime(m.atMs)}: ${m.counts.map((c) => `${c.emoji} ${c.n}`).join(', ')}`}
+              onClick={() => seek(m.atMs)}
+            >
+              {m.counts[0].emoji}
+              {m.counts.reduce((s, c) => s + c.n, 0) > 1 && <span>{m.counts.reduce((s, c) => s + c.n, 0)}</span>}
+            </button>
+          ))}
           <input
             type="range"
             className="fr-walkthrough-bar__range"
@@ -265,6 +305,13 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
           <IconButton icon={captionsOn ? Captions : CaptionsOff} label={captionsOn ? 'Hide captions (C)' : 'Show captions (C)'} active={captionsOn} onClick={() => setCaptionsOn((on) => !on)} />
         )}
         {canManage(editor, w) && <IconButton icon={PenLine} label={hasCaptions ? 'Edit captions' : 'Add captions'} onClick={() => editor.openPanel(CAPTIONS_ID, { id: w.id })} />}
+        {(chapters.length > 0 || !!w.summary) && (
+          <IconButton icon={ListOrdered} label={`Chapters (${chapters.length})`} active={showChapters && !showComments} onClick={() => (setShowComments(false), setShowChapters((on) => !on || showComments))} />
+        )}
+        {canManage(editor, w) && editor.host.walkthroughs?.setChapters && (
+          <IconButton icon={BookOpenText} label={chapters.length ? 'Edit summary and chapters' : 'Add summary and chapters'} onClick={() => editor.openPanel(CHAPTERS_ID, { id: w.id })} />
+        )}
+        <ReactButton editor={editor} id={w.id} t={t} state={reactions} />
         <IconButton icon={MessageSquareText} label={`Walkthrough comments (${markers.length})`} active={showComments} onClick={() => setShowComments((on) => !on)}>
           {markers.length > 0 && <span className="fr-walkthrough-bar__count">{markers.length}</span>}
         </IconButton>

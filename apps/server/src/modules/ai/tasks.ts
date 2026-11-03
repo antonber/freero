@@ -12,6 +12,8 @@
 // StructureInput (no coordinates, no markup); modules/structure lays it out and places it.
 import {
   AI_EXPAND,
+  MAX_CHAPTER_TITLE,
+  MAX_WALKTHROUGH_SUMMARY,
   AI_LIMITS,
   AI_SENTIMENTS,
   LAYOUT_LIMITS,
@@ -28,6 +30,8 @@ import {
   type AiTask,
   type CatchUpChanges,
   type StructureInput,
+  type WalkthroughChaptersInput,
+  type WalkthroughCue,
 } from '@freero/shared';
 
 /** The model's answer can't be used; `reason` is written for the model (one repair turn). */
@@ -47,6 +51,8 @@ export interface Accepted {
   summary: string;
   /** expand (#134): the new children's text. */
   children?: string[];
+  /** walkthrough chapters (#127): the draft. */
+  walkthrough?: WalkthroughChaptersInput;
   /** catchup (#126): the points with their citations, mapped to ids. */
   catchUp?: Pick<AiCatchUp, 'points' | 'items'>;
 }
@@ -422,6 +428,57 @@ Schema: {"items": [string, …]}`,
       }
       if (items.length < AI_EXPAND.min) throw new InvalidOutput(`Give at least ${AI_EXPAND.min} new items that aren't under the topic already.`);
       return { summary: `${items.length} ${kind === 'subtopics' ? 'sub-topics' : kind} for “${clip(oneLine(name), 60)}”`, children: items };
+    },
+  };
+}
+
+// ---- walkthrough summary and chapters (#127) ----
+
+/** Most caption text one draft reads (a 20-minute recording's captions fit). */
+const MAX_CAPTION_CHARS = 60_000;
+
+export function chaptersTask(cues: WalkthroughCue[], durationMs: number): TaskPlan {
+  let used = 0;
+  const lines: string[] = [];
+  for (const c of cues) {
+    const line = `[${Math.floor(c.start / 1000)}s] ${oneLine(c.text)}`;
+    if (used + line.length > MAX_CAPTION_CHARS) break;
+    used += line.length + 1;
+    lines.push(line);
+  }
+  const seconds = Math.floor(durationMs / 1000);
+  return {
+    system: `${PREAMBLE}
+
+Task: the board content is the captions of a recorded walkthrough of a whiteboard, ${seconds} seconds long; "[12s]" marks when a caption starts. Write a summary of 2 to 4 sentences of what it covers, and split it into 2 to 12 chapters where the topic changes. Each chapter has the second it starts (the first starts at 0) and a title of at most 6 words. Say only what the captions support.
+
+Schema: {"summary": string, "chapters": [{"start": integer, "title": string}, …]}`,
+    user: `${instructionBlock('Summarise this walkthrough and split it into chapters.')}\n\n${contentBlock(lines.join('\n'))}`,
+    schema: schemaObject(
+      {
+        summary: { type: 'string' },
+        chapters: { type: 'array', items: schemaObject({ start: { type: 'integer' }, title: { type: 'string' } }, ['start', 'title']) },
+      },
+      ['summary', 'chapters'],
+    ),
+    accept(json) {
+      const o = obj(json);
+      const summary = typeof o.summary === 'string' ? clip(o.summary.trim().replace(/\s+/g, ' '), MAX_WALKTHROUGH_SUMMARY) : '';
+      if (!summary) throw new InvalidOutput('"summary" was empty.');
+      const byStart = new Map<number, string>();
+      for (const raw of Array.isArray(o.chapters) ? o.chapters : []) {
+        if (!raw || typeof raw !== 'object') continue;
+        const c = raw as Record<string, unknown>;
+        const start = typeof c.start === 'number' ? Math.round(c.start) : typeof c.start === 'string' ? Number(c.start) : NaN;
+        const title = str(c.title, MAX_CHAPTER_TITLE);
+        // Only moments of the recording, one chapter per moment.
+        if (!Number.isInteger(start) || start < 0 || start * 1000 >= durationMs || !title || byStart.has(start)) continue;
+        byStart.set(start, title);
+      }
+      const chapters = [...byStart].sort((a, b) => a[0] - b[0]).slice(0, 12).map(([s, title]) => ({ atMs: s * 1000, title }));
+      if (chapters.length < 2) throw new InvalidOutput('Give at least 2 chapters that start within the recording.');
+      chapters[0].atMs = 0; // the first chapter is the start
+      return { summary, walkthrough: { summary, chapters } };
     },
   };
 }

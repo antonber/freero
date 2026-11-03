@@ -128,6 +128,59 @@
   cursor: pointer;
 }
 
+/* #127: chapter starts cut the track; reactions float above it with their counts. */
+.fr-walkthrough-bar__chapter {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 14px;
+  margin: -7px 0 0 -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--fr-surface);
+  box-shadow: 0 0 0 1px var(--fr-line-strong);
+  cursor: pointer;
+}
+
+.fr-walkthrough-bar__reaction {
+  position: absolute;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  transform: translateX(-50%);
+  padding: 0 5px;
+  height: 20px;
+  border: 1px solid var(--fr-line);
+  border-radius: 999px;
+  background: var(--fr-surface);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fr-walkthrough-bar__reaction span {
+  color: var(--fr-ink-2);
+  font: 600 10px/1 var(--fr-font);
+}
+
+.fr-walkthrough-bar__reaction.is-mine {
+  border-color: var(--fr-primary);
+}
+
+.fr-walkthrough-bar__chapter-name {
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--fr-ink-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-walkthrough-bar__chapter:focus-visible,
+.fr-walkthrough-bar__reaction:focus-visible,
 .fr-walkthrough-bar__marker:focus-visible {
   outline: none;
   box-shadow: var(--fr-focus-ring);
@@ -287,6 +340,64 @@
 }
 
 /* ---- comments at moments ---- */
+.fr-walkthrough-reactions {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+}
+
+.fr-walkthrough-reactions__pick {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.fr-walkthrough-reactions__pick:hover {
+  background: var(--fr-hover);
+}
+
+.fr-walkthrough-chapters__summary {
+  margin: 0;
+  padding: 0 16px 8px;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fr-walkthrough-chapters__item {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-walkthrough-chapters__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-walkthrough-chapters__item.is-current {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+.fr-walkthrough-chapters__at {
+  min-width: 40px;
+  color: var(--fr-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .fr-walkthrough-comments {
   position: absolute;
   right: 16px;

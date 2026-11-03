@@ -143,7 +143,9 @@ import type {
   DecisionChanges,
   DecisionResponse,
   Walkthrough,
+  WalkthroughChaptersInput,
   WalkthroughComment,
+  WalkthroughReaction,
   WalkthroughCue,
   WalkthroughSummary,
 } from '@freero/shared';
@@ -719,6 +721,16 @@ export const api = {
   transcribeWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('POST', `${walkthroughsPath(boardId, id)}/transcript`),
   walkthroughCaptionsStatus: (boardId: string) =>
     request<{ available: boolean; reason?: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/walkthroughs-captions`),
+  setWalkthroughChapters: (boardId: string, id: string, body: WalkthroughChaptersInput) =>
+    request<{ walkthrough: Walkthrough }>('PUT', `${walkthroughsPath(boardId, id)}/chapters`, body),
+  draftWalkthroughChapters: (boardId: string, id: string) => request<WalkthroughChaptersInput>('POST', `${walkthroughsPath(boardId, id)}/chapters/draft`),
+  walkthroughReactions: (boardId: string, id: string) => request<{ reactions: WalkthroughReaction[] }>('GET', `${walkthroughsPath(boardId, id)}/reactions`),
+  reactToWalkthrough: (boardId: string, id: string, body: { atMs: number; emoji: string }) =>
+    request<{ reaction: WalkthroughReaction }>('POST', `${walkthroughsPath(boardId, id)}/reactions`, body),
+  async deleteWalkthroughReaction(boardId: string, id: string, reactionId: string): Promise<void> {
+    const res = await fetch(`${walkthroughsPath(boardId, id)}/reactions/${encodeURIComponent(reactionId)}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
   async downloadWalkthrough(boardId: string, id: string): Promise<Blob> {
     const res = await fetch(`${walkthroughsPath(boardId, id)}/download`, { credentials: 'same-origin' });
     if (!res.ok) throw await failure(res);
