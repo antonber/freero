@@ -24,14 +24,14 @@ export default function privacyRoutes(_ctx: ServerContext): Router {
   }));
 
   r.post('/workspaces/:id/exports', requireUser, rateLimit('dataExport', 'user'), handle(async (req, res) => {
-    const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin');
+    const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { scope: 'security' });
     if (ws.kind !== 'team') throw badRequest('Your personal workspace is part of your own data export (Account settings)');
     const e = await requestExport(currentUser(req).id, ws.id);
     kick(req);
     res.status(202).json({ export: e });
   }));
   r.get('/workspaces/:id/exports', requireUser, handle(async (req, res) => {
-    await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin');
+    await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { scope: 'security' });
     res.json({ exports: await listExports({ workspaceId: req.params.id }) });
   }));
 

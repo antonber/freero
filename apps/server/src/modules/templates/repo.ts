@@ -12,12 +12,15 @@ interface Row {
   element_count: number;
   created_at: Date;
   updated_at: Date;
+  organisation_id: string | null;
+  locked: boolean | null;
+  retired_at: Date | null;
 }
 
-const SUMMARY_COLUMNS = 'id, owner_id, name, description, thumbnail, workspace_id, element_count, created_at, updated_at';
+const SUMMARY_COLUMNS = 'id, owner_id, name, description, thumbnail, workspace_id, element_count, created_at, updated_at, organisation_id, locked, retired_at';
 
 /** A stored template's summary; `ownerName` / `canUnshare` depend on the reader (service.ts fills them). */
-export type StoredSummary = Omit<SavedTemplateSummary, 'ownerName' | 'canUnshare'>;
+export type StoredSummary = Omit<SavedTemplateSummary, 'ownerName' | 'canUnshare' | 'organisationName' | 'canManage'>;
 export type StoredTemplate = StoredSummary & { content: TemplateContent };
 
 const toSummary = (r: Row): StoredSummary => ({
@@ -30,7 +33,16 @@ const toSummary = (r: Row): StoredSummary => ({
   elementCount: r.element_count,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
+  organisationId: r.organisation_id ?? null,
+  locked: r.locked === true,
+  retiredAt: r.retired_at ? r.retired_at.getTime() : null,
 });
+
+/** Who reads (#155): their full-member team workspaces and those workspaces' organisations (from modules/workspaces). */
+export interface Audience {
+  workspaceIds: string[];
+  organisationIds: string[];
+}
 
 /**
  * THE visibility rule: which templates a user may list and insert — their own, and those shared
@@ -38,7 +50,9 @@ const toSummary = (r: Row): StoredSummary => ({
  * user id, `$2` the ids of the user's team workspaces where they are not a guest (from
  * modules/workspaces, so this module never reads another module's tables).
  */
-const VISIBLE_TO_USER = '(owner_id = $1 OR workspace_id = ANY($2::text[]))';
+// #155: a retired template reaches nobody but its owner; one published to an organisation reaches
+// the full members of its attached workspaces ($3).
+const VISIBLE_TO_USER = '(owner_id = $1 OR (retired_at IS NULL AND (workspace_id = ANY($2::text[]) OR organisation_id = ANY($3::text[]))))';
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
 
@@ -62,23 +76,25 @@ export async function insertTemplate(t: StoredTemplate): Promise<void> {
 }
 
 /** Templates the user may see, newest first (without their content). */
-export async function listVisibleTo(userId: string, workspaceIds: string[]): Promise<StoredSummary[]> {
+export async function listVisibleTo(userId: string, a: Audience): Promise<StoredSummary[]> {
   return (
-    await query<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE ${VISIBLE_TO_USER} ORDER BY updated_at DESC, id`, [userId, workspaceIds])
+    await query<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE ${VISIBLE_TO_USER} ORDER BY updated_at DESC, id`, [userId, a.workspaceIds, a.organisationIds])
   ).map(toSummary);
 }
 
 /** The templates among `ids` visible to the user (summaries; the object registry resolves through it). */
-export async function visibleAmong(ids: string[], userId: string, workspaceIds: string[]): Promise<StoredSummary[]> {
+export async function visibleAmong(ids: string[], userId: string, a: Audience): Promise<StoredSummary[]> {
   if (!ids.length) return [];
-  return (await query<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE ${VISIBLE_TO_USER} AND id = ANY($3::text[])`, [userId, workspaceIds, ids])).map(toSummary);
+  return (
+    await query<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE ${VISIBLE_TO_USER} AND id = ANY($4::text[])`, [userId, a.workspaceIds, a.organisationIds, ids])
+  ).map(toSummary);
 }
 
 /** One template with its content, or null if missing or not visible to the user. */
-export async function getVisible(id: string, userId: string, workspaceIds: string[]): Promise<StoredTemplate | null> {
+export async function getVisible(id: string, userId: string, a: Audience): Promise<StoredTemplate | null> {
   const r = await one<Row & { content: TemplateContent | string }>(
-    `SELECT ${SUMMARY_COLUMNS}, content FROM templates WHERE ${VISIBLE_TO_USER} AND id = $3`,
-    [userId, workspaceIds, id],
+    `SELECT ${SUMMARY_COLUMNS}, content FROM templates WHERE ${VISIBLE_TO_USER} AND id = $4`,
+    [userId, a.workspaceIds, a.organisationIds, id],
   );
   if (!r) return null;
   return { ...toSummary(r), content: typeof r.content === 'string' ? (JSON.parse(r.content) as TemplateContent) : r.content };
@@ -103,13 +119,60 @@ export async function lockOwnerQuota(ownerId: string): Promise<void> {
   await query(`SELECT pg_advisory_xact_lock(hashtext('templates.quota'), hashtext($1))`, [ownerId]);
 }
 
-/** Shares the owner's template with a workspace (null: personal again). Null if it is not theirs. */
+/**
+ * Shares the owner's template with a workspace (null: personal again). Null if it is not theirs,
+ * or (#155) an admin locked it — then only an admin takes it back (`unshareFrom`).
+ */
 export async function setWorkspace(id: string, ownerId: string, workspaceId: string | null, now: number): Promise<StoredSummary | null> {
   const r = await one<Row>(
-    `UPDATE templates SET workspace_id = $3, updated_at = $4 WHERE id = $1 AND owner_id = $2 RETURNING ${SUMMARY_COLUMNS}`,
+    `UPDATE templates SET workspace_id = $3, updated_at = $4 WHERE id = $1 AND owner_id = $2 AND (NOT locked OR workspace_id IS NOT DISTINCT FROM $3) RETURNING ${SUMMARY_COLUMNS}`,
     [id, ownerId, workspaceId, new Date(now)],
   );
   return r ? toSummary(r) : null;
+}
+
+/** One template whatever its sharing (#155: admins' actions check where it is shared themselves). */
+export async function getSummary(id: string): Promise<StoredSummary | null> {
+  const r = await one<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE id = $1`, [id]);
+  return r ? toSummary(r) : null;
+}
+
+/** Publishes the owner's template to an organisation (null: takes it back; not while locked). Null if it isn't theirs or is locked. */
+export async function setOrganisation(id: string, ownerId: string, organisationId: string | null, now: number): Promise<StoredSummary | null> {
+  const r = await one<Row>(
+    `UPDATE templates SET organisation_id = $3, published_by = CASE WHEN $3::text IS NULL THEN NULL ELSE $2 END, updated_at = $4,
+       locked = CASE WHEN $3::text IS NULL THEN false ELSE locked END, retired_at = CASE WHEN $3::text IS NULL THEN NULL ELSE retired_at END
+     WHERE id = $1 AND owner_id = $2 AND (NOT locked OR organisation_id IS NOT DISTINCT FROM $3) RETURNING ${SUMMARY_COLUMNS}`,
+    [id, ownerId, organisationId, new Date(now)],
+  );
+  return r ? toSummary(r) : null;
+}
+
+/** An organisation's admin withdraws a template published to THEIR organisation. Null if it isn't published there. */
+export async function unpublishFrom(id: string, organisationId: string, now: number): Promise<StoredSummary | null> {
+  const r = await one<Row>(
+    `UPDATE templates SET organisation_id = NULL, published_by = NULL, locked = false, retired_at = NULL, updated_at = $3
+     WHERE id = $1 AND organisation_id = $2 RETURNING ${SUMMARY_COLUMNS}`,
+    [id, organisationId, new Date(now)],
+  );
+  return r ? toSummary(r) : null;
+}
+
+/** Locks / unlocks, retires / brings back a template (the caller checked who may). */
+export async function setAdminState(id: string, patch: { locked?: boolean; retiredAt?: number | null }, now: number): Promise<StoredSummary | null> {
+  const r = await one<Row>(
+    `UPDATE templates SET locked = COALESCE($2, locked), retired_at = CASE WHEN $3::boolean THEN $4::timestamptz ELSE retired_at END, updated_at = $5
+     WHERE id = $1 RETURNING ${SUMMARY_COLUMNS}`,
+    [id, patch.locked ?? null, patch.retiredAt !== undefined, patch.retiredAt == null ? null : new Date(patch.retiredAt), new Date(now)],
+  );
+  return r ? toSummary(r) : null;
+}
+
+/** What is shared with a workspace or published to an organisation, retired ones included (its admins). */
+export async function sharedWithPlace(placeId: string): Promise<StoredSummary[]> {
+  return (await query<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE workspace_id = $1 OR organisation_id = $1 ORDER BY updated_at DESC, id`, [placeId])).map(
+    toSummary,
+  );
 }
 
 /** A workspace admin stops a template being shared with THEIR workspace. Null if it isn't shared there (any more). */
@@ -138,9 +201,9 @@ export async function sharedWith(id: string): Promise<string | null | undefined>
   return r ? r.workspace_id : undefined;
 }
 
-/** Deletes the owner's template; returns its thumbnail (to delete the file), or undefined if none was deleted. */
+/** Deletes the owner's template (#155: not while an admin locked it); returns its thumbnail (to delete the file), or undefined if none was deleted. */
 export async function deleteOwned(id: string, ownerId: string): Promise<string | null | undefined> {
-  const r = await one<{ thumbnail: string | null }>(`DELETE FROM templates WHERE id = $1 AND owner_id = $2 RETURNING thumbnail`, [
+  const r = await one<{ thumbnail: string | null }>(`DELETE FROM templates WHERE id = $1 AND owner_id = $2 AND NOT locked RETURNING thumbnail`, [
     id,
     ownerId,
   ]);

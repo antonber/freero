@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Eye, MonitorPlay, NotebookText, Users, X, Zap } from 'lucide-react';
-import { definePanel, useElements, useFollowing, usePeers, type Editor } from '@engine';
+import { AppWindow, ArrowRightLeft, ChevronDown, ChevronLeft, ChevronRight, Eye, MonitorPlay, NotebookText, Users, X, Zap } from 'lucide-react';
+import type { FacilitationSession, PresentationSession } from '@freero/shared';
+import { definePanel, useCollection, useElements, useFollowing, usePeers, type Editor } from '@engine';
 import { Avatar, Button, IconButton, Menu } from '@ui';
 import { activePresenter, currentPosition, navKey, readExt, slides } from './lib/model';
 import {
   goTo,
+  handOff,
   laserAt,
   laserOff,
   presentStore,
@@ -17,6 +19,7 @@ import {
 import { LaserOverlay } from './lib/LaserOverlay';
 import { NotesPanel, PresenterNotes } from './lib/NotesPanel';
 import { NOTES_PANEL_ID } from './lib/notes';
+import { NotesWindow } from './lib/NotesWindow';
 import './present.css';
 
 // ---------------------------------------------------------------- top bar button
@@ -46,6 +49,10 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
     store.setState({ laser: !store.getState().laser });
   };
   const toggleNotes = () => store.setState({ notesOpen: !store.getState().notesOpen });
+  const notesWindow = usePresent(editor, (s) => s.notesWindow);
+  const handRef = useRef<HTMLButtonElement>(null);
+  const [handOpen, setHandOpen] = useState(false);
+  const people = usePeopleHere(editor);
 
   // Keyboard: navigation keys drive the deck; everything else is swallowed so board shortcuts
   // (tools, delete, nudge…) can't change the board behind a hidden UI.
@@ -93,7 +100,8 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
         }}
         onPointerLeave={() => laser && laserOff(editor)}
       />
-      {notesOpen && current && <PresenterNotes frameId={current.id} onClose={toggleNotes} />}
+      {notesOpen && current && !notesWindow && <PresenterNotes frameId={current.id} onClose={toggleNotes} />}
+      {notesWindow ? <NotesWindow editor={editor} /> : null}
       {!list.length && (
         <div className="fr-present-hint" role="status">
           No frames yet, so the whole board is shown. Add frames (F) to present it step by step.
@@ -146,6 +154,21 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
         <IconButton icon={Zap} label="Laser pointer" shortcut="L" size={32} active={laser} onClick={toggleLaser} />
         {list.length > 0 && <IconButton icon={NotebookText} label="Your notes" shortcut="N" size={32} active={notesOpen} onClick={toggleNotes} />}
         {others > 0 && <IconButton icon={Users} label="Bring everyone to me" size={32} onClick={() => editor.runCommand('presence.bringEveryone')} />}
+        <IconButton icon={AppWindow} label="Open notes in a window" size={32} active={notesWindow} onClick={() => store.setState({ notesWindow: !notesWindow })} />
+        {editor.host.presentation && people.length > 0 ? (
+          <>
+            <IconButton ref={handRef} icon={ArrowRightLeft} label="Hand off to…" size={32} active={handOpen} onClick={() => setHandOpen((o) => !o)} />
+            <Menu
+              open={handOpen}
+              onClose={() => setHandOpen(false)}
+              anchor={handRef.current}
+              side="top"
+              align="center"
+              minWidth={200}
+              items={[{ heading: 'Hand the presentation to' }, ...people.map((p) => ({ id: p.id, label: p.name, onSelect: () => void handOff(editor, p) }))]}
+            />
+          </>
+        ) : null}
         <Button size="sm" variant="ghost" icon={X} className="fr-present-bar__exit" onClick={() => stopPresenting(editor)}>
           Exit
         </Button>
@@ -162,6 +185,7 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
  */
 function AudienceOverlay({ editor }: { editor: Editor }) {
   const peers = usePeers();
+  const server = useServerSession();
   const presenting = usePresent(editor, (s) => s.presenting);
   const dismissed = usePresent(editor, (s) => s.dismissed);
   const following = useFollowing();
@@ -177,11 +201,19 @@ function AudienceOverlay({ editor }: { editor: Editor }) {
     if (!f) return;
     if (following?.userId !== f.userId) followedFor.current = null; // you stopped or followed someone else
     else if (sessionKey !== f.key) {
+      // Handed over (#146): keep following, now the new presenter, once their slides are live.
+      if (server && server.presenterId !== f.userId && server.handedFrom === f.userId) {
+        if (!presenter || presenter.user.id !== server.presenterId || !sessionKey) return;
+        followedFor.current = { key: sessionKey, userId: presenter.user.id, name: presenter.user.name };
+        editor.follow({ userId: presenter.user.id, clientId: presenter.clientId });
+        editor.host.notify(`${presenter.user.name} presents now`);
+        return;
+      }
       followedFor.current = null;
       editor.follow(null);
       editor.host.notify(`${f.name} ended the presentation`);
     }
-  }, [editor, following, sessionKey]);
+  }, [editor, following, sessionKey, server, presenter]);
 
   if (presenting || !presenter || !pres || !sessionKey) return null;
   if (following?.userId === presenter.user.id) return null;
@@ -199,10 +231,75 @@ function AudienceOverlay({ editor }: { editor: Editor }) {
       <Button size="sm" variant="primary" icon={Eye} onClick={follow}>
         Follow
       </Button>
+      <HandOverMenu editor={editor} presenterId={presenter.user.id} />
       <Button size="sm" variant="ghost" onClick={() => store.setState({ dismissed: [...dismissed, sessionKey] })}>
         Dismiss
       </Button>
     </div>
+  );
+}
+
+/** The server's word on who presents (#146). */
+function useServerSession(): PresentationSession | undefined {
+  return new Map(useCollection<PresentationSession>('presentation')).get('session');
+}
+
+/** Everyone else on the board now, one entry per person. */
+function usePeopleHere(editor: Editor): Array<{ id: string; name: string }> {
+  const peers = usePeers();
+  const out = new Map<string, string>();
+  for (const p of peers) if (p.user?.id && p.user.id !== editor.user.id && !out.has(p.user.id)) out.set(p.user.id, p.user.name || 'Someone');
+  return [...out].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Follows the server's session (#146): presenting handed to me starts here, on the slide it was
+ * on; presenting handed from me (or taken over by the facilitator) stops here.
+ */
+function SessionWatcher({ editor }: { editor: Editor }) {
+  const server = useServerSession();
+  const presenting = usePresent(editor, (s) => s.presenting);
+  const since = usePresent(editor, (s) => s.since);
+  const handled = useRef<number>(0);
+  useEffect(() => {
+    if (!server || server.at === handled.current) return;
+    const mine = server.presenterId === editor.user.id;
+    if (mine && !presenting && server.handedFrom && server.at > since) {
+      handled.current = server.at;
+      startPresenting(editor, server.frameId, { handedOver: true });
+      editor.host.notify(`${server.handedBy ?? 'Someone'} handed you the presentation`, 'success');
+    } else if (!mine && presenting && server.at > since) {
+      handled.current = server.at;
+      stopPresenting(editor, { quietly: true });
+      editor.host.notify(`${server.presenterName} presents now`);
+    }
+  }, [editor, server, presenting, since]);
+  return null;
+}
+
+/** The facilitator or the owner hands someone else's presentation over (#146), from the banner. */
+function HandOverMenu({ editor, presenterId }: { editor: Editor; presenterId: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const session = new Map(useCollection<FacilitationSession>('facilitation')).get('session');
+  const people = usePeopleHere(editor).filter((p) => p.id !== presenterId);
+  const me = { id: editor.user.id, name: 'Me' };
+  if (!editor.host.presentation || !(session?.by === editor.user.id || editor.host.board.role === 'owner')) return null;
+  return (
+    <>
+      <Button ref={ref} size="sm" variant="ghost" icon={ArrowRightLeft} onClick={() => setOpen((o) => !o)}>
+        Hand off
+      </Button>
+      <Menu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchor={ref.current}
+        side="bottom"
+        align="center"
+        minWidth={200}
+        items={[{ heading: 'Hand the presentation to' }, ...[me, ...people].map((p) => ({ id: p.id, label: p.name, onSelect: () => void editor.host.presentation!.handoff(p.id, null).catch((e: unknown) => editor.host.notify(e instanceof Error ? e.message : 'Couldn’t hand over', 'error')) }))]}
+      />
+    </>
   );
 }
 
@@ -216,6 +313,7 @@ function Overlay({ editor }: { editor: Editor }) {
 export default [
   definePanel({ id: 'present.button', slot: 'topbar-right', order: 80, Component: PresentButton }),
   definePanel({ id: 'present.overlay', slot: 'screen-overlay', order: 80, Component: Overlay }),
+  definePanel({ id: 'present.session', slot: 'screen-overlay', order: 81, Component: SessionWatcher }),
   // In the top-center column with other session bars (an active vote), so they never overlap.
   definePanel({ id: 'present.banner', slot: 'top-center', order: 10, Component: AudienceOverlay }),
   // Everyone's laser trails, above the presenter's controls' catcher (pointer events pass through).

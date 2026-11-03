@@ -24,6 +24,7 @@ export {
   useRole,
   useEditingId,
   useDock,
+  useBottomDock,
   // additive (see ARCHITECTURE.md "Engine contract additions")
   usePointer,
   useToolGhost,

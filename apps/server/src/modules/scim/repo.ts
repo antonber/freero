@@ -297,3 +297,14 @@ export async function groupsOfUser(workspaceId: string, userId: string): Promise
     )
   ).map(toGroup);
 }
+
+/** Each directory group of a workspace with how many people are in it (#63: shown beside Freero's own groups). */
+export async function directoryGroupSummaries(workspaceId: string): Promise<Array<{ id: string; name: string; memberCount: number }>> {
+  return (
+    await query<{ id: string; display_name: string; n: number }>(
+      `SELECT g.id, g.display_name, (SELECT count(*)::int FROM scim_group_members m WHERE m.group_id = g.id) AS n
+       FROM scim_groups g WHERE g.workspace_id = $1 ORDER BY lower(g.display_name), g.id`,
+      [workspaceId],
+    )
+  ).map((r) => ({ id: r.id, name: r.display_name, memberCount: r.n }));
+}

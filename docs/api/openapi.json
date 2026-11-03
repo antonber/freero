@@ -22,6 +22,7 @@
     { "name": "objects", "description": "Object addresses and what links to them" },
     { "name": "docs", "description": "Docs (KAI-162): collaborative documents next to boards, shared and opened like boards" },
     { "name": "trackers", "description": "Issue trackers (#79): a tracker query as linked task cards on a board (docs/trackers.md)" },
+    { "name": "webhooks", "description": "A team workspace’s webhooks (#48): the admin console’s operations for its owners and admins, with a webhooks:manage credential (docs/events.md)" },
     { "name": "audit", "description": "A team workspace’s audit log for SIEMs that pull (#17); pushing streams are set up in the admin console" },
     { "name": "operator", "description": "For Freero’s operators only (OPERATOR_EMAILS): the problems people reported with “Report a problem”. Anyone else gets 404 here." }
   ],
@@ -127,6 +128,270 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks": {
+      "parameters": [{ "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "listWebhooks",
+        "tags": ["webhooks"],
+        "summary": "The workspace’s webhooks",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "description": "Owners and admins of the team workspace. URLs are shown shortened; secrets never.",
+        "responses": {
+          "200": {
+            "description": "Its webhooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["webhooks"],
+                  "properties": { "webhooks": { "type": "array", "items": { "$ref": "#/components/schemas/Webhook" } } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "operationId": "createWebhook",
+        "tags": ["webhooks"],
+        "summary": "Add a webhook (answers its secret, once)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "description": "As in the admin console: events of boards every full member of the workspace can open, signed with HMAC-SHA256 (`json`) or as a chat message. Optionally only one board or item (`scope`) or one project (`projectId`). Audited (`webhook.created`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url", "events"],
+                "properties": {
+                  "url": { "type": "string", "description": "https only; an address on a private network is refused (unless the server allows private endpoints)" },
+                  "description": { "type": "string", "maxLength": 200 },
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "description": "An event type (docs/events.md): board.created, item.created, comment.created …" }
+                  },
+                  "format": { "type": "string", "enum": ["json", "slack", "teams", "discord", "google-chat", "mattermost"] },
+                  "scope": { "type": ["string", "null"], "description": "Only one board, or one item on it: its link or freero:// address (a board the whole team can open)" },
+                  "projectId": { "type": ["string", "null"], "description": "Only the boards of this project (one the whole team can open); not with scope" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The webhook and its secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["webhook", "secret"],
+                  "properties": {
+                    "webhook": { "$ref": "#/components/schemas/Webhook" },
+                    "secret": { "type": "string", "description": "The signing secret (whsec_…): shown this once, never again" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "patch": {
+        "operationId": "updateWebhook",
+        "tags": ["webhooks"],
+        "summary": "Change a webhook (URL, events, format, scope, project, on / off)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "description": "Only what you send changes; `scope` / `projectId` null clears it. Turning it on (`enabled: true`) resets its failure count; waiting deliveries are sent again. Audited (`webhook.updated`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string", "description": "https only; an address on a private network is refused (unless the server allows private endpoints)" },
+                  "description": { "type": "string", "maxLength": 200 },
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "description": "An event type (docs/events.md): board.created, item.created, comment.created …" }
+                  },
+                  "format": { "type": "string", "enum": ["json", "slack", "teams", "discord", "google-chat", "mattermost"] },
+                  "scope": { "type": ["string", "null"], "description": "Only one board, or one item on it: its link or freero:// address (a board the whole team can open)" },
+                  "projectId": { "type": ["string", "null"], "description": "Only the boards of this project (one the whole team can open); not with scope" },
+                  "enabled": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The webhook",
+            "content": {
+              "application/json": { "schema": { "type": "object", "required": ["webhook"], "properties": { "webhook": { "$ref": "#/components/schemas/Webhook" } } } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWebhook",
+        "tags": ["webhooks"],
+        "summary": "Remove a webhook",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["ok"], "properties": { "ok": { "const": true } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/rotate": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "operationId": "rotateWebhookSecret",
+        "tags": ["webhooks"],
+        "summary": "A new signing secret (answered once; the old one stops at once)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "The webhook and its new secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["webhook", "secret"],
+                  "properties": {
+                    "webhook": { "$ref": "#/components/schemas/Webhook" },
+                    "secret": { "type": "string", "description": "The signing secret (whsec_…): shown this once, never again" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/test": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "operationId": "testWebhook",
+        "tags": ["webhooks"],
+        "summary": "Send a test delivery (a ping, within a second)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "202": {
+            "description": "The queued delivery",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["delivery"], "properties": { "delivery": { "$ref": "#/components/schemas/WebhookDelivery" } } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "listWebhookDeliveries",
+        "tags": ["webhooks"],
+        "summary": "The delivery log (the last 100, newest first; kept 30 days)",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "Deliveries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["deliveries"],
+                  "properties": { "deliveries": { "type": "array", "items": { "$ref": "#/components/schemas/WebhookDelivery" } } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver": {
+      "parameters": [
+        { "name": "workspaceId", "in": "path", "required": true, "description": "A team workspace you own or administer", "schema": { "type": "string" } },
+        { "name": "webhookId", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "deliveryId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "operationId": "redeliverWebhook",
+        "tags": ["webhooks"],
+        "summary": "Send a failed delivery again",
+        "x-freero-scope": "webhooks:manage",
+        "security": [{ "bearer": ["webhooks:manage"] }],
+        "responses": {
+          "200": {
+            "description": "The delivery, queued again",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["delivery"], "properties": { "delivery": { "$ref": "#/components/schemas/WebhookDelivery" } } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     },
@@ -263,6 +528,243 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "updateBoard",
+        "tags": ["boards"],
+        "summary": "Rename a board or change its description (owners and editors)",
+        "description": "The board menu’s rename: a new title is a `board.renamed` event and an activity-feed entry. Recorded in the audit log like every call.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "minProperties": 1,
+                "properties": { "title": { "type": "string", "maxLength": 200 }, "description": { "type": "string", "maxLength": 2000 } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The board as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "board"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "board": { "$ref": "#/components/schemas/Board" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "423": { "$ref": "#/components/responses/AgentPaused" }
+        }
+      }
+    },
+    "/boards/{boardId}/copy": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "copyBoard",
+        "tags": ["boards"],
+        "summary": "Copy a board with its content",
+        "description": "As the app’s Duplicate: in `workspaceId` (and `projectId`) — where you may create boards — or beside the original (else your personal workspace). Hidden frames’ contents are copied only for owners and editors; nobody’s private drafts, no pending suggestions. A copy takes the content out, so it is refused (403 `downloads_restricted`) where the workspace’s downloads policy or the board’s “Viewers and commenters can copy and export” keeps it in. Your board quota and board-creation rate limit apply.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "maxLength": 200, "description": "Default: “Copy of <title>”" },
+                  "workspaceId": { "type": "string" },
+                  "projectId": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The copy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "board"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "board": { "$ref": "#/components/schemas/Board" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/boards/{boardId}/embed": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "get": {
+        "operationId": "getBoardEmbed",
+        "tags": ["boards"],
+        "summary": "Embedding on other sites: the setting and the embed code",
+        "description": "What the share dialog’s “Embed on other sites” shows (#2): whether it is on, whether the workspace’s `boardEmbeds` policy allows it, whether you may change it, what a visitor without an account may do in the embed, and — while it is on — the embed URL and iframe code. An embed never lets more people in than the board’s sharing does.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [
+          { "name": "readonly", "in": "query", "description": "The embed code keeps everyone read-only", "schema": { "type": "boolean" } },
+          { "name": "frameId", "in": "query", "description": "The embed starts at this frame", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The setting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "embed"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "embed": { "$ref": "#/components/schemas/BoardEmbed" } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "setBoardEmbed",
+        "tags": ["boards"],
+        "summary": "Turn embedding on other sites on or off (owner and co-owners)",
+        "description": "As the share dialog’s switch: the board’s owner or a co-owner; turning it on also needs the workspace’s `boardEmbeds` policy (403 otherwise). Audited (`board.embedding_changed`); turning it off closes open embeds at once.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["embeddable"],
+                "properties": {
+                  "embeddable": { "type": "boolean" },
+                  "readonly": { "type": "boolean", "description": "For the embed code answered" },
+                  "frameId": { "type": "string", "description": "For the embed code answered" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The setting as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "embed"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "embed": { "$ref": "#/components/schemas/BoardEmbed" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/boards/{boardId}/export": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "exportBoardPicture",
+        "tags": ["boards"],
+        "summary": "The board (or one frame) drawn as PNG, SVG or PDF by the server",
+        "description": "Drawn on the server from the board as you see it — no hidden frame’s contents for viewers, nobody’s private drafts — with no browser involved (#33). An export like the app’s: refused (403 `downloads_restricted`) by the workspace’s downloads policy or the board’s “Viewers and commenters can copy and export”, recorded as `board.exported`, its own rate limit (RATE_LIMIT_BOARD_RENDER). At most 5000 items (413 `board_too_large`: export a frame); pictures are kept within 8000 px a side and 40 megapixels by drawing them smaller. With `link: true` it answers a single-use download link instead (15 minutes; the checks run again when it is used).",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["format"],
+                "properties": {
+                  "format": { "type": "string", "enum": ["png", "svg", "pdf"] },
+                  "frameId": { "type": "string", "description": "Only this frame (or kanban) and what is in it" },
+                  "scale": { "type": "number", "exclusiveMinimum": 0, "maximum": 4, "description": "Pixels per board unit (png default 2, pdf 1.5)" },
+                  "link": { "type": "boolean", "description": "Answer a single-use download link instead of the file" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The picture, as an attachment (`Content-Disposition`)",
+            "content": {
+              "image/png": { "schema": { "type": "string", "format": "binary" } },
+              "image/svg+xml": { "schema": { "type": "string", "format": "binary" } },
+              "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "201": {
+            "description": "A single-use download link (`link: true`)",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["url", "expiresAt"], "properties": { "url": { "type": "string" }, "expiresAt": { "type": "integer" } } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "413": {
+            "description": "`board_too_large`: more items than a picture is drawn of",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/exports/{ticket}": {
+      "parameters": [{ "name": "ticket", "in": "path", "required": true, "description": "The frx_… ticket of a download link", "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "downloadBoardPicture",
+        "tags": ["boards"],
+        "summary": "Download a board picture by its single-use link (no token: the link is the credential)",
+        "description": "Works once, for 15 minutes, acting for the credential that asked for it — as long as that token or app may still act: everything is checked again (the person’s access, the team’s API switch, the downloads policy). Used, expired or unknown: 404 `export_link_gone`.",
+        "x-freero-scope": null,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The picture, as an attachment (`Content-Disposition`)",
+            "content": {
+              "image/png": { "schema": { "type": "string", "format": "binary" } },
+              "image/svg+xml": { "schema": { "type": "string", "format": "binary" } },
+              "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     },
@@ -523,7 +1025,7 @@
         "operationId": "createItems",
         "tags": ["items"],
         "summary": "Add items (one, or up to 500 with `items`)",
-        "description": "Owners and editors. Without x/y an item goes on free space (next to `near` if given), never on existing content; it joins the frame under its center unless `frameId` says otherwise. Connectors join items by id (`$0` names items[0] of the same call). One change: everyone on the board sees it at once; a bad item refuses the whole call and nothing is written.",
+        "description": "Owners and editors. Without x/y an item goes on free space (next to `near` if given), never on existing content; it joins the frame under its center unless `frameId` says otherwise. Connectors join items by id (`$0` names items[0] of the same call). One change: everyone on the board sees it at once; a bad item refuses the whole call and nothing is written.\n\nImages and embeds (#170, at most 20 per call) are made from `url`, which the server fetches itself before anything is written: an image (PNG, JPEG, GIF, WebP or SVG, by its bytes) is copied into your uploads — your quota, never hot-linked — at its own proportions; an embed must be an https link on an allow-listed provider (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen, CodeSandbox, or a site the server’s operator added) and gets the page’s preview. A URL on a private, loopback or link-local address (also after a redirect or through DNS) is refused with 422 `url_blocked`; an unreachable link or no image with 422 `url_unusable`.",
         "x-freero-scope": "boards:write",
         "security": [{ "bearer": ["boards:write"] }],
         "requestBody": {
@@ -559,7 +1061,9 @@
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/UrlRefused" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     },
@@ -662,6 +1166,81 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/boards/{boardId}/groups": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "groupItems",
+        "tags": ["items"],
+        "summary": "Group items (selected and moved together)",
+        "description": "As Group on the board: two or more items you can see and that aren’t locked get one new group id (items of another group leave it). The outline lists a group as `group:<id>`.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ids"],
+                "properties": { "ids": { "type": "array", "minItems": 2, "maxItems": 1000, "items": { "type": "string" } } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["group"],
+                  "properties": {
+                    "group": {
+                      "type": "object",
+                      "required": ["id", "itemIds"],
+                      "properties": { "id": { "type": "string" }, "itemIds": { "type": "array", "items": { "type": "string" } } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "423": { "$ref": "#/components/responses/AgentPaused" }
+        }
+      }
+    },
+    "/boards/{boardId}/groups/{groupId}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/BoardId" },
+        { "name": "groupId", "in": "path", "required": true, "description": "The group id (`group:<id>` as the outline shows it works too)", "schema": { "type": "string" } }
+      ],
+      "delete": {
+        "operationId": "ungroupItems",
+        "tags": ["items"],
+        "summary": "Ungroup: every item of the group stands on its own again",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "responses": {
+          "200": {
+            "description": "The items that were in the group",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["ungrouped"], "properties": { "ungrouped": { "type": "array", "items": { "type": "string" } } } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "423": { "$ref": "#/components/responses/AgentPaused" }
         }
       }
     },
@@ -1392,6 +1971,172 @@
         }
       }
     },
+    "/docs/{docId}/edit": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }],
+      "post": {
+        "operationId": "editDoc",
+        "tags": ["docs"],
+        "summary": "Change one part of a doc by block id (owners and editors)",
+        "description": "Block ids come from `GET /docs/{docId}` (`blocks`, nested ones under `children`). `replace`: the block (with what is nested under it) becomes the Markdown; `replaceSection`: a heading and everything after it up to the next heading of the same or a higher level; `insertBefore` / `insertAfter`: next to the block, at its level; `delete`: the block and what is nested under it. The first block written by a replace keeps the old id, so comments on it stay. One change, attributed to the app acting for you; a block that isn’t there is 404 and nothing changes.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["op", "blockId"],
+                "properties": {
+                  "op": { "type": "string", "enum": ["replace", "replaceSection", "insertBefore", "insertAfter", "delete"] },
+                  "blockId": { "type": "string" },
+                  "markdown": { "type": "string", "description": "The new content (CommonMark with tables, task lists, strikethrough); not for delete" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "ok", "blockIds"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "ok": { "const": true },
+                    "blockIds": { "type": "array", "items": { "type": "string" }, "description": "The blocks written (none for delete)" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/docs/{docId}/comments": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }],
+      "get": {
+        "operationId": "listDocComments",
+        "tags": ["docs"],
+        "summary": "A doc’s comment threads (on blocks, or on the doc)",
+        "description": "Oldest first, resolved ones too, deleted ones never; mentions read as @Name. A read of the doc’s content: refused (403 `downloads_restricted`) like the doc itself where its workspace’s downloads policy says so.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "responses": {
+          "200": {
+            "description": "Threads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "threads"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "threads": { "type": "array", "items": { "$ref": "#/components/schemas/DocCommentThread" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "operationId": "addDocComment",
+        "tags": ["docs"],
+        "summary": "Start a comment thread on a block (or on the doc)",
+        "description": "Commenters, editors and owners. Notifies the people it @mentions (`<@userId>`) like a comment made in the app.",
+        "x-freero-scope": "comments:write",
+        "security": [{ "bearer": ["comments:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                  "text": { "type": "string", "maxLength": 5000 },
+                  "blockId": { "type": ["string", "null"], "description": "The block it is on; absent or null: the doc as a whole" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "thread"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "thread": { "$ref": "#/components/schemas/DocCommentThread" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/docs/{docId}/comments/{threadId}/replies": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }, { "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "replyToDocComment",
+        "tags": ["docs"],
+        "summary": "Reply in a doc’s comment thread",
+        "x-freero-scope": "comments:write",
+        "security": [{ "bearer": ["comments:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "maxLength": 5000 } } } } }
+        },
+        "responses": {
+          "201": {
+            "description": "The reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "message"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "message": {
+                      "type": "object",
+                      "required": ["id", "authorId", "author", "text", "at"],
+                      "properties": {
+                        "id": { "type": "string" },
+                        "authorId": { "type": "string" },
+                        "author": { "type": "string" },
+                        "text": { "type": "string" },
+                        "at": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/search": {
       "get": {
         "operationId": "search",
@@ -1866,6 +2611,7 @@
               "members:read": "See who has access to your boards",
               "members:write": "Invite people and change their access",
               "audit:read": "Read the audit log of team workspaces you administer",
+              "webhooks:manage": "Add, change and remove the webhooks of team workspaces you administer, and read their delivery logs",
               "problems:triage": "Read and triage the problems people reported (operators’ personal access tokens only: never granted to apps)"
             }
           }
@@ -1901,6 +2647,10 @@
       "RateLimited": {
         "description": "Too many requests",
         "headers": { "Retry-After": { "schema": { "type": "integer" } } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "UrlRefused": {
+        "description": "A URL the server would fetch was refused (`url_blocked`: a private, loopback or link-local address) or couldn’t be used (`url_unusable`: unreachable, too big, not an image). Nothing changed",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "Deleted": {
@@ -2288,7 +3038,30 @@
           "children": { "type": "array", "items": { "$ref": "#/components/schemas/DocBlock" } }
         }
       },
-      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "audit:read", "problems:triage"] },
+      "DocCommentThread": {
+        "type": "object",
+        "required": ["id", "blockId", "resolved", "messages"],
+        "properties": {
+          "id": { "type": "string" },
+          "blockId": { "type": ["string", "null"] },
+          "resolved": { "type": "boolean" },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "authorId", "author", "text", "at"],
+              "properties": {
+                "id": { "type": "string" },
+                "authorId": { "type": "string" },
+                "author": { "type": "string" },
+                "text": { "type": "string" },
+                "at": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "audit:read", "webhooks:manage", "problems:triage"] },
       "KanbanFilterRule": {
         "type": "object",
         "required": ["field", "op"],
@@ -2572,7 +3345,7 @@
           "error": { "type": "string" },
           "code": {
             "type": "string",
-            "description": "insufficient_scope, api_disabled, api_credential_blocked, downloads_restricted, sso_required, confirm_required, agent_paused, invalid_token, …"
+            "description": "insufficient_scope, api_disabled, api_credential_blocked, downloads_restricted, sso_required, confirm_required, agent_paused, invalid_token, url_blocked, url_unusable, board_too_large, export_link_gone, …"
           }
         }
       },
@@ -2689,6 +3462,46 @@
           "hash": { "type": "string" }
         }
       },
+      "Webhook": {
+        "type": "object",
+        "required": ["id", "url", "description", "events", "format", "enabled", "disabledReason", "consecutiveFailures", "createdAt", "createdBy", "lastDeliveryAt", "scope"],
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string", "description": "Shortened for display (the full URL is never answered)" },
+          "description": { "type": "string" },
+          "events": { "type": "array", "items": { "type": "string" } },
+          "format": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "disabledReason": { "type": ["string", "null"], "description": "Why Freero turned it off (failures in a row)" },
+          "consecutiveFailures": { "type": "integer" },
+          "createdAt": { "type": "integer" },
+          "createdBy": { "type": ["object", "null"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
+          "lastDeliveryAt": { "type": ["integer", "null"] },
+          "scope": {
+            "type": ["object", "null"],
+            "properties": { "boardId": { "type": "string" }, "itemId": { "type": ["string", "null"] }, "boardTitle": { "type": ["string", "null"] } }
+          },
+          "projectId": { "type": ["string", "null"] }
+        }
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "required": ["id", "endpointId", "eventId", "eventType", "status", "attempts", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "endpointId": { "type": "string" },
+          "eventId": { "type": "string", "description": "evt_… or ping" },
+          "eventType": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "delivered", "failed"] },
+          "attempts": { "type": "integer" },
+          "nextAttemptAt": { "type": ["integer", "null"] },
+          "responseStatus": { "type": ["integer", "null"] },
+          "error": { "type": ["string", "null"] },
+          "durationMs": { "type": ["integer", "null"] },
+          "createdAt": { "type": "integer" },
+          "deliveredAt": { "type": ["integer", "null"] }
+        }
+      },
       "Workspace": {
         "type": "object",
         "required": ["id", "name", "kind", "role"],
@@ -2714,6 +3527,22 @@
           "owner": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
           "createdAt": { "type": "integer" },
           "updatedAt": { "type": "integer" }
+        }
+      },
+      "BoardEmbed": {
+        "type": "object",
+        "required": ["embeddable", "allowed", "canChange", "visitor", "url", "code"],
+        "properties": {
+          "embeddable": { "type": "boolean" },
+          "allowed": { "type": "boolean", "description": "The workspace’s policy lets this board be embedded" },
+          "canChange": { "type": "boolean", "description": "You may turn it on or off (owner or co-owner)" },
+          "visitor": {
+            "type": ["string", "null"],
+            "enum": ["viewer", null],
+            "description": "`viewer`: anyone sees the embed without signing in (the link lets guests in, no password); null: people sign in"
+          },
+          "url": { "type": ["string", "null"], "description": "The embed URL (null while off)" },
+          "code": { "type": ["string", "null"], "description": "The iframe to paste (null while off)" }
         }
       },
       "Item": {
@@ -2747,7 +3576,7 @@
         "type": "object",
         "required": ["type"],
         "properties": {
-          "type": { "type": "string", "enum": ["sticky", "shape", "text", "card", "frame", "connector"] },
+          "type": { "type": "string", "enum": ["sticky", "shape", "text", "card", "frame", "connector", "image", "embed"] },
           "text": { "type": "string", "maxLength": 10000 },
           "title": { "type": "string", "description": "card, frame" },
           "description": { "type": "string", "description": "card" },
@@ -2768,6 +3597,8 @@
           "assigneeId": { "type": "string" },
           "hidden": { "type": "boolean", "description": "frame: contents hidden from viewers and commenters" },
           "from": { "type": "string", "description": "connector: an item id, or $<n> for items[n] of this call" },
+          "url": { "type": "string", "maxLength": 2048, "description": "image: the picture’s link (copied into your uploads); embed: an https link on an allow-listed provider" },
+          "alt": { "type": "string", "maxLength": 500, "description": "image: what it shows" },
           "to": { "type": "string" },
           "label": { "type": "string" },
           "routing": { "type": "string", "enum": ["straight", "elbow", "curved"] },

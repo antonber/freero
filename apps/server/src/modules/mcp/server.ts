@@ -37,6 +37,7 @@ const SCOPE_LABEL: Record<ApiScope, string> = {
   'members:read': 'see members',
   'members:write': 'manage members',
   'audit:read': 'read audit logs',
+  'webhooks:manage': 'manage webhooks',
   'problems:triage': 'triage problem reports',
 };
 

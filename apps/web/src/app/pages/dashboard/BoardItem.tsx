@@ -1,6 +1,6 @@
 import { memo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, Copy, Crown, Ellipsis, Folder, FolderInput, FolderLock, House, LogOut, Pencil, Share2, SquareArrowOutUpRight, Star, Trash } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, Copy, Crown, Ellipsis, Folder, FolderInput, FolderLock, House, LogOut, Pencil, Share2, SquareArrowOutUpRight, Star, Trash } from 'lucide-react';
 import type { BoardSummary, ProjectSummary } from '@freero/shared';
 import { Avatar, IconButton, Menu, type MenuItem } from '@ui';
 import { BoardThumb } from './BoardThumb';
@@ -23,6 +23,8 @@ export interface BoardActions {
   moveToWorkspace(b: BoardSummary): void;
   transfer(b: BoardSummary): void;
   describe(b: BoardSummary, description: string): void;
+  /** #153: archive / unarchive (its owner or a content admin: `permissions.canArchive`). */
+  setArchived(b: BoardSummary, archived: boolean): void;
 }
 
 interface Props {
@@ -75,6 +77,13 @@ export function boardMenuItems(b: BoardSummary, actions: BoardActions, projects:
       : []),
     ...(b.role === 'owner' ? [{ id: 'move-workspace', label: 'Move to another workspace…', icon: Building2, onSelect: () => actions.moveToWorkspace(b) } satisfies MenuItem] : []),
     ...(b.permissions.canTransfer ? [{ id: 'transfer', label: 'Transfer ownership…', icon: Crown, onSelect: () => actions.transfer(b) } satisfies MenuItem] : []),
+    ...(b.permissions.canArchive
+      ? [
+          b.archivedAt
+            ? ({ id: 'unarchive', label: 'Unarchive', icon: ArchiveRestore, onSelect: () => actions.setArchived(b, false) } satisfies MenuItem)
+            : ({ id: 'archive', label: 'Archive', icon: Archive, onSelect: () => actions.setArchived(b, true) } satisfies MenuItem),
+        ]
+      : []),
     // Only a board you were invited to can be left; team or link access ends with the workspace / link.
     ...(b.role === 'owner'
       ? [{ divider: true } as const, { id: 'delete', label: 'Delete', icon: Trash, danger: true, onSelect: () => actions.remove(b) }]

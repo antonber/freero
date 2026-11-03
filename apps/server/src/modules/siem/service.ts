@@ -185,14 +185,14 @@ const readName = (v: unknown, kind: SiemKind) => (typeof v === 'string' && v.tri
 
 export async function listSinks(workspaceId: string, userId: string): Promise<SiemSinkInfo[]> {
   requireSiem();
-  await requireAdmin(workspaceId, userId, { organisation: true });
+  await requireAdmin(workspaceId, userId, { organisation: true, scope: 'security' });
   const head = await workspaceHeadSeq(workspaceId);
   return Promise.all((await repo.sinksOf(workspaceId)).map((s) => info(s, head)));
 }
 
 export async function createSink(workspaceId: string, userId: string, body: Record<string, unknown>): Promise<{ sink: SiemSinkInfo; signingSecret?: string }> {
   requireSiem();
-  await requireAdmin(workspaceId, userId, { organisation: true });
+  await requireAdmin(workspaceId, userId, { organisation: true, scope: 'security' });
   const kind = body.kind as SiemKind;
   if (!SIEM_KINDS.includes(kind)) throw badRequest(`kind must be ${SIEM_KINDS.join(', ')}`);
   const { settings, url: httpsUrl } = readSettings(kind, body.settings, null);
@@ -233,7 +233,7 @@ export async function createSink(workspaceId: string, userId: string, body: Reco
 
 async function sinkOf(workspaceId: string, userId: string, id: string): Promise<repo.SinkRow> {
   requireSiem();
-  await requireAdmin(workspaceId, userId, { organisation: true });
+  await requireAdmin(workspaceId, userId, { organisation: true, scope: 'security' });
   const s = await repo.getSink(workspaceId, id);
   if (!s) throw notFound('No such audit stream');
   return s;

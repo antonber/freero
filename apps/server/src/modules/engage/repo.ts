@@ -1,4 +1,5 @@
-// The only writer of `engage_answers`, `engage_questions`, `engage_upvotes` and `engage_reveals` [S4].
+// The only writer of `engage_answers`, `engage_questions`, `engage_upvotes`, `engage_reveals` and
+// `engage_keys` [S4].
 import type { ActivityAnswer } from '@freero/shared';
 import { isForeignKeyViolation, one, query } from '../../platform/db';
 import type { StoredAnswer, StoredQuestion } from './rules';
@@ -149,6 +150,38 @@ export async function setRevealed(boardId: string, activityId: string, revealed:
   if (revealed)
     await query(`INSERT INTO engage_reveals (board_id, activity_id, revealed_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [boardId, activityId, new Date(now)]);
   else await query(`DELETE FROM engage_reveals WHERE board_id = $1 AND activity_id = $2`, [boardId, activityId]);
+}
+
+// ---- quiz answer keys (#147) ----
+
+export async function quizKey(boardId: string, activityId: string): Promise<Record<string, string[]>> {
+  const r = await one<{ answer_key: Record<string, string[]> | string }>(`SELECT answer_key FROM engage_keys WHERE board_id = $1 AND activity_id = $2`, [boardId, activityId]);
+  return r ? parse(r.answer_key) : {};
+}
+
+/** A duplicated board keeps its quizzes' answer keys (same activity ids: the copy keeps them). */
+export async function copyBoardKeys(fromBoard: string, toBoard: string, now: number): Promise<void> {
+  await query(
+    `INSERT INTO engage_keys (board_id, activity_id, answer_key, updated_at)
+     SELECT $2, activity_id, answer_key, $3 FROM engage_keys WHERE board_id = $1
+     ON CONFLICT (board_id, activity_id) DO NOTHING`,
+    [fromBoard, toBoard, new Date(now)],
+  );
+}
+
+/** False if the board is gone. */
+export async function setQuizKey(boardId: string, activityId: string, key: Record<string, string[]>, now: number): Promise<boolean> {
+  try {
+    await query(
+      `INSERT INTO engage_keys (board_id, activity_id, answer_key, updated_at) VALUES ($1, $2, $3::jsonb, $4)
+       ON CONFLICT (board_id, activity_id) DO UPDATE SET answer_key = excluded.answer_key, updated_at = excluded.updated_at`,
+      [boardId, activityId, JSON.stringify(key), new Date(now)],
+    );
+    return true;
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return false;
+    throw e;
+  }
 }
 
 // ---- people (data exports, account purge) ----

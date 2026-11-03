@@ -12,6 +12,8 @@ export interface MembershipExport {
   kind: WorkspaceKind;
   role: WorkspaceRole;
   projects: Array<{ id: string; name: string }>;
+  /** #63: the workspace's groups they are in. */
+  groups: Array<{ id: string; name: string }>;
 }
 
 /** Every workspace (and organisation directory, #108) the person is in, their role and the projects they were added to. */
@@ -19,12 +21,21 @@ export async function exportMembershipsOf(userId: string): Promise<MembershipExp
   const rows = [...(await repo.workspacesOf(userId)), ...(await repo.organisationsOf(userId))];
   const ids = rows.map((r) => r.workspace.id);
   const [projects, mine] = await Promise.all([repo.projectsIn(ids), repo.projectIdsOf(userId, ids)]);
+  const groups = new Map(
+    await Promise.all(
+      rows.map(async (r) => {
+        const in_ = new Set(await repo.groupIdsOf(r.workspace.id, userId));
+        return [r.workspace.id, (await repo.groupsIn(r.workspace.id)).filter((g) => in_.has(g.id)).map((g) => ({ id: g.id, name: g.name }))] as const;
+      }),
+    ),
+  );
   return rows.map((r) => ({
     workspaceId: r.workspace.id,
     workspace: r.workspace.name,
     kind: r.workspace.kind,
     role: r.role,
     projects: projects.filter((p) => p.workspaceId === r.workspace.id && mine.has(p.id)).map((p) => ({ id: p.id, name: p.name })),
+    groups: groups.get(r.workspace.id) ?? [],
   }));
 }
 
@@ -33,6 +44,8 @@ export interface WorkspaceDirectoryExport {
   members: Array<{ userId: string; name: string; email: string; role: WorkspaceRole; joinedAt: string }>;
   invitations: Array<{ email: string; role: string; invitedBy: string; createdAt: string; expiresAt: string }>;
   projects: Array<{ id: string; name: string; access: string; createdAt: string; memberIds: string[] }>;
+  /** #63: its groups and who is in them. */
+  groups: Array<{ id: string; name: string; createdAt: string; memberIds: string[] }>;
 }
 
 export async function exportWorkspaceDirectory(workspaceId: string): Promise<WorkspaceDirectoryExport | null> {
@@ -49,6 +62,9 @@ export async function exportWorkspaceDirectory(workspaceId: string): Promise<Wor
     invitations: invites.map((i) => ({ email: i.email, role: i.role, invitedBy: i.invitedBy, createdAt: iso(i.createdAt), expiresAt: iso(i.expiresAt) })),
     projects: await Promise.all(
       projects.map(async (p) => ({ id: p.id, name: p.name, access: p.access, createdAt: iso(p.createdAt), memberIds: await repo.projectMemberIds(p.id) })),
+    ),
+    groups: await Promise.all(
+      (await repo.groupsIn(workspaceId)).map(async (g) => ({ id: g.id, name: g.name, createdAt: iso(g.createdAt), memberIds: await repo.groupMemberIds(g.id) })),
     ),
   };
 }

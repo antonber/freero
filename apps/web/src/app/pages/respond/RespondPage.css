@@ -1,0 +1,76 @@
+/* The phone answer page (#40): one card, full width on a phone. */
+.fr-respond {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 16px 24px;
+  background: var(--fr-surface-2);
+  color: var(--fr-ink);
+  font-family: var(--fr-font);
+}
+
+.fr-respond__head {
+  width: 100%;
+  max-width: 520px;
+}
+
+.fr-respond__card {
+  width: 100%;
+  max-width: 520px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--fr-surface);
+  box-shadow: var(--fr-shadow);
+}
+
+.fr-respond__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.fr-respond__center p {
+  margin: 0;
+}
+
+.fr-respond__btn {
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: var(--fr-primary);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fr-respond__join {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-respond__join h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.fr-respond__join p {
+  margin: 0;
+}
+
+.fr-respond__hint {
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-respond__foot {
+  font-size: 13px;
+}
+
+.fr-respond__foot a {
+  color: var(--fr-ink-3);
+}

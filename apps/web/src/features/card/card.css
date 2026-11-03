@@ -528,3 +528,65 @@
     transition: none;
   }
 }
+
+/* Flip cards (#142): both faces stacked in one box, each turning on the Y axis. */
+.fr-card-flip {
+  position: absolute;
+  inset: 0;
+  perspective: 1200px;
+}
+.fr-card-flip__face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: transform 420ms cubic-bezier(0.3, 0.7, 0.2, 1);
+  transform: rotateY(0deg);
+}
+.fr-card-flip__face.is-back {
+  transform: rotateY(180deg);
+}
+.fr-card-flip.is-flipped .fr-card-flip__face {
+  transform: rotateY(-180deg);
+}
+.fr-card-flip.is-flipped .fr-card-flip__face.is-back {
+  transform: rotateY(0deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fr-card-flip__face {
+    transition: none;
+  }
+}
+
+.fr-card--back {
+  background: var(--paper);
+}
+.fr-card--back::before {
+  display: none;
+}
+.fr-card__back-text {
+  position: absolute;
+  inset: 14px 18px;
+}
+
+.fr-card-flip__turn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--fr-ink-2);
+  box-shadow: 0 0 0 1px rgba(23, 22, 43, 0.08);
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0.75;
+}
+.fr-card-flip__turn:hover {
+  opacity: 1;
+  color: var(--fr-ink);
+}

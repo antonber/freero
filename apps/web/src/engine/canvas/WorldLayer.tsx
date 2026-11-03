@@ -148,14 +148,16 @@ function lowDetailRuns(core: EngineCore, ids: string[], zoom: number, editingId:
 interface WorldView {
   zoom: number;
   focusId: string | null;
+  focusHide: boolean;
 }
-const WorldViewContext = createContext<WorldView>({ zoom: 1, focusId: null });
+const WorldViewContext = createContext<WorldView>({ zoom: 1, focusId: null, focusHide: false });
 
 export function WorldViewProvider({ children }: { children: ReactNode }) {
   const core = useCore();
   const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
   const focusId = useStore(core.ui, (s) => s.focusId);
-  const value = useMemo(() => ({ zoom, focusId }), [zoom, focusId]);
+  const focusHide = useStore(core.ui, (s) => s.focusHide);
+  const value = useMemo(() => ({ zoom, focusId, focusHide }), [zoom, focusId, focusHide]);
   return <WorldViewContext.Provider value={value}>{children}</WorldViewContext.Provider>;
 }
 
@@ -244,9 +246,10 @@ export const ElementView = memo(function ElementView({ id }: { id: string }) {
   // whether it slides there (ElementDefinition.dragPreview). Display only, never written.
   const shownAt = useSyncExternalStore(subscribe, () => items.shownAt(id));
   const sliding = useSyncExternalStore(subscribe, () => items.isSliding(id));
-  const { zoom, focusId } = useContext(WorldViewContext);
+  const { zoom, focusId, focusHide } = useContext(WorldViewContext);
   // [additive, #117] Outside the item this viewer focuses on (Editor.setFocus): faded and inert.
-  const unfocused = useMemo(() => !!focusId && !!el && !core.editor.inFocus(el), [core, focusId, el]);
+  // [#135] or, with "hide the rest", not drawn at all.
+  const unfocused = useMemo(() => (!!focusId && !!el && !core.editor.inFocus(el) ? (focusHide ? 'hidden' : 'faded') : null), [core, focusId, focusHide, el]);
   if (!el) return null;
   return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} shownAt={shownAt} sliding={sliding} unfocused={unfocused} />;
 });
@@ -266,8 +269,8 @@ export function ElementFrame(props: {
   shownAt?: { x: number; y: number } | null;
   /** Slides (animated) between its own position and `shownAt`. */
   sliding?: boolean;
-  /** [additive] Outside this viewer's focus (Editor.setFocus): drawn faded. */
-  unfocused?: boolean;
+  /** [additive] Outside this viewer's focus (Editor.setFocus): drawn faded, or [#135] not at all. */
+  unfocused?: 'faded' | 'hidden' | null;
 }) {
   const core = useCore();
   const { element: el } = props;
@@ -296,7 +299,7 @@ export function ElementFrame(props: {
   }
   return (
     <div
-      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}${props.unfocused ? ' fr-el--unfocused' : ''}`}
+      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}${props.unfocused === 'faded' ? ' fr-el--unfocused' : props.unfocused === 'hidden' ? ' fr-el--outside' : ''}`}
       data-id={props.preview ? undefined : el.id}
       data-type={el.type}
       style={{ ...reg?.def.wrapperStyle?.(el as never), left: at.x, top: at.y, width: el.w, height: el.h, transform }}

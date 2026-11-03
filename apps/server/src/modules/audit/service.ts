@@ -144,6 +144,11 @@ export function recordAuditQuietly(input: AuditInput): Promise<void> {
   return recordAudit(input).catch((e) => logError(`audit: could not record ${input.action}`, e));
 }
 
+/** Events of one action in a workspace's log in [from, to), counted by a metadata key (#65: API calls by app). */
+export function auditCountsBy(workspaceId: string, action: string, from: number, to: number, key: string): Promise<Map<string, number>> {
+  return repo.countByMetadata(workspaceId, action, from, to, key);
+}
+
 export function listAuditEvents(filter: EventFilter, limit: number): Promise<StoredEvent[]> {
   return repo.listEvents(filter, limit);
 }

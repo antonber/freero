@@ -19,9 +19,11 @@ import { isOperator } from '../auth/index';
 import { parseOutlineQuery } from '../outline/index';
 import { listProblems, problemDetail, problemScreenshot, sendProblemScreenshot, updateProblem } from '../problems/index';
 import { backlinksForApi, resolveForApi, searchContent } from './objects';
-import { appendToDoc, createDocFor, listDocs, readDocFor } from './docs';
+import { addDocComment, appendToDoc, createDocFor, editDocFor, listDocComments, listDocs, readDocFor, replyToDocComment } from './docs';
 import { getFeedback, postStatus, readStatusPost } from './controlRoom';
 import { workspaceAuditFor } from './audit';
+import * as hooks from './webhooks';
+import { exportLink, redeemExport, renderForApi } from './exports';
 import * as api from './service';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
@@ -102,9 +104,29 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('get', '/workspaces', 'boards:read', async (call) => ({ body: await api.listWorkspaces(call) }));
   // A team workspace's audit log, for SIEMs that pull (#17; owners/admins).
   endpoint('get', '/workspaces/:workspaceId/audit', 'audit:read', async (call) => ({ body: await workspaceAuditFor(call, call.req.params.workspaceId, call.req.query) }));
+  // A team workspace's webhooks (#48; owners/admins), as the admin console manages them.
+  const W = '/workspaces/:workspaceId/webhooks';
+  const ws = (call: api.ApiCall) => call.req.params.workspaceId;
+  const hook = (call: api.ApiCall) => call.req.params.webhookId;
+  endpoint('get', W, 'webhooks:manage', async (call) => ({ body: await hooks.listWebhooksFor(call, ws(call)) }));
+  endpoint('post', W, 'webhooks:manage', async (call) => ({ status: 201, body: await hooks.createWebhookFor(call, ws(call), call.req.body) }));
+  endpoint('patch', `${W}/:webhookId`, 'webhooks:manage', async (call) => ({ body: await hooks.updateWebhookFor(call, ws(call), hook(call), call.req.body) }));
+  endpoint('delete', `${W}/:webhookId`, 'webhooks:manage', async (call) => ({ body: await hooks.deleteWebhookFor(call, ws(call), hook(call)) }));
+  endpoint('post', `${W}/:webhookId/rotate`, 'webhooks:manage', async (call) => ({ body: await hooks.rotateWebhookFor(call, ws(call), hook(call)) }));
+  endpoint('post', `${W}/:webhookId/test`, 'webhooks:manage', async (call) => ({ status: 202, body: await hooks.testWebhookFor(call, ws(call), hook(call)) }));
+  endpoint('get', `${W}/:webhookId/deliveries`, 'webhooks:manage', async (call) => ({ body: await hooks.webhookDeliveriesFor(call, ws(call), hook(call)) }));
+  endpoint('post', `${W}/:webhookId/deliveries/:deliveryId/redeliver`, 'webhooks:manage', async (call) => ({
+    body: await hooks.redeliverWebhookFor(call, ws(call), hook(call), call.req.params.deliveryId),
+  }));
   endpoint('get', '/boards', 'boards:read', async (call) => ({ body: await api.searchBoards(call, call.req.query) }));
   endpoint('post', '/boards', 'boards:write', async (call) => ({ status: 201, body: await api.createBoard(call, body(call.req)) }));
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));
+  // Rename / describe, and copy (#170).
+  endpoint('patch', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.updateBoard(call, call.req.params.boardId, body(call.req)) }));
+  // Embedding on other sites (#2): read the setting and the embed code, turn it on or off (owners and co-owners).
+  endpoint('get', '/boards/:boardId/embed', 'boards:read', async (call) => ({ body: await api.getBoardEmbed(call, call.req.params.boardId, call.req.query) }));
+  endpoint('patch', '/boards/:boardId/embed', 'boards:write', async (call) => ({ body: await api.setBoardEmbed(call, call.req.params.boardId, body(call.req)) }));
+  endpoint('post', '/boards/:boardId/copy', 'boards:write', async (call) => ({ status: 201, body: await api.copyBoard(call, call.req.params.boardId, body(call.req)) }));
   endpoint('delete', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.deleteBoard(call, call.req.params.boardId, call.req.query.confirm) }));
 
   // ---- docs (KAI-162): containers like boards, with a document as content ----
@@ -115,11 +137,58 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     return call.req.query.format === 'markdown' ? { markdown: out.markdown } : { body: out };
   });
   endpoint('post', '/docs/:docId/append', 'boards:write', async (call) => ({ body: await appendToDoc(call, call.req.params.docId, body(call.req)) }));
+  // Targeted edits and comments on blocks (#61).
+  endpoint('post', '/docs/:docId/edit', 'boards:write', async (call) => ({ body: await editDocFor(call, call.req.params.docId, body(call.req)) }));
+  endpoint('get', '/docs/:docId/comments', 'boards:read', async (call) => ({ body: await listDocComments(call, call.req.params.docId) }));
+  endpoint('post', '/docs/:docId/comments', 'comments:write', async (call) => ({ status: 201, body: await addDocComment(call, call.req.params.docId, body(call.req)) }));
+  endpoint('post', '/docs/:docId/comments/:threadId/replies', 'comments:write', async (call) => ({
+    status: 201,
+    body: await replyToDocComment(call, call.req.params.docId, call.req.params.threadId, body(call.req)),
+  }));
 
   // ---- search and object addresses (KAI-151, KAI-227): the app's rules, the API's switch and downloads policy ----
   endpoint('get', '/search', 'boards:read', async (call) => ({ body: await searchContent(call, call.req.query) }));
   endpoint('post', '/objects/resolve', 'boards:read', async (call) => ({ body: await resolveForApi(call, body(call.req).uris) }));
   endpoint('get', '/objects/backlinks', 'boards:read', async (call) => ({ body: await backlinksForApi(call, call.req.query.uri) }));
+
+  // ---- board pictures drawn on the server (#33): PNG / SVG / PDF, an export like the app's ----
+  /** A drawn board as a download: never rendered as a page of ours (an SVG could carry markup). */
+  const sendFile = (res: Response, f: { body: Buffer; contentType: string; filename: string }) => {
+    res.setHeader('Content-Type', f.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${f.filename.replace(/[^ -~]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(f.filename)}`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox");
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(f.body);
+  };
+  endpoint('post', '/boards/:boardId/export', 'boards:read', async (call) => {
+    const b = body(call.req);
+    if (b.link === true) return { status: 201, body: await exportLink(call, call.req.params.boardId, b) };
+    const file = await renderForApi(call, call.req.params.boardId, b);
+    return { send: (res) => sendFile(res, file) };
+  });
+  // The single-use download link (MCP export_board, or link: true above): the ticket is the credential.
+  ENDPOINTS.push({ method: 'get', path: '/exports/:ticket', scope: null });
+  r.get('/exports/:ticket', (req: Request, res: Response, next) => {
+    void (async () => {
+      let call: api.ApiCall | null = null;
+      let boardId: string | undefined;
+      let status = 500;
+      try {
+        const redeemed = await redeemExport(req, req.params.ticket);
+        call = redeemed.call;
+        boardId = redeemed.boardId;
+        const file = await renderForApi(call, boardId, redeemed.spec);
+        status = 200;
+        sendFile(res.status(200), file);
+      } catch (e) {
+        status = e instanceof HttpError ? e.status : 500;
+        next(e);
+      } finally {
+        if (call) await api.recordApiCall(call, 'GET /api/v1/exports/:ticket', status, boardId);
+      }
+    })();
+  });
 
   // ---- reading a board ----
   endpoint('get', '/boards/:boardId/outline', 'boards:read', async (call) => {
@@ -179,6 +248,10 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     if (!Array.isArray(b.ids) || !b.ids.length || b.ids.some((i) => typeof i !== 'string')) throw badRequest('Send { ids: [ … ], confirm: true }');
     return { body: await api.deleteItems(call, call.req.params.boardId, [...new Set(b.ids as string[])], b.confirm, true) };
   });
+
+  // ---- groups (#170): items selected and moved together ----
+  endpoint('post', '/boards/:boardId/groups', 'boards:write', async (call) => ({ status: 201, body: await api.groupItems(call, call.req.params.boardId, body(call.req)) }));
+  endpoint('delete', '/boards/:boardId/groups/:groupId', 'boards:write', async (call) => ({ body: await api.ungroupItems(call, call.req.params.boardId, call.req.params.groupId) }));
 
   // Layout from structure: the caller says what, Freero places it (preview writes nothing;
   // suggestions proposes it for people to accept, KAI-169).

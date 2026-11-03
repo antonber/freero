@@ -8,6 +8,7 @@ import { Copy, Pencil, Plus, RefreshCw, RotateCw, ScrollText, Send, Trash2 } fro
 import {
   EVENT_TYPES,
   type FreeroEventType,
+  type ProjectSummary,
   type WebhookDeliveryInfo,
   type WebhookEndpointInfo,
   type WebhookFormat,
@@ -64,12 +65,29 @@ interface Draft {
   events: FreeroEventType[];
   /** A board or item link ('' = every board), KAI-249. */
   scope: string;
+  /** Only this project's boards ('' = no project filter), #48. */
+  projectId: string;
 }
 
 /** An endpoint's scope as an address the form shows and sends back unchanged. */
 const scopeAddress = (s: WebhookEndpointInfo['scope']): string => (s ? `freero://board/${s.boardId}${s.itemId ? `#${s.itemId}` : ''}` : '');
 
-function EndpointForm({ initial, editing, busy, onSubmit, onCancel }: { initial: Draft; editing: boolean; busy: boolean; onSubmit: (d: Draft) => void; onCancel: () => void }) {
+function EndpointForm({
+  initial,
+  editing,
+  busy,
+  projects,
+  onSubmit,
+  onCancel,
+}: {
+  initial: Draft;
+  editing: boolean;
+  busy: boolean;
+  projects: ProjectSummary[];
+  onSubmit: (d: Draft) => void;
+  onCancel: () => void;
+}) {
+  const projectOptions: SelectOption<string>[] = [{ value: '', label: 'Every project' }, ...projects.map((p) => ({ value: p.id, label: p.name }))];
   const [d, setD] = useState(initial);
   const toggle = (t: FreeroEventType, on: boolean) => setD((x) => ({ ...x, events: on ? [...new Set([...x.events, t])] : x.events.filter((e) => e !== t) }));
   const submit = (e: FormEvent) => {
@@ -96,6 +114,12 @@ function EndpointForm({ initial, editing, busy, onSubmit, onCancel }: { initial:
         onChange={(e) => setD({ ...d, scope: e.target.value })}
         hint="Empty: every board the whole team can open. A board: only its events. An item (a frame, or an agent's Tasks kanban): only changes and comments on it and what sits in it."
       />
+      {projects.length && !d.scope.trim() ? (
+        <label className="fr-admin-hooks__field">
+          <span className="fr-admin-row__label">Project</span>
+          <Select<string> aria-label="Project" value={d.projectId} onChange={(projectId) => setD({ ...d, projectId })} options={projectOptions} />
+        </label>
+      ) : null}
       <label className="fr-admin-hooks__field">
         <span className="fr-admin-row__label">Format</span>
         <Select<WebhookFormat> aria-label="Format" value={d.format} onChange={(format) => setD({ ...d, format })} options={FORMATS} />
@@ -212,6 +236,15 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
   const [secret, setSecret] = useState<{ value: string; rotated: boolean } | null>(null);
   const [log, setLog] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<WebhookEndpointInfo | null>(null);
+  // Projects the whole team can open: the only ones a webhook may be limited to (#48).
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  useEffect(() => {
+    api.listProjects(workspace.id).then(
+      (r) => setProjects(r.projects.filter((p) => p.access === 'workspace')),
+      () => setProjects([]),
+    );
+  }, [workspace.id]);
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? 'a project';
 
   const load = useCallback(() => {
     api.webhooks(workspace.id).then(
@@ -232,11 +265,13 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
           format: d.format,
           events: d.events,
           ...(d.scope.trim() !== scopeAddress(form.edit.scope) ? { scope: d.scope.trim() || null } : {}),
+          // A board or item scope replaces a project filter.
+          ...((d.scope.trim() ? '' : d.projectId) !== (form.edit.projectId ?? '') ? { projectId: (d.scope.trim() ? '' : d.projectId) || null } : {}),
         });
         replace(endpoint);
         notify('Webhook saved', 'success');
       } else {
-        const r = await api.createWebhook(workspace.id, { url: d.url.trim(), description: d.description, format: d.format, events: d.events, ...(d.scope.trim() ? { scope: d.scope.trim() } : {}) });
+        const r = await api.createWebhook(workspace.id, { url: d.url.trim(), description: d.description, format: d.format, events: d.events, ...(d.scope.trim() ? { scope: d.scope.trim() } : d.projectId ? { projectId: d.projectId } : {}) });
         setEndpoints((list) => [...(list ?? []), r.endpoint]);
         setSecret({ value: r.secret, rotated: false });
       }
@@ -322,6 +357,7 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
                     Only {e.scope.itemId ? 'one item on ' : ''}“{e.scope.boardTitle ?? 'a board that is gone'}”
                   </div>
                 ) : null}
+                {e.projectId ? <div className="fr-admin-hooks__desc">Only boards in “{projectName(e.projectId)}”</div> : null}
               </div>
               <Toggle aria-label={`Send to ${e.url}`} checked={e.enabled} onChange={(on) => void setEnabled(e, on)} />
             </div>
@@ -368,7 +404,12 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
             key={form.edit?.id ?? 'new'}
             editing={!!form.edit}
             busy={busy}
-            initial={form.edit ? { url: '', description: form.edit.description, format: form.edit.format, events: form.edit.events, scope: scopeAddress(form.edit.scope) } : { url: '', description: '', format: 'json', events: DEFAULT_EVENTS, scope: '' }}
+            projects={projects}
+            initial={
+              form.edit
+                ? { url: '', description: form.edit.description, format: form.edit.format, events: form.edit.events, scope: scopeAddress(form.edit.scope), projectId: form.edit.projectId ?? '' }
+                : { url: '', description: '', format: 'json', events: DEFAULT_EVENTS, scope: '', projectId: '' }
+            }
             onSubmit={(d) => void save(d)}
             onCancel={() => setForm(null)}
           />

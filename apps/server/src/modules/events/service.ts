@@ -46,7 +46,8 @@ function boardEvent(key: string, r: BoardEventRecord): repo.NewEvent {
   if (r.copyOf) data.copyOf = r.copyOf;
   if (r.fromWorkspace) data.fromWorkspace = r.fromWorkspace;
   if (r.toWorkspace) data.toWorkspace = r.toWorkspace;
-  return { sourceKey: `outbox:${key}`, type: r.type, workspaceId: r.workspaceId, boardId: r.boardId, objectUri: boardUri(r.boardId), actor: { kind: 'user', id: r.actorId }, data, at: r.at };
+  const actor = r.actorId ? { kind: 'user' as const, id: r.actorId } : { kind: 'system' as const, id: null };
+  return { sourceKey: `outbox:${key}`, type: r.type, workspaceId: r.workspaceId, boardId: r.boardId, objectUri: boardUri(r.boardId), actor, data, at: r.at };
 }
 
 function memberEvent(key: string, r: MemberEventRecord, workspaceId: string): repo.NewEvent {

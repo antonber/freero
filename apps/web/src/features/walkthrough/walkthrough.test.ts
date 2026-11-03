@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraShowing, parseCaptionLines, pointerAt, TimelineRecorder, viewAt, type ViewRect } from './lib/timeline';
+import { cameraShowing, parseCaptionLines, pointerAt, reactionMarks, TimelineRecorder, viewAt, type ViewRect } from './lib/timeline';
 
 const rect = (x: number, y = 0): ViewRect => ({ x, y, w: 1600, h: 900 });
 
@@ -54,5 +54,14 @@ it('typed captions each last until the next one starts (in time order), and line
   expect(parseCaptionLines('0:12 Then the roadmap\nnot a caption\n0:00 Welcome', 20_000)).toEqual([
     { start: 0, end: 12_000, text: 'Welcome' },
     { start: 12_000, end: 20_000, text: 'Then the roadmap' },
+  ]);
+});
+
+it('a burst of reactions at one moment is one mark on the timeline with its counts (and knows yours); reactions far apart stay apart', () => {
+  const r = (id: string, atMs: number, emoji: string, mine = false) => ({ id, atMs, emoji, mine });
+  const marks = reactionMarks([r('a', 61_000, '🎉'), r('b', 60_000, '🎉'), r('c', 60_500, '👍', true), r('d', 300_000, '🤔')], 600_000);
+  expect(marks).toEqual([
+    { atMs: 60_000, mine: 'c', counts: [{ emoji: '🎉', n: 2 }, { emoji: '👍', n: 1 }] },
+    { atMs: 300_000, mine: null, counts: [{ emoji: '🤔', n: 1 }] },
   ]);
 });

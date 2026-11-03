@@ -6,6 +6,7 @@ import { ENGAGE_RESULTS_COLLECTION, type ActivityElement, type ActivityResults, 
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, getAccount, markEmailVerified, type Actor } from '../auth/index';
 import { createBoard } from '../boards/index';
+import { inviteBoardMember } from '../members/index';
 import { changeBoard, snapshotBoardDoc } from '../realtime/index';
 import * as service from './service';
 
@@ -114,4 +115,87 @@ it('Q&A: each person upvotes a question once, and the most upvoted question come
     ['When do we ship?', 0],
   ]);
   expect(results?.questions?.every((q) => q.by === undefined)).toBe(true);
+});
+
+it('the phone answer page gets the activity from the server alone: its question as plain text and its choices, and only editors may run it', async () => {
+  const [owner, viewer] = [await person('Owner'), await person('Viewer')];
+  const { boardId, id } = await boardWith(owner, { question: '<p>Lunch <b>today</b>?</p>' });
+  const seen = await service.activityState(boardId, id, await as(viewer));
+  expect(seen.activity).toMatchObject({ id, kind: 'poll', question: 'Lunch today?', options: [{ id: 'a', text: 'Pizza' }, { id: 'b', text: 'Salad' }], guests: true });
+  expect(seen.canRun).toBe(false);
+  expect((await service.activityState(boardId, id, await as(owner))).canRun).toBe(true);
+});
+
+it('2×2 matrix: each item shows where people put it on average and how far they disagree', async () => {
+  const [owner, ann, bob] = [await person('Owner'), await person('Ann'), await person('Bob')];
+  const { boardId, id } = await boardWith(owner, { kind: 'matrix', axes: { x: ['Low effort', 'High effort'], y: ['Low impact', 'High impact'] } });
+  await service.answer(boardId, id, await as(ann), { positions: { a: { x: 0.2, y: 0.9 }, b: { x: 0.5, y: 0.5 } } });
+  await service.answer(boardId, id, await as(bob), { positions: { a: { x: 0.4, y: 0.7 } } });
+  await expect(service.answer(boardId, id, await as(bob), { positions: { a: { x: 1.4, y: 0.7 } } })).rejects.toMatchObject({ status: 400 });
+  expect((await boardDoc(boardId)).results?.matrix).toEqual([
+    { optionId: 'a', count: 2, x: 0.3, y: 0.8, sx: 0.1, sy: 0.1 },
+    { optionId: 'b', count: 1, x: 0.5, y: 0.5, sx: 0, sy: 0 },
+  ]);
+});
+
+it('quiz: the right answer reaches the board only once shown, a late answer is refused, the faster right answer scores more, and the leaderboard waits for the reveal', async () => {
+  const [owner, ann, bob, cat] = [await person('Owner'), await person('Ann'), await person('Bob'), await person('Cat')];
+  const questions = [
+    { id: 'q1', text: 'Capital of Peru?', options: [{ id: 'lima', text: 'Lima' }, { id: 'cusco', text: 'Cusco' }], seconds: 20 },
+    { id: 'q2', text: 'Primes?', options: [{ id: 'two', text: '2' }, { id: 'four', text: '4' }, { id: 'five', text: '5' }] },
+  ];
+  const { boardId, id } = await boardWith(owner, { kind: 'quiz', options: [], questions, anonymous: false, results: 'reveal' });
+  await service.setKey(boardId, id, await as(owner), { q1: ['lima'], q2: ['two', 'five'] });
+  await expect(service.answer(boardId, id, await as(ann), { quiz: { q1: { choices: ['lima'] } } })).rejects.toMatchObject({ status: 409 });
+
+  const t0 = Date.now();
+  await service.runQuiz(boardId, id, await as(owner), { step: 0 }, t0);
+  await service.answer(boardId, id, await as(ann), { quiz: { q1: { choices: ['lima'] } } }, t0 + 2000);
+  await service.answer(boardId, id, await as(bob), { quiz: { q1: { choices: ['lima'] } } }, t0 + 15000);
+  await service.answer(boardId, id, await as(cat), { quiz: { q1: { choices: ['cusco'] } } }, t0 + 5000);
+  await expect(service.answer(boardId, id, await as(cat), { quiz: { q1: { choices: ['lima'] } } }, t0 + 25000)).rejects.toMatchObject({ status: 400 });
+  let { json, results } = await boardDoc(boardId);
+  expect(results?.quiz).toEqual({ questionId: 'q1', answered: 3 });
+  expect(json).not.toContain('"correct"');
+
+  await service.runQuiz(boardId, id, await as(owner), { showAnswer: true });
+  ({ results } = await boardDoc(boardId));
+  expect(results?.quiz?.correct).toEqual(['lima']);
+  expect(results?.quiz?.counts).toEqual([{ optionId: 'lima', count: 2 }, { optionId: 'cusco', count: 1 }]);
+  await expect(service.answer(boardId, id, await as(cat), { quiz: { q1: { choices: ['lima'] } } })).rejects.toMatchObject({ status: 409 });
+
+  const annScore = (await service.activityState(boardId, id, await as(ann))).myScore!;
+  const bobScore = (await service.activityState(boardId, id, await as(bob))).myScore!;
+  expect(annScore).toBeGreaterThan(bobScore);
+  expect(bobScore).toBeGreaterThan(0);
+  expect(results?.quiz?.leaderboard).toBeUndefined();
+  // Participants never get the key; whoever runs the quiz does.
+  expect((await service.activityState(boardId, id, await as(ann))).key).toBeUndefined();
+
+  await service.reveal(boardId, id, await as(owner), true);
+  ({ results } = await boardDoc(boardId));
+  expect(results?.quiz?.leaderboard?.map((r) => [r.name, r.right])).toEqual([['Ann', 1], ['Bob', 1], ['Cat', 0]]);
+});
+
+it('a copied quiz takes its answer key only for someone who may edit the board it came from; a duplicated board keeps its keys for an editor of the original, not a viewer', async () => {
+  const [owner, ed] = [await person('Owner'), await person('Ed')];
+  const questions = [{ id: 'q1', text: 'Capital of Peru?', options: [{ id: 'lima', text: 'Lima' }, { id: 'cusco', text: 'Cusco' }] }];
+  const quiz = { kind: 'quiz' as const, options: [], questions };
+  const source = await boardWith(owner, quiz);
+  await service.setKey(source.boardId, source.id, await as(owner), { q1: ['lima'] });
+
+  // Pasted onto another board where Ed edits too, but Ed can't edit the source.
+  const target = await boardWith(owner, quiz);
+  await inviteBoardMember(null, target.boardId, { ...owner, emailVerified: true } as never, { email: ed.email, role: 'editor' });
+  await expect(service.copyKey(target.boardId, target.id, await as(ed), { boardId: source.boardId, activityId: source.id })).rejects.toMatchObject({ status: 403 });
+  expect((await service.activityState(target.boardId, target.id, await as(owner))).key).toEqual({});
+  expect((await service.copyKey(target.boardId, target.id, await as(owner), { boardId: source.boardId, activityId: source.id })).key).toEqual({ q1: ['lima'] });
+
+  // A duplicate keeps the same activity ids.
+  const byEditor = await boardWith(owner, quiz);
+  await service.keysOnDuplicate({ boardId: byEditor.boardId, sourceId: source.boardId, sourceRole: 'editor' });
+  expect((await service.activityState(byEditor.boardId, byEditor.id, await as(owner))).key).toEqual({ q1: ['lima'] });
+  const byViewer = await boardWith(owner, quiz);
+  await service.keysOnDuplicate({ boardId: byViewer.boardId, sourceId: source.boardId, sourceRole: 'viewer' });
+  expect((await service.activityState(byViewer.boardId, byViewer.id, await as(owner))).key).toEqual({});
 });

@@ -2,14 +2,16 @@
 // presenting and PDF export use. Drag to reorder, skip, duplicate, give a slide a layout, and
 // write its speaker notes (the present feature's presenter notes, written through its command).
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, EyeOff, Eye, LayoutTemplate, MoreHorizontal, Play, Plus, Presentation, Trash2 } from 'lucide-react';
+import { EyeOff, MoreHorizontal, Play, Plus, Presentation, SquarePen } from 'lucide-react';
 import type { BoardElement, FrameElement } from '@freero/shared';
-import { DockHeader, useCanEdit, useCollection, useElements, useSelection, type Editor } from '@engine';
-import { Button, Menu, type MenuItem } from '@ui';
-import { isFrame, orderFrames } from './frames';
-import { applyLayout, duplicateSlide, moveSlide, newSlide, setSkipped, zoomToFrame } from './actions';
-import { SLIDE_LAYOUTS, type SlideLayoutId } from './layouts';
-import { Thumb } from './Thumb';
+import { DockHeader, useCanEdit, useCollection, useSelection, type Editor } from '@engine';
+import { Button, Menu } from '@ui';
+import { useSlides } from './useSlides';
+import { moveSlide, newSlide, zoomToFrame } from './actions';
+import type { SlideLayoutId } from './layouts';
+import { layoutMenu, slideMenu } from './slideMenu';
+import { editSlide, slideEditStore } from './slideEditor';
+import { SlideThumb } from './Thumb';
 
 export const DECK_PANEL_ID = 'frame.deck';
 /** Presenter notes (owned by features/present; read here, written with `present.setNote`). */
@@ -22,13 +24,6 @@ const noteText = (v: unknown) => {
   const t = (v as { text?: unknown } | undefined)?.text;
   return typeof t === 'string' ? t : '';
 };
-
-function layoutMenu(onPick: (id: SlideLayoutId | null) => void, blank: boolean): MenuItem[] {
-  return [
-    ...(blank ? [{ id: 'blank', label: 'Blank', onSelect: () => onPick(null) }] : []),
-    ...SLIDE_LAYOUTS.map((l) => ({ id: l.id, label: l.label, icon: LayoutTemplate, onSelect: () => onPick(l.id) })),
-  ];
-}
 
 function Notes({ editor, frame, text, canEdit }: { editor: Editor; frame: FrameElement; text: string; canEdit: boolean }) {
   const [draft, setDraft] = useState(text);
@@ -76,24 +71,16 @@ const Slide = memo(function Slide(props: {
   const { editor, frame, canEdit } = props;
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
-  const items: MenuItem[] = [
-    { id: 'layout', label: 'Layout', icon: LayoutTemplate, onSelect: () => undefined, submenu: layoutMenu((id) => id && applyLayout(editor, frame.id, id), false) },
-    { id: 'dup', label: 'Duplicate slide', icon: Copy, onSelect: () => duplicateSlide(editor, frame.id) },
-    frame.skip
-      ? { id: 'unskip', label: 'Include in presentation', icon: Eye, onSelect: () => setSkipped(editor, [frame], false) }
-      : { id: 'skip', label: 'Skip in presentation', icon: EyeOff, onSelect: () => setSkipped(editor, [frame], true) },
-    { divider: true },
-    { id: 'delete', label: 'Delete slide', icon: Trash2, danger: true, onSelect: () => editor.remove([frame.id]) },
-  ];
+  const items = slideMenu(editor, frame, [{ id: 'edit', label: 'Edit slide', icon: SquarePen, onSelect: () => editSlide(editor, frame.id) }]);
   return (
     <li
       data-frame-id={frame.id}
       className={`fr-deck__slide${props.selected ? ' is-selected' : ''}${frame.skip ? ' is-skipped' : ''}${props.dragging ? ' is-dragging' : ''}${props.dropSide ? ` drop-${props.dropSide}` : ''}`}
     >
-      <div className="fr-deck__card" onPointerDown={props.onPointerDown}>
+      <div className="fr-deck__card" onPointerDown={props.onPointerDown} onDoubleClick={() => editSlide(editor, frame.id)}>
         <span className="fr-deck__num">{props.position + 1}</span>
         <span className="fr-deck__thumb" style={{ height: THUMB_H }}>
-          <Thumb frame={frame} children={props.children} w={THUMB_W} h={THUMB_H} />
+          <SlideThumb editor={editor} frame={frame} children={props.children} w={THUMB_W} h={THUMB_H} />
           {frame.skip && (
             <span className="fr-deck__skipped">
               <EyeOff size={12} aria-hidden /> Skipped
@@ -125,7 +112,6 @@ const Slide = memo(function Slide(props: {
 });
 
 export function DeckPanel({ editor }: { editor: Editor }) {
-  const all = useElements();
   const selection = useSelection();
   const canEdit = useCanEdit();
   const notes = useCollection<unknown>(NOTES);
@@ -134,17 +120,7 @@ export function DeckPanel({ editor }: { editor: Editor }) {
   const [adding, setAdding] = useState(false);
   const [drag, setDrag] = useState<{ id: string; to: number } | null>(null);
 
-  const { frames, childrenOf } = useMemo(() => {
-    const fs = orderFrames(all.filter(isFrame));
-    const map = new Map<string, BoardElement[]>();
-    for (const el of all) {
-      if (!el.frameId || el.type === 'frame') continue;
-      const list = map.get(el.frameId) ?? [];
-      list.push(el);
-      map.set(el.frameId, list);
-    }
-    return { frames: fs, childrenOf: map };
-  }, [all]);
+  const { frames, childrenOf } = useSlides();
   const noteOf = useMemo(() => new Map(notes.map(([k, v]) => [k, noteText(v)])), [notes]);
   const shown = frames.filter((f) => !f.skip).length;
 
@@ -180,6 +156,7 @@ export function DeckPanel({ editor }: { editor: Editor }) {
       }
       const fresh = editor.getElement<FrameElement>(frame.id);
       if (!fresh) return;
+      if (slideEditStore(editor).getState().frameId) return editSlide(editor, fresh.id);
       editor.select([fresh.id]);
       zoomToFrame(editor, fresh);
     };

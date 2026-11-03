@@ -12,7 +12,7 @@ export const mountPath = '/';
 
 /** Owners/admins of a team workspace, or of an organisation (#108: for all its workspaces). */
 async function manager(req: Request) {
-  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { organisation: true });
+  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { organisation: true, scope: 'security' });
   if (ws.kind === 'personal') throw badRequest('Provisioning is set up for a team workspace');
   return ws;
 }

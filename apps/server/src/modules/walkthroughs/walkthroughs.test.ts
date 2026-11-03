@@ -14,7 +14,7 @@ import { notificationsExportOf } from '../notifications/index';
 import { readBoardView } from '../realtime/index';
 import { saveUpload } from '../uploads/index';
 import { addComment, createWalkthrough, recordView, walkthroughUploadReferences } from './index';
-import { deleteWalkthrough } from './service';
+import { addReaction, deleteWalkthrough, listReactions, setChapters } from './service';
 
 let dir = '';
 beforeAll(async () => {
@@ -91,4 +91,51 @@ it('a comment’s @mention notifies a member at that moment, never someone who c
   expect((await types(owner)).map((x) => x.type)).toEqual(['walkthrough.comment']);
   // A viewer may watch but not comment.
   await expect(addComment(b.id, w.id, mate.id, { atMs: 0, text: 'me too' })).rejects.toMatchObject({ status: 403 });
+});
+
+// ---- #127: chapters and reactions ----
+
+it('a reaction lands at its moment and only its author sees it as theirs; a viewer can’t react; the author is told once per person, not per click', async () => {
+  const [owner, fan, watcher] = await Promise.all([user('Narrator'), user('Fan'), user('Watcher')]);
+  const b = await createBoard(owner.id, 'Roadmap', '', 'none');
+  await inviteBoardMember(null, b.id, owner, { email: fan.email, role: 'commenter' });
+  await inviteBoardMember(null, b.id, owner, { email: watcher.email, role: 'viewer' });
+  const w = await record(owner.id, b.id, await saveUpload(webm(), 'video/webm', owner.id));
+
+  await addReaction(b.id, w.id, fan.id, { atMs: 1200, emoji: '🎉' });
+  await addReaction(b.id, w.id, fan.id, { atMs: 1300, emoji: '👍' });
+  await expect(addReaction(b.id, w.id, fan.id, { atMs: 100, emoji: '💩' })).rejects.toMatchObject({ status: 400 });
+  await expect(addReaction(b.id, w.id, watcher.id, { atMs: 100, emoji: '👍' })).rejects.toMatchObject({ status: 403 });
+
+  expect((await listReactions(b.id, w.id, fan.id)).map((r) => [r.atMs, r.emoji, r.mine])).toEqual([
+    [1200, '🎉', true],
+    [1300, '👍', true],
+  ]);
+  expect((await listReactions(b.id, w.id, owner.id)).every((r) => !r.mine)).toBe(true);
+  const told = (await notificationsExportOf(owner.id)).notifications.filter((x) => (x as { type: string }).type === 'walkthrough.reaction');
+  expect(told).toHaveLength(1);
+});
+
+it('saved chapters keep only moments of the recording, one per moment, in time order — and only its author or an editor may set them', async () => {
+  const [owner, critic] = await Promise.all([user('Chapters'), user('Critic')]);
+  const b = await createBoard(owner.id, 'Plan', '', 'none');
+  await inviteBoardMember(null, b.id, owner, { email: critic.email, role: 'commenter' });
+  const w = await record(owner.id, b.id, await saveUpload(webm(), 'video/webm', owner.id));
+  const body = {
+    summary: 'What we plan',
+    chapters: [
+      { atMs: 1500, title: 'Next' },
+      { atMs: 0, title: 'Intro' },
+      { atMs: 1500, title: 'Twice' },
+      { atMs: 9000, title: 'After the end' },
+    ],
+  };
+
+  await expect(setChapters(b.id, w.id, critic.id, body)).rejects.toMatchObject({ status: 403 });
+  const saved = await setChapters(b.id, w.id, owner.id, body);
+  expect(saved.chapters).toEqual([
+    { atMs: 0, title: 'Intro' },
+    { atMs: 1500, title: 'Next' },
+  ]);
+  expect(saved.summary).toBe('What we plan');
 });

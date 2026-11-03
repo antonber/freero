@@ -1,4 +1,4 @@
-// Curated emoji set for the picker. Each entry: "<emoji> <search words…>".
+// Curated emoji set for pickers (the emoji tool, reactions). Each entry: "<emoji> <search words…>".
 export interface EmojiEntry {
   emoji: string;
   words: string;

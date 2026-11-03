@@ -8,7 +8,9 @@ import {
   ENGAGE_MAX_QUESTIONS_PER_PERSON,
   ENGAGE_RESULTS_COLLECTION,
   guestDisplayName,
+  richTextToPlain,
   type ActivityElement,
+  type ActivityInfo,
   type ActivityResults,
   type ActivityState,
   type Role,
@@ -18,9 +20,9 @@ import { newId } from '../../platform/ids';
 import type { Actor } from '../auth/index';
 import { actorId as idOf } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
-import { readBoardView, writeServerCollection } from '../realtime/index';
+import { changeBoard, readBoardView, writeServerCollection } from '../realtime/index';
 import * as repo from './repo';
-import { AnswerError, cleanAnswer, computeResults } from './rules';
+import { AnswerError, cleanAnswer, cleanKey, cleanQuizAnswer, computeResults, maxChoicesOf, openQuestion, optionIds, quizQuestions, quizScore, scaleOf } from './rules';
 
 /** Answers kept per activity (a workshop, a town hall): more is refused, never silently dropped. */
 const MAX_ANSWERS = 5000;
@@ -50,9 +52,13 @@ async function load(boardId: string, activityId: string, actor: Actor): Promise<
 }
 
 /** Why this person can't answer now (null: they can). */
-function refusal(c: Ctx): string | null {
+function refusal(c: Ctx, now = Date.now()): string | null {
   if (c.activity.closed) return 'Answers are closed';
   if (c.guest && !c.activity.guests) return 'Sign in to answer this one';
+  if (c.activity.kind === 'quiz') {
+    const q = openQuestion(c.activity, now);
+    if (typeof q === 'string') return q;
+  }
   return null;
 }
 
@@ -67,11 +73,12 @@ function requireEditor(c: Ctx): void {
 
 async function resultsOf(c: Ctx, now = Date.now()): Promise<{ results: ActivityResults; revealed: boolean }> {
   const revealed = c.activity.results !== 'reveal' || (await repo.isRevealed(c.boardId, c.activity.id));
-  const [answers, questions] = await Promise.all([
+  const [answers, questions, key] = await Promise.all([
     c.activity.kind === 'qna' ? Promise.resolve([]) : repo.answersOf(c.boardId, c.activity.id, MAX_ANSWERS),
     c.activity.kind === 'qna' ? repo.questionsOf(c.boardId, c.activity.id) : Promise.resolve([]),
+    c.activity.kind === 'quiz' ? repo.quizKey(c.boardId, c.activity.id) : Promise.resolve({}),
   ]);
-  return { results: computeResults(c.activity, answers, questions, !revealed, now), revealed };
+  return { results: computeResults(c.activity, answers, questions, !revealed, now, key), revealed };
 }
 
 // One publish per activity at a time; changes arriving meanwhile are folded into one more round,
@@ -98,14 +105,71 @@ function publish(c: Ctx): Promise<void> {
   return entry.done;
 }
 
-async function stateFor(c: Ctx): Promise<ActivityState> {
-  const [{ results, revealed }, mine, my] = await Promise.all([
-    resultsOf(c),
+async function stateFor(c: Ctx, now = Date.now()): Promise<ActivityState> {
+  const quiz = c.activity.kind === 'quiz';
+  const [{ results, revealed }, mine, my, key] = await Promise.all([
+    resultsOf(c, now),
     c.activity.kind === 'qna' ? Promise.resolve(null) : repo.myAnswer(c.boardId, c.activity.id, c.personId),
     c.activity.kind === 'qna' ? repo.mine(c.boardId, c.activity.id, c.personId) : Promise.resolve({ upvotes: [], questions: [] }),
+    quiz ? repo.quizKey(c.boardId, c.activity.id) : Promise.resolve({}),
   ]);
-  const why = refusal(c);
-  return { results, mine, myUpvotes: my.upvotes, myQuestions: my.questions, revealed, canAnswer: !why, ...(why ? { reason: why } : {}) };
+  const why = refusal(c, now);
+  return {
+    results,
+    mine,
+    myUpvotes: my.upvotes,
+    myQuestions: my.questions,
+    revealed,
+    canAnswer: !why,
+    ...(why ? { reason: why } : {}),
+    activity: infoOf(c.activity),
+    canRun: canEdit(c.role),
+    now,
+    ...(quiz ? { myScore: quizScore(c.activity, key, mine).score } : {}),
+    ...(quiz && canEdit(c.role) ? { key } : {}),
+  };
+}
+
+/** The activity as the answer page needs it (#40): what the element says, the question as plain text. */
+function infoOf(a: ActivityElement): ActivityInfo {
+  const ids = optionIds(a);
+  return {
+    id: a.id,
+    kind: a.kind,
+    question: richTextToPlain(typeof a.question === 'string' ? a.question : '').trim(),
+    options: (Array.isArray(a.options) ? a.options : []).filter((o) => ids.includes(o?.id)).map((o) => ({ id: o.id, text: typeof o.text === 'string' ? o.text : '' })),
+    maxChoices: maxChoicesOf(a),
+    scale: scaleOf(a),
+    anonymous: !!a.anonymous,
+    results: a.results === 'reveal' ? 'reveal' : 'live',
+    guests: !!a.guests,
+    closed: !!a.closed,
+    color: typeof a.color === 'string' ? a.color : '',
+    ...(a.kind === 'matrix' ? { axes: axesOf(a) } : {}),
+    ...(a.kind === 'quiz' ? { questions: quizQuestions(a), quiz: a.quiz && typeof a.quiz.step === 'number' ? a.quiz : { step: -1, openedAt: 0, showAnswer: false } } : {}),
+  };
+}
+
+const axesOf = (a: ActivityElement): NonNullable<ActivityElement['axes']> => {
+  const pair = (v: unknown, d: [string, string]): [string, string] =>
+    Array.isArray(v) && v.length === 2 && v.every((s) => typeof s === 'string') ? [v[0], v[1]] : d;
+  return { x: pair(a.axes?.x, ['Low', 'High']), y: pair(a.axes?.y, ['Low', 'High']) };
+};
+
+/**
+ * For an AI report (#148, modules/ai): the activity and its results as everyone on the board sees
+ * them — never answers or who gave them, and nothing of a sealed activity until it is revealed
+ * (409 `engage_sealed`). 404 when the person can't see the activity.
+ */
+export async function revealedResults(boardId: string, activityId: string, userId: string): Promise<{ activity: ActivityElement; results: ActivityResults }> {
+  const { role } = await requireBoardAccess(boardId, userId);
+  const view = await readBoardView(boardId, { userId, role });
+  const hit = view.elements.find((e) => e.el.id === activityId && e.el.type === 'activity' && e.layer !== 'private');
+  if (!hit) throw notFound('This activity is no longer on the board');
+  const c: Ctx = { boardId, personId: userId, name: '', guest: false, role, activity: hit.el as ActivityElement };
+  const { results, revealed } = await resultsOf(c);
+  if (!revealed || results.sealed) throw new HttpError(409, 'Reveal the results first: a report reads only results everyone can see.', 'engage_sealed');
+  return { activity: c.activity, results };
 }
 
 export async function activityState(boardId: string, activityId: string, actor: Actor): Promise<ActivityState> {
@@ -118,7 +182,7 @@ export async function answer(boardId: string, activityId: string, actor: Actor, 
   requireAnswering(c);
   let value;
   try {
-    value = cleanAnswer(c.activity, raw);
+    value = c.activity.kind === 'quiz' ? cleanQuizAnswer(c.activity, await repo.myAnswer(boardId, activityId, c.personId), raw, now) : cleanAnswer(c.activity, raw);
   } catch (e) {
     if (e instanceof AnswerError) throw badRequest(e.message);
     throw e;
@@ -134,6 +198,8 @@ export async function answer(boardId: string, activityId: string, actor: Actor, 
 export async function withdraw(boardId: string, activityId: string, actor: Actor): Promise<ActivityState> {
   const c = await load(boardId, activityId, actor);
   requireAnswering(c);
+  // A quiz answer counts once given (a withdrawal would let someone peek, then answer again).
+  if (c.activity.kind === 'quiz') throw badRequest('Quiz answers can’t be taken back');
   await repo.deleteAnswer(boardId, activityId, c.personId);
   await publish(c);
   return stateFor(c);
@@ -196,4 +262,67 @@ export async function clear(boardId: string, activityId: string, actor: Actor): 
   await repo.clearActivity(boardId, activityId);
   await publish(c);
   return stateFor(c);
+}
+
+// ---- quiz (#147) ----
+
+/** Editors: the quiz's right answers (kept here, never in the board). */
+export async function setKey(boardId: string, activityId: string, actor: Actor, raw: unknown, now = Date.now()): Promise<ActivityState> {
+  const c = await load(boardId, activityId, actor);
+  requireEditor(c);
+  if (c.activity.kind !== 'quiz') throw badRequest('Only a quiz has right answers');
+  if (!(await repo.setQuizKey(boardId, activityId, cleanKey(c.activity, raw), now))) throw notFound('Board not found');
+  await publish(c);
+  return stateFor(c);
+}
+
+/**
+ * Editors run the quiz: open a question (`step`, its clock starts now on the server's clock) or
+ * show the open question's right answer (`showAnswer`, which closes it). The server writes the
+ * element, so every client and the time limits use the same clock, then publishes the results.
+ */
+export async function runQuiz(boardId: string, activityId: string, actor: Actor, body: { step?: unknown; showAnswer?: unknown }, now = Date.now()): Promise<ActivityState> {
+  const c = await load(boardId, activityId, actor);
+  requireEditor(c);
+  if (c.activity.kind !== 'quiz') throw badRequest('This activity isn’t a quiz');
+  const total = quizQuestions(c.activity).length;
+  const cur = c.activity.quiz ?? { step: -1, openedAt: 0, showAnswer: false };
+  let next = cur;
+  if (typeof body.step === 'number') {
+    if (!Number.isInteger(body.step) || body.step < -1 || body.step >= total) throw badRequest('No such question');
+    next = { step: body.step, openedAt: now, showAnswer: false };
+  } else if (body.showAnswer === true) {
+    if (cur.step < 0) throw badRequest('Open a question first');
+    next = { ...cur, showAnswer: true };
+  } else throw badRequest('Say step or showAnswer');
+  await changeBoard(boardId, { userId: c.personId, role: c.role }, () => ({ change: { update: [{ id: activityId, patch: { quiz: next } }] } }));
+  const fresh = { ...c, activity: { ...c.activity, quiz: next } };
+  await publish(fresh);
+  return stateFor(fresh, now);
+}
+
+/**
+ * Editors: a copied quiz (pasted, duplicated, inserted from a template) takes the answer key of
+ * the quiz it was copied from — read on the server, never through the client — when the person
+ * may edit the board it came from (they could read the key there). Questions keep their ids in a
+ * copy, so the key fits; anything that doesn't is dropped. Nothing to copy: the state as it is.
+ */
+export async function copyKey(boardId: string, activityId: string, actor: Actor, from: { boardId?: unknown; activityId?: unknown }, now = Date.now()): Promise<ActivityState> {
+  const c = await load(boardId, activityId, actor);
+  requireEditor(c);
+  if (c.activity.kind !== 'quiz') throw badRequest('Only a quiz has right answers');
+  if (typeof from.boardId !== 'string' || typeof from.activityId !== 'string') throw badRequest('Say which quiz it was copied from');
+  const source = await requireBoardAccess(from.boardId, c.personId).catch(() => null);
+  if (!source || !canEdit(source.role)) throw forbidden('Only people who can edit the board it came from copy its right answers');
+  const key = await repo.quizKey(from.boardId, from.activityId);
+  if (Object.keys(key).length) {
+    if (!(await repo.setQuizKey(boardId, activityId, cleanKey(c.activity, key), now))) throw notFound('Board not found');
+    await publish(c);
+  }
+  return stateFor(c);
+}
+
+/** A duplicated board (boards' lifecycle event): its quizzes keep their keys, for whoever could edit the source. */
+export async function keysOnDuplicate(e: { boardId: string; sourceId?: string; sourceRole?: Role }, now = Date.now()): Promise<void> {
+  if (e.sourceId && e.sourceRole && canEdit(e.sourceRole)) await repo.copyBoardKeys(e.sourceId, e.boardId, now);
 }

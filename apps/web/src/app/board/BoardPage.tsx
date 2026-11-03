@@ -19,7 +19,7 @@ import { LinkPassword } from './LinkPassword';
 import { RequestAccess } from './RequestAccess';
 import './BoardPage.css';
 
-type Team = { id: string; name: string } | null;
+type Team = { id: string; name: string; company?: { id: string; name: string } | null } | null;
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; board: BoardSummary; team?: Team; ai?: BoardAiStatus | null; trackers?: BoardTrackersResponse['connections'] }
@@ -156,7 +156,7 @@ function ServerBoard({ id }: { id: string }) {
         // A doc's id (KAI-162; an activity entry, an old link): its own page.
         if (board.kind === 'doc') return navigate(`/doc/${encodeURIComponent(id)}${location.search}`, { replace: true });
         const w = workspaces.find((x) => x.id === board.workspaceId && x.kind === 'team' && x.role !== 'guest');
-        setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name } : null, ai, trackers: connections });
+        setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name, company: w.organisation ? { id: w.organisation.id, name: w.organisation.name } : null } : null, ai, trackers: connections });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -224,6 +224,7 @@ function ServerBoard({ id }: { id: string }) {
   return (
     <>
       <BoardEngine host={host} features={features} topbarAccessory={bell} location={location} />
+      {board.archivedAt ? <ArchivedNotice board={board} onUnarchived={retry} /> : null}
       <ShareDialog
         boardId={board.id}
         open={shareOpen}
@@ -238,6 +239,32 @@ function ServerBoard({ id }: { id: string }) {
         onLeft={() => navigate('/app')}
       />
     </>
+  );
+}
+
+/** #153: an archived board is read-only for everyone; its owner or a content admin can bring it back. */
+function ArchivedNotice({ board, onUnarchived }: { board: BoardSummary; onUnarchived: () => void }) {
+  const notify = useToast();
+  const [busy, setBusy] = useState(false);
+  const unarchive = async () => {
+    setBusy(true);
+    try {
+      await api.setBoardArchived(board.id, false);
+      onUnarchived();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not unarchive it', 'error');
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fr-boardpage-archived" role="status">
+      <span>Archived — this board is read-only for everyone.</span>
+      {board.permissions.canArchive ? (
+        <Button size="sm" loading={busy} onClick={() => void unarchive()}>
+          Unarchive
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

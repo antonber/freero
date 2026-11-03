@@ -181,9 +181,26 @@ export interface AppliedChange {
 
 export class BoardChangeError extends Error {}
 
-const KNOWN_TYPES = new Set<ElementType>([
-  'sticky', 'shape', 'text', 'connector', 'pen', 'frame', 'image', 'card', 'emoji', 'mindmap', 'table', 'embed', 'icon', 'kanban', 'pdf', 'swimlane', 'objectlink', 'activity', 'code', 'timeline', 'timelinebar', 'kanbanview', 'diagram',
-]);
+/**
+ * Which element types a REQUEST may create (changeBoard: the REST API, MCP, insert structure,
+ * suggestions) — true — and why the others are app-only (#49). Typed over every ElementType, so a
+ * new element type does not compile until someone decides here.
+ *
+ * media and file stay app-only on purpose: their `src` must be an upload that went through
+ * modules/uploads' byte sniffing and the uploader's quota, and a request must never point an item at
+ * an `/uploads/<name>` it doesn't own (a file card's download is served through the board, so that
+ * would hand out someone else's attachment). Pictures from a URL are possible (#170: the server
+ * fetches and stores them itself). Uploading media and files through the API would need an upload
+ * endpoint answering an ownership-checked token the creation presents — not built.
+ */
+const REQUEST_CREATABLE: Record<ElementType, true | string> = {
+  sticky: true, shape: true, text: true, connector: true, pen: true, frame: true, image: true, card: true, emoji: true, mindmap: true, table: true, embed: true,
+  icon: true, kanban: true, pdf: true, swimlane: true, objectlink: true, activity: true, code: true, timeline: true, timelinebar: true, kanbanview: true, diagram: true, stickypad: true, icebreaker: true, chart: true,
+  media: 'app-only: its video or audio must be an upload of the person, sniffed and counted by modules/uploads',
+  file: 'app-only: its attachment must be an upload of the person, sniffed and counted by modules/uploads, and is served through the board',
+  doc: 'app-only for now: the web app places a doc it just created (Host.docs); a request makes a doc with /docs and links it',
+};
+const KNOWN_TYPES = new Set((Object.keys(REQUEST_CREATABLE) as ElementType[]).filter((t) => REQUEST_CREATABLE[t] === true));
 const COMMENTS = 'comments';
 
 /** Every id `ids` takes along when deleted: contents of frames (any depth), riders, mind-map branches. */

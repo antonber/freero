@@ -15,7 +15,7 @@ import {
   reorderPatches,
   type FramePreset,
 } from './frames';
-import { layoutItems, type SlideLayoutId } from './layouts';
+import { layoutItems, relayoutPlan, type SlideLayoutId } from './layouts';
 
 export function allFrames(editor: Editor): FrameElement[] {
   return editor.getElements().filter(isFrame);
@@ -137,13 +137,25 @@ export function renameFrame(editor: Editor, id: string, title: string): void {
 
 // ------------------------------------------------------------------ slides (KAI-126)
 
-/** Puts a layout's texts (and image area) into a frame, sized to it: one undo step. */
+/**
+ * Puts a layout's texts (and image area) into a frame, sized to it: one undo step. A slide that
+ * already has a layout gets the new one instead (`relayoutPlan`): untouched parts are replaced,
+ * what people wrote moves into the new layout's matching slot.
+ */
 export function applyLayout(editor: Editor, frameId: string, layout: SlideLayoutId): string[] {
   const frame = editor.getElement<FrameElement>(frameId);
   if (!isFrame(frame) || frame.locked || !editor.can('editor')) return [];
+  const parts = editor.getElements().filter((el) => el.frameId === frameId && el.layoutRole && !el.locked);
+  const plan = relayoutPlan(parts, layoutItems(frame, layout));
   let ids: string[] = [];
   editor.transact(() => {
-    ids = editor.createMany(layoutItems(frame, layout));
+    if (plan.remove.length) editor.remove(plan.remove);
+    const patches = [
+      ...plan.move.map(({ id, rect }) => ({ id, patch: { ...rect } })),
+      ...plan.release.map((id) => ({ id, patch: { layoutRole: null } })),
+    ];
+    if (patches.length) editor.updateMany(patches);
+    ids = editor.createMany(plan.create);
   });
   return ids;
 }
@@ -190,7 +202,14 @@ export function duplicateSlide(editor: Editor, id: string): string | null {
   let copy: string | undefined;
   editor.transact(() => {
     copy = editor.duplicate([id]).find((cid) => editor.getElement(cid)?.type === 'frame');
-    if (copy) moveSlide(editor, copy, at + 1);
+    if (!copy) return;
+    // Renumber the deck with the copy right after the original (the copy starts with the original's
+    // index, and a tie with it may sort either way).
+    const deck = order.map((f) => f.id);
+    deck.splice(at + 1, 0, copy);
+    deck.forEach((fid, i) => {
+      if (editor.getElement<FrameElement>(fid)?.index !== i) editor.update<FrameElement>(fid, { index: i });
+    });
   });
   return copy ?? null;
 }

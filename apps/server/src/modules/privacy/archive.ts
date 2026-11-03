@@ -25,6 +25,7 @@ import { templatesExportOf } from '../templates/index';
 import { trackersExportOf, trackersWorkspaceExportOf } from '../trackers/index';
 import { readUpload, uploadNamesIn, uploadsOwnedBy } from '../uploads/index';
 import { walkthroughsExportOf } from '../walkthroughs/index';
+import { webhooksWorkspaceExportOf } from '../webhooks/index';
 import { exportMembershipsOf, exportWorkspaceDirectory, teamWorkspaceIdsFor } from '../workspaces/index';
 import { exportsRequestedBy } from './repo';
 
@@ -194,6 +195,8 @@ export async function buildWorkspaceArchive(workspaceId: string, appOrigin: stri
     provisioning: await scimExportOf(workspaceId),
     ai: await aiWorkspaceExportOf(workspaceId),
     trackers: await trackersWorkspaceExportOf(workspaceId),
+    // What each webhook sends where (#48): shortened URL, events, format, scope — never its secret.
+    webhooks: await webhooksWorkspaceExportOf(workspaceId),
   });
   for (const t of await templatesExportOf({ workspaceId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
   for (const b of await boardRecords(await boardIdsInWorkspace(workspaceId))) await addBoard(a, b, appOrigin, { editorsLayer: true, privateLayerOf: null });

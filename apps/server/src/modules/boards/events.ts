@@ -1,7 +1,7 @@
 // In-process events of modules/boards, for modules that react to what happens to a board as a
 // whole (the activity feed, KAI-188). Fired after the change is committed; a listener's failure is
 // logged and never fails the change.
-import type { MoveAdjustment } from '@freero/shared';
+import type { MoveAdjustment, Role } from '@freero/shared';
 import { logError } from '../../platform/log';
 
 export type BoardLifecycleAction = 'created' | 'duplicated' | 'renamed' | 'moved' | 'moved_workspace' | 'trashed' | 'restored';
@@ -18,6 +18,9 @@ export interface BoardLifecycleEvent {
    */
   from?: string | null;
   to?: string | null;
+  /** [additive] duplicated: the board it is a copy of, and the copier's role there (what they could read of it). */
+  sourceId?: string;
+  sourceRole?: Role;
 }
 
 type Listener = (e: BoardLifecycleEvent) => Promise<void> | void;

@@ -1,7 +1,7 @@
-// The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects` and
-// `project_members` [S4].
-import type { ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
-import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
+// The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects`,
+// `project_members` and (#63) `workspace_groups`, `workspace_group_members`, `project_groups` [S4].
+import type { AdminScope, InactiveBoardAction, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
+import { isForeignKeyViolation, isUniqueViolation, one, query, tx } from '../../platform/db';
 import { NO_FLOOR_POLICIES, strictestPolicies, strictestSettings, type InvitableWorkspaceRole, type PolicyFloor, type SettingsFloor } from './roles';
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
@@ -43,12 +43,16 @@ interface WsRow {
   board_embeds: 'on' | 'off';
   link_password: 'optional' | 'required' | null;
   link_max_days: number | null;
+  template_publishing: 'members' | 'admins' | null;
   require_two_factor: boolean;
   session_max_hours: number | null;
   session_idle_minutes: number | null;
   trash_retention_days: number;
   version_retention_days: number | null;
   audit_retention_days: number;
+  inactive_board_action: InactiveBoardAction | null;
+  inactive_board_days: number | null;
+  ip_allowlist: string[] | null;
   organisation_id: string | null;
   organisation_attached_at: Date | null;
   created_at: Date;
@@ -64,9 +68,13 @@ interface WsRow {
   org_board_embeds: 'on' | 'off' | null;
   org_link_password: 'optional' | 'required' | null;
   org_link_max_days: number | null;
+  org_template_publishing: 'members' | 'admins' | null;
   org_require_two_factor: boolean | null;
   org_session_max_hours: number | null;
   org_session_idle_minutes: number | null;
+  org_inactive_board_action: InactiveBoardAction | null;
+  org_inactive_board_days: number | null;
+  org_ip_allowlist: string[] | null;
 }
 
 /**
@@ -76,8 +84,10 @@ interface WsRow {
 const WS_SELECT = `SELECT w.*, o.name AS org_name, o.external_sharing AS org_external_sharing, o.link_sharing AS org_link_sharing,
     o.guest_invites AS org_guest_invites, o.downloads AS org_downloads, o.public_links AS org_public_links,
     o.live_embeds AS org_live_embeds, o.board_embeds AS org_board_embeds, o.require_two_factor AS org_require_two_factor,
-    o.link_password AS org_link_password, o.link_max_days AS org_link_max_days,
-    o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes
+    o.link_password AS org_link_password, o.link_max_days AS org_link_max_days, o.template_publishing AS org_template_publishing,
+    o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes,
+    o.inactive_board_action AS org_inactive_board_action, o.inactive_board_days AS org_inactive_board_days,
+    o.ip_allowlist AS org_ip_allowlist
   FROM workspaces w LEFT JOIN workspaces o ON o.id = w.organisation_id`;
 
 const publicLinks = (v: 'anyone' | 'signed_in'): WorkspacePolicies['publicLinks'] => (v === 'signed_in' ? 'signedIn' : 'anyone');
@@ -94,6 +104,7 @@ function toWorkspace(r: WsRow): Workspace {
     boardEmbeds: r.board_embeds === 'off' ? 'off' : 'on',
     linkPassword: r.link_password === 'required' ? 'required' : 'optional',
     linkMaxDays: r.link_max_days ?? null,
+    templatePublishing: r.template_publishing === 'admins' ? 'admins' : 'members',
   };
   const ownSettings: WorkspaceSettings = {
     requireTwoFactor: r.require_two_factor,
@@ -102,6 +113,9 @@ function toWorkspace(r: WsRow): Workspace {
     trashRetentionDays: r.trash_retention_days,
     versionRetentionDays: r.version_retention_days,
     auditRetentionDays: r.audit_retention_days,
+    inactiveBoardAction: r.inactive_board_action ?? 'none',
+    inactiveBoardDays: r.inactive_board_days ?? null,
+    ipAllowlist: r.ip_allowlist ?? [],
   };
   const organisation =
     r.organisation_id && r.org_name !== null
@@ -118,11 +132,15 @@ function toWorkspace(r: WsRow): Workspace {
             boardEmbeds: r.org_board_embeds ?? NO_FLOOR_POLICIES.boardEmbeds,
             linkPassword: r.org_link_password ?? NO_FLOOR_POLICIES.linkPassword,
             linkMaxDays: r.org_link_max_days ?? null,
+            templatePublishing: r.org_template_publishing ?? NO_FLOOR_POLICIES.templatePublishing,
           },
           settings: {
             requireTwoFactor: r.org_require_two_factor ?? false,
             sessionMaxHours: r.org_session_max_hours,
             sessionIdleMinutes: r.org_session_idle_minutes,
+            inactiveBoardAction: r.org_inactive_board_action ?? 'none',
+            inactiveBoardDays: r.org_inactive_board_days ?? null,
+            ipAllowlist: r.org_ip_allowlist ?? [],
           },
           attachedAt: (r.organisation_attached_at ?? r.updated_at).getTime(),
         }
@@ -163,6 +181,21 @@ export async function ensurePersonal(userId: string, newWorkspaceId: string, now
   return r.id;
 }
 
+/** Every team workspace's id (#65: the daily usage rollup). */
+export async function teamIds(): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM workspaces WHERE kind = 'team' ORDER BY id`)).map((r) => r.id);
+}
+
+/**
+ * Team workspaces where an inactive-board rule may apply (#154): their own, or their
+ * organisation's (the floor). Effective values: `settings` (toWorkspace raised them).
+ */
+export async function workspacesWithInactiveRule(): Promise<Workspace[]> {
+  return (await query<WsRow>(`${WS_SELECT} WHERE w.kind = 'team' AND (w.inactive_board_action <> 'none' OR o.inactive_board_action <> 'none') ORDER BY w.id`)).map(
+    toWorkspace,
+  );
+}
+
 /** A team workspace with its creator as owner (inside a transaction: both rows or none). */
 export async function insertTeam(id: string, name: string, ownerId: string, now: number): Promise<void> {
   await query(
@@ -186,7 +219,7 @@ export async function getWorkspaces(ids: string[]): Promise<Workspace[]> {
   return (await query<WsRow>(`${WS_SELECT} WHERE w.id = ANY($1::text[])`, [ids])).map(toWorkspace);
 }
 
-type WithRole = { workspace: Workspace; role: WorkspaceRole; memberCount: number };
+type WithRole = { workspace: Workspace; role: WorkspaceRole; memberCount: number; adminScopes: AdminScope[] | null };
 
 /**
  * Every WORKSPACE the user is in (personal and team; never an organisation's directory row), with
@@ -202,14 +235,14 @@ export function organisationsOf(userId: string): Promise<WithRole[]> {
 }
 
 async function withRoles(userId: string, organisations: boolean): Promise<WithRole[]> {
-  const rows = await query<WsRow & { role: WorkspaceRole; member_count: number }>(
-    `SELECT x.*, m.role, (SELECT count(*)::int FROM workspace_members c WHERE c.workspace_id = x.id) AS member_count
+  const rows = await query<WsRow & { role: WorkspaceRole; member_count: number; admin_scopes: AdminScope[] | null }>(
+    `SELECT x.*, m.role, m.admin_scopes, (SELECT count(*)::int FROM workspace_members c WHERE c.workspace_id = x.id) AS member_count
      FROM workspace_members m JOIN (${WS_SELECT}) x ON x.id = m.workspace_id
      WHERE m.user_id = $1 AND (x.kind = 'organisation') = $2
      ORDER BY (x.kind = 'personal') DESC, x.name, x.id`,
     [userId, organisations],
   );
-  return rows.map((r) => ({ workspace: toWorkspace(r), role: r.role, memberCount: r.member_count }));
+  return rows.map((r) => ({ workspace: toWorkspace(r), role: r.role, memberCount: r.member_count, adminScopes: r.role === 'admin' ? r.admin_scopes : null }));
 }
 
 /**
@@ -218,7 +251,7 @@ async function withRoles(userId: string, organisations: boolean): Promise<WithRo
  */
 export async function rolesOf(userId: string): Promise<Map<string, WorkspaceRole>> {
   const rows = await query<{ workspace_id: string; role: WorkspaceRole }>(
-    `SELECT m.workspace_id, m.role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+    `SELECT m.workspace_id, ${CONTENT_ROLE} AS role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
      WHERE m.user_id = $1 AND w.kind <> 'organisation'`,
     [userId],
   );
@@ -234,7 +267,8 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
        downloads = COALESCE($6, downloads), updated_at = $7, team_access = COALESCE($8, team_access),
        public_links = COALESCE($9, public_links), live_embeds = COALESCE($10, live_embeds),
        board_embeds = COALESCE($11, board_embeds), link_password = COALESCE($12, link_password),
-       link_max_days = CASE WHEN $13::boolean THEN $14::integer ELSE link_max_days END
+       link_max_days = CASE WHEN $13::boolean THEN $14::integer ELSE link_max_days END,
+       template_publishing = COALESCE($15, template_publishing)
      WHERE id = $1`,
     [
       id,
@@ -252,6 +286,7 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
       // null is a value here (no limit): whether to set it at all is its own flag.
       p.linkMaxDays !== undefined,
       p.linkMaxDays ?? null,
+      p.templatePublishing ?? null,
     ],
   );
 }
@@ -265,6 +300,9 @@ export async function updateSettings(id: string, patch: Partial<WorkspaceSetting
     ['trashRetentionDays', 'trash_retention_days'],
     ['versionRetentionDays', 'version_retention_days'],
     ['auditRetentionDays', 'audit_retention_days'],
+    ['inactiveBoardAction', 'inactive_board_action'],
+    ['inactiveBoardDays', 'inactive_board_days'],
+    ['ipAllowlist', 'ip_allowlist'],
   ];
   const sets: string[] = [];
   const params: unknown[] = [id, new Date(now)];
@@ -443,6 +481,8 @@ export interface MemberRow {
   role: WorkspaceRole;
   createdAt: number;
   deactivatedAt: number | null;
+  /** #151: an admin's scopes as stored (null: all three). Only meaningful for role 'admin'. */
+  adminScopes: AdminScope[] | null;
 }
 interface MRow {
   workspace_id: string;
@@ -450,6 +490,7 @@ interface MRow {
   role: WorkspaceRole;
   created_at: Date;
   deactivated_at: Date | null;
+  admin_scopes: AdminScope[] | null;
 }
 const toMember = (r: MRow): MemberRow => ({
   workspaceId: r.workspace_id,
@@ -457,10 +498,36 @@ const toMember = (r: MRow): MemberRow => ({
   role: r.role,
   createdAt: r.created_at.getTime(),
   deactivatedAt: r.deactivated_at ? r.deactivated_at.getTime() : null,
+  adminScopes: r.role === 'admin' ? (r.admin_scopes ?? null) : null,
 });
+
+/**
+ * #151: the role as it counts for board CONTENT — an admin without the content scope is a member
+ * there (board access, projects, moving boards, templates). The SQL twin of roles.ts `contentRole`.
+ */
+const CONTENT_ROLE = `CASE WHEN m.role = 'admin' AND m.admin_scopes IS NOT NULL AND NOT ('content' = ANY(m.admin_scopes)) THEN 'member' ELSE m.role END`;
 
 export async function getRole(workspaceId: string, userId: string): Promise<WorkspaceRole | null> {
   return (await one<{ role: WorkspaceRole }>(`SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, [workspaceId, userId]))?.role ?? null;
+}
+
+/** The user's role as it counts for board content (#151; see CONTENT_ROLE), or null. */
+export async function getContentRole(workspaceId: string, userId: string): Promise<WorkspaceRole | null> {
+  return (
+    (await one<{ role: WorkspaceRole }>(`SELECT ${CONTENT_ROLE} AS role FROM workspace_members m WHERE m.workspace_id = $1 AND m.user_id = $2`, [workspaceId, userId]))
+      ?.role ?? null
+  );
+}
+
+/** Sets an admin's scopes (null: all three); false unless they are an admin there. */
+export async function setAdminScopes(workspaceId: string, userId: string, scopes: AdminScope[] | null): Promise<boolean> {
+  return (
+    await query(`UPDATE workspace_members SET admin_scopes = $3 WHERE workspace_id = $1 AND user_id = $2 AND role = 'admin' RETURNING 1`, [
+      workspaceId,
+      userId,
+      scopes,
+    ])
+  ).length > 0;
 }
 
 export async function getMember(workspaceId: string, userId: string): Promise<MemberRow | null> {
@@ -528,7 +595,14 @@ export async function grantAtLeast(workspaceId: string, userId: string, role: In
 
 /** Returns false if they are not a member. */
 export async function setRole(workspaceId: string, userId: string, role: WorkspaceRole): Promise<boolean> {
-  return (await query(`UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`, [workspaceId, userId, role])).length > 0;
+  // Scopes belong to the admin role (#151): leaving it clears them, so a later promotion starts with all three.
+  return (
+    await query(
+      `UPDATE workspace_members SET role = $3, admin_scopes = CASE WHEN $3 = 'admin' THEN admin_scopes ELSE NULL END
+       WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`,
+      [workspaceId, userId, role],
+    )
+  ).length > 0;
 }
 
 /** Removes a member and their place in the workspace's projects. False if they were not a member. */
@@ -537,6 +611,8 @@ export async function removeMember(workspaceId: string, userId: string): Promise
     workspaceId,
     userId,
   ]);
+  // #63: leaving the workspace leaves its groups (their grants reach nobody outside it).
+  await query(`DELETE FROM workspace_group_members WHERE user_id = $2 AND group_id IN (SELECT id FROM workspace_groups WHERE workspace_id = $1)`, [workspaceId, userId]);
   return (await query(`DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`, [workspaceId, userId])).length > 0;
 }
 
@@ -754,14 +830,141 @@ export async function lockProject(id: string, mode: 'update' | 'share'): Promise
 }
 
 /** Ids of the projects (among `workspaceIds`) the user is a member of. */
+/** Projects the user is in: added to it, or (#63) in a group of its workspace the project is shared with. */
 export async function projectIdsOf(userId: string, workspaceIds: string[]): Promise<Set<string>> {
   if (workspaceIds.length === 0) return new Set();
   const rows = await query<{ project_id: string }>(
     `SELECT pm.project_id FROM project_members pm JOIN projects p ON p.id = pm.project_id
-     WHERE pm.user_id = $1 AND p.workspace_id = ANY($2::text[])`,
+     WHERE pm.user_id = $1 AND p.workspace_id = ANY($2::text[])
+     UNION
+     SELECT pg.project_id FROM project_groups pg JOIN projects p ON p.id = pg.project_id
+       JOIN workspace_groups g ON g.id = pg.group_id AND g.workspace_id = p.workspace_id
+       JOIN workspace_group_members gm ON gm.group_id = g.id AND gm.user_id = $1
+     WHERE p.workspace_id = ANY($2::text[])`,
     [userId, workspaceIds],
   );
   return new Set(rows.map((r) => r.project_id));
+}
+
+/** Everyone in a project: added to it, or in a group it is shared with (#63; who the team gives its boards). */
+export async function projectPeopleIds(projectId: string): Promise<string[]> {
+  return (
+    await query<{ user_id: string }>(
+      `SELECT user_id FROM project_members WHERE project_id = $1
+       UNION SELECT gm.user_id FROM project_groups pg JOIN projects p ON p.id = pg.project_id
+         JOIN workspace_groups g ON g.id = pg.group_id AND g.workspace_id = p.workspace_id
+         JOIN workspace_group_members gm ON gm.group_id = g.id WHERE pg.project_id = $1`,
+      [projectId],
+    )
+  ).map((r) => r.user_id);
+}
+
+// ---- groups (#63) ----
+
+export interface GroupRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  createdAt: number;
+  memberCount: number;
+  guestCount: number;
+}
+const GROUP_SELECT = `SELECT g.id, g.workspace_id, g.name, g.created_at,
+    (SELECT count(*)::int FROM workspace_group_members gm WHERE gm.group_id = g.id) AS member_count,
+    (SELECT count(*)::int FROM workspace_group_members gm JOIN workspace_members m ON m.workspace_id = g.workspace_id AND m.user_id = gm.user_id
+      WHERE gm.group_id = g.id AND m.role = 'guest') AS guest_count
+  FROM workspace_groups g`;
+const toGroup = (r: { id: string; workspace_id: string; name: string; created_at: Date; member_count: number; guest_count: number }): GroupRow => ({
+  id: r.id,
+  workspaceId: r.workspace_id,
+  name: r.name,
+  createdAt: r.created_at.getTime(),
+  memberCount: r.member_count,
+  guestCount: r.guest_count,
+});
+
+/** A new group; false when the workspace already has one of that name (any case). */
+export async function insertGroup(id: string, workspaceId: string, name: string, by: string, now: number): Promise<boolean> {
+  try {
+    await query(`INSERT INTO workspace_groups (id, workspace_id, name, created_by, created_at) VALUES ($1, $2, $3, $4, $5)`, [id, workspaceId, name, by, new Date(now)]);
+    return true;
+  } catch (e) {
+    if (isUniqueViolation(e, 'workspace_groups_name')) return false;
+    throw e;
+  }
+}
+
+/** Renames a group: true, false when it is gone, 'taken' when the name is another group's. */
+export async function renameGroup(id: string, name: string): Promise<boolean | 'taken'> {
+  try {
+    return (await query(`UPDATE workspace_groups SET name = $2 WHERE id = $1 RETURNING 1`, [id, name])).length > 0;
+  } catch (e) {
+    if (isUniqueViolation(e, 'workspace_groups_name')) return 'taken';
+    throw e;
+  }
+}
+
+export async function deleteGroup(id: string): Promise<boolean> {
+  return (await query(`DELETE FROM workspace_groups WHERE id = $1 RETURNING 1`, [id])).length > 0;
+}
+
+export async function getGroup(id: string): Promise<GroupRow | null> {
+  const r = await one<Parameters<typeof toGroup>[0]>(`${GROUP_SELECT} WHERE g.id = $1`, [id]);
+  return r ? toGroup(r) : null;
+}
+
+export async function groupsIn(workspaceId: string): Promise<GroupRow[]> {
+  return (await query<Parameters<typeof toGroup>[0]>(`${GROUP_SELECT} WHERE g.workspace_id = $1 ORDER BY lower(g.name), g.id`, [workspaceId])).map(toGroup);
+}
+
+export async function groupMemberIds(groupId: string): Promise<string[]> {
+  return (await query<{ user_id: string }>(`SELECT user_id FROM workspace_group_members WHERE group_id = $1 ORDER BY added_at, user_id`, [groupId])).map((r) => r.user_id);
+}
+
+/** Adds a member to a group; false when already in it, or the group (or user) is gone. */
+export async function addGroupMember(groupId: string, userId: string, now: number): Promise<boolean> {
+  try {
+    return (await query(`INSERT INTO workspace_group_members (group_id, user_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING 1`, [groupId, userId, new Date(now)])).length > 0;
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return false;
+    throw e;
+  }
+}
+
+export async function removeGroupMember(groupId: string, userId: string): Promise<boolean> {
+  return (await query(`DELETE FROM workspace_group_members WHERE group_id = $1 AND user_id = $2 RETURNING 1`, [groupId, userId])).length > 0;
+}
+
+/** The groups of a workspace the user is in. */
+export async function groupIdsOf(workspaceId: string, userId: string): Promise<string[]> {
+  return (
+    await query<{ id: string }>(
+      `SELECT g.id FROM workspace_groups g JOIN workspace_group_members gm ON gm.group_id = g.id WHERE g.workspace_id = $1 AND gm.user_id = $2`,
+      [workspaceId, userId],
+    )
+  ).map((r) => r.id);
+}
+
+export async function addProjectGroup(projectId: string, groupId: string, now: number): Promise<boolean> {
+  try {
+    return (await query(`INSERT INTO project_groups (project_id, group_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING 1`, [projectId, groupId, new Date(now)])).length > 0;
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return false;
+    throw e;
+  }
+}
+
+export async function removeProjectGroup(projectId: string, groupId: string): Promise<boolean> {
+  return (await query(`DELETE FROM project_groups WHERE project_id = $1 AND group_id = $2 RETURNING 1`, [projectId, groupId])).length > 0;
+}
+
+export async function projectGroupIds(projectId: string): Promise<string[]> {
+  return (await query<{ group_id: string }>(`SELECT group_id FROM project_groups WHERE project_id = $1`, [projectId])).map((r) => r.group_id);
+}
+
+/** Projects shared with a group (its boards follow the group's membership). */
+export async function projectIdsOfGroup(groupId: string): Promise<string[]> {
+  return (await query<{ project_id: string }>(`SELECT project_id FROM project_groups WHERE group_id = $1`, [groupId])).map((r) => r.project_id);
 }
 
 export async function projectMemberIds(projectId: string): Promise<string[]> {

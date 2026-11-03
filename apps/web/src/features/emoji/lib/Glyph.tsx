@@ -1,11 +1,17 @@
-import { StampArt, stampOf } from './stamps';
+import { customSrc, isCustom } from './custom';
+import { stampOf } from './packs';
+import { StampArt } from './stamps';
 
 const EMOJI_FONT = "'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
 
-/** Renders an emoji or a stamp so it fills its box at any size (vector, scales crisply). */
-export function Glyph({ value }: { value: string }) {
+/** Renders an emoji, a stamp or a team sticker so it fills its box at any size. */
+export function Glyph({ value, label }: { value: string; label?: string }) {
   const stamp = stampOf(value);
   if (stamp) return <StampArt stamp={stamp} />;
+  if (isCustom(value)) {
+    const src = customSrc(value);
+    return src ? <img className="fr-emoji__img" src={src} alt={label ?? 'Sticker'} draggable={false} /> : null;
+  }
   return (
     <svg viewBox="0 0 100 100" width="100%" height="100%" role="img" aria-label={value}>
       <text x="50" y="54" textAnchor="middle" dominantBaseline="central" fontSize="84" fontFamily={EMOJI_FONT}>

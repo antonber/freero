@@ -9,7 +9,7 @@ import { requireWorkspace } from '../workspaces/index';
 import * as repo from './repo';
 
 async function requireTeamAdmin(workspaceId: string, userId: string): Promise<void> {
-  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin');
+  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin', { scope: 'security' });
   if (workspace.kind !== 'team') throw notFound('Workspace not found');
 }
 
@@ -29,6 +29,7 @@ async function info(workspaceId: string): Promise<WorkspaceApiInfo> {
         firstUsedAt: r.firstUsedAt,
         lastUsedAt: r.lastUsedAt,
         blocked: r.blocked,
+        ipExempt: r.ipExempt,
       };
     }),
   };
@@ -46,6 +47,23 @@ export async function setWorkspaceApiAccess(workspaceId: string, adminId: string
   await repo.transaction(async () => {
     if (await repo.setWorkspaceApiEnabled(workspaceId, enabled, adminId, Date.now()))
       await recordAudit({ action: 'api.access_changed', workspaceId, actorId: adminId, target: { type: 'workspace', id: workspaceId }, metadata: { enabled } });
+  });
+  return info(workspaceId);
+}
+
+/** Exempts (or not) one token or app from this workspace's IP allowlist (#156; security admins). */
+export async function setCredentialIpExempt(workspaceId: string, adminId: string, credentialId: string, exempt: boolean): Promise<WorkspaceApiInfo> {
+  await requireTeamAdmin(workspaceId, adminId);
+  await repo.transaction(async () => {
+    const row = await repo.setWorkspaceCredentialIpExempt(workspaceId, credentialId, exempt, adminId);
+    if (!row) throw notFound('No such token or app has used this workspace');
+    await recordAudit({
+      action: exempt ? 'api.credential_ip_exempted' : 'api.credential_ip_unexempted',
+      workspaceId,
+      actorId: adminId,
+      target: { type: row.kind === 'oauth' ? 'oauth_app' : 'api_token', id: credentialId, label: row.label },
+      metadata: { userId: row.userId },
+    });
   });
   return info(workspaceId);
 }

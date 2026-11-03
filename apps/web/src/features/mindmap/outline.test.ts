@@ -28,7 +28,7 @@ const sides = (ed: Editor) => {
   const root = [...index.byId.values()].find((n) => !n.parentId)!;
   const name = (n: MindNode) => richTextToPlain(ed.getElement<MindmapElement>(n.id)!.text);
   const kids = index.kids.get(root.id) ?? [];
-  return { right: kids.filter((k) => sideOf(k, root) === 'right').map(name), left: kids.filter((k) => sideOf(k, root) === 'left').map(name) };
+  return { right: kids.filter((k) => sideOf(index, k, root) === 'right').map(name), left: kids.filter((k) => sideOf(index, k, root) === 'left').map(name) };
 };
 
 describe('outlines', () => {

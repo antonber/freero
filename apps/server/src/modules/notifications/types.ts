@@ -186,6 +186,14 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     link: walkthroughPath,
     linkLabel: 'Watch from that moment',
   },
+  // #127: the excerpt is the emoji. One per person per walkthrough (dedupe), not one per click.
+  'walkthrough.reaction': {
+    label: 'Reactions to your walkthroughs',
+    description: 'Someone reacts with an emoji at a moment of a walkthrough you recorded.',
+    title: (actor, d) => `${actor} reacted ${d.excerpt ?? ''} to ${walkthrough(d)} in ${board(d)}`.replace(/\s+/g, ' '),
+    link: walkthroughPath,
+    linkLabel: 'Watch from that moment',
+  },
   // modules/problems: an operator marked a problem the person reported as fixed. The excerpt is
   // the start of their own note, so they recognise which one.
   'problem.fixed': {

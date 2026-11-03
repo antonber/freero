@@ -43,6 +43,11 @@ export interface Board {
   editorsCanShare: boolean;
   /** #123: viewers and commenters may copy, duplicate, export and download it. */
   viewersCanExport: boolean;
+  /** #153: who moved it to the trash (null: before #153, or nobody — a retention rule). */
+  deletedBy: string | null;
+  /** #153: archived (read-only for everyone, out of the default lists) since, and by whom (null: a retention rule). */
+  archivedAt: number | null;
+  archivedBy: string | null;
 }
 
 interface Row {
@@ -68,6 +73,9 @@ interface Row {
   embeddable: boolean | null;
   editors_can_share: boolean | null;
   viewers_can_export: boolean | null;
+  deleted_by: string | null;
+  archived_at: Date | null;
+  archived_by: string | null;
 }
 
 // Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
@@ -97,6 +105,9 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   embeddable: r.embeddable === true,
   editorsCanShare: r.editors_can_share !== false,
   viewersCanExport: r.viewers_can_export !== false,
+  deletedBy: r.deleted_by ?? null,
+  archivedAt: r.archived_at ? r.archived_at.getTime() : null,
+  archivedBy: r.archived_by ?? null,
 });
 
 /** A board in service: not in the trash, not taken down by an operator. */
@@ -119,7 +130,8 @@ export interface BoardEventRecord {
   type: 'board.created' | 'board.renamed' | 'board.moved' | 'board.trashed' | 'board.restored';
   boardId: string;
   workspaceId: string;
-  actorId: string;
+  /** Who did it; null: Freero itself (#154: a retention rule). */
+  actorId: string | null;
   at: number;
   title: string;
   from?: string | null;
@@ -266,11 +278,13 @@ export async function idsInWorkspace(workspaceId: string): Promise<string[]> {
 export async function workspaceStats(
   workspaceId: string,
   now: number,
-): Promise<{ live: number; trashed: number; ownedBy: Map<string, number>; active7d: number; active30d: number }> {
+): Promise<{ live: number; trashed: number; archived: number; ownedBy: Map<string, number>; active7d: number; active30d: number }> {
   const DAY = 86_400_000;
   const [counts, owners, active] = await Promise.all([
-    one<{ live: number; trashed: number }>(
-      `SELECT count(*) FILTER (WHERE deleted_at IS NULL)::int AS live, count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS trashed
+    one<{ live: number; trashed: number; archived: number }>(
+      `SELECT count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NULL)::int AS live,
+         count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS trashed,
+         count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NOT NULL)::int AS archived
        FROM boards WHERE workspace_id = $1`,
       [workspaceId],
     ),
@@ -287,6 +301,7 @@ export async function workspaceStats(
   return {
     live: counts?.live ?? 0,
     trashed: counts?.trashed ?? 0,
+    archived: counts?.archived ?? 0,
     ownedBy: new Map(owners.map((o) => [o.owner_id, o.n])),
     active7d: active?.d7 ?? 0,
     active30d: active?.d30 ?? 0,
@@ -329,14 +344,125 @@ export async function setProject(id: string, projectId: string | null): Promise<
   return (await one(`UPDATE boards SET project_id = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, projectId])) !== null;
 }
 
-/** Moves a live board to the trash; false if it was not live (already trashed or gone). */
-export async function trashBoard(id: string, now: number): Promise<boolean> {
-  return (await one(`UPDATE boards SET deleted_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, new Date(now)])) !== null;
+/** Moves a live board to the trash (`by`: who; null: a retention rule); false if it was not live (already trashed or gone). */
+export async function trashBoard(id: string, now: number, by: string | null = null): Promise<boolean> {
+  return (await one(`UPDATE boards SET deleted_at = $2, deleted_by = $3 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, new Date(now), by])) !== null;
 }
 
 /** Takes a board out of the trash; false if it was not in the trash. */
 export async function restoreBoard(id: string): Promise<boolean> {
-  return (await one(`UPDATE boards SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
+  return (await one(`UPDATE boards SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
+}
+
+/**
+ * Archives (`at`, `by`: who; null: a retention rule) or unarchives (null) a LIVE board, in one
+ * statement; false when that changed nothing (already so, trashed, taken down, gone).
+ */
+export async function setArchived(id: string, at: number | null, by: string | null, now = Date.now()): Promise<boolean> {
+  // Either way it is activity (#154): an unarchived board starts its retention clock again.
+  return (
+    (await one(
+      `UPDATE boards SET archived_at = $2, archived_by = CASE WHEN $2::timestamptz IS NULL THEN NULL ELSE $3 END, updated_at = GREATEST(updated_at, $4)
+       WHERE id = $1 AND ${LIVE} AND (archived_at IS NULL) = ($2::timestamptz IS NOT NULL) RETURNING id`,
+      [id, at === null ? null : new Date(at), by, new Date(now)],
+    )) !== null
+  );
+}
+
+/** Boards and docs a workspace's people created in [from, to), trashed ones included (#65's daily rollup). */
+export async function createdIn(workspaceId: string, from: number, to: number): Promise<{ boards: number; docs: number }> {
+  const r = await one<{ boards: number; docs: number }>(
+    `SELECT count(*) FILTER (WHERE kind = 'board')::int AS boards, count(*) FILTER (WHERE kind = 'doc')::int AS docs
+     FROM boards WHERE workspace_id = $1 AND created_at >= $2 AND created_at < $3`,
+    [workspaceId, new Date(from), new Date(to)],
+  );
+  return { boards: r?.boards ?? 0, docs: r?.docs ?? 0 };
+}
+
+// ---- the admin inventory (#152) ----
+
+/** Every live board of a workspace (archived ones included) with its last activity. */
+export async function inventoryOf(workspaceId: string): Promise<Array<Board & { lastActivityAt: number }>> {
+  const rows = await query<Row & { last_at: Date }>(
+    `SELECT b.*, ${LAST_ACTIVITY_OF('b')} AS last_at FROM boards b WHERE b.workspace_id = $1 AND b.deleted_at IS NULL AND b.removed_at IS NULL`,
+    [workspaceId],
+  );
+  return rows.map((r) => ({ ...toBoard(r), lastActivityAt: new Date(r.last_at).getTime() }));
+}
+
+// ---- retention of inactive boards (#154) ----
+
+/** A board's last activity: an edit or rename (updated_at), or anyone opening it. */
+const LAST_ACTIVITY_OF = (b: string) => `GREATEST(${b}.updated_at, ${b}.created_at, COALESCE((SELECT max(o.opened_at) FROM board_opens o WHERE o.board_id = ${b}.id), ${b}.created_at))`;
+const LAST_ACTIVITY = LAST_ACTIVITY_OF('b');
+/** Live, not archived, and nothing happened since `$2`. */
+const INACTIVE_SINCE = `b.deleted_at IS NULL AND b.removed_at IS NULL AND b.archived_at IS NULL AND ${LAST_ACTIVITY} <= $2`;
+
+export interface InactiveBoard {
+  id: string;
+  kind: ObjectKind;
+  title: string;
+  ownerId: string;
+  lastActivityAt: number;
+  noticeAt: number | null;
+}
+
+/**
+ * Up to `limit` live, unarchived boards of ONE workspace with no activity since `before`, the least
+ * recently active first, after `after` (the last of the previous page).
+ */
+export async function inactiveBoardsIn(workspaceId: string, before: number, limit: number, after: InactiveBoard | null = null): Promise<InactiveBoard[]> {
+  const rows = await query<{ id: string; kind: ObjectKind; title: string; owner_id: string; last_at: Date; retention_notice_at: Date | null }>(
+    `SELECT * FROM (
+       SELECT b.id, b.kind, b.title, b.owner_id, ${LAST_ACTIVITY} AS last_at, b.retention_notice_at FROM boards b
+       WHERE b.workspace_id = $1 AND ${INACTIVE_SINCE}
+     ) x WHERE $4::timestamptz IS NULL OR (x.last_at, x.id) > ($4::timestamptz, $5::text)
+     ORDER BY x.last_at, x.id LIMIT $3`,
+    [workspaceId, new Date(before), limit, after ? new Date(after.lastActivityAt) : null, after?.id ?? null],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind === 'doc' ? 'doc' : 'board',
+    title: r.title,
+    ownerId: r.owner_id,
+    lastActivityAt: new Date(r.last_at).getTime(),
+    noticeAt: r.retention_notice_at ? new Date(r.retention_notice_at).getTime() : null,
+  }));
+}
+
+/** Records that the owner was told (now); only for boards still inactive since `before`. Returns the ids marked. */
+export async function markRetentionNoticed(workspaceId: string, ids: string[], before: number, now: number): Promise<string[]> {
+  if (!ids.length) return [];
+  return (
+    await query<{ id: string }>(
+      `UPDATE boards b SET retention_notice_at = $4 WHERE b.workspace_id = $1 AND ${INACTIVE_SINCE} AND b.id = ANY($3::text[]) RETURNING b.id`,
+      [workspaceId, new Date(before), ids, new Date(now)],
+    )
+  ).map((r) => r.id);
+}
+
+/**
+ * Applies a rule to one board in ONE statement, only if it is still in that workspace, live,
+ * unarchived and inactive since `before`, and its owner was told at least by `noticedBy` (and after
+ * its last activity): a board someone opened a second ago, or moved elsewhere, is left alone.
+ */
+export async function applyInactiveRule(workspaceId: string, id: string, action: 'archive' | 'trash', before: number, noticedBy: number, now: number): Promise<boolean> {
+  const set = action === 'archive' ? `archived_at = $5, archived_by = NULL, updated_at = GREATEST(updated_at, $5)` : `deleted_at = $5, deleted_by = NULL`;
+  return (
+    (await one(
+      `UPDATE boards b SET ${set} WHERE b.id = $3 AND b.workspace_id = $1 AND ${INACTIVE_SINCE}
+         AND b.retention_notice_at IS NOT NULL AND b.retention_notice_at <= $4 AND b.retention_notice_at > ${LAST_ACTIVITY}
+       RETURNING b.id`,
+      [workspaceId, new Date(before), id, new Date(noticedBy), new Date(now)],
+    )) !== null
+  );
+}
+
+/** Every board in a workspace's trash (its content admins, #153), most recently deleted first; taken-down ones stay with the operators. */
+export async function trashedInWorkspace(workspaceId: string): Promise<Board[]> {
+  return (
+    await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND deleted_at IS NOT NULL AND removed_at IS NULL ORDER BY deleted_at DESC, id`, [workspaceId])
+  ).map((r) => toBoard(r));
 }
 
 /** Every board the user owns, trashed ones included, except taken-down ones (account purge). */

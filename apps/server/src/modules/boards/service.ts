@@ -6,6 +6,7 @@ import {
   LINK_PASSWORD_REQUIRED,
   LINK_POLICY_REQUIRED,
   TRASH_RETENTION_DAYS,
+  type AdminTrashedBoard,
   type BoardPermissions,
   type BoardSharingSettings,
   type BoardSummary,
@@ -67,8 +68,8 @@ import { boardLifecycle, boardMovedWorkspace } from './events';
 import * as repo from './repo';
 import type { Board } from './repo';
 
-export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
-export const BOARD_FILTERS: BoardFilter[] = ['all', 'mine', 'shared', 'starred', 'recent', 'trash'];
+export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash' | 'archived';
+export const BOARD_FILTERS: BoardFilter[] = ['all', 'mine', 'shared', 'starred', 'recent', 'trash', 'archived'];
 const DAY_MS = 86_400_000;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
 export const DEFAULT_TITLE = DEFAULT_BOARD_TITLE;
@@ -344,6 +345,14 @@ export async function requireAccess(
  */
 export const boardLetsCopy = (board: Pick<Board, 'viewersCanExport'>, role: Role | null): boolean => board.viewersCanExport || atLeast(role, 'editor');
 
+/**
+ * May `userId` archive or unarchive the board (#153)? Its owner — by who they are, since an
+ * archived board gives everyone at most 'viewer' — or an owner / content admin of its workspace
+ * (`workspaceRole` is the content role: an admin without the content scope reads 'member').
+ */
+export const mayArchive = (board: Board, userId: string, access: BoardWorkspaceAccess): boolean =>
+  !access.blocked && (board.ownerId === userId || (access.team !== null && isManager(access.workspaceRole)));
+
 /** What the user may do beyond their role, under the workspace's policies (each re-checked where it's done). */
 export function permissionsFor(board: Board, userId: string, role: Role, access: BoardWorkspaceAccess, coOwner = false): BoardPermissions {
   const isOwner = board.ownerId === userId;
@@ -357,6 +366,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     maxLinkAccess: access.maxLink,
     canMove: isOwner || admin,
     canTransfer: isOwner || admin,
+    canArchive: mayArchive(board, userId, access),
     guestLinks: access.anonymousLinks && !access.outsidersBlocked,
     jitsiCalls: jitsiAvailable(),
     liveEmbeds: access.policies.liveEmbeds !== 'off',
@@ -504,6 +514,7 @@ export async function toSummary(
     ...(coOwner ? { coOwner: true } : {}),
     sharing: { editorsCanShare: board.editorsCanShare, viewersCanExport: board.viewersCanExport },
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + access.trashRetentionDays * DAY_MS } : {}),
+    ...(board.archivedAt !== null ? { archivedAt: board.archivedAt } : {}),
   };
 }
 
@@ -546,7 +557,8 @@ export async function listBoards(
   const withOutside = filter === 'shared' || filter === 'starred' || filter === 'recent' || (filter === 'all' && ws?.kind === 'personal');
   const outsideIds = withOutside ? [...new Set([...memberships.keys(), ...opens.keys(), ...stars])].filter((id) => !seen.has(id)) : [];
   const outside = (await repo.getBoards(outsideIds)).filter((b) => !myWorkspaces.has(b.workspaceId));
-  const boards = [...inWorkspace, ...outside];
+  // #153: archived boards are out of every list but their own.
+  const boards = [...inWorkspace, ...outside].filter((b) => (b.archivedAt !== null) === (filter === 'archived'));
 
   const accessOf = await boardAccessLoader(userId, [...new Set(boards.map((b) => b.workspaceId))]);
   const owners = await getUsers(boards.map((b) => b.ownerId));
@@ -659,6 +671,9 @@ export async function createBoard(
         embeddable: false,
         editorsCanShare: true,
         viewersCanExport: true,
+        deletedBy: null,
+        archivedAt: null,
+        archivedBy: null,
       };
       await repo.insertBoard(board);
       // A new board starts with today's defaults (line jumps on); a copy is its source's content
@@ -840,7 +855,7 @@ async function listTrash(userId: string, workspaceId: string, q: string): Promis
  */
 export async function moveToTrash(board: Board, actorId: string, now = Date.now()): Promise<void> {
   const trashed = await repo.transaction(async () => {
-    if (!(await repo.trashBoard(board.id, now))) return false; // trashed meanwhile by another request
+    if (!(await repo.trashBoard(board.id, now, actorId))) return false; // trashed meanwhile by another request
     await recordAudit({ action: 'board.trashed', workspaceId: board.workspaceId, actorId, target: boardTarget(board) });
     await repo.appendBoardEvent({ type: 'board.trashed', boardId: board.id, workspaceId: board.workspaceId, actorId, title: board.title });
     return true;
@@ -884,6 +899,118 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
   );
   await boardLifecycle({ boardId: board.id, actorId: userId, action: 'restored' });
   return { ...board, deletedAt: null };
+}
+
+// ---- the admin inventory (#152) ----
+
+/** The workspace's live boards for its content admins (the caller checked the scope): what the inventory lists. */
+export async function inventoryBoards(workspaceId: string): Promise<Array<Board & { lastActivityAt: number; publicLink: boolean }>> {
+  const [boards, access] = await Promise.all([repo.inventoryOf(workspaceId), boardAccess('', { workspaceId, projectId: null })]);
+  // Visitors without an account get in by its link exactly when a guest would (resolveGuestRole).
+  return boards.map((b) => ({ ...b, publicLink: b.linkPasswordHash === null && resolveGuestRole(b, access) !== null }));
+}
+
+/** A board of THIS workspace (404 otherwise: the console reaches nothing elsewhere). */
+async function boardOfWorkspace(workspaceId: string, boardId: string): Promise<Board> {
+  const board = await repo.getBoard(boardId);
+  if (!board || board.workspaceId !== workspaceId) throw notFound('Board not found in this workspace');
+  return board;
+}
+
+/** A content admin turns a board's link off from the inventory (#152): audited, link visitors disconnected. */
+export async function turnOffLinkForWorkspace(workspaceId: string, boardId: string, actorId: string): Promise<void> {
+  const board = await boardOfWorkspace(workspaceId, boardId);
+  if (board.storedLinkAccess === 'none') return;
+  await repo.updateBoardFields(board.id, { linkAccess: 'none' }, Date.now());
+  await recordAudit({
+    action: 'board.link_sharing_changed',
+    workspaceId,
+    actorId,
+    target: boardTarget(board),
+    metadata: { from: board.storedLinkAccess, to: 'none', by: 'admin' },
+  });
+  await refreshBoardAccess(board.id);
+}
+
+/** A content admin hands a board of the workspace to one of its members (#152; transferBoard's rules and audit). */
+export async function transferForWorkspace(workspaceId: string, boardId: string, actorId: string, targetId: unknown): Promise<void> {
+  await transferBoard(await boardOfWorkspace(workspaceId, boardId), actorId, targetId);
+}
+
+/** The board of this workspace, for another module's admin action (members: removing outsiders). */
+export async function workspaceBoard(workspaceId: string, boardId: string): Promise<{ id: string; title: string; kind: ObjectKind }> {
+  const b = await boardOfWorkspace(workspaceId, boardId);
+  return { id: b.id, title: b.title, kind: b.kind };
+}
+
+// ---- archive and the workspace's trash (#153) ----
+
+/**
+ * Archives (or unarchives) a board: its owner or a content admin of its workspace. Archived, it is
+ * read-only for everyone (resolveRole caps every role at 'viewer'), out of the default lists, and
+ * no retention rule moves it to the trash. Live sockets are re-checked at once, on every instance.
+ */
+export async function setBoardArchived(boardId: string, userId: string, archived: boolean, now = Date.now()): Promise<Board> {
+  const { board, access } = await requireAccess(boardId, userId, 'viewer');
+  if (!mayArchive(board, userId, access)) throw forbidden('Only the board’s owner or a content admin of its workspace can archive it');
+  const changed = await repo.transaction(async () => {
+    if (!(await repo.setArchived(board.id, archived ? now : null, userId))) return false;
+    await recordAudit({
+      action: archived ? 'board.archived' : 'board.unarchived',
+      workspaceId: board.workspaceId,
+      actorId: userId,
+      target: boardTarget(board),
+      metadata: { owner: board.ownerId },
+    });
+    return true;
+  });
+  if (changed) await refreshBoardAccess(board.id);
+  return { ...board, archivedAt: archived ? (changed ? now : board.archivedAt) : null, archivedBy: archived ? userId : null };
+}
+
+/** The workspace's trash as its content admins see it (#153; the caller checked the scope): metadata only. */
+export async function workspaceTrash(workspaceId: string): Promise<AdminTrashedBoard[]> {
+  const boards = await repo.trashedInWorkspace(workspaceId);
+  const [people, access] = await Promise.all([
+    getUsers([...boards.map((b) => b.ownerId), ...boards.flatMap((b) => (b.deletedBy ? [b.deletedBy] : []))]),
+    boardAccess('', { workspaceId, projectId: null }),
+  ]);
+  return boards.map((b) => ({
+    boardId: b.id,
+    kind: b.kind,
+    title: b.title,
+    ownerId: b.ownerId,
+    ownerName: people.get(b.ownerId)?.name ?? 'Deleted user',
+    deletedBy: b.deletedBy ? { id: b.deletedBy, name: people.get(b.deletedBy)?.name ?? 'Deleted user' } : null,
+    deletedAt: b.deletedAt!,
+    purgeAt: b.deletedAt! + access.trashRetentionDays * DAY_MS,
+  }));
+}
+
+/**
+ * A content admin restores any board of the workspace's trash (#153; the caller checked the scope),
+ * for its owner: it counts against the OWNER's board quota, and is audited with who restored it.
+ * 404 for a board that isn't in THIS workspace's trash (another workspace's, taken down, gone).
+ */
+export async function restoreForWorkspace(workspaceId: string, boardId: string, actorId: string): Promise<void> {
+  const board = await repo.getBoardIncludingTrash(boardId);
+  if (!board || board.workspaceId !== workspaceId || board.deletedAt === null || board.removedAt !== null) throw notFound('Board not found in this workspace’s trash');
+  await withinBoardQuota(
+    board.ownerId,
+    (max) => `Its owner has reached the limit of ${max} boards. They need to delete boards before this one can be restored.`,
+    async () => {
+      if (!(await repo.restoreBoard(board.id))) throw notFound('Board not found in this workspace’s trash');
+      await recordAudit({
+        action: 'board.restored',
+        workspaceId,
+        actorId,
+        target: boardTarget(board),
+        metadata: { owner: board.ownerId, by: 'admin', deletedBy: board.deletedBy },
+      });
+      await repo.appendBoardEvent({ type: 'board.restored', boardId: board.id, workspaceId, actorId, title: board.title });
+    },
+  );
+  await boardLifecycle({ boardId: board.id, actorId, action: 'restored' });
 }
 
 /** Owner only: deletes a trashed board and everything on it for good. */
@@ -946,6 +1073,21 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
 }
 
 /**
+ * Changes a board's title and / or description as `actorId` (the caller checked they may: an owner
+ * or editor): one write, and a rename is the `board.renamed` event (outbox, same transaction) and
+ * the activity feed's lifecycle entry, like the board menu's rename.
+ */
+export async function renameBoard(board: Board, actorId: string, patch: { title?: string; description?: string }): Promise<void> {
+  if (patch.title === undefined && patch.description === undefined) return;
+  const renamed = patch.title !== undefined && patch.title !== board.title;
+  await repo.transaction(async () => {
+    await repo.updateBoardFields(board.id, patch, Date.now());
+    if (renamed) await repo.appendBoardEvent({ type: 'board.renamed', boardId: board.id, workspaceId: board.workspaceId, actorId, title: patch.title!, from: board.title, to: patch.title! });
+  });
+  if (renamed) await boardLifecycle({ boardId: board.id, actorId, action: 'renamed', from: board.title, to: patch.title });
+}
+
+/**
  * A copy of `source` owned by `userId`, with the source's current content: where they chose
  * (`where`, #124: a workspace and project they may create boards in — createBoard checks), else in
  * the same workspace and project when the user may create boards there, else in their personal
@@ -982,7 +1124,7 @@ export async function duplicateBoard(source: Board, userId: string, role: Role, 
     if (editors) await initBoardLayer(copy.id, 'editors', editors);
     return copy;
   });
-  await boardLifecycle({ boardId: made.id, actorId: userId, action: 'duplicated', from: source.title });
+  await boardLifecycle({ boardId: made.id, actorId: userId, action: 'duplicated', from: source.title, sourceId: source.id, sourceRole: role });
   return made;
 }
 

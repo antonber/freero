@@ -157,6 +157,22 @@ it('what the API answers in a real session has the shapes its reference promises
   await call('GET', `${B}/control-room?cursor=${encodeURIComponent(lane.json.cursor)}`, '/boards/{boardId}/control-room');
   expect((await call('DELETE', `${B}/items/${frame.id}`, '/boards/{boardId}/items/{itemId}')).status).toBe(400); // takes its contents along
   await call('DELETE', `${B}/items/${frame.id}?confirm=true`, '/boards/{boardId}/items/{itemId}');
+  // Groups, rename and copy (#170).
+  const group = (await call('POST', `${B}/groups`, '/boards/{boardId}/groups', { ids: [card.id, shape.id] })).json.group;
+  expect((await call('GET', `${B}/items/${card.id}`, '/boards/{boardId}/items/{itemId}')).json.item.data.groupId).toBe(group.id);
+  expect((await call('DELETE', `${B}/groups/group:${group.id}`, '/boards/{boardId}/groups/{groupId}')).json.ungrouped.sort()).toEqual([card.id, shape.id].sort());
+  expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed' }, readOnly)).status).toBe(403);
+  expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed', description: 'Q3' })).json.board).toMatchObject({ title: 'Renamed', description: 'Q3' });
+  // Embedding on other sites (#2): turning it on is a write; the code comes back once it is on.
+  expect((await call('PATCH', `${B}/embed`, '/boards/{boardId}/embed', { embeddable: true }, readOnly)).status).toBe(403);
+  expect((await call('GET', `${B}/embed`, '/boards/{boardId}/embed', undefined, readOnly)).json.embed).toMatchObject({ embeddable: false, code: null });
+  const embed = (await call('PATCH', `${B}/embed`, '/boards/{boardId}/embed', { embeddable: true, readonly: true })).json.embed;
+  expect(embed.url).toBe(`http://freero.test/embed/b/${board.id}?readonly=1`);
+  expect(embed.code).toContain(embed.url.replace('&', '&amp;'));
+  const copy = (await call('POST', `${B}/copy`, '/boards/{boardId}/copy', { title: 'Renamed, again' })).json.board;
+  expect(copy.title).toBe('Renamed, again');
+  const cards = async (b: string) => (await call('GET', `/boards/${b}/items?type=card`, '/boards/{boardId}/items')).json.items.map((i: { text: string }) => i.text).sort();
+  expect(await cards(copy.id)).toEqual(await cards(board.id));
   await call('POST', `${B}/items/delete`, '/boards/{boardId}/items/delete', { ids: [card.id, shape.id], confirm: true });
   expect((await call('POST', `${B}/items`, '/boards/{boardId}/items', { type: 'sticky', text: 'x' }, readOnly)).status).toBe(403);
   expect((await call('DELETE', B, '/boards/{boardId}')).status).toBe(400);
@@ -174,9 +190,35 @@ it('what the API answers in a real session has the shapes its reference promises
   expect(read.json.markdown).toContain('- [x] Ship it');
   expect(read.json.markdown).toContain('| 1 | 2 |');
   await call('GET', `${D}?format=markdown`, '/docs/{docId}');
+  // Targeted edits and comments on blocks (#61): a comment on a heading stays on it when the heading is rewritten.
+  const heading = (read.json.blocks as Array<{ id: string; type: string }>).find((b) => b.type === 'heading')!.id;
+  expect((await call('POST', `${D}/comments`, '/docs/{docId}/comments', { text: 'Sure?', blockId: heading }, readOnly)).status).toBe(403);
+  const docThread = (await call('POST', `${D}/comments`, '/docs/{docId}/comments', { text: 'Sure?', blockId: heading })).json.thread;
+  await call('POST', `${D}/comments/${docThread.id}/replies`, '/docs/{docId}/comments/{threadId}/replies', { text: 'Yes' });
+  expect((await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'replace', blockId: heading, markdown: '# Decision made' }, readOnly)).status).toBe(403);
+  await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'replace', blockId: heading, markdown: '# Decision made' });
+  await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'insertAfter', blockId: heading, markdown: 'Agreed on Monday.' });
+  expect((await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'delete', blockId: 'nope' })).status).toBe(404);
+  const edited = await call('GET', `${D}?format=markdown`, '/docs/{docId}');
+  expect(edited.json.startsWith('# Decision made\n\nAgreed on Monday.')).toBe(true);
+  const threads = (await call('GET', `${D}/comments`, '/docs/{docId}/comments')).json.threads;
+  expect(threads.map((t: { blockId: string; messages: unknown[] }) => [t.blockId, t.messages.length])).toEqual([[heading, 2]]);
   // A doc is no board for the board operations (and is not listed among boards).
   expect((await call('GET', `/boards/${doc.id}`, '/boards/{boardId}')).status).toBe(404);
   expect((await call('GET', '/boards?q=Decision', '/boards')).json.boards).toEqual([]);
+});
+
+it('an image or embed whose URL points into the server’s own network is refused before anything is fetched or written (SSRF), and an embed off the provider list is refused', async () => {
+  const board = (await call('POST', '/boards', '/boards', { title: 'Pictures' })).json.board;
+  const B = `/boards/${board.id}`;
+  for (const url of ['http://127.0.0.1/logo.png', 'http://169.254.169.254/latest/meta-data/', 'http://[::1]/a.png', 'http://10.0.0.7/a.png']) {
+    const out = await call('POST', `${B}/items`, '/boards/{boardId}/items', { items: [{ type: 'sticky', text: 'kept?' }, { type: 'image', url }] });
+    expect({ url, status: out.status, code: out.json.code }).toEqual({ url, status: 422, code: 'url_blocked' });
+  }
+  expect((await call('POST', `${B}/items`, '/boards/{boardId}/items', { type: 'embed', url: 'https://example.com/page' })).status).toBe(400);
+  // Suggestions can't carry them (the server never fetched their url).
+  expect((await call('POST', `${B}/suggestions`, '/boards/{boardId}/suggestions', { create: [{ type: 'image', url: 'https://example.com/a.png' }] })).status).toBe(400);
+  expect((await call('GET', `${B}/items`, '/boards/{boardId}/items')).json.items).toEqual([]);
 });
 
 it('the operators’ problem endpoints exist only for an operator’s problems:triage token — anyone else’s token gets 404, the scope is refused to them — and answer in the documented shapes', async () => {
@@ -228,4 +270,32 @@ it('a workspace’s audit log over the API pages in order by its cursor, and onl
   // A member with the scope, and an admin without it, get nothing.
   expect((await call('GET', A, '/workspaces/{workspaceId}/audit', undefined, await token(member.id, ['audit:read']))).status).toBe(403);
   expect((await call('GET', A, '/workspaces/{workspaceId}/audit', undefined, await token(admin.id, ['boards:read']))).status).toBe(403);
+});
+
+it('a workspace’s webhooks over the API: only its owners and admins with a webhooks:manage token manage them, the secret is answered once, and a URL on a private network is refused', async () => {
+  const admin = await createUser({ name: 'Hook admin', email: 'hook-admin@api.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const member = await createUser({ name: 'Hook member', email: 'hook-member@api.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const ws = await createTeamWorkspace(admin.id, 'Hooked');
+  await applyDirectoryMembership(ws.id, member.id, 'member', { overwrite: false });
+  const token = async (userId: string, scopes: ApiScope[]) => (await createPersonalToken(userId, 'password', { name: scopes.join(' '), scopes, expiresInDays: 1 })).secret;
+  const manager = await token(admin.id, ['webhooks:manage']);
+  const W = `/workspaces/${ws.id}/webhooks`;
+  expect((await call('POST', W, '/workspaces/{workspaceId}/webhooks', { url: 'https://hooks.example.com/in', events: ['item.created'] }, await token(admin.id, ['boards:write']))).status).toBe(403);
+  expect((await call('GET', W, '/workspaces/{workspaceId}/webhooks', undefined, await token(member.id, ['webhooks:manage']))).status).toBe(403);
+  expect((await call('POST', W, '/workspaces/{workspaceId}/webhooks', { url: 'https://10.1.2.3/in', events: ['item.created'] }, manager)).status).toBe(400);
+  const made = await call('POST', W, '/workspaces/{workspaceId}/webhooks', { url: 'https://hooks.example.com/in?key=s3cr3t', events: ['item.created'], description: 'CI' }, manager);
+  expect(made.status).toBe(201);
+  expect(made.json.secret).toMatch(/^whsec_/);
+  const H = `${W}/${made.json.webhook.id}`;
+  const listed = await call('GET', W, '/workspaces/{workspaceId}/webhooks', undefined, manager);
+  expect(JSON.stringify(listed.json)).not.toContain(made.json.secret);
+  expect(JSON.stringify(listed.json)).not.toContain('s3cr3t');
+  expect((await call('PATCH', H, '/workspaces/{workspaceId}/webhooks/{webhookId}', { enabled: false }, manager)).json.webhook.enabled).toBe(false);
+  expect((await call('POST', `${H}/rotate`, '/workspaces/{workspaceId}/webhooks/{webhookId}/rotate', undefined, manager)).json.secret).not.toBe(made.json.secret);
+  expect((await call('POST', `${H}/test`, '/workspaces/{workspaceId}/webhooks/{webhookId}/test', undefined, manager)).status).toBe(409); // off
+  await call('PATCH', H, '/workspaces/{workspaceId}/webhooks/{webhookId}', { enabled: true }, manager);
+  const ping = (await call('POST', `${H}/test`, '/workspaces/{workspaceId}/webhooks/{webhookId}/test', undefined, manager)).json.delivery;
+  expect((await call('GET', `${H}/deliveries`, '/workspaces/{workspaceId}/webhooks/{webhookId}/deliveries', undefined, manager)).json.deliveries.map((d: { id: string }) => d.id)).toEqual([ping.id]);
+  await call('DELETE', H, '/workspaces/{workspaceId}/webhooks/{webhookId}', undefined, manager);
+  expect((await call('GET', W, '/workspaces/{workspaceId}/webhooks', undefined, manager)).json.webhooks).toEqual([]);
 });

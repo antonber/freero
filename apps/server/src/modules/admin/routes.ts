@@ -1,19 +1,27 @@
 // Admin console routes (contract: @freero/shared api.ts "Admin console"). Every route checks on the
 // server that the caller is an owner or admin of that team workspace (requireAdmin).
 import { Router, type Request } from 'express';
-import type { AdminMember, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
+import { USAGE_HISTORY_MAX_DAYS, type UsageDay } from '@freero/shared';
+import type { AdminBoardsResponse, AdminMember, AdminTrashedBoard, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
+import { currentRequestContext } from '../../platform/requestContext';
 import { recordAudit, verifyWorkspaceAudit } from '../audit/index';
 import { currentUser, getUsers, requireUser } from '../auth/index';
-import { linksOutOfPolicy } from '../boards/index';
+import { linksOutOfPolicy, restoreForWorkspace, transferForWorkspace, turnOffLinkForWorkspace, workspaceBoard, workspaceTrash } from '../boards/index';
+import { removeOutsideMembers } from '../members/index';
 import { getWorkspaceSettings, setMemberDeactivated, updateWorkspaceSettings } from '../workspaces/index';
-import { adminMembers, auditBatches, auditFilter, auditPage, CSV_COLUMNS, csvRow, requireAdmin, workspaceUsage } from './service';
+import { adminMembers, auditBatches, auditFilter, auditPage, boardInventory, CSV_COLUMNS, csvRow, inventoryQuery, requireAdmin, workspaceUsage } from './service';
+import { workspaceAdminFacts } from '../workspaces/index';
+import { usageCsv, usageHistory } from './usage';
 
 const MAX_PAGE = 200;
 /** Members (with organisation-wide deactivation), settings and the audit log also serve an organisation (#108). */
 const ORG = { organisation: true };
+// #151: what each route needs (usage and the member list: any admin).
+const SECURITY = { organisation: true, scope: 'security' } as const;
+const MEMBERS = { organisation: true, scope: 'members' } as const;
 
 const pageSize = (req: Request) => {
   const n = Number(req.query.limit ?? 50);
@@ -35,13 +43,39 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     }),
   );
 
+  // #65: the daily rollups (any admin), as JSON or CSV.
+  const historyDays = (req: Request) => {
+    const n = Number(req.query.days ?? 90);
+    return Number.isInteger(n) && n > 0 ? Math.min(n, USAGE_HISTORY_MAX_DAYS) : 90;
+  };
+  r.get(
+    `${base}/admin/usage/history`,
+    requireUser,
+    handle(async (req, res) => {
+      await requireAdmin(req.params.id, currentUser(req).id);
+      res.json({ days: (await usageHistory(req.params.id, historyDays(req))) satisfies UsageDay[] });
+    }),
+  );
+  r.get(
+    `${base}/admin/usage/history.csv`,
+    requireUser,
+    handle(async (req, res) => {
+      const { name } = await requireAdmin(req.params.id, currentUser(req).id);
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace';
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="freero-usage-${slug}-${new Date().toISOString().slice(0, 10)}.csv"`);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(usageCsv(await usageHistory(req.params.id, historyDays(req))));
+    }),
+  );
+
   // Boards whose link is on but doesn't meet the link policy (#39): links from before the policy
   // keep working, so admins see which to ask about.
   r.get(
     `${base}/admin/link-compliance`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id);
+      await requireAdmin(req.params.id, currentUser(req).id, { scope: 'content' });
       const boards = await linksOutOfPolicy(req.params.id);
       const owners = await getUsers(boards.map((b) => b.ownerId));
       res.json({
@@ -56,6 +90,68 @@ export default function adminRoutes(_ctx: ServerContext): Router {
           }),
         ),
       });
+    }),
+  );
+
+  // #152: the board inventory (metadata only) and what its content admins fix from it.
+  const CONTENT = { scope: 'content' } as const;
+  r.get(
+    `${base}/admin/boards`,
+    requireUser,
+    handle(async (req, res) => {
+      await requireAdmin(req.params.id, currentUser(req).id, CONTENT);
+      res.json((await boardInventory(req.params.id, inventoryQuery(req.query))) satisfies AdminBoardsResponse);
+    }),
+  );
+  r.post(
+    `${base}/admin/boards/:boardId/link-off`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, CONTENT);
+      await turnOffLinkForWorkspace(req.params.id, req.params.boardId, me);
+      res.json({ ok: true });
+    }),
+  );
+  r.post(
+    `${base}/admin/boards/:boardId/remove-outsiders`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, CONTENT);
+      const board = await workspaceBoard(req.params.id, req.params.boardId);
+      const inWorkspace = new Set((await workspaceAdminFacts(req.params.id)).members.map((m) => m.userId));
+      res.json({ removed: await removeOutsideMembers(board, req.params.id, inWorkspace, me) });
+    }),
+  );
+  r.post(
+    `${base}/admin/boards/:boardId/transfer`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, CONTENT);
+      await transferForWorkspace(req.params.id, req.params.boardId, me, req.body?.userId);
+      res.json({ ok: true });
+    }),
+  );
+
+  // #153: everyone's trash, for the workspace's content admins (metadata only), and restoring from it.
+  r.get(
+    `${base}/admin/trash`,
+    requireUser,
+    handle(async (req, res) => {
+      await requireAdmin(req.params.id, currentUser(req).id, { scope: 'content' });
+      res.json({ boards: (await workspaceTrash(req.params.id)) satisfies AdminTrashedBoard[] });
+    }),
+  );
+  r.post(
+    `${base}/admin/trash/:boardId/restore`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, { scope: 'content' });
+      await restoreForWorkspace(req.params.id, req.params.boardId, me);
+      res.json({ ok: true });
     }),
   );
 
@@ -78,7 +174,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
       requireUser,
       handle(async (req, res) => {
         const me = currentUser(req).id;
-        await requireAdmin(req.params.id, me, ORG);
+        await requireAdmin(req.params.id, me, MEMBERS);
         await setMemberDeactivated(req.params.id, me, req.params.userId, deactivated);
         const member = (await adminMembers(req.params.id)).find((m) => m.userId === req.params.userId);
         if (!member) throw notFound('That person is not a member of this workspace');
@@ -91,7 +187,8 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/admin/settings`,
     requireUser,
     handle(async (req, res) => {
-      res.json({ settings: (await getWorkspaceSettings(req.params.id, currentUser(req).id)) satisfies WorkspaceSettings });
+      // #156: the address the server sees, so the console can warn before a list leaves it out.
+      res.json({ settings: (await getWorkspaceSettings(req.params.id, currentUser(req).id)) satisfies WorkspaceSettings, yourIp: currentRequestContext()?.ip ?? null });
     }),
   );
 
@@ -111,7 +208,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/audit`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id, ORG);
+      await requireAdmin(req.params.id, currentUser(req).id, SECURITY);
       const page: { events: AuditEvent[]; next: string | null } = await auditPage(auditFilter(req.params.id, req.query), pageSize(req));
       res.json(page);
     }),
@@ -121,7 +218,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/audit/integrity`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id, ORG);
+      await requireAdmin(req.params.id, currentUser(req).id, SECURITY);
       res.json({ integrity: (await verifyWorkspaceAudit(req.params.id)) satisfies AuditIntegrity });
     }),
   );
@@ -132,7 +229,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('auditExport', 'user'),
     handle(async (req, res) => {
-      const { name } = await requireAdmin(req.params.id, currentUser(req).id, ORG);
+      const { name } = await requireAdmin(req.params.id, currentUser(req).id, SECURITY);
       const format = req.query.format === 'json' ? 'json' : req.query.format === 'csv' || req.query.format === undefined ? 'csv' : null;
       if (!format) throw badRequest('format must be csv or json');
       const filter = auditFilter(req.params.id, req.query);

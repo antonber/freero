@@ -20,6 +20,8 @@ export {
   decideSuggestions,
   // Results only the server computes (live activities, KAI-132): the one writer of those collections.
   writeServerCollection,
+  // One board-level server-written entry read and replaced in one step, with who is here (#146).
+  updateServerEntry,
   // An app writing through the API or MCP, shown on the board for a moment (KAI-168).
   showAgentPresence,
   type AgentPresence,
@@ -35,8 +37,10 @@ export {
   // written on requests (modules/docs, the API) in the editor's own node layout (docContent.ts).
   readDocContent,
   appendDocBlocks,
+  editDocBlocks,
   initDocContent,
 } from './rooms';
+export { DocEditError } from './docContent';
 // Suggestions (KAI-169): proposed changes in the editors layer (BoardView.suggestions reads them).
 // proposeSuggestions is THE seam for anything that wants people to review its change first —
 // the public API, structure insertion with target 'suggestions', and in-app AI (modules/ai).
@@ -89,4 +93,4 @@ export { storedBoardView, storedDocContent } from './stored';
 export { COMMENTS_COLLECTION };
 export { BOARD_CONTENT_TOPIC } from './repo';
 // The uploads board documents reference (the uploads sweep keeps those files).
-export { boardUploadReferences, storedBoardContent } from './uploadRefs';
+export { boardUploadReferences, storedBoardContent, storedBoardSizes } from './uploadRefs';

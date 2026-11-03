@@ -1,18 +1,21 @@
-import { memo, type KeyboardEvent } from 'react';
-import { CalendarDays, Check, ListTodo as ListTodoIcon } from 'lucide-react';
+import { memo, type KeyboardEvent, type ReactNode } from 'react';
+import { CalendarDays, Check, ListTodo as ListTodoIcon, Repeat2 } from 'lucide-react';
 import type { CardElement, Tag } from '@freero/shared';
 import {
   defineElement,
   ElementText,
   richTextToPlain,
+  sanitizeRichText,
+  useCanEdit,
   useCollection,
   useEditor,
+  useIsExporting,
   type ElementRenderProps,
   type NewElement,
 } from '@engine';
 import { Avatar } from '@ui';
 import { CARD_MIN_W, CARD_W, DESC, FOOTER, PAD, TITLE, cardLayout, isBar } from './lib/layout';
-import { DEFAULT_ACCENT, STATUSES } from './lib/constants';
+import { BACK_COLORS, BACK_PART, DEFAULT_ACCENT, STATUSES } from './lib/constants';
 import { formatDue, isOverdue } from './lib/actions';
 import { usePerson } from './lib/people';
 import { Chips } from './lib/Chips';
@@ -104,7 +107,7 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
     );
   }
 
-  return (
+  const front = (
     <div className={`fr-card${element.status === 'done' ? ' is-done' : ''}${presentation?.muted ? ' is-muted' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
       {/* Laid out by the browser, top to bottom, never from a measurement taken while rendering
           (#89): one taken before the web font arrived, or a height another client or the server
@@ -169,7 +172,67 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
       </div>
     </div>
   );
+  return element.back ? <FlipCard element={element} front={front} /> : front;
 });
+
+/**
+ * A two-sided card (#142): both faces in one box, turning on the Y axis when `flipped` changes —
+ * for everyone, it is a shared field. Exports draw only the side that shows, flat.
+ */
+function FlipCard({ element, front }: { element: CardElement; front: ReactNode }) {
+  const editor = useEditor();
+  const exporting = useIsExporting();
+  const canEdit = useCanEdit();
+  const back = element.back!;
+  const flipped = !!element.flipped;
+  const backFace = (
+    <div className="fr-card fr-card--back" style={{ ['--paper' as string]: back.color || BACK_COLORS[0] }}>
+      <div className="fr-card__back-text">
+        <ElementText
+          element={element}
+          part={BACK_PART}
+          value={back.title}
+          onCommit={(html) => {
+            const live = editor.getElement<CardElement>(element.id);
+            if (live?.back) editor.update<CardElement>(element.id, { back: { ...live.back, title: sanitizeRichText(html) } });
+          }}
+          fontSize={18}
+          fontFamily="sans"
+          align="center"
+          vAlign="middle"
+          color="var(--fr-ink)"
+          padding={0}
+          style={{ fontWeight: 600, lineHeight: 1.3 }}
+          placeholder="Back of the card"
+        />
+      </div>
+    </div>
+  );
+  if (exporting) return flipped ? backFace : <>{front}</>;
+  return (
+    <div className={`fr-card-flip${flipped ? ' is-flipped' : ''}`}>
+      <div className="fr-card-flip__face" aria-hidden={flipped}>
+        {front}
+      </div>
+      <div className="fr-card-flip__face is-back" aria-hidden={!flipped}>
+        {backFace}
+      </div>
+      {canEdit ? (
+        <button
+          type="button"
+          className="fr-card-flip__turn"
+          data-fr-interactive
+          aria-label={flipped ? 'Show the front' : 'Show the back'}
+          title={flipped ? 'Show the front' : 'Show the back'}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => editor.update<CardElement>(element.id, { flipped: !flipped })}
+        >
+          <Repeat2 size={14} aria-hidden />
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 export default defineElement({
   type: 'card',
@@ -198,7 +261,13 @@ export default defineElement({
     tags: [],
   }),
   Component: CardView,
-  toPlainText: (el) => [richTextToPlain(el.title), richTextToPlain(el.description)].filter(Boolean).join('\n'),
+  // Both sides of a flip card (find on board, copy as text).
+  toPlainText: (el) => [richTextToPlain(el.title), richTextToPlain(el.description), el.back ? richTextToPlain(el.back.title) : ''].filter(Boolean).join('\n'),
+  // The back of a turned flip card is what a double-click edits.
+  textPartAt: (el) => (el.back && el.flipped && !isBar(el) ? BACK_PART : null),
+  writeTextPart(el, part, html, editor) {
+    if (part === BACK_PART && el.back) editor.update<CardElement>(el.id, { back: { ...el.back, title: sanitizeRichText(html) } });
+  },
   // Height follows the content (title wrap, description preview) at the current width, and the
   // density its container's saved view gives it (compact: no description).
   normalize(el, _prev, ctx) {

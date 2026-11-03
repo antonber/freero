@@ -127,3 +127,23 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+
+/* #153: an archived board says so, above the canvas, with Unarchive for who may. */
+.fr-boardpage-archived {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 10px 8px 16px;
+  transform: translateX(-50%);
+  color: var(--fr-ink);
+  font-size: 13px;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow);
+}

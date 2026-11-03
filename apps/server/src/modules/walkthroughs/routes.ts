@@ -1,6 +1,6 @@
 // Async walkthroughs (contract: @freero/shared walkthroughs.ts).
 import { Router } from 'express';
-import type { Walkthrough, WalkthroughComment, WalkthroughSummary } from '@freero/shared';
+import type { Walkthrough, WalkthroughChaptersInput, WalkthroughComment, WalkthroughReaction, WalkthroughSummary } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
@@ -8,17 +8,22 @@ import { actorId, currentActor, currentUser, requireUser, requireUserOrGuest } f
 import { attachmentDisposition } from '../uploads/index';
 import {
   addComment,
+  addReaction,
   captionsUnavailable,
   createWalkthrough,
   deleteComment,
   deleteWalkthrough,
+  draftChapters,
   getWalkthrough,
   listComments,
+  listReactions,
   listWalkthroughs,
   openWalkthroughDownload,
   recordView,
+  removeReaction,
   renameWalkthrough,
   setCaptions,
+  setChapters,
   transcribeWalkthrough,
 } from './service';
 
@@ -131,6 +136,50 @@ export default function walkthroughRoutes(_ctx: ServerContext): Router {
     requireUser,
     handle(async (req, res) => {
       res.json({ walkthrough: await transcribeWalkthrough(req.params.id, req.params.wid, currentUser(req).id) } satisfies { walkthrough: Walkthrough });
+    }),
+  );
+
+  // #127: summary and chapters, and reactions at moments.
+  r.put(
+    `${one}/chapters`,
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ walkthrough: await setChapters(req.params.id, req.params.wid, currentUser(req).id, req.body) } satisfies { walkthrough: Walkthrough });
+    }),
+  );
+
+  r.post(
+    `${one}/chapters/draft`,
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await draftChapters(req.params.id, req.params.wid, currentUser(req).id)) satisfies WalkthroughChaptersInput);
+    }),
+  );
+
+  r.get(
+    `${one}/reactions`,
+    requireUserOrGuest,
+    handle(async (req, res) => {
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ reactions: await listReactions(req.params.id, req.params.wid, who(req)) } satisfies { reactions: WalkthroughReaction[] });
+    }),
+  );
+
+  r.post(
+    `${one}/reactions`,
+    requireUser,
+    rateLimit('walkthroughComment', 'user'),
+    handle(async (req, res) => {
+      res.status(201).json({ reaction: await addReaction(req.params.id, req.params.wid, currentUser(req).id, req.body) } satisfies { reaction: WalkthroughReaction });
+    }),
+  );
+
+  r.delete(
+    `${one}/reactions/:rid`,
+    requireUser,
+    handle(async (req, res) => {
+      await removeReaction(req.params.id, req.params.wid, req.params.rid, currentUser(req).id);
+      res.status(204).end();
     }),
   );
 

@@ -2,10 +2,15 @@
 // a workspace grants on its boards (asked by modules/boards for every access decision).
 import type { Request } from 'express';
 import {
+  ADMIN_SCOPE_REQUIRED,
+  INACTIVE_BOARD_ACTIONS,
+  IP_ALLOWLIST_EXCLUDES_YOU,
+  type InactiveBoardAction,
   LINK_MAX_DAYS_LIMIT,
   ORGANISATION_POLICY,
   WORKSPACE_CREATION_BLOCKED,
   WORKSPACE_SETTING_LIMITS,
+  type AdminScope,
   type LinkAccess,
   type OrganisationSummary,
   type Role,
@@ -19,6 +24,8 @@ import {
   type WorkspaceSummary,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
+import { currentRequestContext } from '../../platform/requestContext';
+import { ipAllowed, MAX_RANGES, parseRange } from './ipAllowlist';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
@@ -40,17 +47,21 @@ import { handOverOrganisation, organisationSummary } from './organisations';
 import * as repo from './repo';
 import type { Workspace } from './repo';
 import {
+  contentRole,
   DEFAULT_POLICIES,
   FLOOR_POLICY_KEYS,
   FLOOR_SETTING_KEYS,
   isFullMember,
   isManager,
+  isAdminScope,
+  ipListsOf,
   isWorkspaceRole,
   LINK_VALUES,
   looserPolicy,
   looserSetting,
   mayChangeRole,
   mayRemove,
+  scopesOf,
   teamAccessOf,
   TEAM_ACCESS_VALUES,
   teamRole,
@@ -76,6 +87,7 @@ const toSummary = (
   memberCount: number,
   blocked: WorkspaceBlock | null,
   orgRoles: Map<string, WorkspaceRole>,
+  adminScopes: AdminScope[] | null,
 ): WorkspaceSummary => ({
   id: w.id,
   name: w.name,
@@ -86,6 +98,7 @@ const toSummary = (
   createdAt: w.createdAt,
   blocked,
   organisation: w.organisation && { ...w.organisation, yourRole: orgRoles.get(w.organisation.id) ?? null },
+  adminScopes: w.kind === 'personal' ? [] : scopesOf(role, adminScopes),
 });
 
 /** The user's role in each organisation whose directory they are in. */
@@ -99,24 +112,65 @@ async function organisationRolesOf(userId: string): Promise<Map<string, Workspac
  * organisation-wide deactivation, e.g. its directory's deprovisioning), or the workspace — itself
  * or through its organisation — requires two-step verification and they haven't turned it on.
  */
-function blockOf(w: Workspace | undefined, deactivated: Set<string>, workspaceId: string, twoFactor: () => boolean): WorkspaceBlock | null {
+function blockOf(w: Workspace | undefined, deactivated: Set<string>, workspaceId: string, twoFactor: () => boolean, ipExempt: Set<string>): WorkspaceBlock | null {
   if (deactivated.has(workspaceId) || (w?.organisation && deactivated.has(w.organisation.id))) return 'deactivated';
   if (w?.kind === 'team' && w.settings.requireTwoFactor && !twoFactor()) return 'two_factor_required';
+  if (w?.kind === 'team' && !ipExempt.has(w.id) && ipBlocked(w)) return 'ip_not_allowed';
   return null;
 }
 
-/** The user's deactivations and (only when some of `workspaces` needs it) their two-step status. */
-async function blockInputs(userId: string, workspaces: Array<Workspace | undefined>): Promise<{ deactivated: Set<string>; twoFactor: boolean }> {
+/**
+ * #156: the request (or socket) comes from outside the workspace's IP allowlists. Only where a
+ * client address is known: background work (jobs, digests) acts for nobody's network. Requests
+ * through an API token or app follow the same rule on every board they resolve (REST, MCP, lists,
+ * search), except in workspaces whose admins exempted that credential (`ipExempt`).
+ */
+function ipBlocked(w: Workspace): boolean {
+  const lists = ipListsOf(w);
+  if (!lists.length) return false;
+  const ip = currentRequestContext()?.ip;
+  if (!ip) return false;
+  return lists.some((l) => !ipAllowed(l, ip));
+}
+
+/** Which of these workspaces exempted an API credential from their IP allowlist (apiauth registers the reader). */
+type IpExemptions = (credentialId: string, workspaceIds: string[]) => Promise<Set<string>>;
+let ipExemptions: IpExemptions = async () => new Set();
+export function setIpExemptionReader(fn: IpExemptions): void {
+  ipExemptions = fn;
+}
+
+/** May a request from `ip` reach the workspace's boards (#156)? For apiauth's per-workspace check. */
+export async function ipAllowedIn(workspaceId: string, ip: string | null): Promise<boolean> {
+  const w = await repo.getWorkspace(workspaceId);
+  if (!w || w.kind !== 'team' || !ip) return true;
+  return ipListsOf(w).every((l) => ipAllowed(l, ip));
+}
+
+/**
+ * The user's deactivations, (only when some of `workspaces` needs it) their two-step status, and
+ * (#156: only for a request through an API credential to a workspace with an IP allowlist) where
+ * that credential is exempt.
+ */
+async function blockInputs(userId: string, workspaces: Array<Workspace | undefined>): Promise<{ deactivated: Set<string>; twoFactor: boolean; ipExempt: Set<string> }> {
   const needs2fa = workspaces.some((w) => w?.kind === 'team' && w.settings.requireTwoFactor);
-  const [deactivated, twoFactor] = await Promise.all([repo.deactivatedIn(userId), needs2fa ? hasTwoFactor(userId) : Promise.resolve(true)]);
-  return { deactivated, twoFactor };
+  const credentialId = currentRequestContext()?.apiCredentialId;
+  const listed = credentialId ? workspaces.filter((w): w is Workspace => !!w && w.kind === 'team' && ipListsOf(w).length > 0).map((w) => w.id) : [];
+  const [deactivated, twoFactor, ipExempt] = await Promise.all([
+    repo.deactivatedIn(userId),
+    needs2fa ? hasTwoFactor(userId) : Promise.resolve(true),
+    listed.length ? ipExemptions(credentialId!, listed) : Promise.resolve(new Set<string>()),
+  ]);
+  return { deactivated, twoFactor, ipExempt };
 }
 
 export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
   await ensurePersonalWorkspace(userId);
   const [rows, orgRoles] = await Promise.all([repo.workspacesOf(userId), organisationRolesOf(userId)]);
   const b = await blockInputs(userId, rows.map((r) => r.workspace));
-  return rows.map((r) => toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor), orgRoles));
+  return rows.map((r) =>
+    toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor, b.ipExempt), orgRoles, r.adminScopes),
+  );
 }
 
 /** A workspace's summary for the user, or (for an organisation's id) the organisation's. */
@@ -124,7 +178,14 @@ export async function workspaceSummary(workspaceId: string, userId: string): Pro
   const row = (await repo.workspacesOf(userId)).find((r) => r.workspace.id === workspaceId);
   if (!row) return organisationSummary(workspaceId, userId);
   const b = await blockInputs(userId, [row.workspace]);
-  return toSummary(row.workspace, row.role, row.memberCount, blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor), await organisationRolesOf(userId));
+  return toSummary(
+    row.workspace,
+    row.role,
+    row.memberCount,
+    blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor, b.ipExempt),
+    await organisationRolesOf(userId),
+    row.adminScopes,
+  );
 }
 
 const ROLE_RANK: Record<WorkspaceRole, number> = { guest: 1, member: 2, admin: 3, owner: 4 };
@@ -140,8 +201,12 @@ export async function requireWorkspace(
   workspaceId: string,
   userId: string,
   min: WorkspaceRole = 'guest',
-  { allowDeactivated = false, organisation = false }: { allowDeactivated?: boolean; organisation?: boolean } = {},
-): Promise<{ workspace: Workspace; role: WorkspaceRole }> {
+  {
+    allowDeactivated = false,
+    organisation = false,
+    scope,
+  }: { allowDeactivated?: boolean; organisation?: boolean; /** #151: the admin scope this needs (implies `min` admin). */ scope?: AdminScope } = {},
+): Promise<{ workspace: Workspace; role: WorkspaceRole; scopes: AdminScope[]; contentRole: WorkspaceRole | null }> {
   const [workspace, member] = await Promise.all([repo.getWorkspace(workspaceId), repo.getMember(workspaceId, userId)]);
   if (!workspace || !member) throw notFound('Workspace not found');
   if (workspace.kind === 'organisation' && !organisation) throw notFound('Workspace not found');
@@ -149,10 +214,22 @@ export async function requireWorkspace(
   const what = workspace.kind === 'organisation' ? 'organisation' : 'workspace';
   // A deactivated member can do nothing in the workspace but leave it.
   if (member.deactivatedAt !== null && !allowDeactivated) throw forbidden(`Your access to this ${what} was deactivated by its admins`);
+  if (scope && ROLE_RANK[min] < ROLE_RANK.admin) min = 'admin';
   if (ROLE_RANK[role] < ROLE_RANK[min])
     throw forbidden(min === 'owner' ? `Only ${what === 'organisation' ? 'an organisation' : 'a workspace'} owner can do that` : min === 'admin' ? `Only ${what} owners and admins can do that` : 'Guests can’t do that');
-  return { workspace, role };
+  const scopes = scopesOf(role, member.adminScopes);
+  if (scope) requireScope(scopes, scope, what);
+  return { workspace, role, scopes, contentRole: contentRole(role, member.adminScopes) };
 }
+
+const SCOPE_LABEL: Record<AdminScope, string> = { members: 'members', content: 'content', security: 'security' };
+
+/** 403 `admin_scope_required` unless `scopes` covers `scope` (#151). */
+export function requireScope(scopes: AdminScope[], scope: AdminScope, what = 'workspace'): void {
+  if (!scopes.includes(scope)) throw new HttpError(403, `Only owners and ${SCOPE_LABEL[scope]} admins of this ${what} can do that`, ADMIN_SCOPE_REQUIRED);
+}
+
+const whatOf = (w: Workspace) => (w.kind === 'organisation' ? 'organisation' : 'workspace');
 
 const teamOnly = (w: Workspace) => {
   if (w.kind !== 'team') throw badRequest('Your personal workspace has no members or policies. Create a team workspace to collaborate.');
@@ -209,6 +286,7 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('liveEmbeds', ['on', 'off']);
   pick('boardEmbeds', ['on', 'off']);
   pick('linkPassword', ['optional', 'required']);
+  pick('templatePublishing', ['members', 'admins']);
   if (p.linkMaxDays !== undefined) {
     const d = p.linkMaxDays;
     if (d !== null && (typeof d !== 'number' || !Number.isInteger(d) || d < 1 || d > LINK_MAX_DAYS_LIMIT))
@@ -224,12 +302,14 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
  * ask for anything looser than the organisation's floor (#108).
  */
 export async function updateWorkspace(workspaceId: string, userId: string, body: Record<string, unknown>): Promise<WorkspaceSummary | OrganisationSummary> {
-  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin', { organisation: true });
+  const { workspace, scopes } = await requireWorkspace(workspaceId, userId, 'admin', { organisation: true });
   teamOrOrganisation(workspace);
   const patch = {
     ...(body.name !== undefined ? { name: cleanName(body.name) } : {}),
     policies: cleanPolicies(body.policies),
   };
+  // Sharing policies are content administration (#151); any admin may rename.
+  if (Object.keys(patch.policies).length) requireScope(scopes, 'content', whatOf(workspace));
   if (workspace.kind === 'organisation') delete patch.policies.teamAccess; // a team's own (not a floor)
   const floor = workspace.organisation?.policies;
   if (floor)
@@ -267,14 +347,34 @@ const POLICY_LABELS: Record<(typeof FLOOR_POLICY_KEYS)[number], string> = {
   boardEmbeds: 'Embedding boards on other sites',
   linkPassword: 'Password on board links',
   linkMaxDays: 'Board links expire within',
+  templatePublishing: 'Who shares templates',
 };
 const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {
   requireTwoFactor: 'Require two-step verification',
   sessionMaxHours: 'Sign-in lasts at most',
   sessionIdleMinutes: 'Sign out after inactivity',
+  inactiveBoardAction: 'Boards nobody uses',
+  inactiveBoardDays: 'Boards nobody uses, after',
+  ipAllowlist: 'Allowed networks',
 };
 
 // ---- security and retention settings (admin console) ----
+
+/**
+ * Which admin scope changes each setting (#151): sign-in, sessions and how long the audit log is
+ * kept are security's; how long trashed boards and versions are kept is content's.
+ */
+export const SETTING_SCOPE: Record<keyof WorkspaceSettings, AdminScope> = {
+  requireTwoFactor: 'security',
+  sessionMaxHours: 'security',
+  sessionIdleMinutes: 'security',
+  auditRetentionDays: 'security',
+  trashRetentionDays: 'content',
+  versionRetentionDays: 'content',
+  inactiveBoardAction: 'content',
+  inactiveBoardDays: 'content',
+  ipAllowlist: 'security',
+};
 
 /** A team workspace's effective settings (its own raised to its organisation's floors); an organisation's floors. */
 export async function getSettings(workspaceId: string, userId: string): Promise<WorkspaceSettings> {
@@ -303,6 +403,21 @@ function cleanSettings(body: Record<string, unknown>): Partial<WorkspaceSettings
   num('trashRetentionDays', false);
   num('versionRetentionDays', true);
   num('auditRetentionDays', false);
+  num('inactiveBoardDays', true);
+  if (body.ipAllowlist !== undefined) {
+    if (!Array.isArray(body.ipAllowlist) || body.ipAllowlist.length > MAX_RANGES) throw badRequest(`ipAllowlist must be a list of at most ${MAX_RANGES} ranges`);
+    const ranges: string[] = [];
+    for (const v of body.ipAllowlist) {
+      const r = typeof v === 'string' ? parseRange(v) : null;
+      if (!r) throw badRequest(`“${String(v).slice(0, 60)}” is not an IP address or a CIDR range (like 203.0.113.0/24 or 2001:db8::/32)`);
+      if (!ranges.includes(r)) ranges.push(r);
+    }
+    out.ipAllowlist = ranges;
+  }
+  if (body.inactiveBoardAction !== undefined) {
+    if (!(INACTIVE_BOARD_ACTIONS as readonly unknown[]).includes(body.inactiveBoardAction)) throw badRequest('inactiveBoardAction must be none, archive or trash');
+    out.inactiveBoardAction = body.inactiveBoardAction as InactiveBoardAction;
+  }
   return out;
 }
 
@@ -313,18 +428,34 @@ function cleanSettings(body: Record<string, unknown>): Partial<WorkspaceSettings
  * retention follow from the next request / job run.
  */
 export async function updateSettings(workspaceId: string, userId: string, body: Record<string, unknown>): Promise<WorkspaceSettings> {
-  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin', { organisation: true });
+  const { workspace, scopes } = await requireWorkspace(workspaceId, userId, 'admin', { organisation: true });
   teamOrOrganisation(workspace);
   const patch = cleanSettings(body);
+  // #151: each setting is someone's to change (SETTING_SCOPE).
+  for (const k of Object.keys(patch) as Array<keyof WorkspaceSettings>) requireScope(scopes, SETTING_SCOPE[k], whatOf(workspace));
   const floor = workspace.organisation?.settings;
   if (floor)
     for (const k of FLOOR_SETTING_KEYS) {
       const v = patch[k];
       if (v !== undefined && looserSetting(k, v, floor[k])) throw floorRefusal(workspace, SETTING_LABELS[k]);
     }
+  // #154: a rule that archives or trashes needs a period (its own, or the organisation's).
+  const action = patch.inactiveBoardAction ?? workspace.ownSettings.inactiveBoardAction;
+  const days = patch.inactiveBoardDays !== undefined ? patch.inactiveBoardDays : workspace.ownSettings.inactiveBoardDays;
+  if (action !== 'none' && days === null && !workspace.organisation?.settings.inactiveBoardDays)
+    throw badRequest('Choose after how many days without activity boards are archived or moved to the trash');
   if (patch.requireTwoFactor && !workspace.ownSettings.requireTwoFactor && !(await hasTwoFactor(userId)))
     throw forbidden('Turn on two-step verification for your own account first (Settings → Security)');
-  const changed = (Object.keys(patch) as Array<keyof WorkspaceSettings>).filter((k) => patch[k] !== workspace.ownSettings[k]);
+  // #156: a list that leaves out the address you are using now is saved only when you say so (you
+  // would lose the boards, not the console: it stays reachable to fix the list).
+  if (patch.ipAllowlist) {
+    const ip = currentRequestContext()?.ip ?? null;
+    const lists = [patch.ipAllowlist, workspace.kind === 'team' ? (workspace.organisation?.settings.ipAllowlist ?? []) : []].filter((l) => l.length);
+    if (ip && lists.some((l) => !ipAllowed(l, ip)) && body.confirmExcludesMe !== true)
+      throw new HttpError(409, `Your own address (${ip}) isn’t in this list: you couldn’t open the boards from here. Save it anyway?`, IP_ALLOWLIST_EXCLUDES_YOU);
+  }
+  const same = (k: keyof WorkspaceSettings) => String(patch[k]) === String(workspace.ownSettings[k]);
+  const changed = (Object.keys(patch) as Array<keyof WorkspaceSettings>).filter((k) => !same(k));
   if (!changed.length) return workspace.settings;
   await repo.transaction(async () => {
     await repo.updateSettings(workspaceId, patch, Date.now());
@@ -333,10 +464,18 @@ export async function updateSettings(workspaceId: string, userId: string, body: 
       actorId: userId,
       workspaceId,
       target: { type: 'workspace', id: workspaceId, label: workspace.name },
-      metadata: Object.fromEntries(changed.flatMap((k) => [[`${k}.from`, workspace.ownSettings[k]], [`${k}.to`, patch[k]!]])),
+      metadata: Object.fromEntries(
+        changed.flatMap((k) => {
+          const show = (v: unknown) => (Array.isArray(v) ? v.join(', ') : (v as string | number | boolean | null));
+          return [
+            [`${k}.from`, show(workspace.ownSettings[k])],
+            [`${k}.to`, show(patch[k])],
+          ];
+        }),
+      ),
     });
   });
-  if (changed.includes('requireTwoFactor')) await refreshWorkspaceBoards(workspaceId);
+  if (changed.includes('requireTwoFactor') || changed.includes('ipAllowlist')) await refreshWorkspaceBoards(workspaceId);
   return (await repo.getWorkspace(workspaceId))!.settings;
 }
 
@@ -445,35 +584,80 @@ export async function listMembers(workspaceId: string, userId: string): Promise<
   const out: WorkspaceMember[] = [];
   for (const r of rows) {
     const u = users.get(r.userId);
-    if (u) out.push({ userId: u.id, name: u.name, email: u.email, color: u.color, avatarUrl: u.avatarUrl, role: r.role, joinedAt: r.createdAt });
+    if (u)
+      out.push({
+        userId: u.id,
+        name: u.name,
+        email: u.email,
+        color: u.color,
+        avatarUrl: u.avatarUrl,
+        role: r.role,
+        joinedAt: r.createdAt,
+        ...(r.role === 'admin' ? { adminScopes: r.adminScopes } : {}),
+      });
   }
   return out;
 }
 
 export async function memberOf(workspaceId: string, userId: string): Promise<WorkspaceMember | null> {
-  const [role, u] = await Promise.all([repo.getRole(workspaceId, userId), getUser(userId)]);
-  if (!role || !u) return null;
-  return { userId: u.id, name: u.name, email: u.email, color: u.color, avatarUrl: u.avatarUrl, role, joinedAt: Date.now() };
+  const [m, u] = await Promise.all([repo.getMember(workspaceId, userId), getUser(userId)]);
+  if (!m || !u) return null;
+  return {
+    userId: u.id,
+    name: u.name,
+    email: u.email,
+    color: u.color,
+    avatarUrl: u.avatarUrl,
+    role: m.role,
+    joinedAt: m.createdAt,
+    ...(m.role === 'admin' ? { adminScopes: m.adminScopes } : {}),
+  };
+}
+
+/** `adminScopes` of a PATCH: a non-empty list of scopes, or null for all three (#151). */
+function cleanScopes(v: unknown): AdminScope[] | null {
+  if (v === null) return null;
+  if (!Array.isArray(v) || v.length === 0 || !v.every(isAdminScope))
+    throw badRequest('adminScopes must be a non-empty list of members, content, security — or null for all three');
+  const set = new Set(v);
+  return set.size === 3 ? null : (['members', 'content', 'security'] as AdminScope[]).filter((s) => set.has(s));
 }
 
 const lastOwner = () => new HttpError(409, 'A workspace needs at least one owner. Make someone else an owner first.');
 
 /** Changes a member's role; never leaves the workspace without an owner (checked under its lock). */
-export async function changeRole(workspaceId: string, actorId: string, targetId: string, role: unknown): Promise<WorkspaceMember> {
+export async function changeRole(workspaceId: string, actorId: string, targetId: string, role: unknown, adminScopes?: unknown): Promise<WorkspaceMember> {
   if (!isWorkspaceRole(role)) throw badRequest('role must be owner, admin, member or guest');
-  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'admin', { organisation: true });
+  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'admin', { organisation: true, scope: 'members' });
   teamOrOrganisation(workspace);
   if (workspace.kind === 'organisation' && role === 'guest') throw badRequest('An organisation has owners, admins and members');
+  const scopes = adminScopes === undefined ? undefined : cleanScopes(adminScopes);
+  // Only owners decide what an admin administers (#151): an admin can never widen anyone's powers, theirs included.
+  if (scopes !== undefined && actor !== 'owner') throw forbidden(`Only an owner of this ${whatOf(workspace)} can choose what an admin administers`);
+  if (scopes !== undefined && role !== 'admin') throw badRequest('Only admins have admin scopes');
   await repo.transaction(async () => {
     await repo.lockWorkspace(workspaceId, 'update');
-    const from = await repo.getRole(workspaceId, targetId);
-    if (!from) throw notFound('That person is not a member of this workspace');
+    const before = await repo.getMember(workspaceId, targetId);
+    if (!before) throw notFound('That person is not a member of this workspace');
+    const from = before.role;
     if (!mayChangeRole(actor, from, role)) throw forbidden('Only a workspace owner can change the role of owners and admins');
     if (from === 'owner' && role !== 'owner' && (await repo.isLastActiveOwner(workspaceId, targetId))) throw lastOwner();
     await repo.setRole(workspaceId, targetId, role);
     if (from !== role) await recordMembershipChange(workspaceId, targetId);
     if (from !== role)
       await recordAudit({ action: 'member.role_changed', workspaceId, actorId, target: await userTarget(targetId), metadata: { from, to: role } });
+    const was = from === 'admin' ? before.adminScopes : null;
+    if (scopes !== undefined && (from !== 'admin' ? scopes !== null : String(was) !== String(scopes))) {
+      await repo.setAdminScopes(workspaceId, targetId, scopes);
+      if (from === 'admin') await recordMembershipChange(workspaceId, targetId);
+      await recordAudit({
+        action: 'member.admin_scopes_changed',
+        workspaceId,
+        actorId,
+        target: await userTarget(targetId),
+        metadata: { from: from === 'admin' ? (was ?? ['all']).join(',') : null, to: (scopes ?? ['all']).join(',') },
+      });
+    }
   });
   await refreshWorkspaceBoards(workspaceId);
   await membershipChanged({ workspaceId, userId: targetId, role });
@@ -489,8 +673,9 @@ export async function changeRole(workspaceId: string, actorId: string, targetId:
  */
 export async function removeMember(workspaceId: string, actorId: string, targetId: string): Promise<void> {
   const self = actorId === targetId;
-  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'guest', { allowDeactivated: self, organisation: true });
+  const { workspace, role: actor, scopes } = await requireWorkspace(workspaceId, actorId, 'guest', { allowDeactivated: self, organisation: true });
   teamOrOrganisation(workspace);
+  if (!self && actor === 'admin') requireScope(scopes, 'members', whatOf(workspace));
   await repo.transaction(async () => {
     await repo.lockWorkspace(workspaceId, 'update');
     const target = await repo.getRole(workspaceId, targetId);
@@ -552,7 +737,7 @@ export async function removeMemberByDirectory(workspaceId: string, targetId: str
  * Only an owner deactivates an owner, so an active owner always remains.
  */
 export async function setMemberDeactivated(workspaceId: string, actorId: string, targetId: string, deactivated: boolean): Promise<void> {
-  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'admin', { organisation: true });
+  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'admin', { organisation: true, scope: 'members' });
   teamOrOrganisation(workspace);
   if (actorId === targetId) throw badRequest('You can’t deactivate yourself');
   await repo.transaction(async () => {
@@ -643,7 +828,7 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
       outsidersBlocked: policies.externalSharing === 'none',
       maxLink: policies.linkSharing,
       anonymousLinks: policies.publicLinks === 'anyone',
-      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor),
+      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor, blocks.ipExempt),
       trashRetentionDays: ws?.settings.trashRetentionDays ?? DEFAULT_TRASH_DAYS,
     };
   };
@@ -685,7 +870,7 @@ export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: st
   const [members, project, inProject, orgMembers] = await Promise.all([
     repo.listMembers(ws.id),
     place.projectId ? repo.getProject(place.projectId) : Promise.resolve(null),
-    place.projectId ? repo.projectMemberIds(place.projectId) : Promise.resolve([] as string[]),
+    place.projectId ? repo.projectPeopleIds(place.projectId) : Promise.resolve([] as string[]),
     ws.organisation ? repo.listMembers(ws.organisation.id) : Promise.resolve([] as repo.MemberRow[]),
   ]);
   const inP = new Set(inProject);
@@ -695,8 +880,9 @@ export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: st
   const out: Array<{ userId: string; role: Role; workspaceRole: WorkspaceRole }> = [];
   for (const m of members) {
     if (m.deactivatedAt !== null || offInOrg.has(m.userId)) continue;
-    const role = teamRole(m.role, project ? { access: project.access, member: inP.has(m.userId) } : null, level);
-    if (role) out.push({ userId: m.userId, role, workspaceRole: m.role });
+    const wsRole = contentRole(m.role, m.adminScopes)!;
+    const role = teamRole(wsRole, project ? { access: project.access, member: inP.has(m.userId) } : null, level);
+    if (role) out.push({ userId: m.userId, role, workspaceRole: wsRole });
   }
   return out;
 }
@@ -715,7 +901,8 @@ export async function boardGatekeepers(place: BoardPlace): Promise<{ deciders: s
     repo.listMembers(ws.id),
     place.projectId ? repo.getProject(place.projectId) : Promise.resolve(null),
   ]);
-  const admins = members.filter((m) => isManager(m.role)).map((m) => m.userId);
+  // #151: an admin who doesn't administer content doesn't decide who opens boards.
+  const admins = members.filter((m) => isManager(contentRole(m.role, m.adminScopes))).map((m) => m.userId);
   const lead =
     project?.access === 'private' && project.createdBy && members.some((m) => m.userId === project.createdBy && isFullMember(m.role))
       ? project.createdBy
@@ -733,9 +920,12 @@ export function workspaceRolesOf(userId: string): Promise<Map<string, WorkspaceR
   return repo.rolesOf(userId);
 }
 
-/** The user's role in one workspace, or null. */
+/**
+ * The user's role in one workspace as it counts for board content (#151: an admin who doesn't
+ * administer content reads 'member'; owners always 'owner'), or null.
+ */
 export function workspaceRole(workspaceId: string, userId: string): Promise<WorkspaceRole | null> {
-  return repo.getRole(workspaceId, userId);
+  return repo.getContentRole(workspaceId, userId);
 }
 
 export async function getWorkspaceInfo(
@@ -771,14 +961,17 @@ export { isManager };
  * requireWorkspace): its members with their state, how many projects and pending invites.
  */
 export async function workspaceAdminFacts(workspaceId: string): Promise<{
-  members: Array<{ userId: string; role: WorkspaceRole; joinedAt: number; deactivated: boolean }>;
+  members: Array<{ userId: string; role: WorkspaceRole; joinedAt: number; deactivated: boolean; adminScopes: AdminScope[] | null }>;
   projects: number;
+  /** Its projects' ids and names (the board inventory, #152). */
+  projectList: Array<{ id: string; name: string }>;
   pendingInvites: number;
 }> {
   const [members, projects, invites] = await Promise.all([repo.listMembers(workspaceId), repo.projectsIn([workspaceId]), repo.listInvites(workspaceId)]);
   return {
-    members: members.map((m) => ({ userId: m.userId, role: m.role, joinedAt: m.createdAt, deactivated: m.deactivatedAt !== null })),
+    members: members.map((m) => ({ userId: m.userId, role: m.role, joinedAt: m.createdAt, deactivated: m.deactivatedAt !== null, adminScopes: m.adminScopes })),
     projects: projects.length,
+    projectList: projects.map((p) => ({ id: p.id, name: p.name })),
     pendingInvites: invites.filter((i) => i.expiresAt > Date.now()).length,
   };
 }
@@ -805,6 +998,33 @@ export async function twoFactorRequirementOf(userId: string): Promise<string | n
   const names = await repo.twoFactorRequiredBy(userId);
   return names.length ? `${names.join(', ')} require${names.length === 1 ? 's' : ''} two-step verification` : null;
 }
+
+/**
+ * The inactive-board rule of every team workspace that has one (#154), as it applies: its own
+ * raised to its organisation's floor. A rule needs an action and a period.
+ */
+export async function inactiveBoardRules(): Promise<Array<{ workspaceId: string; name: string; action: 'archive' | 'trash'; days: number }>> {
+  const out: Array<{ workspaceId: string; name: string; action: 'archive' | 'trash'; days: number }> = [];
+  for (const w of await repo.workspacesWithInactiveRule()) {
+    const { inactiveBoardAction: action, inactiveBoardDays: days } = w.settings;
+    if (action !== 'none' && days !== null) out.push({ workspaceId: w.id, name: w.name, action, days });
+  }
+  return out;
+}
+
+/** Every team workspace (#65: the daily usage rollup). */
+export function allTeamWorkspaceIds(): Promise<string[]> {
+  return repo.teamIds();
+}
+
+/** Who may share templates with a team workspace (its effective policy) or publish to an organisation (its own), #155. */
+export async function templatePublishingOf(workspaceId: string): Promise<'members' | 'admins'> {
+  const w = await repo.getWorkspace(workspaceId);
+  return (w?.kind === 'organisation' ? w.ownPolicies : w?.policies)?.templatePublishing ?? 'members';
+}
+
+/** Why a workspace's data must be kept as it is (a legal hold, KAI-51 / #157), or null. */
+export { deletionHoldOn as workspaceHoldOn } from './holds';
 
 /** Workspaces whose retention differs from the defaults (trash 30 days, versions kept, audit 365 days). */
 export function retentionOverrides(): Promise<Array<{ id: string; trashDays: number; versionDays: number | null; auditDays: number }>> {

@@ -437,7 +437,8 @@ export async function deleteExpired(now: number): Promise<number> {
   const codes = await query(`DELETE FROM oauth_codes WHERE expires_at < $1 RETURNING code_hash`, [new Date(now)]);
   const tokens = await query(`DELETE FROM api_tokens WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
   const embeds = await query(`DELETE FROM api_embed_tokens WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
-  return codes.length + tokens.length + embeds.length;
+  const exports = await query(`DELETE FROM api_export_tickets WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
+  return codes.length + tokens.length + embeds.length + exports.length;
 }
 
 // ---- live board views (MCP Apps, KAI-171) ----
@@ -532,6 +533,41 @@ export async function embedByTokenHash(tokenHash: string): Promise<EmbedRow | nu
   return r ? toEmbed(r) : null;
 }
 
+// ---- board pictures drawn on the server: single-use download tickets (#33) ----
+
+export async function insertExportTicket(e: {
+  id: string;
+  userId: string;
+  boardId: string;
+  credentialId: string;
+  label: string;
+  grantId: string | null;
+  personalTokenId: string | null;
+  issuedVia: string;
+  ticketHash: string;
+  spec: Record<string, unknown>;
+  expiresAt: number;
+  createdAt: number;
+}): Promise<void> {
+  await query(
+    `INSERT INTO api_export_tickets (id, user_id, board_id, credential_id, label, grant_id, personal_token_id, issued_via, ticket_hash, spec, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [e.id, e.userId, e.boardId, e.credentialId, e.label, e.grantId, e.personalTokenId, e.issuedVia, e.ticketHash, JSON.stringify(e.spec), new Date(e.expiresAt), new Date(e.createdAt)],
+  );
+}
+
+/** Redeems a ticket once: it is deleted in the same statement, so a second or late use finds nothing. */
+export async function redeemExportTicket(ticketHash: string, now: number): Promise<(EmbedRow & { spec: Record<string, unknown> }) | null> {
+  const r = await one<Omit<EmbedDbRow, 'max_role'> & { spec: Record<string, unknown> | string }>(
+    `WITH t AS (DELETE FROM api_export_tickets WHERE ticket_hash = $1 AND expires_at > $2 RETURNING *)
+     SELECT t.*, p.paused_at AS parent_paused_at, p.expires_at AS parent_expires_at, g.client_id
+     FROM t LEFT JOIN api_tokens p ON p.id = t.personal_token_id LEFT JOIN oauth_grants g ON g.id = t.grant_id`,
+    [ticketHash, new Date(now)],
+  );
+  if (!r) return null;
+  return { ...toEmbed({ ...r, max_role: 'viewer' }), spec: typeof r.spec === 'string' ? (JSON.parse(r.spec) as Record<string, unknown>) : r.spec };
+}
+
 // ---- workspaces ----
 
 export async function workspaceApiEnabled(workspaceId: string): Promise<boolean> {
@@ -548,16 +584,43 @@ export async function setWorkspaceApiEnabled(workspaceId: string, enabled: boole
   return before !== enabled;
 }
 
-/** Records that a credential reached the workspace; returns whether an admin blocked it there. */
-export async function noteWorkspaceUse(u: { workspaceId: string; credentialId: string; userId: string; kind: string; label: string; scopes: string[]; at: number }): Promise<boolean> {
-  const r = await one<{ blocked_at: Date | null }>(
+/** Records that a credential reached the workspace; returns whether an admin blocked it there, and (#156) exempted it from the IP allowlist. */
+export async function noteWorkspaceUse(u: {
+  workspaceId: string;
+  credentialId: string;
+  userId: string;
+  kind: string;
+  label: string;
+  scopes: string[];
+  at: number;
+}): Promise<{ blocked: boolean; ipExempt: boolean }> {
+  const r = await one<{ blocked_at: Date | null; ip_exempt: boolean | null }>(
     `INSERT INTO api_workspace_credentials (workspace_id, credential_id, user_id, kind, label, scopes, first_used_at, last_used_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
      ON CONFLICT (workspace_id, credential_id) DO UPDATE SET last_used_at = EXCLUDED.last_used_at, label = EXCLUDED.label, scopes = EXCLUDED.scopes
-     RETURNING blocked_at`,
+     RETURNING blocked_at, ip_exempt`,
     [u.workspaceId, u.credentialId, u.userId, u.kind, u.label, u.scopes.join(' '), new Date(u.at)],
   );
-  return !!r?.blocked_at;
+  return { blocked: !!r?.blocked_at, ipExempt: r?.ip_exempt === true };
+}
+
+/** Which of `workspaceIds` exempted the credential from their IP allowlist (#156). */
+export async function ipExemptIn(credentialId: string, workspaceIds: string[]): Promise<Set<string>> {
+  const rows = await query<{ workspace_id: string }>(
+    `SELECT workspace_id FROM api_workspace_credentials WHERE credential_id = $1 AND workspace_id = ANY($2::text[]) AND ip_exempt`,
+    [credentialId, workspaceIds],
+  );
+  return new Set(rows.map((r) => r.workspace_id));
+}
+
+/** Exempts (or not) a credential in the workspace from its IP allowlist (#156); null when it never reached it. */
+export async function setWorkspaceCredentialIpExempt(workspaceId: string, credentialId: string, exempt: boolean, by: string): Promise<WorkspaceCredentialRow | null> {
+  const r = await query<{ credential_id: string }>(
+    `UPDATE api_workspace_credentials SET ip_exempt = $3, ip_exempt_by = $4 WHERE workspace_id = $1 AND credential_id = $2 RETURNING credential_id`,
+    [workspaceId, credentialId, exempt, exempt ? by : null],
+  );
+  if (!r.length) return null;
+  return (await workspaceCredentials(workspaceId)).find((c) => c.credentialId === credentialId) ?? null;
 }
 
 export interface WorkspaceCredentialRow {
@@ -569,10 +632,21 @@ export interface WorkspaceCredentialRow {
   firstUsedAt: number;
   lastUsedAt: number;
   blocked: boolean;
+  ipExempt: boolean;
 }
 
 export async function workspaceCredentials(workspaceId: string): Promise<WorkspaceCredentialRow[]> {
-  const rows = await query<{ credential_id: string; user_id: string; kind: 'personal' | 'oauth'; label: string; scopes: string; first_used_at: Date; last_used_at: Date; blocked_at: Date | null }>(
+  const rows = await query<{
+    credential_id: string;
+    user_id: string;
+    kind: 'personal' | 'oauth';
+    label: string;
+    scopes: string;
+    first_used_at: Date;
+    last_used_at: Date;
+    blocked_at: Date | null;
+    ip_exempt: boolean | null;
+  }>(
     `SELECT * FROM api_workspace_credentials WHERE workspace_id = $1 ORDER BY last_used_at DESC LIMIT 500`,
     [workspaceId],
   );
@@ -585,6 +659,7 @@ export async function workspaceCredentials(workspaceId: string): Promise<Workspa
     firstUsedAt: r.first_used_at.getTime(),
     lastUsedAt: r.last_used_at.getTime(),
     blocked: r.blocked_at !== null,
+    ipExempt: r.ip_exempt === true,
   }));
 }
 

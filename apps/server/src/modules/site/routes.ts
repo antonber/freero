@@ -53,7 +53,7 @@ export default function siteRoutes({ config }: ServerContext): Router {
     // A draft of terms, or a page the operator hasn't approved, is never a search result, whatever a
     // cached copy of its markup says.
     if ((site?.legal.has(key) && !legal.inEffect) || site?.underReview.has(key)) res.setHeader('X-Robots-Tag', 'noindex');
-    // Google Analytics (GA_MEASUREMENT_ID): its consent banner, and Google's script once accepted.
+    // Google Analytics (GA_MEASUREMENT_ID): Google's script unless this browser opted out, and the opt-out control.
     res.status(status).type('html').send(withAnalyticsRuntime(withAnalytics(textFor(req, key, raw), analytics), config));
   };
 

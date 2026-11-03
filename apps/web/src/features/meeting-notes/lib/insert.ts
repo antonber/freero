@@ -52,6 +52,8 @@ export function layoutMeetingNotes(input: MeetingInput): LaidOut {
 
 export interface MeetingReport {
   frameId: string;
+  /** The layout's "Summary" note (date, who came, the notes' own summary), when it made one. */
+  summaryId?: string;
   title: string;
   decisions: number;
   actions: number;
@@ -72,8 +74,11 @@ export function placeMeeting(editor: Editor, laid: LaidOut, at?: Point): Meeting
   editor.select([ids[0]]);
   editor.zoomToFit([ids[0]], { animate: true, padding: 96, maxZoom: Math.max(1, editor.getCamera().zoom) });
   // The layout's colours say what is what: decisions are green notes, other points yellow ones.
+  // The "Summary" note is the first one whose text starts with that title (layoutMeeting's top row).
+  const summaryAt = placed.findIndex((d) => d.type === 'shape' && /^<b>Summary<\/b>/.test(String((d as { text?: string }).text ?? '')));
   return {
     frameId: ids[0],
+    ...(summaryAt >= 0 && ids[summaryAt] ? { summaryId: ids[summaryAt] } : {}),
     title: frame.title,
     decisions: placed.filter((d) => d.type === 'sticky' && d.color === 'green').length,
     actions: placed.filter((d) => d.type === 'card').length,
@@ -89,6 +94,17 @@ export function summary(r: MeetingReport): string {
     r.notes ? `${r.notes} note${r.notes === 1 ? '' : 's'}` : '',
   ].filter(Boolean);
   return `Imported “${r.title}”${parts.length ? `: ${parts.join(', ')}` : ''}`;
+}
+
+/**
+ * The import's toast. Where the server offers AI, it carries "Summarise" (#148): the AI feature's
+ * `ai.summarizeFrame` writes the summary into the layout's "Summary" note (or a new note in the
+ * frame when there is none) — previewed, one undo step — or says why AI can't run here.
+ */
+export function announce(editor: Editor, r: MeetingReport): void {
+  const ai = !!editor.host.ai || !!editor.host.aiUnavailable;
+  const args = { frameId: r.frameId, ...(r.summaryId ? { fill: r.summaryId } : {}) };
+  editor.host.notify(summary(r), 'success', ai ? { action: { label: 'Summarise', run: () => editor.runCommand('ai.summarizeFrame', args) } } : undefined);
 }
 
 /** Reads a file and places it; throws LayoutError (a message for the person). */

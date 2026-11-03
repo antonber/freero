@@ -6,6 +6,7 @@ const WIDE = new Set<ShapeKind>([
   'display', 'delay', 'storedData', 'loopLimit', 'punchedTape', 'netSwitch', 'netLaptop',
   'wfBrowser', 'wfDesktop', 'wfButton', 'wfInput', 'wfSearch', 'wfDropdown', 'wfTabs', 'wfNavBar', 'wfCheckbox', 'wfRadio', 'wfToggle',
   'wfSlider', 'wfProgress', 'wfImage', 'wfTextArea', 'wfModal',
+  'vsmPush', 'vsmTruck', 'vsmFifo', 'vsmElectronic', 'vsmGoSee', 'dfdStore', 'dfdStoreLines',
 ]);
 const TALL = new Set<ShapeKind>(['umlActor', 'netPhone', 'collate', 'umlLifeline', 'wfPhone', 'wfTablet', 'wfCard']);
 
@@ -24,7 +25,7 @@ export function ShapeIcon({ kind, size = 20, strokeWidth = 1.6 }: { kind: ShapeK
   return (
     <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} fill="none" aria-hidden>
       <g transform={`translate(${pad + (box - w) / 2} ${pad + (box - h) / 2})`} stroke="currentColor" strokeWidth={sw} strokeLinejoin="miter" strokeLinecap="round">
-        <path d={p.outline} />
+        <path d={p.outline} stroke={p.open ? 'none' : undefined} />
         {p.details && <path d={p.details} />}
         {p.dashed && <path d={p.dashed} strokeDasharray={`${sw * 1.6} ${sw * 1.4}`} strokeLinecap="butt" />}
       </g>

@@ -14,6 +14,7 @@ import { STICKY_GAP, STICKY_SIZE, TOOL_ID, nearestColor, toolDims, type StickyTo
 import { stickyAt } from './lib/actions';
 import { gridPositions } from './lib/layout';
 import { listItems } from './lib/paste';
+import { padDefinition } from './lib/pad';
 import './sticky.css';
 
 /** Below this zoom the text is unreadable anyway: draw cheap "text lines" instead (2000-sticky boards). */
@@ -67,7 +68,7 @@ function paintSticky(el: StickyElement, p: LowDetailPaint) {
   for (const [y, w] of [[0.34, 0.64], [0.5, 0.52], [0.66, 0.36]] as const) p.rect(el.w * (1 - w) / 2, el.h * y - h / 2, el.w * w, h, ink, alpha);
 }
 
-export default defineElement({
+const stickyDefinition = defineElement({
   type: 'sticky',
   label: { one: 'Sticky note', many: 'Sticky notes' },
   icon: StickyNoteIcon,
@@ -123,3 +124,5 @@ export default defineElement({
     return true;
   },
 });
+
+export default [stickyDefinition, padDefinition];

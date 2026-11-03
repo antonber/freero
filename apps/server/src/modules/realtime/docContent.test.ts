@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { DOC_FRAGMENT, docToMarkdown, markdownToDoc } from '@freero/shared';
-import { readDocBlocks, writeDocBlocks } from './docContent';
+import { applyDocEdit, DocEditError, readDocBlocks, writeDocBlocks } from './docContent';
 import { restoreInto } from './restore';
 
 let n = 0;
@@ -66,4 +66,19 @@ it('restoring a doc version brings its text back as a new change, and leaves the
   live.on('update', () => updates++);
   expect(restoreInto(live, version, ['comments'])).toBe(0);
   expect(updates).toBe(0);
+});
+
+it('replacing a section takes a heading and what follows up to the next heading of its level — not past it — and keeps the heading’s id so its comments stay; a block that isn’t there changes nothing', () => {
+  const doc = new Y.Doc();
+  writeDocBlocks(doc, markdownToDoc('# Plan\n\n## Risks\n\nOld risk\n\n### Detail\n\nOld detail\n\n## Next\n\nKeep me'), id);
+  const risks = readDocBlocks(doc).find((b) => b.type === 'heading' && b.props?.level === 2)!.id!;
+  applyDocEdit(doc, { op: 'replaceSection', blockId: risks, blocks: markdownToDoc('## Risks\n\nNone left') }, id);
+  expect(docToMarkdown(readDocBlocks(doc)).trim()).toBe('# Plan\n\n## Risks\n\nNone left\n\n## Next\n\nKeep me');
+  expect(readDocBlocks(doc).find((b) => b.type === 'heading' && b.props?.level === 2)!.id).toBe(risks);
+
+  const before = Y.encodeStateVector(doc);
+  expect(() => applyDocEdit(doc, { op: 'replace', blockId: 'gone', blocks: markdownToDoc('x') }, id)).toThrow(DocEditError);
+  const para = readDocBlocks(doc).find((b) => b.type === 'paragraph')!.id!;
+  expect(() => applyDocEdit(doc, { op: 'replaceSection', blockId: para, blocks: markdownToDoc('x') }, id)).toThrow(DocEditError);
+  expect(Y.encodeStateVector(doc)).toEqual(before);
 });

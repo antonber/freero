@@ -1,7 +1,10 @@
-// A tiny live rendition of a frame: its background plus a block per child (Frames panel, deck).
+// A tiny live rendition of a frame: its background plus a block per child (Frames panel, deck),
+// and the slide's real picture once it has one (#52, lib/thumbnails.ts).
 import { memo } from 'react';
 import { STICKY_COLORS, type BoardElement, type FrameElement } from '@freero/shared';
+import type { Editor } from '@engine';
 import { DEFAULT_FILL } from './frames';
+import { useSlidePicture } from './thumbnails';
 
 function childColor(el: BoardElement): string {
   switch (el.type) {
@@ -46,3 +49,12 @@ export const Thumb = memo(function Thumb({ frame, children, w, h }: { frame: Fra
   );
 });
 
+
+/** The slide as it looks (its rendered picture), the block sketch until that is ready. */
+export const SlideThumb = memo(function SlideThumb(props: { editor: Editor; frame: FrameElement; children: BoardElement[]; w: number; h: number }) {
+  const { frame, w, h } = props;
+  const url = useSlidePicture(props.editor, frame, props.children);
+  if (!url) return <Thumb frame={frame} children={props.children} w={w} h={h} />;
+  const k = Math.min(w / frame.w, h / frame.h);
+  return <img className="fr-frame-pic" src={url} width={Math.max(4, Math.round(frame.w * k))} height={Math.max(4, Math.round(frame.h * k))} alt="" draggable={false} />;
+});

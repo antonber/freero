@@ -2,6 +2,8 @@
 // (0, 0); `placeLaidOut` moves that block onto free space of a board (findFreeSpot), so nothing
 // lands on existing content.
 import { STICKY_COLORS, type StickyColor } from '../elements';
+import { CHART_KINDS } from '../charts';
+import { layoutChart } from './chart';
 import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
 import { APART_GAP } from '../outline/spatial';
 import { translateDraft } from './kit';
@@ -26,7 +28,7 @@ export * from './kanban';
 export * from './kanbanRows';
 export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
 export { layered, spacedFit } from './layered';
-export { measureText, textWidth } from './measure';
+export { measureText, textWidth, wrapLines } from './measure';
 export { translateDraft } from './kit';
 export { parsePlantUml, looksLikePlantUml, type PlantUmlDiagram } from './plantuml';
 // Single fully-specified drafts (the public API creates items one by one with them).
@@ -138,6 +140,11 @@ function layoutLoose(input: StructureInput, ctx: LayoutContext): LaidOut {
     case 'table':
       if (!Array.isArray(input.rows) || input.rows.some((r) => !Array.isArray(r))) throw new LayoutError('table needs rows of cells');
       return layoutTable(input.rows, input.header !== false, ctx);
+    case 'chart':
+      if (!Array.isArray(input.rows) || input.rows.some((r) => !Array.isArray(r))) throw new LayoutError('chart needs rows of cells');
+      if (input.type !== undefined && !CHART_KINDS.includes(input.type)) throw new LayoutError(`type must be one of ${CHART_KINDS.join(', ')}`);
+      if (input.title !== undefined && typeof input.title !== 'string') throw new LayoutError('A chart title is text');
+      return layoutChart(input.rows, input.type ?? 'bar', input.title ?? '', ctx);
     case 'note':
       if (typeof input.text !== 'string' || !input.text.trim()) throw new LayoutError('A note needs its text');
       if (input.title !== undefined && typeof input.title !== 'string') throw new LayoutError('A note title is text');

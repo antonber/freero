@@ -42,6 +42,8 @@ const toTemplateInfo = (t: SavedTemplateSummary): SavedTemplateInfo => ({
   shared: t.workspaceId !== null,
   ownerName: t.ownerName,
   canUnshare: t.canUnshare,
+  company: t.organisationName ?? null,
+  locked: t.locked === true,
   elementCount: t.elementCount,
   createdAt: t.createdAt,
 });
@@ -80,6 +82,11 @@ export function shareTemplateWith(teamId: string | null): Host['shareTemplate'] 
     if (shared && !teamId) throw new Error('This board isn’t in a team workspace.');
     return toTemplateInfo((await api.shareTemplate(id, shared ? teamId : null)).template);
   };
+}
+
+/** #155: publishes one of the user's templates to the board's company (or withdraws it). */
+export function publishTemplateTo(organisationId: string): NonNullable<Host['publishTemplate']> {
+  return async (id, published) => toTemplateInfo((await api.publishTemplate(id, published ? organisationId : null)).template);
 }
 
 export async function deleteTemplate(id: string): Promise<void> {
@@ -122,6 +129,11 @@ export function walkthroughsOf(boardId: string, opts: { canDownload: boolean; si
     setCaptions: async (id, cues) => (await api.setWalkthroughCaptions(boardId, id, cues)).walkthrough,
     captionsStatus: () => api.walkthroughCaptionsStatus(boardId),
     transcribe: async (id) => (await api.transcribeWalkthrough(boardId, id)).walkthrough,
+    setChapters: async (id, body) => (await api.setWalkthroughChapters(boardId, id, body)).walkthrough,
+    draftChapters: (id) => api.draftWalkthroughChapters(boardId, id),
+    reactions: async (id) => (await api.walkthroughReactions(boardId, id)).reactions,
+    react: opts.signedIn ? async (id, r) => (await api.reactToWalkthrough(boardId, id, r)).reaction : no('Reacting'),
+    unreact: (id, rid) => api.deleteWalkthroughReaction(boardId, id, rid),
     ...(opts.canDownload
       ? {
           download: async (id: string, title: string) => {

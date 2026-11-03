@@ -35,7 +35,10 @@ export type ElementType =
   | 'timelinebar'
   | 'doc'
   | 'kanbanview'
-  | 'diagram';
+  | 'diagram'
+  | 'chart'
+  | 'stickypad'
+  | 'icebreaker';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -113,9 +116,20 @@ export interface BaseElement {
   diagramLayer?: string | null;
   /** [additive] Its `locked` was set by its diagram layer's lock, and is cleared with it. */
   layerLocked?: true | null;
+  /**
+   * [additive, #52] A part of a slide layout (features/frame `lib/layouts.ts`): which slot of the
+   * layout it fills. Re-applying a layout to the slide replaces the parts still showing their
+   * placeholder text and moves the ones people filled in into the new layout's matching slot; an
+   * `image` slot's placeholder is replaced by a picture dropped or pasted onto it (features/image),
+   * which keeps the role. Meaningless outside a frame; clients that don't know it ignore it.
+   */
+  layoutRole?: SlideLayoutRole | null;
   createdAt: number;
   updatedAt: number;
 }
+
+/** [additive, #52] Slots of a slide layout (BaseElement.layoutRole). Only ever added to. */
+export type SlideLayoutRole = 'title' | 'subtitle' | 'body' | 'body2' | 'image' | 'number' | 'quote' | 'caption';
 
 export type TextAlign = 'left' | 'center' | 'right';
 export type VerticalAlign = 'top' | 'middle' | 'bottom';
@@ -239,6 +253,34 @@ export interface StickyElement extends BaseElement, TextStyle {
   tags?: string[];
 }
 
+/**
+ * [#132] A pad of blank stickies of one colour: dragging from it peels off a new sticky (its own
+ * element, made by whoever peels it — a participant's goes to their private layer like any draft).
+ * The pad stays. Older clients that don't know the type show nothing for it.
+ */
+export interface StickyPadElement extends BaseElement {
+  type: 'stickypad';
+  color: StickyColor;
+}
+
+/**
+ * [#150] An icebreaker widget: a wheel of names, dice, or a random speaking order. The element holds
+ * only its set-up; every spin, roll and shuffle is made by the SERVER (POST
+ * /api/boards/:id/icebreakers/:elementId/roll) and published in the `icebreakerResults` collection
+ * (ICEBREAKER_RESULTS_COLLECTION), so every client shows the same result on the same clock.
+ * Older clients that don't know the type show nothing for it.
+ */
+export interface IcebreakerElement extends BaseElement {
+  type: 'icebreaker';
+  kind: 'wheel' | 'dice' | 'speakers';
+  title: string;
+  /** Wheel slices / people to put in order (unused by dice). */
+  entries: string[];
+  /** Dice: how many (1..3). */
+  dice?: number;
+  color: string;
+}
+
 export type ShapeKind =
   | 'rect'
   | 'roundRect'
@@ -333,7 +375,32 @@ export type ShapeKind =
   | 'wfAvatar'
   | 'wfSlider'
   | 'wfModal'
-  | 'wfProgress';
+  | 'wfProgress'
+  // [additive] Value-stream mapping (#133): process box, data box, supplier / customer, inventory,
+  // push / pull / electronic flows, kaizen burst, shipment, supermarket, FIFO lane, kanban
+  // cards, go-see. Clients that don't know a kind draw its box.
+  | 'vsmProcess'
+  | 'vsmDataBox'
+  | 'vsmSupplier'
+  | 'vsmInventory'
+  | 'vsmPush'
+  | 'vsmPull'
+  | 'vsmKaizen'
+  | 'vsmTruck'
+  | 'vsmSupermarket'
+  | 'vsmFifo'
+  | 'vsmElectronic'
+  | 'vsmKanban'
+  | 'vsmSignal'
+  | 'vsmGoSee'
+  // [additive] Data-flow diagrams (#133): process, multiple process, data stores (closed at one
+  // end, or two lines), external entity, trust boundary.
+  | 'dfdProcess'
+  | 'dfdMultiProcess'
+  | 'dfdStore'
+  | 'dfdStoreLines'
+  | 'dfdExternal'
+  | 'dfdBoundary';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';
@@ -525,12 +592,31 @@ export interface CardElement extends BaseElement {
    * back with the field (undo) or when the card returns to that kanban.
    */
   values?: FieldValues;
+  /**
+   * [additive, #142] A flip card's other side: its own text (rich text) and paper colour. Absent /
+   * null: a one-sided card. Written by the card feature (format toolbar "Two-sided", editing the back).
+   */
+  back?: CardBack | null;
+  /** [additive, #142] The back is the side showing, for everyone (shared state; exports show it too). */
+  flipped?: boolean;
+}
+
+/** [#142] The back of a two-sided card. */
+export interface CardBack {
+  title: RichText;
+  color: string;
 }
 
 export interface EmojiElement extends BaseElement {
   type: 'emoji';
-  /** A single emoji grapheme or a stamp id like 'stamp:thumbsup'. */
+  /**
+   * A single emoji grapheme, a stamp or pack sticker id like 'stamp:thumbsup', or [additive, #138]
+   * a team sticker: 'img:/uploads/<name>' (an image from the workspace's sticker sets; clients
+   * show only their own server's uploads).
+   */
   emoji: string;
+  /** [additive, #138] A team sticker's name (its alt text and how it reads in the outline). */
+  name?: string;
 }
 
 /** A mind-map node; root nodes have parentId null. Edges are drawn from parentId. */
@@ -539,8 +625,8 @@ export interface MindmapElement extends BaseElement {
   text: RichText;
   parentId: string | null;
   rootId: string;
-  /** Root-only: which side children grow to. */
-  direction?: 'right' | 'left' | 'both';
+  /** Root-only: which side children grow to ('down': below the topic, a top-down map, #134). */
+  direction?: 'right' | 'left' | 'both' | 'down';
   color: string;
   collapsed?: boolean;
 }
@@ -902,7 +988,7 @@ export interface FileElement extends BaseElement {
 }
 
 /** Live audience activities (KAI-132). */
-export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna';
+export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna' | 'matrix' | 'quiz';
 export interface ActivityOption {
   id: string;
   text: string;
@@ -936,6 +1022,38 @@ export interface ActivityElement extends BaseElement {
   closed?: boolean;
   /** Accent colour. */
   color: string;
+  /** [additive, #40] Draw the QR code of the phone answer link on the activity (exports keep it). */
+  qr?: boolean;
+  /** [additive, #147] 2×2 matrix: the axes' names, low end then high end (`options` are the items people place). */
+  axes?: { x: [string, string]; y: [string, string] };
+  /**
+   * [additive, #147] Quiz: its questions. Which options are right is NOT here (everyone holds the
+   * board): the server keeps the answer key (PUT …/key) and publishes it per question once shown.
+   */
+  questions?: QuizQuestion[];
+  /** [additive, #147] Quiz: where the facilitator is. Absent / step -1: not started. */
+  quiz?: QuizStep;
+}
+
+/** [#147] One quiz question. */
+export interface QuizQuestion {
+  id: string;
+  text: string;
+  options: ActivityOption[];
+  /** Seconds to answer once the question opens (server clock); absent / 0: no limit. */
+  seconds?: number;
+  /** More than one answer is right (people may pick several); set with the answer key. */
+  multi?: boolean;
+}
+
+/** [#147] The running quiz, written by its facilitator (an editor). */
+export interface QuizStep {
+  /** The question open now (index into `questions`), -1 before the first. */
+  step: number;
+  /** When it opened (server clock, ms): time limits and answer times count from here. */
+  openedAt: number;
+  /** Answers to this question are closed and its right answer and counts are shown. */
+  showAnswer: boolean;
 }
 
 /**
@@ -1037,6 +1155,29 @@ export interface DiagramLayer {
   locked?: true | null;
 }
 
+/** [additive, #137] How a chart draws its data. */
+export type ChartKind = 'bar' | 'stackedBar' | 'line' | 'area' | 'pie';
+
+/**
+ * [additive, #137] A chart drawn from a small data grid. Like a table, the element holds only the
+ * grid's STRUCTURE (row and series ids, in order) and how it is drawn; the cells — category labels,
+ * series names, values — live in the `chartCells` collection, one key per cell (charts.ts
+ * `chartCellKey`), so two people editing different cells never overwrite each other. A pie draws the
+ * first series. Older clients draw an "unsupported" box.
+ */
+export interface ChartElement extends BaseElement {
+  type: 'chart';
+  kind: ChartKind;
+  /** Plain text above the plot ('' = none). */
+  title: string;
+  /** Categories (x axis / pie slices), in order. Their labels are cells in column `CHART_LABEL`. */
+  rows: Array<{ id: string }>;
+  /** Series (bars / lines of one colour), in order. Their names are cells in row `CHART_HEAD`. */
+  series: Array<{ id: string; color?: string }>;
+  /** Show the legend (default true when there are two or more series, or for a pie). */
+  legend?: boolean;
+}
+
 /**
  * A diagram (#117; docs/design/diagrams.md): a container whose members — the items whose `frameId`
  * is the diagram, its shapes, frames (subgraphs) and the connectors between them — it keeps laid out
@@ -1082,7 +1223,10 @@ export type BoardElement =
   | TimelineBarElement
   | DocElement
   | KanbanViewElement
-  | DiagramElement;
+  | DiagramElement
+  | ChartElement
+  | StickyPadElement
+  | IcebreakerElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

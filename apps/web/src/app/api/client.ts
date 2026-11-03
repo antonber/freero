@@ -1,5 +1,13 @@
 import type {
   Account,
+  AdminBoardSort,
+  AdminBoardsResponse,
+  AdminScope,
+  AdminTrashedBoard,
+  UsageDay,
+  BoardGroupGrant,
+  DirectoryGroup,
+  WorkspaceGroup,
   OrganisationSummary,
   OrganisationWorkspace,
   OrganisationWorkspaceMember,
@@ -30,6 +38,9 @@ import type {
   TrackerFieldInfo,
   ActivityAnswer,
   ActivityState,
+  IcebreakerResult,
+  PresentationRequest,
+  PresentationSession,
   BoardCallResponse,
   PersonalViewsResponse,
   SetBoardCallRequest,
@@ -139,6 +150,7 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
+import type { Sticker, StickerSet, StickersResponse } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -149,7 +161,9 @@ import type {
   DecisionChanges,
   DecisionResponse,
   Walkthrough,
+  WalkthroughChaptersInput,
   WalkthroughComment,
+  WalkthroughReaction,
   WalkthroughCue,
   WalkthroughSummary,
 } from '@freero/shared';
@@ -194,7 +208,7 @@ const walkthroughsPath = (boardId: string, id?: string) =>
 
 const activityPath = (id: string, aid: string) => `/api/boards/${encodeURIComponent(id)}/activities/${encodeURIComponent(aid)}`;
 
-export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
+export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash' | 'archived';
 
 /** Audit log filters (see GET /api/workspaces/:id/audit). */
 export interface AuditQuery {
@@ -328,6 +342,9 @@ export const api = {
   deleteBoard: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}`),
   restoreBoard: (id: string) => request<{ board: BoardSummary }>('POST', `/api/boards/${id}/restore`),
   deleteBoardForever: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}/permanent`),
+  /** #153: archive (read-only for everyone, out of the default lists) or unarchive. */
+  setBoardArchived: (id: string, archived: boolean) =>
+    request<{ board: BoardSummary }>('POST', `/api/boards/${encodeURIComponent(id)}/${archived ? 'archive' : 'unarchive'}`),
   /** A copy, where you chose (#124) or else where the server places it (its workspace when you may, else personal). */
   duplicateBoard: (id: string, to?: DuplicateBoardRequest) =>
     request<{ board: BoardSummary }>('POST', `/api/boards/${id}/duplicate`, to ?? {}),
@@ -375,6 +392,13 @@ export const api = {
     request<ActivityState>('PATCH', `${activityPath(id, aid)}/questions/${encodeURIComponent(qid)}`, patch),
   revealActivity: (id: string, aid: string, revealed: boolean) => request<ActivityState>('POST', `${activityPath(id, aid)}/reveal`, { revealed }),
   clearActivity: (id: string, aid: string) => request<ActivityState>('DELETE', `${activityPath(id, aid)}/answers`),
+  presentation: (id: string, body: PresentationRequest) =>
+    request<{ session: PresentationSession | null }>('POST', `/api/boards/${encodeURIComponent(id)}/presentation`, body).then((r) => r.session),
+  rollIcebreaker: (id: string, elementId: string) =>
+    request<{ result: IcebreakerResult }>('POST', `/api/boards/${encodeURIComponent(id)}/icebreakers/${encodeURIComponent(elementId)}/roll`).then((r) => r.result),
+  setActivityKey: (id: string, aid: string, key: Record<string, string[]>) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key`, { key }),
+  copyActivityKey: (id: string, aid: string, from: { boardId: string; activityId: string }) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key/copy`, from),
+  runQuiz: (id: string, aid: string, run: { step: number } | { showAnswer: true }) => request<ActivityState>('POST', `${activityPath(id, aid)}/quiz`, run),
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
@@ -424,6 +448,13 @@ export const api = {
   listTemplates: () => request<{ templates: SavedTemplateSummary[] }>('GET', '/api/templates'),
   getTemplate: (id: string) => request<{ template: SavedTemplate }>('GET', `/api/templates/${encodeURIComponent(id)}`),
   saveTemplate: (body: SaveTemplateRequest) => request<{ template: SavedTemplateSummary }>('POST', '/api/templates', body),
+  /** #155: publish one of your templates to an organisation (null: withdraw it). */
+  publishTemplate: (id: string, organisationId: string | null) =>
+    request<{ template: SavedTemplateSummary }>('PATCH', `/api/templates/${encodeURIComponent(id)}`, { organisationId }),
+  /** #155: owners and content admins of where it is shared or published. */
+  setTemplateLocked: (id: string, locked: boolean) => request<{ template: SavedTemplateSummary }>('POST', `/api/templates/${encodeURIComponent(id)}/lock`, { locked }),
+  setTemplateRetired: (id: string, retired: boolean) => request<{ template: SavedTemplateSummary }>('POST', `/api/templates/${encodeURIComponent(id)}/retire`, { retired }),
+  placeTemplates: (workspaceId: string) => request<{ templates: SavedTemplateSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/admin/templates`),
   deleteTemplate: (id: string) => request<{ ok: true }>('DELETE', `/api/templates/${encodeURIComponent(id)}`),
   /** Shares one of your templates with a team workspace (null: personal again). */
   shareTemplate: (id: string, workspaceId: string | null) =>
@@ -441,8 +472,13 @@ export const api = {
     request<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/members`),
   inviteToWorkspace: (id: string, email: string, role: Exclude<WorkspaceRole, 'owner'>) =>
     request<{ member?: WorkspaceMember; invite?: WorkspaceInvite }>('POST', `/api/workspaces/${encodeURIComponent(id)}/members`, { email, role }),
-  setWorkspaceRole: (id: string, userId: string, role: WorkspaceRole) =>
-    request<{ member: WorkspaceMember }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { role }),
+  /** `adminScopes` (#151, owners only): what an admin administers; null: everything. */
+  setWorkspaceRole: (id: string, userId: string, role: WorkspaceRole, adminScopes?: AdminScope[] | null) =>
+    request<{ member: WorkspaceMember }>(
+      'PATCH',
+      `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+      adminScopes === undefined ? { role } : { role, adminScopes },
+    ),
   removeWorkspaceMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
   resendWorkspaceInvite: (id: string, inviteId: string) =>
@@ -502,9 +538,29 @@ export const api = {
     request<{ workspaceId: string }>('POST', `/api/workspace-invites/${encodeURIComponent(token)}/accept`),
 
   // admin console (owners/admins of a team workspace; checked by the server)
+  /** #65: the daily usage rollups, and the same as a CSV file (a plain link: the cookie authenticates it). */
+  usageHistory: (id: string, days: number) => request<{ days: UsageDay[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage/history?days=${days}`),
+  usageHistoryCsvUrl: (id: string, days: number) => `/api/workspaces/${encodeURIComponent(id)}/admin/usage/history.csv?days=${days}`,
   adminUsage: (id: string) => request<{ usage: WorkspaceUsage }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage`),
   /** Boards whose link is on but doesn't meet the workspace's link policy (#39). */
   linkCompliance: (id: string) => request<{ boards: LinkComplianceIssue[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/link-compliance`),
+  /** #152: the board inventory for the workspace's content admins, and what they fix from it. */
+  adminBoards: (id: string, p: { filter: string; inactiveDays: number; sort: AdminBoardSort; q: string; offset: number; limit: number }) =>
+    request<AdminBoardsResponse>(
+      'GET',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/boards?` +
+        new URLSearchParams({ filter: p.filter, inactiveDays: String(p.inactiveDays), sort: p.sort, q: p.q, offset: String(p.offset), limit: String(p.limit) }).toString(),
+    ),
+  adminBoardLinkOff: (id: string, boardId: string) =>
+    request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/boards/${encodeURIComponent(boardId)}/link-off`),
+  adminRemoveOutsiders: (id: string, boardId: string) =>
+    request<{ removed: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/boards/${encodeURIComponent(boardId)}/remove-outsiders`),
+  adminTransferBoard: (id: string, boardId: string, userId: string) =>
+    request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/boards/${encodeURIComponent(boardId)}/transfer`, { userId }),
+  /** #153: the workspace's trash for its content admins, and restoring from it. */
+  adminTrash: (id: string) => request<{ boards: AdminTrashedBoard[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/trash`),
+  adminRestoreBoard: (id: string, boardId: string) =>
+    request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/trash/${encodeURIComponent(boardId)}/restore`),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>
@@ -512,8 +568,9 @@ export const api = {
       'POST',
       `/api/workspaces/${encodeURIComponent(id)}/admin/members/${encodeURIComponent(userId)}/${deactivated ? 'deactivate' : 'reactivate'}`,
     ),
-  workspaceSettings: (id: string) => request<{ settings: WorkspaceSettings }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`),
-  updateWorkspaceSettings: (id: string, patch: Partial<WorkspaceSettings>) =>
+  /** `yourIp` (#156): the address the server sees (for the IP allowlist). */
+  workspaceSettings: (id: string) => request<{ settings: WorkspaceSettings; yourIp?: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`),
+  updateWorkspaceSettings: (id: string, patch: Partial<WorkspaceSettings> & { confirmExcludesMe?: true }) =>
     request<{ settings: WorkspaceSettings }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`, patch),
   auditEvents: (id: string, filter: AuditQuery) =>
     request<{ events: AuditEvent[]; next: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit?${auditQuery(filter)}`),
@@ -576,6 +633,25 @@ export const api = {
     request<{ ok: true }>('PUT', `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
   removeProjectMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
+  /** #63: groups a project is shared with, and sharing it with one (or stopping). */
+  listProjectGroups: (id: string) => request<{ groups: WorkspaceGroup[] }>('GET', `/api/projects/${encodeURIComponent(id)}/groups`),
+  setProjectGroup: (id: string, groupId: string, shared: boolean) =>
+    request<{ groups: WorkspaceGroup[] }>(shared ? 'PUT' : 'DELETE', `/api/projects/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupId)}`),
+
+  // user groups (#63)
+  listGroups: (workspaceId: string) =>
+    request<{ groups: WorkspaceGroup[]; directory: DirectoryGroup[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/groups`),
+  createGroup: (workspaceId: string, name: string) => request<{ group: WorkspaceGroup }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/groups`, { name }),
+  renameGroup: (id: string, name: string) => request<{ group: WorkspaceGroup }>('PATCH', `/api/groups/${encodeURIComponent(id)}`, { name }),
+  deleteGroup: (id: string) => request<{ ok: true }>('DELETE', `/api/groups/${encodeURIComponent(id)}`),
+  listGroupMembers: (id: string) => request<{ members: WorkspaceMember[] }>('GET', `/api/groups/${encodeURIComponent(id)}/members`),
+  setGroupMember: (id: string, userId: string, member: boolean) =>
+    request<{ group: WorkspaceGroup }>(member ? 'PUT' : 'DELETE', `/api/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
+  listBoardGroups: (boardId: string) => request<{ groups: BoardGroupGrant[] }>('GET', `/api/boards/${encodeURIComponent(boardId)}/groups`),
+  shareBoardWithGroup: (boardId: string, groupId: string, role: BoardGroupGrant['role']) =>
+    request<{ groups: BoardGroupGrant[] }>('PUT', `/api/boards/${encodeURIComponent(boardId)}/groups/${encodeURIComponent(groupId)}`, { role }),
+  unshareBoardGroup: (boardId: string, groupId: string) =>
+    request<{ groups: BoardGroupGrant[] }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/groups/${encodeURIComponent(groupId)}`),
 
   // version history (editors and owners)
   listVersions: (boardId: string) => request<{ versions: BoardVersion[] }>('GET', `/api/boards/${boardId}/versions`),
@@ -710,6 +786,22 @@ export const api = {
   uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
   // any other file: an opaque attachment, only ever downloaded from its board
   uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+
+  // team sticker sets (#138): the board's workspace's own stickers
+  stickers: (boardId: string) => request<StickersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/stickers`),
+  createStickerSet: (boardId: string, name: string) => request<{ set: StickerSet }>('POST', `/api/boards/${encodeURIComponent(boardId)}/sticker-sets`, { name }),
+  async addSticker(setId: string, file: Blob, name: string): Promise<Sticker> {
+    const path = `/api/sticker-sets/${encodeURIComponent(setId)}/stickers?name=${encodeURIComponent(name)}`;
+    const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(res.status, body?.error || 'Upload failed');
+    }
+    return ((await res.json()) as { sticker: Sticker }).sticker;
+  },
+  removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
+  removeSticker: (setId: string, stickerId: string) =>
+    request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });
@@ -752,6 +844,16 @@ export const api = {
   transcribeWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('POST', `${walkthroughsPath(boardId, id)}/transcript`),
   walkthroughCaptionsStatus: (boardId: string) =>
     request<{ available: boolean; reason?: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/walkthroughs-captions`),
+  setWalkthroughChapters: (boardId: string, id: string, body: WalkthroughChaptersInput) =>
+    request<{ walkthrough: Walkthrough }>('PUT', `${walkthroughsPath(boardId, id)}/chapters`, body),
+  draftWalkthroughChapters: (boardId: string, id: string) => request<WalkthroughChaptersInput>('POST', `${walkthroughsPath(boardId, id)}/chapters/draft`),
+  walkthroughReactions: (boardId: string, id: string) => request<{ reactions: WalkthroughReaction[] }>('GET', `${walkthroughsPath(boardId, id)}/reactions`),
+  reactToWalkthrough: (boardId: string, id: string, body: { atMs: number; emoji: string }) =>
+    request<{ reaction: WalkthroughReaction }>('POST', `${walkthroughsPath(boardId, id)}/reactions`, body),
+  async deleteWalkthroughReaction(boardId: string, id: string, reactionId: string): Promise<void> {
+    const res = await fetch(`${walkthroughsPath(boardId, id)}/reactions/${encodeURIComponent(reactionId)}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
   async downloadWalkthrough(boardId: string, id: string): Promise<Blob> {
     const res = await fetch(`${walkthroughsPath(boardId, id)}/download`, { credentials: 'same-origin' });
     if (!res.ok) throw await failure(res);
@@ -799,6 +901,12 @@ export const api = {
     request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision, grant }),
   workspaceApi: (id: string) => request<WorkspaceApiInfo>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/api`),
   setWorkspaceApi: (id: string, enabled: boolean) => request<WorkspaceApiInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/api`, { enabled }),
+  /** #156: exempt a token or app from the workspace's IP allowlist. */
+  setWorkspaceCredentialIpExempt: (id: string, credentialId: string, exempt: boolean) =>
+    request<WorkspaceApiInfo>(
+      exempt ? 'POST' : 'DELETE',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/api/credentials/${encodeURIComponent(credentialId)}/ip-exempt`,
+    ),
   setWorkspaceCredentialBlocked: (id: string, credentialId: string, blocked: boolean) =>
     request<WorkspaceApiInfo>(
       blocked ? 'POST' : 'DELETE',

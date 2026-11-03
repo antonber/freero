@@ -1,0 +1,159 @@
+/* Icebreaker widgets (#150): a white card with the wheel, dice or order and a spin button. */
+.fr-icebreaker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--fr-ink);
+  font-family: var(--fr-font);
+  border-top: 6px solid var(--accent);
+  box-shadow:
+    0 0 0 1px rgba(23, 22, 43, 0.08),
+    0 10px 24px -14px rgba(23, 22, 43, 0.35);
+}
+
+.fr-icebreaker__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+
+.fr-icebreaker__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--fr-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-icebreaker__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+.fr-icebreaker__wheel {
+  width: 100%;
+  height: 100%;
+  font-family: var(--fr-font);
+}
+
+.fr-icebreaker__dice {
+  display: flex;
+  gap: 14px;
+}
+
+.fr-icebreaker__die {
+  width: 72px;
+  height: 72px;
+  filter: drop-shadow(0 4px 6px rgba(23, 22, 43, 0.18));
+}
+
+.fr-icebreaker__die.is-tumbling {
+  transform: rotate(-8deg);
+}
+
+.fr-icebreaker__die.is-tumbling:nth-child(2) {
+  transform: rotate(11deg);
+}
+
+.fr-icebreaker__order {
+  align-self: start;
+  justify-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+.fr-icebreaker__order li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  opacity: 0.35;
+}
+
+.fr-icebreaker__order li.is-in {
+  opacity: 1;
+}
+
+.fr-icebreaker__n {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fr-icebreaker__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.fr-icebreaker__result {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fr-icebreaker__result small {
+  color: var(--fr-ink-3);
+}
+
+.fr-icebreaker__spin {
+  padding: 7px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font: 650 14px var(--fr-font);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.fr-icebreaker__spin:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.fr-icebreaker-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 2px dashed var(--fr-primary);
+  border-radius: 14px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.fr-icebreaker-names {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+}

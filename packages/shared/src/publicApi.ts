@@ -26,6 +26,7 @@ export const API_SCOPES = {
   'members:read': 'See who has access to your boards',
   'members:write': 'Invite people to boards, change their access and remove them',
   'audit:read': 'Read the audit log of team workspaces you administer',
+  'webhooks:manage': 'Add, change and remove the webhooks of team workspaces you administer, and read their delivery logs',
   'problems:triage': 'Read the problems people reported (notes, screenshots, diagnostics) and set their status — Freero operators only',
 } as const;
 export type ApiScope = keyof typeof API_SCOPES;
@@ -215,6 +216,8 @@ export interface WorkspaceApiCredential {
   lastUsedAt: number;
   /** Blocked here by an admin (it still works elsewhere). */
   blocked: boolean;
+  /** [additive, #156] Exempt here from the workspace's IP allowlist (an integration on a server elsewhere). */
+  ipExempt?: boolean;
 }
 
 // ---- /api/v1 payloads (docs/api/openapi.json is the reference) ----
@@ -232,6 +235,23 @@ export interface ApiBoard {
   owner: { id: string; name: string };
   createdAt: number;
   updatedAt: number;
+}
+/**
+ * [additive] A board's embedding on other sites (#2) as the API shows and sets it
+ * (`GET` / `PATCH /boards/{id}/embed`): whether it is on, whether its workspace allows it, who an
+ * embed lets in without signing in, and the embed URL / iframe code (`readonly`, `frameId` options).
+ */
+export interface ApiBoardEmbed {
+  embeddable: boolean;
+  /** The workspace's `boardEmbeds` policy lets this board be embedded. */
+  allowed: boolean;
+  /** You may turn it on or off (the owner or a co-owner). */
+  canChange: boolean;
+  /** What a visitor without an account may do in the embed: 'viewer', or null (they sign in). */
+  visitor: 'viewer' | null;
+  /** The embed URL and iframe code (null while embedding is off). */
+  url: string | null;
+  code: string | null;
 }
 /** An item (board element) as an API caller sees it. */
 export interface ApiItem {
@@ -257,8 +277,16 @@ export interface ApiItem {
   /** The rest of the element as stored (rich text as sanitised HTML). */
   data: Record<string, unknown>;
 }
-export const API_CREATABLE_TYPES = ['sticky', 'shape', 'text', 'card', 'frame', 'connector'] as const;
+export const API_CREATABLE_TYPES = ['sticky', 'shape', 'text', 'card', 'frame', 'connector', 'image', 'embed'] as const;
 export type ApiCreatableType = (typeof API_CREATABLE_TYPES)[number];
+/**
+ * [#170] Created from a URL the server fetches itself (unfurl's SSRF-safe fetch): an image is copied
+ * into the caller's uploads (bytes sniffed, their quota), never hot-linked; an embed must be a link
+ * on an allow-listed provider (`embedProviderForUrl`). Not proposable as suggestions.
+ */
+export const API_URL_ITEM_TYPES: readonly ApiCreatableType[] = ['image', 'embed'];
+/** Most items made from a URL per create call (each is an outbound fetch). */
+export const API_MAX_URL_ITEMS_PER_CALL = 20;
 /** Most items one create call may add; a bigger request is refused whole. */
 export const API_MAX_ITEMS_PER_CALL = 500;
 /** Most ids one bulk delete may name. */

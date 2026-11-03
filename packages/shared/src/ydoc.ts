@@ -1,3 +1,4 @@
+import { chartCellOwner } from './charts';
 import { tableCellOwner } from './elements';
 import { TRACKER_COLLECTION } from './trackers';
 import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
@@ -17,6 +18,8 @@ import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts;
 //                                     element content: in the table's doc, ELEMENT_CONTENT_COLLECTIONS)
+//   'chartCells' -> features/chart (a chart's labels, series names and values per key — see
+//                                     charts.ts; element content like tableCells, #137)
 //   'privateMode' -> features/private-mode (key 'session' -> PrivateModeSession)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot,
 //                                     `h:${sessionId}` -> VotingHistoryEntry; while results are hidden the
@@ -26,6 +29,10 @@ import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 //                                     SERVER: realtime/facilitation.ts enforces it)
 //   'estimation' -> features/estimation (planning poker; sealed estimates in the PRIVATE layer)
 //   'retro'    -> features/retro      (key 'session' -> the guided retro's phase)
+//   'icebreakerResults' -> features/icebreakers (icebreaker id -> IcebreakerResult; WRITTEN BY THE
+//                                     SERVER only — modules/icebreakers; element content)
+//   'presentation' -> features/present (key 'session' -> PresentationSession; WRITTEN BY THE SERVER
+//                                     only — modules/presentations, #146)
 //   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide; element
 //                                     content: in the frame's doc)
 //   'diagramSources' -> features/from-text (diagram id -> the source a diagram was laid out from
@@ -130,11 +137,15 @@ export function homeLayer(layers: readonly string[]): string | null {
  */
 export const ELEMENT_CONTENT_COLLECTIONS: Readonly<Record<string, ElementContentRule>> = {
   tableCells: byKey(tableCellOwner),
+  // c:<chartId>:<rowId>:<colId> -> a chart's cell (charts.ts, #137)
+  chartCells: byKey(chartCellOwner),
   // frame id -> the presenter's notes for that frame
   presenterNotes: byKey((key) => key || null),
   // activity id -> its live results (ENGAGE_RESULTS_COLLECTION; written by the server only, which
   // also moves them: see SERVER_WRITTEN_COLLECTIONS)
   engageResults: byKey((key) => key || null),
+  // icebreaker id -> its latest spin / roll / shuffle (ICEBREAKER_RESULTS_COLLECTION, #150; server-written)
+  icebreakerResults: byKey((key) => key || null),
   // Comment records (CommentRecord in elements.ts): a thread pinned to an item (`t:` record's
   // `elementId`) lives with the item, every record of it (`s:`/`m:`/`r:`/`x:`) with its thread.
   // Legacy whole-thread values (no prefix) carry `elementId` themselves.
@@ -174,7 +185,7 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
  * 'walkthroughs' mirrors the recordings modules/walkthroughs keeps (KAI-133): they outlive restores.
  * 'agentPauses' is a person's "stop" to an agent (KAI-249): an older version must not resume it.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs', 'agentPauses'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs', 'agentPauses', 'icebreakerResults', 'presentation'] as const;
 
 /**
  * Top-level types a board BACKUP (`.freero`, KAI-137) leaves out, and a restore drops if a file
@@ -185,7 +196,7 @@ export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 
  * presenter notes, diagram sources — is board content and travels. A new session collection
  * belongs here (and usually in Y_KEPT_ON_RESTORE).
  */
-export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions', 'agentPauses'] as const;
+export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions', 'agentPauses', 'icebreakerResults', 'presentation'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
@@ -337,7 +348,53 @@ export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
  * any socket's change to them). When one of them is also element content
  * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
  */
-export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION];
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION, 'icebreakerResults', 'presentation'];
+
+/**
+ * [#146] Who presents the board now: key 'session' -> PresentationSession, written only by the
+ * server (modules/presentations), so only the presenter, the facilitator or the owner can hand
+ * presenting to someone else. The slides themselves still follow the presenter's presence.
+ */
+export const PRESENTATION_COLLECTION = 'presentation';
+export interface PresentationSession {
+  presenterId: string;
+  presenterName: string;
+  /** When this presenter took over (server clock). */
+  at: number;
+  /** The slide (frame id) the presentation was on when it was handed over. */
+  frameId: string | null;
+  /** Who handed it over (their name), when it was a handoff. */
+  handedBy?: string;
+  /** The user id it was handed over from. */
+  handedFrom?: string;
+}
+
+/** [#150] Icebreaker results, written only by the server (modules/icebreakers): one per widget. */
+export const ICEBREAKER_RESULTS_COLLECTION = 'icebreakerResults';
+
+/**
+ * [#150] The latest spin, roll or shuffle of an icebreaker. Everyone animates it from `at` for
+ * `ms` (the SERVER's clock), so all screens land on the same result at the same moment.
+ */
+export interface IcebreakerResult {
+  elementId: string;
+  /** Counts up with every spin (a new one starts the animation again). */
+  seq: number;
+  /** When it started (server clock, ms) and how long it turns or tumbles. */
+  at: number;
+  ms: number;
+  /** Who spun it (their display name). */
+  by: string;
+  /** Wheel: the entry it lands on, out of `of` entries as they were (the list may change after). */
+  index?: number;
+  of?: number;
+  /** The entry's text when it was picked. */
+  picked?: string;
+  /** Dice: each die, 1..6. */
+  dice?: number[];
+  /** Speakers: the entries in the order drawn. */
+  order?: string[];
+}
 
 export interface ActivityResults {
   activityId: string;
@@ -356,6 +413,20 @@ export interface ActivityResults {
   rating?: Array<{ optionId: string; avg: number; count: number; dist: number[] }>;
   /** Most upvoted first; hidden questions left out. `by`: the asker's name unless asked anonymously. */
   questions?: Array<{ id: string; text: string; by?: string; votes: number; answered: boolean; at: number }>;
+  /** [#147] 2×2 matrix, per item in the element's order: how many placed it, the average place (0..1) and the spread (standard deviation) on each axis. */
+  matrix?: Array<{ optionId: string; count: number; x: number; y: number; sx: number; sy: number }>;
+  /**
+   * [#147] Quiz: for the open question, how many answered; once its answer is shown, the right
+   * options and how many picked each. `leaderboard` (best first, top 10) only once revealed; names
+   * only when the quiz isn't anonymous.
+   */
+  quiz?: {
+    questionId: string | null;
+    answered: number;
+    correct?: string[];
+    counts?: Array<{ optionId: string; count: number }>;
+    leaderboard?: Array<{ name: string; score: number; right: number }>;
+  };
 }
 
 /** Private mode: while active, what participants add stays in their private layer until revealed. */

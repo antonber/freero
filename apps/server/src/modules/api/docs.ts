@@ -3,15 +3,18 @@
 // scopes (boards:read / boards:write), roles, the team's API switch and the downloads policy apply;
 // the operations are modules/docs', the same the app uses.
 import type { Request } from 'express';
-import type { BoardSummary, DocBlock } from '@freero/shared';
+import { docThreads, mentionsAsNames, walkDocBlocks, type BoardSummary, type CommentMessageRecord, type CommentThreadRecord, type DocBlock } from '@freero/shared';
 import { badRequest } from '../../platform/http';
+import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { useInWorkspace } from '../apiauth/index';
-import { boardSummaryFor, listBoardsIn, requireBoardDownload } from '../boards/index';
-import { appendMarkdown, createDoc, readDoc } from '../docs/index';
+import { boardSummaryFor, listBoardsIn, requireBoardAccess, requireBoardDownload } from '../boards/index';
+import { getUsers } from '../auth/index';
+import { appendMarkdown, createDoc, editDoc, readDoc } from '../docs/index';
+import { changeBoard, readDocContent } from '../realtime/index';
 import { ensurePersonalWorkspace, workspaceRolesOf } from '../workspaces/index';
-import { actingApp, apiBoard, page, withNotice, type ApiCall, type PageQuery } from './service';
+import { actingApp, actorOf, apiBoard, change, page, withNotice, type ApiCall, type PageQuery } from './service';
 import { notFound } from '../../platform/http';
 
 /** A doc as the API shows it: a board's fields, with the doc page as its url. */
@@ -82,4 +85,96 @@ export async function appendToDoc(call: ApiCall, docId: string, body: Record<str
   const added = await appendMarkdown(docId, { userId: call.userId, role: doc.role, name: call.cred.account.name, via: actingApp(call.cred) }, body.markdown);
   call.audit.metadata = { blocks: added };
   return withNotice({ ok: true as const, blocks: added });
+}
+
+/**
+ * A targeted edit (#61): replace a block or the section a heading starts, insert Markdown before /
+ * after a block, or delete one — by the block ids `GET /docs/{id}` answers. Owners and editors;
+ * attributed to the app acting for the person, like append.
+ */
+export async function editDocFor(call: ApiCall, docId: string, body: Record<string, unknown>) {
+  const doc = await openDoc(call, docId);
+  await consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
+  const blocks = await editDoc(docId, { userId: call.userId, role: doc.role, name: call.cred.account.name, via: actingApp(call.cred) }, body);
+  call.audit.metadata = { op: String(body.op), blockId: String(body.blockId), blocks: blocks.length };
+  return withNotice({ ok: true as const, blockIds: blocks });
+}
+
+// ---- comments on a doc's blocks (#61): the boards' comment records, a thread's elementId = the block ----
+
+const MAX_COMMENT = 5000;
+const commentText = (v: unknown) => {
+  if (typeof v !== 'string' || !v.trim()) throw badRequest('text is required');
+  if (v.length > MAX_COMMENT) throw badRequest(`Comments are at most ${MAX_COMMENT} characters`);
+  return v;
+};
+
+/** A doc's comment threads (resolved ones too), oldest first, mentions as names. A read of the doc: its downloads policy applies. */
+export async function listDocComments(call: ApiCall, docId: string) {
+  await openDoc(call, docId);
+  await requireBoardDownload(docId, call.userId, 'api');
+  const { comments } = await readDocContent(docId);
+  const threads = docThreads([...comments.entries()]);
+  const ids = new Set<string>();
+  for (const t of threads) for (const m of t.messages) for (const id of [m.authorId, ...[...m.text.matchAll(/<@([A-Za-z0-9_-]{1,64})>/g)].map((x) => x[1])]) ids.add(id);
+  const users = await getUsers([...ids]);
+  const name = (id: string) => users.get(id)?.name;
+  call.audit.metadata = { returned: threads.length };
+  return withNotice({
+    threads: threads.map((t) => ({
+      id: t.id,
+      blockId: t.blockId,
+      resolved: t.resolved,
+      messages: t.messages.map((m) => ({ id: m.id, authorId: m.authorId, author: name(m.authorId) ?? m.authorName, text: mentionsAsNames(m.text, name), at: m.createdAt })),
+    })),
+  });
+}
+
+const message = (call: ApiCall, threadId: string, text: string): CommentMessageRecord => ({
+  kind: 'message',
+  threadId,
+  id: newId(12),
+  authorId: call.userId,
+  authorName: call.cred.account.name,
+  authorColor: call.cred.account.color,
+  text,
+  createdAt: Date.now(),
+});
+
+/** A new thread on a block of the doc (`blockId`), or on the doc as a whole. Commenters and up. */
+export async function addDocComment(call: ApiCall, docId: string, body: { text?: unknown; blockId?: unknown }) {
+  const text = commentText(body.text);
+  if (body.blockId !== undefined && body.blockId !== null && (typeof body.blockId !== 'string' || !body.blockId)) throw badRequest('blockId must be a block id');
+  const blockId = typeof body.blockId === 'string' ? body.blockId : null;
+  const doc = await openDoc(call, docId);
+  await requireBoardAccess(docId, call.userId, 'commenter');
+  await consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
+  if (blockId) {
+    const { blocks } = await readDocContent(docId);
+    if (![...walkDocBlocks(blocks)].some(({ block }) => block.id === blockId)) throw notFound('No such block in this doc');
+  }
+  const threadId = newId(12);
+  const msg = message(call, threadId, text);
+  const thread: CommentThreadRecord = { kind: 'thread', id: threadId, x: 0, y: 0, elementId: blockId, createdAt: msg.createdAt, createdBy: call.userId };
+  await change(() => changeBoard(docId, actorOf(call, doc.role), () => ({ change: { collections: { comments: { [`t:${threadId}`]: thread, [`m:${threadId}:${msg.id}`]: msg } } } })));
+  call.audit.metadata = { threadId };
+  return withNotice({ thread: { id: threadId, blockId, resolved: false, messages: [{ id: msg.id, authorId: call.userId, author: msg.authorName, text, at: msg.createdAt }] } });
+}
+
+/** A reply in a thread of the doc. Commenters and up. */
+export async function replyToDocComment(call: ApiCall, docId: string, threadId: string, body: { text?: unknown }) {
+  const text = commentText(body.text);
+  const doc = await openDoc(call, docId);
+  await requireBoardAccess(docId, call.userId, 'commenter');
+  await consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
+  const msg = message(call, threadId, text);
+  await change(() =>
+    changeBoard(docId, actorOf(call, doc.role), (view) => {
+      const comments = view.collection('comments');
+      if (!comments.has(`t:${threadId}`) || comments.has(`x:${threadId}`)) throw notFound('No such comment thread in this doc');
+      return { change: { collections: { comments: { [`m:${threadId}:${msg.id}`]: msg } } } };
+    }),
+  );
+  call.audit.metadata = { threadId };
+  return withNotice({ message: { id: msg.id, authorId: call.userId, author: msg.authorName, text, at: msg.createdAt } });
 }
