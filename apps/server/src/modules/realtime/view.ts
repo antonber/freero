@@ -53,6 +53,12 @@ export interface BoardActor extends BoardReader {
    * them below.
    */
   serverCollections?: readonly string[];
+  /**
+   * A co-owner of the board (#122; may protect items like the owner, `mayProtect`). Never from a
+   * request: changeBoard / proposeSuggestions resolve it on the server (boards' resolveCoOwner)
+   * whenever the caller didn't.
+   */
+  coOwner?: boolean;
 }
 
 export interface BoardView {
@@ -253,12 +259,12 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
   const removed = withDependents(change.remove ?? [], view.elements.map((e) => e.el));
   // Protected locks (protectedLock.ts): only the owner changes, deletes, protects or unprotects
   // those items. Removing a frame removes its children, so a frame holding one too.
-  if (!mayProtect(actor.role)) {
+  if (!mayProtect(actor.role, actor.coOwner === true)) {
     const held = [...removed, ...(change.update ?? []).map((u) => u.id)].find((id) => isProtectedLock(where.get(id)?.el));
-    if (held) throw new BoardChangeError(`Item ${held} has a protected lock: only the board owner can change it`);
+    if (held) throw new BoardChangeError(`Item ${held} has a protected lock: only the board’s owner and co-owners can change it`);
     const protects = (v: object) => 'lockProtected' in v;
     if ((change.update ?? []).some((u) => protects(u.patch)) || (change.create ?? []).some((d) => protects(d)))
-      throw new BoardChangeError('Only the board owner can protect items');
+      throw new BoardChangeError('Only the board’s owner and co-owners can protect items');
   }
 
   // The board as it will be: each element's new value and the layer it lives in now (null: new).

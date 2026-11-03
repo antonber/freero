@@ -75,7 +75,7 @@ function assistantView(): WsRoute {
         if (!boardId || boardId !== session.boardId) return { code: 4403, reason: 'No access to this board' };
         const user = session.cred.account;
         if (!(await checkRateLimit('wsConnect', `user:${user.id}`)).allowed) return { code: 4429, reason: 'Too many connections' };
-        const { role, removed } = await getBoardAccess(boardId, user.id);
+        const { role, removed, coOwner } = await getBoardAccess(boardId, user.id);
         if (removed) return { code: WS_CLOSE_BOARD_REMOVED, reason: 'Board removed for review' };
         if (!role) return { code: 4403, reason: 'No access to this board' };
         const workspaceId = await boardWorkspaceId(boardId);
@@ -96,6 +96,7 @@ function assistantView(): WsRoute {
           // the board's layers as the person (#89: an owner's pending suggestions show in the view).
           role,
           maxRole: session.maxRole,
+          coOwner,
           sessionKey: session.sessionKey,
           identity: { id: user.id, name: user.name, color: user.color, avatarUrl: user.avatarUrl },
           authorNames: await authorNamesOf(user.id),
