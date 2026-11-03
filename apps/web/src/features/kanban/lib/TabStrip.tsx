@@ -1,14 +1,23 @@
-// The kanban header's tabs (step 3a): Board and the kanban's tables. Clicking one looks at it, for
-// me only (the board and everyone else's view don't change) until I save my view for everyone. The
-// tab I look at has a menu: rename it, delete it (a table), open the kanban in focus mode. "+ Table"
-// adds a table tab for everyone (editors).
+// The kanban header's tabs (steps 3a, 3b): Board and the kanban's tables, lists, calendars and
+// timelines. Clicking one looks at it, for me only (the board and everyone else's view don't change)
+// until I save my view for everyone. The tab I look at has a menu: rename it, delete it (any but the
+// board), open the kanban in focus mode. "+ View" adds a tab of a layout for everyone (editors).
 import { useRef, useState } from 'react';
-import { Kanban as BoardIcon, Maximize2, MoreHorizontal, Pencil, Plus, Table2, Trash2 } from 'lucide-react';
-import { savedTabId, viewTabs, type KanbanElement, type ViewTab } from '@freero/shared';
+import { CalendarDays, GanttChart, Kanban as BoardIcon, List, Maximize2, MoreHorizontal, Pencil, Plus, Table2, Trash2, type LucideIcon } from 'lucide-react';
+import { LAYOUT_NAMES, PROJECTION_LAYOUTS, savedTabId, viewTabs, type KanbanElement, type ProjectionLayout, type ViewLayout, type ViewTab } from '@freero/shared';
 import type { Editor } from '@engine';
 import { Menu, type MenuItem } from '@ui';
 import { FOCUS_PANEL } from './constants';
-import { addTableTab, deleteTab, renameTab, switchTab, tabsEditable } from './tabs';
+import { addTab, deleteTab, renameTab, switchTab, tabsEditable } from './tabs';
+
+/** Each layout's icon (its tabs, "+ View", focus mode). */
+export const LAYOUT_ICONS: Record<ViewLayout, LucideIcon> = { board: BoardIcon, table: Table2, list: List, calendar: CalendarDays, timeline: GanttChart };
+const LAYOUT_HINTS: Record<ProjectionLayout, string> = {
+  table: 'Every card as a row, a column per field',
+  list: 'A line per card, grouped',
+  calendar: 'Cards on the days of their dates',
+  timeline: 'Cards as bars from start to due date',
+};
 
 const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
 
@@ -62,12 +71,13 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
   const saved = savedTabId(k);
   const [menu, setMenu] = useState<{ id: string; el: HTMLElement } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [adding, setAdding] = useState<HTMLElement | null>(null);
   const mayAdd = selected && canEdit && tabsEditable(editor, k);
   if (tabs.length < 2 && !mayAdd) return null;
   const items = (tab: ViewTab): MenuItem[] => [
     ...(canEdit && tabsEditable(editor, k, tab) ? [{ id: 'rename', label: 'Rename tab', icon: Pencil, onSelect: () => setRenaming(tab.id) }] : []),
     { id: 'focus', label: 'Open in focus mode', icon: Maximize2, onSelect: () => editor.openPanel(FOCUS_PANEL, { id: k.id }) },
-    ...(tab.layout === 'table' && canEdit && tabsEditable(editor, k, tab)
+    ...(tab.layout !== 'board' && canEdit && tabsEditable(editor, k, tab)
       ? [{ divider: true as const }, { id: 'delete', label: 'Delete tab', icon: Trash2, danger: true, onSelect: () => deleteTab(editor, k.id, tab.id) }]
       : []),
   ];
@@ -75,7 +85,7 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
     <div className="fr-kanban__tabs" role="tablist" aria-label="Views of this kanban">
       {tabs.map((tab) => {
         const on = tab.id === shownId;
-        const Icon = tab.layout === 'table' ? Table2 : BoardIcon;
+        const Icon = LAYOUT_ICONS[tab.layout];
         if (renaming === tab.id) return <RenameBox key={tab.id} editor={editor} k={k} tab={tab} onDone={() => setRenaming(null)} />;
         return (
           <span key={tab.id} className={`fr-kanban__tab${on ? ' is-on' : ''}`}>
@@ -111,10 +121,38 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
         );
       })}
       {mayAdd && (
-        <button type="button" className="fr-kanban__tab-add" data-fr-interactive="" title="Add a table of these cards (for everyone)" onPointerDown={stop} onClick={() => addTableTab(editor, k.id)}>
+        <button
+          type="button"
+          className="fr-kanban__tab-add"
+          data-fr-interactive=""
+          title="Add a view of these cards: a table, list, calendar or timeline (for everyone)"
+          aria-haspopup="menu"
+          aria-expanded={!!adding}
+          onPointerDown={stop}
+          onClick={(e) => setAdding(adding ? null : e.currentTarget)}
+        >
           <Plus size={13} aria-hidden />
-          Table
+          View
         </button>
+      )}
+      {adding && (
+        <Menu
+          open
+          anchor={adding}
+          aria-label="Add a view"
+          onClose={() => setAdding(null)}
+          items={PROJECTION_LAYOUTS.map((layout) => ({
+            id: layout,
+            label: (
+              <span className="fr-kanban__add-view">
+                <strong>{LAYOUT_NAMES[layout]}</strong>
+                <span>{LAYOUT_HINTS[layout]}</span>
+              </span>
+            ),
+            icon: LAYOUT_ICONS[layout],
+            onSelect: () => void addTab(editor, k.id, layout),
+          }))}
+        />
       )}
       {menu && (
         <Menu open anchor={menu.el} items={items(tabs.find((t) => t.id === menu.id) ?? tabs[0])} aria-label="Tab options" onClose={() => setMenu(null)} />

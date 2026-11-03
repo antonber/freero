@@ -89,6 +89,26 @@ describe('view tabs', () => {
     expect(ann.getPersonalView(kid, tab)).toBeNull();
   });
 
+  it('while everyone starts on a tab of a layout this client doesn’t know (a newer client’s), adding a calendar tab keeps everyone on that tab and keeps its entry; looking at the calendar folds the cards away for me alone', () => {
+    board = createTestBoard({ users: ['ann', 'bob'], features });
+    const [ann, bob] = board.editors('card');
+    const gallery = { id: 'g_later', name: 'Gallery', layout: 'gallery' };
+    const kid = ann.create({
+      type: 'kanban', x: 0, y: 0, w: 900, h: 320, title: 'Sprint', colW: 280, columns: COLUMNS, colorCards: true,
+      views: [{ id: 'board', name: 'Board', layout: 'board', groupBy: 'stage' }, gallery], activeView: gallery.id,
+    } as never);
+    const id = card(ann, kid, 0, 'Fix login');
+    board.sync();
+
+    ann.runCommand('kanban.addTab', { id: kid, layout: 'calendar', name: 'Due dates' });
+    board.sync();
+    const k = bob.getElement<KanbanElement>(kid)!;
+    expect(k.activeView).toBe(gallery.id);
+    expect(k.views).toContainEqual(gallery);
+    expect(onBoard(ann, id)).toBe(false);
+    expect(onBoard(bob, id)).toBe(true);
+  });
+
   it('while everyone starts on a table tab, regrouping the board by Priority (what older clients write too) keeps the tab and keeps everyone on it, and the board lays its cards out by Priority', () => {
     board = createTestBoard({ users: ['ann'], features });
     const [ann] = board.editors('card');

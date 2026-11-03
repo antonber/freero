@@ -4,7 +4,8 @@
 // swimlanes), sorting and density move or resize the real cards on the shared board, so only
 // editors change them, for everyone — and nobody but whoever locked it (and the board's owners)
 // while the view is locked. On a table tab, its columns, filter and sort are mine until saved
-// (step 3a). "Save for everyone" also makes the tab I look at the one everyone starts on.
+// (step 3a), and so are a list's, a calendar's or a timeline's settings (3b). "Save for everyone"
+// also makes the tab I look at the one everyone starts on.
 // Shows the kanban the selection points at, and keeps showing it when the selection moves elsewhere.
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Lock, SlidersHorizontal } from 'lucide-react';
@@ -17,13 +18,20 @@ import {
   overrideBetween,
   savedTabId,
   shownTabId,
+  calendarDateField,
+  dateFields,
+  listColumns,
+  listGroupField,
+  projectionGroupFields,
+  projectionView,
   tableColumns,
-  tableView,
+  timelineFields,
   withOverride,
   type CardColorBy,
   type CardDensity,
   type KanbanElement,
-  type TableViewConfig,
+  type ProjectionView,
+  type TimelineScale,
 } from '@freero/shared';
 import { DockHeader, richTextToPlain, useCanEdit, useElement, usePeople, usePersonalView, useSelection, type Editor } from '@engine';
 import { Button, IconButton, SegmentedControl, Select, Toggle } from '@ui';
@@ -31,7 +39,7 @@ import { fieldsTarget, FIELD_TYPE_LABELS } from './schema';
 import { groupableFields, setGroupBy, setSwimlanes } from './group';
 import { hasOwnView, resetMyView, saveViewForEveryone, setDensity, setMyCardDisplay, setViewLocked, viewEditable } from './view';
 import { FilterRules, FilterSection, SortRules, SortSection } from './FilterSort';
-import { myTableView, setMyTable, tabsEditable } from './tabs';
+import { myView, setMyView, tabsEditable } from './tabs';
 
 const DENSITIES: Array<{ value: CardDensity; label: string }> = [
   { value: 'compact', label: 'Compact' },
@@ -53,8 +61,8 @@ export function ViewPanel({ editor }: { editor: Editor }) {
   const tabChoice = usePersonalView(k?.id, MY_TAB_KEY);
   const locker = usePeople(saved?.locked ? [saved.locked.by] : []);
   const tabId = k ? shownTabId(k, tabChoice) : null;
-  const table = k && tabId ? tableView(k, tabId) : null;
-  if (k && table) return <TablePanel editor={editor} k={k} saved={table} />;
+  const projection = k && tabId ? projectionView(k, tabId) : null;
+  if (k && projection) return <ProjectionPanel editor={editor} k={k} saved={projection} />;
   if (!k || !saved) {
     return (
       <div className="fr-kanban-fields">
@@ -242,22 +250,32 @@ function Whose({ editor, k, own, mayShare }: { editor: Editor; k: KanbanElement;
   );
 }
 
+const SCALE_CHOICES: Array<{ value: TimelineScale; label: string }> = [
+  { value: 'day', label: 'Days' },
+  { value: 'week', label: 'Weeks' },
+  { value: 'month', label: 'Months' },
+  { value: 'quarter', label: 'Quarters' },
+];
+
 /**
- * A table tab's settings: which fields are columns (and their order), the filter and the sort.
- * All mine until I save them for everyone — and since a table moves no real card, its filter
- * really leaves rows out and its sort really orders them, for me alone.
+ * A projection tab's settings (a table, list, calendar or timeline): its filter and sort; a
+ * table's or a list's columns, a list's grouping, the date fields a calendar or a timeline places
+ * cards by, a timeline's scale and swimlanes. All mine until I save them for everyone — and since
+ * a projection moves no real card, its filter really leaves cards out and its sort really orders
+ * them, for me alone.
  */
-function TablePanel({ editor, k, saved }: { editor: Editor; k: KanbanElement; saved: TableViewConfig }) {
+function ProjectionPanel({ editor, k, saved }: { editor: Editor; k: KanbanElement; saved: ProjectionView }) {
   const canEdit = useCanEdit();
   usePersonalView(k.id, saved.id);
-  const mine = myTableView(editor, k, saved.id) ?? saved;
+  const mine = myView(editor, k, saved.id) ?? saved;
   const schema = collectionSchema(k);
   const own = hasOwnView(editor, k);
-  const mayShare = canEdit && tabsEditable(editor, k, { id: saved.id, name: saved.name, layout: 'table' });
-  const shown = tableColumns(mine, schema);
-  const all = [...SHOWABLE_BUILTINS.map((f) => ({ id: f.id as string, name: f.name })), ...schema.map((f) => ({ id: f.id, name: f.name }))];
-  const name = (id: string) => all.find((f) => f.id === id)?.name ?? id;
-  const setColumns = (columns: string[]) => setMyTable(editor, k.id, saved.id, { columns });
+  const mayShare = canEdit && tabsEditable(editor, k, { id: saved.id, name: saved.name, layout: saved.layout });
+  const set = (patch: Record<string, unknown>) => setMyView(editor, k.id, saved.id, patch);
+  const noun = saved.layout === 'table' || saved.layout === 'list' ? 'rows' : 'cards';
+  const NONE = '';
+  const dates = dateFields(schema).map((f) => ({ value: f.id, label: f.name }));
+  const groups = projectionGroupFields(schema).map((f) => ({ value: f.id, label: f.name }));
   return (
     <div className="fr-kanban-fields fr-kanban-view">
       <DockHeader className="fr-kanban-fields__head">
@@ -267,25 +285,91 @@ function TablePanel({ editor, k, saved }: { editor: Editor; k: KanbanElement; sa
         </span>
       </DockHeader>
       <Whose editor={editor} k={k} own={own} mayShare={mayShare} />
+      {mine.layout === 'calendar' && (
+        <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-dates">
+          <h3 id="fr-kanban-view-dates" className="fr-kanban-view__heading">
+            Dates
+          </h3>
+          <label className="fr-kanban-view__row">
+            <span>Cards sit on</span>
+            <Select size="sm" aria-label="Date field the calendar places cards on" value={calendarDateField(mine, schema)} options={dates} onChange={(date) => set({ date })} />
+          </label>
+          <p className="fr-kanban-fields__hint">Dragging a card to a day sets this date. A date field of the kanban works too.</p>
+        </section>
+      )}
+      {mine.layout === 'timeline' && (
+        <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-dates">
+          <h3 id="fr-kanban-view-dates" className="fr-kanban-view__heading">
+            Bars
+          </h3>
+          <label className="fr-kanban-view__row">
+            <span>Start</span>
+            <Select size="sm" aria-label="Where bars start" value={timelineFields(mine, schema).start} options={dates} onChange={(start) => set({ start })} />
+          </label>
+          <label className="fr-kanban-view__row">
+            <span>End</span>
+            <Select size="sm" aria-label="Where bars end" value={timelineFields(mine, schema).end} options={dates} onChange={(end) => set({ end })} />
+          </label>
+          <label className="fr-kanban-view__row">
+            <span>Scale</span>
+            <Select<TimelineScale> size="sm" aria-label="Timeline scale" value={timelineFields(mine, schema).scale} options={SCALE_CHOICES} onChange={(scale) => set({ scale })} />
+          </label>
+          <label className="fr-kanban-view__row">
+            <span>Swimlanes</span>
+            <Select size="sm" aria-label="Swimlanes by" value={timelineFields(mine, schema).lanes?.id ?? NONE} options={[{ value: NONE, label: 'None' }, ...groups]} onChange={(id) => set({ lanesBy: id || null })} />
+          </label>
+          <p className="fr-kanban-fields__hint">Dragging a bar moves both dates; dragging an end changes that one.</p>
+        </section>
+      )}
+      {mine.layout === 'list' && (
+        <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-group">
+          <h3 id="fr-kanban-view-group" className="fr-kanban-view__heading">
+            Groups
+          </h3>
+          <label className="fr-kanban-view__row">
+            <span>Group by</span>
+            <Select size="sm" aria-label="Group the list by" value={listGroupField(k, mine, schema)?.id ?? NONE} options={[{ value: NONE, label: 'Nothing' }, ...groups]} onChange={(id) => set({ groupBy: id || null })} />
+          </label>
+          <p className="fr-kanban-fields__hint">Alt + ↑ / ↓ on a row moves the card to the group above or below.</p>
+        </section>
+      )}
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-filter">
         <h3 id="fr-kanban-view-filter" className="fr-kanban-view__heading">
           Filter
         </h3>
-        <FilterRules k={k} schema={schema} filter={mine.filter ?? null} onChange={(filter) => setMyTable(editor, k.id, saved.id, { filter })} />
-        <p className="fr-kanban-fields__hint">Leaves rows out of this table only: the board and its cards don’t change.</p>
+        <FilterRules k={k} schema={schema} filter={mine.filter ?? null} onChange={(filter) => set({ filter })} />
+        <p className="fr-kanban-fields__hint">Leaves {noun} out of this tab only: the board and its cards don’t change.</p>
       </section>
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-sort">
         <h3 id="fr-kanban-view-sort" className="fr-kanban-view__heading">
           Sort
         </h3>
-        <SortRules schema={schema} sort={mine.sort ?? []} noun="rows" onChange={(sort) => setMyTable(editor, k.id, saved.id, { sort })} />
-        <p className="fr-kanban-fields__hint">Without a sort, rows follow the board: column by column, top to bottom.</p>
+        <SortRules schema={schema} sort={mine.sort ?? []} noun={noun} onChange={(sort) => set({ sort })} />
+        <p className="fr-kanban-fields__hint">
+          {mine.layout === 'timeline'
+            ? 'Without a sort, bars are in order of their start.'
+            : mine.layout === 'calendar'
+              ? 'Orders the cards within each day.'
+              : 'Without a sort, rows follow the board: column by column, top to bottom.'}
+        </p>
       </section>
+      {(mine.layout === 'table' || mine.layout === 'list') && <ColumnsSection k={k} schema={schema} shown={mine.layout === 'table' ? tableColumns(mine, schema) : listColumns(k, mine, schema)} onChange={(columns) => set({ columns })} list={mine.layout === 'list'} />}
+    </div>
+  );
+}
+
+/** Which fields a table or a list shows after the title, in order. */
+function ColumnsSection({ schema, shown, onChange, list }: { k: KanbanElement; schema: ReturnType<typeof collectionSchema>; shown: string[]; onChange: (columns: string[]) => void; list: boolean }) {
+  const all = [...SHOWABLE_BUILTINS.map((f) => ({ id: f.id as string, name: f.name })), ...schema.map((f) => ({ id: f.id, name: f.name }))];
+  const name = (id: string) => all.find((f) => f.id === id)?.name ?? id;
+  const setColumns = onChange;
+  return (
+    <>
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-columns">
         <h3 id="fr-kanban-view-columns" className="fr-kanban-view__heading">
-          Columns
+          {list ? 'Fields on rows' : 'Columns'}
         </h3>
-        <ol className="fr-kanban-fields__list fr-kanban-view__fields" aria-label="Columns of the table">
+        <ol className="fr-kanban-fields__list fr-kanban-view__fields" aria-label={list ? 'Fields on the list’s rows' : 'Columns of the table'}>
           {shown.map((id, i) => (
             <li key={id} className="fr-kanban-view__field">
               <Toggle size="sm" checked label={name(id)} onChange={() => setColumns(shown.filter((x) => x !== id))} />
@@ -304,7 +388,7 @@ function TablePanel({ editor, k, saved }: { editor: Editor; k: KanbanElement; sa
             ))}
         </ol>
       </section>
-    </div>
+    </>
   );
 }
 

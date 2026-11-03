@@ -11,7 +11,7 @@ import { Grid, type GridEntry } from './Grid';
 import { useKanbanCards, useMine, useTags } from './hooks';
 import { HEADER_H, GAP } from './layout';
 import { gridColumns } from './table';
-import { myTableView } from './tabs';
+import { myView } from './tabs';
 
 export const CANVAS_ROW_H = 40;
 
@@ -21,7 +21,8 @@ export function TableTab({ editor, k, tabId, selected, name }: { editor: Editor;
   const canEdit = useCanEdit();
   const tags = useTags(editor);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const view = useMemo(() => myTableView(editor, k, tabId), [editor, k, tabId, mine]);
+  const found = useMemo(() => myView(editor, k, tabId), [editor, k, tabId, mine]);
+  const view = found?.layout === 'table' ? found : null;
   const schema = useMemo(() => collectionSchema(k), [k]);
   const columns = useMemo(() => (view ? gridColumns(tableColumns(view, schema), schema, tags) : []), [view, schema, tags]);
   const rows = useMemo(() => (view ? tableRows(k, cards, view, { me: editor.user.id }) : []), [k, cards, view, editor]);

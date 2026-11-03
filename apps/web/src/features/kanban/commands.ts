@@ -2,10 +2,10 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, ListChecks, Maximi
 import { defineCommands, type CommandDefinition, type Editor } from '@engine';
 import { addColumn, canMove, moveSelection, moveToColumn, type MoveDir } from './lib/actions';
 import { FIELDS_PANEL, FOCUS_PANEL, VIEW_PANEL } from './lib/constants';
-import { addTableTab, deleteTab, renameTab, setMyTable, switchTab } from './lib/tabs';
+import { addTab, addTableTab, deleteTab, renameTab, setMyView, switchTab } from './lib/tabs';
 import { setFocus } from './lib/focusSettings';
 import { fieldsTarget } from './lib/schema';
-import { cleanFilter } from '@freero/shared';
+import { cleanFilter, isProjectionLayout } from '@freero/shared';
 import { saveViewForEveryone, setDensity, setMyCardDisplay, setMyFilter, setSort, setViewLocked } from './lib/view';
 import { setGroupBy, setSwimlanes } from './lib/group';
 import { createFromRows } from './lib/fromRows';
@@ -165,8 +165,16 @@ export default defineCommands([
     },
   },
   {
-    // View tabs (lib/tabs.ts). Adds a table tab to kanban { id } for everyone ({ name? }) and shows
-    // it to me. Editors; one undo step.
+    // View tabs (lib/tabs.ts). Adds a { layout: 'table' | 'list' | 'calendar' | 'timeline' } tab to
+    // kanban { id } for everyone ({ name? }) and shows it to me. Editors; one undo step.
+    id: 'kanban.addTab',
+    label: 'Add a view tab',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && isProjectionLayout(args.layout)) addTab(editor, args.id, args.layout, typeof args.name === 'string' ? args.name : undefined);
+    },
+  },
+  {
+    // A table tab (3a's command).
     id: 'kanban.addTableTab',
     label: 'Add a table tab',
     icon: Table2,
@@ -200,17 +208,27 @@ export default defineCommands([
     },
   },
   {
-    // My own columns / filter / sort of table tab { tab } of kanban { id } (any role), until I save them for everyone.
+    // My own settings of tab { tab } of kanban { id } (any role), until I save them for everyone:
+    // any tab's filter / sort; a table's or a list's columns; a list's groupBy (null: no groups);
+    // a calendar's date (a date field id); a timeline's start, end, scale and lanesBy (null: none).
+    id: 'kanban.setMyView',
+    label: 'Arrange a tab for me',
+    minRole: 'viewer',
+    run(editor, args) {
+      if (typeof args?.id !== 'string' || typeof args.tab !== 'string') return;
+      const { id, tab, ...patch } = args;
+      setMyView(editor, id, tab, patch);
+    },
+  },
+  {
+    // 3a's name for the same, on a table tab.
     id: 'kanban.setMyTable',
     label: 'Arrange a table for me',
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id !== 'string' || typeof args.tab !== 'string') return;
-      setMyTable(editor, args.id, args.tab, {
-        ...(Array.isArray(args.columns) ? { columns: args.columns.filter((x): x is string => typeof x === 'string') } : {}),
-        ...(args.filter !== undefined ? { filter: cleanFilter(args.filter, { personal: true }) } : {}),
-        ...(Array.isArray(args.sort) ? { sort: args.sort as never } : {}),
-      });
+      const { id, tab, ...patch } = args;
+      setMyView(editor, id, tab, patch);
     },
   },
   {

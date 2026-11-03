@@ -66,9 +66,9 @@ import { addColumn, columnPart, moveColumn, moveColumnTo, patchColumn, removeCol
 import { CARD_LIMITS, COLUMN_COLOR_NAMES, COLUMN_PALETTE, FOCUS_PANEL, STATUS_LABELS, VIEW_PANEL, WIP_CHOICES } from './lib/constants';
 import { columnsAreOptions, groupTitle, storedKey } from './lib/group';
 import { presentCard, presentationKey } from './lib/view';
-import { showsTable } from './lib/tabs';
+import { showsProjection } from './lib/tabs';
 import { TabStrip } from './lib/TabStrip';
-import { TableTab } from './lib/TableTab';
+import { ProjectionTab } from './lib/ProjectionTab';
 import './kanban.css';
 
 /** Below this zoom text is unreadable: draw only the column blocks. */
@@ -462,7 +462,7 @@ const KanbanView = memo(function KanbanView(props: ElementRenderProps<KanbanElem
     if (selected && !wasSelected.current && phone === 'phone' && !exporting) editor.openPanel(FOCUS_PANEL, { id: k.id });
     wasSelected.current = selected;
   }, [selected, phone, exporting, editor, k.id]);
-  if (tab.layout === 'table')
+  if (tab.layout !== 'board')
     return (
       <div className="fr-kanban is-table">
         <Head editor={editor} k={k} selected={selected} lod={lod} tabId={tabId} board={false} canEdit={canEdit} phone={!!phone} />
@@ -471,7 +471,7 @@ const KanbanView = memo(function KanbanView(props: ElementRenderProps<KanbanElem
             {tab.name}
           </div>
         ) : (
-          <TableTab editor={editor} k={k} tabId={tabId} selected={selected && !exporting} name={tab.name} />
+          <ProjectionTab editor={editor} k={k} tab={tab} selected={selected && !exporting} />
         )}
       </div>
     );
@@ -690,8 +690,9 @@ export default defineElement({
   dragPreview: (k, { editor, moving }) => planDrop(k, editor.getElements(), moving),
   // A collapsed column's items, those beyond a column's card limit and the cards the view's filter
   // leaves out stay in it (in the outline, in the WIP count), folded away.
-  // While I look at a table tab, every item in it is folded away for me alone (the table draws the cards).
-  hidesMember: (k, el, { editor }) => inCollapsedColumn(k, el) || beyondLimit(k, el) || filteredOut(k, el) || showsTable(editor, k),
+  // While I look at any tab but the board (a table, list, calendar, timeline), every item in it is
+  // folded away for me alone (the tab draws the cards).
+  hidesMember: (k, el, { editor }) => inCollapsedColumn(k, el) || beyondLimit(k, el) || filteredOut(k, el) || showsProjection(editor, k),
   // Cards show what the board view says: their colour (by column, by a field, or their own) and
   // the fields chosen, drawn by the card itself. Density changes their height (re-normalised).
   presentChild: (k, child, { editor, personal }) => presentCard(k, child, editor, personal),
