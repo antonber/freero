@@ -54,7 +54,7 @@ export function OrgConsolePage() {
   useEffect(() => {
     let live = true;
     if (!manager) return;
-    void siemOffered(organisationId).then((on) => live && setSiem(on));
+    if (org && scopesOf(org).includes('security')) void siemOffered(organisationId).then((on) => live && setSiem(on));
     api.organisationWorkspaces(organisationId).then(
       ({ workspaces }) => live && setNames(new Map(workspaces.map((w) => [w.id, w.name]))),
       () => undefined,

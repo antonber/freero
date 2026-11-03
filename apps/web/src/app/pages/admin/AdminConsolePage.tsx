@@ -72,7 +72,8 @@ export function AdminConsolePage() {
   }, [workspaceId]);
   useEffect(reload, [reload]);
 
-  const manages = workspace?.kind === 'team' && (workspace.role === 'owner' || workspace.role === 'admin');
+  // The AI, webhooks and audit-stream tabs are the security admins' (#151): only they probe for them.
+  const manages = workspace?.kind === 'team' && (workspace.role === 'owner' || workspace.role === 'admin') && scopesOf(workspace).includes('security');
   useEffect(() => {
     let live = true;
     if (manages) void aiOffered(workspaceId).then((on) => live && setAi(on));

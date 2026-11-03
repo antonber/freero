@@ -60,9 +60,11 @@ function Chart({ m, days }: { m: Measure; days: UsageDay[] }) {
             <text x={PAD.left} y={H - 4} className="fr-admin-trend__tick">
               {shortDay(days[0].day)}
             </text>
-            <text x={W - PAD.right} y={H - 4} textAnchor="end" className="fr-admin-trend__tick">
-              {shortDay(days[days.length - 1].day)}
-            </text>
+            {days.length > 1 ? (
+              <text x={W - PAD.right} y={H - 4} textAnchor="end" className="fr-admin-trend__tick">
+                {shortDay(days[days.length - 1].day)}
+              </text>
+            ) : null}
           </>
         ) : null}
         {m.form === 'bars' ? (
@@ -82,7 +84,11 @@ function Chart({ m, days }: { m: Measure; days: UsageDay[] }) {
             ) : null,
           )
         ) : (
-          <polyline className="fr-admin-trend__line" points={values.map((v, i) => `${x(i)},${y(v)}`).join(' ')} />
+          <>
+            <polyline className="fr-admin-trend__line" points={values.map((v, i) => `${x(i)},${y(v)}`).join(' ')} />
+            {/* The newest point (and the only one, on the first day). */}
+            {values.length ? <circle cx={x(values.length - 1)} cy={y(values[values.length - 1])} r={4} className="fr-admin-trend__dot" /> : null}
+          </>
         )}
         {hover !== null ? (
           <>
