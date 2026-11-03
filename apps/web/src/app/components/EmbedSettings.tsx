@@ -20,7 +20,8 @@ function framesOf(items: OutlineItem[], out: Array<{ id: string; title: string }
 
 export function EmbedSettings({ board, onChange }: { board: BoardSummary; onChange: (b: BoardSummary) => void }) {
   const notify = useToast();
-  const isOwner = board.role === 'owner';
+  // Its owner and co-owners (#122) turn it on or off, like the link.
+  const isOwner = board.permissions.manageSharing ?? board.role === 'owner';
   const on = board.embeddable === true;
   const allowed = board.permissions.boardEmbeds !== false;
   const [busy, setBusy] = useState(false);
