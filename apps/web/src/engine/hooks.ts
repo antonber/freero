@@ -192,6 +192,11 @@ export function useDock(): string | null {
   return useUi((s) => s.dock);
 }
 
+/** [additive, #52] The open bottom strip panel ('dock-bottom'), or null. */
+export function useBottomDock(): string | null {
+  return useUi((s) => s.bottomDock);
+}
+
 // ---- additive hooks (see ARCHITECTURE.md "Engine contract additions")
 
 /** World-space pointer position while it is over the canvas (for tool Preview components). */

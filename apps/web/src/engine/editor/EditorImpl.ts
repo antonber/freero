@@ -1863,11 +1863,21 @@ export class EditorImpl implements Editor {
 
   // ------------------------------------------------------------------ UI state
   openDock(panelId: string | null): void {
+    if (panelId && this.core.registry.panelsById.get(panelId)?.def.slot === 'dock-bottom') return this.openBottomDock(panelId);
     this.core.ui.setState({ dock: panelId });
   }
 
   getDock(): string | null {
     return this.core.ui.getState().dock;
+  }
+
+  openBottomDock(panelId: string | null): void {
+    if (panelId && this.core.registry.panelsById.get(panelId)?.def.slot !== 'dock-bottom') return console.warn(`Panel '${panelId}' isn't a 'dock-bottom' panel.`);
+    this.core.ui.setState({ bottomDock: panelId });
+  }
+
+  getBottomDock(): string | null {
+    return this.core.ui.getState().bottomDock;
   }
 
   openPanel(id: string, props?: Record<string, unknown>): void {
@@ -1878,6 +1888,7 @@ export class EditorImpl implements Editor {
     }
     if (!this.can(reg.def.minRole ?? 'viewer')) return;
     if (reg.def.slot === 'dock-right') this.openDock(id);
+    else if (reg.def.slot === 'dock-bottom') this.openBottomDock(id);
     else if (reg.def.slot === 'dialog') this.core.ui.setState({ dialog: { id, props } });
     else console.warn(`Panel '${id}' lives in the '${reg.def.slot}' slot, which is always mounted; only dialog and dock panels open.`);
   }
@@ -1886,6 +1897,7 @@ export class EditorImpl implements Editor {
     const s = this.core.ui.getState();
     if (s.dialog && (!id || s.dialog.id === id)) this.core.ui.setState({ dialog: null });
     if (id && s.dock === id) this.openDock(null);
+    if (id && s.bottomDock === id) this.openBottomDock(null);
   }
 
   setChromeHidden(hidden: boolean): void {

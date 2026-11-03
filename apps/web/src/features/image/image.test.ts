@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import type { Editor } from '@engine';
+import { createTestBoard, type Editor, type NewElement } from '@engine';
 import { imageUrlFromPaste } from './lib/files';
-import { INLINE_FALLBACK_MAX_BYTES, storeImage } from './lib/insert';
+import { imagePlaceholderFor, INLINE_FALLBACK_MAX_BYTES, replacePlaceholder, storeImage } from './lib/insert';
+import manifest from './feature';
 import type { ImageElement } from '@freero/shared';
 import { fitGridLayout, fitSize, gridLayout, naturalAspectBox, replacementBox } from './lib/layout';
 import { applyDraft, panPicture, resetCrop, resizeWindow, startDraft, visibleCrop } from './lib/crop';
@@ -144,5 +145,29 @@ describe('cropping', () => {
     expect(c.w).toBeCloseTo(1);
     expect(c.h).toBeCloseTo(2 / 3);
     expect(c.y).toBeCloseTo(1 / 6);
+  });
+});
+
+describe('slide image areas (#52)', () => {
+  it('a picture dropped on a slide layout’s image area takes its place and size on that slide, and one undo brings the area back', () => {
+    const board = createTestBoard({ users: ['ann'], features: [manifest] });
+    const [ed] = board.editors('image');
+    const slide = ed.create({ type: 'frame', x: 0, y: 0, w: 1280, h: 720, title: 'S', fill: '#fff', index: 0 } as NewElement);
+    const area = ed.create({ type: 'shape', shape: 'rect', x: 72, y: 72, w: 600, h: 576, text: 'Image', frameId: slide, layoutRole: 'image' } as unknown as NewElement);
+    const other = ed.create({ type: 'shape', shape: 'rect', x: 800, y: 72, w: 300, h: 200, text: 'Not an area', frameId: slide } as unknown as NewElement);
+    // Dropped on the area it is the target, dropped on anything else it isn't; pasted, the selected area is.
+    expect(imagePlaceholderFor(ed, { x: 300, y: 300 })?.id).toBe(area);
+    expect(imagePlaceholderFor(ed, { x: 900, y: 150 })).toBeNull();
+    ed.select([area]);
+    expect(imagePlaceholderFor(ed, { x: 900, y: 150 })?.id).toBe(area);
+    ed.select([other]);
+
+    const id = replacePlaceholder(ed, area, { src: '/uploads/abcdefgh.png', naturalW: 1600, naturalH: 900, alt: '' });
+    expect(ed.getElement(area)).toBeUndefined();
+    expect(ed.getElement(id)).toMatchObject({ type: 'image', x: 72, y: 72, w: 600, h: 576, frameId: slide, layoutRole: 'image' });
+    ed.undo();
+    expect(ed.getElement(id)).toBeUndefined();
+    expect(ed.getElement(area)).toMatchObject({ layoutRole: 'image', w: 600 });
+    board.destroy();
   });
 });

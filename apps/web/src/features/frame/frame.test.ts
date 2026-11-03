@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import type { BoardElement, FrameElement, StickyElement } from '@freero/shared';
+import { describe, expect, it, vi } from 'vitest';
+import { richTextToPlain, type BoardElement, type FrameElement, type StickyElement } from '@freero/shared';
 import { createTestBoard, type NewElement } from '@engine';
 import { membershipPatches, nextFrameIndex, nextFrameTitle, orderFrames, reorderPatches } from './lib/frames';
 import frameManifest from './feature';
 import frameDef from './element';
-import { duplicateSlide, framesInOrder } from './lib/actions';
+import { applyLayout, duplicateSlide, framesInOrder, newSlide } from './lib/actions';
 import { layoutItems, SLIDE_LAYOUTS } from './lib/layouts';
+import { slideSignature, ThumbCache } from './lib/thumbnails';
 
 const frame = (id: string, index: number, extra: Partial<FrameElement> = {}): FrameElement => ({
   id,
@@ -177,5 +178,60 @@ describe('slides (KAI-126)', () => {
     expect(framesInOrder(ed).map((f) => f.id)).toEqual([ids[0], copy, ids[1], ids[2]]);
     expect(ed.getElements().filter((el) => el.frameId === copy && el.type === 'sticky')).toHaveLength(1);
     board.destroy();
+  });
+});
+
+describe('slide layouts applied again (#52)', () => {
+  it('a second layout replaces the first instead of piling on top, and what was written moves into it', () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest: frameManifest, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] }] });
+    const [ed] = board.editors('frame');
+    const slide = newSlide(ed, 'title-body')!;
+    const on = () => ed.getElements().filter((el) => el.frameId === slide);
+    const part = (role: string) => on().find((el) => el.layoutRole === role) as (BoardElement & { text: string }) | undefined;
+    ed.update(part('title')!.id, { text: '<b>Q3 results</b>' } as never);
+
+    applyLayout(ed, slide, 'two-columns');
+    // One title (the written one, formatting kept), one of each body column, nothing doubled.
+    expect(on().map((el) => el.layoutRole).sort()).toEqual(['body', 'body2', 'title']);
+    expect(part('title')!.text).toBe('<b>Q3 results</b>');
+
+    // A layout without a title slot: the written title stays on the slide as an ordinary text.
+    applyLayout(ed, slide, 'quote');
+    expect(on().map((el) => String(el.layoutRole ?? 'none')).sort()).toEqual(['caption', 'none', 'quote']);
+    expect(richTextToPlain(String((on().find((el) => !el.layoutRole) as { text?: string }).text))).toBe('Q3 results');
+    board.destroy();
+  });
+});
+
+describe('slide thumbnails (#52)', () => {
+  it('a slide is drawn again after something on it changes, but not for changes elsewhere or while it is still being edited', async () => {
+    vi.useFakeTimers();
+    try {
+      const drawn: string[] = [];
+      const cache = new ThumbCache(async (id) => {
+        drawn.push(id);
+        return `data:image/jpeg;base64,${drawn.length}`;
+      }, 100);
+      const a = frame('A', 0, { updatedAt: 1 });
+      const b = frame('B', 1, { updatedAt: 1 });
+      const onA = [sticky('s', 10, 10, 'A')];
+      cache.request('A', slideSignature(a, onA));
+      cache.request('B', slideSignature(b, []));
+      await vi.advanceTimersByTimeAsync(150);
+      expect(drawn.sort()).toEqual(['A', 'B']);
+
+      // Typing on A: three quick changes, one picture once it settles; B untouched is not redrawn.
+      for (let t = 2; t <= 4; t++) {
+        cache.request('A', slideSignature(a, [{ ...onA[0], updatedAt: t }]));
+        cache.request('B', slideSignature(b, []));
+        await vi.advanceTimersByTimeAsync(30);
+      }
+      await vi.advanceTimersByTimeAsync(150);
+      expect(drawn.filter((id) => id === 'A')).toHaveLength(2);
+      expect(drawn.filter((id) => id === 'B')).toHaveLength(1);
+      expect(cache.url('A')).toBe('data:image/jpeg;base64,3');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

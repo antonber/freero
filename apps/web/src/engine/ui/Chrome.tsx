@@ -4,7 +4,7 @@ import { useStore } from 'zustand';
 import { WifiOff, X } from 'lucide-react';
 import { IconButton, Spinner } from '@ui';
 import { ScopeContext, useCore } from '../context';
-import { useDock, useRole } from '../hooks';
+import { useBottomDock, useDock, useRole } from '../hooks';
 import { ROLE_RANK } from '../runtime/core';
 import { Toolbar } from './Toolbar';
 import { TopLeft, TopRight } from './TopBar';
@@ -45,6 +45,27 @@ function Dock() {
   );
 }
 
+/**
+ * [additive, #52] The bottom strip: the open 'dock-bottom' panel (the slide filmstrip), under the
+ * canvas. The panel draws its own controls (and its close button); the strip is marked as occluding
+ * so fits and placement leave it out, and the bottom corners' controls sit above it.
+ */
+function BottomDock() {
+  const core = useCore();
+  const id = useBottomDock();
+  const role = useRole();
+  const reg = id ? core.registry.panelsById.get(id) : undefined;
+  if (!reg || reg.def.slot !== 'dock-bottom' || ROLE_RANK[role] < ROLE_RANK[reg.def.minRole ?? 'viewer']) return null;
+  const { def, feature } = reg;
+  return (
+    <section className="fr-bottomdock fr-chrome-card" data-fr-chrome="" data-fr-occludes="bottomdock" data-fr-region="bottomdock" aria-label="Bottom panel">
+      <ScopeContext.Provider value={feature}>
+        <def.Component editor={core.scoped(feature)} />
+      </ScopeContext.Provider>
+    </section>
+  );
+}
+
 function ConnectionBanner() {
   const core = useCore();
   const status = useStore(core.ui, (s) => s.connection);
@@ -80,7 +101,9 @@ function ConnectionBanner() {
 }
 
 export function Chrome() {
-  const hidden = useStore(useCore().ui, (s) => s.chromeHidden);
+  const core = useCore();
+  const hidden = useStore(core.ui, (s) => s.chromeHidden);
+  const bottom = useStore(core.ui, (s) => !!s.bottomDock && core.registry.panelsById.get(s.bottomDock)?.def.slot === 'dock-bottom');
   if (hidden)
     return (
       <div className="fr-chrome">
@@ -89,7 +112,7 @@ export function Chrome() {
       </div>
     );
   return (
-    <div className="fr-chrome">
+    <div className={`fr-chrome${bottom ? ' fr-chrome--bottomdock' : ''}`}>
       <TopLeft />
       <TopRight />
       <Toolbar />
@@ -98,6 +121,7 @@ export function Chrome() {
       <FormatToolbar />
       <ContextMenu />
       <Dock />
+      <BottomDock />
       <TopCenter besideDock />
       <ConnectionBanner />
     </div>

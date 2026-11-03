@@ -113,9 +113,20 @@ export interface BaseElement {
   diagramLayer?: string | null;
   /** [additive] Its `locked` was set by its diagram layer's lock, and is cleared with it. */
   layerLocked?: true | null;
+  /**
+   * [additive, #52] A part of a slide layout (features/frame `lib/layouts.ts`): which slot of the
+   * layout it fills. Re-applying a layout to the slide replaces the parts still showing their
+   * placeholder text and moves the ones people filled in into the new layout's matching slot; an
+   * `image` slot's placeholder is replaced by a picture dropped or pasted onto it (features/image),
+   * which keeps the role. Meaningless outside a frame; clients that don't know it ignore it.
+   */
+  layoutRole?: SlideLayoutRole | null;
   createdAt: number;
   updatedAt: number;
 }
+
+/** [additive, #52] Slots of a slide layout (BaseElement.layoutRole). Only ever added to. */
+export type SlideLayoutRole = 'title' | 'subtitle' | 'body' | 'body2' | 'image' | 'number' | 'quote' | 'caption';
 
 export type TextAlign = 'left' | 'center' | 'right';
 export type VerticalAlign = 'top' | 'middle' | 'bottom';

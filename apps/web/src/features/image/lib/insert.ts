@@ -1,4 +1,5 @@
 // Getting images onto the board: upload (or fall back), measure, lay out, create once.
+import type { BoardElement } from '@freero/shared';
 import type { Editor, NewElement, Point, Rect } from '@engine';
 import { dataUrlToBlob, isImageFile, naturalSizeOf, readAsDataUrl } from './files';
 import { fitGridLayout, fitSize } from './layout';
@@ -71,6 +72,46 @@ function revealRect(editor: Editor, r: Rect) {
 }
 
 /**
+ * A slide layout's image area (#52: a shape with `layoutRole: 'image'`) a single picture is meant
+ * for: the one selected, else the one under the drop / paste point.
+ */
+export function imagePlaceholderFor(editor: Editor, at: Point | null): BoardElement | null {
+  const isSlot = (el: BoardElement | null | undefined): el is BoardElement => !!el && el.type === 'shape' && el.layoutRole === 'image' && !el.locked;
+  const sel = editor.getSelection();
+  const picked = sel.length === 1 ? editor.getElement(sel[0]) : null;
+  if (isSlot(picked)) return picked;
+  const hit = at ? editor.hitTest(at) : null;
+  return isSlot(hit) ? hit : null;
+}
+
+/**
+ * Puts a picture in place of a slide's image area: the same box (the picture is cover-fitted, as
+ * every uncropped image is), the same slide, still the layout's image part — one undo step.
+ * Returns the new image's id ('' when it couldn't be added).
+ */
+export function replacePlaceholder(editor: Editor, placeholderId: string, image: { src: string; naturalW: number; naturalH: number; alt: string }): string {
+  const ph = editor.getElement(placeholderId);
+  if (!ph) return '';
+  let id = '';
+  editor.transact(() => {
+    id = editor.create<'image'>({
+      type: 'image',
+      ...image,
+      x: ph.x,
+      y: ph.y,
+      w: ph.w,
+      h: ph.h,
+      rotation: ph.rotation,
+      frameId: ph.frameId ?? null,
+      layoutRole: 'image',
+    });
+    if (id) editor.remove([ph.id]);
+  });
+  if (id) editor.select([id]);
+  return id;
+}
+
+/**
  * Uploads image files and places them as one grid centered on `center` (a drop or paste
  * point), or — when `center` is null (the upload button) — in a free spot near the view, each
  * scaled to fit ~600px. While uploading, local placeholders shimmer where the images will land.
@@ -95,12 +136,16 @@ export async function insertImageFiles(editor: Editor, files: File[], center: Po
     reportFailures(editor, 0, unreadable);
     return [];
   }
-  const laidOut = fitGridLayout(
-    readable.map((m) => fitSize(m.size.w, m.size.h)),
-    center ?? { x: 0, y: 0 },
-    visibleArea(editor),
-  );
-  const rects = center ? laidOut : intoFreeSpot(editor, laidOut, near);
+  // One picture onto a slide's image area takes its place (#52).
+  const slot = readable.length === 1 ? imagePlaceholderFor(editor, center) : null;
+  const laidOut = slot
+    ? [{ x: slot.x, y: slot.y, w: slot.w, h: slot.h }]
+    : fitGridLayout(
+        readable.map((m) => fitSize(m.size.w, m.size.h)),
+        center ?? { x: 0, y: 0 },
+        visibleArea(editor),
+      );
+  const rects = center || slot ? laidOut : intoFreeSpot(editor, laidOut, near);
   // Other items of the same drop (videos, files…) are placed beside these, not on them (KAI-204).
   const clearPending = addPending(rects);
   const release = editor.reserveSpace(rects);
@@ -126,6 +171,11 @@ export async function insertImageFiles(editor: Editor, files: File[], center: Po
     els.push({ type: 'image', src: s.url, naturalW: w, naturalH: h, alt: altFromName(readable[i].file.name), ...rects[i] });
   });
   reportFailures(editor, tooLarge, unreadable);
+  if (slot && els.length === 1 && editor.getElement(slot.id)) {
+    const { src, naturalW, naturalH, alt } = els[0];
+    const id = replacePlaceholder(editor, slot.id, { src, naturalW, naturalH, alt: alt ?? '' });
+    return id ? [id] : [];
+  }
   return els.length ? editor.createMany(els as NewElement[], { select: true }) : [];
 }
 

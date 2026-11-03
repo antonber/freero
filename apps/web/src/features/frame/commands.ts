@@ -1,7 +1,7 @@
 import { EyeOff, Frame, GalleryVertical, Maximize2, Presentation } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { applyLayout, frameSelection, newSlide, selectedFrames, setSkipped, zoomToFrame } from './lib/actions';
-import { DECK_PANEL_ID } from './lib/DeckPanel';
+import { FILMSTRIP_ID } from './lib/Filmstrip';
 import { SLIDE_LAYOUTS, type SlideLayoutId } from './lib/layouts';
 import { PANEL_ID } from './lib/frames';
 
@@ -40,13 +40,15 @@ export default defineCommands([
     },
   },
   {
+    // The filmstrip under the canvas (#52); its notes button opens the side deck with speaker notes.
     id: 'frame.openDeck',
     icon: Presentation,
     label: 'Slide deck',
     menus: ['board'],
     minRole: 'viewer',
+    detail: (editor) => (editor.getBottomDock() === FILMSTRIP_ID ? '(on)' : ''),
     run(editor) {
-      editor.openDock(editor.getDock() === DECK_PANEL_ID ? null : DECK_PANEL_ID);
+      editor.openBottomDock(editor.getBottomDock() === FILMSTRIP_ID ? null : FILMSTRIP_ID);
     },
   },
   {
