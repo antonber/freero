@@ -1830,6 +1830,10 @@ export const AUDIT_ACTIONS = {
   'webhook.secret_rotated': 'Rotated a webhook’s signing secret',
   'webhook.deleted': 'Removed a webhook',
   'webhook.disabled': 'A webhook was turned off after failing repeatedly',
+  // Audit streaming to a SIEM (modules/siem, #17). Never the secret.
+  'siem.sink_created': 'Started streaming the audit log to a SIEM',
+  'siem.sink_updated': 'Changed an audit log stream',
+  'siem.sink_deleted': 'Stopped streaming the audit log to a SIEM',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',
@@ -1873,6 +1877,73 @@ export interface AuditIntegrity {
   headHash: string | null;
   /** What is wrong, when not ok. */
   problem: string | null;
+  /**
+   * Signed checkpoints of the chain's head (#17): every hour the server signs the newest seq + hash
+   * with its own secret; each one still in retention must match the stored event at that seq, so a
+   * chain rewritten wholesale (head row included) shows. Streams to a SIEM carry the heads too.
+   */
+  anchors: { checked: number; lastAt: number | null };
+}
+
+// ---- Audit streaming to a SIEM (#17; team workspaces; owners/admins) ----
+// GET    /api/workspaces/:id/admin/siem                     -> { sinks: SiemSinkInfo[] }
+// POST   /api/workspaces/:id/admin/siem    body SiemSinkInput -> { sink, signingSecret? }  (https: the
+//        signing secret, shown once)
+// PATCH  /api/workspaces/:id/admin/siem/:sinkId body Partial<SiemSinkInput> -> { sink }  (a blank secret keeps the stored one)
+// POST   /api/workspaces/:id/admin/siem/:sinkId/test        -> { sink }  (sends a test record now)
+// DELETE /api/workspaces/:id/admin/siem/:sinkId             -> { ok }
+// Each sink receives every event of the workspace's audit log in order (cursor: its chain `seq`),
+// at least once, retried with backoff until it arrives; plus `freero.audit.head` checkpoints.
+// Secrets (HEC token, client secret, bearer token, signing secret) are sealed and never sent back.
+export type SiemKind = 'splunk' | 'sentinel' | 'https' | 'syslog';
+export const SIEM_KINDS: readonly SiemKind[] = ['splunk', 'sentinel', 'https', 'syslog'];
+export const SIEM_MAX_SINKS = 5;
+export interface SiemSettings {
+  /** splunk: the HTTP Event Collector's base URL (https://splunk.example.com:8088); https: the receiving URL. */
+  url?: string;
+  /** splunk */
+  index?: string;
+  sourcetype?: string;
+  /** sentinel (Azure Monitor Logs Ingestion API) */
+  endpoint?: string;
+  dcrId?: string;
+  stream?: string;
+  tenantId?: string;
+  clientId?: string;
+  /** syslog over TLS (RFC 5425) */
+  host?: string;
+  port?: number;
+  /** PEM of a private CA the syslog server's certificate is issued by (optional; public). */
+  caCert?: string;
+}
+export interface SiemSinkInput {
+  kind: SiemKind;
+  name?: string;
+  settings: SiemSettings;
+  /** splunk: HEC token; sentinel: client secret; https: optional bearer token. Never returned. */
+  secret?: string;
+  enabled?: boolean;
+}
+export interface SiemSinkInfo {
+  id: string;
+  kind: SiemKind;
+  name: string;
+  /** Non-secret settings, as saved. */
+  settings: SiemSettings;
+  /** Where it goes, shortened (no secrets). */
+  target: string;
+  hasSecret: boolean;
+  enabled: boolean;
+  /** ok: delivering; failing: the last attempt failed (retrying); paused: turned off. */
+  status: 'ok' | 'failing' | 'paused';
+  /** The newest event `seq` delivered, and how far the log is. */
+  deliveredSeq: number;
+  headSeq: number;
+  lastDeliveredAt: number | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  nextAttemptAt: number | null;
+  createdAt: number;
 }
 
 // ---- Admin console (KAI-47) and workspace policies (KAI-51) ----

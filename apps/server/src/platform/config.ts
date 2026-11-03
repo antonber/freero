@@ -362,6 +362,18 @@ export interface Config {
     /** Failed attempts in a row after which Freero turns an endpoint off (and tells who made it). */
     disableAfterFailures: number;
   };
+  /** Audit log streaming to workspaces' SIEMs (modules/siem, #17). */
+  siem: {
+    /** Off: no stream can be added and nothing is sent (the instance-wide switch). */
+    enabled: boolean;
+    /** Sinks may be plain http and private / loopback addresses (a SIEM on the operator's own network). */
+    privateEndpoints: boolean;
+    timeoutMs: number;
+    /** First retry delay; each further one is 4x longer, capped at 6 hours. */
+    retryBaseMs: number;
+    /** Where Microsoft Sentinel sinks get their Entra ID token (tests point it at a local mock). */
+    azureAuthority: string;
+  };
   /**
    * Slack link unfurls (modules/slack, #88; docs/integrations/slack.md): the operator's Slack app.
    * Off (null) unless both its signing secret and its bot token are set.
@@ -895,6 +907,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       retryBaseMs: int('WEBHOOK_RETRY_BASE_MS', 10_000, 10, 3_600_000),
       maxAttempts: int('WEBHOOK_MAX_ATTEMPTS', 7, 1, 20),
       disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
+    },
+    siem: {
+      enabled: bool('SIEM', true),
+      privateEndpoints: bool('SIEM_PRIVATE_ENDPOINTS', false),
+      timeoutMs: int('SIEM_TIMEOUT_SECONDS', 15, 1, 120) * 1000,
+      retryBaseMs: int('SIEM_RETRY_BASE_MS', 10_000, 10, 3_600_000),
+      azureAuthority: (url('SIEM_AZURE_AUTHORITY', ['https:', 'http:']) ?? 'https://login.microsoftonline.com').replace(/[/]+$/, ''),
     },
     slack: slackApp(),
     embedExtraOrigins,
