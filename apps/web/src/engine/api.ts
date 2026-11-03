@@ -12,6 +12,7 @@
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   ActivityAnswer,
+  AnalyticsEvent,
   ActivityEntry,
   ActivityState,
   BoardCall,
@@ -218,6 +219,13 @@ export interface Host {
    * with an action stay up longer.
    */
   notify(message: string, kind?: 'info' | 'success' | 'error', opts?: NotifyOptions): void;
+  /**
+   * [additive] Counts a product event for the service's analytics (Google Analytics, only where the
+   * server has it on and the person accepted; ARCHITECTURE.md "Analytics"). The events and the
+   * values they may carry are a closed list (`AnalyticsEvent`, @freero/shared): never a title,
+   * content, name or id. Absent (offline sandbox, embeds, tests): nothing is counted.
+   */
+  track?(event: AnalyticsEvent): void;
   /**
    * Current time on the SERVER's clock (ms). Use it for anything shared that is time-based
    * (timers, deadlines) so clients with skewed clocks agree. Falls back to the local clock
