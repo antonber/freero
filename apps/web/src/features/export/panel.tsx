@@ -49,14 +49,17 @@ function ImageDialog({ editor }: { editor: Editor }) {
   const [background, setBackground] = useState(true);
   const [scope, setScope] = useState<ImageScope>(() => (editor.getSelection().length ? 'selection' : 'board'));
   const [busy, setBusy] = useState(false);
+  // Share of the picture drawn so far (big boards render in steps, the page answering in between).
+  const [drawn, setDrawn] = useState<number | undefined>(undefined);
   const info = useMemo(() => scopeInfo(editor, scope), [editor, scope]);
   const boardEmpty = editor.getElements().length === 0;
   const size = info.rect ? outputSize(info.rect, format === 'svg' ? 1 : Number(scale)) : null;
 
   const run = async () => {
     setBusy(true);
+    setDrawn(undefined);
     try {
-      await exportImage(editor, { format, scale: Number(scale), background, scope });
+      await exportImage(editor, { format, scale: Number(scale), background, scope, onProgress: (done, total) => setDrawn(total > 1 ? done / total : undefined) });
       close();
     } catch (err) {
       console.warn('Image export failed', err);
@@ -145,7 +148,10 @@ function ImageDialog({ editor }: { editor: Editor }) {
           </p>
         )}
         {busy && (
-          <Progress label={info.count > LARGE_BOARD ? `Rendering ${info.count.toLocaleString()} items. Large boards take a few seconds…` : 'Rendering…'} />
+          <Progress
+            value={drawn}
+            label={info.count > LARGE_BOARD ? `Rendering ${info.count.toLocaleString()} items. Large boards take a while…` : 'Rendering…'}
+          />
         )}
       </div>
     </Modal>
