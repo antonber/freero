@@ -1746,6 +1746,16 @@ export interface Editor {
    * (`ElementDefinition.hiddenWith`). False for unknown ids.
    */
   isViewHidden(id: string): boolean;
+  /**
+   * [additive, #117] Focus on one item for this viewer (a diagram's focus mode): everything outside
+   * it — and outside what it contains — is drawn faded and is inert: not hit-tested, selectable,
+   * marquee'd, lasso'd or Tab-walked. Local view state: never synced, any role, exports unaffected.
+   * Esc (once nothing is selected) or `setFocus(null)` ends it; deleting the item ends it too.
+   * Hook: useFocus().
+   */
+  setFocus(id: string | null): void;
+  /** [additive] The focused item's id (null: none, or it was deleted). */
+  getFocus(): string | null;
 
   // -- events --
   on(event: EditorEvent, cb: () => void): () => void;

@@ -97,6 +97,11 @@ OutlineField { id, name, type, options?: Array<{ id, label, status? }> }   // Ou
   or in a hidden frame or someone's draft) reads `source: [k1] (not on the board: deleted, or not
   visible to you)`: the view never tells which. Add one with `add_view`, change it with
   `configure_view` (`kanbanId`: the linked view's id).
+- Diagrams (#117, #118): `[d1] diagram: Checkout · layout: Top to bottom` holds its steps and the
+  lines between them (a subgraph's frame with what is in it). With two or more layers it reads
+  `layers: 3` and lists its members under one `<diagramId>:<layerId>` section per layer, top of the
+  stack first, `hidden: true` / `locked: true` on those layers: a hidden layer's items are folded
+  away on the board, not gone. Add steps to it with `add_diagram` `into`.
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or
   joined by a connector, in the same frame (or outside frames). A text box right above the rest is
   the cluster's title. Containers, tables and mind maps are never clustered.
@@ -212,7 +217,17 @@ kanban grows; only stickies and cards), or a cluster
 (`cluster:<id>` or any item in it: touching its items, never above its title, clear of other
 clusters, so the outline reads them as part of it); `newFrame` / `newKanban` (To do / Doing / Done)
 around what is added, on free space. The tracker import places its cards with the same rules,
-except that an issue's status is never changed by where it lands.
+except that an issue's status is never changed by where it lands. `into` a diagram (#117): the
+new steps and their lines join it (a structure that comes in its own diagram gives up that
+container) below what it holds, and the diagram's live layout places them in the same change
+(`withDiagramLayout`; a manual diagram keeps them there and grows).
+
+Diagram containers (#117): `graph`, `tree`, `orgchart`, an outline drawn `as: 'tree'`, `sequence`,
+`plantuml` and every Mermaid kind but `mindmap` come inside ONE `diagram` item (created first, so its
+id is `created[0]`): flowcharts and class / ER / state / activity diagrams laid out by their
+direction (`down` / `right` / `up` / `left`), trees by theirs, org charts as `orgchart`, sequence
+diagrams `manual`. Its members are its children (`frameId`); it keeps the drawing it arrives with
+until its structure changes (docs/design/diagrams.md).
 
 `target: 'board'` (default) writes it to the live board as **one change**: planned against the live
 doc and applied in the same step (nothing lands in between), one transaction, attributed to the caller

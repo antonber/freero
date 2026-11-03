@@ -822,7 +822,7 @@ export const TOOLS: McpTool[] = [
     name: 'add_diagram',
     title: 'Add a diagram',
     description:
-      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames —, a sequenceDiagram, a classDiagram — UML classes with their attributes and operations, inheritance, composition, multiplicities —, an erDiagram — entity tables with keys and crow’s-foot ends — or a stateDiagram-v2), `outline` (nested items, drawn as a mind map or a tree), `orgchart` (people and who they report to), or `graph` (nodes and edges). For a kanban use add_cards with columns. Needs permission to change boards.',
+      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames —, a sequenceDiagram, a classDiagram — UML classes with their attributes and operations, inheritance, composition, multiplicities —, an erDiagram — entity tables with keys and crow’s-foot ends — or a stateDiagram-v2), `outline` (nested items, drawn as a mind map or a tree), `orgchart` (people and who they report to), or `graph` (nodes and edges). Flowcharts, class, ER, state and sequence diagrams, trees, org charts and graphs come as one diagram item (its id is the first returned) that keeps itself laid out when steps are added; give `into` a diagram’s id from the outline to add steps to that diagram instead. For a kanban use add_cards with columns. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: ADD,
     input: {
@@ -858,6 +858,7 @@ export const TOOLS: McpTool[] = [
         })
         .optional(),
       near,
+      into: z.string().min(1).max(200).optional().describe('A diagram on the board (its id from the outline) to draw into: the new steps join it and its layout makes room for them.'),
     },
     async run(call, a) {
       const given = [a.mermaid, a.outline, a.orgchart, a.graph].filter((v) => v !== undefined).length;
@@ -871,8 +872,8 @@ export const TOOLS: McpTool[] = [
             ? { kind: 'tree', root: a.outline }
             : { kind: 'mindmap', root: a.outline }
           : { kind: 'graph', nodes: a.graph!.nodes, edges: a.graph!.edges, ...(a.graph!.direction ? { direction: a.graph!.direction } : {}) };
-      const out = await addStructure(call, a.boardId, structure, a.near);
-      return written('Added a diagram', out.url, out.created);
+      const out = await addStructure(call, a.boardId, structure, a.near, a.into ? { into: a.into } : undefined);
+      return written(a.into ? `Added to diagram ${a.into}` : 'Added a diagram', out.url, out.created);
     },
   }),
 

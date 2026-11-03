@@ -1283,9 +1283,12 @@ async function run() {
       const bad = await B.req('POST', `/api/boards/${board.id}/insert-structure`, { structure: { kind: 'mermaid', source: 'flowchart TD\n  a ~~> b{' } });
       assert(bad.status === 400 && /line 2/.test(bad.json?.error ?? ''), `malformed Mermaid: ${bad.status} ${bad.text}`);
       const r = await B.req('POST', `/api/boards/${board.id}/insert-structure`, { structure: { kind: 'mermaid', source } });
-      assert(r.status === 201 && r.json.created.length === 6, `${r.status} ${r.text}`);
+      // One diagram container (#117, created first), three steps and three lines in it.
+      assert(r.status === 201 && r.json.created.length === 7, `${r.status} ${r.text}`);
       await waitFor(() => r.json.created.every((id) => els(watcher).has(id)), 5000, 'the owner to see the inserted diagram');
       assert(r.json.created.every((id) => els(watcher).get(id).createdBy === B.id), 'not attributed to the editor who inserted it');
+      const [diagramId, ...members] = r.json.created;
+      assert(els(watcher).get(diagramId).type === 'diagram' && members.every((id) => els(watcher).get(id).frameId === diagramId), 'the flowchart did not come as one diagram holding its steps');
       const o = await C.req('GET', `/api/boards/${board.id}/outline`);
       const outline = o.json.outline;
       const shapes = JSON.stringify(outline.items);

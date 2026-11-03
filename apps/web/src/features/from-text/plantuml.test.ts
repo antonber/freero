@@ -58,7 +58,9 @@ it('a pasted PlantUML class diagram lands as class boxes with their members, lin
   expect([contains.startCap, contains.endCap, richTextToPlain(contains.label)]).toEqual(['diamond', 'none', 'contains']); // composition, diamond at the whole
   expect(contains.labels?.map((l) => richTextToPlain(l.text))).toEqual(['1', 'many']);
   const shop = els.find((e): e is FrameElement => e.type === 'frame' && e.title === 'Shop')!;
-  expect([product.frameId, book.frameId, shippable.frameId, order.frameId ?? null]).toEqual([shop.id, shop.id, shop.id, null]);
+  // The whole drawing is one diagram (#117): the package frame and the classes outside it are its members.
+  const diagram = els.find((e) => e.type === 'diagram')!;
+  expect([product.frameId, book.frameId, shippable.frameId, order.frameId, shop.frameId]).toEqual([shop.id, shop.id, shop.id, diagram.id, diagram.id]);
   expect(ed.collection(DIAGRAMS).entries()).toHaveLength(1);
 });
 

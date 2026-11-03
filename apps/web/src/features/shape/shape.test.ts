@@ -45,7 +45,7 @@ describe('UML classes from Mermaid', () => {
   it('a class box holds every member line, with its dividers under the name and above the first operation (an empty compartment still shows)', () => {
     const source = ['classDiagram', '  class BankAccount {', '    +String owner', '    +BigDecimal balance', '    +deposit(amount) bool', '    +withdraw(amount)', '  }', '  class Marker'].join('\n');
     let n = 0;
-    const classes = layoutStructure({ kind: 'mermaid', source }, { newId: () => `id${n++}` }).elements as ShapeElement[];
+    const classes = layoutStructure({ kind: 'mermaid', source }, { newId: () => `id${n++}` }).elements.filter((e): e is ShapeElement => e.type === 'shape');
     const line = 14 * ENTITY_LINE;
     const [account, marker] = classes.map((c) => ({ c, plain: richTextToPlain(c.text), div: classDividers(richTextToPlain(c.text), c.fontSize, c.strokeWidth) }));
     expect(account.plain.split('\n')).toEqual(['BankAccount', '+String owner', '+BigDecimal balance', '+deposit(amount) : bool', '+withdraw(amount)']);

@@ -8,7 +8,9 @@
 //            an imported issue's status is the tracker's, so it goes to the column of its status
 //            instead); the kanban grows to hold them
 //   cluster  right below (or beside) its members, close enough to read as one cluster
+//   diagram  its new steps join the diagram below what it holds; its live layout places them (#117)
 import {
+  DIAGRAM_LAYOUT,
   APART_GAP,
   boardView,
   clusterBoxes,
@@ -163,14 +165,15 @@ function placeInto(laid: LaidOut, into: string, column: string | undefined, row:
     col = col ?? colRef[2];
     lane = lane ?? colRef[3];
   } else target = byId.get(into);
-  if (!target) throw new LayoutError(`No item ${into} on this board (use an id from the outline: a frame, a kanban, a kanban column or a cluster)`);
-  if (target.locked && (target.type === 'frame' || target.type === 'kanban')) throw new LayoutError(`That ${target.type} is locked`);
+  if (!target) throw new LayoutError(`No item ${into} on this board (use an id from the outline: a frame, a kanban, a kanban column, a diagram or a cluster)`);
+  if (target.locked && (target.type === 'frame' || target.type === 'kanban' || target.type === 'diagram')) throw new LayoutError(`That ${target.type} is locked`);
   if (col !== undefined && target.type !== 'kanban') throw new LayoutError(`placement.column is for a kanban; that item is a ${target.type}`);
   if (lane !== undefined && target.type !== 'kanban') throw new LayoutError(`placement.row is for a kanban; that item is a ${target.type}`);
   if (laid.fieldsOf && Object.keys(laid.fieldsOf).length && target.type !== 'kanban') throw new LayoutError(`Card fields belong to a kanban; that item is a ${target.type}`);
   if (target.type === 'kanban') return intoKanban(laid, target as KanbanElement, col, lane, view, ctx);
   if (target.type === 'frame') return intoFrame(laid, target, view, ctx);
-  if (!LOOSE.has(target.type)) throw new LayoutError(`Items go into a frame, a kanban or a cluster; that item is a ${target.type}`);
+  if (target.type === 'diagram') return intoDiagram(laid, target, view);
+  if (!LOOSE.has(target.type)) throw new LayoutError(`Items go into a frame, a kanban, a diagram or a cluster; that item is a ${target.type}`);
   if (laid.parts?.some((pt) => pt.titleId)) throw new LayoutError('That cluster has its title already: leave the title out');
   return intoCluster(laid, target, view, ctx);
 }
@@ -376,6 +379,26 @@ function intoFrame(laid: LaidOut, f: BoardElement, view: BoardView, ctx: PlaceCo
   const bounds = { x: Math.round(at.x), y: Math.round(at.y), w: size.w, h: size.h };
   const g = grown(f, bounds);
   return { ...laid, elements: t.elements, moves: t.moves, bounds, frameOf: t.frameOf, moveExtra: new Map(), grow: g ? [{ id: f.id, patch: g }] : [] };
+}
+
+/**
+ * Into a diagram (#117): the new steps (a structure that came in its own diagram gives up that
+ * container) join it below what it holds; the diagram's live layout then places them
+ * (`withDiagramLayout`, in plan.ts), or, laid out by hand, they stay there and it grows.
+ */
+function intoDiagram(laid: LaidOut, d: BoardElement, view: BoardView): Placed {
+  if (laid.moves.length) throw new LayoutError('Only new steps go into a diagram (leave out existing items)');
+  const own = laid.elements.find((e) => e.type === 'diagram' && !e.frameId);
+  const inner = own ? laid.elements.filter((e) => e.id !== own.id).map((e) => (e.frameId === own.id ? ({ ...e, frameId: null } as ElementDraft) : e)) : laid.elements;
+  if (inner.some((e) => e.type === 'diagram')) throw new LayoutError('A diagram doesn’t go inside another diagram');
+  if (!inner.length) throw new LayoutError('Nothing to add to the diagram');
+  const box = unionRects(inner.filter((e) => e.type !== 'connector').map((e) => rotatedBounds(e))) ?? { x: 0, y: 0, w: 0, h: 0 };
+  const content = unionRects(view.elements.map((e) => e.el).filter((el) => el.frameId === d.id && el.type !== 'connector').map((el) => rotatedBounds(el)));
+  const at = content ? { x: content.x, y: content.y + content.h + APART_GAP } : { x: d.x + DIAGRAM_LAYOUT.pad, y: d.y + DIAGRAM_LAYOUT.headerH + DIAGRAM_LAYOUT.pad };
+  const t = translated({ ...laid, elements: inner, moves: [] }, Math.round(at.x - box.x), Math.round(at.y - box.y), d.id);
+  const bounds = { x: Math.round(at.x), y: Math.round(at.y), w: Math.ceil(box.w), h: Math.ceil(box.h) };
+  const keys = laid.keys && own ? Object.fromEntries(Object.entries(laid.keys).filter(([id]) => id !== own.id)) : laid.keys;
+  return { ...laid, elements: t.elements, moves: [], ...(keys ? { keys } : {}), size: { w: bounds.w, h: bounds.h }, bounds, frameOf: new Map(), moveExtra: new Map(), grow: [] };
 }
 
 /** The cluster `seed` belongs to: loose items in the same container, close together (the outline's rule). */
