@@ -22,6 +22,8 @@ import type {
   TrackerProject,
   TrackerSendRequest,
   TrackerSendResponse,
+  TrackerSprint,
+  TrackerFieldInfo,
   ActivityAnswer,
   ActivityState,
   BoardCallResponse,
@@ -488,6 +490,17 @@ export const api = {
   boardTrackers: (boardId: string) => request<BoardTrackersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/trackers`),
   trackerProjects: (boardId: string, connectionId: string) =>
     request<{ projects: TrackerProject[]; queryLanguage: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/trackers/connections/${encodeURIComponent(connectionId)}/projects`),
+  trackerSprints: (boardId: string, connectionId: string, project: string) =>
+    request<{ sprints: TrackerSprint[]; fieldName: string | null }>(
+      'GET',
+      `/api/boards/${encodeURIComponent(boardId)}/trackers/connections/${encodeURIComponent(connectionId)}/sprints?project=${encodeURIComponent(project)}`,
+    ),
+  trackerIssueTypes: (boardId: string, connectionId: string, project: string) =>
+    request<{ issueTypes: string[]; preferred: string | null }>(
+      'GET',
+      `/api/boards/${encodeURIComponent(boardId)}/trackers/connections/${encodeURIComponent(connectionId)}/issue-types?project=${encodeURIComponent(project)}`,
+    ),
+  trackerFields: (id: string) => request<{ fields: TrackerFieldInfo[] }>('GET', `/api/trackers/connections/${encodeURIComponent(id)}/fields`),
   trackerPreview: (boardId: string, body: TrackerSendRequest) => request<{ issues: TrackerIssuePreview[] }>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/preview`, body),
   trackerSend: (boardId: string, body: TrackerSendRequest) => request<TrackerSendResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/send`, body),
   trackerImport: (boardId: string, body: TrackerImportRequest) => request<TrackerImportResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/import`, body),

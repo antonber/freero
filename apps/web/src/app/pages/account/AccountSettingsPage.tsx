@@ -83,7 +83,7 @@ export function AccountSettingsPage() {
         <Section
           id="trackers"
           title="Your issue trackers"
-          description="Your own Jira, Linear or GitHub connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console."
+          description="Your own Jira, Linear, GitHub or Azure DevOps connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console."
         >
           <TrackerConnections workspaceId={null} />
         </Section>

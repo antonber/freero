@@ -1,10 +1,21 @@
 // The tracker dialogs. Send: pick a connection and project, see EXACTLY what the issue will hold
 // (the server's own preview, fields it can't carry listed), create it. Import: a query in the
-// tracker's own language becomes linked cards. The server writes the board (badges, cards) as one
-// change attributed to the tracker for this person; the dialogs never write the board themselves.
+// tracker's own language becomes linked cards — or (#119, #43) a project's sprint or an epic's
+// issues, picked rather than written. The server writes the board (badges, cards) as one change
+// attributed to the tracker for this person; the dialogs never write the board themselves.
 import { useEffect, useMemo, useState } from 'react';
 import { Download, TicketPlus } from 'lucide-react';
-import { ISSUE_FIELD_LABELS, richTextToPlain, TRACKER_PROVIDERS, type IssueValues, type RoadmapGroupBy, type TrackerIssuePreview, type TrackerProject } from '@freero/shared';
+import {
+  ISSUE_FIELD_LABELS,
+  richTextToPlain,
+  TRACKER_PROVIDERS,
+  type IssueValues,
+  type RoadmapGroupBy,
+  type TrackerIssuePreview,
+  type TrackerProject,
+  type TrackerProviderKind,
+  type TrackerSprint,
+} from '@freero/shared';
 import { definePanel, type Editor, type PanelProps } from '@engine';
 import { Button, Input, Modal, SegmentedControl, Select, TextArea } from '@ui';
 import { IMPORT_DIALOG, openIssue, SEND_DIALOG } from './lib/links';
@@ -16,6 +27,10 @@ const STATUS_LABEL: Record<string, string> = {
   done: 'Done',
 };
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+/** What a tracker calls its sprints (#119); none: it has none Freero imports by. */
+const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprint', linear: 'Cycle', azure: 'Iteration' };
+/** What a tracker calls the issue others go under (#43); none: not from Freero (GitHub). */
+const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: 'Parent issue', azure: 'Parent work item' };
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 /** The connection picker and its projects, shared by both dialogs. */
@@ -26,6 +41,8 @@ function useConnection(editor: Editor) {
   const [projects, setProjects] = useState<TrackerProject[] | null>(null);
   const [queryLanguage, setQueryLanguage] = useState('');
   const [project, setProject] = useState('');
+  // Which connection `projects` / `project` belong to (a switch shows the old ones for a moment).
+  const [loadedFor, setLoadedFor] = useState('');
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!t || !connectionId) return;
@@ -35,6 +52,7 @@ function useConnection(editor: Editor) {
       (r) => {
         if (!live) return;
         setProjects(r.projects);
+        setLoadedFor(connectionId);
         setQueryLanguage(r.queryLanguage);
         const preferred = t.connections.find((c) => c.id === connectionId)?.defaults.project;
         setProject(preferred && r.projects.some((p) => p.key === preferred) ? preferred : (r.projects[0]?.key ?? preferred ?? ''));
@@ -56,6 +74,8 @@ function useConnection(editor: Editor) {
     queryLanguage,
     error,
     setError,
+    /** The project is one of this connection's (safe to ask the tracker about). */
+    projectReady: loadedFor === connectionId && !!projects?.some((p) => p.key === project),
   };
 }
 
@@ -121,6 +141,7 @@ function Fields({ values }: { values: IssueValues }) {
   if (values.assignee) rows.push([ISSUE_FIELD_LABELS.assignee, values.assignee]);
   if (values.dueDate) rows.push([ISSUE_FIELD_LABELS.dueDate, values.dueDate]);
   if (values.estimate !== undefined && values.estimate !== null) rows.push([ISSUE_FIELD_LABELS.estimate, String(values.estimate)]);
+  if (values.sprint) rows.push([ISSUE_FIELD_LABELS.sprint, values.sprint]);
   if (!rows.length) return null;
   return (
     <dl className="fr-trackers-preview__fields">
@@ -134,20 +155,48 @@ function Fields({ values }: { values: IssueValues }) {
   );
 }
 
+/** The issue types of the project (#43): a picker, the connection's preferred one first. */
+function useIssueTypes(editor: Editor, connectionId: string, project: string, wanted: boolean) {
+  const [types, setTypes] = useState<{ issueTypes: string[]; preferred: string | null } | null>(null);
+  useEffect(() => {
+    const t = editor.host.trackers;
+    setTypes(null);
+    if (!wanted || !t?.issueTypes || !connectionId || !project) return;
+    let live = true;
+    t.issueTypes(connectionId, project).then(
+      (r) => live && setTypes(r),
+      () => live && setTypes({ issueTypes: [], preferred: null }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [editor, connectionId, project, wanted]);
+  return types;
+}
+
 function SendDialog({ editor, props }: PanelProps) {
   const ids = useMemo(() => (Array.isArray(props?.ids) ? (props.ids as unknown[]).filter((v): v is string => typeof v === 'string') : []), [props]);
   const c = useConnection(editor);
-  const [mode, setMode] = useState<'one' | 'each'>('one');
+  const [mode, setMode] = useState<'one' | 'each' | 'clusters'>('one');
   const [issueType, setIssueType] = useState('');
+  const [parent, setParent] = useState('');
   const [preview, setPreview] = useState<TrackerIssuePreview[] | null>(null);
   const [busy, setBusy] = useState(false);
   const close = () => editor.closePanel(SEND_DIALOG);
+  const provider = c.connection?.provider;
+  const parentName = provider ? PARENT_NAME[provider] : undefined;
+  const typed = provider === 'jira' || provider === 'azure';
+  const types = useIssueTypes(editor, c.connectionId, c.project, typed && c.projectReady);
+  useEffect(() => {
+    if (!parentName && mode === 'clusters') setMode('one');
+  }, [parentName, mode]);
   const request = {
     connectionId: c.connectionId,
     project: c.project,
     itemIds: ids,
     mode,
     ...(issueType.trim() ? { issueType: issueType.trim() } : {}),
+    ...(parent.trim() && mode !== 'clusters' && parentName ? { parent: parent.trim() } : {}),
   };
 
   useEffect(() => {
@@ -180,7 +229,11 @@ function SendDialog({ editor, props }: PanelProps) {
       close();
       const first = out.issues[0];
       editor.host.notify(
-        out.issues.length === 1 ? `Created ${first.key} for ${plural(first.itemIds.length, 'item')}` : `Created ${plural(out.issues.length, 'issue')}`,
+        out.parent
+          ? `Created ${out.parent.key} with ${plural(out.issues.length, 'issue')} under it`
+          : out.issues.length === 1
+            ? `Created ${first.key} for ${plural(first.itemIds.length, 'item')}`
+            : `Created ${plural(out.issues.length, 'issue')}`,
         'success',
         first ? { action: { label: 'Open', run: () => openIssue(first.url) } } : undefined,
       );
@@ -192,7 +245,7 @@ function SendDialog({ editor, props }: PanelProps) {
   };
 
   if (!c.t) return null;
-  const count = mode === 'each' ? ids.length : 1;
+  const count = mode === 'each' ? ids.length : mode === 'clusters' ? (preview?.length ?? 1) : 1;
   return (
     <Modal
       open
@@ -218,38 +271,60 @@ function SendDialog({ editor, props }: PanelProps) {
         <ConnectionFields c={c} />
         <div className="fr-trackers-dialog__row">
           {ids.length > 1 && (
-            <div>
+            <div style={parentName ? { flexBasis: '100%' } : undefined}>
               <span className="fr-trackers-dialog__label">Issues</span>
-              <SegmentedControl<'one' | 'each'>
+              <SegmentedControl<'one' | 'each' | 'clusters'>
                 aria-label="How many issues"
                 size="sm"
                 options={[
                   { value: 'one', label: 'One for all' },
                   { value: 'each', label: `One per item (${ids.length})` },
+                  ...(parentName ? [{ value: 'clusters' as const, label: 'One per cluster' }] : []),
                 ]}
                 value={mode}
                 onChange={setMode}
               />
             </div>
           )}
-          {c.connection?.provider === 'jira' && (
+          {typed && (
             <div>
-              <span className="fr-trackers-dialog__label">Issue type</span>
-              <Input aria-label="Issue type" value={issueType} placeholder={c.connection.defaults.issueType ?? 'Task'} onChange={(e) => setIssueType(e.target.value)} />
+              <span className="fr-trackers-dialog__label">{provider === 'azure' ? 'Work item type' : 'Issue type'}</span>
+              {types?.issueTypes.length ? (
+                <Select
+                  aria-label="Issue type"
+                  options={types.issueTypes.map((t) => ({ value: t, label: t }))}
+                  value={issueType || (types.preferred && types.issueTypes.includes(types.preferred) ? types.preferred : types.issueTypes.includes('Task') ? 'Task' : types.issueTypes[0])}
+                  onChange={setIssueType}
+                  width="100%"
+                />
+              ) : (
+                <Input aria-label="Issue type" value={issueType} placeholder={types?.preferred ?? c.connection?.defaults.issueType ?? 'Task'} onChange={(e) => setIssueType(e.target.value)} />
+              )}
+            </div>
+          )}
+          {parentName && mode !== 'clusters' && (
+            <div>
+              <span className="fr-trackers-dialog__label">Under (optional)</span>
+              <Input aria-label={parentName} value={parent} placeholder={provider === 'azure' ? '#12' : provider === 'linear' ? 'ENG-12' : 'WEB-12'} onChange={(e) => setParent(e.target.value)} />
             </div>
           )}
         </div>
         <p className="fr-trackers-dialog__hint">
-          {mode === 'one' && ids.length > 1
-            ? `One issue for the ${plural(ids.length, 'selected item')}, each listed with a link back to the board.`
-            : 'Each item becomes an issue with a link back to the board.'}{' '}
+          {mode === 'clusters'
+            ? `A new ${parentName === 'Epic' ? 'epic' : 'parent'} for the ${plural(ids.length, 'selected item')}, with an issue under it for each cluster of items close together.`
+            : mode === 'one' && ids.length > 1
+              ? `One issue for the ${plural(ids.length, 'selected item')}, each listed with a link back to the board.`
+              : 'Each item becomes an issue with a link back to the board.'}{' '}
           The items show the issue and stay in sync with it.
         </p>
         {preview ? (
           <div className="fr-trackers-preview" aria-label="What will be sent">
-            {preview.map((p) => (
-              <div key={p.itemIds.join(',')} className="fr-trackers-preview__issue">
-                <p className="fr-trackers-preview__title">{p.values.title}</p>
+            {preview.map((p, n) => (
+              <div key={p.itemIds.join(',') || `parent-${n}`} className="fr-trackers-preview__issue">
+                <p className="fr-trackers-preview__title">
+                  {mode === 'clusters' && !p.itemIds.length ? `${parentName ?? 'Parent'}: ` : ''}
+                  {p.values.title}
+                </p>
                 {p.values.description && <Description text={p.values.description} />}
                 <Fields values={p.values} />
                 {p.unmapped.length > 0 && (
@@ -279,6 +354,7 @@ const QUERY_HINT: Record<string, string> = {
   jira: 'e.g. project = WEB AND sprint in openSprints()',
   linear: 'e.g. onboarding',
   github: 'e.g. repo:acme/web is:open label:bug',
+  azure: "e.g. SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = 'Fabrikam'",
 };
 
 const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
@@ -288,10 +364,44 @@ const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
   { value: 'none', label: 'One lane' },
 ];
 
+type ImportBy = 'query' | 'sprint' | 'epic';
+
+/** A project's sprints for the picker (#119): the current one first, closed ones shown but not picked. */
+function useSprints(editor: Editor, connectionId: string, project: string, wanted: boolean) {
+  const [sprints, setSprints] = useState<TrackerSprint[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const t = editor.host.trackers;
+    setSprints(null);
+    setError(null);
+    if (!wanted || !t?.sprints || !connectionId || !project) return;
+    let live = true;
+    t.sprints(connectionId, project).then(
+      (r) => live && setSprints(r.sprints),
+      (e) => live && (setSprints([]), setError(message(e, 'The tracker didn’t list its sprints.'))),
+    );
+    return () => {
+      live = false;
+    };
+  }, [editor, connectionId, project, wanted]);
+  return { sprints, error };
+}
+
 function ImportDialog({ editor, props }: PanelProps) {
   const c = useConnection(editor);
   const [query, setQuery] = useState('');
+  const [by, setBy] = useState<ImportBy>('query');
+  const [sprint, setSprint] = useState('current');
+  const [epic, setEpic] = useState('');
   const [busy, setBusy] = useState(false);
+  const provider = c.connection?.provider;
+  const sprintName = provider ? SPRINT_NAME[provider] : undefined;
+  const parentName = provider ? PARENT_NAME[provider] : undefined;
+  const s = useSprints(editor, c.connectionId, c.project, by === 'sprint' && !!sprintName && c.projectReady);
+  useEffect(() => {
+    if ((by === 'sprint' && !sprintName) || (by === 'epic' && !parentName)) setBy('query');
+  }, [by, sprintName, parentName]);
+  const ready = by === 'query' ? !!query.trim() : by === 'sprint' ? !!c.project && !!sprint : !!c.project && !!epic.trim();
   // Roadmap mode (KAI-160): opened on a timeline, the issues become its bars, in lanes.
   const timeline = useMemo(() => {
     const el = typeof props?.timelineId === 'string' ? editor.getElement(props.timelineId) : undefined;
@@ -306,13 +416,13 @@ function ImportDialog({ editor, props }: PanelProps) {
   const [groupBy, setGroupBy] = useState<RoadmapGroupBy>('epic');
   const close = () => editor.closePanel(IMPORT_DIALOG);
   const run = async () => {
-    if (!c.t || !query.trim()) return;
+    if (!c.t || !ready) return;
     setBusy(true);
     c.setError(null);
     try {
       const out = await c.t.importIssues({
         connectionId: c.connectionId,
-        query: query.trim(),
+        ...(by === 'query' ? { query: query.trim() } : { scope: { project: c.project, ...(by === 'sprint' ? { sprint } : { epic: epic.trim() }) } }),
         ...(timeline ? { timeline: { id: timeline.id, groupBy } } : {}),
         ...(kanban ? { placement: { into: kanban.id } } : {}),
       });
@@ -358,25 +468,70 @@ function ImportDialog({ editor, props }: PanelProps) {
           <Button variant="ghost" onClick={close} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={run} loading={busy} disabled={!query.trim()}>
+          <Button variant="primary" onClick={run} loading={busy} disabled={!ready}>
             Import
           </Button>
         </>
       }
     >
       <div className="fr-trackers-dialog">
-        <ConnectionFields c={c} withProject={false} />
-        <TextArea
-          label={c.queryLanguage || 'Query'}
-          value={query}
-          rows={3}
-          maxLength={2000}
-          placeholder={QUERY_HINT[c.connection?.provider ?? 'jira']}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void run();
-          }}
-        />
+        <ConnectionFields c={c} withProject={by !== 'query'} />
+        {(sprintName || parentName) && (
+          <div className="fr-trackers-dialog__row">
+            <span className="fr-trackers-dialog__label">Bring in</span>
+            <SegmentedControl<ImportBy>
+              size="sm"
+              aria-label="Bring in"
+              value={by}
+              options={[
+                { value: 'query', label: c.queryLanguage || 'Query' },
+                ...(sprintName ? [{ value: 'sprint' as const, label: `A ${sprintName.toLowerCase()}` }] : []),
+                ...(parentName ? [{ value: 'epic' as const, label: parentName === 'Epic' ? 'An epic' : `A ${parentName.toLowerCase()}` }] : []),
+              ]}
+              onChange={setBy}
+            />
+          </div>
+        )}
+        {by === 'query' && (
+          <TextArea
+            label={c.queryLanguage || 'Query'}
+            value={query}
+            rows={3}
+            maxLength={2000}
+            placeholder={QUERY_HINT[c.connection?.provider ?? 'jira']}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void run();
+            }}
+          />
+        )}
+        {by === 'sprint' && sprintName && (
+          <div>
+            <span className="fr-trackers-dialog__label">{sprintName}</span>
+            <Select
+              aria-label={sprintName}
+              width="100%"
+              value={sprint}
+              options={[
+                { value: 'current', label: `Current ${sprintName.toLowerCase()}`, description: s.sprints?.find((x) => x.state === 'active')?.name ?? (s.sprints ? 'None is active' : 'Loading…') },
+                ...[...(s.sprints ?? [])].reverse().map((x) => ({
+                  value: x.id,
+                  label: x.name,
+                  description: x.state === 'active' ? 'Now' : x.state === 'closed' ? 'Closed' : x.startDate ? `Starts ${x.startDate}` : 'Upcoming',
+                })),
+              ]}
+              onChange={setSprint}
+            />
+            {s.error && (
+              <p className="fr-trackers-dialog__error" role="alert">
+                {s.error}
+              </p>
+            )}
+          </div>
+        )}
+        {by === 'epic' && parentName && (
+          <Input label={`${parentName} key`} value={epic} placeholder={provider === 'azure' ? '#12' : provider === 'linear' ? 'ENG-12' : 'WEB-12'} onChange={(e) => setEpic(e.target.value)} />
+        )}
         {timeline && (
           <div className="fr-trackers-dialog__row">
             <span className="fr-trackers-dialog__label">Lanes by</span>
@@ -387,7 +542,8 @@ function ImportDialog({ editor, props }: PanelProps) {
           {timeline
             ? `Each issue becomes a bar on “${richTextToPlain(String((timeline as { title?: string }).title ?? '')) || 'the timeline'}” at its start and due dates, linked to it: moving a bar changes the issue’s dates, and dates changed in the tracker move the bar. Issues without dates wait in an “Unscheduled” frame below. Up to 50 at a time.`
             : kanban
-              ? `Each issue becomes a card in “${kanbanTitle}”, linked to it: in the column named after its status (else one of its kind, else a new column), with its priority in a Priority field. Moving a card or changing its priority updates the issue. Up to 50 at a time.`
+              ? `Each issue becomes a card in “${kanbanTitle}”, linked to it: in the column named after its status (else one of its kind, else a new column), with its priority in a Priority field${sprintName ? ` and its ${sprintName.toLowerCase()} in a ${sprintName} field (the project’s ${sprintName.toLowerCase()}s as options; closed ones can’t be picked)` : ''}. Moving a card or changing its fields updates the issue. Up to 50 at a time.`
+
               : 'Each issue becomes a task card linked to it (up to 50 at a time). Issues already on this board are left out.'}
         </p>
         {c.error && (
