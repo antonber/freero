@@ -66,8 +66,9 @@ export default defineCommands([
     },
   },
   {
-    // #148: "Summarise" after a meeting-notes import: a summary note inside that meeting's frame.
-    // Run by other features with { frameId } (no menu of its own).
+    // #148: "Summarise" after a meeting-notes import: the summary written into that meeting's
+    // "Summary" note ({ fill }), else a new note inside its frame. Run by other features with
+    // { frameId, fill? } (no menu of its own).
     id: 'ai.summarizeFrame',
     label: 'Summarise with AI',
     palette: false,
@@ -75,7 +76,8 @@ export default defineCommands([
     run: (editor, args) => {
       const frameId = typeof args?.frameId === 'string' ? args.frameId : null;
       if (!frameId || editor.getElement(frameId)?.type !== 'frame' || !aiOrExplain(editor)) return;
-      editor.openPanel(AI_DIALOG, { task: 'summarize', ids: [frameId], into: frameId });
+      const fill = typeof args?.fill === 'string' ? args.fill : undefined;
+      editor.openPanel(AI_DIALOG, { task: 'summarize', ids: [frameId], into: frameId, ...(fill ? { fill } : {}) });
     },
   },
   {

@@ -1999,8 +1999,10 @@ board and builds `Host.ai` only when it says yes.
   results through `engage/index.ts` `revealedResults` — what everyone on the board sees, never
   answers or names, and a sealed activity only once revealed (409 `engage_sealed`, before any
   call); `summarize` with `into: <frameId>` places the note inside that frame (the meeting-notes
-  import's toast offers it as "Summarise", running `ai.summarizeFrame`), and the app grows the frame
-  before inserting the preview, in the same undo step.
+  import's toast offers it as "Summarise", running `ai.summarizeFrame` with the layout's own
+  "Summary" note as `fill`): the app writes the summary into that note (`fillNote`: it keeps what
+  the note said, grows, and moves what is below it down with the frame), or — without one — grows
+  the frame and inserts the preview; either way one undo step.
 - **Catch-up** (#126): `catchup` with `since: 'visit' | 7 | 14 | 30` reads ONLY the change set —
   `activity/index.ts` `catchUpChanges(boardId, userId, { since })`, the same rows and view rules as
   "changes since your last visit" (others' attributed bursts, the reader's view, never a private

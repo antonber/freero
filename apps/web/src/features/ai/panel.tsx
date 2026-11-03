@@ -6,7 +6,7 @@ import { FileText, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
 import { AI_LIMITS, type AiActionResponse, type AiClusterBy, type AiDiagramKind, type AiTask, type BoardElement } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
 import { Button, ElementsPreview, Modal, SegmentedControl, Select, TextArea } from '@ui';
-import { AI_DIALOG, applyPreview, CATCH_UP_DIALOG, clusterable, suggestedTask } from './lib/actions';
+import { AI_DIALOG, applyPreview, CATCH_UP_DIALOG, clusterable, fillNote, suggestedTask } from './lib/actions';
 import { CatchUpDialog } from './lib/CatchUp';
 import './ai.css';
 
@@ -78,6 +78,7 @@ function AiDialog({ editor, props }: PanelProps) {
   // A summary into a frame (a meeting's, #148) and a report on an activity are asked for from their
   // own entry points: the dialog then does just that one thing.
   const into = typeof props?.into === 'string' ? props.into : undefined;
+  const fill = typeof props?.fill === 'string' ? props.fill : undefined;
   const fixed = task === 'report' || !!into;
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
@@ -123,7 +124,7 @@ function AiDialog({ editor, props }: PanelProps) {
 
   const insert = () => {
     if (!result) return;
-    applyPreview(editor, result, { into });
+    if (!(fill && into && fillNote(editor, result, fill, into))) applyPreview(editor, result, { into });
     close();
     editor.host.notify('Added by AI. Undo takes it back.', 'success');
   };

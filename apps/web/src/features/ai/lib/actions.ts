@@ -1,6 +1,6 @@
 // Shared bits of the AI feature: when its entry points show, what the selection offers, and how an
 // accepted preview lands on the board (one undo step).
-import { type AiActionResponse, type AiTask, type BoardElement } from '@freero/shared';
+import { layoutStructure, richTextToPlain, type AiActionResponse, type AiTask, type BoardElement } from '@freero/shared';
 import type { Editor } from '@engine';
 
 export const AI_DIALOG = 'ai.dialog';
@@ -83,4 +83,38 @@ export function applyPreview(editor: Editor, res: AiActionResponse, opts: { into
   const ids = [...created, ...(res.moves ?? []).map((m) => m.id)];
   if (ids.length) editor.select(ids);
   return created;
+}
+
+/**
+ * A meeting's summary written into the import layout's own "Summary" note (#148) instead of a new
+ * one: the note keeps its title and what it said (the date, who came), the AI's summary follows,
+ * and it grows to fit — what sits below it in the frame moves down and the frame grows with it.
+ * ONE transaction (one undo step). False when that note is gone or locked (then insert the preview).
+ */
+export function fillNote(editor: Editor, res: AiActionResponse, noteId: string, frameId: string): boolean {
+  const note = editor.getElement(noteId) as (BoardElement & { text?: string }) | undefined;
+  const frame = editor.getElement(frameId);
+  const made = res.snapshot?.elements.find((el) => typeof (el as { text?: unknown }).text === 'string') as (BoardElement & { text: string }) | undefined;
+  if (!note || note.locked || typeof note.text !== 'string' || !frame || frame.type !== 'frame' || !made) return false;
+  const lines = (html: string) => richTextToPlain(html).split('\n');
+  // What the note said, without its "Summary" title; the AI's note without its own title.
+  const had = lines(note.text).slice(1).join('\n').trim();
+  const said = lines(made.text).slice(1).join('\n').trim();
+  const laid = layoutStructure({ kind: 'note', title: 'Summary', text: [had, said].filter(Boolean).join('\n\n') }, { newId: () => noteId });
+  const next = laid.elements[0] as unknown as { text: string; h: number };
+  const grow = Math.max(0, Math.round(next.h - note.h));
+  const bottom = note.y + note.h;
+  editor.transact(() => {
+    if (grow) {
+      const below = editor
+        .getElements()
+        .filter((el) => el.frameId === frameId && el.id !== noteId && el.y >= bottom - 1)
+        .map((el) => ({ id: el.id, dx: 0, dy: grow }));
+      if (!frame.locked) editor.update(frameId, { h: frame.h + grow });
+      if (below.length) editor.moveBy(below);
+    }
+    editor.update(noteId, { text: next.text, ...(grow ? { h: note.h + grow } : {}) } as never);
+  });
+  editor.select([noteId]);
+  return true;
 }

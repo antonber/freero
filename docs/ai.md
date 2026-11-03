@@ -13,7 +13,7 @@ What it can do today (KAI-102), from the AI button in the selection toolbar, the
 | Cluster by theme | the selected notes (stickies, cards) | named groups: the notes move into them, each group gets a title |
 | Cluster by sentiment | the selected notes | Positive, Neutral, Mixed and Negative groups (only those) |
 | Summarise | the selection, or the whole board | a written note beside it |
-| Summarise a meeting | an imported meeting's frame ("Summarise" on the import's message) | a summary note inside that frame |
+| Summarise a meeting | an imported meeting's frame ("Summarise" on the import's message) | the summary written into the import's "Summary" note (kept: its date and who came), which grows to fit |
 | Catch me up | what other people added, changed and removed (and how many comments) since your last visit or in the last 7, 14 or 30 days — the change set only, as you may see the board now; never private drafts | nothing: a summary shown to you alone, each point linking to the items and frames it is about; "Insert on board" adds it as a note |
 | Expand a mind-map topic | the topic, the path from the centre to it, and what is under it already | nothing until you choose: 3 to 7 ideas, questions or sub-topics to tick, added under the topic in one undo step |
 | Walkthrough summary and chapters | a walkthrough's captions (its author or an editor asks) | nothing until saved: a draft summary and chapter list to edit, then save |
