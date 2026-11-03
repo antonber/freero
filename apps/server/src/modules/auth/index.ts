@@ -71,7 +71,7 @@ export { completeSignIn, safeReturnPath } from './signIn';
 export { resolveDirectoryLogin, provisionDirectoryAccount, DIRECTORY_PROVIDER_PREFIX } from './providers';
 export { onSignInRestriction, signInRestriction, type SignInAttempt, type SignInRestriction } from './restrictions';
 // Invite-only servers (SIGNUPS=invite-only): modules say which addresses are expected (a pending invite…).
-export { onSignupExpected } from './signups';
+export { onSignupExpected, signupRefusal } from './signups';
 export { endSessionsOf } from './service';
 // Credentials that outlive sessions (modules/apiauth: API tokens, authorised apps): how the session
 // that made one signed in (sign-in restrictions apply to the credential too), and the moment an
