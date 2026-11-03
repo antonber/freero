@@ -1,9 +1,9 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **steps 2a–2f, 3a, 3b and 3e built** (schema foundation, card display, group by and
+Status: **steps 2a–2f, 3a, 3b, 3c and 3e built** (schema foundation, card display, group by and
 swimlanes, filter and sort, agents and API, fields from trackers / templates / CSV; view tabs, the
-Table tab and focus mode; List, Calendar and Timeline tabs; table ↔ kanban conversion; see the "as
-built" sections below); the rest of phase 3 proposed. The
+Table tab and focus mode; List, Calendar and Timeline tabs; linked views on the same board; table ↔
+kanban conversion; see the "as built" sections below); 3d (across boards) proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -1285,9 +1285,138 @@ List, Calendar and Timeline, as tabs on the canvas and as layouts of focus mode.
   their cards, `query_cards` reads the calendar in date order and the timeline with the start set
   by `update_items`, and a non-date field is refused.
 
-Left: a calendar span (`calendar.end`), linked views (3c), dependencies drawn on a timeline tab,
+Left: a calendar span (`calendar.end`), linked views (3c, since built), dependencies drawn on a timeline tab,
 grouped sections and column widths in a table tab, "Save to view" from focus mode, the 5,000-card
 benchmark (another agent).
+
+## Step 3c as built
+
+Linked views on the same board: a kanban's cards as a table, list, calendar or timeline in a box of
+its own anywhere else on the board (a calendar of the sprint next to the roadmap).
+
+- **Model** (`@freero/shared` `elements.ts` `KanbanViewElement`, `linkedViews.ts`): a `kanbanview`
+  element holds `sourceId` (the kanban's element id) and `view`, one **projection view** — the same
+  shape and rules as a kanban's own projection tab (`ProjectionView` of `tabs.ts`, its id fixed to
+  `view`), so every setting, filter, sort and default means the same in a tab and a linked view.
+  Read through `linkedView` (cleaned, cached; a malformed or unknown layout reads as a table and is
+  kept as stored) and `linkedSource` (the kanban, or null). It stores ids only — field and option
+  ids, never labels (a free-text filter value is the one exception, as §6 says) — and no copy of
+  any card. **Deviation** from §6: the design's `ViewConfig` is the flattened projection-tab shape
+  3a / 3b settled on, not a nested `calendar: { date }`.
+- **Saved vs personal** (decision 2), as for tabs: `view` is what everyone starts from; a person's
+  own changes (filter, sort, columns, grouping, date fields, scale, swimlanes) are a personal
+  override under the element (key `_view`, any role, never in the doc) until an editor presses
+  "Save for everyone" (one undo step; a filter saying "is me" can't be saved). Renaming it,
+  switching its layout (its filter, sort and lock carry over, the old layout's settings don't) and
+  locking it are saved changes (editors, an unlocked element, a view nobody else locked).
+- **Drawing — no fork** (`lib/ProjectionTab.tsx`): the three 3a / 3b hosts (table, list, calendar /
+  timeline tab) became one `ProjectionBody` that takes the collection, the view as this person sees
+  it, what they may do and the box to fill; a kanban's tab (`ProjectionTab`, the kanban's box) and a
+  linked view (`lib/LinkedView.tsx`, its own box under a 44-unit title band) both host it. Grid,
+  CalendarBody, TimelineBody and ListBody are unchanged. The linked view takes pointer, wheel and
+  keys while selected, like a tab; it is windowed the same way (`useWorldViewport` and its own
+  scroll). Its title band names the view and the kanban ("of Sprint 12", a click selects the kanban
+  and brings it into view) and, while selected, opens the kanban in focus mode.
+- **Ownership**: the linked view is the kanban feature's second element (§9's plan), not a new
+  feature folder: it draws with the kanban's projection bodies and reads its schema, which no other
+  feature may import, and features meet only through the engine. Edits made in it are the bodies'
+  own writes — `card.setValues` (the card feature's one write path: one undo step, live for
+  everyone; a new value of the board's column field moves the real card through
+  `kanban.moveToColumn`). It never moves a card.
+- **Locks and roles**: viewers and commenters read (and arrange it for themselves); editors edit.
+  Cards are read only in it while the **kanban** is locked (as on the kanban's own tabs) or the
+  **linked view** element is locked ("Read only" in its title band); a card's own lock holds as
+  everywhere (`card.setValues` refuses it). A **locked frame** around the kanban changes nothing:
+  locking is per item in Freero (a locked frame doesn't lock what is inside it, on the canvas or in
+  the kanban's own tabs), so the linked view behaves as the kanban does.
+- **Source states**: present → drawn. Absent for this person → a state, never a crash or a leak.
+  Owners and editors receive every hidden frame, so for them an absent kanban was deleted: "The
+  kanban this view showed was deleted · Undo brings it back…" (and, selected, "Delete this view");
+  undoing the delete brings the kanban back under the same id and the view draws its cards again
+  (nothing to restore on the view: it never held them). Anyone else can't tell deleted from
+  withheld (a hidden frame, someone's draft) and neither does the view: "Not visible to you · …was
+  deleted, or is somewhere on the board you can't see" — the convention smart links follow ("No
+  access, or no such object: the server tells them apart for nobody"). Known gap: a kanban that is
+  someone else's private draft reads as "deleted" to editors (they don't receive private layers);
+  the view still shows nothing of it.
+- **Creating one**: a selected kanban's context menu "Add linked view ▸ Table / List / Calendar /
+  Timeline", and the kanban's tab menu (on the Board tab the same submenu; on a projection tab "Add
+  as linked view", which places that tab as I see it: its settings and name). It lands right of the
+  kanban, top edges level (`linkedViewSpot`: 80 units away, or the nearest free spot), selected, one
+  undo step. Sizes per layout (`LINKED_VIEW_SIZES`: a calendar month needs more room than a list).
+  The View panel shows a selected linked view's settings (Name, Show as, the lock, then the same
+  sections as a tab: dates / bars / groups, filter, sort, columns); the context menu adds "Show its
+  kanban", and "Edit fields…" / "Open in focus mode" act on its kanban.
+- **Copy and paste**: copying keeps `sourceId`. Copied (or duplicated, or saved in a template) **with
+  its kanban**, the engine's id remap points the copy at the kanban's copy — a "Copy" is
+  independent, as decision 3 wants. Copied **alone** on the same board it shows the same kanban
+  (or, the kanban gone, the removed state). **Pasted onto another board without its kanban** it is
+  left out, with "Linked views stay on the board of their kanban for now: copy the kanban itself to
+  take its cards along." (`copyContent` records the board it was copied from; `pasteContent` drops
+  the view when that is another board and its kanban isn't there.) Chosen over a static snapshot
+  table: a snapshot would silently turn a live view into stale data, while refusing keeps the paste
+  honest and leaves 3d a clean place to make it a cross-board view instead.
+- **Outline and agents**: `[lv1] linked view: Launches · source: [k1] Sprint 12 · layout: calendar by
+  Launch · filter: Priority is P0` (`projectionWords`, shared with the tabs' words); its cards are
+  listed once, under the kanban. A kanban the reader doesn't have reads `source: [k1] (not on the
+  board: deleted, or not visible to you)`. **MCP `add_view`** (a new tool rather than more
+  `configure_view` arguments: creating an item beside a kanban is a different act from configuring
+  one, and the answer is the new view, not the kanban): `layout`, `name` and the settings a tab of
+  that layout takes, validated by the same code as `configure_view`'s tabs (`projectionSettings`);
+  placed by the shared `linkedViewSpot` clear of everything. **`configure_view` with `kanbanId` a
+  linked view's id** changes it (`name`, `layout`, its layout's settings; refused while it is locked
+  by someone else or its kanban isn't there) and answers the linked view. REST: `POST
+  /boards/{boardId}/kanbans/{kanbanId}/linked-views` (201 `linkedView`) and the existing `PATCH
+  …/kanbans/{id}/view`. Schemas stay fixed-depth with no `$ref` (mcp.test.ts); OpenAPI (`LinkedView`,
+  `LinkedViewInput`), the Power Automate connector, docs/mcp.md, the API README, the outline doc and
+  the site's tool list updated. Deleting one is `delete_items`.
+- **Rollout**: clients from before 3c don't know the type: they draw "Unsupported item (kanbanview)"
+  in its box (the engine's fallback), never break, and leave it out when they copy (`insertSnapshot`
+  keeps known types only). The server accepts the type in changes (`KNOWN_TYPES`). Nothing else in
+  the doc changes: no new collections, no kanban field.
+- **Performance** (`npm run bench:kanban`, new rows: react-dom in jsdom, the production build, a
+  5,000-card kanban, half of its cards dated): opening a linked view draws what is in view — table
+  ~29 ms (17 rows drawn), calendar ~18 ms (40 chips), timeline ~21 ms (35 bars); one card renamed by
+  a collaborator takes ~15 ms end to end (the write, the kanban's re-plan, the view's rows) and
+  redraws **one** row / chip (two on the timeline: the bar and its label), not the view. Unrelated
+  edits re-render nothing (the view subscribes to its kanban's cards, `useKanbanCards`, which keeps
+  the same array while they don't change; the title band reads the kanban alone, `useKanban`). No
+  per-item board scan inside a transaction was added.
+- **Tests** (each fails without its change, checked by mutation): a calendar linked view lands
+  beside its kanban; Alt+→ on a card in it moves that card's due date for the collaborator in one
+  undo step; deleting the kanban shows the removed state and undo brings its cards back (fails if
+  the view is never editable, is placed on the kanban, or has no removed state); a 2,000-card table
+  linked view draws only the rows on screen with the right `aria-rowcount` (fails if its window is
+  measured from the wrong place); my own filter leaves cards out for me alone and Save for everyone
+  makes it the collaborator's (fails if the override is written into the doc, or not saved); copies
+  keep the link on the board, follow the kanban's copy, stay with their kanban gone, and a paste onto
+  another board goes only with the kanban (fails if the cross-board paste is kept, dropped with its
+  kanban, or a same-board copy is dropped); an agent's `add_view` lands clear of what is beside the
+  kanban without moving a card, the outline reads it, `configure_view` on it switches the layout
+  keeping the filter and refuses another layout's setting, and a deleted kanban reads as gone.
+  These render the element exactly as the canvas does: `createTestBoard` gained `element(user, id)`
+  (and `boardId`, for two boards), an additive engine test API.
+- **Verified in the real app** (two people, `verify-freero`): Ann adds a calendar linked view from
+  the kanban's context menu, it appears beside the kanban for both; she drags "Book the venue" one
+  day later in the linked view and Bob's kanban card and linked view both show the new date; Ann
+  deletes the kanban, both see the removed state; Ann's undo brings it back for both.
+
+**Not built — board-style mirror.** §3's table lists a `board` layout for linked views (cards drawn
+with `ElementPreview`, drag between groups sets values). Left out: it would draw the real card
+component a second time, so two things on the canvas look like the same card while only one of
+them takes connectors, comments, votes, reactions and drags — the confusion the "only the board
+places real cards" rule exists to avoid; and a list grouped by the board's column field already
+reads as columns of cards, with Alt+↑ / ↓ moving a card between them. It can be added later as a
+fifth layout with no model change (the view's `layout` widens; older clients read an unknown
+layout as a table and keep it when they write).
+
+**Left for 3d** (cross-board, decision 3): a linked view whose kanban is on another board — the
+element gains the home board (`freero://board/<id>/item/<kanbanId>`); "Synced" on pasting a kanban
+or a linked view onto another board (today's `pasteContent` already knows the board it came from:
+it would set the home board instead of dropping the view); the server projection endpoint with
+live updates and per-viewer access ("No access · Request access"); writes through `modules/api`
+with the home board's role deciding what is editable. Also open: a calendar span, dependencies on a
+timeline, telling an editor "someone's draft" apart from "deleted" (it would need the server).
 
 ## Step 3e as built
 
