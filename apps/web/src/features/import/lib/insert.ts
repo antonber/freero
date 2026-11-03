@@ -1,24 +1,26 @@
 // Putting an imported file on the board: read it (size-capped), recognise and parse it, store its
 // pictures, then create everything in ONE transaction — one undo step — on a free spot near where
 // it was dropped. A file we can't read adds nothing and says why.
-import { translateDraft, type ElementDraft } from '@freero/shared';
+import { translateDraft, type BoardElement, type ElementDraft, type FrameElement } from '@freero/shared';
 import type { Editor, NewElement, Point } from '@engine';
 import { boundsOf, ImportError, MAX_FILE_BYTES, type ImportReport, type ImportResult } from './common';
 import { looksLikeDrawio, parseDrawio } from './drawio';
 import { looksLikeExcalidraw, parseExcalidraw } from './excalidraw';
 import { isVsdxName, parseVsdx } from './vsdx';
+import { isPptxName, parsePptx } from './pptx';
 import { nanoid } from 'nanoid';
 
 export const IMPORT_DIALOG = 'import.dialog';
 
-/** Text formats (a file, or pasted); `.vsdx` is a zip package, read from its bytes. */
+/** Text formats (a file, or pasted); `.vsdx` and `.pptx` are zip packages, read from their bytes. */
 export type ImportKind = 'drawio' | 'excalidraw';
-export type FileKind = ImportKind | 'vsdx';
+export type FileKind = ImportKind | 'vsdx' | 'pptx';
 
 /** Which importer a file is for, by its name, else by its first bytes; null: none. */
 export function kindOfFile(name: string, head: string): FileKind | null {
   const n = name.toLowerCase();
   if (isVsdxName(n) || n.endsWith('.vsd')) return 'vsdx';
+  if (isPptxName(n) || n.endsWith('.ppt')) return 'pptx';
   if (n.endsWith('.drawio') || n.endsWith('.dio')) return 'drawio';
   if (n.endsWith('.excalidraw')) return 'excalidraw';
   if ((n.endsWith('.xml') || n.endsWith('.txt') || !n.includes('.')) && looksLikeDrawio(head)) return 'drawio';
@@ -47,19 +49,25 @@ function dataUrlToBlob(url: string): Blob {
   return new Blob([bytes], { type });
 }
 
-/** Stores each picture with the board's uploads (linked ones fetched by the server); null for one that couldn't be stored. */
+/**
+ * Stores each picture with the board's uploads (linked ones fetched by the server); null for one
+ * that couldn't be stored. A picture used several times (a logo on every slide) is stored once.
+ */
 async function storeImages(editor: Editor, images: ImportResult['images']): Promise<Map<string, string | null>> {
+  const stored = new Map<string, Promise<string | null>>();
+  const store = (source: string) => {
+    let p = stored.get(source);
+    if (!p) {
+      p = (source.startsWith('data:') ? editor.host.uploadImage(dataUrlToBlob(source)) : editor.host.importImage(source)).then(
+        ({ url }) => url || null,
+        () => null,
+      );
+      stored.set(source, p);
+    }
+    return p;
+  };
   const out = new Map<string, string | null>();
-  await Promise.all(
-    images.map(async ({ id, source }) => {
-      try {
-        const { url } = source.startsWith('data:') ? await editor.host.uploadImage(dataUrlToBlob(source)) : await editor.host.importImage(source);
-        out.set(id, url || null);
-      } catch {
-        out.set(id, null);
-      }
-    }),
-  );
+  await Promise.all(images.map(async ({ id, source }) => out.set(id, await store(source))));
   return out;
 }
 
@@ -87,10 +95,27 @@ export async function placeImport(editor: Editor, result: ImportResult, at?: Poi
   if (!drafts.length) throw new ImportError('Nothing in this file could be put on the board.');
   const b = boundsOf(drafts);
   const spot = editor.findFreeSpot({ w: b.w, h: b.h }, at ? { near: at } : undefined);
-  const placed = drafts.map((d) => translateDraft(d, Math.round(spot.x - b.x), Math.round(spot.y - b.y)));
+  // Imported frames (pages, slides) come after the board's own in the deck, in the file's order.
+  const deckEnd = editor.getElements().reduce((m, el) => (el.type === 'frame' && Number.isFinite(el.index) ? Math.max(m, el.index) : m), -1) + 1;
+  let frameNo = 0;
+  const placed = drafts.map((d) => {
+    const moved = translateDraft(d, Math.round(spot.x - b.x), Math.round(spot.y - b.y));
+    return moved.type === 'frame' ? ({ ...moved, index: deckEnd + frameNo++ } as ElementDraft) : moved;
+  });
+  // Tables keep their cells outside the element: the table feature writes them as they are inserted.
+  const content = result.content ?? {};
+  const tables = placed.filter((d) => d.type === 'table' && content[d.id]);
+  const plain = placed.filter((d) => !(d.type === 'table' && content[d.id]));
   let ids: string[] = [];
   editor.transact(() => {
-    ids = editor.createMany(placed as unknown as NewElement[]);
+    ids = editor.createMany(plain as unknown as NewElement[]);
+    if (!ids.length && plain.length) return;
+    for (const t of tables) {
+      const el = { ...t, z: 0, createdBy: '', createdAt: 0, updatedAt: 0 } as unknown as BoardElement;
+      ids.push(...editor.insertElements({ elements: [el], content: { [t.id]: content[t.id] } }, { at: { x: t.x + t.w / 2, y: t.y + t.h / 2 } }));
+    }
+    // Speaker notes become presenter notes (the present feature owns them).
+    for (const n of result.notes ?? []) if (editor.getElement<FrameElement>(n.frameId)) editor.runCommand('present.setNote', { frameId: n.frameId, text: n.text });
   });
   if (!ids.length) throw new ImportError('You can’t add these items to this board right now.');
   const top = ids.filter((id) => {
@@ -105,10 +130,12 @@ export async function placeImport(editor: Editor, result: ImportResult, at?: Poi
 /** Reads, recognises, parses and places a file; throws ImportError (a message for the person). */
 export async function importFile(editor: Editor, file: File, at?: Point): Promise<ImportReport> {
   if (file.size > MAX_FILE_BYTES) throw new ImportError(`That file is over ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
-  if (kindOfFile(file.name, '') === 'vsdx') return placeImport(editor, await parseVsdx(new Uint8Array(await file.arrayBuffer()), nanoid), at);
+  const packaged = kindOfFile(file.name, '');
+  if (packaged === 'vsdx') return placeImport(editor, await parseVsdx(new Uint8Array(await file.arrayBuffer()), nanoid), at);
+  if (packaged === 'pptx') return placeImport(editor, await parsePptx(new Uint8Array(await file.arrayBuffer()), nanoid), at);
   const text = await file.text();
   const kind = kindOfFile(file.name, text.slice(0, 2000));
-  if (!kind || kind === 'vsdx') throw new ImportError('Freero imports draw.io (.drawio), Excalidraw (.excalidraw) and Visio (.vsdx) files.');
+  if (!kind || kind === 'vsdx' || kind === 'pptx') throw new ImportError('Freero imports draw.io (.drawio), Excalidraw (.excalidraw), Visio (.vsdx) and PowerPoint (.pptx) files.');
   return placeImport(editor, await parseImport(kind, text), at);
 }
 

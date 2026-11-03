@@ -59,8 +59,8 @@ function ImportDialog({ editor, props }: PanelProps) {
     <Modal
       open
       onClose={close}
-      title={report ? `Imported from ${report.source}` : 'Import a diagram'}
-      description={report ? undefined : 'Shapes, text, connectors, frames, freehand and images from a draw.io (.drawio), Excalidraw (.excalidraw) or Visio (.vsdx, also Lucidchart’s Visio export) file. One undo takes it all back.'}
+      title={report ? `Imported from ${report.source}` : 'Import a file'}
+      description={report ? undefined : 'Shapes, text, connectors, frames, freehand and images from a draw.io (.drawio), Excalidraw (.excalidraw) or Visio (.vsdx, also Lucidchart’s Visio export) file, or a PowerPoint deck (.pptx) as slides with their speaker notes. One undo takes it all back.'}
       width={520}
       footer={
         // Keyed: a new button for the report, so it doesn't fade from Cancel's colours into Done's.
@@ -75,8 +75,8 @@ function ImportDialog({ editor, props }: PanelProps) {
         <div className="fr-import">
           <label className={`fr-import__file${busy ? ' fr-import__file--busy' : ''}`}>
             <FileInput size={18} aria-hidden />
-            <span>{busy ? 'Importing…' : 'Choose a .drawio, .excalidraw or .vsdx file'}</span>
-            <input type="file" disabled={busy} accept=".drawio,.dio,.xml,.excalidraw,.json,.vsdx,.vsdm" onChange={(e) => void pick(e.target.files?.[0])} />
+            <span>{busy ? 'Importing…' : 'Choose a .drawio, .excalidraw, .vsdx or .pptx file'}</span>
+            <input type="file" disabled={busy} accept=".drawio,.dio,.xml,.excalidraw,.json,.vsdx,.vsdm,.pptx,.pptm,.ppsx,.potx" onChange={(e) => void pick(e.target.files?.[0])} />
           </label>
           <p className="fr-import__hint">You can also drop the file on the board, or paste a diagram copied from draw.io or Excalidraw.</p>
           {error ? (

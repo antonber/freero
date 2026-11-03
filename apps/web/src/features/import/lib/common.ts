@@ -1,7 +1,7 @@
 // What both importers share: the result they build (Freero element drafts in the source file's
 // coordinates, images still to upload, a report of what could not be mapped), and small helpers.
 // Pure: no editor, no DOM — the parsers run in tests as they run on the board.
-import { plainToRichText, type Anchor, type ConnectorEndpoint, type ElementDraft, type Rect } from '@freero/shared';
+import { plainToRichText, type Anchor, type ConnectorEndpoint, type ElementDraft, type Rect, type TableCopyContent } from '@freero/shared';
 
 /** Whole files this large or larger are refused before they are read. */
 export const MAX_FILE_BYTES = 30 * 1024 * 1024;
@@ -10,7 +10,7 @@ export const MAX_UNPACKED_BYTES = 30 * 1024 * 1024;
 /** Items one import may create (the same cap as text-built structure). */
 export const MAX_ITEMS = 2000;
 
-export type SourceTool = 'draw.io' | 'Excalidraw' | 'Visio';
+export type SourceTool = 'draw.io' | 'Excalidraw' | 'Visio' | 'PowerPoint';
 
 export interface ImportReport {
   source: SourceTool;
@@ -26,6 +26,10 @@ export interface ImportResult {
   /** Image drafts whose picture must be stored first: a data: URL or an http(s) URL. */
   images: Array<{ id: string; source: string }>;
   report: ImportReport;
+  /** [#136] Speaker notes for frames (by draft id): they become presenter notes. */
+  notes?: Array<{ frameId: string; text: string }>;
+  /** [#136] Table cells, by the table draft's id (the table feature writes them on insert). */
+  content?: Record<string, TableCopyContent>;
 }
 
 /** A file we refuse, with a message for the person. Nothing is added. */

@@ -6,7 +6,7 @@ export default defineCommands([
   {
     id: 'import.file',
     icon: FileInput,
-    label: 'Import draw.io, Excalidraw or Visio file…',
+    label: 'Import draw.io, Excalidraw, Visio or PowerPoint file…',
     menus: ['board'],
     run(editor) {
       editor.openPanel(IMPORT_DIALOG);

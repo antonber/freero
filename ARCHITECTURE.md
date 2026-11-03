@@ -885,7 +885,28 @@ through `DecompressionStream`, counting the REAL output bytes against per-entry 
 sizes a zip declares are never trusted), with a 20 s deadline checked as it goes; XML with a DOCTYPE
 is refused, external relationships are never followed, legacy binary `.vsd` gets "save as .vsdx".
 Tests build their packages with `lib/vsdxFixture.ts` (hand-written parts; no third-party samples)
-and fuzz them. Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
+and fuzz them. The package plumbing both Office formats share (relationships, part paths, the
+DOCTYPE refusal, picture sniffing) is `lib/opc.ts`.
+
+PowerPoint (`.pptx`, also `.pptm` / `.ppsx` / `.potx`; #136), same importer and dialog: `lib/pptx.ts`
+reads the deck from the published Office Open XML format (presentation → slides in `sldIdLst`
+order → layout → master → theme; no Microsoft code or template) and makes one frame per slide,
+side by side, in the deck's order, after the board's own frames in the deck (`placeImport` numbers
+imported frames after the highest `index`); hidden slides get `skip`. Text boxes and placeholders
+become text (paragraphs, bullets, bold / italic / underline / strike, run colours, size, alignment,
+the theme's heading / body face as serif / sans / mono; a placeholder without its own place or style
+takes its layout's, then its master's), preset shapes Freero shapes (theme style references
+resolved to colours), lines connectors glued where the slide glues them, pictures images (cropped
+like on the slide; one picture used on many slides is stored once), tables tables (cells through
+`insertElements`, so the table feature writes them), groups one `groupId`, the slide background the
+frame's fill (a picture background an image under everything), and the layout's and master's own
+artwork is drawn on each slide unless `showMasterSp="0"`. Speaker notes go to `present.setNote`
+in the same transaction. Charts, SmartArt, other graphic objects and videos without a poster are
+placed as a labelled box of their size, embedded objects as their picture when they keep one; ink
+and linked pictures are left out — all listed in the report. Untrusted input as for Visio (the same
+zip limits, ≤ 300 slides, no DOCTYPE, external relationships never followed, legacy `.ppt` gets
+"save as .pptx"); tests build decks with `lib/pptxFixture.ts` (hand-written parts) and fuzz them.
+Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
 `from-text.insert`.
 
 Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
