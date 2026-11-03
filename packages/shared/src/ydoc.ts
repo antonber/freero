@@ -18,9 +18,10 @@ import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts;
 //                                     element content: in the table's doc, ELEMENT_CONTENT_COLLECTIONS)
 //   'privateMode' -> features/private-mode (key 'session' -> PrivateModeSession)
-//   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot;
-//                                     while results are hidden the real ballot is in the voter's
-//                                     PRIVATE layer and the shared key holds a `sealed` marker)
+//   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot,
+//                                     `h:${sessionId}` -> VotingHistoryEntry; while results are hidden the
+//                                     real ballot is in the voter's PRIVATE layer and the shared key
+//                                     holds a `sealed` marker; READ BY THE SERVER: votingRules.ts)
 //   'facilitation' -> features/facilitation (key 'session' -> FacilitationSession; READ BY THE
 //                                     SERVER: realtime/facilitation.ts enforces it)
 //   'estimation' -> features/estimation (planning poker; sealed estimates in the PRIVATE layer)
@@ -49,13 +50,21 @@ import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 // values, and to check commenters' writes); it relays and persists updates. It drops all updates
 // from viewers, and for commenters accepts only changes confined to the collections listed in
 // COMMENTER_WRITABLE — and in 'comments' only records the commenter owns (see CommentRecord in
-// elements.ts and apps/server/src/modules/realtime/commentRules.ts).
+// elements.ts and apps/server/src/modules/realtime/commentRules.ts); a commenter taking part
+// (participation.ts) also PARTICIPANT_WRITABLE, there only its own ballot and pick.
 
 export const Y_ELEMENTS = 'elements';
 export const Y_SETTINGS = 'settings';
 
 /** Top-level types a commenter may modify (server-enforced). */
 export const COMMENTER_WRITABLE = ['comments'] as const;
+
+/**
+ * [additive] Top-level types a PARTICIPANT may modify besides COMMENTER_WRITABLE (server-enforced,
+ * participation.ts): a commenter or guest while the board lets them take part — in these only their
+ * own ballot and planning-poker pick (realtime votingRules.ts / estimationRules.ts).
+ */
+export const PARTICIPANT_WRITABLE = ['voting', 'estimation'] as const;
 
 /**
  * How the entries of an element-content collection find their element (ELEMENT_CONTENT_COLLECTIONS).
@@ -237,7 +246,21 @@ export interface TimerState {
 export const VOTING_COLLECTION = 'voting';
 export const VOTING_SESSION_KEY = 'session';
 export const VOTES_PER_USER_MIN = 1;
-export const VOTES_PER_USER_MAX = 20;
+export const VOTES_PER_USER_MAX = 99;
+/** How long after a vote's `endsAt` (server clock) a ballot is still taken: clocks and sockets lag a little. */
+export const VOTE_DEADLINE_GRACE_MS = 1500;
+/** Past votes kept for the results panel's history (VotingHistoryEntry under `h:<id>`). */
+export const VOTING_HISTORY_MAX = 20;
+/** Key of a past vote's results in the `voting` collection. */
+export const votingHistoryKey = (sessionId: string) => `h:${sessionId}`;
+export const isVotingHistoryKey = (key: string) => key.startsWith('h:');
+/**
+ * `userId` of a ballot revealed from an anonymous vote (`anonymousBallots`): nobody. Written only by
+ * the server (realtime layers.ts), `${ANONYMOUS_VOTER_PREFIX}<n>`; never an account or guest id
+ * (those have no ':').
+ */
+export const ANONYMOUS_VOTER_PREFIX = 'anon:';
+export const isAnonymousVoter = (userId: unknown): boolean => typeof userId === 'string' && userId.startsWith(ANONYMOUS_VOTER_PREFIX);
 
 export interface VotingSession {
   id: string;
@@ -254,6 +277,31 @@ export interface VotingSession {
   startedBy: string;
   startedAt: number;
   endedAt: number | null;
+  /**
+   * [additive] Anonymous ballots: nobody — the facilitator and the owner included — can ever see who
+   * voted for what. Needs `anonymous` (sealed ballots). Server-enforced: a ballot arriving in a
+   * voter's private layer is stamped `anonymous` and stripped of the voter's name, the shared "has
+   * voted" marker carries no name, and the reveal writes the ballots under `anon:<n>` voter ids in
+   * an order that depends only on what they hold, deleting the markers. One ballot per person still
+   * holds: it is keyed by the voter in their private layer until then.
+   */
+  anonymousBallots?: boolean;
+  /** [additive] At most this many of one person's votes on one item (absent / null: no cap). Server-enforced. */
+  maxPerItem?: number | null;
+  /**
+   * [additive] Server-clock ms (Host.serverNow) when voting closes: the server takes no ballot after
+   * it (VOTE_DEADLINE_GRACE_MS), and the facilitator's client ends the session. Absent / null: no timer.
+   */
+  endsAt?: number | null;
+}
+
+/** [additive] A past vote kept for the results panel (`voting` key votingHistoryKey(id)): totals only, never ballots. */
+export interface VotingHistoryEntry {
+  session: VotingSession;
+  /** [elementId, votes], most votes first. */
+  totals: Array<[string, number]>;
+  voters: number;
+  archivedAt: number;
 }
 
 /**
@@ -328,7 +376,12 @@ export interface VoteBallot {
    * sealed in their private layer (elementIds is then empty) until the session ends.
    */
   sealed?: boolean;
-  /** Voter's display name/color at vote time, for "who has voted" avatars after they leave. */
+  /**
+   * [additive] Stamped by the server on a ballot sealed in an anonymous vote (`anonymousBallots`):
+   * it is revealed without its voter, whatever the session says by then.
+   */
+  anonymous?: boolean;
+  /** Voter's display name/color at vote time, for "who has voted" avatars after they leave (never in an anonymous vote). */
   userName?: string;
   userColor?: string;
 }

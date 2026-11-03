@@ -868,6 +868,8 @@ export interface BoardAccessRequest {
 // emails or the member list, can't @mention, and get no notifications. Their comments are stored
 // under their guest id with the name "Guest · <name>" (the server refuses any other name for them).
 // Changing the link or the policy re-checks connected guests at once; expired guests are dropped.
+// A commenter guest takes part in votes, planning poker and private mode like any commenter while
+// the board lets them (participation.ts: their own ballot, pick and drafts only, server-enforced).
 // GET  /api/guest/boards/:id        -> GuestBoardInfo           (no session needed; 404: no such board)
 // POST /api/guest/boards/:id/join   body { name } -> GuestJoinResponse (rate limited per IP; 403 when
 //                                      the board doesn't let guests in)
@@ -1148,6 +1150,13 @@ export interface RoleMessage {
    * but reads as the person — an owner / editor gets the editors layer (pending suggestions).
    */
   readRole?: Role;
+  /**
+   * [additive, parity rank 1] This commenter connection (a commenter, a guest, or someone a
+   * facilitator's lock made a commenter) may take part while the board lets them
+   * (participation.ts): write its own ballot, planning-poker pick and private-mode drafts. Sent
+   * again whenever that changes. Clients that don't know it simply don't offer taking part.
+   */
+  participant?: boolean;
 }
 /** What a facilitator limits for this connection (enforced by the server, mirrored by the client). */
 export interface SessionLimits {
@@ -1162,7 +1171,8 @@ export interface SessionLimits {
 // ---- Board layers (content the server withholds) ----
 // Besides the shared doc, a board has server-held LAYER docs that only some connections may
 // sync (see "Board layers" in ARCHITECTURE.md):
-//   'private'  one per user: only that user's sockets read it, and only while they may edit.
+//   'private'  one per user: only that user's sockets read it; written while they may edit, or
+//              as a participant (their ballot, pick and private-mode drafts only).
 //              Private-mode drafts and ballots of hidden votes live here until revealed.
 //   'editors'  owners/editors only: contents of hidden frames.
 // They travel over the board's socket (relayed between instances by the server), in an envelope:
@@ -1185,7 +1195,8 @@ export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
 //            (ANONYMOUS_AUTHOR, no app, reveal-time timestamps) and without the comment threads
 //            on them (whose records name their writer: the author). Drafts written during an
 //            anonymous session are revealed so whatever the op says.
-// Only the private layers of people who may still edit the board are revealed; the server holds
+// Only the private layers of people who may still edit the board — or take part as participants
+// (RoleMessage.participant) — are revealed; the server holds
 // the sender's later messages until the op is applied, so it stays in order with them.
 export const WS_MESSAGE_LAYER_OP = 102;
 export interface LayerOp {
