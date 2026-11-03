@@ -1,7 +1,7 @@
 import { Type as TypeIcon } from 'lucide-react';
 import { memo, type CSSProperties } from 'react';
 import type { TextElement } from '@freero/shared';
-import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
+import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
 import { layoutText, measureTextBox, textPadding } from './lib/layout';
 import { pastedTextToRich, textBlockAt, textDefaults } from './lib/actions';
 import './text.css';
@@ -26,6 +26,25 @@ const TextView = memo(function TextView({ element }: ElementRenderProps<TextElem
   );
 });
 
+/**
+ * Zoomed out to low detail (#131): its lines as faint bars at the text's own line height, in its
+ * ink (light on a dark page, as the full drawing paints it) — no text layout.
+ */
+function paintText(el: TextElement, p: LowDetailPaint) {
+  const highlighted = !!el.background && el.background !== 'transparent';
+  if (highlighted) p.box({ fill: el.background, radius: 4 });
+  const ink = highlighted ? el.textColor : canvasInk(el.textColor);
+  const pad = textPadding(el.fontSize);
+  const line = el.fontSize * 1.4;
+  const bar = el.fontSize * 0.7;
+  const rows = Math.max(1, Math.floor((el.h - pad * 2 + 0.5) / line));
+  for (let i = 0; i < rows; i++) {
+    const w = (el.w - pad * 2) * (i === rows - 1 && rows > 1 ? 0.6 : 1);
+    const x = el.align === 'center' ? (el.w - w) / 2 : el.align === 'right' ? el.w - pad - w : pad;
+    p.rect(x, pad + i * line + (line - bar) / 2, w, bar, ink, 0.3);
+  }
+}
+
 export default defineElement({
   type: 'text',
   label: { one: 'Text', many: 'Text' },
@@ -40,6 +59,7 @@ export default defineElement({
   removeWhenEmpty: true,
   defaults: (): Omit<NewElement<'text'>, 'x' | 'y'> => textDefaults(),
   Component: TextView,
+  lowDetail: paintText,
   toPlainText: (el) => richTextToPlain(el.text),
   normalize: (el, prev) => layoutText(el, prev, (wrap) => measureTextBox(el.text, el.fontFamily, el.fontSize, wrap)),
   // Double-click a side handle: back from a fixed wrapping width to hugging the text.

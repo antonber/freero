@@ -1,7 +1,7 @@
 import { Shapes as ShapesIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
-import { looksLikeMermaid, looksLikePlantUml, type ShapeElement } from '@freero/shared';
-import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
+import { looksLikeMermaid, looksLikePlantUml, type ShapeElement, type ShapeKind } from '@freero/shared';
+import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
 import { anchorOnOutline, classDividers, ENTITY_FONT, ENTITY_LINE, ENTITY_PAD, entityDivider, hitShape, insetPaths, outlineToward, textBox } from './lib/geometry';
 import { DEFAULT_SIZE } from './lib/constants';
 import { shapeDefaults } from './lib/actions';
@@ -94,6 +94,41 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
   );
 });
 
+/** Outlines low detail draws round (a circle in its box) or as a pill. */
+const ROUND = new Set<ShapeKind>(['ellipse', 'summingJunction', 'orJunction', 'cloud']);
+const PILL = new Set<ShapeKind>(['terminator', 'delay', 'display', 'storedData']);
+/** Outlines low detail paints as their silhouette, filled (fractions of the box). Everything else: a box. */
+const SILHOUETTE: Partial<Record<ShapeKind, ReadonlyArray<readonly [number, number]>>> = {
+  triangle: [[0.5, 0], [1, 1], [0, 1]],
+  diamond: [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]],
+  parallelogram: [[0.2, 0], [1, 0], [0.8, 1], [0, 1]],
+  hexagon: [[0.25, 0], [0.75, 0], [1, 0.5], [0.75, 1], [0.25, 1], [0, 0.5]],
+};
+
+/**
+ * Zoomed out to low detail (#131): the shape's fill and outline — round, a pill, a silhouette or a
+ * box — inked as the full drawing inks it on a dark page. No text, no compartments or details.
+ */
+function paintShape(el: ShapeElement, p: LowDetailPaint) {
+  const { shape, w, h, fill, fillOpacity, stroke } = el;
+  const transparent = fill === 'transparent';
+  const inkMark = !transparent && !el.text && canvasInk(fill) !== fill;
+  const ink = transparent || inkMark ? canvasInk(stroke) : stroke;
+  const paint = inkMark ? canvasInk(fill) : fill;
+  const silhouette = SILHOUETTE[shape];
+  // A silhouette has no outline at this size: filled (with its ink, faint, when it has no fill).
+  if (silhouette) p.polygon(silhouette, transparent ? ink : paint, transparent ? 0.35 : fillOpacity);
+  else
+    p.box({
+      fill: transparent ? null : paint,
+      alpha: fillOpacity,
+      stroke: ink,
+      strokeWidth: el.strokeWidth,
+      round: ROUND.has(shape),
+      radius: PILL.has(shape) ? Math.min(w, h) / 2 : shape === 'roundRect' ? Math.min(24, Math.min(w, h) * 0.16) : 0,
+    });
+}
+
 export default defineElement({
   type: 'shape',
   label: { one: 'Shape', many: 'Shapes' },
@@ -120,6 +155,7 @@ export default defineElement({
     h: DEFAULT_SIZE,
   }),
   Component: ShapeView,
+  lowDetail: paintShape,
   toPlainText: (el) => richTextToPlain(el.text),
   // Unfilled outlines are thin targets: half the stroke plus the engine's screen tolerance.
   hitTest(el, local, { tolerance }) {
