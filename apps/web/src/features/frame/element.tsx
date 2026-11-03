@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { EyeOff, Frame as FrameIcon } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
-import { defineElement, useCanEdit, useChromeHidden, useEditor, useIsExporting, type Editor, type ElementRenderProps, type NewElement } from '@engine';
+import { defineElement, isLightSurface, useCanEdit, useChromeHidden, useEditor, useIsExporting, type Editor, type ElementRenderProps, type NewElement } from '@engine';
 import { DEFAULT_FILL, presetById } from './lib/frames';
 import { renameFrame } from './lib/actions';
 import { startTitleDrag } from './lib/titleDrag';
@@ -127,7 +127,8 @@ const FrameView = memo(function FrameView({ element, selected, zoom: renderZoom 
   return (
     <>
       <div
-        className="fr-frame"
+        // A light fill is shown dark on a dark page, like the canvas around it (engine theme.ts).
+        className={`fr-frame${isLightSurface(element.fill || DEFAULT_FILL) ? ' fr-canvas-surface' : ''}`}
         style={{
           background: element.fill || DEFAULT_FILL,
           // A hairline that stays 1 screen px at any zoom.

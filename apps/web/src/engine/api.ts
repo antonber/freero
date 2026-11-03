@@ -98,6 +98,14 @@ export interface HostPersonalViews {
   save(itemId: string, viewId: string, settings: Record<string, unknown> | null): Promise<void>;
 }
 
+/** [additive] Light, dark, or whatever the device uses. */
+export type ColorThemeChoice = 'system' | 'light' | 'dark';
+/** [additive] See Host.colorTheme. */
+export interface HostColorTheme {
+  get(): ColorThemeChoice;
+  set(theme: ColorThemeChoice): void;
+}
+
 export interface Host {
   user: HostUser;
   board: {
@@ -211,6 +219,11 @@ export interface Host {
    * the offline sandbox.
    */
   reportProblem?(context: { role: Role }): void;
+  /**
+   * [additive] The person's app theme (the app keeps it with their account): read it, change it.
+   * Absent where the page follows something else (the live view in an AI assistant).
+   */
+  colorTheme?: HostColorTheme;
   openShareDialog(): void;
   navigate(path: string): void;
   /**

@@ -81,6 +81,8 @@ export type { DocThread, DocCommentMessage, CommentAuthor } from './docs/comment
 
 // Renders an element's rich-text field; switches to the shared editor while editing.
 export { ElementText } from './text/ElementText';
+// [additive] Dark mode at paint time (canvas/theme.ts): default inks light on the live canvas.
+export { canvasInk, canvasPaper, isLightSurface } from './canvas/theme';
 export type { ElementTextProps } from './text/ElementText';
 // Sanitizes the RichText HTML subset (see @freero/shared RichText).
 export { sanitizeRichText, richTextToPlain, plainToRichText, replaceInRichText, isSafeHref } from './text/sanitize';

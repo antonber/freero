@@ -3,16 +3,11 @@ import { useEffect, useRef } from 'react';
 import type { BoardSettings } from '@freero/shared';
 import type { Camera } from '../api';
 import { useCore } from '../context';
-import { documentTheme, shownBackground, subscribeDocumentTheme } from './theme';
+import { documentTheme, lightness, shownBackground, subscribeDocumentTheme } from './theme';
 
 const MIN_PX = 14;
 
-function luminance(hex: string): number {
-  const m = hex.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
-  if (!m) return 1;
-  const [r, g, b] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16) / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
+const luminance = lightness;
 
 export interface GridLayers {
   /** Screen spacing of the main layer, in [MIN_PX, 4·MIN_PX). */

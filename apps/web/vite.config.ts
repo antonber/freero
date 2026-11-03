@@ -36,7 +36,7 @@ function freeroServiceWorker(): Plugin {
         for (const f of out.imports) shell.add(f);
         for (const f of out.viteMetadata?.importedCss ?? []) shell.add(f);
       }
-      const precache = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', ...[...shell].sort().map((f) => `/${f}`)];
+      const precache = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/theme-boot.js', ...[...shell].sort().map((f) => `/${f}`)];
       const version = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);
       const { code } = await transformWithEsbuild(readFileSync(source, 'utf8'), source, {
         loader: 'ts',

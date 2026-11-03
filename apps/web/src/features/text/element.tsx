@@ -1,7 +1,7 @@
 import { Type as TypeIcon } from 'lucide-react';
 import { memo, type CSSProperties } from 'react';
 import type { TextElement } from '@freero/shared';
-import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
+import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
 import { layoutText, measureTextBox, textPadding } from './lib/layout';
 import { pastedTextToRich, textBlockAt, textDefaults } from './lib/actions';
 import './text.css';
@@ -20,6 +20,8 @@ const TextView = memo(function TextView({ element }: ElementRenderProps<TextElem
       placeholder="Type something…"
       className={`fr-textbox${element.autoWidth ? ' fr-textbox--auto' : ''}${style ? ' fr-textbox--hl' : ''}`}
       style={style}
+      // On the canvas (no highlight of its own) the default ink turns light on a dark page.
+      color={style ? element.textColor : canvasInk(element.textColor)}
     />
   );
 });

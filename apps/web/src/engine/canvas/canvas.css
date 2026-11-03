@@ -49,12 +49,18 @@
   height: 0;
 }
 
-/* A dark page (theme.ts, #89): board content keeps its own colours (`.fr-paper`) and is drawn
-   through DARK_FILTER — keep it in step with darkFiltered() in theme.ts, which draws the canvas
-   background the same way. Photos, video, pages and live frames are turned back. */
-:root[data-theme='dark'] .fr-viewport :is(.fr-world__items, .fr-el--preview),
-:root[data-theme='dark'] .fr-viewport :is(.fr-world__items, .fr-el--preview) :is(img, video, iframe, canvas) {
-  filter: invert(0.93) hue-rotate(180deg);
+/* A dark page (theme.ts, #89): board content keeps its own colours; only its DEFAULT inks are
+   painted light (theme.ts canvasInk), and only here on the live canvas, never in an export. */
+:root[data-theme='dark'] .fr-viewport {
+  --fr-canvas-ink: #ecebf5;
+  --fr-canvas-ink-2: #c3c1d6;
+}
+
+/* Light surfaces shown dark (frame fills), keeping their hue like darkFiltered() in theme.ts, a
+   step lighter than the canvas so a frame reads as a panel, not a hole. A feature marks the
+   surface element with this class. */
+:root[data-theme='dark'] .fr-viewport .fr-canvas-surface {
+  filter: invert(0.86) hue-rotate(180deg);
 }
 
 /* While the camera moves the layer is promoted (cheap compositing); once it settles the
