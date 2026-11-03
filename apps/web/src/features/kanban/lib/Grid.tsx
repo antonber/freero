@@ -354,6 +354,10 @@ export function Grid(props: GridProps) {
         e.stopPropagation();
         startEdit(at);
         return;
+      case 'Escape':
+        // On the board, Escape hands the keyboard back to it; in a dialog it closes the dialog (not handled here).
+        if (!e.currentTarget.closest('[role="dialog"]')) (document.activeElement as HTMLElement | null)?.blur();
+        return;
       case ' ':
         if (columns[at.col]?.type === 'checkbox') {
           e.preventDefault();
