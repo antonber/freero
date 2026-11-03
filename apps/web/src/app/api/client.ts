@@ -58,6 +58,7 @@ import type {
   BoardOutlineResponse,
   PublicEmbedInfo,
   PublicEmbedMember,
+  MicrosoftIntegrationsInfo,
   PublicEmbedToken,
   GuestJoinResponse,
   AccessRequestState,
@@ -372,6 +373,8 @@ export const api = {
   publicEmbed: (id: string) => request<PublicEmbedInfo>('GET', `/api/embed/b/${encodeURIComponent(id)}`),
   publicEmbedToken: (id: string, readonly: boolean) => request<PublicEmbedToken>('POST', `/api/embed/b/${encodeURIComponent(id)}/token`, { readonly }),
   publicEmbedMember: (id: string, token: string) => request<PublicEmbedMember>('POST', `/api/embed/b/${encodeURIComponent(id)}/me`, { token }),
+  /** The Microsoft Teams app and Copilot agent this instance offers (#112, #114). */
+  microsoftIntegrations: () => request<MicrosoftIntegrationsInfo>('GET', '/api/integrations/microsoft'),
 
   // activity
   boardActivity: (id: string, before?: number) =>
