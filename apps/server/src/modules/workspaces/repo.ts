@@ -32,6 +32,8 @@ interface WsRow {
   public_links: 'anyone' | 'signed_in';
   live_embeds: 'on' | 'off';
   board_embeds: 'on' | 'off';
+  link_password: 'optional' | 'required' | null;
+  link_max_days: number | null;
   require_two_factor: boolean;
   session_max_hours: number | null;
   session_idle_minutes: number | null;
@@ -56,6 +58,8 @@ const toWorkspace = (r: WsRow): Workspace => ({
     publicLinks: r.public_links === 'signed_in' ? 'signedIn' : 'anyone',
     liveEmbeds: r.live_embeds === 'off' ? 'off' : 'on',
     boardEmbeds: r.board_embeds === 'off' ? 'off' : 'on',
+    linkPassword: r.link_password === 'required' ? 'required' : 'optional',
+    linkMaxDays: r.link_max_days ?? null,
   },
   settings: {
     requireTwoFactor: r.require_two_factor,
@@ -141,7 +145,8 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
        link_sharing = COALESCE($4, link_sharing), guest_invites = COALESCE($5, guest_invites),
        downloads = COALESCE($6, downloads), updated_at = $7, team_access = COALESCE($8, team_access),
        public_links = COALESCE($9, public_links), live_embeds = COALESCE($10, live_embeds),
-       board_embeds = COALESCE($11, board_embeds)
+       board_embeds = COALESCE($11, board_embeds), link_password = COALESCE($12, link_password),
+       link_max_days = CASE WHEN $13::boolean THEN $14::integer ELSE link_max_days END
      WHERE id = $1`,
     [
       id,
@@ -155,6 +160,10 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
       p.publicLinks === undefined ? null : p.publicLinks === 'signedIn' ? 'signed_in' : 'anyone',
       p.liveEmbeds ?? null,
       p.boardEmbeds ?? null,
+      p.linkPassword ?? null,
+      // null is a value here (no limit): whether to set it at all is its own flag.
+      p.linkMaxDays !== undefined,
+      p.linkMaxDays ?? null,
     ],
   );
 }
