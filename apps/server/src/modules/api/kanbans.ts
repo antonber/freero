@@ -47,6 +47,17 @@ import {
   type ProjectionView,
   type TimelineScale,
   type ViewTab,
+  type KanbanViewElement,
+  LAYOUT_NAMES,
+  LINKED_VIEW_SIZES,
+  linkedView,
+  linkedViewDraft,
+  linkedViewNameProblem,
+  linkedViewSpot,
+  newLinkedView,
+  projectionWords,
+  rotatedBounds,
+  withLinkedViewSaved,
   cardPasses,
   cardQueryValue,
   cardValue,
@@ -447,11 +458,18 @@ function orderOptions(w: Working, f: FieldDef, raw: unknown, at: string, isGroup
  * kanban is locked, or the view is locked by someone else (its locker and the board's owners may).
  */
 export function planConfigureView(view: BoardView, kid: string, body: unknown, who: { id: string; role: Role }, newId: () => string = () => Math.random().toString(36).slice(2)): BoardChange {
+  // A linked view (step 3c) is configured by its own id.
+  const lv = view.elements.find((e) => e.el.id === kid && e.el.type === 'kanbanview')?.el as KanbanViewElement | undefined;
+  if (lv) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw badRequest(`Send what to change: ${LINKED_KEYS.join(', ')}`);
+    return planConfigureLinkedView(view, lv, body as Input, who);
+  }
   const k0 = kanbanIn(view, kid);
   if (k0.locked) throw badRequest('That kanban is locked; unlock it first');
   const b = body as Input | null;
   if (!b || typeof b !== 'object' || Array.isArray(b))
     throw badRequest('Send what to change: view or addView (which tab), groupBy, subGroupBy, show, color, density, filter, sort, columns, locked, name, active or remove');
+  if (b.layout !== undefined) throw badRequest('layout switches a linked view to another layout; a kanban’s tabs keep theirs (addView adds a tab of another layout)');
   const w = new Working(view, kid);
   const schema = () => collectionSchema(w.k);
 
@@ -626,25 +644,38 @@ const BOARD_KEYS = ['groupBy', 'subGroupBy', 'color', 'density', 'columns'];
  * untouched), sort and lock. What moves or sizes the real cards belongs to the Board tab.
  */
 function configureProjection(w: Working, id: string, b: Input, who: { id: string; role: Role }, schema: () => FieldDef[]) {
-  const layout = projectionView(w.k, id)!.layout;
+  const saved = projectionView(w.k, id)!;
+  const next = projectionSettings(saved, b, who, schema(), 'tab');
+  if (next !== saved) w.patch(w.kid, withProjectionSaved(w.k, next));
+}
+
+/**
+ * Projection view `saved` with the settings of `b` applied (by name, validated: the first problem
+ * refuses the call naming what would have been valid) — a kanban's tab, or a linked view (step 3c,
+ * `what` 'linked view'), which takes the same settings as a tab of its layout.
+ * `schema` (the collection's) names the fields.
+ */
+function projectionSettings(saved0: ProjectionView, b: Input, who: { id: string; role: Role }, schema: readonly FieldDef[], what: 'tab' | 'linked view'): ProjectionView {
+  const layout = saved0.layout;
   const takes = PROJECTION_KEYS[layout];
-  const also = [...takes, 'name', 'active', 'remove'].join(', ');
+  const also = [...takes, 'name', ...(what === 'tab' ? ['active', 'remove'] : ['layout'])].join(', ');
   for (const key of [...BOARD_KEYS, 'date', 'start', 'end', 'scale']) {
     if (b[key] === undefined || takes.includes(key)) continue;
-    throw badRequest(BOARD_KEYS.includes(key) ? `${key} belongs to the Board tab; a ${layout} tab takes ${also}` : `${key} isn’t a setting of a ${layout} tab; it takes ${also}`);
+    throw badRequest(BOARD_KEYS.includes(key) ? `${key} belongs to the Board tab; a ${layout} ${what} takes ${also}` : `${key} isn’t a setting of a ${layout} ${what}; it takes ${also}`);
   }
-  const saved = () => projectionView(w.k, id)!;
-  const save = (next: ProjectionView) => w.patch(w.kid, withProjectionSaved(w.k, cleanProjection(next)!));
-  const dateField = (ref: unknown, what: string) => {
-    const all = dateFields(schema());
+  let cur = saved0;
+  const saved = () => cur;
+  const save = (next: ProjectionView) => void (cur = cleanProjection(next)!);
+  const dateField = (ref: unknown, at: string) => {
+    const all = dateFields(schema);
     const f = typeof ref === 'string' ? (all.find((x) => x.id === ref) ?? all.find((x) => norm(x.name) === norm(ref))) : undefined;
-    if (!f) throw badRequest(`${what}: “${String(ref)}” isn’t a date field (date fields: ${all.map((x) => x.name).join(', ')})`);
+    if (!f) throw badRequest(`${at}: “${String(ref)}” isn’t a date field (date fields: ${all.map((x) => x.name).join(', ')})`);
     return f.id;
   };
-  const groupField = (ref: unknown, what: string) => {
-    const all = projectionGroupFields(schema());
+  const groupField = (ref: unknown, at: string) => {
+    const all = projectionGroupFields(schema);
     const f = typeof ref === 'string' ? (all.find((x) => x.id === ref) ?? all.find((x) => norm(x.name) === norm(ref))) : undefined;
-    if (!f) throw badRequest(`${what}: “${String(ref)}” isn’t a field to group by (single select, person or checkbox, Status, Assignee: ${all.map((x) => x.name).join(', ')})`);
+    if (!f) throw badRequest(`${at}: “${String(ref)}” isn’t a field to group by (single select, person or checkbox, Status, Assignee: ${all.map((x) => x.name).join(', ')})`);
     return f.id;
   };
   if (b.show !== undefined) {
@@ -652,7 +683,7 @@ function configureProjection(w: Working, id: string, b: Input, who: { id: string
     const columns = [
       ...new Set(
         b.show.map((ref, i) => {
-          const f = typeof ref === 'string' ? (SHOWABLE_BUILTINS.find((x) => x.id === ref || norm(x.name) === norm(ref)) ?? fieldByRef(schema(), ref)) : undefined;
+          const f = typeof ref === 'string' ? (SHOWABLE_BUILTINS.find((x) => x.id === ref || norm(x.name) === norm(ref)) ?? fieldByRef(schema, ref)) : undefined;
           if (!f) throw badRequest(`show[${i}]: no field “${String(ref)}” a ${layout} can show`);
           return f.id;
         }),
@@ -669,49 +700,123 @@ function configureProjection(w: Working, id: string, b: Input, who: { id: string
     save({ ...saved(), scale: b.scale as TimelineScale } as ProjectionView);
   }
   if (b.subGroupBy !== undefined) save({ ...saved(), lanesBy: b.subGroupBy === null ? null : groupField(b.subGroupBy, 'subGroupBy') } as ProjectionView);
-  if (b.filter !== undefined) save({ ...saved(), filter: readFilter(b.filter, schema()) });
+  if (b.filter !== undefined) save({ ...saved(), filter: readFilter(b.filter, schema) });
   if (b.sort !== undefined) {
     const { sort: _s, ...rest } = saved();
-    const sort = readSort(b.sort, schema());
+    const sort = readSort(b.sort, schema);
     save({ ...rest, ...(sort.length ? { sort } : {}) } as ProjectionView);
   }
   if (b.locked !== undefined) {
     if (typeof b.locked !== 'boolean') throw badRequest('locked must be true or false');
     save({ ...saved(), locked: b.locked ? { by: who.id } : null });
   }
+  return cur;
+}
+
+// ------------------------------------------------------------------ linked views (step 3c)
+
+/** The keys add_view and configure_view on a linked view take (besides what its layout has). */
+const LINKED_KEYS = ['name', 'layout', ...new Set(Object.values(PROJECTION_KEYS).flat())];
+
+/** Linked view `lv` (showing `k`, or nothing when its kanban isn't on the board) as agents read it. */
+export function linkedViewSummary(lv: KanbanViewElement, k: KanbanElement | null, names: Names) {
+  const v = linkedView(lv);
+  const schema = k ? collectionSchema(k) : [];
+  return {
+    id: lv.id,
+    kind: 'linked view' as const,
+    sourceId: lv.sourceId,
+    source: k ? { id: k.id, title: plain(k.title) || 'Kanban' } : null,
+    ...apiProjection(k, v, schema, names),
+    name: v.name,
+    layout: v.layout,
+    shows: projectionWords(k, v, schema),
+  };
+}
+
+/**
+ * add_view (step 3c): a linked view of kanban `kid` — `layout` (table, list, calendar, timeline;
+ * default table), `name`, and the settings a tab of that layout takes — placed beside the kanban
+ * (right of it, or the nearest free spot). One new element; no card moves.
+ */
+export function planAddView(view: BoardView, kid: string, body: unknown, who: { id: string; role: Role }, newId: () => string): { change: BoardChange; id: string } {
+  const k = kanbanIn(view, kid);
+  const b = (body ?? {}) as Input;
+  if (typeof b !== 'object' || Array.isArray(b)) throw badRequest(`Send the view: layout (${PROJECTION_LAYOUTS.join(', ')}), name and its settings`);
+  const unknown = Object.keys(b).find((key) => !LINKED_KEYS.includes(key));
+  if (unknown) throw badRequest(`${unknown} isn’t a setting of a linked view (it takes ${LINKED_KEYS.join(', ')})`);
+  if (b.layout !== undefined && !isProjectionLayout(b.layout)) throw badRequest(`layout must be ${PROJECTION_LAYOUTS.join(', ')}`);
+  if (b.name !== undefined && (typeof b.name !== 'string' || linkedViewNameProblem(b.name))) throw badRequest(`name: ${typeof b.name === 'string' ? linkedViewNameProblem(b.name) : 'the view’s name'}`);
+  const layout: ProjectionLayout = isProjectionLayout(b.layout) ? b.layout : 'table';
+  const { layout: _l, name: _n, ...settings } = b;
+  const v = projectionSettings(newLinkedView(layout, typeof b.name === 'string' ? b.name : null), settings, who, collectionSchema(k), 'linked view');
+  const size = LINKED_VIEW_SIZES[layout];
+  const obstacles = view.elements.map((e) => rotatedBounds(e.el));
+  const id = newId();
+  return { id, change: { create: [linkedViewDraft(id, k, v, linkedViewSpot(k, size, obstacles))] } };
+}
+
+/** configure_view on linked view `lv` (step 3c): its name, layout (its filter and sort carry over) and the settings of its layout, for everyone. */
+function planConfigureLinkedView(view: BoardView, lv: KanbanViewElement, b: Input, who: { id: string; role: Role }): BoardChange {
+  if (lv.locked) throw badRequest('That linked view is locked; unlock it first');
+  const unknown = Object.keys(b).find((key) => !LINKED_KEYS.includes(key));
+  if (unknown) throw badRequest(`${unknown} isn’t a setting of a linked view (it takes ${LINKED_KEYS.join(', ')})`);
+  let v = linkedView(lv);
+  if (viewLockedFor(v, who)) throw badRequest('This linked view is locked by someone else: only they or the board’s owners can change it');
+  const k = view.elements.find((e) => e.el.id === lv.sourceId && e.el.type === 'kanban')?.el as KanbanElement | undefined;
+  if (!k) throw badRequest('This linked view’s kanban isn’t on the board (deleted, or not visible to you): there is nothing to configure');
+  if (b.name !== undefined) {
+    const problem = typeof b.name === 'string' ? linkedViewNameProblem(b.name) : 'the view’s name';
+    if (problem) throw badRequest(`name: ${problem}`);
+    v = { ...v, name: (b.name as string).trim() };
+  }
+  if (b.layout !== undefined) {
+    if (!isProjectionLayout(b.layout)) throw badRequest(`layout must be ${PROJECTION_LAYOUTS.join(', ')}`);
+    if (b.layout !== v.layout) {
+      const fresh = newLinkedView(b.layout);
+      const name = v.name === LAYOUT_NAMES[v.layout] ? fresh.name : v.name;
+      v = cleanProjection({ ...fresh, name, filter: v.filter ?? null, sort: v.sort ?? [], locked: v.locked ?? null })!;
+    }
+  }
+  const { name: _n, layout: _l, ...settings } = b;
+  v = projectionSettings(v, settings, who, collectionSchema(k), 'linked view');
+  const patch = withLinkedViewSaved(v);
+  if (JSON.stringify(patch.view) === JSON.stringify(lv.view)) throw badRequest('Nothing to change');
+  return { update: [{ id: lv.id, patch: patch as unknown as Record<string, unknown> }] };
+}
+
+/** A projection's settings as agents read them (a tab's or a linked view's): fields by name. */
+function apiProjection(k: KanbanElement | null, v: ProjectionView, schema: readonly FieldDef[], names: Names): Record<string, unknown> {
+  const fieldName = (id: string) => [...queryFields(schema), ...PROJECTION_GROUP_BUILTINS].find((f) => f.id === id)?.name ?? id;
+  const common = {
+    filter: v.filter ? { match: v.filter.op === 'or' ? 'any' : 'all', rules: v.filter.rules.map((r) => apiRule(r, schema)) } : null,
+    filterText: describeFilter(v.filter, schema, names) || null,
+    sort: (v.sort ?? []).map((s) => ({ field: fieldName(s.field), dir: s.dir })),
+    locked: !!v.locked,
+  };
+  switch (v.layout) {
+    case 'table':
+      return { show: tableColumns(v, schema).map(fieldName), ...common };
+    case 'list':
+      return { show: k ? listColumns(k, v, schema).map(fieldName) : [], groupBy: (k && listGroupField(k, v, schema)?.name) ?? null, ...common };
+    case 'calendar':
+      return { date: fieldName(calendarDateField(v, schema)), ...common };
+    case 'timeline': {
+      const tl = timelineFields(v, schema);
+      return { start: fieldName(tl.start), end: fieldName(tl.end), scale: tl.scale, subGroupBy: tl.lanes?.name ?? null, ...common };
+    }
+  }
 }
 
 /** A tab as agents read it: its name, layout, whether everyone starts on it, and the settings of a tab other than the board. */
 function apiTab(k: KanbanElement, t: ViewTab, schema: readonly FieldDef[], names: Names) {
-  const fieldName = (id: string) => [...queryFields(schema), ...PROJECTION_GROUP_BUILTINS].find((f) => f.id === id)?.name ?? id;
   const v = t.layout === 'board' ? null : projectionView(k, t.id);
-  const settings = (): Record<string, unknown> => {
-    if (!v) return {};
-    const common = {
-      filter: v.filter ? { match: v.filter.op === 'or' ? 'any' : 'all', rules: v.filter.rules.map((r) => apiRule(r, schema)) } : null,
-      filterText: describeFilter(v.filter, schema, names) || null,
-      sort: (v.sort ?? []).map((s) => ({ field: fieldName(s.field), dir: s.dir })),
-      locked: !!v.locked,
-    };
-    switch (v.layout) {
-      case 'table':
-        return { show: tableColumns(v, schema).map(fieldName), ...common };
-      case 'list':
-        return { show: listColumns(k, v, schema).map(fieldName), groupBy: listGroupField(k, v, schema)?.name ?? null, ...common };
-      case 'calendar':
-        return { date: fieldName(calendarDateField(v, schema)), ...common };
-      case 'timeline': {
-        const tl = timelineFields(v, schema);
-        return { start: fieldName(tl.start), end: fieldName(tl.end), scale: tl.scale, subGroupBy: tl.lanes?.name ?? null, ...common };
-      }
-    }
-  };
   return {
     id: t.id,
     name: t.name,
     layout: t.layout,
     ...(t.id === savedTabId(k) ? { active: true } : {}),
-    ...settings(),
+    ...(v ? apiProjection(k, v, schema, names) : {}),
   };
 }
 

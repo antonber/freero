@@ -8,7 +8,8 @@
 //
 // web:    a real engine session (scripts/bench/kanban-web.ts through vite-node with the web app's
 //         config): bulk creation into a kanban by every path the app has, and the hot paths on a
-//         big kanban (a card moved, re-lays, an unrelated edit, visible elements, the outline).
+//         big kanban (a card moved, re-lays, an unrelated edit, visible elements, the outline), and
+//         a linked view of it opened and redrawn after one card changes (react-dom in jsdom).
 // server: the pure planning behind every server write to a kanban (scripts/bench/kanban-server.ts
 //         with tsx): add_cards / structure placement and withKanbanLayout.
 // Each line is the median of --repeat fresh runs (one run for the slowest scenarios at 5k).
@@ -49,7 +50,7 @@ if (args.includes('--json')) {
 }
 
 // One table per side: a row per scenario, a column per size (scenarios on the big kanban have one).
-const fmt = (r) => (r.skip ? `n/a (${r.skip})` : r.ms === undefined ? (r.ok ? 'ok' : 'FAILED') : `${r.ms < 10 ? r.ms.toFixed(1) : Math.round(r.ms)} ms${r.per ? ` / ${r.per}` : ''}${r.note ? ` (${r.note})` : ''}`);
+const fmt = (r) => (r.skip ? `n/a (${r.skip})` : r.ms === undefined ? (r.ok ? 'ok' : 'FAILED') : `${r.ms < 10 ? r.ms.toFixed(1) : Math.round(r.ms)} ms${r.per ? ` / ${r.per}` : ''}${r.detail ? ` — ${r.detail}` : ''}${r.note ? ` (${r.note})` : ''}`);
 let failed = false;
 for (const s of ['web', 'server']) {
   const rows = results.filter((r) => r.side === s);

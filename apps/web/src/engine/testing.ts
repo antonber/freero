@@ -7,9 +7,12 @@
 //   const [ann, bob] = board.editors('comments');
 //   ann.runCommand(…); bob.runCommand(…);   // concurrent
 //   board.sync();                           // both replicas now agree
+import { createElement, type ReactElement } from 'react';
 import type { Role, SuggestionRecord } from '@freero/shared';
 import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, HostUser, SavedTemplateInfo } from './api';
 import { unavailableVersionHistory } from './api';
+import { ElementView } from './canvas/WorldLayer';
+import { EngineContext } from './context';
 import { createCore, type EngineCore } from './runtime/core';
 import { serverPropose, syncStores } from './store/replicas';
 
@@ -24,6 +27,8 @@ export interface TestBoardOptions {
   now?: () => number;
   /** [additive] The board's title as the replicas open it (default 'Test'); renameBoard changes it. */
   title?: string;
+  /** [additive] The board's id (default 'test-board'): two test boards with different ids are two boards (pasting from one into the other). */
+  boardId?: string;
   /** What Host.listMembers returns (default: the replica's own user). */
   members?: HostUser[];
 }
@@ -35,6 +40,12 @@ export interface TestBoard {
   sync(): void;
   /** [additive] Suggestions arriving from the server (KAI-169): records land in every editor's editors layer. */
   propose(records: SuggestionRecord[]): void;
+  /**
+   * [additive] Element `id` as replica `user` (its index) draws it on the canvas: its feature's
+   * component inside that replica's engine, selected while it is in that replica's selection.
+   * Render it (react-dom) to test what an element shows and does, hooks and all.
+   */
+  element(user: number, id: string): ReactElement;
   destroy(): void;
 }
 
@@ -52,7 +63,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
     const user: HostUser = typeof u === 'string' ? { id: u, name: u, color: '#5b3ff0', avatarUrl: null } : u;
     const host: Host = {
       user,
-      board: { id: 'test-board', title: opts.title ?? 'Test', role: opts.role ?? 'owner' },
+      board: { id: opts.boardId ?? 'test-board', title: opts.title ?? 'Test', role: opts.role ?? 'owner' },
       syncUrl: '',
       personalViews: {
         list: async () =>
@@ -122,6 +133,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
         cores.filter((c) => c.editor.can('editor')).map((c) => c.store),
       ),
     propose: (records) => serverPropose(cores.filter((c) => c.editor.can('editor')).map((c) => c.store), records),
+    element: (user, id) => createElement(EngineContext.Provider, { value: cores[user] }, createElement(ElementView, { id })),
     destroy: () => cores.forEach((c) => c.destroy()),
   };
 }

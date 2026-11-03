@@ -5,16 +5,39 @@ import { FIELDS_PANEL, FOCUS_PANEL, VIEW_PANEL } from './lib/constants';
 import { addTab, addTableTab, deleteTab, renameTab, setMyView, switchTab } from './lib/tabs';
 import { setFocus } from './lib/focusSettings';
 import { fieldsTarget } from './lib/schema';
-import { cleanFilter, isProjectionLayout } from '@freero/shared';
+import { LAYOUT_NAMES, PROJECTION_LAYOUTS, cleanFilter, isProjectionLayout, type ProjectionLayout } from '@freero/shared';
 import { saveViewForEveryone, setDensity, setMyCardDisplay, setMyFilter, setSort, setViewLocked } from './lib/view';
 import { setGroupBy, setSwimlanes } from './lib/group';
 import { createFromRows } from './lib/fromRows';
+import { addLinkedView, renameLinkedView, resetMyLinkedView, saveLinkedViewForEveryone, selectedLinkedView, setLinkedLayout, setLinkedLocked, setMyLinkedView, sourceOf } from './lib/linked';
+import { LAYOUT_ICONS } from './lib/TabStrip';
 
 const selectedKanban = (editor: Editor) => {
   const sel = editor.getSelection();
   const el = sel.length === 1 ? editor.getElement(sel[0]) : undefined;
   return el?.type === 'kanban' && !el.locked ? el : null;
 };
+
+/** The one selected kanban (locked or not: a linked view changes nothing on it). */
+const oneKanban = (editor: Editor) => {
+  const sel = editor.getSelection();
+  const el = sel.length === 1 ? editor.getElement(sel[0]) : undefined;
+  return el?.type === 'kanban' ? el : null;
+};
+
+/** "Add linked view ▸ Table / List / Calendar / Timeline" on a selected kanban: a view of its cards beside it, for everyone (editors). */
+const addLinked = (layout: ProjectionLayout): CommandDefinition => ({
+  id: `kanban.addLinkedView.${layout}`,
+  label: LAYOUT_NAMES[layout],
+  icon: LAYOUT_ICONS[layout],
+  group: 'Add linked view',
+  menus: ['context'],
+  when: (editor) => !!oneKanban(editor) && editor.mayAdd('kanbanview'),
+  run(editor) {
+    const k = oneKanban(editor);
+    if (k) addLinkedView(editor, k.id, layout);
+  },
+});
 
 /**
  * Arrow keys on items stacked in a kanban move them between and within columns (the layout
@@ -241,6 +264,72 @@ export default defineCommands([
       if (typeof args?.id !== 'string') return;
       const { id, ...patch } = args;
       setFocus(editor, id, patch as never);
+    },
+  },
+  ...PROJECTION_LAYOUTS.map(addLinked),
+  {
+    // A linked view of kanban { id } beside it (step 3c): { layout } (table, list, calendar,
+    // timeline), { name? }, or { from: a projection tab of the kanban } to place that tab as I see
+    // it. Editors; one undo step; the new view is selected.
+    id: 'kanban.addLinkedView',
+    label: 'Add a linked view',
+    run(editor, args) {
+      if (typeof args?.id !== 'string') return;
+      const layout = isProjectionLayout(args.layout) ? args.layout : 'table';
+      addLinkedView(editor, args.id, layout, { name: typeof args.name === 'string' ? args.name : undefined, from: typeof args.from === 'string' ? args.from : undefined });
+    },
+  },
+  {
+    // My own settings of linked view { id } (any role) until I save them for everyone: the same
+    // settings a tab of its layout takes (kanban.setMyView).
+    id: 'kanban.setMyLinkedView',
+    label: 'Arrange a linked view for me',
+    minRole: 'viewer',
+    run(editor, args) {
+      if (typeof args?.id !== 'string') return;
+      const { id, ...patch } = args;
+      setMyLinkedView(editor, id, patch);
+    },
+  },
+  {
+    // Linked view { id }: my settings become its saved view ({ reset: true }: drop mine instead).
+    id: 'kanban.saveLinkedView',
+    label: 'Save a linked view for everyone',
+    minRole: 'viewer',
+    run(editor, args) {
+      if (typeof args?.id !== 'string') return;
+      if (args.reset === true) resetMyLinkedView(editor, args.id);
+      else saveLinkedViewForEveryone(editor, args.id);
+    },
+  },
+  {
+    // Linked view { id } for everyone: { name }, { layout }, { locked }. Editors.
+    id: 'kanban.configureLinkedView',
+    label: 'Change a linked view',
+    run(editor, args) {
+      if (typeof args?.id !== 'string') return;
+      if (typeof args.name === 'string') renameLinkedView(editor, args.id, args.name);
+      if (isProjectionLayout(args.layout)) setLinkedLayout(editor, args.id, args.layout);
+      if (typeof args.locked === 'boolean') setLinkedLocked(editor, args.id, args.locked);
+    },
+  },
+  {
+    // From a selected linked view: its kanban, selected and in view.
+    id: 'kanban.showLinkedSource',
+    label: 'Show its kanban',
+    icon: Columns3,
+    menus: ['context'],
+    minRole: 'viewer',
+    when: (editor) => {
+      const lv = selectedLinkedView(editor);
+      return !!lv && !!sourceOf(editor, lv);
+    },
+    run(editor) {
+      const lv = selectedLinkedView(editor);
+      const k = lv && sourceOf(editor, lv);
+      if (!k) return;
+      editor.select([k.id]);
+      editor.zoomToFit([k.id], { animate: true, padding: 48 });
     },
   },
   move('left', 'Move to previous column', ArrowLeft, 'arrowleft'),

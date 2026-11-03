@@ -297,6 +297,60 @@ for (const [label, settings] of [
   );
 }
 
+// ---- a linked view of the big kanban (step 3c), drawn by react-dom in a jsdom page ----
+// Opening it draws only the rows (days, bars) in view; one card changed re-renders that card's row
+// alone (counted from the DOM mutations), not the view.
+if (!ONLY || 'linked view'.includes(ONLY) || ONLY.includes('linked')) await linkedViews();
+
+async function linkedViews() {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true });
+  for (const key of Object.getOwnPropertyNames(dom.window)) if (!(key in globalThis)) Object.defineProperty(globalThis, key, { configurable: true, get: () => (dom.window as unknown as Record<string, unknown>)[key] });
+  // A production build (as the app ships): no act(); flushSync renders now, then effects settle.
+  const { flushSync } = await import('react-dom');
+  const { createRoot } = await import('react-dom/client');
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  for (const layout of ['table', 'calendar', 'timeline'] as const) {
+    const s = filled(BIG);
+    const k = kanbanOf(s);
+    // Half of the cards dated over the next weeks, so a calendar and a timeline have something to place.
+    s.ed.transact(() => cardsOf(s).forEach((c, i) => i % 2 === 0 && s.ed.update<CardElement>(c.id, { dueDate: `2026-11-${String(1 + (i % 28)).padStart(2, '0')}` })));
+    s.ed.runCommand('kanban.addLinkedView', { id: k.id, layout });
+    const lv = s.ed.getSelection()[0];
+    s.ed.setCamera({ x: s.ed.getElement(lv)!.x - 40, y: -40, zoom: 1 });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const t0 = performance.now();
+    flushSync(() => root.render(s.board.element(0, lv)));
+    const open = performance.now() - t0;
+    await settle();
+    const drawn = host.querySelectorAll('[role="row"], [data-card], [data-bar]').length;
+    emit(`linked view, ${layout}: open (${BIG} cards)`, BIG, [open], { detail: `${drawn} rows / chips / bars drawn` });
+    // One card on screen changed elsewhere (a collaborator renames it): what the view redraws.
+    const chip = host.querySelector('[data-card], [data-bar]');
+    const shownId = chip?.getAttribute('data-card') ?? chip?.getAttribute('data-bar');
+    const shownTitle = host.querySelector('[role="rowheader"]')?.textContent;
+    const target = cardsOf(s).find((c) => c.id === shownId || c.title === shownTitle)!;
+    const changed = new Set<Element>();
+    const watch = new MutationObserver((records) => {
+      for (const r of records) {
+        const el = (r.target.nodeType === 1 ? (r.target as Element) : r.target.parentElement)?.closest('[role="row"], [data-card], [data-bar]');
+        if (el) changed.add(el);
+      }
+    });
+    watch.observe(host, { subtree: true, childList: true, characterData: true, attributes: true });
+    const t1 = performance.now();
+    flushSync(() => void s.ed.update<CardElement>(target.id, { title: 'Renamed card' }));
+    const update = performance.now() - t1;
+    await settle();
+    watch.disconnect();
+    emit(`linked view, ${layout}: one card renamed by a collaborator (${BIG} cards)`, BIG, [update], { detail: `${changed.size} of them redrawn` });
+    root.unmount();
+    done(s);
+  }
+}
+
 // Sanity: the board a bulk creation leaves is laid out (nothing left for a second pass).
 {
   const s = filled(Math.min(BIG, 2000), realistic);

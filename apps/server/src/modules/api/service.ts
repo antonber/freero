@@ -25,6 +25,8 @@ import {
   type CommentThreadRecord,
   type ElementDraft,
   type InsertStructureResponse,
+  type KanbanElement,
+  type KanbanViewElement,
   LayoutError,
   type Role,
   type StructurePlacement,
@@ -71,7 +73,7 @@ import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../
 import { boardConnections, importCandidates, importIssues, noteProposedImport, projectsOf, sendToTracker } from '../trackers/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
-import { kanbanIn, kanbanSummary, peopleOn, planConfigureView, planDefineFields, queryCardRows, type CardQuery } from './kanbans';
+import { kanbanIn, kanbanSummary, linkedViewSummary, peopleOn, planAddView, planConfigureView, planDefineFields, queryCardRows, type CardQuery } from './kanbans';
 import { pausedError, pauseOf } from './pause';
 
 /** One call of a credential: who, through what, and what its audit event will say. */
@@ -494,9 +496,50 @@ async function changeKanban(call: ApiCall, boardId: string, kanbanId: string, pl
 export const defineFields = (call: ApiCall, boardId: string, kanbanId: string, body: unknown) =>
   changeKanban(call, boardId, kanbanId, (view) => planDefineFields(view, kanbanId, body, newElementId));
 
-/** configure_view: a kanban's saved board view or table tab, for everyone (kanbans.ts planConfigureView). */
-export const configureView = (call: ApiCall, boardId: string, kanbanId: string, body: unknown) =>
-  changeKanban(call, boardId, kanbanId, (view, role) => planConfigureView(view, kanbanId, body, { id: call.userId, role }, newElementId));
+/**
+ * configure_view: a kanban's saved board view or one of its tabs, for everyone — or, `kanbanId`
+ * naming a linked view (step 3c), that view's settings (kanbans.ts planConfigureView). Answers with
+ * the kanban, or with the linked view.
+ */
+export async function configureView(call: ApiCall, boardId: string, kanbanId: string, body: unknown) {
+  const board = await openBoard(call, boardId);
+  const lv = (await readBoardView(board.id, { userId: call.userId, role: board.role })).elements.find((e) => e.el.id === kanbanId && e.el.type === 'kanbanview')?.el as KanbanViewElement | undefined;
+  if (!lv) return changeKanban(call, boardId, kanbanId, (view, role) => planConfigureView(view, kanbanId, body, { id: call.userId, role }, newElementId));
+  const { id, role } = board;
+  await requireBoardAccess(id, call.userId, 'editor');
+  await agentWrite(call, { id, role });
+  await change(() => changeBoard(id, actorOf(call, role), (view) => ({ change: planConfigureView(view, kanbanId, body, { id: call.userId, role }, newElementId) })));
+  return withNotice({ linkedView: await linkedViewNow(call, board, kanbanId) });
+}
+
+/** add_view (step 3c): a linked view of kanban `kanbanId` beside it, for everyone; answers with the new view. */
+export async function addView(call: ApiCall, boardId: string, kanbanId: string, body: unknown) {
+  const board = await openBoard(call, boardId);
+  const { id, role } = board;
+  await requireBoardAccess(id, call.userId, 'editor');
+  await agentWrite(call, { id, role });
+  let made = '';
+  await change(() =>
+    changeBoard(id, actorOf(call, role), (view) => {
+      const plan = planAddView(view, kanbanId, body, { id: call.userId, role }, newElementId);
+      made = plan.id;
+      return { change: plan.change };
+    }),
+  );
+  const linkedView = await linkedViewNow(call, board, made);
+  call.audit.metadata = { itemId: made, kanbanId };
+  return withNotice({ linkedView: { ...linkedView, link: `${boardUrl(call.req, id)}?item=${encodeURIComponent(made)}` } });
+}
+
+/** Linked view `lvId` as it is now on the board, as the caller sees it (with its kanban, when they see that). */
+async function linkedViewNow(call: ApiCall, board: BoardSummary, lvId: string) {
+  const view = await readBoardView(board.id, { userId: call.userId, role: board.role });
+  const lv = view.elements.find((e) => e.el.id === lvId && e.el.type === 'kanbanview')?.el as KanbanViewElement | undefined;
+  if (!lv) throw notFound('No such linked view on this board');
+  const k = (view.elements.find((e) => e.el.id === lv.sourceId && e.el.type === 'kanban')?.el as KanbanElement | undefined) ?? null;
+  present(call, board.id, [lv.id], view);
+  return linkedViewSummary(lv, k, k ? await kanbanNames(board, view, k.id) : () => undefined);
+}
 
 /** query_cards: a kanban's cards as rows, filtered and sorted by the board's own rules. A read: the downloads policy applies. */
 export async function queryCards(call: ApiCall, boardId: string, kanbanId: string, q: CardQuery) {

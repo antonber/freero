@@ -217,6 +217,35 @@ it('an agent adds a calendar on a date field of the kanban and a timeline in swi
   expect(await refused('configure_view', { boardId, kanbanId, view: 'Launches', scale: 'week' })).toContain('isn’t a setting of a calendar tab');
 });
 
+it('add_view puts a calendar linked view of the kanban beside it, clear of everything, without moving a card; the outline lists it with its kanban and what places its cards; configure_view on it switches it to a timeline keeping its filter; once the kanban is deleted the outline says it is gone', async () => {
+  const { boardId, kanbanId, ids } = await sprint(['A', 'B']);
+  await call('define_fields', { boardId, kanbanId, fields: [{ name: 'Launch', type: 'date' }] });
+  await call('update_items', { boardId, items: [{ id: ids[0], fields: { Launch: '2026-12-09', Priority: 'P0' } }] });
+  await call('add_stickies', { boardId, stickies: ['Right of the kanban'], near: kanbanId });
+  const before = [...(await elements(boardId)).values()];
+  const cards = before.filter((el) => el.type === 'card').map((el) => [el.id, el.x, el.y]);
+
+  const made = (await call('add_view', { boardId, kanbanId, layout: 'calendar', name: 'Launches', date: 'Launch', filter: { rules: [{ field: 'Priority', op: 'is', value: 'P0' }] } })).untrusted_board_content as Record<string, unknown>;
+  expect(made).toMatchObject({ kind: 'linked view', sourceId: kanbanId, name: 'Launches', layout: 'calendar', date: 'Launch', shows: 'calendar by Launch' });
+  const els = await elements(boardId);
+  const lv = els.get(made.id as string)!;
+  const k = els.get(kanbanId)!;
+  expect(lv).toMatchObject({ type: 'kanbanview', sourceId: kanbanId });
+  expect(lv.x).toBeGreaterThan(k.x + k.w);
+  const overlaps = (a: BoardElement, b: BoardElement) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  expect(before.filter((el) => overlaps(el, lv))).toEqual([]);
+  expect([...els.values()].filter((el) => el.type === 'card').map((el) => [el.id, el.x, el.y])).toEqual(cards);
+  const outline = () => client.callTool({ name: 'get_board_outline', arguments: { boardId } }).then(textOf);
+  expect(await outline()).toContain(`[${lv.id}] linked view: Launches · source: [${kanbanId}] Sprint · layout: calendar by Launch · filter: Priority is P0`);
+
+  const tl = (await call('configure_view', { boardId, kanbanId: lv.id, layout: 'timeline', subGroupBy: 'Team' })).untrusted_board_content as Record<string, unknown>;
+  expect(tl).toMatchObject({ layout: 'timeline', name: 'Launches', subGroupBy: 'Team', filterText: 'Priority is P0' });
+  expect(await refused('configure_view', { boardId, kanbanId: lv.id, date: 'Launch' })).toContain('isn’t a setting of a timeline linked view');
+
+  await call('delete_items', { boardId, itemIds: [kanbanId], confirm: true });
+  expect(await outline()).toContain(`[${lv.id}] linked view: Launches · source: [${kanbanId}] (not on the board: deleted, or not visible to you)`);
+});
+
 it('define_fields deleting the Doing column hands its cards to To do with To do’s status; the column field itself and the field the board is grouped by can’t be deleted', async () => {
   const { boardId, kanbanId, ids } = await sprint(['Fix login']);
   const [card] = ids;

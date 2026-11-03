@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COLUMN_FIELD_ID, cardValue, collectionSchema, storedFields, type CardElement, type KanbanElement } from '@freero/shared';
 import { createTestBoard, richTextToPlain, type Editor, type FeatureBundle, type NewElement, type TestBoard } from '@engine';
 import manifest from './feature';
-import kanbanDef from './element';
+import elementDefs from './element';
 import commands from './commands';
 import outline from './outline';
 import { moveColumnTo, newKanban, removeColumn, setCollapsed, setColumnWidth } from './lib/actions';
@@ -10,7 +10,7 @@ import { COL_HEAD_H, GAP, HEADER_H, PAD, colLeft, planDrop } from './lib/layout'
 import { addField, addOption, removeField, removeOption, renameField } from './lib/schema';
 import { presentCard, saveViewForEveryone, setMyCardDisplay } from './lib/view';
 
-const bundle: FeatureBundle = { manifest, elements: [kanbanDef], tools: [], formats: [], panels: [], commands, outline };
+const bundle: FeatureBundle = { manifest, elements: elementDefs, tools: [], formats: [], panels: [], commands, outline };
 
 let board: TestBoard | null = null;
 afterEach(() => {

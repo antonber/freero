@@ -26,6 +26,16 @@ export function useKanbanCards(editor: Editor, id: string | null): { k: KanbanEl
   return useSyncExternalStore(subscribe, get, get);
 }
 
+/** Kanban `id` as it is now (null: not on the board for me, or not a kanban); re-renders only when that element changes. */
+export function useKanban(editor: Editor, id: string | null): KanbanElement | null {
+  const subscribe = useCallback((cb: () => void) => editor.on('elements', cb), [editor]);
+  const get = useCallback(() => {
+    const el = id ? editor.getElement<KanbanElement>(id) : undefined;
+    return el && el.type === 'kanban' ? el : null;
+  }, [editor, id]);
+  return useSyncExternalStore(subscribe, get, get);
+}
+
 /** This person's own settings `key` of item `itemId` (Editor.getPersonalView); re-renders when they change. */
 export function useMine(editor: Editor, itemId: string | null, key: string): Record<string, unknown> | null {
   const subscribe = useCallback((cb: () => void) => editor.on('personal-views', cb), [editor]);

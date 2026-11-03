@@ -9,41 +9,24 @@
 import {
   NO_GROUP,
   boardView,
-  calendarDateField,
   collectionSchema,
-  dateFields,
   defineOutline,
   describeFilter,
   describeSort,
   kanbanColumnAt,
-  listGroupField,
+  linkedSource,
+  linkedView,
   projectionView,
+  projectionWords,
   savedTabId,
-  timelineFields,
   viewTabs,
-  type FieldDef,
   type KanbanElement,
 } from '@freero/shared';
 
 /** "table", "list by Stage", "calendar by Due date", "timeline from Start date to Due date in lanes by Team". */
-function tabWords(k: KanbanElement, id: string, schema: readonly FieldDef[]): string {
+function tabWords(k: KanbanElement, id: string, schema: ReturnType<typeof collectionSchema>): string {
   const v = projectionView(k, id);
-  if (!v) return 'view';
-  const date = (ref: string) => dateFields(schema).find((f) => f.id === ref)?.name ?? ref;
-  switch (v.layout) {
-    case 'table':
-      return 'table';
-    case 'list': {
-      const g = listGroupField(k, v, schema);
-      return g ? `list by ${g.name}` : 'list';
-    }
-    case 'calendar':
-      return `calendar by ${date(calendarDateField(v, schema))}`;
-    case 'timeline': {
-      const t = timelineFields(v, schema);
-      return `timeline from ${date(t.start)} to ${date(t.end)}${t.lanes ? ` in lanes by ${t.lanes.name}` : ''}`;
-    }
-  }
+  return v ? projectionWords(k, v, schema) : 'view';
 }
 
 export default defineOutline({
@@ -84,6 +67,27 @@ export default defineOutline({
           fields: { status: c.status, wip: c.wip || null, collapsed: c.collapsed ? true : null, shows: c.limit || null },
         })),
         sectionOf: (child) => k.columns[kanbanColumnAt(k, child.x + child.w / 2)]?.id ?? null,
+      };
+    },
+    // A linked view (step 3c): its name, the kanban it shows, and what it shows of it in words (its
+    // layout, what places the cards, its saved filter and sort). Its cards are the kanban's: they
+    // are listed there, once. A kanban this reader doesn't have (deleted, or in a hidden frame or
+    // someone's draft) is named by id only, never by anything it says.
+    kanbanview: (lv, ctx) => {
+      const v = linkedView(lv);
+      const k = linkedSource(lv, (id) => ctx.element(id));
+      const schema = k ? collectionSchema(k) : [];
+      return {
+        kind: 'linked view',
+        title: v.name,
+        standalone: true,
+        fields: {
+          source: k ? `[${k.id}] ${ctx.plain(k.title) || 'Kanban'}` : `[${lv.sourceId}] (not on the board: deleted, or not visible to you)`,
+          layout: projectionWords(k, v, schema),
+          filter: (k && describeFilter(v.filter, schema, ctx.personName)) || null,
+          sort: (k && describeSort(v.sort, schema)) || null,
+          'view locked': v.locked ? true : null,
+        },
       };
     },
   },

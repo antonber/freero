@@ -7,7 +7,7 @@
 // around the box center.
 
 import type { FieldDef, FieldValues } from './fields';
-import type { SavedView } from './tabs';
+import type { ProjectionView, SavedView } from './tabs';
 
 export type ElementType =
   | 'sticky'
@@ -33,7 +33,8 @@ export type ElementType =
   | 'code'
   | 'timeline'
   | 'timelinebar'
-  | 'doc';
+  | 'doc'
+  | 'kanbanview';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -630,6 +631,24 @@ export interface KanbanElement extends BaseElement {
   lanes?: KanbanLane[] | null;
 }
 
+/**
+ * [additive] A linked view (docs/design/kanban-fields-and-views.md, step 3c): a live projection of a
+ * kanban elsewhere on the same board — its cards as a table, a list, a calendar or a timeline,
+ * drawn from the live elements, never a copy. It stores only the kanban's element id and its own
+ * view settings (ids of fields and options, never their labels), so it holds nothing of the
+ * kanban's content: someone who can't see the kanban (a hidden frame, another person's draft) sees
+ * an empty "not visible" view. Edits made in it write the real cards (card.setValues). Read it
+ * through `@freero/shared` `linkedViews.ts` (`linkedView`), never directly. Written only by the
+ * kanban feature (and the server's add_view / configure_view).
+ */
+export interface KanbanViewElement extends BaseElement {
+  type: 'kanbanview';
+  /** The kanban it shows (an element id on this board). */
+  sourceId: string;
+  /** Its saved view (the shape of a kanban's projection tab); each person's own changes are a personal override. */
+  view: ProjectionView;
+}
+
 export interface KanbanLane {
   id: string;
   h: number;
@@ -921,7 +940,8 @@ export type BoardElement =
   | CodeElement
   | TimelineElement
   | TimelineBarElement
-  | DocElement;
+  | DocElement
+  | KanbanViewElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

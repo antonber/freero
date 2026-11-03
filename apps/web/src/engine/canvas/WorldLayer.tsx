@@ -95,7 +95,7 @@ export function WorldElements() {
   );
 }
 
-const ElementView = memo(function ElementView({ id }: { id: string }) {
+export const ElementView = memo(function ElementView({ id }: { id: string }) {
   const core = useCore();
   const el = useElement(id);
   const selected = useStore(core.ui, (s) => s.selection.includes(id));
