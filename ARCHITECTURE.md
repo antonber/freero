@@ -671,9 +671,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - `lowDetail(el, paint: LowDetailPaint)` (#131): how the live canvas paints the type zoomed out to
   low detail ("Rendering"), in the item's own units: `box({ fill, stroke, strokeWidth, radius,
   round, alpha })`, `rect`, `polygon` (fractions of the box), `line`, `picture(src, fallback)`;
-  `paint.selected` / `selectionColor` for what has no box of its own. Colours may be
-  `canvasInk(…)` values (resolved for the theme, like the full drawing's CSS). Sticky, shape, text,
-  connector and image have one; types without it always draw `Component`. Tests:
+  `paint.selected` / `selectionColor` for what has no box of its own, `paint.presentation` (the
+  container's `presentChild`, as the component gets it: a kanban's colour-by). Colours may be
+  `canvasInk(…)` values (resolved for the theme, like the full drawing's CSS). Sticky, sticky pad,
+  shape, text, connector, image, card (the side that shows) and chart have one; types without it
+  (frames, kanbans, diagrams, icebreakers…) always draw `Component`. Tests:
   `TestBoard.world(user)` renders a replica's world layer (culling and low detail as on screen),
   `TestBoard.exported(user, id)` an item as exports draw it.
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the

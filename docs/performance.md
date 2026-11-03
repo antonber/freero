@@ -60,24 +60,24 @@ One Windows desktop: AMD Ryzen 9 7950X (16 cores), 128 GB, Windows 11, Node 22, 
 headless (software rendering), 1440 × 900, light theme. **Before** is main at 3142c15f; **after**
 is this change (#130, #131). Frames: median / p95 / worst, ms.
 
-| Scenario | before (3142c15f) | after |
+| Scenario | before (3142c15f) | after (this change, on main 28b043da) |
 |---|---|---|
-| initial load | 3.6 s; 53,477 DOM nodes | 2.8 s; 2,304 DOM nodes (9,572 items on low-detail canvases) |
-| memory after load | 147 MB JS heap, 59,936 DOM nodes | 24 MB, 2,757 DOM nodes |
-| pan at zoom to fit | **3,710 / 4,044 / 4,275** (stopped after a minute: 26 frames) | **6.3 / 17 / 18** |
-| zoom in from fit to 100% | 3,375 / 3,810 / 3,857 (stopped at zoom 0.065 after a minute) | 12 / 38 / 48 |
-| pan at 100% | 922 / 949 / 970 (at 0.065, where the zoom stopped: 4,350 items mounted) | 5.7 / 9.5 / 18 (52 items) |
-| zoom out from 100% to fit | 609 / 1,890 / 2,818 | 7.8 / 25 / 64 |
-| select all | 1,455 ms | 83 ms |
-| pan at fit, everything selected | 3,887 / 4,039 / 4,102 (stopped after a minute) | 9.7 / 18 / 18 |
-| drag 500 items | 19 / 242 / 265; the drop settles in 246 ms | 17 / 35 / 52; 35 ms |
-| a collaborator's edit appears | 21 ms (worst 96) | 8.8 ms (worst 17) |
-| a collaborator drags 50 items | 149 / 201 / 201 | 17 / 18 / 51 |
-| memory at the end | 238 MB, 59,961 DOM nodes | 39 MB, 2,782 DOM nodes |
+| initial load | 3.6 s; 53,477 DOM nodes | 3.7 s; 307 DOM nodes (9,972 items on low-detail canvases) |
+| memory after load | 147 MB JS heap, 59,936 DOM nodes | 22 MB, 360 DOM nodes |
+| pan at zoom to fit | **3,710 / 4,044 / 4,275** (stopped after a minute: 26 frames) | **7.6 / 17 / 18** |
+| zoom in from fit to 100% | 3,375 / 3,810 / 3,857 (stopped at zoom 0.065 after a minute) | 15 / 40 / 52 |
+| pan at 100% | 922 / 949 / 970 (at 0.065, where the zoom stopped: 4,350 items mounted) | 6.0 / 14 / 33 (52 items) |
+| zoom out from 100% to fit | 609 / 1,890 / 2,818 | 9.5 / 33 / 90 |
+| select all | 1,455 ms | 122 ms |
+| pan at fit, everything selected | 3,887 / 4,039 / 4,102 (stopped after a minute) | 15 / 19 / 22 |
+| drag 500 items | 19 / 242 / 265; the drop settles in 246 ms | 17 / 70 / 71; 45 ms |
+| a collaborator's edit appears | 21 ms (worst 96) | 15 ms (worst 21) |
+| a collaborator drags 50 items | 149 / 201 / 201 | 14 / 18 / 19 |
+| memory at the end | 238 MB, 59,961 DOM nodes | 36 MB, 385 DOM nodes |
 
 **Target (#131) and result:** at zoom to fit a 10,000-item board pans and zooms inside a 60 Hz
 frame — median under 16.7 ms, p95 under 33 ms. Before: about 4 s a frame (and every frame long
-enough that the camera's "moving" state dropped between frames). After: 6.3 ms median, 17 ms p95.
+enough that the camera's "moving" state dropped between frames). After: 7.6 ms median, 17 ms p95.
 The same numbers on the before build are reproducible: build main with
 `vite build --minify false --outDir <dir>` and run `npm run bench:board -- --dist <dir> --label before`.
 
@@ -96,13 +96,14 @@ thousands of interleaved, overlapping items is the problem itself.
 
 **What changed** (#131, `engine/canvas/LowDetailLayer.tsx`, `detail.ts`): below zoom 0.18 (back
 above 0.22, so it never flickers) the items whose type knows how to paint itself cheaply —
-stickies, shapes, text, connectors, images — are painted onto canvases in the world instead of
+stickies and sticky pads, shapes, text, connectors, images, cards (the side that shows, with the
+kanban's colour-by) and charts (their plot area) — are painted onto canvases in the world instead of
 being DOM. Consecutive such items share a canvas and items drawn in full sit between canvases, so
 render order holds; a canvas moves with the camera (a pan repaints nothing) and repaints only the
 part a change touched. Items big on screen, edited, making room for a drag or private keep their
 DOM. Exports, thumbnails, hit-testing, selection and the screen-reader paths read the doc and never
-see the canvas. At fit the page went from 53,000 DOM nodes to 2,300 and from 147 MB of JS heap to
-20 MB.
+see the canvas. At fit the page went from 53,000 DOM nodes to about 300 and from 147 MB of JS heap to
+22 MB.
 
 **Then the per-item React work** (visible once the browser stopped dominating):
 - Every item subscribed to the ui store with six selectors, one of them `selection.includes(id)`:
@@ -132,8 +133,7 @@ Found by the benchmark and not fixed here (to file as their own issues):
 - **Leaving low detail mounts every item in view at once** (≈1,500 at zoom 0.22 on this board):
   now rendered as a transition (in slices), the worst zoom-in frame is 48 ms; a canvas that fades
   to DOM item by item, or a higher threshold for dense boards, would smooth it further.
-- **Kanbans, cards, frames and diagrams stay DOM when zoomed out** (cards draw their own simpler
-  far-away look, with a shadow and a clip each). 400 cards cost little here; a board of many
-  kanbans would want a `lowDetail` for cards (with the kanban's colour-by accent).
+- **Kanbans, frames, diagrams and icebreakers stay DOM when zoomed out** (their titles still read,
+  and a board has few of them); their cards, members and contents paint in low detail.
 - The headless numbers are software-rendered; a GPU raster changes the paint side of every row,
   not the layering and React work this change removed.
