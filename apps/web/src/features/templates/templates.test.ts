@@ -48,6 +48,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   doc: ['uri'],
   kanbanview: ['sourceId', 'view'],
   diagram: ['title', 'layout'],
+  chart: ['kind', 'title', 'rows', 'series'],
 };
 
 let seq = 0;

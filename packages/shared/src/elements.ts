@@ -35,7 +35,8 @@ export type ElementType =
   | 'timelinebar'
   | 'doc'
   | 'kanbanview'
-  | 'diagram';
+  | 'diagram'
+  | 'chart';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -1068,6 +1069,29 @@ export interface DiagramLayer {
   locked?: true | null;
 }
 
+/** [additive, #137] How a chart draws its data. */
+export type ChartKind = 'bar' | 'stackedBar' | 'line' | 'area' | 'pie';
+
+/**
+ * [additive, #137] A chart drawn from a small data grid. Like a table, the element holds only the
+ * grid's STRUCTURE (row and series ids, in order) and how it is drawn; the cells — category labels,
+ * series names, values — live in the `chartCells` collection, one key per cell (charts.ts
+ * `chartCellKey`), so two people editing different cells never overwrite each other. A pie draws the
+ * first series. Older clients draw an "unsupported" box.
+ */
+export interface ChartElement extends BaseElement {
+  type: 'chart';
+  kind: ChartKind;
+  /** Plain text above the plot ('' = none). */
+  title: string;
+  /** Categories (x axis / pie slices), in order. Their labels are cells in column `CHART_LABEL`. */
+  rows: Array<{ id: string }>;
+  /** Series (bars / lines of one colour), in order. Their names are cells in row `CHART_HEAD`. */
+  series: Array<{ id: string; color?: string }>;
+  /** Show the legend (default true when there are two or more series, or for a pie). */
+  legend?: boolean;
+}
+
 /**
  * A diagram (#117; docs/design/diagrams.md): a container whose members — the items whose `frameId`
  * is the diagram, its shapes, frames (subgraphs) and the connectors between them — it keeps laid out
@@ -1113,7 +1137,8 @@ export type BoardElement =
   | TimelineBarElement
   | DocElement
   | KanbanViewElement
-  | DiagramElement;
+  | DiagramElement
+  | ChartElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

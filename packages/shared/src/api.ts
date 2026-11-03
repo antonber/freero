@@ -3,6 +3,7 @@
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
 import type { BoardElement, TableCopyContent } from './elements';
+import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
 import type { BoardOutline } from './outline/types';
@@ -1736,7 +1737,7 @@ export interface InsertStructureResponse {
   /** Where the result landed. */
   bounds: Rect;
   /** 'preview' only: an ElementsSnapshot (elements + content by element id) and the moves. */
-  snapshot?: { elements: BoardElement[]; content: Record<string, TableCopyContent> };
+  snapshot?: { elements: BoardElement[]; content: Record<string, TableCopyContent | ChartCopyContent> };
   moves?: Array<{ id: string; x: number; y: number }>;
 }
 // ---- AI (KAI-101 foundation, KAI-102 board actions; docs/ai.md) ----

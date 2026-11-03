@@ -32,6 +32,8 @@ import {
   SUGGESTIONS_COLLECTION,
   suggestionState,
   tableCellEntries,
+  chartCellEntries,
+  CHART_CELLS,
   withoutDanglingRefs,
   type BoardElement,
   type ElementDraft,
@@ -40,6 +42,7 @@ import {
   type SuggestionRecord,
   type SuggestionState,
   type TableCopyContent,
+  type ChartCopyContent,
 } from '@freero/shared';
 import { changedKeys } from './facilitation';
 import { BoardChangeError, type BoardChange, type BoardView } from './view';
@@ -72,7 +75,7 @@ export function reviewSuggestions(records: readonly SuggestionRecord[], view: Bo
  * The records a proposal becomes: one per new item, per changed item and per deleted item, all
  * in one new group. `change` is planned against `view` (the proposer's editor view) exactly like
  * a direct write would be — the same planners — so accepting it later does what writing it now
- * would have done. `content`: what new tables hold (by element id).
+ * would have done. `content`: what new tables and charts hold (by element id).
  */
 export function proposeRecords(
   view: BoardView,
@@ -83,7 +86,7 @@ export function proposeRecords(
   const description = opts.description.trim();
   if (description.length > MAX_SUGGESTION_DESCRIPTION) throw new BoardChangeError(`description is longer than ${MAX_SUGGESTION_DESCRIPTION} characters`);
   for (const name of Object.keys(change.collections ?? {}))
-    if (name !== 'tableCells') throw new BoardChangeError(`A suggestion can't change '${name}'`);
+    if (name !== 'tableCells' && name !== CHART_CELLS) throw new BoardChangeError(`A suggestion can't change '${name}'`);
   const byId = new Map(view.elements.map((e) => [e.el.id, e.el]));
   const groupId = opts.newId();
   const base = { groupId, author: opts.author, description, createdAt: now };
@@ -171,6 +174,7 @@ export function planDecision(
   const exists = (id: string) => onBoard.has(id) || accepted.has(id);
   const change: Required<Pick<BoardChange, 'create' | 'update' | 'remove'>> & { collections?: BoardChange['collections'] } = { create: [], update: [], remove: [] };
   const cells: Record<string, string> = {};
+  const chartCells: Record<string, string> = {};
   const removing = new Set(records.flatMap((r) => (r.op === 'delete' && r.targetId && onBoard.has(r.targetId) ? [r.targetId] : [])));
   for (const r of records) {
     if (r.op === 'create' && r.element) {
@@ -180,12 +184,14 @@ export function planDecision(
       draft.suggestedBy = { kind: r.author.kind, name: r.author.name, userId: r.author.userId };
       change.create.push(draft as ElementDraft);
       if (el.type === 'table' && isObj(r.content)) Object.assign(cells, tableCellEntries(r.element.id, r.content as TableCopyContent));
+      if (el.type === 'chart' && isObj(r.content)) Object.assign(chartCells, chartCellEntries(r.element.id, r.content as ChartCopyContent));
     } else if (r.op === 'update' && r.targetId && onBoard.has(r.targetId) && !removing.has(r.targetId)) {
       change.update.push({ id: r.targetId, patch: { ...r.patch } });
     }
   }
   change.remove = [...removing];
-  if (Object.keys(cells).length) change.collections = { tableCells: cells };
+  const collections = { ...(Object.keys(cells).length ? { tableCells: cells } : {}), ...(Object.keys(chartCells).length ? { [CHART_CELLS]: chartCells } : {}) };
+  if (Object.keys(collections).length) change.collections = collections;
   return { change, records, decision };
 }
 
