@@ -2,6 +2,7 @@
 // a workspace grants on its boards (asked by modules/boards for every access decision).
 import type { Request } from 'express';
 import {
+  WORKSPACE_CREATION_BLOCKED,
   WORKSPACE_SETTING_LIMITS,
   type LinkAccess,
   type Role,
@@ -19,6 +20,7 @@ import { newId } from '../../platform/ids';
 import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
 import { recordAudit } from '../audit/index';
 import { getUser, getUsers, hasTwoFactor } from '../auth/index';
+import { creationRefusal } from './creation';
 import { deletionHoldOn } from './holds';
 import {
   boardIdsInWorkspace,
@@ -129,6 +131,9 @@ const teamOnly = (w: Workspace) => {
 };
 
 export async function createTeamWorkspace(userId: string, name: string): Promise<WorkspaceSummary> {
+  // An organization that manages this person's address may keep them to its own workspace (#64).
+  const refusal = await creationRefusal(userId, name);
+  if (refusal) throw new HttpError(403, refusal, WORKSPACE_CREATION_BLOCKED);
   const id = newId(12);
   await repo.transaction(async () => {
     const max = getConfig().maxWorkspacesPerUser;

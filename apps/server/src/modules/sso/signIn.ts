@@ -1,4 +1,5 @@
-// The SSO browser flows (service-provider initiated only):
+// The SSO browser flows (service-provider initiated, and SAML started at the identity provider
+// where the workspace allows it):
 //
 //   GET  /api/sso/:ws/start          -> remembers the request (sso_flows, bound to this browser by an
 //                                       HttpOnly cookie) and redirects to the identity provider
@@ -8,6 +9,13 @@
 //   SAML GET  /api/sso/:ws/saml/finish -> same-site, carries the cookie: only the browser that
 //                                       started the flow can finish it (no login CSRF / fixation)
 //   OIDC GET  /api/sso/:ws/oidc/callback -> cookie + state, then auth's OIDC client redeems the code
+//   SAML IdP-initiated (#107): the IdP's app tile posts an UNSOLICITED response (no InResponseTo) to
+//                                       the ACS. Only with the connection's `idpInitiated` on (else
+//                                       /login?error=sso_unsolicited); its Destination must be this ACS;
+//                                       the assertion ID is remembered until its NotOnOrAfter (one
+//                                       use); the claims are parked on a new flow bound to the browser
+//                                       that posted (cookie set on that answer) and finished by the same
+//                                       …/saml/finish; RelayState counts only as a same-origin path.
 //
 // Both end in completeDirectorySignIn: the address must be at a domain the workspace verified, the
 // account is resolved (auth.resolveDirectoryLogin), a deprovisioned person is refused, a newcomer
@@ -36,17 +44,19 @@ import { applyDirectoryMembership, isDeactivatedMember } from '../workspaces/ind
 import { CLIENT_SECRET_PURPOSE, serviceProviderUrls, ssoMethod } from './connections';
 import { domainOf, isOrganizationEmail } from './domains';
 import * as repo from './repo';
-import { claimsFromProfile, SAML_REQUEST_TTL_MS, samlFor, splitCertificates } from './saml';
+import { claimsFromProfile, responseDestination, SAML_REQUEST_TTL_MS, sameAcs, samlFor, splitCertificates } from './saml';
 
 const COOKIE = 'freero_sso';
 const COOKIE_PATH = '/api/sso';
+/** An IdP-initiated sign-in's parked claims wait this long for the redirect that finishes it. */
+const UNSOLICITED_TTL_MS = 2 * 60_000;
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 const fail = (res: Response, code: OidcErrorCode) => res.redirect(303, `/login?error=${code}`);
 
-function bindBrowser(req: Request, res: Response): string {
+function bindBrowser(req: Request, res: Response, maxAge = SAML_REQUEST_TTL_MS): string {
   const token = randomBytes(32).toString('base64url');
-  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: COOKIE_PATH, maxAge: SAML_REQUEST_TTL_MS, secure: getConfig().production && req.secure });
+  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: COOKIE_PATH, maxAge, secure: getConfig().production && req.secure });
   return sha256(token);
 }
 
@@ -138,6 +148,22 @@ interface DirectoryClaims {
   email: string;
   name: string | null;
   sessionNotOnOrAfter: number | null;
+  /** SAML started at the identity provider (its app tile), for the audit log. */
+  idpInitiated?: boolean;
+}
+
+/**
+ * Where an IdP-initiated sign-in lands: its RelayState only when that is a plain same-origin path
+ * (no scheme, host, protocol-relative `//`, backslash, whitespace or control character), else the
+ * workspace's dashboard — never an open redirect.
+ */
+export function unsolicitedReturnPath(relay: string, workspaceId: string): string {
+  const dashboard = `/app?ws=${encodeURIComponent(workspaceId)}`;
+  // eslint-disable-next-line no-control-regex
+  if (relay.length > 2000 || !/^\/(?![/\\])[^\s\\\u0000-\u001f\u007f]*$/.test(relay)) return dashboard;
+  // Back into the API (another sign-in, a logout) is not a destination.
+  if (/^\/api(\/|$)/i.test(relay)) return dashboard;
+  return safeReturnPath(relay, dashboard);
 }
 
 /** POST /api/sso/:workspaceId/saml/acs — the identity provider's page posts here (cross-site). */
@@ -166,6 +192,28 @@ export async function samlAcs(req: Request, res: Response): Promise<void> {
     name: claims.name,
     sessionNotOnOrAfter: claims.sessionNotOnOrAfter,
   };
+  if (claims.inResponseTo === null) {
+    // Unsolicited: the identity provider started this sign-in (its app tile). The library has
+    // checked signature, audience, Recipient, timestamps and recorded the assertion ID (replay).
+    if (!c.idpInitiated) {
+      await refused(workspaceId, 'an IdP-initiated sign-in (unsolicited SAML response), which this workspace does not allow', { email: claims.email });
+      return void fail(res, 'sso_unsolicited');
+    }
+    const destination = responseDestination(response);
+    if (!destination || !sameAcs(destination, s.acsUrl)) {
+      await refused(workspaceId, `an IdP-initiated SAML response addressed to ${destination ?? 'no Destination'}, not this ACS`, { email: claims.email });
+      return void fail(res, 'sso_failed');
+    }
+    const flowId = newId(24);
+    const now = Date.now();
+    await repo.insertAnsweredSamlFlow(
+      { id: flowId, workspaceId, browserHash: bindBrowser(req, res, UNSOLICITED_TTL_MS), returnTo: unsolicitedReturnPath(relay, workspaceId) },
+      { ...parked, idpInitiated: true } satisfies DirectoryClaims,
+      now,
+      now + UNSOLICITED_TTL_MS,
+    );
+    return void res.redirect(303, `/api/sso/${encodeURIComponent(workspaceId)}/saml/finish?flow=${encodeURIComponent(flowId)}`);
+  }
   // The RelayState names the flow; it must be the one that sent the request this answers.
   if (!relay || !(await repo.recordSamlResult(workspaceId, relay, claims.inResponseTo, parked, Date.now()))) {
     await refused(workspaceId, 'a SAML response for no pending sign-in of this flow (RelayState)', { email: claims.email });
@@ -265,7 +313,13 @@ async function completeDirectorySignIn(req: Request, res: Response, c: repo.Conn
     workspaceId,
     actorId: r.userId,
     target,
-    metadata: { protocol: c.protocol, enforced: c.enforced, newAccount: r.created, secondStepPending: 'twoFactorRequired' in done },
+    metadata: {
+      protocol: c.protocol,
+      enforced: c.enforced,
+      newAccount: r.created,
+      secondStepPending: 'twoFactorRequired' in done,
+      initiatedBy: claims.idpInitiated ? 'identity_provider' : 'freero',
+    },
   });
   if ('twoFactorRequired' in done) return void res.redirect(303, `/login/two-factor?next=${encodeURIComponent(returnTo)}`);
   res.redirect(303, returnTo);

@@ -97,6 +97,10 @@ export async function insertAccount(
     if (e instanceof repo.EmailTakenError) throw emailTaken();
     throw e;
   }
+  // Born verified (a provider or the organization's directory vouched for the address): that proves
+  // the address like a verification link would — pending invites convert, a verified domain's
+  // workspace may take the account in (sso domain control, #64).
+  if (user.emailVerified) await emailVerified(user.id, user.email);
   return toAccount(user);
 }
 

@@ -466,11 +466,13 @@ export type OidcErrorCode =
   | 'wrong_account' // reauth: a different provider account than the one connected
   | 'suspended' // login: Freero's moderators suspended that account
   | 'sso_required' // the address's organization signs its people in only through its own SSO
+  | 'signup_closed' // an invite-only server (SIGNUPS=invite-only) and nothing here expects this address
   // Workspace single sign-on (/api/sso/…):
   | 'sso_unavailable' // the workspace has no enabled SSO connection, or its provider can't be reached
   | 'sso_failed' // the identity provider's answer was refused (signature, audience, expiry, replay, …) or expired
   | 'sso_domain' // the identity provider vouched for an address outside the workspace's verified domains
-  | 'sso_removed'; // the workspace's directory deprovisioned this person (SCIM)
+  | 'sso_removed' // the workspace's directory deprovisioned this person (SCIM)
+  | 'sso_unsolicited'; // the identity provider started the sign-in (its app tile) and the workspace doesn't allow that
 
 /**
  * 403 `code` when a way of signing in (password, reset link, a personal provider, signup) is
@@ -533,7 +535,10 @@ export const ACCOUNT_SUSPENDED = 'account_suspended';
 // POST /api/sso/:workspaceId/saml/acs     <- the identity provider posts SAMLResponse + RelayState;
 //                                          303 to …/saml/finish, which signs in (bound to this browser)
 // GET  /api/sso/:workspaceId/oidc/callback -> 302 to `next`, /login/two-factor?next=…, or /login?error=sso_failed
-// IdP-initiated SAML (an unsolicited response) is refused: tiles in the IdP's portal link to /start.
+// IdP-initiated SAML (an unsolicited response, no InResponseTo: the IdP's app tile) is accepted at the
+// same ACS only while the connection's `idpInitiated` is on (off by default; refused with
+// /login?error=sso_unsolicited otherwise); its RelayState is honoured only as a same-origin path.
+// With it off, a tile can link to /start instead (SP-initiated).
 export interface SsoDomain {
   id: string;
   domain: string;
@@ -555,11 +560,15 @@ export interface SsoConnectionInfo {
   oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
   /** When a sign-in last went through it (enforcing needs one). */
   testedAt: number | null;
+  /** SAML: sign-ins started at the identity provider (its app tile) are accepted. Off by default. */
+  idpInitiated: boolean;
 }
 export interface SsoConnectionInput {
   protocol: SsoProtocol;
   enabled: boolean;
   defaultRole?: Exclude<WorkspaceRole, 'owner'>;
+  /** SAML: accept sign-ins started at the identity provider. Omitted: unchanged. */
+  idpInitiated?: boolean;
   /** SAML: the IdP's metadata XML, or its parts. */
   samlMetadataXml?: string;
   samlEntityId?: string;
@@ -579,6 +588,37 @@ export interface SsoSettings {
 export interface SsoDiscovery {
   sso: { workspaceName: string; startUrl: string; enforced: boolean } | null;
 }
+
+// ---- Domain control (#64; team workspaces with a VERIFIED domain; owners/admins; no SSO needed) ----
+// GET    /api/workspaces/:id/sso/domain-control                     -> DomainControlSettings
+// PUT    /api/workspaces/:id/sso/domain-control  body { captureSignups?, blockWorkspaces? } -> DomainControlSettings
+// POST   /api/workspaces/:id/sso/domain-control/captures body { userIds, graceDays } -> DomainControlSettings
+//        (each person is emailed; after the grace period they are a member, if their address is
+//        still verified and at the domain; their own boards stay theirs)
+// DELETE /api/workspaces/:id/sso/domain-control/captures/:userId     -> DomainControlSettings
+// With `blockWorkspaces`, POST /api/workspaces by someone at the domain is 403
+// { code: WORKSPACE_CREATION_BLOCKED } naming the workspace's admins.
+export interface DomainAccount {
+  userId: string;
+  name: string;
+  email: string;
+  /** member: already in the workspace; pending: joins at `joinsAt`; outside: neither. */
+  status: 'member' | 'pending' | 'outside';
+  joinsAt: number | null;
+}
+export interface DomainControlSettings {
+  /** The workspace's verified domains (domain control applies to these only). */
+  domains: string[];
+  /** Accounts that verify an address at the domains (sign-up, email change) join the workspace at once. */
+  captureSignups: boolean;
+  /** People at the domains can't create team workspaces of their own. */
+  blockWorkspaces: boolean;
+  /** Accounts at the domains that proved their address (unverified ones are never listed or taken in). */
+  accounts: DomainAccount[];
+}
+export const DOMAIN_CAPTURE_GRACE_DAYS = [7, 14, 30] as const;
+/** 403 `code` of POST /api/workspaces when the person's verified domain is managed by another workspace. */
+export const WORKSPACE_CREATION_BLOCKED = 'workspace_creation_blocked';
 
 // ---- Provisioning (SCIM 2.0, team workspaces; owners/admins manage it) ----
 // Base URL: <PUBLIC_URL>/scim/v2 (Users, Groups, ServiceProviderConfig, ResourceTypes, Schemas),
@@ -1761,6 +1801,12 @@ export const AUDIT_ACTIONS = {
   'sso.login': 'Signed in with single sign-on',
   'sso.login_refused': 'Single sign-on refused',
   'sso.member_provisioned': 'Joined through single sign-on (just in time)',
+  // Domain control (#64): accounts at a verified domain.
+  'sso.domain_control_changed': 'Changed domain control',
+  'sso.domain_capture_started': 'Told someone at a verified domain they will join the workspace',
+  'sso.domain_capture_cancelled': 'Stopped someone at a verified domain from joining',
+  'sso.domain_account_captured': 'Joined the workspace: account at a verified domain',
+  'sso.workspace_creation_refused': 'Was refused a new team workspace (domain managed by this workspace)',
   // Provisioning (modules/scim).
   'scim.token_created': 'Created a provisioning token',
   'scim.token_rotated': 'Rotated a provisioning token',

@@ -3583,7 +3583,9 @@ async function ssoChecks() {
         const resp = idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer, ...o });
         const acs = await postToAcs(b, request.acsUrl, resp, relay, idp);
         const fin = acs.location?.includes('/saml/finish') ? await b.fetch(acs.location) : null;
-        if (acs.location !== '/login?error=sso_failed' || b.jar.has('freero_session')) accepted.push(`${name}: ${acs.status} ${acs.location} ${fin?.location ?? ''}`);
+        // Unsolicited: refused with its own message while the workspace doesn't allow IdP-initiated sign-in (#107).
+        const want = name === 'unsolicited' ? '/login?error=sso_unsolicited' : '/login?error=sso_failed';
+        if (acs.location !== want || b.jar.has('freero_session')) accepted.push(`${name}: ${acs.status} ${acs.location} ${fin?.location ?? ''}`);
       }
       assert(accepted.length === 0, `accepted: ${accepted.join('; ')}`);
     });
