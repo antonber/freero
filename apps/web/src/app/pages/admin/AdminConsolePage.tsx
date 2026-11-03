@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, UserCog, Users, Webhook } from 'lucide-react';
-import type { WorkspaceSummary } from '@freero/shared';
+import { ADMIN_SCOPES, type AdminScope, type WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
 import { AdminAi, aiOffered } from './AdminAi';
@@ -22,19 +22,24 @@ import { AdminWebhooks, webhooksOffered } from './AdminWebhooks';
 import { AdminTrackers } from './AdminTrackers';
 import './admin.css';
 
+// `scopes` (#151): the admin scopes that use the tab (any of them); none: every admin.
 const TABS = [
-  { id: 'overview', label: 'Overview', icon: ChartColumn },
-  { id: 'members', label: 'Members', icon: Users },
-  { id: 'security', label: 'Security', icon: Lock },
-  { id: 'sso', label: 'Single sign-on', icon: KeyRound },
-  { id: 'provisioning', label: 'Provisioning', icon: UserCog },
-  { id: 'ai', label: 'AI', icon: Sparkles },
-  { id: 'retention', label: 'Data', icon: Hourglass },
-  { id: 'api', label: 'API & apps', icon: Plug },
-  { id: 'webhooks', label: 'Webhooks', icon: Webhook },
-  { id: 'trackers', label: 'Issue trackers', icon: Ticket },
-  { id: 'audit', label: 'Audit log', icon: ScrollText },
+  { id: 'overview', label: 'Overview', icon: ChartColumn, scopes: [] },
+  { id: 'members', label: 'Members', icon: Users, scopes: ['members'] },
+  { id: 'security', label: 'Security', icon: Lock, scopes: ['security', 'content'] },
+  { id: 'sso', label: 'Single sign-on', icon: KeyRound, scopes: ['security'] },
+  { id: 'provisioning', label: 'Provisioning', icon: UserCog, scopes: ['security'] },
+  { id: 'ai', label: 'AI', icon: Sparkles, scopes: ['security'] },
+  { id: 'retention', label: 'Data', icon: Hourglass, scopes: ['content', 'security'] },
+  { id: 'api', label: 'API & apps', icon: Plug, scopes: ['security'] },
+  { id: 'webhooks', label: 'Webhooks', icon: Webhook, scopes: ['security'] },
+  { id: 'trackers', label: 'Issue trackers', icon: Ticket, scopes: ['security'] },
+  { id: 'audit', label: 'Audit log', icon: ScrollText, scopes: ['security'] },
 ] as const;
+
+/** What the caller administers (a server from before #151 sends nothing: everything). */
+export const scopesOf = (w: Pick<WorkspaceSummary, 'adminScopes'>): readonly AdminScope[] => w.adminScopes ?? ADMIN_SCOPES;
+const usable = (t: { scopes: readonly AdminScope[] }, mine: readonly AdminScope[]) => t.scopes.length === 0 || t.scopes.some((s) => mine.includes(s));
 type Tab = (typeof TABS)[number]['id'];
 
 export function AdminConsolePage() {
@@ -73,7 +78,9 @@ export function AdminConsolePage() {
     document.title = workspace ? `Admin console · ${workspace.name} · Freero` : 'Admin console · Freero';
   }, [workspace]);
 
-  const tab: Tab = (requested === 'ai' && !ai) || (requested === 'webhooks' && !hooks) ? 'overview' : requested;
+  const mine = workspace ? scopesOf(workspace) : ADMIN_SCOPES;
+  const tab: Tab =
+    (requested === 'ai' && !ai) || (requested === 'webhooks' && !hooks) || !usable(TABS.find((t) => t.id === requested)!, mine) ? 'overview' : requested;
   const manager = (workspace?.role === 'owner' || workspace?.role === 'admin') && workspace.blocked !== 'deactivated';
   const back = `/app?ws=${encodeURIComponent(workspaceId)}`;
 
@@ -99,9 +106,11 @@ export function AdminConsolePage() {
           <nav className="fr-admin__tabs" aria-label="Admin console">
             <div className="fr-admin__ws">
               <span className="fr-admin__ws-name">{workspace.name}</span>
-              <span className="fr-admin__muted">Admin console · you’re {workspace.role === 'owner' ? 'an owner' : 'an admin'}</span>
+              <span className="fr-admin__muted">
+                Admin console · you’re {workspace.role === 'owner' ? 'an owner' : mine.length === ADMIN_SCOPES.length ? 'an admin' : `a ${mine.join(' and ')} admin`}
+              </span>
             </div>
-            {TABS.filter((t) => (t.id !== 'ai' || ai) && (t.id !== 'webhooks' || hooks)).map((t) => (
+            {TABS.filter((t) => (t.id !== 'ai' || ai) && (t.id !== 'webhooks' || hooks) && usable(t, mine)).map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -129,7 +138,7 @@ export function AdminConsolePage() {
             {tab === 'retention' ? (
               <>
                 <AdminRetention workspace={workspace} />
-                <AdminDataExport workspace={workspace} />
+                {mine.includes('security') ? <AdminDataExport workspace={workspace} /> : null}
               </>
             ) : null}
             {tab === 'api' ? <AdminApi workspace={workspace} /> : null}

@@ -1,6 +1,7 @@
 // Pure workspace rules: roles, what a workspace grants on its boards, and the sharing policies.
-import { looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
+import { ADMIN_SCOPES, looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
 import type {
+  AdminScope,
   LinkAccess,
   OrderedPolicyKey,
   OrganisationPolicyKey,
@@ -25,6 +26,25 @@ export const isInvitableWorkspaceRole = (v: unknown): v is InvitableWorkspaceRol
 export const isManager = (r: WorkspaceRole | null): boolean => r === 'owner' || r === 'admin';
 /** Everyone but guests: creates boards, sees the boards shared with the whole workspace. */
 export const isFullMember = (r: WorkspaceRole | null): boolean => r !== null && r !== 'guest';
+
+// ---- admin scopes (#151) ----
+
+export const isAdminScope = (v: unknown): v is AdminScope => (ADMIN_SCOPES as readonly unknown[]).includes(v);
+
+/** What someone administers: owners everything, an admin their scopes (none stored: everything), others nothing. */
+export function scopesOf(role: WorkspaceRole | null, adminScopes: AdminScope[] | null): AdminScope[] {
+  if (role === 'owner' || (role === 'admin' && !adminScopes)) return [...ADMIN_SCOPES];
+  return role === 'admin' ? ADMIN_SCOPES.filter((s) => adminScopes!.includes(s)) : [];
+}
+
+/**
+ * The role as it counts for board content: an admin who doesn't administer content is a member
+ * there (no editing every board, no private projects, no moving others' boards). The SQL twin is
+ * repo.ts `CONTENT_ROLE` (lists and board access read it from there).
+ */
+export function contentRole(role: WorkspaceRole | null, adminScopes: AdminScope[] | null): WorkspaceRole | null {
+  return role === 'admin' && !scopesOf(role, adminScopes).includes('content') ? 'member' : role;
+}
 
 /** What owners/admins get on every board of their workspace (they administer the content). */
 export const MANAGER_BOARD_ROLE: Role = 'editor';

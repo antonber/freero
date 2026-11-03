@@ -267,7 +267,8 @@ export const LINK_PASSWORD_MAX = 128;
 // GET    /api/workspaces/:id/members                -> { members: WorkspaceMember[], invites: WorkspaceInvite[] } (not guests)
 // POST   /api/workspaces/:id/members  body { email, role } -> { member } | { invite }  (verified email;
 //        owner/admin any non-owner role; members only guests, and only if guestInvites = 'members')
-// PATCH  /api/workspaces/:id/members/:userId body { role } -> { member }  (owner: any; admin: member/guest)
+// PATCH  /api/workspaces/:id/members/:userId body { role, adminScopes?: AdminScope[] | null } -> { member }
+//        (owner: any; a members admin: member/guest. `adminScopes` only by an owner, only for an admin)
 // DELETE /api/workspaces/:id/members/:userId -> { ok: true }  (owner/admin, or yourself to leave). Cuts
 //        live access at once; boards they owned there pass to whoever removed them.
 // POST   /api/workspaces/:id/invites/:inviteId/resend -> { invite }   DELETE … -> { ok: true }
@@ -289,6 +290,18 @@ export type WorkspaceKind = 'personal' | 'team' | 'organisation';
 /** What a team workspace's members get on its boards (owners/admins always edit). */
 export type TeamAccess = 'editor' | 'commenter' | 'viewer';
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
+/**
+ * [additive, #151] What an admin administers: `members` (people, invites, roles, deactivation,
+ * groups), `content` (sharing policies, every board: inventory, trash, archive, retention, templates,
+ * projects — and editing every board, as admins always did) and `security` (sign-in and session
+ * settings, single sign-on, provisioning, IP allowlist, integrations, exports and the audit log).
+ * Owners have all three; an admin with no scopes set (every admin from before #151) has all three.
+ * An admin without `content` counts as a member wherever board content is concerned.
+ */
+export type AdminScope = 'members' | 'content' | 'security';
+export const ADMIN_SCOPES: readonly AdminScope[] = ['members', 'content', 'security'];
+/** Error code: an admin without the scope a route needs (403). */
+export const ADMIN_SCOPE_REQUIRED = 'admin_scope_required';
 export type ProjectAccess = 'workspace' | 'private';
 export interface WorkspacePolicies {
   /** Who may give people outside the workspace access to its boards ('none': nobody, and such access stops working). */
@@ -348,6 +361,8 @@ export interface WorkspaceSummary {
    * `policies` above are already the effective values (never looser than these).
    */
   organisation?: WorkspaceOrganisation | null;
+  /** [additive, #151] What you administer here (empty unless owner/admin; owners: all three). */
+  adminScopes?: AdminScope[];
 }
 
 // ---- Organisations (#108; docs/design/organisations.md) ----
@@ -441,6 +456,8 @@ export interface WorkspaceMember {
   avatarUrl: string | null;
   role: WorkspaceRole;
   joinedAt: number;
+  /** [additive, #151] An admin's scopes (null: all three; absent for everyone else). */
+  adminScopes?: AdminScope[] | null;
 }
 export interface WorkspaceInvite {
   id: string;
@@ -2012,6 +2029,7 @@ export const AUDIT_ACTIONS = {
   'member.invite_revoked': 'Revoked an invite',
   'member.joined': 'Joined the workspace',
   'member.role_changed': 'Changed a member’s role',
+  'member.admin_scopes_changed': 'Changed what an admin administers',
   'member.removed': 'Removed a member',
   'member.left': 'Left the workspace',
   'member.deactivated': 'Deactivated a member',
@@ -2250,7 +2268,10 @@ export interface SiemSinkInfo {
 }
 
 // ---- Admin console (KAI-47) and workspace policies (KAI-51) ----
-// Owners and admins of a TEAM workspace; every route re-checks the workspace role on the server.
+// Owners and admins of a TEAM workspace; every route re-checks the workspace role on the server,
+// and (#151) the admin scope it needs: members (deactivate), content (link compliance, the
+// trash/retention settings), security (the security settings, the audit log); usage, the member
+// list and reading the settings need none. 403 `admin_scope_required` otherwise.
 // GET   /api/workspaces/:id/admin/usage                 -> { usage: WorkspaceUsage }
 // GET   /api/workspaces/:id/admin/members?q=           -> { members: AdminMember[] }
 // POST  /api/workspaces/:id/admin/members/:userId/deactivate  -> { member: AdminMember }

@@ -176,7 +176,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
     '/workspaces/:id/members/:userId',
     requireUser,
     handle(async (req, res) => {
-      res.json({ member: await changeRole(req.params.id, currentUser(req).id, req.params.userId, req.body?.role) });
+      res.json({ member: await changeRole(req.params.id, currentUser(req).id, req.params.userId, req.body?.role, req.body?.adminScopes) });
     }),
   );
 

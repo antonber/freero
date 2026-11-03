@@ -14,6 +14,9 @@ import { adminMembers, auditBatches, auditFilter, auditPage, CSV_COLUMNS, csvRow
 const MAX_PAGE = 200;
 /** Members (with organisation-wide deactivation), settings and the audit log also serve an organisation (#108). */
 const ORG = { organisation: true };
+// #151: what each route needs (usage and the member list: any admin).
+const SECURITY = { organisation: true, scope: 'security' } as const;
+const MEMBERS = { organisation: true, scope: 'members' } as const;
 
 const pageSize = (req: Request) => {
   const n = Number(req.query.limit ?? 50);
@@ -41,7 +44,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/admin/link-compliance`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id);
+      await requireAdmin(req.params.id, currentUser(req).id, { scope: 'content' });
       const boards = await linksOutOfPolicy(req.params.id);
       const owners = await getUsers(boards.map((b) => b.ownerId));
       res.json({
@@ -78,7 +81,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
       requireUser,
       handle(async (req, res) => {
         const me = currentUser(req).id;
-        await requireAdmin(req.params.id, me, ORG);
+        await requireAdmin(req.params.id, me, MEMBERS);
         await setMemberDeactivated(req.params.id, me, req.params.userId, deactivated);
         const member = (await adminMembers(req.params.id)).find((m) => m.userId === req.params.userId);
         if (!member) throw notFound('That person is not a member of this workspace');
@@ -111,7 +114,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/audit`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id, ORG);
+      await requireAdmin(req.params.id, currentUser(req).id, SECURITY);
       const page: { events: AuditEvent[]; next: string | null } = await auditPage(auditFilter(req.params.id, req.query), pageSize(req));
       res.json(page);
     }),
@@ -121,7 +124,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/audit/integrity`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id, ORG);
+      await requireAdmin(req.params.id, currentUser(req).id, SECURITY);
       res.json({ integrity: (await verifyWorkspaceAudit(req.params.id)) satisfies AuditIntegrity });
     }),
   );
@@ -132,7 +135,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('auditExport', 'user'),
     handle(async (req, res) => {
-      const { name } = await requireAdmin(req.params.id, currentUser(req).id, ORG);
+      const { name } = await requireAdmin(req.params.id, currentUser(req).id, SECURITY);
       const format = req.query.format === 'json' ? 'json' : req.query.format === 'csv' || req.query.format === undefined ? 'csv' : null;
       if (!format) throw badRequest('format must be csv or json');
       const filter = auditFilter(req.params.id, req.query);

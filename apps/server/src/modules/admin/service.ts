@@ -4,6 +4,7 @@
 import {
   AUDIT_ACTIONS,
   type AdminMember,
+  type AdminScope,
   type AuditAction,
   type AuditEvent,
   type WorkspaceRole,
@@ -21,10 +22,15 @@ import { requireWorkspace, workspaceAdminFacts } from '../workspaces/index';
  * 404 unless the caller is in the workspace, 403 unless an owner/admin, 400 for a personal
  * workspace. An organisation (#108) answers 404 unless the caller opts in with
  * `organisation: true`: its members, settings, audit log and audit streams do; tabs about boards
- * and integrations (AI, webhooks, trackers, usage) don't.
+ * and integrations (AI, webhooks, trackers, usage) don't. `scope` (#151): the admin scope the route
+ * needs — members, content or security; none for what every admin may read (usage, the member list).
  */
-export async function requireAdmin(workspaceId: string, userId: string, { organisation = false }: { organisation?: boolean } = {}): Promise<{ name: string }> {
-  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin', { organisation });
+export async function requireAdmin(
+  workspaceId: string,
+  userId: string,
+  { organisation = false, scope }: { organisation?: boolean; scope?: AdminScope } = {},
+): Promise<{ name: string }> {
+  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin', { organisation, scope });
   if (workspace.kind === 'personal') throw badRequest('Your personal workspace has no admin console');
   return { name: workspace.name };
 }
@@ -54,6 +60,7 @@ export async function adminMembers(workspaceId: string, q = ''): Promise<AdminMe
       twoFactor: security.twoFactor.has(u.id),
       lastActiveAt: security.lastActive.get(u.id) ?? null,
       boards: stats.ownedBy.get(u.id) ?? 0,
+      ...(m.role === 'admin' ? { adminScopes: m.adminScopes } : {}),
     });
   }
   return out;

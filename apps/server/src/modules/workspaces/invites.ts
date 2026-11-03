@@ -71,7 +71,9 @@ export async function inviteToWorkspace(
   if (!email || !EMAIL_RE.test(email) || email.length > 254) throw badRequest('Enter a valid email address');
   if (!isInvitableWorkspaceRole(body.role)) throw badRequest('role must be admin, member or guest');
   const role = body.role;
-  const { workspace, role: mine } = await requireWorkspace(workspaceId, inviter.id);
+  const { workspace, role: asStored, scopes } = await requireWorkspace(workspaceId, inviter.id);
+  // #151: an admin who doesn't administer members invites like a member.
+  const mine = asStored === 'admin' && !scopes.includes('members') ? 'member' : asStored;
   if (workspace.kind !== 'team') throw badRequest('Invite people to a team workspace, not your personal one');
   if (!mayInvite(mine, role, workspace.policies))
     throw forbidden(
@@ -116,7 +118,7 @@ export async function inviteToWorkspace(
 }
 
 export async function resendInvite(req: Request | null, workspaceId: string, inviteId: string, by: User & { emailVerified: boolean }): Promise<WorkspaceInvite> {
-  const { workspace } = await requireWorkspace(workspaceId, by.id, 'admin');
+  const { workspace } = await requireWorkspace(workspaceId, by.id, 'admin', { scope: 'members' });
   if (!by.emailVerified) throw forbidden('Verify your email address before inviting people');
   const token = randomBytes(32).toString('base64url');
   const now = Date.now();
@@ -127,7 +129,7 @@ export async function resendInvite(req: Request | null, workspaceId: string, inv
 }
 
 export async function revokeInvite(workspaceId: string, inviteId: string, userId: string): Promise<void> {
-  await requireWorkspace(workspaceId, userId, 'admin');
+  await requireWorkspace(workspaceId, userId, 'admin', { scope: 'members' });
   const invite = (await repo.listInvites(workspaceId)).find((i) => i.id === inviteId);
   if (!(await repo.deleteInvite(workspaceId, inviteId))) throw notFound('No such pending invite');
   await recordAudit({ action: 'member.invite_revoked', workspaceId, actorId: userId, target: { type: 'email', id: invite?.email ?? inviteId, label: invite?.email ?? null }, metadata: { role: invite?.role ?? null } });

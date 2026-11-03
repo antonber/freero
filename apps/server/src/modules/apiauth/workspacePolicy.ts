@@ -9,7 +9,7 @@ import { requireWorkspace } from '../workspaces/index';
 import * as repo from './repo';
 
 async function requireTeamAdmin(workspaceId: string, userId: string): Promise<void> {
-  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin');
+  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin', { scope: 'security' });
   if (workspace.kind !== 'team') throw notFound('Workspace not found');
 }
 

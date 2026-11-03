@@ -107,6 +107,8 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
   const maxDays = settingValue(policies.linkMaxDays);
   const maxDaysOptions = LINK_MAX_DAYS_FIELD.options.some((o) => o.value === maxDays) ? LINK_MAX_DAYS_FIELD.options : [...LINK_MAX_DAYS_FIELD.options, { value: maxDays, label: `${maxDays} days` }];
 
+  // #151: sign-in is the security admins', sharing the content admins' (a server from before sends no scopes).
+  const scopes = workspace.adminScopes ?? ['members', 'content', 'security'];
   if (!settings) return <Spinner />;
   return (
     <section aria-labelledby="admin-security-title">
@@ -124,6 +126,7 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
         </p>
       ) : null}
 
+      {scopes.includes('security') ? (
       <div className="fr-admin-card">
         <h2 className="fr-admin-card__title">Sign-in</h2>
         <Row
@@ -155,7 +158,9 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
           session end can only make one sign-in shorter.
         </p>
       </div>
+      ) : null}
 
+      {scopes.includes('content') ? (
       <div className="fr-admin-card">
         <h2 className="fr-admin-card__title">Sharing</h2>
         {POLICY_FIELDS.filter((f) => !org || f.key !== 'teamAccess').map((f) => {
@@ -188,6 +193,7 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
         </Row>
         {org ? null : <LinkCompliance workspaceId={workspace.id} policies={policies} />}
       </div>
+      ) : null}
     </section>
   );
 }
@@ -239,15 +245,18 @@ export function AdminRetention({ workspace }: { workspace: WorkspaceSummary }) {
   if (!settings) return <Spinner />;
   // An organisation holds no boards: only its own (merged) audit log has a retention.
   const org = workspace.kind === 'organisation';
+  // #151: boards' and versions' retention is content's, the audit log's security's.
+  const scopes = workspace.adminScopes ?? ['members', 'content', 'security'];
+  const content = !org && scopes.includes('content');
   return (
     <section aria-labelledby="admin-retention-title">
       <h1 id="admin-retention-title" className="fr-admin__title">
         Data retention
       </h1>
       <div className="fr-admin-card">
-        {org ? null : <SettingSelect field="trashRetentionDays" settings={settings} save={save} />}
-        {org ? null : <SettingSelect field="versionRetentionDays" settings={settings} save={save} />}
-        <SettingSelect field="auditRetentionDays" settings={settings} save={save} />
+        {content ? <SettingSelect field="trashRetentionDays" settings={settings} save={save} /> : null}
+        {content ? <SettingSelect field="versionRetentionDays" settings={settings} save={save} /> : null}
+        {scopes.includes('security') ? <SettingSelect field="auditRetentionDays" settings={settings} save={save} /> : null}
         <p className="fr-admin-card__note">Freero applies these every hour. What is removed can’t be brought back.</p>
       </div>
     </section>

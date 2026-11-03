@@ -1,5 +1,6 @@
 import type {
   Account,
+  AdminScope,
   OrganisationSummary,
   OrganisationWorkspace,
   OrganisationWorkspaceMember,
@@ -438,8 +439,13 @@ export const api = {
     request<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/members`),
   inviteToWorkspace: (id: string, email: string, role: Exclude<WorkspaceRole, 'owner'>) =>
     request<{ member?: WorkspaceMember; invite?: WorkspaceInvite }>('POST', `/api/workspaces/${encodeURIComponent(id)}/members`, { email, role }),
-  setWorkspaceRole: (id: string, userId: string, role: WorkspaceRole) =>
-    request<{ member: WorkspaceMember }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { role }),
+  /** `adminScopes` (#151, owners only): what an admin administers; null: everything. */
+  setWorkspaceRole: (id: string, userId: string, role: WorkspaceRole, adminScopes?: AdminScope[] | null) =>
+    request<{ member: WorkspaceMember }>(
+      'PATCH',
+      `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+      adminScopes === undefined ? { role } : { role, adminScopes },
+    ),
   removeWorkspaceMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
   resendWorkspaceInvite: (id: string, inviteId: string) =>

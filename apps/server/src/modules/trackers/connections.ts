@@ -55,7 +55,7 @@ export async function requireManaged(id: string, userId: string): Promise<Stored
     if (c.ownerId !== userId) throw notFound('No such tracker connection');
   } else {
     try {
-      await requireAdmin(c.workspaceId!, userId);
+      await requireAdmin(c.workspaceId!, userId, { scope: 'security' });
     } catch {
       throw notFound('No such tracker connection');
     }
@@ -335,7 +335,7 @@ export async function createConnection(userId: string, body: unknown, req: Reque
   if (!PROVIDERS.includes(b.provider as TrackerProviderKind)) throw badRequest(`provider must be ${PROVIDERS.join(', ')}`);
   const provider = b.provider as TrackerProviderKind;
   const workspaceId = typeof b.workspaceId === 'string' && b.workspaceId ? b.workspaceId : null;
-  if (workspaceId) await requireAdmin(workspaceId, userId);
+  if (workspaceId) await requireAdmin(workspaceId, userId, { scope: 'security' });
   const name = str(b.name, 'name', 80);
   const siteRaw = typeof b.site === 'string' && b.site.trim() ? b.site.trim() : (defaultSite[provider] ?? '');
   let site: string;
@@ -553,7 +553,7 @@ export function webhookSecretOf(c: StoredConnection): string | null {
 }
 
 export async function listManaged(userId: string, workspaceId: string | null, req: Request | null): Promise<TrackerConnectionInfo[]> {
-  if (workspaceId) await requireAdmin(workspaceId, userId);
+  if (workspaceId) await requireAdmin(workspaceId, userId, { scope: 'security' });
   const list = await repo.listConnections(workspaceId ? { workspaceId } : { ownerId: userId });
   const counts = await repo.countLinks(list.map((c) => c.id));
   return list.map((c) => info(c, counts.get(c.id) ?? 0, req, true));

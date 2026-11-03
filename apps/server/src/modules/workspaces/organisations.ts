@@ -12,6 +12,7 @@
 // - list workspaces, their members and owners: owners/admins of the organisation. An org role
 //   never gives board access (rolesOf leaves organisations out).
 import {
+  type AdminScope,
   MAX_ORGANISATIONS_PER_USER,
   WORKSPACE_CREATION_BLOCKED,
   type OrganisationSummary,
@@ -27,11 +28,12 @@ import { findUserByEmail, getUsers, normalizeEmail } from '../auth/index';
 import { creationRefusal } from './creation';
 import * as repo from './repo';
 import type { Workspace } from './repo';
+import { scopesOf } from './roles';
 import { cleanName, refreshWorkspaceBoards, requireWorkspace } from './service';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number, workspaceCount: number): OrganisationSummary => ({
+const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number, workspaceCount: number, adminScopes: AdminScope[] | null): OrganisationSummary => ({
   id: w.id,
   name: w.name,
   kind: 'organisation',
@@ -42,24 +44,30 @@ const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number, works
   createdAt: w.createdAt,
   blocked: null,
   workspaceCount,
+  adminScopes: scopesOf(role, adminScopes),
 });
 
 /** The organisation and the caller's role in its directory: 404 unless they are in it, 403 below `min`. */
-export async function requireOrganisation(organisationId: string, userId: string, min: WorkspaceRole = 'admin'): Promise<{ organisation: Workspace; role: WorkspaceRole }> {
-  const { workspace, role } = await requireWorkspace(organisationId, userId, min, { organisation: true });
+export async function requireOrganisation(
+  organisationId: string,
+  userId: string,
+  min: WorkspaceRole = 'admin',
+  scope?: AdminScope,
+): Promise<{ organisation: Workspace; role: WorkspaceRole }> {
+  const { workspace, role } = await requireWorkspace(organisationId, userId, min, { organisation: true, scope });
   if (workspace.kind !== 'organisation') throw notFound('Organisation not found');
   return { organisation: workspace, role };
 }
 
 export async function listOrganisations(userId: string): Promise<OrganisationSummary[]> {
   const rows = await repo.organisationsOf(userId);
-  return Promise.all(rows.map(async (r) => toSummary(r.workspace, r.role, r.memberCount, (await repo.attachedWorkspaces(r.workspace.id)).length)));
+  return Promise.all(rows.map(async (r) => toSummary(r.workspace, r.role, r.memberCount, (await repo.attachedWorkspaces(r.workspace.id)).length, r.adminScopes)));
 }
 
 export async function organisationSummary(organisationId: string, userId: string): Promise<OrganisationSummary> {
   const row = (await repo.organisationsOf(userId)).find((r) => r.workspace.id === organisationId);
   if (!row) throw notFound('Workspace not found');
-  return toSummary(row.workspace, row.role, row.memberCount, (await repo.attachedWorkspaces(organisationId)).length);
+  return toSummary(row.workspace, row.role, row.memberCount, (await repo.attachedWorkspaces(organisationId)).length, row.adminScopes);
 }
 
 /** A new organisation with the caller as its owner and no floors yet (attaching a workspace changes nothing until it sets some). */
@@ -196,7 +204,7 @@ export async function detachWorkspace(organisationId: string, workspaceId: strin
  * through its workspaces, SSO, provisioning or domain control.
  */
 export async function addOrganisationMember(organisationId: string, actorId: string, body: { email?: unknown; role?: unknown }): Promise<WorkspaceMember> {
-  const { role: mine } = await requireOrganisation(organisationId, actorId, 'admin');
+  const { role: mine } = await requireOrganisation(organisationId, actorId, 'admin', 'members');
   const role = body.role;
   if (role !== 'admin' && role !== 'member') throw badRequest('role must be admin or member');
   if (role === 'admin' && mine !== 'owner') throw forbidden('Only an owner of the organisation can add admins');

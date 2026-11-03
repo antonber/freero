@@ -1,6 +1,6 @@
 // The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects` and
 // `project_members` [S4].
-import type { ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
+import type { AdminScope, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
 import { NO_FLOOR_POLICIES, strictestPolicies, strictestSettings, type InvitableWorkspaceRole, type PolicyFloor, type SettingsFloor } from './roles';
 
@@ -186,7 +186,7 @@ export async function getWorkspaces(ids: string[]): Promise<Workspace[]> {
   return (await query<WsRow>(`${WS_SELECT} WHERE w.id = ANY($1::text[])`, [ids])).map(toWorkspace);
 }
 
-type WithRole = { workspace: Workspace; role: WorkspaceRole; memberCount: number };
+type WithRole = { workspace: Workspace; role: WorkspaceRole; memberCount: number; adminScopes: AdminScope[] | null };
 
 /**
  * Every WORKSPACE the user is in (personal and team; never an organisation's directory row), with
@@ -202,14 +202,14 @@ export function organisationsOf(userId: string): Promise<WithRole[]> {
 }
 
 async function withRoles(userId: string, organisations: boolean): Promise<WithRole[]> {
-  const rows = await query<WsRow & { role: WorkspaceRole; member_count: number }>(
-    `SELECT x.*, m.role, (SELECT count(*)::int FROM workspace_members c WHERE c.workspace_id = x.id) AS member_count
+  const rows = await query<WsRow & { role: WorkspaceRole; member_count: number; admin_scopes: AdminScope[] | null }>(
+    `SELECT x.*, m.role, m.admin_scopes, (SELECT count(*)::int FROM workspace_members c WHERE c.workspace_id = x.id) AS member_count
      FROM workspace_members m JOIN (${WS_SELECT}) x ON x.id = m.workspace_id
      WHERE m.user_id = $1 AND (x.kind = 'organisation') = $2
      ORDER BY (x.kind = 'personal') DESC, x.name, x.id`,
     [userId, organisations],
   );
-  return rows.map((r) => ({ workspace: toWorkspace(r), role: r.role, memberCount: r.member_count }));
+  return rows.map((r) => ({ workspace: toWorkspace(r), role: r.role, memberCount: r.member_count, adminScopes: r.role === 'admin' ? r.admin_scopes : null }));
 }
 
 /**
@@ -218,7 +218,7 @@ async function withRoles(userId: string, organisations: boolean): Promise<WithRo
  */
 export async function rolesOf(userId: string): Promise<Map<string, WorkspaceRole>> {
   const rows = await query<{ workspace_id: string; role: WorkspaceRole }>(
-    `SELECT m.workspace_id, m.role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+    `SELECT m.workspace_id, ${CONTENT_ROLE} AS role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
      WHERE m.user_id = $1 AND w.kind <> 'organisation'`,
     [userId],
   );
@@ -443,6 +443,8 @@ export interface MemberRow {
   role: WorkspaceRole;
   createdAt: number;
   deactivatedAt: number | null;
+  /** #151: an admin's scopes as stored (null: all three). Only meaningful for role 'admin'. */
+  adminScopes: AdminScope[] | null;
 }
 interface MRow {
   workspace_id: string;
@@ -450,6 +452,7 @@ interface MRow {
   role: WorkspaceRole;
   created_at: Date;
   deactivated_at: Date | null;
+  admin_scopes: AdminScope[] | null;
 }
 const toMember = (r: MRow): MemberRow => ({
   workspaceId: r.workspace_id,
@@ -457,10 +460,36 @@ const toMember = (r: MRow): MemberRow => ({
   role: r.role,
   createdAt: r.created_at.getTime(),
   deactivatedAt: r.deactivated_at ? r.deactivated_at.getTime() : null,
+  adminScopes: r.role === 'admin' ? (r.admin_scopes ?? null) : null,
 });
+
+/**
+ * #151: the role as it counts for board CONTENT — an admin without the content scope is a member
+ * there (board access, projects, moving boards, templates). The SQL twin of roles.ts `contentRole`.
+ */
+const CONTENT_ROLE = `CASE WHEN m.role = 'admin' AND m.admin_scopes IS NOT NULL AND NOT ('content' = ANY(m.admin_scopes)) THEN 'member' ELSE m.role END`;
 
 export async function getRole(workspaceId: string, userId: string): Promise<WorkspaceRole | null> {
   return (await one<{ role: WorkspaceRole }>(`SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, [workspaceId, userId]))?.role ?? null;
+}
+
+/** The user's role as it counts for board content (#151; see CONTENT_ROLE), or null. */
+export async function getContentRole(workspaceId: string, userId: string): Promise<WorkspaceRole | null> {
+  return (
+    (await one<{ role: WorkspaceRole }>(`SELECT ${CONTENT_ROLE} AS role FROM workspace_members m WHERE m.workspace_id = $1 AND m.user_id = $2`, [workspaceId, userId]))
+      ?.role ?? null
+  );
+}
+
+/** Sets an admin's scopes (null: all three); false unless they are an admin there. */
+export async function setAdminScopes(workspaceId: string, userId: string, scopes: AdminScope[] | null): Promise<boolean> {
+  return (
+    await query(`UPDATE workspace_members SET admin_scopes = $3 WHERE workspace_id = $1 AND user_id = $2 AND role = 'admin' RETURNING 1`, [
+      workspaceId,
+      userId,
+      scopes,
+    ])
+  ).length > 0;
 }
 
 export async function getMember(workspaceId: string, userId: string): Promise<MemberRow | null> {
@@ -528,7 +557,14 @@ export async function grantAtLeast(workspaceId: string, userId: string, role: In
 
 /** Returns false if they are not a member. */
 export async function setRole(workspaceId: string, userId: string, role: WorkspaceRole): Promise<boolean> {
-  return (await query(`UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`, [workspaceId, userId, role])).length > 0;
+  // Scopes belong to the admin role (#151): leaving it clears them, so a later promotion starts with all three.
+  return (
+    await query(
+      `UPDATE workspace_members SET role = $3, admin_scopes = CASE WHEN $3 = 'admin' THEN admin_scopes ELSE NULL END
+       WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`,
+      [workspaceId, userId, role],
+    )
+  ).length > 0;
 }
 
 /** Removes a member and their place in the workspace's projects. False if they were not a member. */

@@ -165,13 +165,13 @@ const auditTarget = (e: { id: string; urlDisplay: string }) => ({ type: 'webhook
 
 export async function listEndpoints(workspaceId: string, userId: string): Promise<WebhookEndpointInfo[]> {
   requireWebhooks();
-  await requireAdmin(workspaceId, userId);
+  await requireAdmin(workspaceId, userId, { scope: 'security' });
   return infos(await repo.endpointsOf(workspaceId));
 }
 
 export async function createEndpoint(workspaceId: string, userId: string, body: Record<string, unknown>): Promise<{ endpoint: WebhookEndpointInfo; secret: string }> {
   requireWebhooks();
-  await requireAdmin(workspaceId, userId);
+  await requireAdmin(workspaceId, userId, { scope: 'security' });
   const url = readUrl(body.url);
   const events = readEvents(body.events);
   const format = readFormat(body.format);
@@ -208,7 +208,7 @@ export async function createEndpoint(workspaceId: string, userId: string, body: 
 
 async function endpointOf(workspaceId: string, userId: string, id: string): Promise<repo.EndpointRow> {
   requireWebhooks();
-  await requireAdmin(workspaceId, userId);
+  await requireAdmin(workspaceId, userId, { scope: 'security' });
   const e = await repo.getEndpoint(workspaceId, id);
   if (!e) throw notFound('No such webhook');
   return e;

@@ -349,6 +349,21 @@
   color: var(--fr-ink-2);
 }
 
+/* What an admin administers (#151). */
+.fr-admin-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.fr-admin-scopes__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
 .fr-admin-pill {
   display: inline-flex;
   align-items: center;

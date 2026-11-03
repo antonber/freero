@@ -10,7 +10,7 @@ import { boardIdsInProject, countLiveBoardsInProject } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
 import * as repo from './repo';
 import type { Project } from './repo';
-import { isFullMember, isManager, isTeamAccess } from './roles';
+import { contentRole, isFullMember, isManager, isTeamAccess } from './roles';
 import { requireWorkspace } from './service';
 
 const cleanName = (v: unknown): string => {
@@ -47,7 +47,8 @@ const toSummary = (p: Project, role: WorkspaceRole | null, userId: string): Proj
 
 /** The workspace's projects the user can see (guests: only those they were added to). */
 export async function listProjects(workspaceId: string, userId: string): Promise<ProjectSummary[]> {
-  const { role } = await requireWorkspace(workspaceId, userId, 'guest', { allowDeactivated: true });
+  // Projects are content (#151): an admin who doesn't administer content sees them as a member.
+  const { contentRole: role } = await requireWorkspace(workspaceId, userId, 'guest', { allowDeactivated: true });
   if ((await repo.getMember(workspaceId, userId))?.deactivatedAt != null) return []; // sees nothing in it
   const [projects, mine] = await Promise.all([repo.projectsIn([workspaceId]), repo.projectIdsOf(userId, [workspaceId])]);
   return projects.filter((p) => canSee(p, role, mine.has(p.id))).map((p) => toSummary(p, role, userId));
@@ -58,7 +59,7 @@ export async function createProject(
   userId: string,
   body: { name?: unknown; access?: unknown; teamAccess?: unknown },
 ): Promise<ProjectSummary> {
-  const { role } = await requireWorkspace(workspaceId, userId, 'member');
+  const { contentRole: role } = await requireWorkspace(workspaceId, userId, 'member');
   const now = Date.now();
   const p: Project = {
     id: newId(12),
@@ -79,7 +80,7 @@ export async function createProject(
 async function visibleProject(projectId: string, userId: string): Promise<{ project: Project; role: WorkspaceRole }> {
   const project = await repo.getProject(projectId);
   const inWorkspace = project ? await repo.getMember(project.workspaceId, userId) : null;
-  const role = inWorkspace && inWorkspace.deactivatedAt === null ? inWorkspace.role : null; // deactivated: nothing
+  const role = inWorkspace && inWorkspace.deactivatedAt === null ? contentRole(inWorkspace.role, inWorkspace.adminScopes) : null; // deactivated: nothing
   if (!project || !role) throw notFound('Project not found');
   const member = (await repo.projectIdsOf(userId, [project.workspaceId])).has(project.id);
   if (!canSee(project, role, member)) throw notFound('Project not found');

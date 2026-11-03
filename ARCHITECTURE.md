@@ -2593,6 +2593,26 @@ security and retention settings, sharing policies, the audit log (filters, pagin
 add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
 `admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
 
+**Admin roles** (#151; `workspace_members.admin_scopes`, workspaces' repo): an admin administers
+`members` (people, invites, roles, deactivation, groups), `content` (sharing policies, the board
+inventory, trash, archive, retention, templates, projects) and/or `security` (sign-in and session
+settings, SSO, provisioning, the IP allowlist, AI / API / webhooks / trackers, exports, the audit log
+and its streams). NULL = all three, so every admin from before keeps meaning everything; owners
+always have all three; a role change away from admin clears the scopes. Only an owner sets them
+(`PATCH /workspaces/:id/members/:userId { role: 'admin', adminScopes }`, audited
+`member.admin_scopes_changed`) — an admin can't widen anyone's, their own included. Every admin
+route names the scope it needs: `requireWorkspace(…, 'admin', { scope })` / `requireWorkspaceRole` /
+admin's `requireAdmin(…, { scope })` answer 403 `admin_scope_required` otherwise; settings are
+checked key by key (`SETTING_SCOPE`: a mixed change is refused whole). Usage, the member list and
+reading settings need none. **An admin without `content` counts as a member wherever board content
+is concerned** (no editing every board, no private projects, no moving or transferring others'
+boards, no deciding access requests): `repo.rolesOf` / `getContentRole` / exported `workspaceRole`
+read the content role (`roles.ts` `contentRole`, SQL twin `CONTENT_ROLE`), so board access, lists,
+search, the public API, projects, templates and `teamMembers` / `boardGatekeepers` agree. The same
+column and checks serve an organisation's admins (org security admins: SSO, provisioning, floors of
+sign-in; content admins: the sharing floors; members admins: its directory). The console hides tabs
+and cards the caller's scopes can't use (`WorkspaceSummary.adminScopes`).
+
 **Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
 enforced by the module that owns the data, wired from that module's `init.ts`:
 - Deactivated members (`workspace_members.deactivated_at`) and the two-step requirement close the
