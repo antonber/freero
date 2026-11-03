@@ -249,7 +249,42 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     jitsiCalls: jitsiAvailable(),
     liveEmbeds: access.policies.liveEmbeds !== 'off',
     embedOrigins: getConfig().embedExtraOrigins,
+    boardEmbeds: access.policies.boardEmbeds !== 'off',
   };
+}
+
+/**
+ * Throws unless the owner may turn embedding on other sites on or off (#2): the owner only, like
+ * the link; turning it ON also needs the workspace's `boardEmbeds` policy. Turning it off is
+ * always possible.
+ */
+export function checkEmbeddingChange(board: Board, role: Role, access: BoardWorkspaceAccess, embeddable: boolean): void {
+  if (role !== 'owner') throw forbidden('Only the board owner can change embedding');
+  if (board.kind !== 'board') throw badRequest('Only boards can be embedded on other sites');
+  if (embeddable && !board.embeddable && access.policies.boardEmbeds === 'off')
+    throw forbidden('This workspace doesnâ€™t allow embedding its boards on other sites');
+}
+
+/** After a stored embedding change: audited, and every live socket re-checked (embeds close). */
+export async function embeddingChanged(board: Board, actorId: string, embeddable: boolean): Promise<void> {
+  await recordAuditQuietly({ action: 'board.embedding_changed', workspaceId: board.workspaceId, actorId, target: boardTarget(board), metadata: { from: board.embeddable, to: embeddable } });
+  await refreshBoardAccess(board.id);
+}
+
+/**
+ * Whether other sites may frame the board now (#2) and what a visitor without an account may do
+ * there. Null when there is no such board in service, it is a doc, or embedding is off â€” by its
+ * owner or by its workspace's policy: one answer, so it tells nobody which. `visitor` is 'viewer'
+ * exactly when the board's link would let a visitor without an account in as a guest (no
+ * password): an embed never shows more than the link would, and never lets a visitor write.
+ */
+export async function embeddingOf(boardId: string): Promise<{ board: Board; visitor: 'viewer' | null } | null> {
+  const board = await repo.getBoard(boardId);
+  if (!board || board.kind !== 'board' || !board.embeddable) return null;
+  const access = await boardAccess('', board);
+  if (access.policies.boardEmbeds === 'off') return null;
+  const visitor = board.linkPasswordHash === null && resolveGuestRole(board, access) !== null ? 'viewer' : null;
+  return { board, visitor };
 }
 
 /** How someone tried to take a board's content out (recorded with a refusal). */
@@ -309,6 +344,7 @@ export async function toSummary(
     ...(board.linkBlocked ? { linkBlocked: true } : {}),
     ...(role === 'owner' ? { linkProtection: linkProtectionOf(board) } : {}),
     call: callOf(board),
+    embeddable: board.embeddable,
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + access.trashRetentionDays * DAY_MS } : {}),
   };
 }
@@ -458,6 +494,7 @@ export async function createBoard(
         linkExpiresAt: null,
         callUrl: null,
         callJitsi: false,
+        embeddable: false,
       };
       await repo.insertBoard(board);
       await recordAudit({ action: kind === 'doc' ? 'doc.created' : 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });

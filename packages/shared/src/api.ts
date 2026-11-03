@@ -81,6 +81,11 @@ export interface BoardSummary {
   linkProtection?: { password: boolean; expiresAt: number | null; expired: boolean; storedAccess: LinkAccess };
   /** [additive] The board's call (KAI-134): a meeting link its editors set, or a Jitsi room. */
   call?: BoardCall | null;
+  /**
+   * [additive] Its owner lets other sites embed it live (#2, `/embed/b/:id`): what the embed shows
+   * still follows the board's sharing exactly. Absent: off.
+   */
+  embeddable?: boolean;
 }
 
 /**
@@ -109,6 +114,11 @@ export interface BoardPermissions {
   liveEmbeds?: boolean;
   /** [additive] Further https origins the server's operator allows to be framed (`EMBED_EXTRA_ORIGINS`). */
   embedOrigins?: string[];
+  /**
+   * [additive] Its workspace lets its boards be embedded on other sites (policy `boardEmbeds`, #2).
+   * Absent: allowed.
+   */
+  boardEmbeds?: boolean;
 }
 
 // ---- Board call (KAI-134) ----
@@ -250,6 +260,11 @@ export interface WorkspacePolicies {
    * activated as live frames on its boards; 'off' keeps every link a preview card.
    */
   liveEmbeds: 'on' | 'off';
+  /**
+   * [additive] Whether its boards may be embedded live on other sites (#2: a board's owner turns
+   * embedding on in the share dialog); 'off' keeps every board out of other sites' frames.
+   */
+  boardEmbeds: 'on' | 'off';
 }
 export interface WorkspaceSummary {
   id: string;
@@ -706,6 +721,8 @@ export interface UpdateBoardRequest {
   linkPassword?: string | null;
   /** [additive] Owner only (KAI-145): when the link stops working (epoch ms, future), or null. */
   linkExpiresAt?: number | null;
+  /** [additive] Owner only (#2): let other sites embed the board (`BoardSummary.embeddable`). */
+  embeddable?: boolean;
 }
 
 // ---- Version history ----
@@ -928,6 +945,67 @@ export interface EmbedRedeemResponse {
   boardUrl: string;
   /** The app or token the view came from ("Claude"). */
   app: string;
+}
+
+// ---- Public live embeds on other sites (#2; docs/integrations/embedding.md) ----
+// Any site may frame /embed/b/:id[?readonly=1][&frame=<itemId>] while the board's owner allows
+// embedding (`BoardSummary.embeddable`) and its workspace's `boardEmbeds` policy is on; the page
+// is the ONLY one framable from anywhere (every other page stays frame-ancestors 'none'). What it
+// shows follows the board's sharing exactly, never more:
+// - a visitor without an account sees the board live, read-only, when its link lets visitors
+//   without an account in (as guests could; no password) — and no presence of theirs is shown;
+// - anyone else signs in through a first-party popup (/embed/connect/:id), which hands the frame a
+//   token for THIS board that acts with the person's own role (capped at viewer with readonly=1)
+//   and ends with their session. Editing starts only after a click inside the frame.
+// GET  /api/embed/b/:id                         -> PublicEmbedInfo  (no account needed)
+// POST /api/embed/b/:id/token  { readonly? }    -> PublicEmbedToken (session; first-party popup only)
+// POST /api/embed/b/:id/me     { token }        -> PublicEmbedMember (401: sign in again)
+// GET  /api/oembed?url=<board or embed URL>[&maxwidth][&maxheight] -> OEmbedResponse (public boards only)
+// Socket: /ws/embed/b/:id, subprotocols [PUBLIC_EMBED_WS_PROTOCOL] (visitor) or
+// [PUBLIC_EMBED_WS_PROTOCOL, token] (signed in), plus PUBLIC_EMBED_VIEW_ONLY to stay read-only.
+export const PUBLIC_EMBED_WS_PROTOCOL = 'freero.public-embed';
+/** A further subprotocol: this socket only reads, whatever the person may do (editing not started yet). */
+export const PUBLIC_EMBED_VIEW_ONLY = 'freero.view-only';
+/** `code` of a 403 from POST …/token: the person can't open the board (the popup offers to ask for access). */
+export const EMBED_NO_ACCESS = 'embed_no_access';
+/** Close code: too many visitors are watching this board's embeds right now (#60). */
+export const WS_CLOSE_EMBED_FULL = 4430;
+export type PublicEmbedInfo =
+  /** Embedding is off for it (or there is no such board): the same answer either way. */
+  | { status: 'off' }
+  /**
+   * `visitor`: what someone without an account may do here ('viewer'), or null (sign in).
+   * `title` only when a visitor may see the board.
+   */
+  | { status: 'on'; boardId: string; title: string | null; visitor: 'viewer' | null; boardUrl: string };
+export interface PublicEmbedToken {
+  token: string;
+  expiresAt: number;
+}
+export interface PublicEmbedMember {
+  user: { id: string; name: string; color: string; avatarUrl: string | null };
+  /** As that person sees it, with `role` capped by the token (readonly). */
+  board: BoardSummary;
+  boardUrl: string;
+  expiresAt: number;
+}
+/** What the connect popup tells the embed frame that opened it (window.opener, same origin only). */
+export type EmbedConnectMessage =
+  | { freeroEmbedConnect: 'token'; boardId: string; token: string; expiresAt: number }
+  | { freeroEmbedConnect: 'no-access'; boardId: string };
+export interface OEmbedResponse {
+  version: '1.0';
+  type: 'rich';
+  provider_name: string;
+  provider_url: string;
+  title: string;
+  html: string;
+  width: number;
+  height: number;
+  thumbnail_url?: string;
+  thumbnail_width?: number;
+  thumbnail_height?: number;
+  cache_age?: number;
 }
 
 // ---- Activity ----
@@ -1629,6 +1707,7 @@ export const AUDIT_ACTIONS = {
   'board.transferred': 'Transferred board ownership',
   'board.moved': 'Moved a board to another project',
   'board.link_sharing_changed': 'Changed link sharing',
+  'board.embedding_changed': 'Turned embedding on other sites on or off',
   'board.duplicated': 'Duplicated a board',
   'board.exported': 'Exported a board',
   'board.backup_restored': 'Restored a board from a backup file',

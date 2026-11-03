@@ -10,7 +10,10 @@ import {
   cleanDescription,
   cleanTitle,
   createBoard,
+  checkEmbeddingChange,
   describeAccess,
+  embeddingChanged,
+  embeddingOf,
   guestRoleFor,
   listBoards,
   moveToTrash,
@@ -86,6 +89,34 @@ export async function publicLinkPreview(boardId: string): Promise<{ title: strin
   if (!board || board.kind !== 'board' || board.linkPasswordHash !== null) return null;
   if (!(await guestRoleFor(board))) return null;
   return { title: board.title, description: board.description, thumbnail: board.thumbnail };
+}
+
+/**
+ * Live embeds on other sites (#2, modules/embed): whether other sites may frame the board now —
+ * its owner allows it and its workspace's `boardEmbeds` policy is on — and what a visitor without
+ * an account may do there ('viewer' exactly when its link lets such visitors in, no password; null:
+ * sign in). Null for no such board, a doc, or embedding off: the same answer, so it tells nobody
+ * which. Who may do what once signed in is still `getBoardAccess`.
+ */
+export async function boardEmbedding(
+  boardId: string,
+): Promise<{ id: string; title: string; description: string; thumbnail: string | null; visitor: 'viewer' | null } | null> {
+  const e = await embeddingOf(boardId);
+  if (!e) return null;
+  const { board, visitor } = e;
+  return { id: board.id, title: board.title, description: board.description, thumbnail: board.thumbnail, visitor };
+}
+
+/**
+ * Turns embedding on other sites on or off as `userId`, by the share dialog's rules (the owner
+ * only; turning it on also needs the workspace's policy): audited, and open embeds re-checked.
+ */
+export async function setBoardEmbeddable(boardId: string, userId: string, embeddable: boolean): Promise<void> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  checkEmbeddingChange(board, role, access, embeddable);
+  if (board.embeddable === embeddable) return;
+  await repo.updateBoardFields(board.id, { embeddable }, Date.now());
+  await embeddingChanged(board, userId, embeddable);
 }
 
 /** Throws a 404/403 HttpError unless the user has at least `min` on the board. */

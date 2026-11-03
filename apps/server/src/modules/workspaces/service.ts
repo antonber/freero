@@ -162,6 +162,7 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('teamAccess', TEAM_ACCESS_VALUES);
   pick('publicLinks', ['anyone', 'signedIn']);
   pick('liveEmbeds', ['on', 'off']);
+  pick('boardEmbeds', ['on', 'off']);
   return out;
 }
 

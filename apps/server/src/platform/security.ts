@@ -5,7 +5,7 @@
 // Requests with neither header come from non-browser clients (curl, server-to-server), which
 // cannot ride a victim's cookies, so they pass. WebSocket upgrades get the same Origin check.
 import type { IncomingMessage } from 'node:http';
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import { EMBED_FRAME_ORIGINS } from '@freero/shared';
 import type { Config } from './config';
 
@@ -119,8 +119,37 @@ export function allowFraming(path: RegExp, reason: string): void {
 }
 const framable = (path: string) => framablePaths.some((p) => p.path.test(path));
 
+/**
+ * Lets ANY site frame this one response: a board embedded live on another site (#2,
+ * modules/embed `/embed/b/:id`), decided per board by the handler (its owner allows embedding and
+ * its workspace's policy is on). Only for a page that acts on nobody's session cookie — the embed
+ * signs in with its own board-bound token from a first-party popup — and starts editing only
+ * after a click inside the frame. Every other response keeps frame-ancestors 'none' and
+ * X-Frame-Options DENY. Say why in `reason` (read in review).
+ */
+export function frameFromAnySite(req: Request, res: Response, config: Config, reason: string): void {
+  if (reason.trim().length < 10) throw new Error('frameFromAnySite needs a reason');
+  res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { ancestors: ['*'] }));
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+}
+
+const openerPaths: Array<{ path: RegExp; reason: string }> = [];
+
+/**
+ * Keeps `window.opener` for the app's pages under `path` (Cross-Origin-Opener-Policy unsafe-none
+ * instead of same-origin): the popup a board embedded on another site opens to sign in
+ * (modules/embed `/embed/connect/`) hands its token back to the frame that opened it, by
+ * postMessage to Freero's own origin only. Never framable. Say why in `reason`.
+ */
+export function allowOpener(path: RegExp, reason: string): void {
+  if (reason.trim().length < 10) throw new Error('allowOpener needs a reason');
+  openerPaths.push({ path, reason });
+}
+
 /** Content-Security-Policy for the app's own pages and API responses. */
-export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean, opts: { framable?: boolean } = {}): string {
+export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean, opts: { framable?: boolean; ancestors?: string[] } = {}): string {
+  const ancestors = opts.ancestors ?? (opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors : ["'none'"]);
   const ws = host ? (secure ? `wss://${host}` : `ws://${host} wss://${host}`) : '';
   const s3 = config.s3?.publicUrl ? new URL(config.s3.publicUrl).origin : '';
   return [
@@ -143,7 +172,7 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    `frame-ancestors ${opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors.join(' ') : "'none'"}`,
+    `frame-ancestors ${ancestors.join(' ')}`,
     ...(secure ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 }
@@ -155,7 +184,7 @@ export function securityHeaders(config: Config): RequestHandler {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!frame) res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Opener-Policy', req.method === 'GET' && openerPaths.some((p) => p.path.test(req.path)) ? 'unsafe-none' : 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', frame ? 'cross-origin' : 'same-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
     if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
