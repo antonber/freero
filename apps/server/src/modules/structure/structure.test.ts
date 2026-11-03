@@ -161,8 +161,11 @@ it('turns a Mermaid flowchart with subgraphs into frames that hold their nodes',
     expect(shapeByText(t).frameId).toBe(inner.id);
     expect(inside(shapeByText(t), inner)).toBe(true);
   }
+  // The flowchart is one diagram (#117): what no subgraph holds is a member of the diagram itself.
+  const diagram = all.find((e) => e.type === 'diagram')!;
+  expect(outer.frameId).toBe(diagram.id);
   for (const t of ['Start', 'Done']) {
-    expect(shapeByText(t).frameId ?? null).toBe(null);
+    expect(shapeByText(t).frameId).toBe(diagram.id);
     expect(overlap(shapeByText(t), outer)).toBe(false);
   }
   expect(shapeByText('Database')).toMatchObject({ shape: 'cylinder' });
@@ -315,7 +318,8 @@ it('moves nodes linked earlier into a Mermaid subgraph that names them on their 
   const all = (await elementsOf(boardId)).filter((e) => res.created.includes(e.id));
   const frame = all.find((e) => e.type === 'frame')!;
   const shape = (t: string) => all.find((e) => e.type === 'shape' && (e as { text: string }).text === t)!;
-  expect([shape('Approved?').frameId, shape('Revise').frameId, shape('Request').frameId ?? null]).toEqual([frame.id, frame.id, null]);
+  const diagram = all.find((e) => e.type === 'diagram')!;
+  expect([shape('Approved?').frameId, shape('Revise').frameId, shape('Request').frameId]).toEqual([frame.id, frame.id, diagram.id]);
 });
 
 // ---- placement by meaning: into a kanban column, a cluster, a frame (agents never pick coordinates) ----
@@ -518,7 +522,8 @@ it('reads a Mermaid class diagram: classes with their members in compartments, r
   expect(receives.labels!.map((l) => [l.t < 0.5 ? 'start' : 'end', l.text])).toEqual([['start', '1'], ['end', '0..*']]);
   // The namespace is a frame holding its classes; the note is joined to its class by a dashed line.
   expect(d.frames.map((f) => f.title)).toEqual(['Billing']);
-  expect([invoice.frameId, d.named('Payment').frameId, d.named('Customer').frameId ?? null]).toEqual([d.frames[0].id, d.frames[0].id, null]);
+  const diagram = d.all.find((e) => e.type === 'diagram')!;
+  expect([invoice.frameId, d.named('Payment').frameId, d.named('Customer').frameId]).toEqual([d.frames[0].id, d.frames[0].id, diagram.id]);
   const note = d.shapes.find((s) => s.shape === 'umlNote')!;
   expect(d.between(note, d.named('Duck'))).toMatchObject({ strokeStyle: 'dashed', endCap: 'none' });
   // Every member line fits: a class is at least as wide as its longest line needs.
@@ -595,4 +600,26 @@ it('reads a Mermaid state diagram: start and end markers per scope, states with 
   const fork = d.lines.find((l) => l.start.elementId === shipping.id)!;
   expect(d.all.find((e) => e.id === fork.end.elementId)).toMatchObject({ shape: 'rect', h: 10 });
   expect(d.between(d.shapes.find((s) => s.shape === 'umlNote')!, d.named('Idle'))).toMatchObject({ strokeStyle: 'dashed' });
+});
+
+// ---- Diagram containers (#117): steps an agent adds into a diagram join it and are laid out with it.
+
+it('steps an agent draws into a diagram join it, and the diagram lays them out with what it had — nothing overlapping, the box around all of it', async () => {
+  const boardId = await boardWith([]);
+  const first = await insert(boardId, { structure: { kind: 'mermaid', source: 'flowchart TD\n  A[Order] --> B[Pack]\n  B --> C[Ship]' } });
+  const diagramId = first.created[0];
+  expect((await elementsOf(boardId)).find((e) => e.id === diagramId)?.type).toBe('diagram');
+  const res = await insert(boardId, {
+    structure: { kind: 'graph', nodes: [{ id: 'r', text: 'Refund' }, { id: 'n', text: 'Notify' }], edges: [{ from: 'r', to: 'n' }] },
+    placement: { into: diagramId },
+  });
+  const all = await elementsOf(boardId);
+  // No second diagram: the new steps (and their line) are members of the first.
+  expect(all.filter((e) => e.type === 'diagram').map((e) => e.id)).toEqual([diagramId]);
+  for (const id of res.created) expect(all.find((e) => e.id === id)?.frameId).toBe(diagramId);
+  const steps = all.filter((e) => e.frameId === diagramId && e.type !== 'connector');
+  expect(steps).toHaveLength(5);
+  for (let i = 0; i < steps.length; i++) for (let j = i + 1; j < steps.length; j++) expect(overlap(steps[i], steps[j])).toBe(false);
+  const d = all.find((e) => e.id === diagramId)!;
+  for (const s of steps) expect(s.x >= d.x && s.y >= d.y && s.x + s.w <= d.x + d.w && s.y + s.h <= d.y + d.h).toBe(true);
 });

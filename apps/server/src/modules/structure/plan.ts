@@ -2,7 +2,7 @@
 // (@freero/shared layout), place it on free space (never on existing content), and express it as
 // a BoardChange — new elements, moved items, table cells. Pure, so the same plan feeds every sink
 // (sinks.ts): the board itself, a preview, and later the suggestions layer (KAI-169).
-import { APART_GAP, layoutStructure, LayoutError, rotatedBounds, tableCellEntries, withKanbanLayout, type BoardElement, type InsertStructureRequest, type Point } from '@freero/shared';
+import { APART_GAP, layoutStructure, LayoutError, rotatedBounds, tableCellEntries, withDiagramLayout, withKanbanLayout, type BoardElement, type InsertStructureRequest, type Point } from '@freero/shared';
 import type { BoardChange, BoardView } from '../realtime/index';
 import { LOOSE as MOVABLE, placeLaid, type Placed } from './place';
 
@@ -56,7 +56,10 @@ export function planStructure(req: InsertStructureRequest, view: BoardView, newI
   for (const [tableId, content] of Object.entries(placed.content)) Object.assign(cells, tableCellEntries(tableId, content));
   // A kanban that took items is laid out as open boards would lay it out after the same drop:
   // sorted, filtered, in its swimlanes, each card's row value and status set.
-  const laidOut = withKanbanLayout(view.elements.map((e) => e.el), { create: placed.elements, update });
+  // A diagram that took steps reflows as open boards would lay it out after the same change (#117);
+  // a new diagram adopts its drawing.
+  const before = view.elements.map((e) => e.el);
+  const laidOut = withDiagramLayout(before, withKanbanLayout(before, { create: placed.elements, update }));
   return {
     change: {
       create: laidOut.create as typeof placed.elements,
