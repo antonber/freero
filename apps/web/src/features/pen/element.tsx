@@ -1,7 +1,7 @@
 import { PenLine as PenLineIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import type { PenElement } from '@freero/shared';
-import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
+import { canvasInk, defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { HIGHLIGHTER_OPACITY, PEN_COLORS, PEN_WIDTHS } from './lib/constants';
 import { strokeDistance, strokePath, unpack } from './lib/stroke';
 import './pen.css';
@@ -16,8 +16,10 @@ const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement
       viewBox={`0 0 ${baseW || 1} ${baseH || 1}`}
       preserveAspectRatio="none"
       aria-hidden
+      // Default ink turns light on a dark page (theme.ts canvasInk); the doc keeps the colour.
+      style={{ color: canvasInk(stroke) }}
     >
-      <path d={d} fill={stroke} fillOpacity={highlighter ? HIGHLIGHTER_OPACITY : 1} />
+      <path d={d} fill="currentColor" fillOpacity={highlighter ? HIGHLIGHTER_OPACITY : 1} />
     </svg>
   );
 });

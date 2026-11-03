@@ -101,6 +101,14 @@ export interface HostPersonalViews {
   save(itemId: string, viewId: string, settings: Record<string, unknown> | null): Promise<void>;
 }
 
+/** [additive] Light, dark, or whatever the device uses. */
+export type ColorThemeChoice = 'system' | 'light' | 'dark';
+/** [additive] See Host.colorTheme. */
+export interface HostColorTheme {
+  get(): ColorThemeChoice;
+  set(theme: ColorThemeChoice): void;
+}
+
 export interface Host {
   user: HostUser;
   board: {
@@ -221,6 +229,11 @@ export interface Host {
    * the offline sandbox.
    */
   reportProblem?(context: { role: Role }): void;
+  /**
+   * [additive] The person's app theme (the app keeps it with their account): read it, change it.
+   * Absent where the page follows something else (the live view in an AI assistant).
+   */
+  colorTheme?: HostColorTheme;
   openShareDialog(): void;
   navigate(path: string): void;
   /**
@@ -1319,6 +1332,12 @@ export interface Editor {
   getRole(): Role;
   can(minRole: Role): boolean;
   /**
+   * [additive] May this user protect items (`BaseElement.lockProtected`), unprotect them or change
+   * a protected one? The board owner only (`@freero/shared` `mayProtect`). The server enforces it
+   * (realtime/protectedLock.ts); the engine mirrors it in the lock commands and chrome.
+   */
+  mayProtect(): boolean;
+  /**
    * [additive] What a facilitator limits for this user right now (from the server's role message;
    * null: nothing). The server enforces it; the engine mirrors it: a locked board is commenting
    * only (`getRole()` is then 'commenter'), and tools / paste / inserts that would add other types
@@ -1338,7 +1357,8 @@ export interface Editor {
   isParticipant(): boolean;
   /**
    * [additive] May this user change these elements: an editor any, a participant only their own
-   * drafts (in their private layer). Element writes check it and toast otherwise.
+   * drafts (in their private layer); nobody but the owner a protected one (`mayProtect`). Element
+   * writes check it and toast otherwise.
    */
   mayEdit(ids: readonly string[]): boolean;
   /**

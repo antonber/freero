@@ -5,6 +5,8 @@ import {
   acceptClosure,
   buildOutline,
   COMMENTER_WRITABLE,
+  isProtectedLock,
+  mayProtect,
   PARTICIPANT_WRITABLE,
   pendingSuggestions,
   rejectClosure,
@@ -221,6 +223,10 @@ export class EditorImpl implements Editor {
     return this.core.store.serverRole ?? this.core.hostRef.current.board.role;
   }
 
+  mayProtect(): boolean {
+    return mayProtect(this.getRole());
+  }
+
   can(minRole: Role): boolean {
     return ROLE_RANK[this.getRole()] >= ROLE_RANK[minRole];
   }
@@ -235,6 +241,8 @@ export class EditorImpl implements Editor {
   }
 
   mayEdit(ids: readonly string[]): boolean {
+    // A protected lock (BaseElement.lockProtected) holds for everyone but the owner (mayProtect).
+    if (!this.mayProtect() && ids.some((id) => isProtectedLock(this.getElement(id)))) return false;
     if (this.can('editor')) return true;
     return ids.length > 0 && ids.every((id) => this.ownDraft(id));
   }

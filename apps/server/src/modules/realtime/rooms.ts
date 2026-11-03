@@ -65,7 +65,9 @@ import {
   type ObjectKind,
   pendingSuggestions,
   WITHDRAWN_BY,
+  mayProtect,
 } from '@freero/shared';
+import { guardProtectedLocks } from './protectedLock';
 import { getConfig } from '../../platform/config';
 import { keepSuggestionAuthors, noteSuggestionAuthor, type SuggestionAuthorKey } from './repo';
 import { logError } from '../../platform/log';
@@ -661,6 +663,7 @@ class Room {
       doc.getMap<unknown>(VOTING_COLLECTION);
       if (participant) for (const n of PARTICIPANT_LAYER_ROOTS) doc.getMap<unknown>(n);
       prepareServerCollections(doc);
+      const overrides = mayProtect(conn.access);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
         fixed = guardVotes(tr, doc, this.doc, { userId: conn.userId, participant });
@@ -670,6 +673,8 @@ class Room {
           fixed = guardDrafts(tr, doc, this.doc) || fixed;
         }
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
+        // Protected locks hold in the layers too (a hidden frame's contents; protectedLock.ts).
+        if (!overrides) fixed = guardProtectedLocks(tr, doc.getMap<unknown>(ELEMENTS), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
         // A new draft during an anonymous private mode is nobody's (#44, attribution.ts).
         const creator = creatorOf(conn.userId, isPrivateLayer(name), this.doc);
         fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), creator, (id) => this.knownAttribution(doc, id)) > 0 || fixed;
@@ -1081,12 +1086,15 @@ class Room {
       const addTypes = conn.limits?.addTypes;
       let fixed = false;
       let moved: MovedEntry[] = [];
+      const overrides = mayProtect(conn.access);
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
+        // Only the owner changes protected items (protectedLock.ts).
+        if (!overrides) fixed = guardProtectedLocks(tr, this.doc.getMap<unknown>(ELEMENTS), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
         // Who made an element is the server's to say (attribution.ts, KAI-222).
         fixed = guardAttribution(tr, this.doc.getMap<unknown>(ELEMENTS), conn.userId, (id) => this.knownAttribution(this.doc, id)) > 0 || fixed;
         // Element content written here for an element in a layer goes to that layer (elementContent.ts).

@@ -2,6 +2,7 @@ import { Network as NetworkIcon } from 'lucide-react';
 import { memo, type CSSProperties, type KeyboardEvent } from 'react';
 import type { MindmapElement } from '@freero/shared';
 import {
+  canvasInk,
   defineElement,
   ElementText,
   richTextToPlain,
@@ -45,12 +46,13 @@ function Edge({ node, parent, depth }: { node: MindmapElement; parent: MindmapEl
   const y1 = node.h / 2;
   const dx = (x1 - x0) * 0.55;
   return (
-    <svg className="fr-mm__edge" width="1" height="1" aria-hidden>
+    <svg className="fr-mm__edge" width="1" height="1" aria-hidden style={{ color: canvasInk(node.color) }}>
       <path
         d={`M ${x0} ${py} C ${x0 + dx} ${py}, ${x1 - dx} ${y1}, ${x1} ${y1}`}
-        // Presentation attributes, not CSS: export clones (html-to-image) don't carry stylesheets.
+        // Presentation attributes and inline style, not CSS: export clones (html-to-image) don't
+        // carry stylesheets. currentColor: an ink branch is painted light on a dark canvas.
         fill="none"
-        stroke={node.color}
+        stroke="currentColor"
         strokeWidth={depth <= 1 ? 3 : 2}
         strokeLinecap="round"
       />

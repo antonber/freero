@@ -9,6 +9,9 @@ import {
   House,
   LogOut,
   MessageSquareWarning,
+  Monitor,
+  Moon,
+  Sun,
   Plus,
   Settings,
   ShieldAlert,
@@ -23,6 +26,8 @@ import type { ProjectSummary, WorkspaceSummary } from '@freero/shared';
 import { Avatar, IconButton, Logo, Menu, Tooltip } from '@ui';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { useChooseTheme } from '../../components/ThemeSwitch';
+import { useThemePreference } from '../../lib/theme';
 import { useMediaQuery } from '../../lib/hooks';
 import { personColor } from '../../lib/placeholder';
 import { workspaceLabel } from './useWorkspaces';
@@ -85,6 +90,8 @@ export function Sidebar(props: SidebarProps) {
   const accountRef = useRef<HTMLButtonElement>(null);
   const switcherRef = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const theme = useThemePreference();
+  const chooseTheme = useChooseTheme();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const compact = useMediaQuery('(max-width: 1000px)');
   // Operators (moderation) get a way to the queue in their account menu.
@@ -262,6 +269,19 @@ export function Sidebar(props: SidebarProps) {
         items={[
           { heading: user.email },
           { id: 'settings', label: 'Account settings', icon: Settings, onSelect: () => navigate('/settings') },
+          {
+            id: 'theme',
+            label: 'Theme',
+            icon: themeIcon[theme],
+            onSelect: () => undefined,
+            submenu: (['system', 'light', 'dark'] as const).map((t) => ({
+              id: `theme-${t}`,
+              label: t === 'system' ? 'Same as device' : t === 'light' ? 'Light' : 'Dark',
+              icon: themeIcon[t],
+              checked: theme === t,
+              onSelect: () => chooseTheme(t),
+            })),
+          },
           { id: 'problem', label: 'Report a problem…', icon: MessageSquareWarning, shortcut: PROBLEM_SHORTCUT, onSelect: () => problems.open() },
           ...(operator ? [{ id: 'moderation', label: 'Moderation queue', icon: ShieldAlert, onSelect: () => navigate('/operator') }] : []),
           { divider: true },
@@ -279,6 +299,8 @@ export function Sidebar(props: SidebarProps) {
     </aside>
   );
 }
+
+const themeIcon = { system: Monitor, light: Sun, dark: Moon } as const;
 
 /** Props that make an element accept dropped board cards (`enabled` false: none). */
 function dropTarget(enabled: boolean, getDrop: () => SidebarProps['onDropBoard'], projectId: string | null) {

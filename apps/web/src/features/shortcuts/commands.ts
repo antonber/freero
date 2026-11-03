@@ -20,9 +20,12 @@ export default defineCommands([
     id: 'shortcuts.palette',
     icon: SquareChevronRight,
     label: 'Command palette',
-    // Mod+/ — Mod+K is taken (item link, and a text link while typing). Matched by the typed
-    // character like '?', so layouts where '/' needs Shift (German Shift+7) work too.
+    // Mod+/ — matched by the typed character like '?', so layouts where '/' needs Shift (German
+    // Shift+7) work too. Mod+K too, the key people bring from other tools: an alias, so with one
+    // item selected Mod+K stays "Link to…" (a command's own key goes first) and while typing it
+    // stays the text link.
     shortcut: 'mod+/',
+    extraShortcuts: ['mod+k'],
     menus: ['board'],
     minRole: 'viewer',
     // Never while typing: the shortcut would steal focus from the text being written.

@@ -213,6 +213,18 @@ export interface FacilitationSession {
   cursorsHidden: boolean;
 }
 
+/** A locked item only the owner or the facilitator may change (BaseElement.lockProtected). */
+export const isProtectedLock = (el: { locked?: boolean; lockProtected?: boolean } | null | undefined): boolean => !!el?.locked && !!el.lockProtected;
+
+/**
+ * May someone with this role on the board protect items, unprotect them, or change a protected
+ * one? The board owner only, never a facilitator (any editor can start a facilitation session).
+ * The one place to widen it (co-owners, #122).
+ */
+export function mayProtect(role: string): boolean {
+  return role === 'owner';
+}
+
 export interface BoardSettings {
   background: string;
   grid: 'dots' | 'lines' | 'none';

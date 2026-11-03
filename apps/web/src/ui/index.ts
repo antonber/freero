@@ -1,5 +1,6 @@
 // Freero design system — the only public entry into ui/ (import from '@ui').
 // Importing this module also loads the design tokens and base styles.
+import './fonts/fonts.css';
 import './tokens.css';
 import './base.css';
 

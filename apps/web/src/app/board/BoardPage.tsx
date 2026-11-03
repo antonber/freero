@@ -1,5 +1,5 @@
 // Route /board/:id — loads the board, builds the Host and mounts the engine.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { guestDisplayName, LINK_PASSWORD_REQUIRED, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type GuestInfo, type Role } from '@freero/shared';
 import { BoardEngine, type Host } from '@engine';
@@ -11,6 +11,8 @@ import { ShareDialog } from '../components/ShareDialog';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { useProblemReport, useShowingBoard } from '../problems/ProblemReport';
+import { useChooseTheme } from '../components/ThemeSwitch';
+import { getThemePreference } from '../lib/theme';
 import { features } from './features';
 import { createGuestHost, createLocalHost, createServerHost, toastNotify } from './host';
 import { LinkPassword } from './LinkPassword';
@@ -179,6 +181,11 @@ function ServerBoard({ id }: { id: string }) {
   const problems = useProblemReport();
   useShowingBoard(board ? { id: board.id, role: board.role } : null);
   const reportProblem = useMemo(() => (board ? (c: { role: Role }) => problems.open({ id: board.id, role: c.role }) : undefined), [board?.id, problems]);
+  // The board menu's Theme (features/appearance): saved to the account like the settings page's.
+  const chooseTheme = useChooseTheme();
+  const chooseRef = useRef(chooseTheme);
+  chooseRef.current = chooseTheme;
+  const colorTheme = useMemo<Host['colorTheme']>(() => ({ get: getThemePreference, set: (t) => chooseRef.current(t) }), []);
 
   const host = useMemo<Host | null>(() => {
     if (!board || !user) return null;
@@ -192,9 +199,10 @@ function ServerBoard({ id }: { id: string }) {
       ai,
       trackers,
       reportProblem,
+      colorTheme,
     });
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
-  }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem]);
+  }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem, colorTheme]);
 
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;

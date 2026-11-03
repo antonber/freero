@@ -1,14 +1,14 @@
 import { Smile as SmileIcon } from 'lucide-react';
 import { memo } from 'react';
 import type { IconElement } from '@freero/shared';
-import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
+import { canvasInk, defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { IconSvg } from './lib/nodes';
 import { DEFAULT_COLOR, DEFAULT_STROKE, ICON_SIZE, insertIcon, parseDragPayload } from './lib/insert';
 import './icons.css';
 
 /** Vector, so it stays crisp at any zoom; the drawing lives in the element (see IconElement). */
 const IconView = memo(function IconView({ element }: ElementRenderProps<IconElement>) {
-  return <IconSvg className="fr-icons-el" nodes={element.nodes} color={element.color} strokeWidth={element.strokeWidth} />;
+  return <IconSvg className="fr-icons-el" nodes={element.nodes} color={canvasInk(element.color)} strokeWidth={element.strokeWidth} />;
 });
 
 export default defineElement({

@@ -76,3 +76,11 @@
   gap: 6px;
   align-items: center;
 }
+
+/* The font button's face: a long family name stays one short line. */
+.fr-textstyle-font {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

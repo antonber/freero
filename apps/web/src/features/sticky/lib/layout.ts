@@ -22,16 +22,17 @@ export function nextFreeSlot(from: Rect, dir: Direction, occupied: Rect[], gap: 
   return { x: candidate.x, y: candidate.y };
 }
 
-/** Top-left positions for `count` squares of `size` in a near-square grid centered on `center`. */
-export function gridPositions(count: number, size: number, gap: number, center: Point): Point[] {
+/** Top-left positions for `count` boxes of `size` (a side, or w × h) in a near-square grid centered on `center`. */
+export function gridPositions(count: number, size: number | { w: number; h: number }, gap: number, center: Point): Point[] {
+  const { w, h } = typeof size === 'number' ? { w: size, h: size } : size;
   const cols = Math.ceil(Math.sqrt(count));
   const rows = Math.ceil(count / cols);
-  const totalW = cols * size + (cols - 1) * gap;
-  const totalH = rows * size + (rows - 1) * gap;
+  const totalW = cols * w + (cols - 1) * gap;
+  const totalH = rows * h + (rows - 1) * gap;
   const x0 = center.x - totalW / 2;
   const y0 = center.y - totalH / 2;
   return Array.from({ length: count }, (_, i) => ({
-    x: Math.round(x0 + (i % cols) * (size + gap)),
-    y: Math.round(y0 + Math.floor(i / cols) * (size + gap)),
+    x: Math.round(x0 + (i % cols) * (w + gap)),
+    y: Math.round(y0 + Math.floor(i / cols) * (h + gap)),
   }));
 }

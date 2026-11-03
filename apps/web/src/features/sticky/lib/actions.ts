@@ -1,21 +1,24 @@
 // Sticky actions shared by the tool, commands and format toolbar.
 import type { StickyElement } from '@freero/shared';
 import type { Editor, NewElement, Point } from '@engine';
-import { DEFAULT_COLOR, STICKY_GAP, STICKY_SIZE, TOOL_ID, type StickyToolOptions } from './constants';
+import { STICKY_INK } from '@freero/shared';
+import { DEFAULT_COLOR, STICKY_GAP, TOOL_ID, stickyDims, stickyPreset, toolDims, type StickyShape, type StickySize, type StickyToolOptions } from './constants';
 import { nextFreeSlot, type Direction } from './layout';
 
-/** A new sticky centered on `at`, using the last chosen color. */
+/** A new sticky centered on `at`, using the last chosen color, shape and size. */
 export function stickyAt(editor: Editor, at: Point, overrides: Partial<StickyElement> = {}): NewElement<'sticky'> {
-  const color = editor.getToolOptions<StickyToolOptions>(TOOL_ID).color ?? DEFAULT_COLOR;
-  const w = overrides.w ?? STICKY_SIZE;
-  const h = overrides.h ?? STICKY_SIZE;
+  const opts = editor.getToolOptions<StickyToolOptions>(TOOL_ID);
+  const color = opts.color ?? DEFAULT_COLOR;
+  const dims = toolDims(opts);
+  const w = overrides.w ?? dims.w;
+  const h = overrides.h ?? dims.h;
   return {
     type: 'sticky',
     color,
     text: '',
     fontFamily: 'sans',
     fontSize: 'auto',
-    textColor: '#17162B',
+    textColor: STICKY_INK,
     align: 'center',
     vAlign: 'middle',
     ...overrides,
@@ -56,4 +59,21 @@ export function createNextSticky(editor: Editor, from: StickyElement, dir: Direc
   if (id && !copyText) editor.startEditing(id);
   editor.endGesture();
   return id;
+}
+
+/**
+ * Gives `stickies` a preset shape and/or size, each keeping its center (a note grows in place
+ * rather than off to one side). A sticky resized freely takes the medium size when only the shape
+ * is chosen. One undo step; locked stickies stay as they are.
+ */
+export function setStickyBox(editor: Editor, stickies: StickyElement[], pick: { shape?: StickyShape; size?: StickySize }): void {
+  const patches: Array<{ id: string; patch: Partial<StickyElement> }> = [];
+  for (const s of stickies) {
+    if (s.locked) continue;
+    const now = stickyPreset(s);
+    const { w, h } = stickyDims(pick.shape ?? now.shape, pick.size ?? now.size ?? 'm');
+    if (w === s.w && h === s.h) continue;
+    patches.push({ id: s.id, patch: { x: Math.round(s.x + (s.w - w) / 2), y: Math.round(s.y + (s.h - h) / 2), w, h } });
+  }
+  if (patches.length) editor.updateMany(patches);
 }

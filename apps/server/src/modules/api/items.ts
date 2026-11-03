@@ -27,6 +27,9 @@ import {
   rotatedBounds,
   shapeDraft,
   STICKY_COLORS,
+  STICKY_SHAPES,
+  STICKY_SIZES,
+  stickyDims,
   STICKY_SIZE,
   stickyDraft,
   textDraft,
@@ -179,7 +182,13 @@ export function planCreate(inputs: Input[], view: BoardView, newId: () => string
       );
     } else {
       const size = { w: num(it.w, 'w', i, 8, 20_000) ?? DEFAULT_SIZE[type].w, h: num(it.h, 'h', i, 8, 20_000) ?? DEFAULT_SIZE[type].h };
-      if (type === 'sticky') size.h = size.w;
+      if (type === 'sticky') {
+        // A shape and size preset (square / rect, s / m / l), else a square of w.
+        const shape = oneOf(it.shape, 'shape', STICKY_SHAPES, i);
+        const preset = oneOf(it.size, 'size', STICKY_SIZES, i);
+        if (shape || preset) Object.assign(size, stickyDims(shape, preset));
+        else size.h = size.w;
+      }
       if (type === 'text') size.h = measureText(text, { fontSize: num(it.fontSize, 'fontSize', i, 8, 200) ?? 18, maxWidth: size.w, lineHeight: 1.4 }).h + 8;
       if (type === 'card') {
         const t = measureText(str(it.title, 'title', i, 500) ?? text, { fontSize: 16, maxWidth: size.w - 40, bold: true, lineHeight: 1.35 }).h;
@@ -200,7 +209,7 @@ export function planCreate(inputs: Input[], view: BoardView, newId: () => string
       const r = { x: at.x, y: at.y, w: size.w, h: size.h };
       if (type === 'sticky') {
         const c = oneOf(it.color, 'color', Object.keys(STICKY_COLORS) as StickyColor[], i) ?? 'yellow';
-        draft = stickyDraft(id, r.x, r.y, text, c, r.w);
+        draft = stickyDraft(id, r.x, r.y, text, c, { w: r.w, h: r.h });
       } else if (type === 'shape') {
         draft = shapeDraft(id, oneOf(it.shape, 'shape', SHAPES, i) ?? 'rect', r, text, {
           fill: color(it.fill, 'fill', i),
@@ -362,7 +371,12 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
   }
   if (only('fill', ['shape', 'frame'])) patch.fill = color(it.fill, 'fill', null);
   if (only('stroke', ['shape', 'connector'])) patch.stroke = color(it.stroke, 'stroke', null);
-  if (only('shape', ['shape'])) patch.shape = oneOf(it.shape, 'shape', SHAPES, null);
+  if (el.type === 'sticky' && (has('shape') || has('size'))) {
+    // A sticky's shape and size preset; it keeps its center.
+    const now = { shape: el.w / Math.max(1, el.h) > 1.2 ? ('rect' as const) : ('square' as const) };
+    const { w, h } = stickyDims(oneOf(it.shape, 'shape', STICKY_SHAPES, null) ?? now.shape, oneOf(it.size, 'size', STICKY_SIZES, null));
+    Object.assign(patch, { w, h, x: Math.round(el.x + (el.w - w) / 2), y: Math.round(el.y + (el.h - h) / 2) });
+  } else if (only('shape', ['shape'])) patch.shape = oneOf(it.shape, 'shape', SHAPES, null);
   if (only('hidden', ['frame'])) {
     if (typeof it.hidden !== 'boolean') throw badRequest('hidden must be true or false');
     patch.hidden = it.hidden;

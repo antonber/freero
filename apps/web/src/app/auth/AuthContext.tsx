@@ -3,6 +3,7 @@ import type { Account, User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
 import { takeProviderSignIn, track } from '../analytics/bridge';
 import { api } from '../api/client';
+import { setThemePreference } from '../lib/theme';
 
 export interface AuthValue {
   /** The signed-in user, or null. `deletionScheduledFor` set: only the restore page is usable. */
@@ -16,8 +17,8 @@ export interface AuthValue {
   logout(): Promise<void>;
   /** Re-fetches the session. */
   refresh(): Promise<Account | null>;
-  /** Saves name/color/time zone; every open tab (boards included) picks the change up. */
-  updateProfile(patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>> & { timeZone?: string }): Promise<Account>;
+  /** Saves name/color/time zone/theme; every open tab (boards included) picks the change up. */
+  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }): Promise<Account>;
   /**
    * Adopts an account the server just returned (avatar change, password reset sign-in, restore)
    * — or null after it signed this tab out (deletion) — and tells the other tabs.
@@ -118,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [announce]);
 
-  const updateProfile = useCallback(async (patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>> & { timeZone?: string }) => {
+  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) => {
     const { user } = await api.updateMe(patch);
     setUser(user);
     announce();
@@ -130,6 +131,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     announce();
   }, [announce]);
 
+  // The account's theme wins over this browser's: it follows the person to every device.
+  const accountTheme = user?.theme;
+  useEffect(() => {
+    if (accountTheme) setThemePreference(accountTheme);
+  }, [accountTheme]);
   // An account whose time zone isn't known yet takes this browser's (reminders, email dates); a
   // zone chosen in the profile is never overwritten. Once per tab and account.
   const zoneSent = useRef<string | null>(null);

@@ -36,10 +36,13 @@
   --fr-shadow: 0 2px 8px rgba(23, 22, 43, 0.1), 0 0 0 1px rgba(23, 22, 43, 0.04);
   --fr-shadow-lg: 0 12px 32px rgba(23, 22, 43, 0.16), 0 0 0 1px rgba(23, 22, 43, 0.05);
 
-  --fr-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --fr-font-serif: 'Source Serif 4', Georgia, serif;
-  --fr-font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --fr-font-hand: 'Caveat', 'Comic Sans MS', cursive;
+  /* Self-hosted (ui/fonts, scripts/fonts.mjs), then system faces that cover Chinese, Japanese and
+     Korean. The board's other typefaces: engine/text/fonts.ts. */
+  --fr-font-cjk: 'Hiragino Sans', 'PingFang SC', 'Microsoft YaHei', 'Malgun Gothic', 'Noto Sans CJK JP', 'Noto Sans JP', 'Noto Sans SC';
+  --fr-font: 'Inter', system-ui, -apple-system, 'Segoe UI', var(--fr-font-cjk), sans-serif;
+  --fr-font-serif: 'Source Serif 4', Georgia, 'Hiragino Mincho ProN', 'Songti SC', 'SimSun', 'Batang', 'Noto Serif CJK JP', serif;
+  --fr-font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, var(--fr-font-cjk), monospace;
+  --fr-font-hand: 'Caveat', 'Comic Sans MS', var(--fr-font-cjk), cursive;
 
   --fr-z-canvas-ui: 10;
   --fr-z-toolbar: 20;
@@ -100,9 +103,9 @@ button {
 }
 
 /* ---- Dark (#89) ----
-   A page that follows a dark surrounding sets data-theme="dark" on <html> (the live board view in an
-   AI assistant follows the assistant's theme). The chrome follows these; board content does not
-   (`.fr-paper` above). */
+   app/lib/theme.ts sets data-theme on <html>: the person's choice (System / Light / Dark), or the
+   assistant's theme in the live board view inside an AI assistant. The chrome follows these; board
+   content does not (`.fr-paper` above). */
 :root[data-theme='dark'] {
   color-scheme: dark;
   --fr-primary: #8f7bff;

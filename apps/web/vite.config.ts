@@ -36,7 +36,7 @@ function freeroServiceWorker(): Plugin {
         for (const f of out.imports) shell.add(f);
         for (const f of out.viteMetadata?.importedCss ?? []) shell.add(f);
       }
-      const precache = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', ...[...shell].sort().map((f) => `/${f}`)];
+      const precache = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/theme-boot.js', ...[...shell].sort().map((f) => `/${f}`)];
       const version = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);
       const { code } = await transformWithEsbuild(readFileSync(source, 'utf8'), source, {
         loader: 'ts',
@@ -97,6 +97,11 @@ export default defineConfig({
       '@blocknote/react',
       '@blocknote/ariakit',
     ],
+  },
+  build: {
+    // Font files stay files: inlined into the CSS they would load with every page, whether or not
+    // any text uses that face (see scripts/fonts.mjs).
+    assetsInlineLimit: (file: string) => (file.endsWith('.woff2') ? false : undefined),
   },
   server: {
     port: 5173,
