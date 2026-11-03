@@ -846,7 +846,7 @@ through `DecompressionStream`, counting the REAL output bytes against per-entry 
 sizes a zip declares are never trusted), with a 20 s deadline checked as it goes; XML with a DOCTYPE
 is refused, external relationships are never followed, legacy binary `.vsd` gets "save as .vsdx".
 Tests build their packages with `lib/vsdxFixture.ts` (hand-written parts; no third-party samples)
-and fuzz them. Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) are handed to
+and fuzz them. Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
 `from-text.insert`.
 
 Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
@@ -860,9 +860,8 @@ docs/board-outline.md):
   (pasted `@startuml` text, the dialog's PlantUML kind, a dropped `.puml`). It produces the same
   diagram model as the Mermaid reader — a `SequenceInput`, or nodes / edges / groups whose nodes may
   carry their own size and look (class boxes with compartments) and whose edges carry UML ends and
-  multiplicities — so both land as the same shapes; `layoutPlantUml` lays it out with the layered
-  graph layout and lays the looks and line ends over it (a class is drawn as a table — name, divider,
-  members — until compartments ship). Kept as an editable diagram source like Mermaid. Never
+  multiplicities — so both land as the same shapes: `layoutPlantUml` is `layoutDiagram` (classes
+  are `umlClass` shapes with `compartments`). Kept as an editable diagram source like Mermaid. Never
   fetches anything: `!include` and the preprocessor are refused; styling is skipped; unknown lines
   are errors naming the line.
 - Mind maps from structure are laid out by `layoutMindTree` (`@freero/shared` layout/mindtree.ts),
@@ -892,7 +891,7 @@ docs/board-outline.md):
   (`triangleOpen`, `diamond`, `diamondOpen`, dashed for `..`) or the crow's-foot end each side
   names, multiplicities as labels near their ends; namespaces and composite states are frames;
   start / end states, choices and forks are small marks; notes are `umlNote`s on a dashed line.
-  Front matter (`---` … `---`) is skipped. PlantUML is not read.
+  Front matter (`---` … `---`) is skipped.
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
