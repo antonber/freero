@@ -60,6 +60,8 @@ export default defineElement({
   // colour (sticky text keeps its readable ink).
   sharedStyle: (el) => ({ fill: STICKY_COLORS[el.color], fontFamily: el.fontFamily, fontSize: el.fontSize, align: el.align, vAlign: el.vAlign }),
   applySharedStyle: (_el, { fill, ...rest }) => ({ ...rest, ...(fill ? { color: nearestColor(fill) } : {}) }),
+  // A few pixels big (a large board's thumbnail): its paper.
+  swatch: (el) => STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow,
   textField: 'text',
   defaults: (): Omit<NewElement<'sticky'>, 'x' | 'y'> => ({
     type: 'sticky',

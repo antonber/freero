@@ -1428,11 +1428,61 @@ In the real app (`verify-freero`, the offline sandbox, the dev build): a 1,999-r
 kanban with fields is on the board, laid out (four columns of 500, in row order, chips drawn)
 about 1.7 s after "Import" — the same before and after, since that path names each card's kanban
 and never looked containers up; nearly all of it is drawing. Regrouping those 1,999 cards by
-Priority from the View panel: 3.1 s before, 1.4–1.8 s after. **Found there, not fixed**: 5 s after
-any edit the board thumbnail (`engine/editor/export.tsx` `startThumbnails`) renders the whole board
-through html-to-image on the main thread; with 2,000 cards that froze the page for 32–53 s (style
-cloning per element). It needs its own change: skip what is smaller than a pixel at the thumbnail's
-scale, or draw boxes past a few hundred elements.
+Priority from the View panel: 3.1 s before, 1.4–1.8 s after. **Found there**: 5 s after any edit
+the board thumbnail froze the page for 32–53 s with 2,000 cards. Since fixed, next section.
+
+### Board thumbnails and image exports
+
+**The cause.** 5 s after an edit (then at most once a minute, and on leave) `startThumbnails`
+rendered every shared item in full into an offscreen copy of the board and handed it to
+html-to-image in one go. html-to-image copies every computed style property of every DOM node
+(~350 `getPropertyValue` / `setProperty` calls, each with a prototype-chain type check) on the main
+thread with no yield: about 0.75 ms per node in Chrome, and a full-detail kanban card is ~25 nodes.
+Profiled at 500 cards: 4.7 s of the 7.5 s in `cloneCSSStyle`, 2 s in style / layout it forces, React
+0.2 s. Explicit image exports (PNG / JPG / SVG / PDF pages, copy as image) took the same path.
+
+**The fix** (engine; `engine/editor/paintPlan.ts` decides, `export.tsx` renders):
+- A thumbnail draws in full only what is big enough on the picture to show detail (16 px on its
+  long side), at most the 150 biggest such items, each at the picture's own zoom, so the features'
+  level of detail applies exactly as on the canvas zoomed out that far. Everything smaller is a box
+  in the colour it reads as, painted on the canvas in milliseconds: `ElementDefinition.swatch`
+  (sticky: its paper; card: a light grey, white paper with lines of text, which a white column
+  would swallow; connectors and drawings: left out, their lines are thinner than a pixel there),
+  default fill / color / stroke. Render order is kept, so boxes sit over their kanban and under
+  what lies on top.
+- What is drawn in full is rasterized in chunks of about 50 DOM nodes, one task each, every chunk
+  covering only its items' part of the picture (pixel-aligned, so no seams), the page answering in
+  between (a `MessageChannel` yield, which a hidden tab doesn't throttle). React mounts the
+  picture as a transition, in slices. A blend-mode item (highlighter) is a chunk of its own,
+  composited with its blend. SVG nests the chunks' SVGs (one copy of the font CSS).
+- Explicit exports keep full fidelity on the same chunked path: same pixels, no longer one task;
+  the image dialog shows how far along it is (`renderToDataUrl({ onProgress })`).
+- Frames drew their hairline and title from the live camera zoom even in pictures: exported while
+  zoomed out to a 2,000-card board, the hairline was 50 px and the title 50 times too big. A
+  picture now draws frames at its own zoom.
+
+Measured in the real app (`/board/local`, dev build, headless Chromium, this laptop): a frame of 12
+stickies, 18 loose stickies and kanbans of N cards in four columns; one real edit (a sticky placed
+with N and a click); long tasks (PerformanceObserver) and the largest gap of a 10 ms heartbeat while
+the thumbnail renders.
+
+| Thumbnail pass, N cards | 50 (82 items) | 500 | 2,000 |
+|---|---:|---:|---:|
+| before: longest task / total blocking | 886 ms / 836 ms | 6,918 ms / 6,972 ms | 26,919 ms / 27,454 ms |
+| after: longest task / total blocking | 56 ms / 10 ms | none over 50 ms | none over 50 ms |
+| after: whole pass (wall, page answering) | 1.0 s | 46 ms | 70 ms |
+
+| Explicit PNG export (dialog, whole board, 2x) | 50 | 2,000 (capped at 8,192 px) |
+|---|---:|---:|
+| before: total / longest task | 1.9 s / 894 ms | 32 s / 27.9 s |
+| after: total / longest task / largest gap | 1.9 s / 80 ms / 102 ms | 42–46 s / 171 ms / 245 ms |
+
+The 2,000-card export takes longer in total (a raster per chunk) but the page keeps answering and
+the dialog shows progress; its longest task is React committing 2,000 items at once. On a real
+board (logged in, real server): the thumbnail upload succeeds, the dashboard shows it, and wheel
+panning during the pass on the 2,000-card board answers in 23–52 ms. A typical board's thumbnail
+looks as before (stickies, frame, kanban, legible titles); on large boards stickies and cards
+become boxes of their colour, as they would be a few pixels big anyway.
 
 ## Sources (concepts only; nothing copied)
 

@@ -776,6 +776,13 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /** [additive] Extra style for the element's positioned world wrapper (e.g. mix-blend-mode). */
   wrapperStyle?(element: ElementOf<T>): CSSProperties | undefined;
   /**
+   * [additive] The colour this item reads as when it is only a few pixels big: board thumbnails
+   * draw such items as boxes of this colour (drawing every small item in full froze large boards),
+   * and so does the minimap. null leaves it out at that size (a line thinner than a pixel).
+   * Default: its `fill`, else `color`, else `stroke`, else a neutral grey.
+   */
+  swatch?(element: ElementOf<T>): string | null;
+  /**
    * [additive] false = the engine draws no bounding-box selection frame, resize/rotate handles
    * or hover outline for this type; the feature draws its own (connectors: endpoint handles).
    * Default true.
@@ -1574,6 +1581,11 @@ export interface Editor {
      * without CORS that the server can't reach either — and were left out of the picture.
      */
     onMissingImages?: (count: number) => void;
+    /**
+     * [additive] Progress of the picture (`done` of `total` steps). Big pictures are drawn in
+     * steps with the page answering in between, so a dialog can show how far along it is.
+     */
+    onProgress?: (done: number, total: number) => void;
   }): Promise<string>;
 
   // -- UI state --

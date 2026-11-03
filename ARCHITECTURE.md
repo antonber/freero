@@ -574,6 +574,10 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   Declare what it handles (and keys a type's text parts handle) in `keys: [{ shortcuts, label,
   minRole? }]` next to it, or the `?` sheet can't show them.
 - `wrapperStyle(el)`: style for the element's world wrapper (highlighter `mix-blend-mode`).
+- `swatch(el) → colour | null`: what an item reads as a few pixels big. Board thumbnails draw items
+  too small on the picture to show detail (and all but the 150 biggest) as boxes of it, so a
+  2,000-card board's thumbnail costs milliseconds; null leaves it out (lines). Default: fill /
+  color / stroke (`engine/editor/paintPlan.ts`).
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
   feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
   where the format toolbar is (never query the chrome's DOM).
@@ -581,6 +585,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   true })`, exports, thumbnails and zoom-to-fit include it.
 - `Editor.cancelGesture()`: Escape mid-drag — reverts the outermost gesture's writes and leaves no
   undo step (the select tool and connector handles use it).
+- Offscreen pictures (`engine/editor/export.tsx`) are rasterized in chunks of ~50 DOM nodes, one
+  task each (html-to-image copies every style of every node on the main thread); exports keep full
+  fidelity, thumbnails follow `paintPlan.ts`. Items draw at the picture's zoom (`zoom` prop: 1 for
+  exports, the picture's scale for thumbnails); an element reading the live camera must use the
+  prop when `useIsExporting()`. `renderToDataUrl({ onProgress })` reports the steps.
 - `renderToDataUrl({ …, skipFonts? })`: exports inline only the web-font faces the picture uses
   (fetched once, see `engine/editor/fontEmbed.ts`); html-to-image never reads stylesheets itself,
   so cross-origin font CSS can't log errors. `skipFonts` (thumbnails) uses installed fonts.

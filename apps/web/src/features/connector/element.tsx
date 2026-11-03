@@ -257,6 +257,8 @@ export default defineElement({
   connectable: false,
   // The overlay panel draws endpoint/midpoint handles; a bounding box around a line only confuses.
   selectionFrame: false,
+  // A line a few pixels long is thinner than a pixel: left out of a large board's thumbnail.
+  swatch: () => null,
   textField: 'label',
   defaults: (): Omit<NewElement<'connector'>, 'x' | 'y'> => ({
     type: 'connector',

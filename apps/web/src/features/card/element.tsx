@@ -181,6 +181,9 @@ export default defineElement({
   // The accent bar is the card's colour.
   sharedStyle: (el) => ({ fill: el.color || DEFAULT_ACCENT }),
   applySharedStyle: (_el, { fill }) => (fill && fill !== 'transparent' ? { color: fill } : null),
+  // A few pixels big (a large board's thumbnail) a card reads as white paper with lines of text:
+  // a light grey (white would vanish on a kanban's white columns); the accent stripe is too thin.
+  swatch: () => '#e3e2ec',
   textField: 'title',
   defaults: (): Omit<NewElement<'card'>, 'x' | 'y'> => ({
     type: 'card',

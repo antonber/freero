@@ -26,7 +26,13 @@ export interface ExportOptions {
   skipFonts?: boolean;
   /** Only elements of the shared doc (what everyone with access sees): dashboard thumbnails. */
   sharedOnly?: boolean;
+  /**
+   * Draw as a thumbnail (paintPlan.ts): items at the level of detail of the picture's scale, those
+   * too small to show detail as boxes of their swatch colour. Explicit exports leave it off.
+   */
+  thumbnail?: boolean;
   onMissingImages?: (count: number) => void;
+  onProgress?: (done: number, total: number) => void;
 }
 
 export class Emitter {
