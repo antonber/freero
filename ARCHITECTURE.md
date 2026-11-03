@@ -914,6 +914,9 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
 - `Host.reportProblem?({ role })`: opens the app's "Report a problem" dialog (absent for visitors and
   in the sandbox); `features/problem-report` puts it in the board menu with `mod+alt+p`. `fontEmbedCss(node)`
   is exported for the app's screenshot of the visible page (see "Problem reports").
+- `Host.track?(event: AnalyticsEvent)`: counts a product event from the closed list in
+  `@freero/shared` `analytics.ts` (absent in the sandbox, for guests and in embeds; a no-op unless
+  Google Analytics is on and accepted). See "Analytics".
 
 ### Installable app (PWA, KAI-140)
 
@@ -1011,7 +1014,8 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
   auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
-  pages only, with its origin in their CSP. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
+  pages only, with its origin in their CSP; `GA_MEASUREMENT_ID` adds the Google Analytics runtime
+  (see "Analytics" below). The build itself never contains a script: both are added when served. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
   `scripts/indexnow.mjs` submits the live sitemaps' URLs (or those changed since a day) after a deploy.
 - **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
   written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
@@ -1039,6 +1043,40 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   internal link, the comparison publishing rule); `npm run verify -- --only site` runs it on a real
   server with a real session and with `SITE=false`, and fetches every sitemap URL (200, no
   redirect, no noindex, its own canonical).
+
+## Analytics (Google Analytics 4, `GA_MEASUREMENT_ID`; server `modules/analytics`, web `app/analytics`)
+
+Off unless the operator sets `GA_MEASUREMENT_ID` (the hosted service does; self-hosted servers get
+nothing: no script tag, no frame, `/analytics.js` and `/analytics-frame` answer 404, the CSP is
+byte-for-byte what it was). When on:
+
+- **Consent first (Consent Mode v2, basic).** `app/analytics/runtime.ts` is the one place that
+  decides: nothing from Google loads until the visitor chooses Accept in the banner (Accept and
+  Decline look the same; GPC / Do Not Track count as Decline; the choice lives in local storage
+  under `freero:analytics-consent` for 6 months). Google's tag then starts with all four consent
+  types denied and only `analytics_storage` granted; ad storage, ad user data, ad personalisation
+  and Google signals stay off. Decline (or withdrawing later through "Cookie settings": the site
+  footer, the app's Help menu, the privacy policy) deletes the `_ga*` cookies. The runtime has no
+  imports: `vite.config.ts` (`freero-analytics`) builds it alone into `dist/analytics.js`, and the
+  app imports the same functions.
+- **Marketing pages** (`modules/site`) get `<script src="/analytics.js" data-freero-ga=…>`; the
+  runtime runs Google's tag in the page itself (public content), reporting the path with the query
+  reduced to UTM tags and the referrer reduced to its origin.
+- **The app never runs Google's tag in its own document**, which holds board titles, content,
+  names and links that GA's automatic measurements (outbound clicks, file downloads, the tab title,
+  history changes) would read. The bridge (`app/analytics/bridge.ts`, mounted by `AppAnalytics`)
+  creates a hidden same-origin frame, `/analytics-frame` (only this origin may frame it), after
+  consent and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
+  token removed (`/board/<id>` → `/board`, unknown routes → `/not-found`), a generic title — and
+  events from the closed list `AnalyticsEvent` (`sign_up` / `login` with the method, `board_created`,
+  `template_used` with a built-in template's public id), validated by `analyticsEventParams`.
+  `/embed/*`, `/operator*` and `/oauth/*` are never reported and never show the banner. Features
+  count events through `Host.track` (optional; the templates feature is the only user).
+- **Single writers:** the consent choice — `runtime.ts` `saveChoice` (banner buttons); page views —
+  `AppAnalytics` → `reportPage`; events — `track` (AuthContext, `api.createBoard`, `Host.track`).
+- **CSP** (`platform/security.ts`, only with the id, never on framable pages): `script-src` +
+  `https://www.googletagmanager.com`, `connect-src` + Google's collection hosts, `frame-src` +
+  `'self'`. The privacy policy's analytics tokens (`modules/site/legal.ts`) describe exactly this.
 
 ## UI kit (`ui/`) — exports from `@ui`
 
@@ -1135,7 +1173,8 @@ see "Issue trackers" below), `search` (search_entries, search_sources: the searc
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
 document realtime stores; see "Docs and native live embeds"), `site` (no table: serves the built
-marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
+endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs

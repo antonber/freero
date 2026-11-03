@@ -336,6 +336,7 @@ workspace (modules/workspaces).
 | Board activity feed (who changed what kind of item, when) | `board_activity` (activity) | no | 90 days | deleted with the boards |
 | Guest sessions (a name, the board, sha256 of the cookie) | `guest_sessions` (auth) | — | — (no account) | expire after `GUEST_SESSION_HOURS` |
 | Error reports (`ERROR_REPORTING_DSN`): the error, request method and path, account id | the Sentry-compatible service you configure | no | outside Freero (that service's retention) | — |
+| Google Analytics (`GA_MEASUREMENT_ID`, only after the visitor accepts): pseudonymous `_ga` / `_ga_<id>` cookies, the route with ids removed (`/board`), a generic title, the referring origin, browser, device and coarse location, events `sign_up` / `login` (method), `board_created`, `template_used` (public template id); the choice itself in the browser's local storage (`freero:analytics-consent`) | Google (processor) via `/analytics.js` and the app's `/analytics-frame` (modules/analytics, web `app/analytics`) | no (Freero holds none of it) | outside Freero: no account id is ever sent, so nothing links it to the account; GA's own data retention setting applies | — |
 | Fonts | the web app loads Inter, Caveat, JetBrains Mono and Source Serif from Google Fonts: Google receives visitors' IP addresses and user agents (the marketing site self-hosts its font) | no | — | — |
 | Rate-limit counters | Redis / memory, keys are HMACs | no | expire with their window | — |
 | Mail | SMTP provider / dev outbox | no | outside Freero (provider retention) | — |
