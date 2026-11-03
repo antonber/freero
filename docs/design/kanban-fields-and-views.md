@@ -1312,6 +1312,16 @@ re-normalizes) every card below it (≈30 ms at 1,700); `getVisibleElements` ask
 while 3b changes the tab code). The runtime's followers pass and `withChildren` still read the
 ordered board per call; neither is on a bulk path today.
 
+In the real app (`verify-freero`, the offline sandbox, the dev build): a 1,999-row CSV onto a new
+kanban with fields is on the board, laid out (four columns of 500, in row order, chips drawn)
+about 1.7 s after "Import" — the same before and after, since that path names each card's kanban
+and never looked containers up; nearly all of it is drawing. Regrouping those 1,999 cards by
+Priority from the View panel: 3.1 s before, 1.4–1.8 s after. **Found there, not fixed**: 5 s after
+any edit the board thumbnail (`engine/editor/export.tsx` `startThumbnails`) renders the whole board
+through html-to-image on the main thread; with 2,000 cards that froze the page for 32–53 s (style
+cloning per element). It needs its own change: skip what is smaller than a pixel at the thumbnail's
+scale, or draw boxes past a few hundred elements.
+
 ## Sources (concepts only; nothing copied)
 
 - Notion: [Views, filters, sorts & groups](https://notion.com/help/views-filters-and-sorts),
