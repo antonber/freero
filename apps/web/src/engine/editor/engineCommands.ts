@@ -17,13 +17,17 @@ import {
   PaintBucket,
   Scissors,
   SendToBack,
+  ShieldCheck,
   Trash2,
   Ungroup,
 } from 'lucide-react';
+import { isProtectedLock } from '@freero/shared';
 import type { CommandDefinition, Editor } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { nextZoomStep } from '../camera/camera';
 import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from './boardSettings';
+
+const PROTECTED_NOTE = 'Only the board owner or the facilitator can unlock a protected item.';
 
 /** Commands whose shortcut is display-only: the keyboard path is the native copy/cut/paste event. */
 export const NATIVE_CLIPBOARD_COMMANDS = new Set(['engine.copy', 'engine.cut', 'engine.paste']);
@@ -140,7 +144,30 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       run: (e) => {
         const els = selected(e);
         const lock = !els.every((el) => el.locked);
-        e.updateMany(els.map((el) => ({ id: el.id, patch: { locked: lock } })));
+        // A protected lock is lifted only by the owner or the facilitator (the server enforces it).
+        const held = !lock && !e.mayOverrideProtection() ? els.filter(isProtectedLock) : [];
+        if (held.length) e.host.notify(held.length === els.length ? PROTECTED_NOTE : `${PROTECTED_NOTE} The others are unlocked.`, 'info');
+        const open = els.filter((el) => !held.includes(el));
+        if (open.length) e.updateMany(open.map((el) => ({ id: el.id, patch: lock ? { locked: true } : { locked: false, lockProtected: false } })));
+      },
+    },
+    {
+      // Like a lock, but only the board owner (or whoever runs the facilitation session) can lift
+      // it: a template's frame, a facilitator's agenda. Mod+Alt+Shift+L — Mod+Shift+P, used for this
+      // elsewhere, opens a private window in Firefox and can't be taken there.
+      id: 'engine.protectLock',
+      icon: ShieldCheck,
+      label: 'Lock for the owner only',
+      shortcut: 'mod+alt+shift+l',
+      menus: ['context'],
+      detail: (e) => (selected(e).length && selected(e).every(isProtectedLock) ? 'on' : undefined),
+      when: (e) => hasSel(e) && e.mayOverrideProtection(),
+      disabledReason: 'Only the board owner or the facilitator can do this',
+      run: (e) => {
+        const els = selected(e);
+        const protect = !els.every(isProtectedLock);
+        // Taking protection off leaves an ordinary lock.
+        e.updateMany(els.map((el) => ({ id: el.id, patch: protect ? { locked: true, lockProtected: true } : { lockProtected: false } })));
       },
     },
     {

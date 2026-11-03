@@ -60,6 +60,13 @@ export interface BaseElement {
   /** Stacking order. Higher = on top. Frames always render below non-frames. */
   z: number;
   locked?: boolean;
+  /**
+   * [additive] With `locked`: a protected lock. Only the board owner and the person running the
+   * board's facilitation session (`mayOverrideProtection`) may change, unlock, unprotect or delete
+   * the item; the server undoes anyone else's change. A client that doesn't know the field sees an
+   * ordinary lock.
+   */
+  lockProtected?: boolean;
   /** Id of the frame that contains this element, if any. */
   frameId?: string | null;
   /** Elements sharing a groupId are selected/moved together. */

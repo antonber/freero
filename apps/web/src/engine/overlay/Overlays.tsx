@@ -1,14 +1,24 @@
 // Screen-space overlays: they stay constant size regardless of zoom.
 import { memo, type CSSProperties } from 'react';
 import { useStore } from 'zustand';
-import type { BoardElement, PresenceState } from '@freero/shared';
+import { isProtectedLock, type BoardElement, type PresenceState } from '@freero/shared';
 import { useCore } from '../context';
 import { useCamera, useElements, usePeers, useRole, useSelectedElements } from '../hooks';
 import { worldToScreen } from '../camera/camera';
 import { boundsOf, rectCenter } from '../geometry/geometry';
 import type { Camera } from '../api';
 import { ALL_HANDLES, CORNER_HANDLES, type Handle } from '../geometry/transform';
-import { Lock, RotateCw } from 'lucide-react';
+import { Lock, RotateCw, ShieldCheck } from 'lucide-react';
+
+/** The lock badge: a shield on a protected lock (only the owner or the facilitator lifts it). */
+function LockBadge({ el }: { el: BoardElement }) {
+  const guarded = isProtectedLock(el);
+  return (
+    <div className="fr-ov-lock" title={guarded ? 'Locked by the board owner' : 'Locked'}>
+      {guarded ? <ShieldCheck size={11} strokeWidth={2.4} /> : <Lock size={11} strokeWidth={2.4} />}
+    </div>
+  );
+}
 import { readableTextColor } from '@ui';
 import './overlays.css';
 
@@ -79,11 +89,7 @@ function SelectionOverlay() {
           .filter((el) => !ownFrame(el))
           .map((el) => (
             <div key={el.id} className={`fr-ov-outline fr-ov-outline--member${el.locked ? ' is-locked' : ''}`} style={boxStyle(el, cam)}>
-              {el.locked && (
-                <div className="fr-ov-lock" title="Locked">
-                  <Lock size={11} strokeWidth={2.4} />
-                </div>
-              )}
+              {el.locked && <LockBadge el={el} />}
             </div>
           ))}
       <div className={`fr-ov-selection${editingId ? ' is-editing' : ''}${locked ? ' is-locked' : ''}`} style={style}>
@@ -100,7 +106,7 @@ function SelectionOverlay() {
             <RotateCw size={12} strokeWidth={2.4} />
           </div>
         )}
-        {locked && single && <div className="fr-ov-lock" title="Locked"><Lock size={11} strokeWidth={2.4} /></div>}
+        {locked && single && <LockBadge el={els[0]} />}
       </div>
     </>
   );

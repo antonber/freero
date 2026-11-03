@@ -1294,6 +1294,12 @@ export interface Editor {
   getRole(): Role;
   can(minRole: Role): boolean;
   /**
+   * [additive] May this user change protected items (`BaseElement.lockProtected`), protect or
+   * unprotect? The board owner, and the person running the facilitation session. The server
+   * enforces it (realtime/protectedLock.ts); the engine mirrors it in the lock commands and chrome.
+   */
+  mayOverrideProtection(): boolean;
+  /**
    * [additive] What a facilitator limits for this user right now (from the server's role message;
    * null: nothing). The server enforces it; the engine mirrors it: a locked board is commenting
    * only (`getRole()` is then 'commenter'), and tools / paste / inserts that would add other types

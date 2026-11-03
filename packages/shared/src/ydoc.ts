@@ -204,6 +204,18 @@ export interface FacilitationSession {
   cursorsHidden: boolean;
 }
 
+/** A locked item only the owner or the facilitator may change (BaseElement.lockProtected). */
+export const isProtectedLock = (el: { locked?: boolean; lockProtected?: boolean } | null | undefined): boolean => !!el?.locked && !!el.lockProtected;
+
+/**
+ * May this person change protected items, protect or unprotect? The board owner always; anyone
+ * else only while they run the board's facilitation session. `access` is their own role on the
+ * board (not the one a facilitation lock leaves them).
+ */
+export function mayOverrideProtection(access: string, userId: string, session: Pick<FacilitationSession, 'by'> | null | undefined): boolean {
+  return access === 'owner' || (!!session && session.by === userId && (access === 'editor' || access === 'owner'));
+}
+
 export interface BoardSettings {
   background: string;
   grid: 'dots' | 'lines' | 'none';
