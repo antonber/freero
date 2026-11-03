@@ -21,6 +21,7 @@ import {
   priorityFieldOf,
   pullableFields,
   syncedBase,
+  trackerAgreed,
   type BoardElement,
   type CardElement,
   type ElementDraft,
@@ -73,6 +74,17 @@ it('a date changed on the board while a sync was pulling the title from Jira is 
   const base = syncedBase(read, afterWrite, ['title'], tracker);
   expect(mergeField('dueDate', base, afterWrite, tracker, can)).toMatchObject({ decision: 'push' });
   expect(mergeField('title', base, afterWrite, tracker, can).decision).toBe('none');
+});
+
+it('a status changed in the tracker while a sync was writing the board’s new title is pulled by the next sync, not taken as agreed', () => {
+  const can = { push: true, pull: true };
+  // The sync merged (todo), pushed the title; someone moved the issue before it read it back.
+  const board = card('One-click pay');
+  const merged = card('Pay with one click');
+  const readBack = { ...card('One-click pay'), status: 'done' as const };
+  const base = syncedBase(board, board, [], trackerAgreed(merged, readBack, ['title']));
+  expect(mergeField('status', base, board, readBack, can)).toMatchObject({ decision: 'pull' });
+  expect(mergeField('title', base, board, readBack, can).decision).toBe('none');
 });
 
 it('labels a tracker reorders or re-cases are not mistaken for an edit', () => {
