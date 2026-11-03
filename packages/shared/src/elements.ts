@@ -504,6 +504,19 @@ export interface CardElement extends BaseElement {
    * back with the field (undo) or when the card returns to that kanban.
    */
   values?: FieldValues;
+  /**
+   * [additive, #142] A flip card's other side: its own text (rich text) and paper colour. Absent /
+   * null: a one-sided card. Written by the card feature (format toolbar "Two-sided", editing the back).
+   */
+  back?: CardBack | null;
+  /** [additive, #142] The back is the side showing, for everyone (shared state; exports show it too). */
+  flipped?: boolean;
+}
+
+/** [#142] The back of a two-sided card. */
+export interface CardBack {
+  title: RichText;
+  color: string;
 }
 
 export interface EmojiElement extends BaseElement {

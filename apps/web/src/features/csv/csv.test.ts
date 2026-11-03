@@ -56,6 +56,32 @@ it('stickies exported to CSV — text with a comma and a line break, a tag — r
   expect(ids.map((id) => richTextToPlain(into.getElement<StickyElement>(id)!.text))).toEqual(['Plain idea', 'Milk, eggs\nand "bread"', 'Tagged one']);
 });
 
+it('a flip card loses neither side in the CSV: the back has its own column, and re-importing keeps the front as the text', () => {
+  board = createTestBoard({ users: ['ann'], features });
+  const [ed] = board.editors('csv');
+  const card: NewElement<'card'> = {
+    type: 'card',
+    x: 0,
+    y: 0,
+    w: 240,
+    h: 100,
+    title: plainToRichText('Capital of Peru?'),
+    description: '',
+    color: '#5B3FF0',
+    back: { title: plainToRichText('Lima'), color: '#FFF1B8' },
+    flipped: true,
+  };
+  ed.createMany([card, sticky(400, 'One-sided')]);
+  const table = exportRows(toRows(ed, itemsToExport(ed), new Map()));
+  const back = table[0].indexOf('Back');
+  expect(back).toBeGreaterThan(0);
+  expect(table.slice(1).map((r) => [r[1], r[back]])).toEqual([
+    ['Capital of Peru?', 'Lima'],
+    ['One-sided', ''],
+  ]);
+  expect(importRows(toCsv(table), 'card').map((r) => r.item.text)).toEqual(['Capital of Peru?', 'One-sided']);
+});
+
 it('a cell a spreadsheet would run as a formula is exported as text, and reads back unchanged', () => {
   for (const evil of ['=HYPERLINK("http://x","y")', '+1+1', '-2', '@SUM(A1)']) {
     const cell = csvCell(evil);

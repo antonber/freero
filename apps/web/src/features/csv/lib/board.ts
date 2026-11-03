@@ -80,6 +80,7 @@ export function toRows(editor: Editor, items: Item[], names: ReadonlyMap<string,
       assignee: el.type === 'card' && el.assigneeId ? (names.get(el.assigneeId) ?? '') : '',
       due: el.type === 'card' ? (el.dueDate ?? '') : '',
       frame: frameTitle(el.frameId),
+      ...(el.type === 'card' && el.back ? { back: richTextToPlain(el.back.title) } : {}),
       ...(k?.type === 'kanban' && el.type === 'card' ? { fields: fieldTexts(k, el, names) } : {}),
     };
   });
