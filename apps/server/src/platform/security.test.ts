@@ -50,6 +50,43 @@ describe('frames the CSP allows (live embeds, KAI-127)', () => {
   });
 });
 
+it('Google Analytics widens the CSP only by Google’s hosts and the app’s own analytics frame, and not at all when unset, on any page another site may frame, or on the embeds’ pages', () => {
+  const directives = (csp: string) => new Map(csp.split('; ').map((d) => [d.split(' ')[0], new Set(d.split(' ').slice(1))]));
+  const unset = contentSecurityPolicy(loadConfig({}), 'app.test', true);
+  expect(unset).not.toMatch(/googletagmanager|google-analytics|analytics.google/);
+  // Framed pages: the assistants' live view (framable) and a board embedded on any site (ancestors '*').
+  for (const opts of [{ framable: true }, { ancestors: ['*'] }])
+    expect(contentSecurityPolicy(loadConfig({ GA_MEASUREMENT_ID: 'G-TEST123' }), 'app.test', true, opts)).toBe(contentSecurityPolicy(loadConfig({}), 'app.test', true, opts));
+  // The embeds' own pages (the embedded board, its sign-in popup), as the security headers set them.
+  const cspAt = (path: string, env: NodeJS.ProcessEnv) => {
+    const set: Record<string, string> = {};
+    securityHeaders(loadConfig(env))({ method: 'GET', path, headers: { host: 'app.test' }, secure: true } as never, { setHeader: (k: string, v: string) => (set[k.toLowerCase()] = v) } as never, () => undefined);
+    return set['content-security-policy'];
+  };
+  for (const path of ['/embed/b/abc', '/embed/connect/abc', '/embed/board/abc']) expect(cspAt(path, { GA_MEASUREMENT_ID: 'G-TEST123' }), path).toBe(cspAt(path, {}));
+  expect(cspAt('/app', { GA_MEASUREMENT_ID: 'G-TEST123' })).toContain('googletagmanager');
+
+  const before = directives(unset);
+  const after = directives(contentSecurityPolicy(loadConfig({ GA_MEASUREMENT_ID: 'g-test123' }), 'app.test', true));
+  expect([...after.keys()]).toEqual([...before.keys()]);
+  const added: string[] = [];
+  for (const [name, sources] of after) {
+    for (const s of before.get(name)!) expect(sources.has(s), `${name} lost ${s}`).toBe(true);
+    for (const s of sources) if (!before.get(name)!.has(s)) added.push(`${name} ${s}`);
+  }
+  expect(added.sort()).toEqual(
+    [
+      'script-src https://www.googletagmanager.com',
+      'connect-src https://*.google-analytics.com',
+      'connect-src https://*.analytics.google.com',
+      'connect-src https://*.googletagmanager.com',
+      "frame-src 'self'",
+    ].sort(),
+  );
+  // A Universal Analytics id would load nothing: refused at startup instead of failing silently.
+  expect(() => loadConfig({ GA_MEASUREMENT_ID: 'UA-12345-1' })).toThrow(/GA_MEASUREMENT_ID/);
+});
+
 describe('who may frame Freero (MCP Apps live view, KAI-171)', () => {
   const headersFor = (path: string, env: NodeJS.ProcessEnv = {}) => {
     const set: Record<string, string> = {};

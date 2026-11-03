@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Account, User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
+import { takeProviderSignIn, track } from '../analytics/bridge';
 import { api } from '../api/client';
 
 export interface AuthValue {
@@ -82,9 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await api.login({ email: email.trim(), password });
+    takeProviderSignIn(); // a provider sign-in abandoned in this tab doesn't count instead
     if (!('user' in res)) return null;
     setUser(res.user);
     announce();
+    track({ name: 'login', method: 'password' });
     return res.user;
   }, [announce]);
 
@@ -92,6 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { user } = await api.loginTwoFactor(code);
     setUser(user);
     announce();
+    // The second step of a password sign-in, or of one through a provider (noted when it started).
+    track({ name: 'login', method: takeProviderSignIn() ?? 'password' });
     return user;
   }, [announce]);
 
@@ -99,6 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { user } = await api.signup({ name: name.trim(), email: email.trim(), password });
     setUser(user);
     announce();
+    takeProviderSignIn();
+    track({ name: 'sign_up', method: 'password' });
     return user;
   }, [announce]);
 

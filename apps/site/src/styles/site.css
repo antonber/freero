@@ -1234,6 +1234,18 @@ tbody th code {
   text-decoration: underline;
   color: #fff;
 }
+.footer__button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: #e7e6f3;
+  cursor: pointer;
+}
+.footer__button:hover {
+  text-decoration: underline;
+  color: #fff;
+}
 .footer__legal {
   margin: 40px 0 0;
   padding-top: 24px;

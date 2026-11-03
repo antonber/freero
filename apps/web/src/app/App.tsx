@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { ToastProvider } from '@ui';
+import { AppAnalytics } from './analytics/AppAnalytics';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { GuestGate } from './board/GuestGate';
@@ -47,6 +48,8 @@ export function App() {
       <ToastProvider>
         <AppUpdates />
         <AuthProvider>
+          {/* Google Analytics where the server has it on (GA_MEASUREMENT_ID): consent first, redacted pages. */}
+          <AppAnalytics />
           {/* "Report a problem": its dialog and shortcut, for every signed-in page. */}
           <ProblemReportProvider>
           <FrameGuard>

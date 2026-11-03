@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { CircleAlert, Eye, EyeOff, KeyRound, Lock, Mail, Sparkles, UserRound } from 'lucide-react';
 import { SSO_REQUIRED, type SiteLegal, type SsoDiscovery } from '@freero/shared';
 import { Button, IconButton, Input, Logo } from '@ui';
+import { noteProviderSignIn } from '../../analytics/bridge';
 import { useAuth } from '../../auth/AuthContext';
 import { api, ApiError } from '../../api/client';
 import { safeNext } from '../../lib/nav';
@@ -199,7 +200,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
               <span>
                 <strong>{sso.workspaceName}</strong> {sso.enforced ? 'signs you in with single sign-on.' : 'uses single sign-on.'}
               </span>
-              <a className="fr-authcard__sso-btn" href={sso.startUrl}>
+              <a className="fr-authcard__sso-btn" href={sso.startUrl} onClick={() => noteProviderSignIn('sso')}>
                 <KeyRound size={16} aria-hidden /> Continue with SSO
               </a>
               {sso.enforced && isLogin ? (

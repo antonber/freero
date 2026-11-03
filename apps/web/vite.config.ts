@@ -49,8 +49,26 @@ function freeroServiceWorker(): Plugin {
   };
 }
 
+/**
+ * Builds the Google Analytics runtime (src/app/analytics/runtime.ts) into dist/analytics.js: the
+ * consent banner and Google's tag for the marketing pages, and the app's analytics frame. The
+ * server serves it only while GA_MEASUREMENT_ID is set (modules/analytics). The file has no
+ * imports, so a transform is all it takes.
+ */
+function freeroAnalytics(): Plugin {
+  const source = src('app/analytics/runtime.ts');
+  return {
+    name: 'freero-analytics',
+    apply: 'build',
+    async generateBundle() {
+      const { code } = await transformWithEsbuild(readFileSync(source, 'utf8'), source, { loader: 'ts', format: 'iife', minify: true });
+      this.emitFile({ type: 'asset', fileName: 'analytics.js', source: code });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), freeroServiceWorker()],
+  plugins: [react(), freeroServiceWorker(), freeroAnalytics()],
   customLogger: logger,
   resolve: {
     // Layer entry points. Features/app import '@engine' and '@ui' only — see ARCHITECTURE.md.
@@ -92,6 +110,9 @@ export default defineConfig({
       // builds it from this Host) works in development too; the consent screen is the app's.
       '/mcp': { target: server, changeOrigin: false },
       '/.well-known': { target: server, changeOrigin: false },
+      // Google Analytics' runtime and the app's analytics frame (only while GA_MEASUREMENT_ID is set).
+      '/analytics.js': { target: server, changeOrigin: false },
+      '/analytics-frame': { target: server, changeOrigin: false },
     },
   },
 });

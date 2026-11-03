@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { OidcErrorCode, SignInProvider } from '@freero/shared';
+import { noteProviderSignIn } from '../../analytics/bridge';
 import { api, providerUrl } from '../../api/client';
 import './ProviderButtons.css';
 
@@ -36,7 +37,7 @@ export function ProviderButtons({ next, verb }: { next: string; verb: string }) 
     <div className="fr-authcard__providers">
       {providers.map((p) => (
         // A full navigation: the provider's page, then back through the callback.
-        <a key={p.id} className="fr-authcard__provider" href={providerUrl(p.id, 'login', next !== '/app' ? next : undefined)}>
+        <a key={p.id} className="fr-authcard__provider" href={providerUrl(p.id, 'login', next !== '/app' ? next : undefined)} onClick={() => noteProviderSignIn(p.id)}>
           <ProviderMark label={p.label} />
           <span>
             {verb} with {p.label}

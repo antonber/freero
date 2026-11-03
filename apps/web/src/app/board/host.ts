@@ -11,6 +11,7 @@ import {
 } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
+import { track } from '../analytics/bridge';
 import { api, wsBase } from '../api/client';
 import {
   deleteTemplate,
@@ -138,6 +139,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     ...(deps.reportProblem ? { reportProblem: deps.reportProblem } : {}),
     navigate: deps.navigate,
     notify: deps.notify,
+    track,
     serverNow,
     listMembers: () => listMembers(board.id),
     lookupUsers: (ids) => lookupUsers(board.id, ids),

@@ -126,6 +126,7 @@ import type {
 } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
+import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
   CreateWalkthroughRequest,
@@ -283,8 +284,12 @@ export const api = {
         (scope.workspace ? `&workspace=${encodeURIComponent(scope.workspace)}` : '') +
         (scope.project ? `&project=${encodeURIComponent(scope.project)}` : ''),
     ),
+  // Every board the app creates (blank, from a template link, from shared images) is counted here.
   createBoard: (body: CreateBoardRequest = {}) =>
-    request<{ board: BoardSummary }>('POST', '/api/boards', body),
+    request<{ board: BoardSummary }>('POST', '/api/boards', body).then((r) => {
+      track({ name: 'board_created' });
+      return r;
+    }),
   getBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/boards/${id}`),
   // docs (KAI-162): containers like boards — /api/boards/:id serves their summary, sharing, versions
   createDoc: (body: CreateDocRequest = {}) => request<CreateDocResponse>('POST', '/api/docs', body),
