@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
-import { ArrowLeft, ArrowLeftRight, ArrowRight, ChevronsDownUp, ChevronsUpDown, ListTree, Plus } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ChevronsDownUp, ChevronsUpDown, ListTree, Plus, Sparkles } from 'lucide-react';
 import type { MindmapElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { ColorSwatches, IconButton, Popover, SegmentedControl, Tooltip } from '@ui';
 import { BRANCH_COLORS, COLOR_NAMES, ROOT_COLORS } from './lib/constants';
 import { addChild, currentIndex, relayout, rootIdsOf, setBranchColor, setDirection, toggleCollapse } from './lib/actions';
+import { expandWithAi } from './lib/ai';
 import type { Direction } from './lib/tree';
 
 function ColorControl({ editor, nodes }: { editor: Editor; nodes: MindmapElement[] }) {
@@ -67,11 +68,22 @@ export default defineFormat({
               { value: 'left', icon: ArrowLeft, title: 'Grow to the left' },
               { value: 'both', icon: ArrowLeftRight, title: 'Grow on both sides' },
               { value: 'right', icon: ArrowRight, title: 'Grow to the right' },
+              { value: 'down', icon: ArrowDown, title: 'Grow downwards' },
             ]}
             aria-label="Map direction"
           />
         )}
         {single && <IconButton icon={Plus} label="Add child idea" shortcut="Tab" size={32} onClick={() => addChild(editor, single.id)} />}
+        {/* #134: greyed out with the reason where AI exists on the server but not for this person here. */}
+        {single && (editor.host.ai || editor.host.aiUnavailable) && (
+          <IconButton
+            icon={Sparkles}
+            label={editor.host.ai ? 'Expand with AI' : `Expand with AI: ${editor.host.aiUnavailable}`}
+            size={32}
+            disabled={!editor.host.ai}
+            onClick={() => expandWithAi(editor, single.id)}
+          />
+        )}
         {single && hasKids && (
           <IconButton
             icon={single.collapsed ? ChevronsUpDown : ChevronsDownUp}

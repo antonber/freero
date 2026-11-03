@@ -33,6 +33,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 function hint(task: AiTask, selected: number, sortable: number, into: boolean, by: AiClusterBy): string {
   switch (task) {
+    case 'expand':
+      return 'New children for a mind-map topic.';
     case 'catchup':
       return 'A summary of what others changed, just for you.';
     case 'report':
@@ -53,6 +55,7 @@ function hint(task: AiTask, selected: number, sortable: number, into: boolean, b
 const PLACEHOLDER: Record<AiTask, string> = {
   report: 'Optional: what to focus on, e.g. what to do next quarter',
   catchup: 'Optional: what to focus on',
+  expand: 'Optional: what to focus on',
   ideas: 'e.g. Icebreakers for a remote team retro',
   cluster: 'Optional: how to group them, e.g. by customer pain',
   summarize: 'Optional: what to focus on, e.g. decisions and owners',

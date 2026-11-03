@@ -8,12 +8,16 @@
 // nodes' current positions, so dragging a node above its sibling or across the root is how users
 // reorder — and laying out an already laid-out map changes nothing.
 //
+// A top-down map (`direction: 'down'`, #134) is the same tree turned: children sit below their
+// parent, sibling COLUMNS as wide as their subtrees side by side, ordered left to right.
+//
 // Everything here is cycle-safe: a broken or cyclic parent chain makes the affected nodes orphans,
 // never an infinite loop.
 import type { Point } from '../geometry';
 
-export type MindDirection = 'right' | 'left' | 'both';
-export type MindSide = 'right' | 'left';
+export type MindDirection = 'right' | 'left' | 'both' | 'down';
+/** Where a node sits from its parent: beside it, or below it in a top-down map. */
+export type MindSide = 'right' | 'left' | 'down';
 
 /** The geometric/structural slice of a mind-map node the layout needs. */
 export interface MindNode {
@@ -35,7 +39,7 @@ export interface MindTreeIndex<N extends MindNode = MindNode> {
 }
 
 /** Gap between the root and its first level, between deeper levels, and between siblings. */
-export const MIND_GAPS = { root: 72, level: 48, sibling: 14 } as const;
+export const MIND_GAPS = { root: 72, level: 48, sibling: 14, /** between sibling columns of a top-down map */ across: 24 } as const;
 
 const cy = (n: MindNode) => n.y + n.h / 2;
 export const mindCx = (n: MindNode) => n.x + n.w / 2;
@@ -43,6 +47,11 @@ export const mindCx = (n: MindNode) => n.x + n.w / 2;
 /** Sibling order: top to bottom, ties by creation. Layout preserves it, so it is stable. */
 export function compareMindSiblings(a: MindNode, b: MindNode): number {
   return cy(a) - cy(b) || a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
+/** Sibling order in a top-down map: left to right, ties by creation. */
+export function compareMindSiblingsAcross(a: MindNode, b: MindNode): number {
+  return mindCx(a) - mindCx(b) || a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 export function indexMindNodes<N extends MindNode>(nodes: readonly N[]): MindTreeIndex<N> {
@@ -56,11 +65,47 @@ export function indexMindNodes<N extends MindNode>(nodes: readonly N[]): MindTre
     else kids.set(n.parentId, [n]);
   }
   for (const list of kids.values()) list.sort(compareMindSiblings);
+  // Top-down maps order siblings left to right.
+  for (const r of nodes) {
+    if (r.parentId || r.direction !== 'down') continue;
+    const seen = new Set<string>();
+    const stack = [r.id];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const ks = kids.get(id);
+      if (!ks) continue;
+      ks.sort(compareMindSiblingsAcross);
+      for (const k of ks) stack.push(k.id);
+    }
+  }
   return { byId, kids };
 }
 
+/** The root of the map `id` hangs from (following parents), or null for orphans and cycles. */
+export function mindRootIn<N extends MindNode>(index: MindTreeIndex<N>, id: string): N | null {
+  const seen = new Set<string>();
+  let cur = index.byId.get(id);
+  while (cur) {
+    if (seen.has(cur.id)) return null;
+    seen.add(cur.id);
+    if (!cur.parentId) return cur;
+    cur = index.byId.get(cur.parentId);
+  }
+  return null;
+}
+
+/** The map `id` belongs to grows downwards. */
+export const mindGrowsDown = (index: MindTreeIndex, id: string): boolean => mindRootIn(index, id)?.direction === 'down';
+
+/** Where `node` sits from `parent`: below it in a top-down map, otherwise the side its position says. */
+export function mindSideIn(index: MindTreeIndex, node: MindNode, parent: MindNode): MindSide {
+  return mindGrowsDown(index, parent.id) ? 'down' : mindSideOf(node, parent);
+}
+
 /** Which side of its parent a node sits on (decided by position, so it survives drags). */
-export function mindSideOf(node: MindNode, parent: MindNode): MindSide {
+export function mindSideOf(node: MindNode, parent: MindNode): 'left' | 'right' {
   return mindCx(node) < mindCx(parent) ? 'left' : 'right';
 }
 
@@ -105,6 +150,21 @@ function layoutFrom(index: MindTreeIndex, rootId: string, opts: MindLayoutOption
 
   const pos = (n: MindNode): Point => out.get(n.id) ?? { x: n.x, y: n.y };
 
+  // A top-down map: each subtree is a column as wide as what it shows.
+  const down = mindGrowsDown(index, root.id);
+  const widths = new Map<string, number>();
+  const wide = (n: MindNode, guard = new Set<string>()): number => {
+    const hit = widths.get(n.id);
+    if (hit !== undefined) return hit;
+    if (guard.has(n.id)) return n.w;
+    guard.add(n.id);
+    const ks = visibleKids(n);
+    const block = ks.reduce((s, k) => s + wide(k, guard), 0) + MIND_GAPS.across * Math.max(0, ks.length - 1);
+    const e = Math.max(n.w, block);
+    widths.set(n.id, e);
+    return e;
+  };
+
   /** Hidden descendants are parked behind their collapsed ancestor so they add no bounds. */
   const park = (n: MindNode) => {
     const p = pos(n);
@@ -118,7 +178,23 @@ function layoutFrom(index: MindTreeIndex, rootId: string, opts: MindLayoutOption
     }
   };
 
+  const placeBelow = (n: MindNode, ks: MindNode[], gap: number) => {
+    const p = pos(n);
+    const block = ks.reduce((s, k) => s + wide(k), 0) + MIND_GAPS.across * Math.max(0, ks.length - 1);
+    let left = p.x + n.w / 2 - block / 2;
+    for (const k of ks) {
+      if (seen.has(k.id)) continue;
+      seen.add(k.id);
+      const e = wide(k);
+      out.set(k.id, { x: Math.round(left + (e - k.w) / 2), y: Math.round(p.y + n.h + gap) });
+      if (k.collapsed) park(k);
+      else placeBelow(k, visibleKids(k), MIND_GAPS.level);
+      left += e + MIND_GAPS.across;
+    }
+  };
+
   const placeKids = (n: MindNode, ks: MindNode[], side: MindSide, gap: number) => {
+    if (side === 'down') return placeBelow(n, ks, gap);
     const p = pos(n);
     const block = ks.reduce((s, k) => s + ext(k), 0) + MIND_GAPS.sibling * Math.max(0, ks.length - 1);
     let top = p.y + n.h / 2 - block / 2;
@@ -141,7 +217,7 @@ function layoutFrom(index: MindTreeIndex, rootId: string, opts: MindLayoutOption
   }
   const parent = root.parentId ? index.byId.get(root.parentId) : undefined;
   if (parent) {
-    placeKids(root, visibleKids(root), mindSideOf(root, parent), MIND_GAPS.level);
+    placeKids(root, visibleKids(root), down ? 'down' : mindSideOf(root, parent), MIND_GAPS.level);
     return out;
   }
   const first = kidsOf(root);

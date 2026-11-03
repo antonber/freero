@@ -317,6 +317,35 @@ it('a catch-up with no earlier visit to compare with, or with nothing others cha
   expect(seen).toHaveLength(0);
 });
 
+// ---- expanding a mind-map topic (#134) ----
+
+it('expanding a topic reads the path to it and what is under it — never someone’s private draft hanging from it — and children it already has don’t count towards the 3 it must add', async () => {
+  const [ann, bob] = await Promise.all([user('Mapper'), user('Drafter')]);
+  const ws = await team(ann, [[bob, 'member']]);
+  const node = (id: string, parentId: string | null, text: string) =>
+    ({ id, type: 'mindmap', x: 0, y: 0, w: 120, h: 40, rotation: 0, z: ++z, createdBy: ann.id, createdAt: 1, updatedAt: 1, text, parentId, rootId: 'root', color: '#5B3FF0' }) as unknown as BoardElement;
+  const boardId = await boardWith(ann.id, [node('root', null, 'Launch plan'), node('mkt', 'root', 'Marketing'), node('blog', 'mkt', 'Blog post')], ws);
+  const layer = new Y.Doc();
+  layer.getMap('elements').set('secret', node('secret', 'mkt', 'SECRET budget cut'));
+  await initBoardLayer(boardId, `u:${bob.id}`, Y.encodeStateAsUpdate(layer));
+  await updateAiSettings(ws, ann.id, { enabled: true, source: 'instance' });
+  replies = [JSON.stringify({ items: ['Blog post', 'Webinar', 'Newsletter'] }), JSON.stringify({ items: ['Blog post', 'Webinar', 'Newsletter', 'Launch video', 'Press kit', 'Podcast', 'Meetup', 'Ads'] })];
+
+  const res = await runAiAction(boardId, ann.id, { task: 'expand', expand: 'ideas', ids: ['mkt'], target: 'board' });
+
+  const user0 = seen[0].body.messages.find((m) => m.role === 'user')!.content;
+  const sent = JSON.parse(user0.slice(user0.indexOf('<board_content>') + '<board_content>'.length, user0.indexOf('</board_content>')).trim()) as string;
+  expect(sent).toContain('Launch plan > Marketing');
+  expect(sent).toContain('Blog post');
+  expect(sent).not.toContain('SECRET');
+  // "Blog post" is there already: two new ones are too few, so the model was asked again.
+  expect(seen).toHaveLength(2);
+  expect(res.children).toEqual(['Webinar', 'Newsletter', 'Launch video', 'Press kit', 'Podcast', 'Meetup', 'Ads']);
+  // Nothing was placed: the app adds them under the topic itself.
+  expect(res.created).toEqual([]);
+  expect((await elementsOf(boardId, ann.id)).map((e) => e.id).sort()).toEqual(['blog', 'mkt', 'root']);
+});
+
 // ---- AI on results you already have (#148) ----
 
 it('sorting by sentiment accepts only the four sentiment groups: an invented group gets one repair turn, and notes the model skipped land in Neutral', async () => {

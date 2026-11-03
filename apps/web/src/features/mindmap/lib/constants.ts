@@ -1,4 +1,6 @@
 export const TOOL_ID = 'mindmap';
+export const EXPAND_DIALOG = 'mindmap.expand-dialog';
+export const FROM_STICKIES_DIALOG = 'mindmap.from-stickies-dialog';
 
 /** Root pill fill. Freero violet. */
 export const ROOT_COLOR = '#5B3FF0';

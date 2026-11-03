@@ -1599,7 +1599,15 @@ export type AiAccess = 'everyone' | 'members' | 'admins';
  * `report` [additive, #148]: a written report of a live activity's results (`ids`: the activity),
  * read from results everyone can already see (a sealed activity only once it is revealed).
  */
-export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram' | 'report' | 'catchup';
+export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram' | 'report' | 'catchup' | 'expand';
+/**
+ * [additive, #134] `expand`: 3 to 7 new children for one mind-map topic (`ids`: that topic) — ideas,
+ * questions or sub-topics — read from the topic, the path to it and what is under it already.
+ * Nothing is placed: `AiActionResponse.children` is the text, which the app previews and adds
+ * under the topic itself (one undo step).
+ */
+export type AiExpandKind = 'ideas' | 'questions' | 'subtopics';
+export const AI_EXPAND = { min: 3, max: 7 } as const;
 /**
  * [additive, #126] `catchup`: what OTHER people changed since the reader's last visit ('visit') or
  * in the last 7, 14 or 30 days — read from the change set only ("changes since your last visit",
@@ -1657,6 +1665,8 @@ export interface AiActionRequest {
   by?: AiClusterBy;
   /** [additive, #126] catchup: since the last visit (default) or the last 7, 14 or 30 days. */
   since?: AiCatchUpSince;
+  /** [additive, #134] expand: what to add under the topic (default ideas). */
+  expand?: AiExpandKind;
   /**
    * [additive, #148] summarize: put the result into this frame (free space inside it, else below
    * what is there: the app grows the frame when it inserts the preview) instead of beside it.
@@ -1679,6 +1689,8 @@ export interface AiActionResponse extends InsertStructureResponse {
   usage: { inputTokens: number; outputTokens: number };
   /** [additive, #126] catchup: the summary with its citations (the snapshot is the note to insert). */
   catchUp?: AiCatchUp;
+  /** [additive, #134] expand: the new children's text, in order (nothing was placed: `created` is empty). */
+  children?: string[];
 }
 
 export interface WorkspaceAiSettings {

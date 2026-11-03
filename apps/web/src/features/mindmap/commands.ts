@@ -1,6 +1,9 @@
-import { ListTree } from 'lucide-react';
+import { ListTree, Network, Sparkles } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
 import { copyOutline } from './lib/clipboard';
+import { expandWithAi } from './lib/ai';
+import { FROM_STICKIES_DIALOG } from './lib/constants';
+import { stickiesOf } from './lib/fromStickies';
 import {
   addChild,
   addSibling,
@@ -56,6 +59,30 @@ export default defineCommands([
     run(editor) {
       const n = selectedNode(editor);
       if (n) addSibling(editor, n.id);
+    },
+  },
+  {
+    id: 'mindmap.expandAi',
+    label: 'Expand with AI…',
+    icon: Sparkles,
+    menus: ['context'],
+    palette: false,
+    when: (editor) => !!selectedNode(editor) && (!!editor.host.ai || !!editor.host.aiUnavailable),
+    run(editor) {
+      const n = selectedNode(editor);
+      if (n) expandWithAi(editor, n.id);
+    },
+  },
+  {
+    // #134: a pile of sticky notes becomes a map around the one you pick.
+    id: 'mindmap.fromStickies',
+    label: 'Make a mind map…',
+    icon: Network,
+    menus: ['context'],
+    when: (editor) => stickiesOf(editor, editor.getSelection()).length >= 2,
+    disabledReason: 'Select two or more sticky notes',
+    run(editor) {
+      editor.openPanel(FROM_STICKIES_DIALOG, { ids: stickiesOf(editor, editor.getSelection()).map((n) => n.id) });
     },
   },
   {

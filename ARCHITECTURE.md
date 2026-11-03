@@ -821,6 +821,13 @@ docs/board-outline.md):
   through `insertElements`), one transaction = one undo step, then fits it into view.
 - Mind maps from structure are laid out by `layoutMindTree` (`@freero/shared` layout/mindtree.ts),
   the function `features/mindmap` runs for tidy up / follow / drag: one function, not a copy.
+  A root's `direction: 'down'` (#134) makes a top-down map: children below, sibling columns
+  ordered left to right (`indexMindNodes` sorts them by x; `mindSideIn` says 'down'); switching to
+  or from it re-encodes sibling order on the new axis first. Clients from before it read 'down'
+  as 'left' and would re-lay such a map out to the left when they edit it.
+  "Make a mind map" turns selected stickies into a map around the one picked (removed and
+  inserted in one transaction); "Expand with AI" asks `modules/ai` (`task: 'expand'`, text only)
+  and adds the picked children with `insertOutline` (one undo step).
   Org charts and Auto-layout ▸ Tree / Org chart use `tidyTree`; flowcharts and Auto-layout ▸
   Top-down / Left to right use `layered` (`features/arrange/lib/autoLayout.ts`: selected items and
   the connectors joining them, moved with `moveBy` in one gesture; locked items stay put).
@@ -1894,6 +1901,9 @@ board and builds `Host.ai` only when it says yes.
   alone sees it (the AI feature's "Catch me up" dialog, also from the activity bar's "Summarise");
   "Insert on board" applies the preview. No change in that time, or no earlier visit: refused
   before any call.
+- **Text-only answers** (#134): `expand` reads one mind-map topic, its path and its children from
+  the reader's view (no private draft but the topic itself) and returns `children` (3–7, repeats of
+  what is there dropped, fewer gets the repair turn); nothing is laid out or placed on the server.
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited

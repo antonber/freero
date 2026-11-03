@@ -100,6 +100,15 @@ export function answer(system, user) {
       points: items.slice(0, 5).map((t) => `Raised: ${t}`),
     });
   }
+  if (/Task: suggest \d+ to \d+ new children for one topic of a mind map/.test(system)) {
+    const topic = (/Topic to expand: (.*)/.exec(String(content))?.[1] ?? 'it').slice(0, 30);
+    const items = /questions worth asking/.test(system)
+      ? [`Who is ${topic} for?`, `What does ${topic} cost?`, `When is ${topic} done?`, `What could go wrong with ${topic}?`]
+      : /sub-topics/.test(system)
+        ? [`${topic}: goals`, `${topic}: people`, `${topic}: timeline`, `${topic}: budget`]
+        : [`Try a pilot for ${topic}`, `Ask users about ${topic}`, `Pair ${topic} with a launch event`, `Measure ${topic} weekly`, `Share ${topic} early`];
+    return JSON.stringify({ items });
+  }
   if (/Task: catch the person up/.test(system)) {
     const items = String(content)
       .split('\n')

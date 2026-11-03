@@ -518,8 +518,8 @@ export interface MindmapElement extends BaseElement {
   text: RichText;
   parentId: string | null;
   rootId: string;
-  /** Root-only: which side children grow to. */
-  direction?: 'right' | 'left' | 'both';
+  /** Root-only: which side children grow to ('down': below the topic, a top-down map, #134). */
+  direction?: 'right' | 'left' | 'both' | 'down';
   color: string;
   collapsed?: boolean;
 }

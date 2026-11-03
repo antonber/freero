@@ -104,6 +104,71 @@
   pointer-events: none;
 }
 
+/* Expand with AI / Make a mind map (#134) */
+.fr-mm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-mm-dialog__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-mm-dialog__title svg {
+  color: var(--fr-primary);
+}
+
+.fr-mm-dialog__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 0;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 14px;
+}
+
+.fr-mm-dialog__list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--fr-radius-sm);
+  cursor: pointer;
+}
+
+.fr-mm-dialog__list label:hover {
+  background: var(--fr-hover);
+}
+
+.fr-mm-dialog__roots legend {
+  margin-bottom: 4px;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+
+.fr-mm-dialog__fine {
+  margin: 0;
+  color: var(--fr-ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fr-mm-dialog__error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-danger-soft);
+  color: var(--fr-danger);
+  font-size: 13px;
+}
+
 /* Format toolbar */
 .fr-mm-swatch-btn {
   display: grid;

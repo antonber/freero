@@ -11,6 +11,7 @@
 // references to items it was not shown are dropped, Mermaid must parse. What leaves this file is a
 // StructureInput (no coordinates, no markup); modules/structure lays it out and places it.
 import {
+  AI_EXPAND,
   AI_LIMITS,
   AI_SENTIMENTS,
   LAYOUT_LIMITS,
@@ -23,6 +24,7 @@ import {
   type AiClusterBy,
   type AiCatchUp,
   type AiDiagramKind,
+  type AiExpandKind,
   type AiTask,
   type CatchUpChanges,
   type StructureInput,
@@ -40,8 +42,11 @@ export interface TaskPlan {
 }
 
 export interface Accepted {
-  structure: StructureInput;
+  /** What to place (absent: nothing is placed — expand's children). */
+  structure?: StructureInput;
   summary: string;
+  /** expand (#134): the new children's text. */
+  children?: string[];
   /** catchup (#126): the points with their citations, mapped to ids. */
   catchUp?: Pick<AiCatchUp, 'points' | 'items'>;
 }
@@ -373,6 +378,54 @@ Schema: {"title": string, "summary": string, "points": [{"text": string, "items"
   };
 }
 
+// ---- expand a mind-map topic (#134) ----
+
+const EXPAND_WORDS: Record<AiExpandKind, string> = {
+  ideas: 'ideas that develop the topic',
+  questions: 'questions worth asking about the topic (each ends with a question mark)',
+  subtopics: 'sub-topics that break the topic down',
+};
+
+/** The topic, the path from the map's centre to it and what is under it already. */
+export interface MindTopic {
+  path: string[];
+  children: string[];
+}
+
+export function expandTask(kind: AiExpandKind, prompt: string, topic: MindTopic): TaskPlan {
+  const name = topic.path[topic.path.length - 1] ?? '';
+  const lines = [
+    `Central topic: ${clip(oneLine(topic.path[0] ?? ''), 200)}`,
+    ...(topic.path.length > 1 ? [`Path: ${topic.path.map((t) => clip(oneLine(t), 120)).join(' > ')}`] : []),
+    `Topic to expand: ${clip(oneLine(name), 300)}`,
+    ...(topic.children.length ? ['Already under it:', ...topic.children.slice(0, 50).map((c) => `- ${clip(oneLine(c), 120)}`)] : []),
+  ];
+  return {
+    system: `${PREAMBLE}
+
+Task: suggest ${AI_EXPAND.min} to ${AI_EXPAND.max} new children for one topic of a mind map: ${EXPAND_WORDS[kind]}. Each is short (at most 8 words), fits under the topic in the context of its path, and differs from the others and from what is already under it.${prompt ? ' The instruction says what to focus on.' : ''}
+
+Schema: {"items": [string, …]}`,
+    user: `${instructionBlock(prompt || `Expand this topic with ${kind === 'subtopics' ? 'sub-topics' : kind}.`)}\n\n${contentBlock(lines.join('\n'))}`,
+    schema: schemaObject({ items: { type: 'array', items: { type: 'string' } } }, ['items']),
+    accept(json) {
+      const o = obj(json);
+      if (!Array.isArray(o.items)) throw new InvalidOutput('"items" must be a list of texts.');
+      const seen = new Set([name, ...topic.children].map((t) => oneLine(t).toLowerCase()));
+      const items: string[] = [];
+      for (const raw of o.items) {
+        const t = str(raw, 120);
+        if (!t || seen.has(t.toLowerCase())) continue;
+        seen.add(t.toLowerCase());
+        items.push(t);
+        if (items.length >= AI_EXPAND.max) break;
+      }
+      if (items.length < AI_EXPAND.min) throw new InvalidOutput(`Give at least ${AI_EXPAND.min} new items that aren't under the topic already.`);
+      return { summary: `${items.length} ${kind === 'subtopics' ? 'sub-topics' : kind} for “${clip(oneLine(name), 60)}”`, children: items };
+    },
+  };
+}
+
 // ---- diagram ----
 
 const DIAGRAM_RULES: Record<AiDiagramKind, string> = {
@@ -429,4 +482,4 @@ ${DIAGRAM_RULES[kind]}`,
 }
 
 /** The tasks a request may name. */
-export const TASKS: readonly AiTask[] = ['ideas', 'cluster', 'summarize', 'diagram', 'report', 'catchup'];
+export const TASKS: readonly AiTask[] = ['ideas', 'cluster', 'summarize', 'diagram', 'report', 'catchup', 'expand'];

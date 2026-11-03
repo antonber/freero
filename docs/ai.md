@@ -15,6 +15,7 @@ What it can do today (KAI-102), from the AI button in the selection toolbar, the
 | Summarise | the selection, or the whole board | a written note beside it |
 | Summarise a meeting | an imported meeting's frame ("Summarise" on the import's message) | a summary note inside that frame |
 | Catch me up | what other people added, changed and removed (and how many comments) since your last visit or in the last 7, 14 or 30 days — the change set only, as you may see the board now; never private drafts | nothing: a summary shown to you alone, each point linking to the items and frames it is about; "Insert on board" adds it as a note |
+| Expand a mind-map topic | the topic, the path from the centre to it, and what is under it already | nothing until you choose: 3 to 7 ideas, questions or sub-topics to tick, added under the topic in one undo step |
 | Write a report | a live activity's results as everyone on the board sees them: counts, words, questions — never who answered; a sealed activity only after it is revealed | a note beside the activity with themes, notable answers and next steps |
 | Diagram from text | your prompt (and the selection, if any) | a flowchart, sequence diagram or mind map with attached connectors |
 

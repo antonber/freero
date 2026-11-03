@@ -9,6 +9,7 @@ import {
   MAX_SUGGESTION_DESCRIPTION,
   renderOutlineMarkdown,
   estimateTokens,
+  richTextToPlain,
   rotatedBounds,
   unionRects,
   type AiActionRequest,
@@ -17,6 +18,7 @@ import {
   type AiDiagramKind,
   type AuditValue,
   type BoardOutline,
+  type MindmapElement,
   type OutlineItem,
   type Point,
   type SuggestionAuthor,
@@ -48,7 +50,9 @@ import {
   TASKS,
   type ClusterItem,
   catchUpTask,
+  expandTask,
   type Accepted,
+  type MindTopic,
   type TaskPlan,
 } from './tasks';
 
@@ -60,6 +64,7 @@ const TASK_DESCRIPTIONS: Record<AiActionRequest['task'], string> = {
   diagram: 'Diagram',
   report: 'Report',
   catchup: 'Catch-up',
+  expand: 'Expanded topic',
 };
 
 const DAY = 86_400_000;
@@ -91,6 +96,8 @@ function parseActionRequest(body: unknown): AiActionRequest {
   if ((b.task === 'ideas' || b.task === 'diagram') && !prompt && !b.ids?.length) throw badRequest('Say what the ideas or the diagram should be about');
   if (b.task === 'cluster' && (b.ids?.length ?? 0) < 2) throw badRequest('Select at least two notes to cluster');
   if (b.task === 'report' && b.ids?.length !== 1) throw badRequest('Select the one activity to report on');
+  if (b.task === 'expand' && b.ids?.length !== 1) throw badRequest('Select the one mind-map topic to expand');
+  if (b.expand !== undefined && b.expand !== 'ideas' && b.expand !== 'questions' && b.expand !== 'subtopics') throw badRequest('expand must be ideas, questions or subtopics');
   return {
     task: b.task!,
     prompt,
@@ -99,6 +106,7 @@ function parseActionRequest(body: unknown): AiActionRequest {
     by: b.by,
     into: b.into,
     since: b.task === 'catchup' ? (b.since ?? 'visit') : undefined,
+    expand: b.task === 'expand' ? (b.expand ?? 'ideas') : undefined,
     target: b.target ?? 'preview',
     near: b.near,
     at: b.at,
@@ -202,6 +210,26 @@ async function clusterItems(
   // Sorting moves the notes it sorts: someone else's notes are theirs to agree to move (KAI-169).
   const othersOwn = els.some((el) => texts.has(el.id) && el.createdBy !== userId);
   return { items, center: b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : null, othersOwn };
+}
+
+/**
+ * A mind-map topic as the reader sees the board (never anyone's private draft around it): the path
+ * from the map's centre to it and the text of its children.
+ */
+async function mindTopic(boardId: string, userId: string, role: AiGrant['role'], id: string): Promise<MindTopic> {
+  const view = await readBoardView(boardId, { userId, role });
+  const nodes = new Map(view.elements.filter((e) => e.el.type === 'mindmap' && (e.layer !== 'private' || e.el.id === id)).map((e) => [e.el.id, e.el as MindmapElement]));
+  const node = nodes.get(id);
+  if (!node) throw badRequest('That isn’t a mind-map topic on this board');
+  const text = (n: MindmapElement) => richTextToPlain(n.text).trim() || '(no text)';
+  const path: string[] = [];
+  const seen = new Set<string>();
+  for (let cur: MindmapElement | undefined = node; cur && !seen.has(cur.id); cur = cur.parentId ? nodes.get(cur.parentId) : undefined) {
+    seen.add(cur.id);
+    path.unshift(text(cur));
+  }
+  const children = [...nodes.values()].filter((n) => n.parentId === id && n.id !== id).map(text);
+  return { path: path.slice(-12), children };
 }
 
 /** The selected element furthest right: results about a selection land just right of it. */
@@ -341,6 +369,11 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
       if (!near) near = activity.id;
       break;
     }
+    case 'expand': {
+      target = 'preview';
+      plan = expandTask(req.expand ?? 'ideas', prompt, await mindTopic(boardId, userId, g.role, ids![0]));
+      break;
+    }
     case 'diagram':
       plan = diagramTask(req.diagram ?? 'flowchart', prompt, ids ? await readContent(boardId, userId, ids) : null);
       if (ids && !near) near = await rightmostOf(boardId, userId, g.role, ids);
@@ -362,13 +395,19 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
     throw e;
   }
   const tokens = { ...usage };
+  if (!asked.structure) {
+    // Text only (expand): the app places it itself.
+    await auditAi(g, userId, { ...meta, ...tokens, outcome: 'ok', created: 0, moved: 0 });
+    return { target: 'preview', created: [], moved: [], bounds: { x: 0, y: 0, w: 0, h: 0 }, task: req.task, summary: asked.summary, usage: asked.usage, children: asked.children ?? [] };
+  }
+  const structure = asked.structure;
   let placed;
   try {
     // Proposed by the AI for this person: the badge reads "AI for <Person>".
     const description = `${TASK_DESCRIPTIONS[req.task]}${prompt ? `: ${prompt}` : ''}`.slice(0, MAX_SUGGESTION_DESCRIPTION);
     const author: SuggestionAuthor = { kind: 'ai', name: 'AI', userId, userName: (await getUser(userId))?.name ?? '' };
     const placement = req.task === 'summarize' && req.into ? { placement: { into: req.into } } : {};
-    placed = await insertStructure(boardId, userId, { structure: asked.structure, near, at, target, description, ...placement }, { author });
+    placed = await insertStructure(boardId, userId, { structure, near, at, target, description, ...placement }, { author });
   } catch (e) {
     await auditAi(g, userId, { ...meta, ...tokens, outcome: 'not_placed' });
     throw e;

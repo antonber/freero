@@ -35,20 +35,31 @@ import { planFollow } from './lib/follow';
 import { outlineFromPaste } from './lib/outline';
 import './mindmap.css';
 
-type Side = 'left' | 'right';
+type Side = 'left' | 'right' | 'down';
 
 /** Smooth edge from the parent's hub to this node, in this node's local coordinates. */
-function Edge({ node, parent, depth }: { node: MindmapElement; parent: MindmapElement; depth: number }) {
-  const side: Side = node.x + node.w / 2 < parent.x + parent.w / 2 ? 'left' : 'right';
-  const py = parent.y + parent.h / 2 - node.y;
-  const x0 = (side === 'right' ? parent.x + parent.w + HUB_R : parent.x - HUB_R) - node.x;
-  const x1 = side === 'right' ? 0 : node.w;
-  const y1 = node.h / 2;
-  const dx = (x1 - x0) * 0.55;
+function Edge({ node, parent, depth, down }: { node: MindmapElement; parent: MindmapElement; depth: number; down: boolean }) {
+  let d: string;
+  if (down) {
+    // A top-down map: from the hub under the parent to the top of this node.
+    const x0 = parent.x + parent.w / 2 - node.x;
+    const y0 = parent.y + parent.h + HUB_R - node.y;
+    const x1 = node.w / 2;
+    const dy = (0 - y0) * 0.55;
+    d = `M ${x0} ${y0} C ${x0} ${y0 + dy}, ${x1} ${-dy}, ${x1} 0`;
+  } else {
+    const side: Side = node.x + node.w / 2 < parent.x + parent.w / 2 ? 'left' : 'right';
+    const py = parent.y + parent.h / 2 - node.y;
+    const x0 = (side === 'right' ? parent.x + parent.w + HUB_R : parent.x - HUB_R) - node.x;
+    const x1 = side === 'right' ? 0 : node.w;
+    const y1 = node.h / 2;
+    const dx = (x1 - x0) * 0.55;
+    d = `M ${x0} ${py} C ${x0 + dx} ${py}, ${x1 - dx} ${y1}, ${x1} ${y1}`;
+  }
   return (
     <svg className="fr-mm__edge" width="1" height="1" aria-hidden style={{ color: canvasInk(node.color) }}>
       <path
-        d={`M ${x0} ${py} C ${x0 + dx} ${py}, ${x1 - dx} ${y1}, ${x1} ${y1}`}
+        d={d}
         // Presentation attributes and inline style, not CSS: export clones (html-to-image) don't
         // carry stylesheets. currentColor: an ink branch is painted light on a dark canvas.
         fill="none"
@@ -71,9 +82,12 @@ function Hub({ id, side, w, h, collapsed, count, color, canEdit }: {
   canEdit: boolean;
 }) {
   const editor = useEditor();
-  const style: CSSProperties = collapsed
-    ? { top: h / 2, ...(side === 'right' ? { left: w + 6 } : { right: w + 6 }), ['--mm' as string]: color }
-    : { top: h / 2, left: side === 'right' ? w : 0, ['--mm' as string]: color };
+  const style: CSSProperties =
+    side === 'down'
+      ? { top: collapsed ? h + 14 : h, left: collapsed ? w / 2 - 10 : w / 2, ['--mm' as string]: color }
+      : collapsed
+        ? { top: h / 2, ...(side === 'right' ? { left: w + 6 } : { right: w + 6 }), ['--mm' as string]: color }
+        : { top: h / 2, left: side === 'right' ? w : 0, ['--mm' as string]: color };
   return (
     <button
       type="button"
@@ -104,7 +118,9 @@ const MindmapNode = memo(function MindmapNode({ element, selected, editing }: El
   const isRoot = !element.parentId;
   const s = isRoot ? NODE_STYLE.root : NODE_STYLE.node;
   const color = element.color || ROOT_COLOR;
-  const outer: Side = parent && element.x + element.w / 2 < parent.x + parent.w / 2 ? 'left' : isRoot && element.direction === 'left' ? 'left' : 'right';
+  // Where this node's own children go out (top-down maps: below it).
+  const down = info.side === 'down' || (isRoot && element.direction === 'down');
+  const outer: Side = down ? 'down' : parent && element.x + element.w / 2 < parent.x + parent.w / 2 ? 'left' : isRoot && element.direction === 'left' ? 'left' : 'right';
   const hasKids = info.childCount > 0;
 
   // Enter while typing commits and adds the next sibling (Shift+Enter = new line).
@@ -117,7 +133,7 @@ const MindmapNode = memo(function MindmapNode({ element, selected, editing }: El
 
   return (
     <div className="fr-mm" onKeyDownCapture={onKeyDownCapture}>
-      {parent && <Edge node={element} parent={parent} depth={info.depth} />}
+      {parent && <Edge node={element} parent={parent} depth={info.depth} down={info.side === 'down'} />}
       <div
         className={`fr-mm__pill${isRoot ? ' is-root' : ''}${drop ? ' is-drop' : ''}${selected ? ' is-selected' : ''}`}
         style={{ ['--mm' as string]: color, borderRadius: Math.min(element.h / 2, 26) }}
@@ -138,7 +154,10 @@ const MindmapNode = memo(function MindmapNode({ element, selected, editing }: El
       {hasKids && element.collapsed && (
         <Hub id={element.id} side={outer} w={element.w} h={element.h} collapsed count={info.descendantCount} color={color} canEdit={canEdit} />
       )}
-      {hasKids && !element.collapsed && (info.kidsRight || (!info.kidsLeft && outer === 'right')) && (
+      {hasKids && !element.collapsed && info.kidsDown && (
+        <Hub id={element.id} side="down" w={element.w} h={element.h} collapsed={false} count={0} color={isRoot ? color : element.color} canEdit={canEdit} />
+      )}
+      {hasKids && !element.collapsed && (info.kidsRight || (!info.kidsLeft && !info.kidsDown && outer === 'right')) && (
         <Hub id={element.id} side="right" w={element.w} h={element.h} collapsed={false} count={0} color={isRoot ? color : element.color} canEdit={canEdit} />
       )}
       {hasKids && !element.collapsed && info.kidsLeft && (
