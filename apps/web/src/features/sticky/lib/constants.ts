@@ -59,6 +59,8 @@ export interface StickyToolOptions {
   color?: StickyColor;
   shape?: StickyShape;
   size?: StickySize;
+  /** [#132] The tool places a sticky pad (a stack to peel stickies from) instead of a sticky. */
+  pad?: boolean;
 }
 
 /** The box new stickies get: the shape and size picked last (a medium square at first). */

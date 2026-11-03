@@ -13,6 +13,7 @@ import { STICKY_GAP, STICKY_SIZE, TOOL_ID, nearestColor, toolDims, type StickyTo
 import { stickyAt } from './lib/actions';
 import { gridPositions } from './lib/layout';
 import { listItems } from './lib/paste';
+import { padDefinition } from './lib/pad';
 import './sticky.css';
 
 /** Below this zoom the text is unreadable anyway: draw cheap "text lines" instead (2000-sticky boards). */
@@ -53,7 +54,7 @@ const StickyView = memo(function StickyView({ element, zoom, reserved }: Element
   );
 });
 
-export default defineElement({
+const stickyDefinition = defineElement({
   type: 'sticky',
   label: { one: 'Sticky note', many: 'Sticky notes' },
   icon: StickyNoteIcon,
@@ -108,3 +109,5 @@ export default defineElement({
     return true;
   },
 });
+
+export default [stickyDefinition, padDefinition];

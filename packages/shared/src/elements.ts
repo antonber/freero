@@ -34,7 +34,8 @@ export type ElementType =
   | 'timeline'
   | 'timelinebar'
   | 'doc'
-  | 'kanbanview';
+  | 'kanbanview'
+  | 'stickypad';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -223,6 +224,16 @@ export interface StickyElement extends BaseElement, TextStyle {
   text: RichText;
   /** Tag ids from the board's `tags` map. */
   tags?: string[];
+}
+
+/**
+ * [#132] A pad of blank stickies of one colour: dragging from it peels off a new sticky (its own
+ * element, made by whoever peels it — a participant's goes to their private layer like any draft).
+ * The pad stays. Older clients that don't know the type show nothing for it.
+ */
+export interface StickyPadElement extends BaseElement {
+  type: 'stickypad';
+  color: StickyColor;
 }
 
 export type ShapeKind =
@@ -1037,7 +1048,8 @@ export type BoardElement =
   | TimelineElement
   | TimelineBarElement
   | DocElement
-  | KanbanViewElement;
+  | KanbanViewElement
+  | StickyPadElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
