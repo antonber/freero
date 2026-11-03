@@ -4,6 +4,23 @@ import { createTestBoard, type Rect } from '@engine';
 import emojiElement from './element';
 import emojiCommands from './commands';
 import { reactionSlot } from './lib/reactions';
+import { PACKS } from './lib/packs';
+import { customSrc } from './lib/custom';
+
+describe('sticker packs', () => {
+  it('no two stickers in any pack share an id (a board would show one where the other was placed)', () => {
+    const ids = PACKS.flatMap((p) => p.stickers.map((s) => s.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('team stickers', () => {
+  it('only our own uploads render: a sticker naming any other address shows nothing instead of loading it', () => {
+    expect(customSrc('img:/uploads/abcDEF12_-.svg')).toBe('/uploads/abcDEF12_-.svg');
+    for (const value of ['img:https://tracker.example/pixel.png', 'img://evil.example/a.png', 'img:/uploads/../api/me.png', 'img:/uploads/abcdef12.html', 'img:javascript:alert(1)'])
+      expect(customSrc(value), value).toBeNull();
+  });
+});
 
 describe('react with stamp', () => {
   it('reacting several times to the same item lines the stamps up instead of stacking them', () => {

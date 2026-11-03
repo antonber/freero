@@ -5,6 +5,8 @@ export const PLACE_SIZE = 64;
 export const MAX_RECENT = 8;
 
 export interface EmojiToolOptions {
+  /** [#138] The name of the team sticker `current` places (its alt text and outline name). */
+  currentName?: string;
   /** What a click places: an emoji grapheme or `stamp:<id>`. */
   current?: string;
   recent?: string[];

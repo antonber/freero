@@ -998,6 +998,48 @@ export interface BoardVersion {
 }
 export const MAX_VERSION_NAME = 80;
 
+// ---- Team sticker sets (#138; server modules/stickers) ----
+// A workspace's own stickers, in named sets its members place from the emoji & stamps picker.
+// The images are uploads (same checks as any image, a smaller size cap); a placed sticker is an
+// emoji item whose `emoji` is `img:/uploads/<name>` (it keeps showing after its set is removed).
+// GET    /api/boards/:id/stickers         -> StickersResponse  (the sets of the board's workspace;
+//                                          none when you aren't in that workspace)
+// POST   /api/boards/:id/sticker-sets     body { name } -> { set: StickerSet }  (members of the
+//                                          board's workspace, not guests; 400 over MAX_STICKER_SETS)
+// POST   /api/sticker-sets/:id/stickers?name=<name>  body: the image bytes (Content-Type
+//                                          image/png, image/svg+xml, image/webp or image/gif)
+//                                          -> { sticker: Sticker }  (members; 413 over
+//                                          MAX_STICKER_BYTES or the upload quota, 415 other types,
+//                                          400 when the bytes aren't that image)
+// DELETE /api/sticker-sets/:id             -> { ok: true }  (its creator, or a workspace owner / admin)
+// DELETE /api/sticker-sets/:id/stickers/:stickerId -> { ok: true }  (the same, or who added it)
+export interface Sticker {
+  id: string;
+  name: string;
+  /** "/uploads/<name>" */
+  url: string;
+}
+export interface StickerSet {
+  id: string;
+  name: string;
+  /** Who made the set, by their current name (null: an account deleted since). */
+  createdBy: string | null;
+  /** You may add stickers to it. */
+  canAdd: boolean;
+  /** You may remove it (and any sticker in it): its creator, or a workspace owner / admin. */
+  canManage: boolean;
+  stickers: Sticker[];
+}
+export interface StickersResponse {
+  sets: StickerSet[];
+  /** You may make a new set in the board's workspace. */
+  canCreate: boolean;
+}
+export const MAX_STICKER_SETS = 30;
+export const MAX_STICKERS_PER_SET = 120;
+export const MAX_STICKER_BYTES = 512 * 1024;
+export const MAX_STICKER_NAME = 60;
+
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a
 // guest) of.
@@ -2138,6 +2180,7 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'stickers.set_removed': 'Removed a team sticker set',
   'audit.exported': 'Exported the audit log',
   // The public API (KAI-104) and agent safety (KAI-170): credentials, apps and every API call.
   'api.token_created': 'Created an API token',

@@ -554,8 +554,14 @@ export interface CardElement extends BaseElement {
 
 export interface EmojiElement extends BaseElement {
   type: 'emoji';
-  /** A single emoji grapheme or a stamp id like 'stamp:thumbsup'. */
+  /**
+   * A single emoji grapheme, a stamp or pack sticker id like 'stamp:thumbsup', or [additive, #138]
+   * a team sticker: 'img:/uploads/<name>' (an image from the workspace's sticker sets; clients
+   * show only their own server's uploads).
+   */
   emoji: string;
+  /** [additive, #138] A team sticker's name (its alt text and how it reads in the outline). */
+  name?: string;
 }
 
 /** A mind-map node; root nodes have parentId null. Edges are drawn from parentId. */
