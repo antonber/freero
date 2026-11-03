@@ -73,13 +73,14 @@ export function missingImages(editor: Editor) {
 
 export async function exportImage(
   editor: Editor,
-  o: { format: ImageFormat; scale: number; background: boolean; scope: ImageScope },
+  o: { format: ImageFormat; scale: number; background: boolean; scope: ImageScope; onProgress?: (done: number, total: number) => void },
 ): Promise<void> {
   const { request } = scopeInfo(editor, o.scope);
   const missing = missingImages(editor);
   const dataUrl = await editor.renderToDataUrl({
     ...request,
     onMissingImages: missing.onMissingImages,
+    onProgress: o.onProgress,
     format: o.format,
     scale: o.format === 'svg' ? 1 : o.scale,
     // JPEG has no transparency, so it always gets the board background.

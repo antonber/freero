@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { EyeOff, Frame as FrameIcon } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
-import { defineElement, useCanEdit, useChromeHidden, useEditor, type Editor, type ElementRenderProps, type NewElement } from '@engine';
+import { defineElement, useCanEdit, useChromeHidden, useEditor, useIsExporting, type Editor, type ElementRenderProps, type NewElement } from '@engine';
 import { DEFAULT_FILL, presetById } from './lib/frames';
 import { renameFrame } from './lib/actions';
 import { startTitleDrag } from './lib/titleDrag';
@@ -117,9 +117,12 @@ function HiddenCover({ zoom }: { zoom: number }) {
   );
 }
 
-const FrameView = memo(function FrameView({ element, selected }: ElementRenderProps<FrameElement>) {
+const FrameView = memo(function FrameView({ element, selected, zoom: renderZoom }: ElementRenderProps<FrameElement>) {
   const editor = useEditor();
-  const zoom = useLiveZoom(editor);
+  const liveZoom = useLiveZoom(editor);
+  // A picture (export, thumbnail) is drawn at its own zoom, not at whatever zoom the person
+  // exporting looks at: zoomed far out, the hairline and title would be drawn 50x too big.
+  const zoom = useIsExporting() ? renderZoom : liveZoom;
   const canEdit = useCanEdit();
   return (
     <>

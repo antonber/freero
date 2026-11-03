@@ -47,4 +47,6 @@ export default defineElement({
   // Highlighter ink multiplies with what's beneath (overlaps darken like real markers). It must
   // sit on the positioned wrapper: that is the stacking context the blend composites against.
   wrapperStyle: (el) => (el.highlighter ? { mixBlendMode: 'multiply' } : undefined),
+  // Ink of a drawing a few pixels big is thinner than a pixel: left out of a large board's thumbnail.
+  swatch: () => null,
 });
