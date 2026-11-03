@@ -341,6 +341,13 @@ export interface Config {
       /** Who hosts the servers and where ("Railway Corp., US West"): the privacy policy's hosting provider. */
       hosting: string | null;
       /**
+       * Who stores uploaded files and where, and who delivers email and where (SITE_LEGAL_STORAGE,
+       * SITE_LEGAL_MAIL), as the privacy policy and /subprocessors name them. null = the pages name
+       * what the server can see itself (the bucket's or the SMTP server's host).
+       */
+      storage: string | null;
+      mail: string | null;
+      /**
        * The longest the hosting keeps database backups and request logs, in days (SITE_LEGAL_BACKUP_DAYS,
        * SITE_LEGAL_LOG_DAYS): the hosting provider decides them, so the policy states what the operator
        * set, never a guess. null = not set (the policy shows a placeholder).
@@ -646,6 +653,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     address: legalText('SITE_LEGAL_ADDRESS', 400),
     jurisdiction: legalText('SITE_LEGAL_JURISDICTION', 200),
     hosting: legalText('SITE_LEGAL_HOSTING', 300),
+    storage: legalText('SITE_LEGAL_STORAGE', 300),
+    mail: legalText('SITE_LEGAL_MAIL', 300),
     backupDays: str('SITE_LEGAL_BACKUP_DAYS') === null ? null : int('SITE_LEGAL_BACKUP_DAYS', 0, 1, 3650),
     logDays: str('SITE_LEGAL_LOG_DAYS') === null ? null : int('SITE_LEGAL_LOG_DAYS', 0, 1, 3650),
     statusUrl: url('SITE_STATUS_URL', ['https:']),

@@ -135,7 +135,16 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
   write(
     'manifest.json',
     JSON.stringify(
-      { version: 1, pages: manifestPages, files, notFound: '404.html', prefixes: SITE_PREFIXES, assetsPrefix: ASSETS_PREFIX, legal: pages.filter((p) => p.legal).map((p) => p.path) },
+      {
+        version: 1,
+        pages: manifestPages,
+        files,
+        notFound: '404.html',
+        prefixes: SITE_PREFIXES,
+        assetsPrefix: ASSETS_PREFIX,
+        legal: pages.filter((p) => p.legal).map((p) => p.path),
+        underReview: pages.filter((p) => p.underReview).map((p) => p.path),
+      },
       null,
       2,
     ),

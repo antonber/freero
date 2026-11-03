@@ -25,6 +25,12 @@ fs.writeFileSync(
   path.join(dist, 'privacy/index.html'),
   `<!doctype html><html><head><title>Privacy</title><meta name="robots" content="noindex, follow"/></head><body><aside class="legal-draft" role="note"><strong>Draft: not in effect.</strong> Under legal review.</aside><h1>Privacy policy</h1><p>Operated by [[freero-legal:operator]][[freero-legal:atAddress]]. Write to [[freero-legal:contact]]. Deleted after [[freero-legal:deletionGraceDays]] days.</p></body></html>`,
 );
+// A legal page the operator hasn't approved yet (apps/site `underReview`), as built: noindex, with its review line.
+fs.mkdirSync(path.join(dist, 'dpa'));
+fs.writeFileSync(
+  path.join(dist, 'dpa/index.html'),
+  `<!doctype html><html><head><title>DPA</title><meta name="robots" content="noindex, follow"/></head><body><aside class="legal-draft" role="note"><strong>Draft: not in effect.</strong></aside><p class="legal-review" role="note"><strong>Draft — under review.</strong></p><h1>Data processing addendum</h1><p>Processor: [[freero-legal:operator]].</p></body></html>`,
+);
 fs.writeFileSync(
   path.join(dist, 'manifest.json'),
   JSON.stringify({
@@ -33,12 +39,14 @@ fs.writeFileSync(
       { path: '/', file: 'index.html' },
       { path: '/claude', file: 'claude/index.html' },
       { path: '/privacy', file: 'privacy/index.html' },
+      { path: '/dpa', file: 'dpa/index.html' },
     ],
     files: [{ path: '/robots.txt', file: 'robots.txt', type: 'text/plain' }],
     notFound: '404.html',
     prefixes: ['/vs/'],
     assetsPrefix: '/_site',
-    legal: ['/privacy'],
+    legal: ['/privacy', '/dpa'],
+    underReview: ['/dpa'],
   }),
 );
 
@@ -143,6 +151,17 @@ it('until an operator is named, the privacy policy is visibly a draft that searc
     expect(html).toContain('<a href="mailto:privacy@whiteboard.example.com">privacy@whiteboard.example.com</a>');
     expect(html).toContain('Deleted after 21 days.');
     expect(html).not.toContain('[[freero-legal:');
+  });
+});
+
+it('a page the operator hasn’t approved stays out of search results and keeps its “under review” line even once the legal pages are in effect', async () => {
+  await servedWith({ operator: 'Kaiten Gaming LLC' }, async (live) => {
+    const res = await fetch(`${live}/dpa`);
+    const html = await res.text();
+    expect(html).toContain('Processor: Kaiten Gaming LLC.');
+    expect(html).toContain('Draft — under review.');
+    expect(html).toContain('<meta name="robots" content="noindex, follow"/>');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex');
   });
 });
 

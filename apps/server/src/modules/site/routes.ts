@@ -40,7 +40,7 @@ export default function siteRoutes({ config }: ServerContext): Router {
     }
     let text = byKey.get(key);
     if (text === undefined) {
-      text = withLegal(withOrigin(raw, origin), legal, !!site?.legal.has(key));
+      text = withLegal(withOrigin(raw, origin), legal, !!site?.legal.has(key), !!site?.underReview.has(key));
       byKey.set(key, text);
     }
     return text;
@@ -50,8 +50,9 @@ export default function siteRoutes({ config }: ServerContext): Router {
     const analytics = config.site.analytics;
     if (analytics) res.setHeader('Content-Security-Policy', cspWithAnalytics(contentSecurityPolicy(config, req.headers.host, req.secure), analytics.src));
     res.setHeader('Cache-Control', 'no-cache');
-    // A draft of terms is never a search result, whatever a cached copy of its markup says.
-    if (site?.legal.has(key) && !legal.inEffect) res.setHeader('X-Robots-Tag', 'noindex');
+    // A draft of terms, or a page the operator hasn't approved, is never a search result, whatever a
+    // cached copy of its markup says.
+    if ((site?.legal.has(key) && !legal.inEffect) || site?.underReview.has(key)) res.setHeader('X-Robots-Tag', 'noindex');
     // Google Analytics (GA_MEASUREMENT_ID): its consent banner, and Google's script once accepted.
     res.status(status).type('html').send(withAnalyticsRuntime(withAnalytics(textFor(req, key, raw), analytics), config));
   };
