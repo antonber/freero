@@ -157,6 +157,8 @@ export function createCore(
     ui.subscribe((s, p) => {
       if (p.dragging && !s.dragging) pruneSelection();
     }),
+    // My own view settings can fold items away for me (a kanban showing me a table tab).
+    core.emitter.on('personal-views', pruneSelection),
     store.subscribeElements(() => {
       const { editingId, hoverId } = ui.getState();
       pruneSelection();

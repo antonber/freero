@@ -342,7 +342,7 @@ export class EditorImpl implements Editor {
     const box = this.core.store.getElement(el.frameId);
     const reg = box && this.core.registry.elements.get(box.type);
     if (!reg?.def.hidesMember || this.core.ui.getState().dragging?.has(el.id)) return false;
-    return reg.def.hidesMember(box as never, el);
+    return reg.def.hidesMember(box as never, el, { editor: this.core.scoped(reg.feature) });
   }
 
   /**

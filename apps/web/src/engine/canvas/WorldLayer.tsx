@@ -66,6 +66,8 @@ function useVisibleIds(): string[] {
     };
     compute(true);
     const offStore = store.subscribeElements(schedule);
+    // My own view settings can fold items away for me alone (hidesMember with getPersonalView).
+    const offMine = core.emitter.on('personal-views', schedule);
     const offUi = ui.subscribe((s, p) => {
       // `dragging`: items folded into a container stay drawn while dragged, and fold when dropped.
       if (s.selection !== p.selection || s.editingId !== p.editingId || s.viewHidden !== p.viewHidden || s.dragging !== p.dragging) compute(true);
@@ -74,6 +76,7 @@ function useVisibleIds(): string[] {
     });
     return () => {
       offStore();
+      offMine();
       offUi();
       disposed = true;
     };

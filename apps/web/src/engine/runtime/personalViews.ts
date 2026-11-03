@@ -85,5 +85,7 @@ export function personalViews(core: EngineCore): PersonalViews {
     },
   };
   directories.set(core, dir);
+  // Who folds what away may depend on them (a kanban showing me a table tab): EditorEvent 'personal-views'.
+  state.subscribe(() => core.emitter.emit('personal-views'));
   return dir;
 }

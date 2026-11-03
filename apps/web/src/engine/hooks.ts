@@ -9,6 +9,8 @@ import { personalViews } from './runtime/personalViews';
 import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
 import { toolGhostAt } from './interaction/toolDispatch';
+import { quantizeZoom } from './camera/camera';
+import { useCompactLayout } from './ui/compact';
 import type { TextFormatState } from './text/session';
 
 /**
@@ -273,6 +275,41 @@ export function useDragPreview(id: string): Rect[] | null {
 export function usePersonalView(itemId: string | null | undefined, viewId: string): Record<string, unknown> | null {
   const dir = personalViews(useCore());
   return useStore(dir.state, (s) => (itemId ? (s[itemId]?.[viewId] ?? null) : null));
+}
+
+/**
+ * [additive] The part of the world on screen (world units), for drawing only what is in view (a
+ * windowed table inside an element). Quantised like `zoom`: the rect snaps outward to a grid an
+ * eighth of the view's size (and the zoom to half-octaves), so panning re-renders the caller only
+ * when it crosses a grid line, never every frame. Always covers the real view.
+ */
+export function useWorldViewport(): Rect {
+  const key = useUi((s) => {
+    const zoom = quantizeZoom(s.camera.zoom);
+    const w = s.viewport.width / s.camera.zoom;
+    const h = s.viewport.height / s.camera.zoom;
+    const step = Math.max(1, Math.pow(2, Math.round(Math.log2(Math.max(w, h, 1) / 8))));
+    const x0 = Math.floor(s.camera.x / step) * step;
+    const y0 = Math.floor(s.camera.y / step) * step;
+    const x1 = Math.ceil((s.camera.x + w) / step) * step;
+    const y1 = Math.ceil((s.camera.y + h) / step) * step;
+    return `${x0},${y0},${x1 - x0},${y1 - y0},${zoom}`;
+  });
+  return useMemo(() => {
+    const [x, y, w, h] = key.split(',').map(Number);
+    return { x, y, w, h };
+  }, [key]);
+}
+
+/**
+ * [additive] The phone layout (a window ≤ 600 px wide): 'phone' while the board is viewed and
+ * commented on, 'phone-edit' once an editor pressed "Edit" (UiState.phoneEditing); null on wider
+ * screens. Re-renders when it changes.
+ */
+export function usePhoneLayout(): 'phone' | 'phone-edit' | null {
+  const compact = useCompactLayout();
+  const editing = useUi((s) => s.phoneEditing);
+  return compact ? (editing ? 'phone-edit' : 'phone') : null;
 }
 
 /** [additive] Ids hidden for this viewer only (Editor.setViewHidden); re-renders when they change. */
