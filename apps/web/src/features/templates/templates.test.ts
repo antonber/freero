@@ -46,6 +46,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   timeline: ['title', 'start', 'end', 'scale', 'lanes'],
   timelinebar: ['title', 'start', 'end', 'color'],
   doc: ['uri'],
+  kanbanview: ['sourceId', 'view'],
 };
 
 let seq = 0;
