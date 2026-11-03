@@ -139,10 +139,10 @@ to confirm before any tool that changes a board. It never deletes, shares or syn
 People need a Microsoft 365 Copilot licence.
 
 1. **Register Copilot as an OAuth app in Freero.** Signed in as the account that will own it:
-   **Settings → API & apps → Apps you develop → Register an app**:
-   - name: `Microsoft 365 Copilot` (people see it on the consent screen and in activity);
-   - redirect URI: `https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect`;
-   - **confidential** (it gets a client secret, shown once).
+   **Settings → Your OAuth apps → Register app**:
+   - App name: `Microsoft 365 Copilot` (people see it on the consent screen and in activity);
+   - Redirect URIs: `https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect`;
+   - **Confidential app** on (it gets a client secret, shown once).
 2. **Register the OAuth client with Microsoft.** [Teams Developer Portal](https://dev.teams.microsoft.com)
    → **Tools → OAuth client registration → Register client**:
 
@@ -159,9 +159,9 @@ People need a Microsoft 365 Copilot licence.
    Save, and copy the **OAuth client registration ID**.
 
    The `resource` in the authorization endpoint binds Copilot's tokens to the MCP server (RFC 8707).
-   If Microsoft drops it, the tokens are for the REST API and `/mcp` answers 401, so Copilot keeps
-   asking to sign in: check **Settings → API & apps → Connected apps**, which names the resource each
-   app may use.
+   If Microsoft drops it, the tokens are for the REST API instead, `/mcp` answers them with 401, and
+   Copilot keeps asking people to sign in. (Not yet tried against a real tenant: see
+   [Not built yet](#not-built-yet).)
 3. **Set** and restart Freero:
 
    ```sh
@@ -247,6 +247,11 @@ Store apps must be multi-organisation: see the bot note above.
 - **Personal notifications in Teams** ("Connect Microsoft Teams" in settings; mentions, replies and
   assignments as bot messages, deduplicated with email). Workspace webhooks in the `teams` format
   already post board activity to a channel ([events.md](../events.md)).
+- **Tried against a real Microsoft 365 tenant.** Everything here was checked against Microsoft's
+  published schemas and documentation, with Teams and the Bot Connector played by local stand-ins
+  (the Teams JavaScript library's own protocol, tokens signed by local keys). Things only a real
+  tenant shows: Teams' desktop sign-in window signing in in place, whether Copilot's OAuth vault keeps
+  the `resource` parameter, and single-tenant bots across organisations.
 - **Previews of private boards for people who can open them** (needs the account linking above):
   until then every private link gets the generic card.
 
