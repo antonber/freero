@@ -8,11 +8,11 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { Account } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { runWithRequestContext } from '../../platform/requestContext';
-import { createPersonalToken, setCredentialIpExempt, useInWorkspace, type ApiCredential } from '../apiauth/index';
+import { createPersonalToken, ipExemptionsOf, setCredentialIpExempt, useInWorkspace, type ApiCredential } from '../apiauth/index';
 import { createUser } from '../auth/index';
 import { createBoard, getBoardAccess } from '../boards/index';
 import { admitSocket } from '../realtime/index';
-import { attachWorkspace, createOrganisation } from './index';
+import { attachWorkspace, createOrganisation, setIpExemptionReader } from './index';
 import { createTeamWorkspace, listWorkspaces, updateSettings } from './service';
 
 const OFFICE = '10.20.30.40';
@@ -25,6 +25,7 @@ let admitAs: { userId: string; boardId: string; ip: string } | null = null;
 
 beforeAll(async () => {
   await openTestDb();
+  setIpExemptionReader(ipExemptionsOf); // as apiauth's init does
   wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
   await new Promise<void>((r) => wss.once('listening', () => r()));
   wss.on('connection', (ws) => {
@@ -97,15 +98,22 @@ it('an organisation’s list applies to its workspaces besides their own', async
   expect((await from(OFFICE, () => getBoardAccess(board.id, owner.id))).role).toBe('owner');
 });
 
-it('an API token reaches the workspace from outside its networks only once its admins exempt it there', async () => {
+it('an API token reaches the workspace’s boards from outside its networks only once its admins exempt it there — on every board it resolves, not just where it is recorded', async () => {
   const owner = await user('Owner');
   const ws = (await createTeamWorkspace(owner.id, `Team ${++n}`)).id;
+  const board = await createBoard(owner.id, 'Plans', '', 'none', { workspaceId: ws });
   await from(OFFICE, () => updateSettings(ws, owner.id, { ipAllowlist: ['10.0.0.0/8'] }));
   const { token } = await createPersonalToken(owner.id, 'password', { name: 'Nightly export', scopes: ['boards:read'], expiresInDays: 30 });
   const cred = { credentialId: token.id, kind: 'personal', label: token.name, scopes: ['boards:read'], account: { id: owner.id } } as unknown as ApiCredential;
+  const viaToken = <T>(ip: string, fn: () => Promise<T>) =>
+    runWithRequestContext({ reqId: `api-${ip}`, userId: owner.id, ip, userAgent: null, apiCredentialId: token.id }, fn);
 
-  await expect(from(CAFE, () => useInWorkspace(cred, ws))).rejects.toMatchObject({ status: 403, code: 'ip_not_allowed' });
-  await from(OFFICE, () => useInWorkspace(cred, ws));
+  await expect(viaToken(CAFE, () => useInWorkspace(cred, ws))).rejects.toMatchObject({ status: 403, code: 'ip_not_allowed' });
+  expect((await viaToken(CAFE, () => getBoardAccess(board.id, owner.id))).role).toBeNull();
+  await viaToken(OFFICE, () => useInWorkspace(cred, ws));
   await setCredentialIpExempt(ws, owner.id, token.id, true);
-  await expect(from(CAFE, () => useInWorkspace(cred, ws))).resolves.toBeUndefined();
+  await expect(viaToken(CAFE, () => useInWorkspace(cred, ws))).resolves.toBeUndefined();
+  expect((await viaToken(CAFE, () => getBoardAccess(board.id, owner.id))).role).toBe('owner');
+  // The exemption is the credential's: the person's own browser from the café still gets nothing.
+  expect((await from(CAFE, () => getBoardAccess(board.id, owner.id))).role).toBeNull();
 });

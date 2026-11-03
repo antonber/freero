@@ -223,8 +223,9 @@ export async function authenticate(req: Request, resource: string): Promise<ApiC
     await repo.touchToken(token.id, token.grantId, now);
   }
   setRequestUser(req, account.id);
-  markApiCredential(req); // #156: the IP allowlist is checked per workspace in useInWorkspace
   const oauth = token.kind === 'access';
+  // #156: board access through this credential honours the workspaces' IP exemptions for it.
+  markApiCredential(req, oauth ? `${token.clientId}:${account.id}` : token.id);
   return {
     tokenId: token.id,
     credentialId: oauth ? `${token.clientId}:${account.id}` : token.id,

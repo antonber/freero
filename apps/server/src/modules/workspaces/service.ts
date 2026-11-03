@@ -112,24 +112,32 @@ async function organisationRolesOf(userId: string): Promise<Map<string, Workspac
  * organisation-wide deactivation, e.g. its directory's deprovisioning), or the workspace — itself
  * or through its organisation — requires two-step verification and they haven't turned it on.
  */
-function blockOf(w: Workspace | undefined, deactivated: Set<string>, workspaceId: string, twoFactor: () => boolean): WorkspaceBlock | null {
+function blockOf(w: Workspace | undefined, deactivated: Set<string>, workspaceId: string, twoFactor: () => boolean, ipExempt: Set<string>): WorkspaceBlock | null {
   if (deactivated.has(workspaceId) || (w?.organisation && deactivated.has(w.organisation.id))) return 'deactivated';
   if (w?.kind === 'team' && w.settings.requireTwoFactor && !twoFactor()) return 'two_factor_required';
-  if (w?.kind === 'team' && ipBlocked(w)) return 'ip_not_allowed';
+  if (w?.kind === 'team' && !ipExempt.has(w.id) && ipBlocked(w)) return 'ip_not_allowed';
   return null;
 }
 
 /**
  * #156: the request (or socket) comes from outside the workspace's IP allowlists. Only where a
- * client address is known: background work (jobs, digests) acts for nobody's network. A request
- * through an API token or app is checked where it is used (apiauth's useInWorkspace: exemptions).
+ * client address is known: background work (jobs, digests) acts for nobody's network. Requests
+ * through an API token or app follow the same rule on every board they resolve (REST, MCP, lists,
+ * search), except in workspaces whose admins exempted that credential (`ipExempt`).
  */
 function ipBlocked(w: Workspace): boolean {
   const lists = ipListsOf(w);
   if (!lists.length) return false;
-  const ctx = currentRequestContext();
-  if (!ctx?.ip || ctx.apiCredential) return false;
-  return lists.some((l) => !ipAllowed(l, ctx.ip!));
+  const ip = currentRequestContext()?.ip;
+  if (!ip) return false;
+  return lists.some((l) => !ipAllowed(l, ip));
+}
+
+/** Which of these workspaces exempted an API credential from their IP allowlist (apiauth registers the reader). */
+type IpExemptions = (credentialId: string, workspaceIds: string[]) => Promise<Set<string>>;
+let ipExemptions: IpExemptions = async () => new Set();
+export function setIpExemptionReader(fn: IpExemptions): void {
+  ipExemptions = fn;
 }
 
 /** May a request from `ip` reach the workspace's boards (#156)? For apiauth's per-workspace check. */
@@ -139,11 +147,21 @@ export async function ipAllowedIn(workspaceId: string, ip: string | null): Promi
   return ipListsOf(w).every((l) => ipAllowed(l, ip));
 }
 
-/** The user's deactivations and (only when some of `workspaces` needs it) their two-step status. */
-async function blockInputs(userId: string, workspaces: Array<Workspace | undefined>): Promise<{ deactivated: Set<string>; twoFactor: boolean }> {
+/**
+ * The user's deactivations, (only when some of `workspaces` needs it) their two-step status, and
+ * (#156: only for a request through an API credential to a workspace with an IP allowlist) where
+ * that credential is exempt.
+ */
+async function blockInputs(userId: string, workspaces: Array<Workspace | undefined>): Promise<{ deactivated: Set<string>; twoFactor: boolean; ipExempt: Set<string> }> {
   const needs2fa = workspaces.some((w) => w?.kind === 'team' && w.settings.requireTwoFactor);
-  const [deactivated, twoFactor] = await Promise.all([repo.deactivatedIn(userId), needs2fa ? hasTwoFactor(userId) : Promise.resolve(true)]);
-  return { deactivated, twoFactor };
+  const credentialId = currentRequestContext()?.apiCredentialId;
+  const listed = credentialId ? workspaces.filter((w): w is Workspace => !!w && w.kind === 'team' && ipListsOf(w).length > 0).map((w) => w.id) : [];
+  const [deactivated, twoFactor, ipExempt] = await Promise.all([
+    repo.deactivatedIn(userId),
+    needs2fa ? hasTwoFactor(userId) : Promise.resolve(true),
+    listed.length ? ipExemptions(credentialId!, listed) : Promise.resolve(new Set<string>()),
+  ]);
+  return { deactivated, twoFactor, ipExempt };
 }
 
 export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
@@ -151,7 +169,7 @@ export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]
   const [rows, orgRoles] = await Promise.all([repo.workspacesOf(userId), organisationRolesOf(userId)]);
   const b = await blockInputs(userId, rows.map((r) => r.workspace));
   return rows.map((r) =>
-    toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor), orgRoles, r.adminScopes),
+    toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor, b.ipExempt), orgRoles, r.adminScopes),
   );
 }
 
@@ -164,7 +182,7 @@ export async function workspaceSummary(workspaceId: string, userId: string): Pro
     row.workspace,
     row.role,
     row.memberCount,
-    blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor),
+    blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor, b.ipExempt),
     await organisationRolesOf(userId),
     row.adminScopes,
   );
@@ -810,7 +828,7 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
       outsidersBlocked: policies.externalSharing === 'none',
       maxLink: policies.linkSharing,
       anonymousLinks: policies.publicLinks === 'anyone',
-      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor),
+      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor, blocks.ipExempt),
       trashRetentionDays: ws?.settings.trashRetentionDays ?? DEFAULT_TRASH_DAYS,
     };
   };

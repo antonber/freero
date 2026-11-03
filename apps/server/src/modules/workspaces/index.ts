@@ -89,4 +89,4 @@ export { templatePublishingOf } from './service';
 // Usage trends (#65, modules/admin's rollup).
 export { allTeamWorkspaceIds } from './service';
 // IP allowlists (#156): apiauth checks a credential's requests per workspace (its exemption decides).
-export { ipAllowedIn } from './service';
+export { ipAllowedIn, setIpExemptionReader } from './service';

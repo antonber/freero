@@ -6958,7 +6958,7 @@ async function mcpChecks() {
         for (let i = 0; i < 2; i++) {
           const res = await c.callTool({ name: 'add_stickies', arguments: { boardId: board, stickies: [`rr ${i}`] } });
           assert(!res.isError, `round robin ${i}: ${text(res)}`);
-          await waitFor(() => res.structuredContent.created.every((id) => browser.doc.getMap('elements').has(id)), 5000, `sticky ${i} on instance 1`);
+          await waitFor(() => res.structuredContent.ids.every((id) => browser.doc.getMap('elements').has(id)), 5000, `sticky ${i} on instance 1`);
         }
         assert(n >= 4, `requests did not alternate: ${n}`);
         await waitFor(() => [...browser.provider.awareness.getStates().values()].some((s) => s?.agent?.app === 'Verify Assistant'), 5000, 'the app’s presence across instances');

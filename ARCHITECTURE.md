@@ -2857,9 +2857,11 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   is blocked. The admin console (`requireWorkspace`), sign-in, SSO and SCIM never ask it, so an owner
   can always fix a wrong list — the break-glass path. Saving a list that leaves out the caller's own
   address needs `confirmExcludesMe` (409 `ip_allowlist_excludes_you`); `GET …/admin/settings` says
-  `yourIp`. Requests through an API token or app (`markApiCredential`) are checked per workspace in
-  apiauth's `useInWorkspace` instead, where a security admin may exempt that credential
-  (`api_workspace_credentials.ip_exempt`, audited `api.credential_ip_exempted`).
+  `yourIp`. Requests through an API token or app follow the same rule on every board they resolve
+  (REST, MCP, lists, search — all through `boardAccessLoader`) and in apiauth's `useInWorkspace`,
+  except in a workspace whose security admins exempted that credential
+  (`api_workspace_credentials.ip_exempt`, audited `api.credential_ip_exempted`; the request context
+  carries `apiCredentialId`, apiauth registers `setIpExemptionReader` from its init).
 - Session lifetime / idle timeout: **a session belongs to a person, not a workspace**, so the
   strictest limits of the team workspaces someone is a member of (not as a guest) apply to all of
   their sessions (`workspaces.sessionLimitsFor`, given to auth with `setSessionLimits`). Auth checks

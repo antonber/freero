@@ -568,6 +568,15 @@ export async function noteWorkspaceUse(u: {
   return { blocked: !!r?.blocked_at, ipExempt: r?.ip_exempt === true };
 }
 
+/** Which of `workspaceIds` exempted the credential from their IP allowlist (#156). */
+export async function ipExemptIn(credentialId: string, workspaceIds: string[]): Promise<Set<string>> {
+  const rows = await query<{ workspace_id: string }>(
+    `SELECT workspace_id FROM api_workspace_credentials WHERE credential_id = $1 AND workspace_id = ANY($2::text[]) AND ip_exempt`,
+    [credentialId, workspaceIds],
+  );
+  return new Set(rows.map((r) => r.workspace_id));
+}
+
 /** Exempts (or not) a credential in the workspace from its IP allowlist (#156); null when it never reached it. */
 export async function setWorkspaceCredentialIpExempt(workspaceId: string, credentialId: string, exempt: boolean, by: string): Promise<WorkspaceCredentialRow | null> {
   const r = await query<{ credential_id: string }>(

@@ -11,10 +11,10 @@ export interface RequestContext {
   ip: string | null;
   userAgent: string | null;
   /**
-   * #156: the request acts through an API token or app (apiauth). The IP allowlist is then checked
-   * per workspace where the credential is used (its exemption decides), not on board access.
+   * #156: the request acts through this API token or app (apiauth's credential id). The IP
+   * allowlist then lets it through wherever the workspace's admins exempted that credential.
    */
-  apiCredential?: boolean;
+  apiCredentialId?: string;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
@@ -51,9 +51,9 @@ export function setRequestUser(req: IncomingMessage, userId: string): void {
 }
 
 /** apiauth marks a request authenticated by a token or app (#156). */
-export function markApiCredential(req: IncomingMessage): void {
+export function markApiCredential(req: IncomingMessage, credentialId: string): void {
   const ctx = byRequest.get(req);
-  if (ctx) ctx.apiCredential = true;
+  if (ctx) ctx.apiCredentialId = credentialId;
 }
 
 /** The authenticated user of a request, if auth has identified one. */
