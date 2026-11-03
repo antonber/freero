@@ -3,7 +3,7 @@
 // the undo history. Everything else in the engine talks to board data through this class.
 //
 // Board layers (see ARCHITECTURE.md "Board layers"): besides the shared doc, every client holds
-// two layer docs the server syncs only to some connections — 'private' (this user only:
+// two layer docs the server syncs only to some connections â€” 'private' (this user only:
 // private-mode drafts, sealed ballots) and 'editors' (owners/editors only: hidden frames'
 // contents). Their `elements` maps are read as ONE board together with the shared doc's; a write
 // goes to the element's current layer, or where `placement` puts it (new elements, or an element
@@ -132,6 +132,15 @@ export class BoardStore {
   private contentListeners = new Map<string, Set<Listener>>();
   private sorted: BoardElement[] | null = null;
   private byType = new Map<string, BoardElement[]>();
+  /**
+   * Ids by element type, in every doc (see elementsOfType). Unlike the ordered caches it survives
+   * local writes (each adds its id), so reads between writes inside one transaction stay cheap;
+   * any doc event (end of a transaction, remote change, undo) drops it. A superset: an id deleted
+   * since stays until then, and readers check the element.
+   */
+  private typeIds: Map<string, Set<string>> | null = null;
+  /** maxZ() while it is known to be exact (kept by local writes like typeIds; dropped by any doc event). */
+  private zMax: number | null = null;
   private version = 0;
   private gestureDepth = 0;
   private baseCaptureTimeout: number;
@@ -297,6 +306,8 @@ export class BoardStore {
     this.layers[name] = this.createLayer(name);
     this.sorted = null;
     this.byType.clear();
+    this.typeIds = null;
+    this.zMax = null;
     this.version++;
     for (const id of ids) {
       const set = this.elementListeners.get(id);
@@ -350,6 +361,8 @@ export class BoardStore {
   private onElementsEvent(ev: Y.YMapEvent<BoardElement>): void {
     this.sorted = null;
     this.byType.clear();
+    this.typeIds = null;
+    this.zMax = null;
     this.version++;
     for (const key of ev.keysChanged) {
       const set = this.elementListeners.get(key);
@@ -457,15 +470,45 @@ export class BoardStore {
     return arr;
   }
 
+  /**
+   * [additive] The elements of one type, in no particular order. For lookups made between writes
+   * inside a transaction (the container under a new item): every write drops getOrdered's cache,
+   * so asking it per item re-sorts the whole board each time; this index costs only the type's
+   * own elements.
+   */
+  elementsOfType(type: string): BoardElement[] {
+    if (!this.typeIds) {
+      this.typeIds = new Map();
+      for (const map of [this.elements, ...BOARD_LAYERS.map((name) => this.layers[name].elements)]) for (const [id, el] of map) this.indexType(el.type, id);
+    }
+    const out: BoardElement[] = [];
+    for (const id of this.typeIds.get(type) ?? []) {
+      const el = this.getElement(id);
+      if (el?.type === type) out.push(el);
+    }
+    return out;
+  }
+
+  private indexType(type: string, id: string): void {
+    const ids = this.typeIds?.get(type);
+    if (ids) ids.add(id);
+    else this.typeIds?.set(type, new Set([id]));
+  }
+
   getVersion(): number {
     return this.version;
   }
 
   /** Highest z currently used (for "on top" inserts). */
   maxZ(): number {
-    let m = 0;
-    for (const el of this.getOrdered()) if (el.z > m) m = el.z;
-    return m;
+    // Kept between writes (see writeElement): each item a transaction creates asks for it, and
+    // recounting means re-sorting the board after every write.
+    if (this.zMax === null) {
+      let m = 0;
+      for (const el of this.getOrdered()) if (el.z > m) m = el.z;
+      this.zMax = m;
+    }
+    return this.zMax;
   }
 
   minZ(): number {
@@ -481,7 +524,7 @@ export class BoardStore {
   }
 
   transact(fn: () => void): void {
-    // Outside a gesture every write is its own undo step (lock, duplicate, nudge…), however
+    // Outside a gesture every write is its own undo step (lock, duplicate, nudgeâ€¦), however
     // quickly they follow each other; inside a gesture everything merges. Nested in an open
     // transaction (Editor.transact, transactDerived) it joins that one's step.
     if (this.gestureDepth === 0 && !this.doc._transaction) this.history.stopCapturing();
@@ -539,7 +582,7 @@ export class BoardStore {
   }
 
   // Writes drop the ordered caches right away (not only when the transaction ends), so reads
-  // inside a transaction — getOrdered(), followers, feature code in editor.transact — see them.
+  // inside a transaction â€” getOrdered(), followers, feature code in editor.transact â€” see them.
   /** Writes `el` where `placement` says (moving it out of its current layer if that differs). */
   setElement(el: BoardElement): void {
     const current = this.layerOf(el.id);
@@ -553,6 +596,12 @@ export class BoardStore {
   }
 
   private writeElement(el: BoardElement, current: ElementLayer | null, target: ElementLayer): void {
+    if (this.zMax !== null) {
+      // Still exact when the element only stays or rises; it may have been the highest otherwise.
+      const prev = current ? this.mapOf(current).get(el.id) : undefined;
+      if ((current && current !== target) || (prev && !(el.z >= prev.z) && prev.z >= this.zMax)) this.zMax = null;
+      else if (el.z > this.zMax) this.zMax = el.z;
+    }
     if (current && current !== target) {
       this.mapOf(current).delete(el.id);
       this.moveContentOf(el.id, current, target);
@@ -560,9 +609,11 @@ export class BoardStore {
     this.mapOf(target).set(el.id, el);
     this.sorted = null;
     this.byType.clear();
+    this.indexType(el.type, el.id);
   }
 
   deleteElement(id: string): void {
+    this.zMax = null;
     for (const layer of ['shared', ...BOARD_LAYERS] as ElementLayer[]) {
       const map = this.mapOf(layer);
       if (map.has(id)) map.delete(id);

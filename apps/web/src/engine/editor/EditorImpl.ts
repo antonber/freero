@@ -44,7 +44,7 @@ import { describeElementType } from './typeLabel';
 import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
 import { boundsOf, elementAABB, localToWorld, rectCenter, rectUnion, visualAABB } from '../geometry/geometry';
-import { elementsInRect, hitTestElements, HIT_TOLERANCE_PX } from '../geometry/spatial';
+import { compareRenderOrder, elementsInRect, hitTestElements, HIT_TOLERANCE_PX } from '../geometry/spatial';
 import { findFreeSpot } from '../geometry/freeSpot';
 import {
   clampZoom,
@@ -646,11 +646,23 @@ export class EditorImpl implements Editor {
    * duplicates and pastes.
    */
   containerAt(p: Point, exclude?: ReadonlySet<string>): BoardElement | null {
+    // Only containers are asked (by type, from the store's index), never every visible element:
+    // this runs for each item a transaction creates or moves, and between two writes the board's
+    // order has to be re-sorted and every kanban card asked whether it is folded away — n cards
+    // dropped onto a kanban in one step cost O(n²).
+    const under: BoardElement[] = [];
+    for (const type of this.core.registry.containers)
+      for (const el of this.core.store.elementsOfType(type)) {
+        if (exclude?.has(el.id)) continue;
+        const r = elementAABB(el);
+        if (p.x < r.x || p.x > r.x + r.w || p.y < r.y || p.y > r.y + r.h || this.isHidden(el)) continue;
+        under.push(el);
+      }
+    // The smallest; of equal ones the first in render order (as when scanning the visible elements).
+    under.sort(compareRenderOrder);
     let best: BoardElement | null = null;
-    for (const el of this.getVisibleElements()) {
-      if (exclude?.has(el.id) || !this.getDefinition(el.type)?.container) continue;
+    for (const el of under) {
       const r = elementAABB(el);
-      if (p.x < r.x || p.x > r.x + r.w || p.y < r.y || p.y > r.y + r.h) continue;
       if (!best || r.w * r.h < best.w * best.h) best = el;
     }
     return best;
@@ -665,7 +677,7 @@ export class EditorImpl implements Editor {
   private adoptIntoContainers(ids: string[]): void {
     const store = this.core.store;
     const isContainer = (el: BoardElement | undefined) => !!el && !!this.getDefinition(el.type)?.container;
-    if (!this.getElements().some(isContainer)) return;
+    if (!this.core.registry.containers.some((type) => store.elementsOfType(type).length)) return;
     for (const id of ids) {
       const el = store.getElement(id);
       if (!el || isContainer(el) || isContainer(el.frameId ? store.getElement(el.frameId) : undefined)) continue;

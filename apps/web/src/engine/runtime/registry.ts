@@ -40,6 +40,8 @@ export interface Registry {
   foldsMembers: boolean;
   /** [additive] Some container type presents its children (ElementDefinition.presentChild). */
   presents: boolean;
+  /** [additive] The element types that are containers (ElementDefinition.container). */
+  containers: ElementType[];
 }
 
 /** One importer, whichever file it came from: an element type's importData or an importer.ts. */
@@ -69,6 +71,7 @@ export function buildRegistry(
     hidesContents: false,
     foldsMembers: false,
     presents: false,
+    containers: [],
   };
 
   const addTool = (def: ToolDefinition, feature: string) => {
@@ -97,6 +100,7 @@ export function buildRegistry(
       if (def.hidesContents) reg.hidesContents = true;
       if (def.hidesMember) reg.foldsMembers = true;
       if (def.presentChild) reg.presents = true;
+      if (def.container) reg.containers.push(def.type);
     }
     for (const imp of b.importers ?? []) {
       if (reg.importers.some((r) => r.def.name === imp.id)) throw new Error(`Importer id '${imp.id}' is defined twice.`);

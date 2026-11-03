@@ -312,6 +312,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Frame membership has one rule, applied by the engine on drop, create, duplicate and paste: an
   element belongs to the innermost container under its center (`frameId`), unless it already
   names an existing container. Features never compute membership for new elements themselves.
+  The lookup (`Editor.containerAt`) asks only the containers, through the store's per-type index
+  (`BoardStore.elementsOfType`, kept across writes inside a transaction), so a step that creates or
+  moves n items costs n × containers, not n × board: never scan `getVisibleElements()` per item
+  inside a transaction (every write drops the ordered caches, and each scan asks every kanban
+  card whether it is folded away).
 - Typing a character with one EMPTY text item selected starts editing it with that character —
   AltGr characters too (`isPrintableKey`: Windows reports AltGr as Ctrl+Alt, so a Ctrl+Alt press
   that typed something other than its key's own letter/digit is text, and on an empty note AltGr+9

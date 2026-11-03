@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineCore } from '../runtime/core';
 import { boxDef, bundle, frameDef, makeCore } from './harness';
+import { createTestBoard } from '../testing';
 import type { ElementDefinition } from '../api';
 
 let core: EngineCore;
@@ -161,6 +162,23 @@ describe('z-order and grouping', () => {
     // Middle + top selected, stepped back: both pass `bottom`, and keep their own order.
     core.editor.sendBackward([middle, top]);
     expect(order().filter((id) => id !== far)).toEqual([middle, top, bottom]);
+  });
+
+  it('a note added right after a collaborator added theirs lands on top of them, not under', () => {
+    const board = createTestBoard({ users: ['ann', 'bob'], features: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>] })] });
+    try {
+      const [ann, bob] = board.editors();
+      ann.create({ type: 'sticky', x: 0, y: 0 } as never);
+      board.sync();
+      bob.create({ type: 'sticky', x: 0, y: 0 } as never);
+      const bobsTop = bob.create({ type: 'sticky', x: 0, y: 0 } as never);
+      board.sync();
+      const mine = ann.create({ type: 'sticky', x: 0, y: 0 } as never);
+      expect(ann.getElements().at(-1)!.id).toBe(mine);
+      expect(ann.getElement(mine)!.z).toBeGreaterThan(ann.getElement(bobsTop)!.z);
+    } finally {
+      board.destroy();
+    }
   });
 
   it('deleting a frame deletes its children', () => {
