@@ -11,7 +11,7 @@
 // regions, Board as list), never from pixels.
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { BoardElement } from '@freero/shared';
-import type { LowDetailPaint, Rect } from '../api';
+import type { ChildPresentation, LowDetailPaint, Rect } from '../api';
 import { useCore } from '../context';
 import { elementAABB, rectContainsRect, rectsIntersect, rectUnion } from '../geometry/geometry';
 import { pictureColor } from './pictureColor';
@@ -50,8 +50,8 @@ interface Painted {
   area: Rect;
   /** Canvas pixels per world unit. */
   px: number;
-  /** Each item as last painted, and where. */
-  items: Map<string, { el: BoardElement; box: Rect }>;
+  /** Each item as last painted, where, and its container as it was then (it may present it). */
+  items: Map<string, { el: BoardElement; box: Rect; container?: BoardElement }>;
 }
 
 export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cull: Rect; zoom: number }) {
@@ -65,10 +65,10 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
     const canvas = ref.current;
     if (!canvas) return;
     const { store, registry } = core;
-    const els: Array<{ el: BoardElement; box: Rect }> = [];
+    const els: Array<{ el: BoardElement; box: Rect; container?: BoardElement }> = [];
     for (const id of ids) {
       const el = store.getElement(id);
-      if (el) els.push({ el, box: paintedBox(el) });
+      if (el) els.push({ el, box: paintedBox(el), container: registry.presents && el.frameId ? store.getElement(el.frameId) : undefined });
     }
     const union = rectUnion(els.map((e) => e.box));
     const want = union && intersection(union, cull);
@@ -99,10 +99,10 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
     let dirty: Rect | null = null;
     if (!all) {
       const now = new Set<string>();
-      for (const { el, box } of els) {
+      for (const { el, box, container } of els) {
         now.add(el.id);
         const was = last.items.get(el.id);
-        if (was?.el === el) continue;
+        if (was?.el === el && was.container === container) continue;
         dirty = grow(grow(dirty, box), was?.box ?? null);
       }
       for (const [id, was] of last.items) if (!now.has(id)) dirty = grow(dirty, was.box);
@@ -116,7 +116,7 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
     }
     if (all) last.items.clear();
 
-    const { selection, focusId } = core.ui.getState();
+    const { selection, focusId, focusHide } = core.ui.getState();
     const selected = new Set(selection);
     const resolve = resolver(getComputedStyle(canvas));
     ctx.setTransform(px, 0, 0, px, -area.x * px, -area.y * px);
@@ -144,8 +144,9 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
       fn();
       ctx.globalAlpha = a;
     };
-    const paint: LowDetailPaint & { selected: boolean } = {
+    const paint: LowDetailPaint & { selected: boolean; presentation: ChildPresentation | null } = {
       selected: false,
+      presentation: null,
       selectionColor: resolve('var(--fr-select, #5b3ff0)'),
       box({ fill, stroke, strokeWidth = 0, radius, round, alpha = 1 }) {
         const sw = stroke && stroke !== 'transparent' ? Math.max(0, strokeWidth) : 0;
@@ -199,9 +200,14 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
       const def = registry.elements.get(item.el.type)?.def;
       if (!def?.lowDetail) continue;
       el = item.el;
-      // Outside the item this viewer focuses on: faded, as the DOM item would be.
-      ctx.globalAlpha = focusId && !core.editor.inFocus(el) ? 0.16 : 1;
+      // Outside the item this viewer focuses on: faded, or not drawn ("hide the rest"), as the DOM item would be.
+      const outside = !!focusId && !core.editor.inFocus(el);
+      if (outside && focusHide) continue;
+      ctx.globalAlpha = outside ? 0.16 : 1;
       paint.selected = selected.has(el.id);
+      // As ElementFrame gives it to the component: the container's view of it (kanban colour-by).
+      const creg = item.container && registry.elements.get(item.container.type);
+      paint.presentation = creg?.def.presentChild ? creg.def.presentChild(item.container as never, el, { editor: core.scoped(creg.feature), personal: true }) : null;
       if (el.rotation) {
         ctx.save();
         ctx.translate(el.x + el.w / 2, el.y + el.h / 2);
@@ -240,11 +246,14 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
       });
     };
     const offEls = core.store.subscribeElements(() => later(false));
+    // My own view settings change how containers present their items (a kanban's colour-by for me).
+    const offMine = core.emitter.on('personal-views', () => later(true));
     const offUi = core.ui.subscribe((s, p) => {
-      if (s.selection !== p.selection || s.focusId !== p.focusId) later(true);
+      if (s.selection !== p.selection || s.focusId !== p.focusId || s.focusHide !== p.focusHide) later(true);
     });
     return () => {
       offEls();
+      offMine();
       offUi();
     };
   }, [core]);

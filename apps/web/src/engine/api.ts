@@ -715,6 +715,8 @@ export interface LowDetailPaint {
   readonly selected: boolean;
   /** The selection colour, for that. */
   readonly selectionColor: string;
+  /** How the item's container wants it shown (a kanban's colour-by accent), as `Component` gets it. */
+  readonly presentation: ChildPresentation | null;
   /**
    * Fills and/or outlines the item's box (the outline inside it, like a CSS border). `radius`
    * rounds the corners; `round` makes it the ellipse in the box. `alpha` fades the fill only.
