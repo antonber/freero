@@ -1226,7 +1226,7 @@ permission check, `POST /objects/resolve`), `references` (object_references, ref
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals: live audience activities; see "Live activities" below), `trackers`
-(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows: issue-tracker sync;
+(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
@@ -2407,8 +2407,8 @@ target itself:
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
-one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub or Azure DevOps Boards (Services /
-Server, #6), and stay linked both ways.
+one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub, Azure DevOps Boards (Services /
+Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -2423,9 +2423,11 @@ Server, #6), and stay linked both ways.
   backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
   capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
   (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
-  `issueTypes`, `parents`. `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below). `RemoteIssue.version` is the revision read (Azure DevOps): a write
   against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
-  fresh reads (at most twice) instead of overwriting.
+  fresh reads (at most twice) instead of overwriting. Trackers without revisions (Asana,
+  monday.com) write only the fields a sync changes (a PUT of those fields, a column write of those
+  columns), so another field changed meanwhile is never written over.
 - **Field map (#43)**: a connection's `settings` hold the picked estimate / start date fields,
   issue type per project and `fieldMap` (tracker field id ↔ kanban field NAME and kind). Mapped
   fields are `custom:<id>` IssueFields, merged like every other; a kanban without a field of that
@@ -2447,6 +2449,15 @@ Server, #6), and stay linked both ways.
   `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
   (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
   Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
+- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, where
+  nobody can paste an address): one per connection and project, registered after a send or import
+  into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,
+  registered again for a new secret). The address names the registration (`h`) and carries `k`, an
+  HMAC of `h` with the connection's webhook secret, checked before the provider sees a delivery. A
+  handshake (`WebhookResult.handshake`: Asana's `X-Hook-Secret` echoed and kept sealed —
+  `keepHookSecret` only for a pending row without one, so only once —, monday.com's challenge
+  echoed) is answered only while that row is pending, i.e. while Freero waits on `register`; Asana
+  deliveries are then verified with that secret (`X-Hook-Signature`).
 - **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
   link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
   draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
@@ -2484,8 +2495,11 @@ Server, #6), and stay linked both ways.
   `trackersWorkspaceExportOf` (a team's connections) feed `privacy/archive.ts`; never credentials.
 - `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
   Atlassian OAuth, agile sprints), `mock-linear.mjs` (cycles), `mock-github.mjs` and
-  `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks), which
-  implement the subset of each public API used, webhooks included.
+  `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks),
+  `mock-asana.mjs` (sections, tags, custom fields, external attachments, OAuth, webhooks with the
+  handshake and signatures) and `mock-monday.mjs` (GraphQL: columns, groups, updates, subitems,
+  webhooks with the challenge, complexity), which implement the subset of each public API used,
+  webhooks included.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
