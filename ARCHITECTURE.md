@@ -1239,30 +1239,29 @@ Off unless the operator sets `GA_MEASUREMENT_ID` (the hosted service does; self-
 nothing: no script tag, no frame, `/analytics.js` and `/analytics-frame` answer 404, the CSP is
 byte-for-byte what it was). When on:
 
-- **Consent first (Consent Mode v2, basic).** `app/analytics/runtime.ts` is the one place that
-  decides: nothing from Google loads until the visitor chooses Accept in the banner (Accept and
-  Decline look the same; GPC / Do Not Track count as Decline; the choice lives in local storage
-  under `freero:analytics-consent` for 6 months). Google's tag then starts with all four consent
-  types denied and only `analytics_storage` granted; ad storage, ad user data, ad personalisation
-  and Google signals stay off. Decline (or withdrawing later through "Cookie settings": the site
-  footer, the app's Help menu, the privacy policy) deletes the `_ga*` cookies. The runtime has no
-  imports: `vite.config.ts` (`freero-analytics`) builds it alone into `dist/analytics.js`, and the
-  app imports the same functions.
+- **On by default, with an opt-out (the operator's decision; no banner).** `app/analytics/runtime.ts`
+  is the one place that decides: Google's tag runs unless this browser opted out ("Turn off
+  analytics": the site footer, the app's Help menu, the privacy policy; `freero:analytics-off` in
+  local storage, kept until turned back on) or sends GPC / Do Not Track (off, and the controls
+  can't override it). Consent Mode v2 defaults: `analytics_storage` granted; ad storage, ad user
+  data, ad personalisation and Google signals always off. Opting out deletes the `_ga*` cookies.
+  The runtime has no imports: `vite.config.ts` (`freero-analytics`) builds it alone into
+  `dist/analytics.js`, and the app imports the same functions.
 - **Marketing pages** (`modules/site`) get `<script src="/analytics.js" data-freero-ga=…>`; the
   runtime runs Google's tag in the page itself (public content), reporting the path with the query
   reduced to UTM tags and the referrer reduced to its origin.
 - **The app never runs Google's tag in its own document**, which holds board titles, content,
   names and links that GA's automatic measurements (outbound clicks, file downloads, the tab title,
   history changes) would read. The bridge (`app/analytics/bridge.ts`, mounted by `AppAnalytics`)
-  creates a hidden same-origin frame, `/analytics-frame` (only this origin may frame it), after
-  consent and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
+  creates a hidden same-origin frame, `/analytics-frame` (only this origin may frame it), on the
+  first page reported and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
   token removed (`/board/<id>` → `/board`, unknown routes → `/not-found`), a generic title — and
   events from the closed list `AnalyticsEvent` (`sign_up` / `login` with the method, `board_created`,
   `template_used` with a built-in template's public id), validated by `analyticsEventParams`.
-  `/embed/*` (the assistants' live view, boards embedded on other sites, their sign-in popup),
-  `/operator*` and `/oauth/*` are never reported and never show the banner. Features
+  `/embed/*` and `/teams/*` (the assistants' live view, boards embedded on other sites or in
+  Teams, their sign-in pages), `/operator*` and `/oauth/*` are never reported. Features
   count events through `Host.track` (optional; the templates feature is the only user).
-- **Single writers:** the consent choice — `runtime.ts` `saveChoice` (banner buttons); page views —
+- **Single writers:** the opt-out — `runtime.ts` `setOptedOut` (the controls); page views —
   `AppAnalytics` → `reportPage`; events — `track` (AuthContext, `api.createBoard`, `Host.track`).
 - **CSP** (`platform/security.ts`, only with the id; never on a page another site may frame —
   `allowFraming`, `frameFromAnySite` — nor on `/embed/*`): `script-src` +

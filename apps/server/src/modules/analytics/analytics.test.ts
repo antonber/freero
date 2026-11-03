@@ -26,13 +26,13 @@ afterAll(async () => {
 });
 
 it('without GA_MEASUREMENT_ID a server offers nothing of Google Analytics: the app is told it is off, and neither the runtime nor the frame is served', async () => {
-  expect(await (await fetch(`${off.base}/api/analytics`)).json()).toEqual({ enabled: false, privacyUrl: null });
+  expect(await (await fetch(`${off.base}/api/analytics`)).json()).toEqual({ enabled: false });
   expect((await fetch(`${off.base}/analytics.js`)).status).toBe(404);
   expect((await fetch(`${off.base}/analytics-frame`)).status).toBe(404);
 });
 
 it('with it, the analytics frame runs the runtime in frame mode and only this origin may frame it', async () => {
-  expect(await (await fetch(`${on.base}/api/analytics`)).json()).toEqual({ enabled: true, privacyUrl: '/privacy' });
+  expect(await (await fetch(`${on.base}/api/analytics`)).json()).toEqual({ enabled: true });
   expect(await (await fetch(`${on.base}/analytics.js`)).text()).toBe('/* runtime */');
   const res = await fetch(`${on.base}/analytics-frame`);
   expect(await res.text()).toContain('<script src="/analytics.js" data-freero-ga="G-TEST123" data-mode="frame"></script>');

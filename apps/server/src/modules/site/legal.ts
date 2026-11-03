@@ -106,33 +106,32 @@ function analyticsText(config: Config): Record<'analytics' | 'analyticsCookies' 
   const cookieName = ga ? `_ga_${ga.replace(/^G-/, '')}` : '';
   return {
     analytics: ga
-      ? `Only if you accept analytics cookies, we use Google Analytics to count visits and a few actions (see <a href="#cookies">Cookies</a>). ${site}`.trim()
+      ? `We use Google Analytics to count visits and a few actions; you can turn it off (see <a href="#cookies">Cookies</a>). ${site}`.trim()
       : site || 'These pages load no analytics script, and the app has none.',
     // Paragraphs and a list (the page puts this token in a <div>).
     analyticsCookies: ga
       ? [
-          `<p>The cookies below are needed for the service to work; none are for advertising. Analytics is the one optional use, and it runs only if you choose “Accept” in the cookie banner. Before you choose, and if you decline, no analytics script loads. If your browser sends Global Privacy Control or Do Not Track, we treat that as “Decline”.</p>`,
-          `<p>If you accept, our pages and the app use Google Analytics, provided by Google LLC as our processor:</p><ul>`,
+          `<p>The cookies below are needed for the service to work; none are for advertising. We also use Google Analytics, provided by Google LLC as our processor, to see how our pages and the app are used. It is on by default:</p><ul>`,
           `<li>It sets the cookies ${code('_ga')} and ${code(cookieName)} (kept up to 13 months) to count visits.</li>`,
           `<li>It receives the kind of page you are on (boards, docs and invitations only as a generic address such as ${code('/board')}), the referring site’s domain, your browser, device and screen size, an approximate location Google derives from your IP address, and these events: signing up or logging in (with the method, such as password), creating a board, and using one of Freero’s public templates.</li>`,
-          `<li>It never receives what is on your boards or docs, their titles, what you search for, or your name, email address or account id. It never runs in an assistant’s live board view, the operators’ console or the screen where you connect an app.</li>`,
+          `<li>It never receives what is on your boards or docs, their titles, what you search for, or your name, email address or account id. It never runs on boards embedded in an assistant, on other sites or in Microsoft Teams, in the operators’ console or on the screen where you connect an app.</li>`,
           `<li>Advertising features (Google signals, ad personalisation and ad data) are always off.</li>`,
           `<li>Google may process this data in the United States; see <a href="https://policies.google.com/technologies/partner-sites">how Google uses information from sites that use its services</a>.</li></ul>`,
-          `<p>The legal basis is your consent. You can withdraw it at any time with <a href="#cookies" data-freero-cookie-settings>Cookie settings</a> (also at the bottom of our pages and in the app’s Help menu): measuring stops and the analytics cookies are deleted. Your choice is kept in your browser’s local storage for 6 months, then we ask again.</p>`,
+          `<p>We rely on our legitimate interest in understanding and improving the service. You can opt out at any time with <a href="#cookies" data-freero-analytics-toggle>Turn off analytics</a> (also at the bottom of our pages and in the app’s Help menu): measuring stops in that browser, its analytics cookies are deleted, and the choice is remembered there. If your browser sends Global Privacy Control or Do Not Track, analytics stays off.</p>`,
         ].join('')
       : '<p>The app uses only cookies it needs to work. None are for advertising or analytics. The marketing pages set no cookies.</p>',
-    analyticsProvider: ga ? 'Google Analytics (Google LLC), only if you accept analytics cookies' : config.site.analytics ? `The analytics service at ${code(new URL(config.site.analytics.src).origin)} (marketing pages only)` : 'None: this service uses no analytics',
+    analyticsProvider: ga ? 'Google Analytics (Google LLC); you can turn it off' : config.site.analytics ? `The analytics service at ${code(new URL(config.site.analytics.src).origin)} (marketing pages only)` : 'None: this service uses no analytics',
     analyticsData: ga
       ? 'The kind of page you visit (no board or doc ids or titles), the referring domain, browser and device details, an approximate location from your IP address, and the events listed under Cookies'
       : config.site.analytics
         ? 'Page visits on the marketing pages'
         : '—',
     analyticsPurpose: ga
-      ? 'Counting visits to our pages and the app, and a few actions such as sign-ups, with Google Analytics, only if you accept analytics cookies'
+      ? 'Counting visits to our pages and the app, and a few actions such as sign-ups, with Google Analytics (you can opt out)'
       : config.site.analytics
         ? 'Counting visits to the marketing pages'
         : 'Not done on this service',
-    analyticsBasis: ga ? 'Your consent, which you can withdraw at any time' : '—',
+    analyticsBasis: ga ? 'Legitimate interests (understanding and improving the service); you can object by opting out' : '—',
   };
 }
 
