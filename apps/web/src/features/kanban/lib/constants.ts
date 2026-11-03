@@ -5,6 +5,8 @@ export const TOOL_ID = 'kanban';
 export const FIELDS_PANEL = 'kanban.fields';
 /** The dock panel that edits a kanban's board view: what cards show, how they are coloured (panel.tsx). */
 export const VIEW_PANEL = 'kanban.view';
+/** Focus mode: the kanban as a page of its own, arranged my way (a dialog panel, lib/Focus.tsx). */
+export const FOCUS_PANEL = 'kanban.focus';
 
 /** Header accents for columns (Freero palette). */
 export const COLUMN_COLORS = ['#8A89A3', '#2E9BF0', '#F5A524', '#1FA463', '#8B5CF6', '#E64DA6', '#14B8A6', '#E5484D'];

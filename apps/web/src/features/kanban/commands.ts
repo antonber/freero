@@ -1,7 +1,9 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, ListChecks, SlidersHorizontal } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, ListChecks, Maximize2, SlidersHorizontal, Table2 } from 'lucide-react';
 import { defineCommands, type CommandDefinition, type Editor } from '@engine';
 import { addColumn, canMove, moveSelection, moveToColumn, type MoveDir } from './lib/actions';
-import { FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
+import { FIELDS_PANEL, FOCUS_PANEL, VIEW_PANEL } from './lib/constants';
+import { addTableTab, deleteTab, renameTab, setMyTable, switchTab } from './lib/tabs';
+import { setFocus } from './lib/focusSettings';
 import { fieldsTarget } from './lib/schema';
 import { cleanFilter } from '@freero/shared';
 import { saveViewForEveryone, setDensity, setMyCardDisplay, setMyFilter, setSort, setViewLocked } from './lib/view';
@@ -136,6 +138,81 @@ export default defineCommands([
     minRole: 'viewer',
     when: (editor) => !!fieldsTarget(editor),
     run: (editor) => editor.openDock(VIEW_PANEL),
+  },
+  {
+    // Focus mode (lib/Focus.tsx): the kanban the selection points at as a page of its own,
+    // arranged my way. Args { id } name another kanban. Any role.
+    id: 'kanban.openFocus',
+    label: 'Open in focus mode',
+    icon: Maximize2,
+    menus: ['context'],
+    minRole: 'viewer',
+    when: (editor) => !!fieldsTarget(editor),
+    run(editor, args) {
+      const id = typeof args?.id === 'string' ? args.id : fieldsTarget(editor)?.id;
+      if (id) editor.openPanel(FOCUS_PANEL, { id });
+    },
+  },
+  {
+    // View tabs (lib/tabs.ts). Adds a table tab to kanban { id } for everyone ({ name? }) and shows
+    // it to me. Editors; one undo step.
+    id: 'kanban.addTableTab',
+    label: 'Add a table tab',
+    icon: Table2,
+    run(editor, args) {
+      if (typeof args?.id === 'string') addTableTab(editor, args.id, typeof args.name === 'string' ? args.name : undefined);
+    },
+  },
+  {
+    // Looks at tab { tab } of kanban { id }, for me only (any role); "Save for everyone" makes it everyone's.
+    id: 'kanban.showTab',
+    label: 'Show tab',
+    minRole: 'viewer',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && typeof args.tab === 'string') switchTab(editor, args.id, args.tab);
+    },
+  },
+  {
+    // Renames tab { tab } of kanban { id } to { name } for everyone. Editors.
+    id: 'kanban.renameTab',
+    label: 'Rename tab',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && typeof args.tab === 'string' && typeof args.name === 'string') renameTab(editor, args.id, args.tab, args.name);
+    },
+  },
+  {
+    // Deletes table tab { tab } of kanban { id } for everyone (never the board tab). Editors.
+    id: 'kanban.deleteTab',
+    label: 'Delete tab',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && typeof args.tab === 'string') deleteTab(editor, args.id, args.tab);
+    },
+  },
+  {
+    // My own columns / filter / sort of table tab { tab } of kanban { id } (any role), until I save them for everyone.
+    id: 'kanban.setMyTable',
+    label: 'Arrange a table for me',
+    minRole: 'viewer',
+    run(editor, args) {
+      if (typeof args?.id !== 'string' || typeof args.tab !== 'string') return;
+      setMyTable(editor, args.id, args.tab, {
+        ...(Array.isArray(args.columns) ? { columns: args.columns.filter((x): x is string => typeof x === 'string') } : {}),
+        ...(args.filter !== undefined ? { filter: cleanFilter(args.filter, { personal: true }) } : {}),
+        ...(Array.isArray(args.sort) ? { sort: args.sort as never } : {}),
+      });
+    },
+  },
+  {
+    // My focus-mode arrangement of kanban { id }: { groupBy? (a field id, null: none), density?,
+    // filter?, sort?, columns? }. Any role; nothing changes for anyone else.
+    id: 'kanban.setFocus',
+    label: 'Arrange focus mode',
+    minRole: 'viewer',
+    run(editor, args) {
+      if (typeof args?.id !== 'string') return;
+      const { id, ...patch } = args;
+      setFocus(editor, id, patch as never);
+    },
   },
   move('left', 'Move to previous column', ArrowLeft, 'arrowleft'),
   move('right', 'Move to next column', ArrowRight, 'arrowright'),
