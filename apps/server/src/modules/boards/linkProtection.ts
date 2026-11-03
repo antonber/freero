@@ -1,4 +1,4 @@
-// Share-link password and expiry (KAI-145). The board's owner may protect its link:
+// Share-link password and expiry (KAI-145). The board's owner (and co-owners, #122) may protect its link:
 //   - a password: the link then grants its role only to people (accounts, or guests joining)
 //     who gave the CURRENT password. Who did is a row in board_link_unlocks bound to the
 //     password's revision, so setting a new password cancels every earlier unlock at once, and
@@ -20,7 +20,7 @@ import * as repo from './repo';
 import type { Board } from './repo';
 import { boardTarget } from './service';
 
-/** What PATCH /boards/:id may change about the link's protection (owner only; checked by the caller). */
+/** What PATCH /boards/:id may change about the link's protection (owners and co-owners; checked by the caller). */
 export interface LinkProtectionPatch {
   linkPassword?: unknown;
   linkExpiresAt?: unknown;
@@ -28,9 +28,23 @@ export interface LinkProtectionPatch {
 
 export const hasLinkProtectionPatch = (body: LinkProtectionPatch): boolean => body.linkPassword !== undefined || body.linkExpiresAt !== undefined;
 
-/** Validates and applies the owner's change, audits it and drops live link-only access it ends. */
+/** A validated link protection change (`cleanLinkProtection`): the new hash / expiry, when given. */
+export interface CleanLinkProtection {
+  passwordHash?: string | null;
+  expiresAt?: number | null;
+}
+
+/** Validates and applies the change of an owner or co-owner, audits it and drops live link-only access it ends. */
 export async function changeLinkProtection(board: Board, actorId: string, body: LinkProtectionPatch, now = Date.now()): Promise<void> {
-  const patch: { passwordHash?: string | null; expiresAt?: number | null } = {};
+  await applyLinkProtection(board, actorId, await cleanLinkProtection(body, now));
+}
+
+/**
+ * Validates a link protection change without writing anything (PATCH checks the whole link change
+ * against the workspace's link policy, #39, before any of it is stored). Hashes a new password.
+ */
+export async function cleanLinkProtection(body: LinkProtectionPatch, now = Date.now()): Promise<CleanLinkProtection> {
+  const patch: CleanLinkProtection = {};
   if (body.linkPassword !== undefined) {
     if (body.linkPassword === null) patch.passwordHash = null;
     else {
@@ -49,6 +63,11 @@ export async function changeLinkProtection(board: Board, actorId: string, body: 
       patch.expiresAt = Math.round(at);
     }
   }
+  return patch;
+}
+
+/** Stores a validated change (`cleanLinkProtection`), audits it and drops live link-only access it ends. */
+export async function applyLinkProtection(board: Board, actorId: string, patch: CleanLinkProtection): Promise<void> {
   if (patch.passwordHash === undefined && patch.expiresAt === undefined) return;
   // Removing a password that isn't there (or an expiry) changes nothing worth recording.
   const passwordChange = patch.passwordHash !== undefined && !(patch.passwordHash === null && board.linkPasswordHash === null);
