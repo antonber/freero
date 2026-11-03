@@ -92,6 +92,11 @@
   }
 }
 
+/* Outside the slide being edited on its own (Editor.setFocus hideOutside, #135): not drawn. */
+.fr-el--outside {
+  visibility: hidden;
+}
+
 /* Outside the item this viewer focuses on (Editor.setFocus): faded, and out of reach. */
 .fr-el--unfocused {
   opacity: 0.16;

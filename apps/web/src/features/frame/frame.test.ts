@@ -7,6 +7,7 @@ import frameDef from './element';
 import { applyLayout, duplicateSlide, framesInOrder, newSlide } from './lib/actions';
 import { layoutItems, SLIDE_LAYOUTS } from './lib/layouts';
 import { slideSignature, ThumbCache } from './lib/thumbnails';
+import { editSlide, focusChanged, leaveSlide, slideEditStore, stepSlide } from './lib/slideEditor';
 
 const frame = (id: string, index: number, extra: Partial<FrameElement> = {}): FrameElement => ({
   id,
@@ -233,5 +234,50 @@ describe('slide thumbnails (#52)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('editing one slide on its own (#135)', () => {
+  const setup = () => {
+    const board = createTestBoard({ users: ['ann', 'bob'], features: [{ manifest: frameManifest, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] }] });
+    const [ann, bob] = board.editors('frame');
+    const one = ann.create({ type: 'frame', x: 0, y: 0, w: 1280, h: 720, title: 'One', fill: '#fff', index: 0 } as NewElement);
+    const two = ann.create({ type: 'frame', x: 2000, y: 0, w: 1280, h: 720, title: 'Two', fill: '#fff', index: 1 } as NewElement);
+    const onOne = ['a', 'b'].map((t, i) => ann.create({ type: 'sticky', x: 100 + i * 300, y: 100, w: 100, h: 100, text: t, frameId: one } as NewElement));
+    const onTwo = ann.create({ type: 'sticky', x: 2100, y: 100, w: 100, h: 100, text: 'c', frameId: two } as NewElement);
+    const loose = ann.create({ type: 'sticky', x: 100, y: 1200, w: 100, h: 100, text: 'loose' } as NewElement);
+    return { board, ann, bob, one, two, onOne, onTwo, loose };
+  };
+
+  it('select all and delete inside the slide editor take only what is on that slide: the slide itself, other slides and loose items stay', () => {
+    const { board, ann, one, two, onOne, onTwo, loose } = setup();
+    editSlide(ann, one);
+    ann.runCommand('engine.selectAll');
+    expect(ann.getSelection().sort()).toEqual([...onOne].sort());
+    expect(ann.hitTest({ x: 640, y: 600 })).toBeNull(); // the slide's empty area is the page, not the frame
+    ann.runCommand('engine.delete');
+    expect([one, two, onTwo, loose].every((id) => ann.getElement(id))).toBe(true);
+    expect(onOne.some((id) => ann.getElement(id))).toBe(false);
+    board.destroy();
+  });
+
+  it('nothing about the slide editor reaches the board: others keep their view, and leaving puts this one back where it was', () => {
+    const { board, ann, bob, one, two } = setup();
+    ann.setCamera({ x: -300, y: 900, zoom: 0.4 });
+    const before = JSON.stringify(bob.getElements());
+    editSlide(ann, one);
+    stepSlide(ann, 1);
+    expect(slideEditStore(ann).getState().frameId).toBe(two);
+    expect(ann.getFocus()).toBe(two);
+    expect(bob.getFocus()).toBeNull();
+    expect(JSON.stringify(bob.getElements())).toBe(before);
+    // Esc ends the engine's focus; the slide editor follows and the board comes back as it was.
+    ann.setFocus(null);
+    focusChanged(ann, ann.getFocus());
+    expect(slideEditStore(ann).getState().frameId).toBeNull();
+    expect(ann.getCamera()).toEqual({ x: -300, y: 900, zoom: 0.4 });
+    leaveSlide(ann); // already left: nothing happens
+    expect(ann.getCamera()).toEqual({ x: -300, y: 900, zoom: 0.4 });
+    board.destroy();
   });
 });

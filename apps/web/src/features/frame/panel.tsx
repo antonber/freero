@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Frame, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { Frame, Pencil, Play, Plus, SquarePen, Trash2 } from 'lucide-react';
 import type { BoardElement, FrameElement } from '@freero/shared';
 import { DockHeader, definePanel, useCanEdit, useSelection, type Editor } from '@engine';
 import { Button, IconButton, Input } from '@ui';
@@ -9,6 +9,8 @@ import { renameFrame, zoomToFrame } from './lib/actions';
 import { SlideThumb } from './lib/Thumb';
 import { DeckPanel, DECK_PANEL_ID } from './lib/DeckPanel';
 import { Filmstrip, FILMSTRIP_ID } from './lib/Filmstrip';
+import { SlideEditBar } from './lib/SlideEditBar';
+import { editSlide } from './lib/slideEditor';
 
 const DRAG_PX = 4;
 
@@ -197,6 +199,20 @@ export default [
     id: FILMSTRIP_ID,
     slot: 'dock-bottom',
     order: 50,
-    Component: ({ editor }) => <Filmstrip editor={editor} />,
+    Component: ({ editor }) => (
+      <Filmstrip
+        editor={editor}
+        onOpen={(f) => editSlide(editor, f.id)}
+        extraMenu={(f) => [{ id: 'edit', label: 'Edit slide', icon: SquarePen, onSelect: () => editSlide(editor, f.id) }]}
+      />
+    ),
+  }),
+  // Editing one slide on its own (#135): its bar, and the watcher that ends it with the focus.
+  definePanel({
+    id: 'frame.slideEditBar',
+    slot: 'top-center',
+    order: 20,
+    minRole: 'viewer',
+    Component: SlideEditBar,
   }),
 ];

@@ -611,6 +611,9 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   (`.fr-el--unfocused`) and is out of reach — not hit-tested, marquee'd, lasso'd, selected or
   Tab-walked (`EditorImpl.getInteractiveElements`). Esc, once nothing is selected, ends it; so does
   deleting the item. Exports are unaffected. A diagram's focus mode is built on it.
+  [#135] `setFocus(id, { hideOutside, contentsOnly })`: what is outside isn't drawn at all
+  (`.fr-el--outside`), and the focused item itself is out of reach too (`EditorImpl.inReach`), so
+  only what it contains can be picked, selected or deleted — the slide editor's page.
 - [#52] `PanelSlot` `'dock-bottom'`, `Editor.openBottomDock(id | null)` / `getBottomDock()`, hook
   `useBottomDock()` (see "Board chrome"). `BaseElement.layoutRole` (`@freero/shared`): the slot of a
   slide layout an item fills (written by `features/frame` layouts; read by `features/image`, which
@@ -818,6 +821,12 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   and applying a layout to a slide that has one replaces it (`relayoutPlan`): parts still showing
   their placeholder go, text people wrote moves into the new layout's matching slot (kept as an
   ordinary text when there is none), a picture in the image slot moves into the new image slot.
+  #135: "Edit slide" (double-click a slide in the filmstrip or deck, a slide's menu, a frame's
+  context menu) opens one slide on its own (`lib/slideEditor.ts`): the frame at 100% (smaller only
+  when the window can't show that much), `setFocus(frame, { hideOutside, contentsOnly })`, a
+  top-center bar with previous / next (Page Up / Down) and Done; Esc (or the slide deleted) ends the
+  focus and the bar puts the camera back where it was. Local view state only: nothing is written
+  to the board.
 - Sticky author labels (KAI-112, `features/sticky/decoration.tsx`): a board setting in the
   `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
   from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;

@@ -1,7 +1,8 @@
-import { EyeOff, Frame, GalleryVertical, Maximize2, Presentation } from 'lucide-react';
+import { EyeOff, Frame, GalleryVertical, Maximize2, Presentation, SquarePen } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { applyLayout, frameSelection, newSlide, selectedFrames, setSkipped, zoomToFrame } from './lib/actions';
 import { FILMSTRIP_ID } from './lib/Filmstrip';
+import { editSlide } from './lib/slideEditor';
 import { SLIDE_LAYOUTS, type SlideLayoutId } from './lib/layouts';
 import { PANEL_ID } from './lib/frames';
 
@@ -27,6 +28,18 @@ export default defineCommands([
     run(editor) {
       const [f] = selectedFrames(editor);
       if (f) zoomToFrame(editor, f);
+    },
+  },
+  {
+    // One slide on its own (#135): at 100%, the rest of the board out of the way, Esc to go back.
+    id: 'frame.editSlide',
+    icon: SquarePen,
+    label: 'Edit slide',
+    menus: ['context'],
+    when: (editor) => selectedFrames(editor).length === 1,
+    run(editor) {
+      const [f] = selectedFrames(editor);
+      if (f) editSlide(editor, f.id);
     },
   },
   {

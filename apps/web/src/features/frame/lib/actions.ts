@@ -202,7 +202,14 @@ export function duplicateSlide(editor: Editor, id: string): string | null {
   let copy: string | undefined;
   editor.transact(() => {
     copy = editor.duplicate([id]).find((cid) => editor.getElement(cid)?.type === 'frame');
-    if (copy) moveSlide(editor, copy, at + 1);
+    if (!copy) return;
+    // Renumber the deck with the copy right after the original (the copy starts with the original's
+    // index, and a tie with it may sort either way).
+    const deck = order.map((f) => f.id);
+    deck.splice(at + 1, 0, copy);
+    deck.forEach((fid, i) => {
+      if (editor.getElement<FrameElement>(fid)?.index !== i) editor.update<FrameElement>(fid, { index: i });
+    });
   });
   return copy ?? null;
 }

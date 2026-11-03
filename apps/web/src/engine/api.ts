@@ -1778,8 +1778,11 @@ export interface Editor {
    * marquee'd, lasso'd or Tab-walked. Local view state: never synced, any role, exports unaffected.
    * Esc (once nothing is selected) or `setFocus(null)` ends it; deleting the item ends it too.
    * Hook: useFocus().
+   * [additive, #135] `hideOutside`: what is outside isn't drawn at all (a slide edited on its own);
+   * `contentsOnly`: the item itself is out of reach too — only what it contains can be picked,
+   * selected (select all) or deleted, so it works as the page being edited.
    */
-  setFocus(id: string | null): void;
+  setFocus(id: string | null, opts?: { hideOutside?: boolean; contentsOnly?: boolean }): void;
   /** [additive] The focused item's id (null: none, or it was deleted). */
   getFocus(): string | null;
 

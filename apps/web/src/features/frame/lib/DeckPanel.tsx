@@ -2,7 +2,7 @@
 // presenting and PDF export use. Drag to reorder, skip, duplicate, give a slide a layout, and
 // write its speaker notes (the present feature's presenter notes, written through its command).
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { EyeOff, MoreHorizontal, Play, Plus, Presentation } from 'lucide-react';
+import { EyeOff, MoreHorizontal, Play, Plus, Presentation, SquarePen } from 'lucide-react';
 import type { BoardElement, FrameElement } from '@freero/shared';
 import { DockHeader, useCanEdit, useCollection, useSelection, type Editor } from '@engine';
 import { Button, Menu } from '@ui';
@@ -10,6 +10,7 @@ import { useSlides } from './useSlides';
 import { moveSlide, newSlide, zoomToFrame } from './actions';
 import type { SlideLayoutId } from './layouts';
 import { layoutMenu, slideMenu } from './slideMenu';
+import { editSlide } from './slideEditor';
 import { SlideThumb } from './Thumb';
 
 export const DECK_PANEL_ID = 'frame.deck';
@@ -70,13 +71,13 @@ const Slide = memo(function Slide(props: {
   const { editor, frame, canEdit } = props;
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
-  const items = slideMenu(editor, frame);
+  const items = slideMenu(editor, frame, [{ id: 'edit', label: 'Edit slide', icon: SquarePen, onSelect: () => editSlide(editor, frame.id) }]);
   return (
     <li
       data-frame-id={frame.id}
       className={`fr-deck__slide${props.selected ? ' is-selected' : ''}${frame.skip ? ' is-skipped' : ''}${props.dragging ? ' is-dragging' : ''}${props.dropSide ? ` drop-${props.dropSide}` : ''}`}
     >
-      <div className="fr-deck__card" onPointerDown={props.onPointerDown}>
+      <div className="fr-deck__card" onPointerDown={props.onPointerDown} onDoubleClick={() => editSlide(editor, frame.id)}>
         <span className="fr-deck__num">{props.position + 1}</span>
         <span className="fr-deck__thumb" style={{ height: THUMB_H }}>
           <SlideThumb editor={editor} frame={frame} children={props.children} w={THUMB_W} h={THUMB_H} />

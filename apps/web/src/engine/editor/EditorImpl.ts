@@ -403,15 +403,18 @@ export class EditorImpl implements Editor {
     return false;
   }
 
-  setFocus(id: string | null): void {
+  setFocus(id: string | null, opts: { hideOutside?: boolean; contentsOnly?: boolean } = {}): void {
     const next = id && this.core.store.getElement(id) ? id : null;
-    if (this.core.ui.getState().focusId === next) return;
-    this.core.ui.setState({ focusId: next, hoverId: null });
+    const hide = !!next && !!opts.hideOutside;
+    const contentsOnly = !!next && !!opts.contentsOnly;
+    const s = this.core.ui.getState();
+    if (s.focusId === next && s.focusHide === hide && s.focusContentsOnly === contentsOnly) return;
+    this.core.ui.setState({ focusId: next, focusHide: hide, focusContentsOnly: contentsOnly, hoverId: null });
     // What is outside the focus can't stay selected (Delete would act on it unseen).
     const sel = this.getSelection();
     const kept = sel.filter((x) => {
       const el = this.getElement(x);
-      return !!el && this.inFocus(el);
+      return !!el && this.inReach(el);
     });
     if (kept.length !== sel.length) this.core.ui.setState({ selection: kept });
   }
@@ -433,10 +436,16 @@ export class EditorImpl implements Editor {
     return false;
   }
 
+  /** [additive, #135] Inside the focus and reachable: with `contentsOnly`, the focused item itself is not. */
+  inReach(el: BoardElement): boolean {
+    if (!this.inFocus(el)) return false;
+    return !(this.core.ui.getState().focusContentsOnly && el.id === this.getFocus());
+  }
+
   /** [additive] What pointers and keys reach: the visible elements, without those outside the focus. */
   getInteractiveElements(): BoardElement[] {
     const visible = this.getVisibleElements();
-    return this.getFocus() ? visible.filter((el) => this.inFocus(el)) : visible;
+    return this.getFocus() ? visible.filter((el) => this.inReach(el)) : visible;
   }
 
   /**
@@ -1267,7 +1276,7 @@ export class EditorImpl implements Editor {
     const store = this.core.store;
     const valid = ids.filter((id) => {
       const el = store.getElement(id);
-      return !!el && !this.isHidden(el) && this.inFocus(el);
+      return !!el && !this.isHidden(el) && this.inReach(el);
     });
     const cur = this.getSelection();
     let next: string[];
