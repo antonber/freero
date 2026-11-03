@@ -966,7 +966,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`, `/features/<slug>`) are a separate workspace
+`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/subprocessors`, `/dpa`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`, `/features/<slug>`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -1042,7 +1042,7 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   pages only, with its origin in their CSP; `GA_MEASUREMENT_ID` adds the Google Analytics runtime
   (see "Analytics" below). The build itself never contains a script: both are added when served. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
   `scripts/indexnow.mjs` submits the live sitemaps' URLs (or those changed since a day) after a deploy.
-- **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
+- **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`, `/subprocessors`, `/dpa`; drafts for legal review,
   written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
   (`src/lib/legal.tsx`) where a deployment's facts go: the operator, address, governing law and
   contacts (`SITE_LEGAL_*`, `ABUSE_CONTACT_EMAIL`, `SECURITY_CONTACT`), retention periods and the
@@ -1053,6 +1053,12 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `X-Robots-Tag: noindex`, and `GET /api/site/legal` answers `null`, so the app's sign-up asks
   nobody to agree to a draft. A page about the deployment never hard-codes a value the server
   knows from its configuration.
+- **The trust pack** (#109: `/security`, `/subprocessors`, `/dpa`, plus `SECURITY.md`) is written
+  from the code and the production deployment as the repository and the public service show it.
+  Until the operator approves it, each page carries `<UnderReview />` ("Draft — under review"),
+  which, unlike the legal banner, no setting removes, and `<ToConfirm />` marks every statement
+  the repository can't confirm. Approving = deleting them from the page (after fixing any
+  statement that turned out wrong).
 - **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
   like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
   and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site

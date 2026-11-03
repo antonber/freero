@@ -12,6 +12,7 @@ import { Container } from '../components/ui';
 export type LegalKey =
   | 'operator'
   | 'atAddress'
+  | 'postalAddress'
   | 'jurisdiction'
   | 'contact'
   | 'abuseContact'
@@ -80,4 +81,23 @@ export function DraftBanner() {
       the service.
     </aside>
   );
+}
+
+/**
+ * The trust pages (/security, /subprocessors, /dpa) stay visibly under review until the operator
+ * has had them reviewed and approves them: unlike the banner above, the server never removes this
+ * line, whatever SITE_LEGAL_OPERATOR says. Approving a page = deleting <UnderReview /> from it.
+ */
+export function UnderReview() {
+  return (
+    <p className="legal-review" role="note">
+      <strong>Draft — under review.</strong> This page is a draft pending legal review and the operator’s approval. It may change, and statements marked{' '}
+      <ToConfirm /> have not been confirmed yet.
+    </p>
+  );
+}
+
+/** A statement the operator has yet to confirm (removed, with the statement fixed if need be, on approval). */
+export function ToConfirm() {
+  return <mark className="legal-confirm">to confirm by the operator</mark>;
 }

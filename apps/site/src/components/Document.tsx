@@ -129,6 +129,9 @@ function SiteFooter() {
         ['/privacy', 'Privacy policy'],
         ['/terms', 'Terms of service'],
         ['/acceptable-use', 'Acceptable use'],
+        ['/security', 'Security overview'],
+        ['/subprocessors', 'Subprocessors'],
+        ['/dpa', 'Data processing addendum'],
       ],
     },
   ];
