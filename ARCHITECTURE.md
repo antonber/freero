@@ -808,6 +808,29 @@ DOCTYPE / ENTITY (no external entities, no entity expansion), compressed pages t
 anything is added; labels become plain text (HTML labels reduced to their text). A dropped `.freero`
 goes to `Host.openBackup` (importer `backup`). Miro import (the person's own token) is KAI-261.
 
+Visio (`.vsdx` / `.vsdm`, also Lucidchart's and draw.io's Visio exports; #116), same importer, same
+one-transaction placement: `lib/vsdx.ts` reads the package from the published VSDX format
+(relationships → document style sheets → pages → masters → media; no Microsoft code or stencil) and
+resolves every value the way Visio inherits it (the shape's own cell, then its master shape's, then
+its line / fill / text style sheet chain; geometry and connection points inherited from a master are
+scaled to the instance's size). A master Freero has a counterpart for (basic, flowchart, UML, BPMN,
+ERD, network: the `MASTERS` table, by universal name) becomes that `ShapeKind`; a shape without one
+is recognised from its geometry (rectangle, rounded rectangle, ellipse, diamond, triangle, hexagon,
+parallelogram, trapezoid); otherwise it becomes a labelled rectangle, or — without text — its outline
+as pen strokes, both reported. 1-D shapes become connectors glued where the page's `Connects` glue
+them (`PinX` → `anchor: 'auto'`, a connection point → `at`); groups one `groupId`, unless their master
+is a known kind (a UML class, an entity: one shape with all the group's text); containers and
+swimlanes (`User.msvStructureType`) frames holding what is drawn inside them; embedded PNG / JPEG /
+GIF / WebP pictures images; EMF, OLE objects, background pages and linked pictures are left out and
+reported. Every page becomes a frame, pages side by side. Untrusted input: `lib/zip.ts` reads the
+zip directory first (≤ 2000 entries, no encryption, no ZIP64), then unpacks only the parts it needs
+through `DecompressionStream`, counting the REAL output bytes against per-entry and total caps (the
+sizes a zip declares are never trusted), with a 20 s deadline checked as it goes; XML with a DOCTYPE
+is refused, external relationships are never followed, legacy binary `.vsd` gets "save as .vsdx".
+Tests build their packages with `lib/vsdxFixture.ts` (hand-written parts; no third-party samples)
+and fuzz them. Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) are handed to
+`from-text.insert`.
+
 Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
 docs/board-outline.md):
 - "Insert from text" lays text out in the BROWSER with `@freero/shared` `layoutStructure`, the
@@ -832,6 +855,16 @@ docs/board-outline.md):
   a diagram don't carry its source; outline items without a Mermaid id are matched by their path
   of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
   diagram (the second update re-lays from its own source).
+- PlantUML (#38; `@freero/shared` layout/plantuml.ts, structure kind `plantuml`): an in-house reader
+  of the documented syntax for sequence, class, activity, state, use case and component diagrams
+  (pasted `@startuml` text, the dialog's PlantUML kind, a dropped `.puml`). It produces the same
+  diagram model as the Mermaid reader — a `SequenceInput`, or nodes / edges / groups whose nodes may
+  carry their own size and look (class boxes with compartments) and whose edges carry UML ends and
+  multiplicities — so both land as the same shapes; `layoutPlantUml` lays it out with the layered
+  graph layout and lays the looks and line ends over it (a class is drawn as a table — name, divider,
+  members — until compartments ship). Kept as an editable diagram source like Mermaid. Never
+  fetches anything: `!include` and the preprocessor are refused; styling is skipped; unknown lines
+  are errors naming the line.
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
