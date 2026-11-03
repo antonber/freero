@@ -2119,6 +2119,13 @@ audit and admin controls are the same code.
   (`boards.updateBoardDetails`, the same `renameBoard` as the app's PATCH: `board.renamed` +
   lifecycle), copy (`boards.duplicateBoardFor`: Duplicate's downloads check, placement and layers),
   groups (`groupId`, as the editor's Group / Ungroup).
+  **What a request may create at all** is `realtime/view.ts` `REQUEST_CREATABLE`, a
+  `Record<ElementType, true | reason>`: a new element type doesn't compile until someone decides
+  there (#49). `media` and `file` are app-only on purpose — their `src` must be the person's own
+  upload, sniffed and counted by modules/uploads (a file card's download is served through the
+  board), and a request must never point an item at an `/uploads/<name>` it doesn't own; pictures
+  from a URL go through the server's own fetch instead (above). Uploading media / files over the API
+  would need an upload endpoint answering an ownership-checked token the creation presents.
 - **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
   authorised and the apps they registered), from `apiauth.apiDataOf`.
 

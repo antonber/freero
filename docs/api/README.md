@@ -136,6 +136,10 @@ open boards drop them at once (KAI-224).
   cards with owner and due date, points, who spoke (the MCP `import_meeting_notes`;
   [../integrations/README.md](../integrations/README.md)). Automation recipes (n8n, Make, Zapier)
   and a Power Automate connector made from this API are in [../integrations/](../integrations/).
+- Video, audio and file items can't be created through the API or MCP (#49): their file must be an
+  upload of the person, checked and counted by Freero's uploads, and an item must never point at a
+  file its creator doesn't own. Pictures can (`image` with a `url`: Freero fetches and keeps its own
+  copy); videos and files are added in the app.
 - Webhooks (#48): `/workspaces/{workspaceId}/webhooks` lists, adds (the secret is answered once),
   changes (`scope`: one board or item; `projectId`: one project), removes, rotates, tests a team
   workspace's webhooks and reads / redelivers their delivery log — for its owners and admins with
