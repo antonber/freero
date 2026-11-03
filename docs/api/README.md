@@ -140,6 +140,11 @@ open boards drop them at once (KAI-224).
   upload of the person, checked and counted by Freero's uploads, and an item must never point at a
   file its creator doesn't own. Pictures can (`image` with a `url`: Freero fetches and keeps its own
   copy); videos and files are added in the app.
+- Docs (#61): `POST /docs/{docId}/edit` `{ op, blockId, markdown }` changes one part of a doc by
+  the block ids `GET /docs/{docId}` answers — `replace`, `replaceSection` (a heading and its section),
+  `insertBefore`, `insertAfter`, `delete`; `GET /docs/{docId}/comments` reads its threads (the
+  downloads policy applies, like reading the doc), `POST …/comments` `{ text, blockId? }` and
+  `POST …/comments/{threadId}/replies` write them (`comments:write`).
 - Webhooks (#48): `/workspaces/{workspaceId}/webhooks` lists, adds (the secret is answered once),
   changes (`scope`: one board or item; `projectId`: one project), removes, rotates, tests a team
   workspace's webhooks and reads / redelivers their delivery log — for its owners and admins with

@@ -190,6 +190,19 @@ it('what the API answers in a real session has the shapes its reference promises
   expect(read.json.markdown).toContain('- [x] Ship it');
   expect(read.json.markdown).toContain('| 1 | 2 |');
   await call('GET', `${D}?format=markdown`, '/docs/{docId}');
+  // Targeted edits and comments on blocks (#61): a comment on a heading stays on it when the heading is rewritten.
+  const heading = (read.json.blocks as Array<{ id: string; type: string }>).find((b) => b.type === 'heading')!.id;
+  expect((await call('POST', `${D}/comments`, '/docs/{docId}/comments', { text: 'Sure?', blockId: heading }, readOnly)).status).toBe(403);
+  const docThread = (await call('POST', `${D}/comments`, '/docs/{docId}/comments', { text: 'Sure?', blockId: heading })).json.thread;
+  await call('POST', `${D}/comments/${docThread.id}/replies`, '/docs/{docId}/comments/{threadId}/replies', { text: 'Yes' });
+  expect((await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'replace', blockId: heading, markdown: '# Decision made' }, readOnly)).status).toBe(403);
+  await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'replace', blockId: heading, markdown: '# Decision made' });
+  await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'insertAfter', blockId: heading, markdown: 'Agreed on Monday.' });
+  expect((await call('POST', `${D}/edit`, '/docs/{docId}/edit', { op: 'delete', blockId: 'nope' })).status).toBe(404);
+  const edited = await call('GET', `${D}?format=markdown`, '/docs/{docId}');
+  expect(edited.json.startsWith('# Decision made\n\nAgreed on Monday.')).toBe(true);
+  const threads = (await call('GET', `${D}/comments`, '/docs/{docId}/comments')).json.threads;
+  expect(threads.map((t: { blockId: string; messages: unknown[] }) => [t.blockId, t.messages.length])).toEqual([[heading, 2]]);
   // A doc is no board for the board operations (and is not listed among boards).
   expect((await call('GET', `/boards/${doc.id}`, '/boards/{boardId}')).status).toBe(404);
   expect((await call('GET', '/boards?q=Decision', '/boards')).json.boards).toEqual([]);

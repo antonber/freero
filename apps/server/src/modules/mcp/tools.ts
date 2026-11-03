@@ -11,7 +11,11 @@ import {
   API_MAX_DELETE_PER_CALL,
   API_MAX_ITEMS_PER_CALL,
   API_MAX_URL_ITEMS_PER_CALL,
+  blockText,
+  DOC_EDIT_OPS,
   FIELD_TYPES,
+  walkDocBlocks,
+  type DocEditOp,
   FILTER_OPS,
   LAYOUT_LIMITS,
   STICKY_COLORS,
@@ -30,7 +34,11 @@ import {
 import { appUrl } from '../../platform/mail';
 import {
   addComment,
+  addDocComment,
   appendToDoc,
+  editDocFor,
+  listDocComments,
+  replyToDocComment,
   createDocFor,
   listDocs,
   readDocFor,
@@ -338,10 +346,20 @@ export const TOOLS: McpTool[] = [
       'Reads a doc as Markdown: headings, lists, checklists, tables, code, quotes, images and links. A live board frame embedded in the doc reads as an image of its freero://board address (read that board with get_board_outline).',
     scope: 'boards:read',
     annotations: READ,
-    input: { docId: z.string().min(1).max(2000).describe('The doc: its id (from search_docs) or its link (https://…/doc/<id>).') },
+    input: {
+      docId: z.string().min(1).max(2000).describe('The doc: its id (from search_docs) or its link (https://…/doc/<id>).'),
+      blocks: z.boolean().optional().describe('Also list its blocks with their ids (id, type, depth, text): what edit_doc and comment_on_doc take as blockId.'),
+      comments: z.boolean().optional().describe('Also its comment threads (on which block, resolved, the messages).'),
+    },
     async run(call, a) {
       const out = await readDocFor(call, a.docId);
-      return untrustedMarkdown(out.markdown, `Doc ${out.doc.id} (${out.doc.url}), your role: ${out.doc.role}.`);
+      const facts = `Doc ${out.doc.id} (${out.doc.url}), your role: ${out.doc.role}.`;
+      if (!a.blocks && !a.comments) return untrustedMarkdown(out.markdown, facts);
+      const blocks = a.blocks
+        ? [...walkDocBlocks(out.blocks)].map(({ block, depth }) => ({ id: block.id ?? null, type: block.type, depth, ...(block.type === 'heading' ? { level: block.props?.level ?? 1 } : {}), text: blockText(block).slice(0, 500) }))
+        : undefined;
+      const threads = a.comments ? (await listDocComments(call, a.docId)).threads : undefined;
+      return untrustedJson({ markdown: out.markdown, ...(blocks ? { blocks } : {}), ...(threads ? { threads } : {}) }, { summary: facts });
     },
   }),
 
@@ -376,6 +394,49 @@ export const TOOLS: McpTool[] = [
     async run(call, a) {
       const out = await appendToDoc(call, a.docId, { markdown: a.markdown });
       return plain(`Added ${out.blocks} block${out.blocks === 1 ? '' : 's'} to doc ${a.docId}.`, { blocks: out.blocks });
+    },
+  }),
+
+  tool({
+    name: 'edit_doc',
+    title: 'Edit part of a doc',
+    description:
+      'Changes one part of a doc you can edit, by block id (read_doc with blocks: true lists them): `replace` a block (and what is nested under it) with Markdown, `replaceSection` — a heading and everything up to the next heading of the same or a higher level —, `insertBefore` / `insertAfter` a block, or `delete` it. Comments on a replaced block or heading stay on its first new block. Everyone with the doc open sees it at once. Returns the ids of the blocks written.',
+    scope: 'boards:write',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    input: {
+      docId: z.string().min(1).max(2000).describe('The doc: its id or its link.'),
+      op: z.enum(DOC_EDIT_OPS as unknown as [DocEditOp, ...DocEditOp[]]).describe('replace, replaceSection, insertBefore, insertAfter or delete.'),
+      blockId: z.string().min(1).max(64).describe('The block (a heading for replaceSection), from read_doc with blocks: true.'),
+      markdown: z.string().max(1_000_000).optional().describe('The new content, as Markdown (not for delete).'),
+    },
+    async run(call, a) {
+      const out = await editDocFor(call, a.docId, { op: a.op, blockId: a.blockId, ...(a.markdown !== undefined ? { markdown: a.markdown } : {}) });
+      return plain(`${a.op === 'delete' ? 'Deleted' : 'Wrote'} ${a.op === 'delete' ? `block ${a.blockId}` : `${out.blockIds.length} block${out.blockIds.length === 1 ? '' : 's'}`} in doc ${a.docId}.`, { blockIds: out.blockIds });
+    },
+  }),
+
+  tool({
+    name: 'comment_on_doc',
+    title: 'Comment on a doc',
+    description:
+      'Leaves a comment on a doc — on a block (blockId, from read_doc with blocks: true) or on the doc as a whole — or replies in a thread (threadId, from read_doc with comments: true). People with access see it with your name and the app’s. Needs permission to comment.',
+    scope: 'comments:write',
+    annotations: ADD,
+    input: {
+      docId: z.string().min(1).max(2000).describe('The doc: its id or its link.'),
+      text: z.string().min(1).max(5000),
+      blockId: z.string().min(1).max(64).optional().describe('Pin the comment to this block.'),
+      threadId: z.string().min(1).max(200).optional().describe('Reply in this thread instead of starting one.'),
+    },
+    async run(call, a) {
+      if (a.threadId && a.blockId) throw new ArgumentError('Give blockId (a new thread) or threadId (a reply), not both.');
+      if (a.threadId) {
+        const { message } = await replyToDocComment(call, a.docId, a.threadId, { text: a.text });
+        return plain(`Replied in thread ${a.threadId} (message ${message.id}).`, { threadId: a.threadId, messageId: message.id });
+      }
+      const { thread } = await addDocComment(call, a.docId, { text: a.text, blockId: a.blockId });
+      return plain(`Comment thread ${thread.id} started${a.blockId ? ` on block ${a.blockId}` : ''}.`, { threadId: thread.id });
     },
   }),
 

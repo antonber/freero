@@ -19,7 +19,7 @@ import { isOperator } from '../auth/index';
 import { parseOutlineQuery } from '../outline/index';
 import { listProblems, problemDetail, problemScreenshot, sendProblemScreenshot, updateProblem } from '../problems/index';
 import { backlinksForApi, resolveForApi, searchContent } from './objects';
-import { appendToDoc, createDocFor, listDocs, readDocFor } from './docs';
+import { addDocComment, appendToDoc, createDocFor, editDocFor, listDocComments, listDocs, readDocFor, replyToDocComment } from './docs';
 import { getFeedback, postStatus, readStatusPost } from './controlRoom';
 import { workspaceAuditFor } from './audit';
 import * as hooks from './webhooks';
@@ -136,6 +136,14 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     return call.req.query.format === 'markdown' ? { markdown: out.markdown } : { body: out };
   });
   endpoint('post', '/docs/:docId/append', 'boards:write', async (call) => ({ body: await appendToDoc(call, call.req.params.docId, body(call.req)) }));
+  // Targeted edits and comments on blocks (#61).
+  endpoint('post', '/docs/:docId/edit', 'boards:write', async (call) => ({ body: await editDocFor(call, call.req.params.docId, body(call.req)) }));
+  endpoint('get', '/docs/:docId/comments', 'boards:read', async (call) => ({ body: await listDocComments(call, call.req.params.docId) }));
+  endpoint('post', '/docs/:docId/comments', 'comments:write', async (call) => ({ status: 201, body: await addDocComment(call, call.req.params.docId, body(call.req)) }));
+  endpoint('post', '/docs/:docId/comments/:threadId/replies', 'comments:write', async (call) => ({
+    status: 201,
+    body: await replyToDocComment(call, call.req.params.docId, call.req.params.threadId, body(call.req)),
+  }));
 
   // ---- search and object addresses (KAI-151, KAI-227): the app's rules, the API's switch and downloads policy ----
   endpoint('get', '/search', 'boards:read', async (call) => ({ body: await searchContent(call, call.req.query) }));

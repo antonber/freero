@@ -3,10 +3,10 @@
 // every access rule) and its document lives in modules/realtime (rooms, persistence, history,
 // fan-out), so here are only the operations that make sense for a document: create one (optionally
 // from Markdown, optionally next to a board), read it as Markdown / blocks, append Markdown.
-import { docToMarkdown, DOC_MAX_IMPORT_CHARS, markdownToDoc, type BoardSummary, type DocBlock } from '@freero/shared';
+import { DOC_EDIT_OPS, docToMarkdown, DOC_MAX_IMPORT_CHARS, markdownToDoc, type BoardSummary, type DocBlock, type DocEditOp } from '@freero/shared';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { boardPlace, boardSummaryFor, createBoardFor, recordBoardExport, requireBoardAccess, requireBoardDownload } from '../boards/index';
-import { appendDocBlocks, initDocContent, readDocContent, type BoardActor } from '../realtime/index';
+import { appendDocBlocks, DocEditError, editDocBlocks, initDocContent, readDocContent, type BoardActor } from '../realtime/index';
 import { workspaceRole } from '../workspaces/index';
 
 export interface CreateDocInput {
@@ -88,6 +88,29 @@ export async function exportDocMarkdown(docId: string, userId: string, via: 'exp
   const { blocks } = await readDocContent(docId);
   await recordBoardExport(docId, userId, 'markdown');
   return { title: access.title, markdown: docToMarkdown(blocks) };
+}
+
+/**
+ * A targeted edit of a doc as `actor` (an owner or editor of it; #61): `op` on block `blockId` —
+ * replace it, replace the section a heading starts, insert Markdown before / after it, or delete
+ * it (@freero/shared DocEdit). Answers the ids of the blocks written. Refused whole (400 / 404,
+ * nothing written) when the block isn't there or the op doesn't fit it.
+ */
+export async function editDoc(docId: string, actor: BoardActor, body: { op?: unknown; blockId?: unknown; markdown?: unknown }): Promise<string[]> {
+  if (!DOC_EDIT_OPS.includes(body.op as DocEditOp)) throw badRequest(`op must be one of ${DOC_EDIT_OPS.join(', ')}`);
+  const op = body.op as DocEditOp;
+  if (typeof body.blockId !== 'string' || !body.blockId || body.blockId.length > 64) throw badRequest('blockId must be a block id (from reading the doc)');
+  const md = cleanMarkdown(body.markdown);
+  if (op === 'delete' && md !== undefined) throw badRequest('delete takes no markdown');
+  if (op !== 'delete' && !md?.trim()) throw badRequest('markdown is required');
+  const access = await requireBoardAccess(docId, actor.userId, 'editor');
+  if (access.kind !== 'doc') throw notFound('Doc not found');
+  try {
+    return await editDocBlocks(docId, { ...actor, role: access.role }, { op, blockId: body.blockId, ...(md ? { blocks: markdownToDoc(md) } : {}) });
+  } catch (e) {
+    if (e instanceof DocEditError) throw e.message.startsWith('No block') ? notFound(e.message) : badRequest(e.message);
+    throw e;
+  }
 }
 
 /** Appends Markdown to the end of a doc as `actor` (an owner or editor of it). */

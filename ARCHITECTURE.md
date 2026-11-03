@@ -2530,7 +2530,12 @@ rules (or needed a generic grants table first). The object registry answers `boa
 boards, each only for its own kind, so `freero://board/<doc id>` resolves to nothing.
 `modules/docs` (no table) holds only what a document has: create (from Markdown, next to a board:
 its workspace/project when the person may create there), export as Markdown (downloads policy,
-audited `doc.exported`), append Markdown (the API). Its audit target is `{ type: 'doc' }`;
+audited `doc.exported`), append Markdown and targeted edits (the API, #61: `editDoc` → realtime's
+`editDocBlocks` → `docContent.applyDocEdit` — replace a block or a heading's section, insert before /
+after, delete — checked against the live document before anything is written; a replace keeps the
+first block's id, so comments on it stay). Comments on a doc over the API (#61, `api/docs.ts`) are
+the boards' records written through `changeBoard` on the doc's room (commenter rules, mention
+notifications) and read with `@freero/shared` `docThreads`, the editor's own assembler. Its audit target is `{ type: 'doc' }`;
 `doc.created` replaces `board.created`.
 
 **One Yjs doc per object, the same rooms.** realtime serves `/ws/docs/:id` next to `/ws/boards/:id`

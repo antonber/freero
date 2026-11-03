@@ -1892,6 +1892,172 @@
         }
       }
     },
+    "/docs/{docId}/edit": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }],
+      "post": {
+        "operationId": "editDoc",
+        "tags": ["docs"],
+        "summary": "Change one part of a doc by block id (owners and editors)",
+        "description": "Block ids come from `GET /docs/{docId}` (`blocks`, nested ones under `children`). `replace`: the block (with what is nested under it) becomes the Markdown; `replaceSection`: a heading and everything after it up to the next heading of the same or a higher level; `insertBefore` / `insertAfter`: next to the block, at its level; `delete`: the block and what is nested under it. The first block written by a replace keeps the old id, so comments on it stay. One change, attributed to the app acting for you; a block that isn’t there is 404 and nothing changes.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["op", "blockId"],
+                "properties": {
+                  "op": { "type": "string", "enum": ["replace", "replaceSection", "insertBefore", "insertAfter", "delete"] },
+                  "blockId": { "type": "string" },
+                  "markdown": { "type": "string", "description": "The new content (CommonMark with tables, task lists, strikethrough); not for delete" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "ok", "blockIds"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "ok": { "const": true },
+                    "blockIds": { "type": "array", "items": { "type": "string" }, "description": "The blocks written (none for delete)" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/docs/{docId}/comments": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }],
+      "get": {
+        "operationId": "listDocComments",
+        "tags": ["docs"],
+        "summary": "A doc’s comment threads (on blocks, or on the doc)",
+        "description": "Oldest first, resolved ones too, deleted ones never; mentions read as @Name. A read of the doc’s content: refused (403 `downloads_restricted`) like the doc itself where its workspace’s downloads policy says so.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "responses": {
+          "200": {
+            "description": "Threads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "threads"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "threads": { "type": "array", "items": { "$ref": "#/components/schemas/DocCommentThread" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "operationId": "addDocComment",
+        "tags": ["docs"],
+        "summary": "Start a comment thread on a block (or on the doc)",
+        "description": "Commenters, editors and owners. Notifies the people it @mentions (`<@userId>`) like a comment made in the app.",
+        "x-freero-scope": "comments:write",
+        "security": [{ "bearer": ["comments:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                  "text": { "type": "string", "maxLength": 5000 },
+                  "blockId": { "type": ["string", "null"], "description": "The block it is on; absent or null: the doc as a whole" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "thread"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "thread": { "$ref": "#/components/schemas/DocCommentThread" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/docs/{docId}/comments/{threadId}/replies": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }, { "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "replyToDocComment",
+        "tags": ["docs"],
+        "summary": "Reply in a doc’s comment thread",
+        "x-freero-scope": "comments:write",
+        "security": [{ "bearer": ["comments:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "maxLength": 5000 } } } } }
+        },
+        "responses": {
+          "201": {
+            "description": "The reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "message"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "message": {
+                      "type": "object",
+                      "required": ["id", "authorId", "author", "text", "at"],
+                      "properties": {
+                        "id": { "type": "string" },
+                        "authorId": { "type": "string" },
+                        "author": { "type": "string" },
+                        "text": { "type": "string" },
+                        "at": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/search": {
       "get": {
         "operationId": "search",
@@ -2791,6 +2957,29 @@
           "props": { "type": "object" },
           "content": { "type": ["array", "object"] },
           "children": { "type": "array", "items": { "$ref": "#/components/schemas/DocBlock" } }
+        }
+      },
+      "DocCommentThread": {
+        "type": "object",
+        "required": ["id", "blockId", "resolved", "messages"],
+        "properties": {
+          "id": { "type": "string" },
+          "blockId": { "type": ["string", "null"] },
+          "resolved": { "type": "boolean" },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "authorId", "author", "text", "at"],
+              "properties": {
+                "id": { "type": "string" },
+                "authorId": { "type": "string" },
+                "author": { "type": "string" },
+                "text": { "type": "string" },
+                "at": { "type": "integer" }
+              }
+            }
+          }
         }
       },
       "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "audit:read", "webhooks:manage", "problems:triage"] },

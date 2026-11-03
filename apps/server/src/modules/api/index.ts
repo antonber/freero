@@ -60,3 +60,5 @@ export { searchContent, resolveForApi, backlinksForApi } from './objects';
 export { postStatus, getFeedback, PLACEHOLDER_AGENT, type StatusPost, type TaskState, type FeedbackChange } from './controlRoom';
 // Docs (KAI-162): list, create from Markdown, read as Markdown + blocks, append Markdown.
 export { listDocs, createDocFor, readDocFor, appendToDoc } from './docs';
+// Docs beyond append (#61): targeted edits by block id, comments on blocks.
+export { editDocFor, listDocComments, addDocComment, replyToDocComment } from './docs';
