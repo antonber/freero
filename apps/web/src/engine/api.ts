@@ -58,6 +58,7 @@ import type {
   WalkthroughCue,
   WalkthroughSummary,
   IcebreakerResult,
+  PresentationSession,
 } from '@freero/shared';
 
 /** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
@@ -409,6 +410,17 @@ export interface Host {
    * with it too). Rejects with a showable message (not allowed now, nothing to spin). Absent offline.
    */
   icebreakers?: { roll(elementId: string): Promise<IcebreakerResult> };
+  /**
+   * [additive, #146] Who presents this board, kept by the SERVER (`presentation` collection): start
+   * (refused while someone else on the board presents, unless you facilitate or own it), hand off
+   * to someone on the board (the presenter, the facilitator or the owner), end. Rejects with a
+   * showable message. Absent offline: presenting stays local.
+   */
+  presentation?: {
+    start(frameId: string | null): Promise<PresentationSession | null>;
+    handoff(to: string, frameId: string | null): Promise<PresentationSession | null>;
+    end(): Promise<PresentationSession | null>;
+  };
   /**
    * [additive] Async walkthroughs of this board (KAI-133; wire: @freero/shared walkthroughs.ts):
    * recordings of someone's voice (and camera) with the path they took over the board. Anyone who

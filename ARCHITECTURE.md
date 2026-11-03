@@ -142,6 +142,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
 | The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
+| Who presents a board (`presentation` key `session`, #146) | server `modules/presentations` (realtime `updateServerEntry`: start, hand off, end; a socket's write is undone) | `Host.presentation` (`features/present`) |
+| Icebreaker results (`icebreakerResults`, #150) and a quiz's answer key (`engage_keys`, #147) | server `modules/icebreakers` (`writeServerCollection`) and `modules/engage` | `Host.icebreakers.roll`; `Host.engage.setKey` / `runQuiz` |
 | A vote's history (`voting` keys `h:<sessionId>` → `VotingHistoryEntry`: totals only, never ballots) | `features/voting` (archived when the next vote starts or results are cleared; at most `VOTING_HISTORY_MAX`); editors only (`votingRules.ts`) | the results panel's "Past votes" |
 
 ### Host — the one typed contract between app and engine
@@ -1232,7 +1234,8 @@ permission check, `POST /objects/resolve`), `references` (object_references, ref
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals, engage_keys: live audience activities; see "Live activities" below), `icebreakers`
-(no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `trackers`
+(no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `presentations`
+(no tables: who presents a board, its handoffs, #146), `trackers`
 (tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
@@ -2870,6 +2873,18 @@ animates the same frames from that start (`Host.serverNow`) and lands at the sam
 motion and exports: the result at once; screen readers: a live caption). Owners and editors spin;
 while a facilitation session runs only its facilitator and the owner (`rollRefusal`); commenters,
 guests and viewers watch. The module owns no tables.
+
+**Who presents** (#146, `modules/presentations`, `features/present`): the slides still follow the
+presenter's presence, but WHO presents is the server-written `presentation` collection (key
+`session`: presenter, since when, the slide it was handed over on, who handed it). `POST
+/boards/:id/presentation` starts (refused while someone else on the board presents, unless the
+caller facilitates or owns the board; a presenter who left no longer holds it), hands off (the
+presenter, the facilitator or the owner, to someone on the board now: realtime's
+`updateServerEntry` reads and writes the entry in one step with who is here, by the server's own
+presence names) and ends. The new presenter's client starts presenting on that slide; the old
+one's stops; whoever followed the old presenter follows the new one. Presenter notes can open in a
+window of their own (a React portal into a popup, so it follows the slide; it closes with the
+presentation).
 
 **Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
 commenters and guests take part in a facilitator's sessions without edit access, like Engage lets

@@ -91,6 +91,15 @@ export function engageOf(boardId: string): HostEngage {
   };
 }
 
+/** Who presents the board (#146): the server keeps it, so handing over is checked there. */
+export function presentationOf(boardId: string): NonNullable<Host['presentation']> {
+  return {
+    start: (frameId) => api.presentation(boardId, { action: 'start', frameId }),
+    handoff: (to, frameId) => api.presentation(boardId, { action: 'handoff', to, frameId }),
+    end: () => api.presentation(boardId, { action: 'end' }),
+  };
+}
+
 /** The board's call link (KAI-134): anyone on the board reads it, editors set it. */
 export function callOf(boardId: string): NonNullable<Host['call']> {
   return { get: () => api.boardCall(boardId), set: (req) => api.setBoardCall(boardId, req) };
@@ -182,6 +191,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     report: reportOn(board.id),
     engage: engageOf(board.id),
     icebreakers: { roll: (elementId) => api.rollIcebreaker(board.id, elementId) },
+    presentation: presentationOf(board.id),
     call: callOf(board.id),
     walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: true }),
     decisions: decisionsOf(board.id),
@@ -270,6 +280,7 @@ export function createGuestHost(
     fetchImage: needsAccount('Copying images'),
     // Guests answer live activities when the activity lets visitors in (the server checks).
     engage: engageOf(board.id),
+    presentation: presentationOf(board.id),
     call: { get: () => api.boardCall(board.id), set: needsAccount('Setting the call link') },
     // Visitors watch walkthroughs and open decisions; recording and commenting need an account.
     walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: false }),

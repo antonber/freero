@@ -17,6 +17,10 @@ export interface PresentState {
   laser: boolean;
   /** Presenting with my notes pane open (N). */
   notesOpen: boolean;
+  /** [#146] My notes in a window of their own (second screen). */
+  notesWindow: boolean;
+  /** [#146] When I last started presenting, on the server's clock (older server sessions are stale). */
+  since: number;
 }
 
 const stores = new Map<string, StoreApi<PresentState>>();
@@ -24,7 +28,7 @@ const stores = new Map<string, StoreApi<PresentState>>();
 export function presentStore(editor: Editor): StoreApi<PresentState> {
   let s = stores.get(editor.boardId);
   if (!s) {
-    s = createStore<PresentState>(() => ({ presenting: false, frameId: null, position: 0, dismissed: [], laser: false, notesOpen: true }));
+    s = createStore<PresentState>(() => ({ presenting: false, frameId: null, position: 0, dismissed: [], laser: false, notesOpen: true, notesWindow: false, since: 0 }));
     stores.set(editor.boardId, s);
   }
   return s;
@@ -63,7 +67,12 @@ function showCurrent(editor: Editor, animate: boolean) {
   else editor.zoomToFit(undefined, { animate, padding: 64, maxZoom: 1 });
 }
 
-export function startPresenting(editor: Editor, fromFrameId?: string | null) {
+/**
+ * Starts presenting from the selected frame (or `fromFrameId`). The server is told who presents
+ * (#146): if someone else on the board presents, it refuses and this stops again with its reason.
+ * `handedOver`: someone handed the presentation to me — the server already says so.
+ */
+export function startPresenting(editor: Editor, fromFrameId?: string | null, opts: { handedOver?: boolean } = {}) {
   const list = slides(editor.getElements());
   const selected = editor.getSelection().find((id) => list.some((f) => f.id === id));
   const start = list.find((f) => f.id === (fromFrameId ?? selected)) ?? list[0] ?? null;
@@ -76,7 +85,13 @@ export function startPresenting(editor: Editor, fromFrameId?: string | null) {
     presenting: true,
     frameId: start?.id ?? null,
     position: start ? list.indexOf(start) : 0,
+    since: editor.host.serverNow(),
   });
+  if (!opts.handedOver && editor.host.presentation)
+    editor.host.presentation.start(start?.id ?? null).catch((e: unknown) => {
+      stopPresenting(editor, { quietly: true });
+      editor.host.notify(e instanceof Error ? e.message : 'Couldn’t start presenting', 'info');
+    });
   publish(editor, { presenting: { frameId: start?.id ?? null, startedAt: Date.now() } });
   // The presenter sees how the room reacts (#144: features/presence counts, nothing is stored).
   editor.runCommand('presence.countReactions', { on: true });
@@ -92,10 +107,12 @@ export function laserOff(editor: Editor) {
   stopLaser(editor, (laser) => publish(editor, { laser }));
 }
 
-export function stopPresenting(editor: Editor) {
+/** Stops presenting here. `quietly`: the server already moved on (handed over, refused): don't tell it. */
+export function stopPresenting(editor: Editor, opts: { quietly?: boolean } = {}) {
   if (!presentStore(editor).getState().presenting) return;
   laserOff(editor);
-  presentStore(editor).setState({ presenting: false, laser: false });
+  presentStore(editor).setState({ presenting: false, laser: false, notesWindow: false });
+  if (!opts.quietly) editor.host.presentation?.end().catch(() => undefined);
   editor.setChromeHidden(false);
   publish(editor, { presenting: null });
   editor.runCommand('presence.countReactions', { on: false });
@@ -122,4 +139,17 @@ export function step(editor: Editor, delta: number) {
 /** Re-fit the current slide (viewport resized). */
 export function refit(editor: Editor) {
   if (presentStore(editor).getState().presenting) showCurrent(editor, false);
+}
+
+/** Hands presenting to `to` (#146): the server checks and records it; their screen takes over. */
+export async function handOff(editor: Editor, to: { id: string; name: string }): Promise<void> {
+  const p = editor.host.presentation;
+  if (!p) return;
+  try {
+    await p.handoff(to.id, presentStore(editor).getState().frameId);
+    stopPresenting(editor, { quietly: true });
+    editor.host.notify(`${to.name} presents now`, 'success');
+  } catch (e) {
+    editor.host.notify(e instanceof Error ? e.message : 'Couldn’t hand over', 'error');
+  }
 }

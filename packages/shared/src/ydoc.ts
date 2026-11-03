@@ -28,6 +28,8 @@ import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 //   'retro'    -> features/retro      (key 'session' -> the guided retro's phase)
 //   'icebreakerResults' -> features/icebreakers (icebreaker id -> IcebreakerResult; WRITTEN BY THE
 //                                     SERVER only — modules/icebreakers; element content)
+//   'presentation' -> features/present (key 'session' -> PresentationSession; WRITTEN BY THE SERVER
+//                                     only — modules/presentations, #146)
 //   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide; element
 //                                     content: in the frame's doc)
 //   'diagramSources' -> features/from-text (diagram id -> the source a diagram was laid out from
@@ -178,7 +180,7 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
  * 'walkthroughs' mirrors the recordings modules/walkthroughs keeps (KAI-133): they outlive restores.
  * 'agentPauses' is a person's "stop" to an agent (KAI-249): an older version must not resume it.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs', 'agentPauses', 'icebreakerResults'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs', 'agentPauses', 'icebreakerResults', 'presentation'] as const;
 
 /**
  * Top-level types a board BACKUP (`.freero`, KAI-137) leaves out, and a restore drops if a file
@@ -189,7 +191,7 @@ export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 
  * presenter notes, diagram sources — is board content and travels. A new session collection
  * belongs here (and usually in Y_KEPT_ON_RESTORE).
  */
-export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions', 'agentPauses', 'icebreakerResults'] as const;
+export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions', 'agentPauses', 'icebreakerResults', 'presentation'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
@@ -333,7 +335,26 @@ export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
  * any socket's change to them). When one of them is also element content
  * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
  */
-export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION, 'icebreakerResults'];
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION, 'icebreakerResults', 'presentation'];
+
+/**
+ * [#146] Who presents the board now: key 'session' -> PresentationSession, written only by the
+ * server (modules/presentations), so only the presenter, the facilitator or the owner can hand
+ * presenting to someone else. The slides themselves still follow the presenter's presence.
+ */
+export const PRESENTATION_COLLECTION = 'presentation';
+export interface PresentationSession {
+  presenterId: string;
+  presenterName: string;
+  /** When this presenter took over (server clock). */
+  at: number;
+  /** The slide (frame id) the presentation was on when it was handed over. */
+  frameId: string | null;
+  /** Who handed it over (their name), when it was a handoff. */
+  handedBy?: string;
+  /** The user id it was handed over from. */
+  handedFrom?: string;
+}
 
 /** [#150] Icebreaker results, written only by the server (modules/icebreakers): one per widget. */
 export const ICEBREAKER_RESULTS_COLLECTION = 'icebreakerResults';

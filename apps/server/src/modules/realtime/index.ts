@@ -19,6 +19,8 @@ export {
   decideSuggestions,
   // Results only the server computes (live activities, KAI-132): the one writer of those collections.
   writeServerCollection,
+  // One board-level server-written entry read and replaced in one step, with who is here (#146).
+  updateServerEntry,
   // An app writing through the API or MCP, shown on the board for a moment (KAI-168).
   showAgentPresence,
   type AgentPresence,

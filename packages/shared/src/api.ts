@@ -271,6 +271,16 @@ export const ENGAGE_QUIZ_GRACE_MS = 1500;
 /** [#147] Points for a right answer: the full amount without a time limit; with one, half plus half again as fast as you were. */
 export const ENGAGE_QUIZ_POINTS = 1000;
 
+// ---- Presenting (#146) ----
+// POST /api/boards/:id/presentation  body PresentationRequest -> { session: PresentationSession | null }
+//   start: anyone who can open the board, unless someone else on the board presents (then only the
+//   facilitator or the owner may take over); handoff: the presenter, the facilitator or the owner
+//   hands presenting to someone on the board now; end: the presenter, the facilitator or the owner.
+export type PresentationRequest =
+  | { action: 'start'; frameId?: string | null }
+  | { action: 'handoff'; to: string; frameId?: string | null }
+  | { action: 'end' };
+
 // ---- Icebreakers (#150) ----
 // POST /api/boards/:id/icebreakers/:elementId/roll  -> { result: IcebreakerResult }
 //   The server spins the wheel, rolls the dice or shuffles the speakers of the icebreaker as the
