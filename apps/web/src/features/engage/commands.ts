@@ -1,6 +1,6 @@
-import { MessageSquareText } from 'lucide-react';
+import { Maximize2, MessageSquareText, QrCode } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
-import { ANSWER_DIALOG } from './lib/activity';
+import { ANSWER_DIALOG, LINK_DIALOG, STAGE_DIALOG } from './lib/activity';
 
 const selectedActivity = (editor: Editor): string | null => {
   const sel = editor.getSelection();
@@ -31,6 +31,32 @@ export default defineCommands([
     run(editor) {
       const id = selectedActivity(editor);
       if (id) editor.openPanel(ANSWER_DIALOG, { id });
+    },
+  },
+  {
+    // The phone answer link as a QR code (#40), for anyone on the board.
+    id: 'engage.showLink',
+    label: 'Answer link and QR code',
+    icon: QrCode,
+    minRole: 'viewer',
+    menus: ['context'],
+    when: (editor) => selectedActivity(editor) !== null,
+    run(editor) {
+      const id = selectedActivity(editor);
+      if (id) editor.openPanel(LINK_DIALOG, { id });
+    },
+  },
+  {
+    // Presenter view (#40): the activity full screen, results growing live.
+    id: 'engage.stage',
+    label: 'Show activity full screen',
+    icon: Maximize2,
+    minRole: 'viewer',
+    menus: ['context'],
+    when: (editor) => selectedActivity(editor) !== null,
+    run(editor, args) {
+      const id = typeof args?.id === 'string' ? args.id : selectedActivity(editor);
+      if (id && editor.getElement(id)?.type === 'activity') editor.openPanel(STAGE_DIALOG, { id });
     },
   },
 ]);

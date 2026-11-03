@@ -115,3 +115,12 @@ it('Q&A: each person upvotes a question once, and the most upvoted question come
   ]);
   expect(results?.questions?.every((q) => q.by === undefined)).toBe(true);
 });
+
+it('the phone answer page gets the activity from the server alone: its question as plain text and its choices, and only editors may run it', async () => {
+  const [owner, viewer] = [await person('Owner'), await person('Viewer')];
+  const { boardId, id } = await boardWith(owner, { question: '<p>Lunch <b>today</b>?</p>' });
+  const seen = await service.activityState(boardId, id, await as(viewer));
+  expect(seen.activity).toMatchObject({ id, kind: 'poll', question: 'Lunch today?', options: [{ id: 'a', text: 'Pizza' }, { id: 'b', text: 'Salad' }], guests: true });
+  expect(seen.canRun).toBe(false);
+  expect((await service.activityState(boardId, id, await as(owner))).canRun).toBe(true);
+});

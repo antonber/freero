@@ -65,6 +65,35 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  gap: 16px;
+}
+
+.fr-engage__body > :not(.fr-engage__qr) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The answer link's QR code on the activity (#40). */
+.fr-engage__qr {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 112px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+}
+
+.fr-engage__qr svg {
+  display: block;
+  width: 112px;
+  height: 112px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(23, 22, 43, 0.08);
 }
 
 .fr-engage__bars {
@@ -250,94 +279,11 @@
   }
 }
 
-/* Answer and settings dialogs. */
+/* Settings dialog. */
 .fr-engage-form {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.fr-engage-form__question {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-
-.fr-engage-form__hint {
-  margin: 0;
-  font-size: 13px;
-  color: var(--fr-ink-3);
-}
-
-.fr-engage-form__choices {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.fr-engage-form__choice {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1.5px solid var(--fr-line, #dddce6);
-  border-radius: 10px;
-  background: #fff;
-  color: var(--fr-ink);
-  font: 500 15px/1.3 var(--fr-font);
-  text-align: left;
-  cursor: pointer;
-}
-
-.fr-engage-form__choice[aria-pressed='true'],
-.fr-engage-form__choice[aria-checked='true'] {
-  border-color: var(--fr-accent, #5b3ff0);
-  background: color-mix(in srgb, var(--fr-accent, #5b3ff0) 9%, #fff);
-}
-
-.fr-engage-form__rank {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 6px 8px 6px 12px;
-  border: 1.5px solid var(--fr-line, #dddce6);
-  border-radius: 10px;
-  font-size: 15px;
-}
-
-.fr-engage-form__rank span:nth-child(2) {
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
-.fr-engage-form__scale {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.fr-engage-form__scale button {
-  min-width: 40px;
-  min-height: 40px;
-  border: 1.5px solid var(--fr-line, #dddce6);
-  border-radius: 8px;
-  background: #fff;
-  font: 600 15px var(--fr-font);
-  cursor: pointer;
-}
-
-.fr-engage-form__scale button[aria-checked='true'] {
-  border-color: var(--fr-accent, #5b3ff0);
-  background: var(--fr-accent, #5b3ff0);
-  color: #fff;
 }
 
 .fr-engage-form__row {
@@ -350,48 +296,134 @@
   flex: 1;
 }
 
-.fr-engage-form__q {
+/* "Answer on a phone" dialog (#40). */
+.fr-engage-link {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.fr-engage-link__qr {
+  display: block;
+  width: 220px;
+  height: 220px;
+  margin: 0 auto;
+}
+
+.fr-engage-link__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+  text-align: center;
+}
+
+.fr-engage-link__url {
+  width: 100%;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(23, 22, 43, 0.04);
-  font-size: 14px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm, 8px);
+  background: var(--fr-surface-2);
+  color: var(--fr-ink);
+  font: 13px var(--fr-font);
 }
 
-.fr-engage-form__q.is-answered {
-  opacity: 0.6;
+.fr-engage-link__actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
 }
 
-.fr-engage-form__q > span {
-  flex: 1;
+/* One activity full screen while presenting (#40). */
+.fr-engage-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 48px;
+  padding: 56px 64px;
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font-family: var(--fr-font);
+  border-top: 10px solid var(--accent);
+  outline: none;
+}
+
+.fr-engage-stage__main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+}
+
+.fr-engage-stage__kind {
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.fr-engage-stage__question {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 52px);
+  line-height: 1.15;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
-.fr-engage-form__upvote {
-  display: inline-flex;
+.fr-engage-stage__results {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  zoom: 1.6;
+}
+
+.fr-engage-stage__join {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-width: 52px;
-  min-height: 34px;
-  padding: 4px 10px;
-  border: 1.5px solid var(--fr-line, #dddce6);
-  border-radius: 999px;
-  background: #fff;
-  font: 650 13px var(--fr-font);
-  cursor: pointer;
+  justify-content: center;
+  gap: 10px;
+  width: min(30vw, 340px);
+  text-align: center;
 }
 
-.fr-engage-form__upvote[aria-pressed='true'] {
-  border-color: var(--fr-accent, #5b3ff0);
-  color: var(--fr-accent, #5b3ff0);
-}
-
-.fr-engage-form__error {
+.fr-engage-stage__join p {
   margin: 0;
-  font-size: 13px;
-  color: var(--fr-danger, #d93848);
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.fr-engage-stage__join code {
+  font-size: 14px;
+  color: var(--fr-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.fr-engage-stage__qr {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.fr-engage-stage__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+/* Phones and narrow windows: the QR code goes under the results. */
+@media (max-width: 720px) {
+  .fr-engage-stage {
+    grid-template-columns: 1fr;
+    padding: 40px 20px;
+    gap: 20px;
+  }
+  .fr-engage-stage__join {
+    width: 60vw;
+    margin: 0 auto;
+  }
 }
 
 .fr-engage-form__label {
@@ -400,9 +432,4 @@
   color: var(--fr-ink-2);
   text-transform: uppercase;
   letter-spacing: 0.03em;
-}
-
-/* Phones: the answer form fills the screen width. */
-[data-fr-layout^='phone'] .fr-engage-form__choice {
-  min-height: 48px;
 }

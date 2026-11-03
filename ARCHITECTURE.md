@@ -2842,7 +2842,12 @@ in the same transaction (`realtime/serverCollections.ts`, like the vote budget).
 answer can never be mapped to a person by any client, and a sealed activity (`results: 'reveal'`)
 publishes only how many answered until an editor reveals it. Names appear only on a poll answered
 while it was not anonymous (kept per answer as given). `engageResults` and `call` are in
-`Y_KEPT_ON_RESTORE`. The answer form is a dialog that `?activity=<id>` opens (phones: the answer link).
+`Y_KEPT_ON_RESTORE`. The answer form (`@ui` `ActivityForm`) is a dialog on the board (`?activity=<id>`
+opens it) and the board-free phone page `/respond/<board>/<activity>` (#40, `app/pages/respond`):
+the activity's `GET` returns the activity itself (`ActivityState.activity`, question as plain text)
+so that page needs no Yjs or canvas, and a visitor joins as a guest inline. Its QR code is encoded
+by the pinned `qrcode` package and drawn as one SVG path (the link dialog, optionally on the
+element so exports keep it, and the full-screen presenter view of one activity).
 
 **Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
 commenters and guests take part in a facilitator's sessions without edit access, like Engage lets

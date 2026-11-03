@@ -2,7 +2,7 @@
 // All REST endpoints live under /api, send/receive JSON, and authenticate via
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
-import type { BoardElement, TableCopyContent } from './elements';
+import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
 import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
 import type { BoardOutline } from './outline/types';
@@ -193,7 +193,8 @@ export const MAX_CALL_URL = 2000;
 // replaces it), and publishes only results into the board's ENGAGE_RESULTS_COLLECTION (@freero/shared
 // ydoc.ts). Anyone who can open the board may answer — viewers too — and guests when the activity
 // allows it. Rate limited (RATE_LIMIT_ENGAGE).
-// GET    /api/boards/:id/activities/:aid                     -> ActivityState
+// GET    /api/boards/:id/activities/:aid                     -> ActivityState  (with `activity`: the
+//        phone answer page /respond/:id/:aid (#40) needs nothing else — no board, no socket)
 // PUT    /api/boards/:id/activities/:aid/answer   body { answer: ActivityAnswer } -> ActivityState
 // DELETE /api/boards/:id/activities/:aid/answer   -> ActivityState   (take your answer back)
 // POST   /api/boards/:id/activities/:aid/questions  body { text } -> ActivityState   (Q&A)
@@ -224,7 +225,20 @@ export interface ActivityState {
   /** You may answer now; else why not ("Answers are closed", "Sign in to answer"). */
   canAnswer: boolean;
   reason?: string;
+  /**
+   * [additive, #40] The activity as you see it on the board — its question as plain text — so a
+   * page without the board (the phone answer page, /respond/<board>/<activity>) can show the form.
+   */
+  activity?: ActivityInfo;
+  /** [additive, #40] You run activities on this board (owner / editor): moderation, reveal. */
+  canRun?: boolean;
 }
+
+/** [#40] What answering an activity needs to know of it, without the board. */
+export type ActivityInfo = Pick<ActivityElement, 'id' | 'kind' | 'options' | 'maxChoices' | 'scale' | 'anonymous' | 'results' | 'guests' | 'closed' | 'color'> & {
+  /** The question, plain text. */
+  question: string;
+};
 export const ENGAGE_MAX_WORDS = 3;
 export const ENGAGE_MAX_WORD_LENGTH = 40;
 export const ENGAGE_MAX_CLOUD_WORDS = 60;

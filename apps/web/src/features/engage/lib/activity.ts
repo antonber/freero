@@ -1,9 +1,11 @@
 // Pure helpers of live activities (KAI-132): what each kind is called, its starting content, and
 // how results are drawn (shares, word sizes). The answers themselves are the server's.
-import type { ActivityElement, ActivityKind, ActivityOption, ActivityResults } from '@freero/shared';
+import { richTextToPlain, type ActivityElement, type ActivityInfo, type ActivityKind, type ActivityOption, type ActivityResults } from '@freero/shared';
 
 export const ANSWER_DIALOG = 'engage.answer';
 export const SETTINGS_DIALOG = 'engage.settings';
+export const LINK_DIALOG = 'engage.link';
+export const STAGE_DIALOG = 'engage.stage';
 export const RESULTS = 'engageResults';
 export const TOOL_ID = 'engage';
 
@@ -72,11 +74,34 @@ export function answersLabel(kind: ActivityKind, results: ActivityResults | unde
   return n === 0 ? 'No answers yet' : n === 1 ? '1 answer' : `${n} answers`;
 }
 
-/** The URL that opens this activity's answer form (phones, a QR code on a slide). */
-export const answerLink = (activityId: string): string => {
+/**
+ * The URL people answer through (phones, a QR code on a slide): the board-free answer page
+ * `/respond/<board>/<activity>` (#40). Without a server (the offline sandbox) the board's own
+ * `?activity=` link, which opens the answer dialog over the board.
+ */
+export const answerLink = (boardId: string, activityId: string, onServer = true): string => {
   const u = new URL(window.location.href);
   u.search = '';
   u.hash = '';
-  u.searchParams.set('activity', activityId);
+  if (!onServer) {
+    u.searchParams.set('activity', activityId);
+    return u.toString();
+  }
+  u.pathname = `/respond/${encodeURIComponent(boardId)}/${encodeURIComponent(activityId)}`;
   return u.toString();
 };
+
+/** What the answer form needs of an activity (the same the server sends the phone page). */
+export const activityInfo = (a: ActivityElement): ActivityInfo => ({
+  id: a.id,
+  kind: a.kind,
+  question: richTextToPlain(a.question).trim(),
+  options: a.options,
+  maxChoices: a.maxChoices,
+  scale: a.scale,
+  anonymous: a.anonymous,
+  results: a.results,
+  guests: a.guests,
+  closed: a.closed,
+  color: a.color,
+});

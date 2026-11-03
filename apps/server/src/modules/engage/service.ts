@@ -8,7 +8,9 @@ import {
   ENGAGE_MAX_QUESTIONS_PER_PERSON,
   ENGAGE_RESULTS_COLLECTION,
   guestDisplayName,
+  richTextToPlain,
   type ActivityElement,
+  type ActivityInfo,
   type ActivityResults,
   type ActivityState,
   type Role,
@@ -20,7 +22,7 @@ import { actorId as idOf } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
 import { readBoardView, writeServerCollection } from '../realtime/index';
 import * as repo from './repo';
-import { AnswerError, cleanAnswer, computeResults } from './rules';
+import { AnswerError, cleanAnswer, computeResults, maxChoicesOf, optionIds, scaleOf } from './rules';
 
 /** Answers kept per activity (a workshop, a town hall): more is refused, never silently dropped. */
 const MAX_ANSWERS = 5000;
@@ -105,7 +107,35 @@ async function stateFor(c: Ctx): Promise<ActivityState> {
     c.activity.kind === 'qna' ? repo.mine(c.boardId, c.activity.id, c.personId) : Promise.resolve({ upvotes: [], questions: [] }),
   ]);
   const why = refusal(c);
-  return { results, mine, myUpvotes: my.upvotes, myQuestions: my.questions, revealed, canAnswer: !why, ...(why ? { reason: why } : {}) };
+  return {
+    results,
+    mine,
+    myUpvotes: my.upvotes,
+    myQuestions: my.questions,
+    revealed,
+    canAnswer: !why,
+    ...(why ? { reason: why } : {}),
+    activity: infoOf(c.activity),
+    canRun: canEdit(c.role),
+  };
+}
+
+/** The activity as the answer page needs it (#40): what the element says, the question as plain text. */
+function infoOf(a: ActivityElement): ActivityInfo {
+  const ids = optionIds(a);
+  return {
+    id: a.id,
+    kind: a.kind,
+    question: richTextToPlain(typeof a.question === 'string' ? a.question : '').trim(),
+    options: (Array.isArray(a.options) ? a.options : []).filter((o) => ids.includes(o?.id)).map((o) => ({ id: o.id, text: typeof o.text === 'string' ? o.text : '' })),
+    maxChoices: maxChoicesOf(a),
+    scale: scaleOf(a),
+    anonymous: !!a.anonymous,
+    results: a.results === 'reveal' ? 'reveal' : 'live',
+    guests: !!a.guests,
+    closed: !!a.closed,
+    color: typeof a.color === 'string' ? a.color : '',
+  };
 }
 
 export async function activityState(boardId: string, activityId: string, actor: Actor): Promise<ActivityState> {

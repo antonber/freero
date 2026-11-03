@@ -1,15 +1,28 @@
 // Two dialogs of live activities (KAI-132): answering one (anyone on the board, guests when the
 // activity allows it — answers go to the server, never into the board) and setting one up (editors).
-import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowDown, ArrowUp, Check, EyeOff, Plus, ThumbsUp, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import { nanoid } from 'nanoid';
-import { ENGAGE_MAX_OPTIONS, ENGAGE_MAX_QUESTION, ENGAGE_MAX_WORDS, type ActivityAnswer, type ActivityElement, type ActivityKind, type ActivityState } from '@freero/shared';
-import { definePanel, plainToRichText, richTextToPlain, useCanEdit, useElement, type Editor, type PanelProps } from '@engine';
-import { Button, IconButton, Input, Modal, SegmentedControl, Select, Toggle } from '@ui';
-import { ANSWER_DIALOG, KINDS, SETTINGS_DIALOG, kindLabel, starter, usesOptions } from './lib/activity';
+import { ENGAGE_MAX_OPTIONS, type ActivityElement, type ActivityKind, type ActivityState } from '@freero/shared';
+import { definePanel, plainToRichText, richTextToPlain, useCanEdit, useElement, type Editor, type HostEngage, type PanelProps } from '@engine';
+import { ActivityForm, Button, IconButton, Input, Modal, SegmentedControl, Select, Toggle, type ActivityActions } from '@ui';
+import { ANSWER_DIALOG, KINDS, LINK_DIALOG, SETTINGS_DIALOG, STAGE_DIALOG, activityInfo, kindLabel, starter, usesOptions } from './lib/activity';
+import { LinkDialog } from './lib/LinkDialog';
+import { Stage } from './lib/Stage';
 import './engage.css';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong');
+
+/** Answering through the board's server (Host.engage); moderation only for those who run activities. */
+function activityActions(engage: HostEngage, id: string, canRun: boolean): ActivityActions {
+  return {
+    answer: (answer) => engage.answer(id, answer),
+    withdraw: () => engage.withdraw(id),
+    ask: (text) => engage.ask(id, text),
+    upvote: (qid, on) => engage.upvote(id, qid, on),
+    ...(canRun ? { moderate: (qid: string, patch: { answered?: boolean; hidden?: boolean }) => engage.moderate(id, qid, patch) } : {}),
+  };
+}
 
 function useActivityState(editor: Editor, id: string): [ActivityState | null, (s: ActivityState) => void, string | null] {
   const [state, setState] = useState<ActivityState | null>(null);
@@ -31,208 +44,12 @@ function useActivityState(editor: Editor, id: string): [ActivityState | null, (s
   return [state, setState, error];
 }
 
-function PollForm({ a, mine, onSubmit, busy }: { a: ActivityElement; mine: ActivityAnswer | null; onSubmit: (ans: ActivityAnswer) => void; busy: boolean }) {
-  const max = Math.max(1, Math.min(a.maxChoices ?? 1, a.options.length));
-  const [picked, setPicked] = useState<string[]>(mine?.choices ?? []);
-  const toggle = (id: string) =>
-    setPicked((p) => (max === 1 ? [id] : p.includes(id) ? p.filter((x) => x !== id) : p.length < max ? [...p, id] : p));
-  return (
-    <>
-      <p className="fr-engage-form__hint">{max === 1 ? 'Pick one' : `Pick up to ${max}`}</p>
-      <ul className="fr-engage-form__choices" role={max === 1 ? 'radiogroup' : 'group'}>
-        {a.options.map((o) => (
-          <li key={o.id}>
-            <button
-              type="button"
-              className="fr-engage-form__choice"
-              role={max === 1 ? 'radio' : 'checkbox'}
-              aria-checked={picked.includes(o.id)}
-              onClick={() => toggle(o.id)}
-            >
-              {picked.includes(o.id) ? <Check size={16} aria-hidden /> : <span style={{ width: 16 }} />}
-              {o.text || 'Untitled choice'}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <Button variant="primary" size="lg" loading={busy} disabled={!picked.length} onClick={() => onSubmit({ choices: picked })}>
-        {mine ? 'Change my answer' : 'Send answer'}
-      </Button>
-    </>
-  );
-}
-
-function WordsForm({ mine, onSubmit, busy }: { mine: ActivityAnswer | null; onSubmit: (ans: ActivityAnswer) => void; busy: boolean }) {
-  const [words, setWords] = useState<string[]>(() => {
-    const w = [...(mine?.words ?? [])];
-    while (w.length < ENGAGE_MAX_WORDS) w.push('');
-    return w;
-  });
-  const filled = words.map((w) => w.trim()).filter(Boolean);
-  return (
-    <form
-      className="fr-engage-form"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        if (filled.length) onSubmit({ words: filled });
-      }}
-    >
-      <p className="fr-engage-form__hint">Up to {ENGAGE_MAX_WORDS} words or short phrases</p>
-      {words.map((w, i) => (
-        <Input
-          key={i}
-          aria-label={`Word ${i + 1}`}
-          placeholder={i === 0 ? 'Your word' : 'Another (optional)'}
-          value={w}
-          maxLength={40}
-          autoFocus={i === 0}
-          onChange={(e) => setWords((ws) => ws.map((x, j) => (j === i ? e.target.value : x)))}
-        />
-      ))}
-      <Button type="submit" variant="primary" size="lg" loading={busy} disabled={!filled.length}>
-        {mine ? 'Change my words' : 'Send'}
-      </Button>
-    </form>
-  );
-}
-
-function RankForm({ a, mine, onSubmit, busy }: { a: ActivityElement; mine: ActivityAnswer | null; onSubmit: (ans: ActivityAnswer) => void; busy: boolean }) {
-  const ids = a.options.map((o) => o.id);
-  const [order, setOrder] = useState<string[]>(() => (mine?.order && mine.order.length === ids.length && mine.order.every((id) => ids.includes(id)) ? mine.order : ids));
-  const move = (i: number, d: -1 | 1) =>
-    setOrder((o) => {
-      const j = i + d;
-      if (j < 0 || j >= o.length) return o;
-      const next = [...o];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
-  return (
-    <>
-      <p className="fr-engage-form__hint">Most important at the top</p>
-      <ol className="fr-engage-form__choices">
-        {order.map((id, i) => (
-          <li key={id} className="fr-engage-form__rank">
-            <strong>{i + 1}</strong>
-            <span>{a.options.find((o) => o.id === id)?.text || 'Untitled item'}</span>
-            <IconButton size={32} icon={ArrowUp} label="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
-            <IconButton size={32} icon={ArrowDown} label="Move down" disabled={i === order.length - 1} onClick={() => move(i, 1)} />
-          </li>
-        ))}
-      </ol>
-      <Button variant="primary" size="lg" loading={busy} onClick={() => onSubmit({ order })}>
-        {mine ? 'Change my ranking' : 'Send ranking'}
-      </Button>
-    </>
-  );
-}
-
-function RateForm({ a, mine, onSubmit, busy }: { a: ActivityElement; mine: ActivityAnswer | null; onSubmit: (ans: ActivityAnswer) => void; busy: boolean }) {
-  const scale = a.scale ?? 5;
-  const [ratings, setRatings] = useState<Record<string, number>>(mine?.ratings ?? {});
-  return (
-    <>
-      <p className="fr-engage-form__hint">1 = not at all, {scale} = completely</p>
-      <ul className="fr-engage-form__choices">
-        {a.options.map((o) => (
-          <li key={o.id}>
-            <div>{o.text || 'Untitled statement'}</div>
-            <div className="fr-engage-form__scale" role="radiogroup" aria-label={o.text}>
-              {Array.from({ length: scale }, (_, i) => i + 1).map((n) => (
-                <button key={n} type="button" role="radio" aria-checked={ratings[o.id] === n} onClick={() => setRatings((r) => ({ ...r, [o.id]: n }))}>
-                  {n}
-                </button>
-              ))}
-            </div>
-          </li>
-        ))}
-      </ul>
-      <Button variant="primary" size="lg" loading={busy} disabled={!Object.keys(ratings).length} onClick={() => onSubmit({ ratings })}>
-        {mine ? 'Change my ratings' : 'Send ratings'}
-      </Button>
-    </>
-  );
-}
-
-function QnaForm({ editor, a, state, setState }: { editor: Editor; a: ActivityElement; state: ActivityState; setState: (s: ActivityState) => void }) {
-  const canEdit = useCanEdit();
-  const [text, setText] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const engage = editor.host.engage!;
-  const run = async (fn: () => Promise<ActivityState>) => {
-    setError(null);
-    try {
-      setState(await fn());
-      return true;
-    } catch (e) {
-      setError(errorText(e));
-      return false;
-    }
-  };
-  const ask = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!text.trim()) return;
-    setBusy(true);
-    if (await run(() => engage.ask(a.id, text.trim()))) setText('');
-    setBusy(false);
-  };
-  const questions = state.results?.questions ?? [];
-  return (
-    <>
-      {state.canAnswer ? (
-        <form className="fr-engage-form__row" onSubmit={ask}>
-          <Input aria-label="Your question" placeholder="Ask a question" value={text} maxLength={ENGAGE_MAX_QUESTION} autoFocus onChange={(e) => setText(e.target.value)} />
-          <Button type="submit" variant="primary" loading={busy} disabled={!text.trim()}>
-            Ask
-          </Button>
-        </form>
-      ) : null}
-      <p className="fr-engage-form__hint">{a.anonymous ? 'Questions are anonymous.' : 'Your name is shown with your question.'}</p>
-      {error ? <p className="fr-engage-form__error" role="alert">{error}</p> : null}
-      {state.results?.sealed ? <p className="fr-engage-form__hint">Questions show once the host reveals them.</p> : null}
-      <ul className="fr-engage-form__choices">
-        {questions.map((q) => {
-          const on = state.myUpvotes.includes(q.id);
-          return (
-            <li key={q.id} className={`fr-engage-form__q${q.answered ? ' is-answered' : ''}`}>
-              <button
-                type="button"
-                className="fr-engage-form__upvote"
-                aria-pressed={on}
-                aria-label={on ? `Remove your upvote (${q.votes})` : `Upvote (${q.votes})`}
-                disabled={!state.canAnswer}
-                onClick={() => void run(() => engage.upvote(a.id, q.id, !on))}
-              >
-                <ThumbsUp size={14} aria-hidden /> {q.votes}
-              </button>
-              <span>
-                {q.text}
-                <br />
-                <small>{q.answered ? 'Answered' : q.by ?? 'Anonymous'}</small>
-              </span>
-              {canEdit ? (
-                <>
-                  <IconButton size={32} icon={Check} label={q.answered ? 'Mark as not answered' : 'Mark as answered'} active={q.answered} onClick={() => void run(() => engage.moderate(a.id, q.id, { answered: !q.answered }))} />
-                  <IconButton size={32} icon={EyeOff} label="Hide from the board" onClick={() => void run(() => engage.moderate(a.id, q.id, { hidden: true }))} />
-                </>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-    </>
-  );
-}
-
 function AnswerDialog({ editor, props }: PanelProps) {
   const id = typeof props?.id === 'string' ? props.id : '';
   const a = useElement(id) as ActivityElement | undefined;
+  const canEdit = useCanEdit();
   const close = () => editor.closePanel(ANSWER_DIALOG);
   const [state, setState, loadError] = useActivityState(editor, id);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
   if (!a || a.type !== 'activity') {
     return (
       <Modal open onClose={close} title="Activity">
@@ -240,56 +57,15 @@ function AnswerDialog({ editor, props }: PanelProps) {
       </Modal>
     );
   }
-  const submit = async (answer: ActivityAnswer) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setState(await editor.host.engage!.answer(a.id, answer));
-      setSent(true);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const withdraw = async () => {
-    try {
-      setState(await editor.host.engage!.withdraw(a.id));
-      setSent(false);
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
-  const question = richTextToPlain(a.question).trim() || 'Untitled activity';
-  // Re-mount the form when the stored answer arrives, so it starts from it.
-  const formKey = state ? JSON.stringify(state.mine) : 'loading';
+  const engage = editor.host.engage;
   return (
     <Modal open onClose={close} title={kindLabel(a.kind)} width={480}>
-      <div className="fr-engage-form" data-testid="engage-answer">
-        <p className="fr-engage-form__question">{question}</p>
-        {loadError ? <p className="fr-engage-form__error" role="alert">{loadError}</p> : null}
-        {state && !state.canAnswer && a.kind !== 'qna' ? <p className="fr-engage-form__hint">{state.reason}</p> : null}
-        {state && a.kind === 'qna' ? <QnaForm editor={editor} a={a} state={state} setState={setState} /> : null}
-        {state && state.canAnswer && a.kind !== 'qna' ? (
-          <div key={formKey} className="fr-engage-form">
-            {a.kind === 'poll' ? <PollForm a={a} mine={state.mine} onSubmit={submit} busy={busy} /> : null}
-            {a.kind === 'wordcloud' ? <WordsForm mine={state.mine} onSubmit={submit} busy={busy} /> : null}
-            {a.kind === 'ranking' ? <RankForm a={a} mine={state.mine} onSubmit={submit} busy={busy} /> : null}
-            {a.kind === 'rating' ? <RateForm a={a} mine={state.mine} onSubmit={submit} busy={busy} /> : null}
-          </div>
-        ) : null}
-        {error ? <p className="fr-engage-form__error" role="alert">{error}</p> : null}
-        {sent ? <p className="fr-engage-form__hint" role="status">Thanks — your answer is in. You can change it any time.</p> : null}
-        {state?.mine && state.canAnswer && a.kind !== 'qna' ? (
-          <Button variant="ghost" size="sm" onClick={withdraw}>
-            Take my answer back
-          </Button>
-        ) : null}
-        <p className="fr-engage-form__hint">
-          {a.kind === 'qna' ? '' : a.anonymous ? 'Anonymous: nobody sees who answered what.' : 'Open: your name may be shown with your answer.'}
-          {a.results === 'reveal' && !state?.revealed ? ' Results show once the host reveals them.' : ''}
+      {loadError ? (
+        <p className="fr-actform__error" role="alert">
+          {loadError}
         </p>
-      </div>
+      ) : null}
+      {state && engage ? <ActivityForm activity={activityInfo(a)} state={state} onState={setState} actions={activityActions(engage, a.id, canEdit)} /> : null}
     </Modal>
   );
 }
@@ -368,4 +144,6 @@ function SettingsDialog({ editor, props }: PanelProps) {
 export default [
   definePanel({ id: ANSWER_DIALOG, slot: 'dialog', order: 60, minRole: 'viewer', Component: AnswerDialog }),
   definePanel({ id: SETTINGS_DIALOG, slot: 'dialog', order: 61, minRole: 'editor', Component: SettingsDialog }),
+  definePanel({ id: LINK_DIALOG, slot: 'dialog', order: 62, minRole: 'viewer', Component: LinkDialog }),
+  definePanel({ id: STAGE_DIALOG, slot: 'dialog', order: 63, minRole: 'viewer', Component: Stage }),
 ];

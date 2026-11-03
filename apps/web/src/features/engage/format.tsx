@@ -1,10 +1,11 @@
 // Running a live activity from the format toolbar (owners and editors): set it up, reveal sealed
-// results, close / reopen answers, copy the link people answer through, start over.
-import { Eye, EyeOff, MessageSquare, MessageSquareOff, RotateCcw, Settings2, Smartphone } from 'lucide-react';
+// results, close / reopen answers, the link (and QR code) people answer through, show it full
+// screen, start over.
+import { Eye, EyeOff, Maximize2, MessageSquare, MessageSquareOff, QrCode, RotateCcw, Settings2 } from 'lucide-react';
 import type { ActivityElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { IconButton } from '@ui';
-import { SETTINGS_DIALOG, answerLink } from './lib/activity';
+import { LINK_DIALOG, SETTINGS_DIALOG, STAGE_DIALOG } from './lib/activity';
 
 async function run(editor: Editor, fn: () => Promise<unknown>, done?: string) {
   try {
@@ -31,17 +32,8 @@ function Controls({ editor, a }: { editor: Editor; a: ActivityElement }) {
         label={a.closed ? 'Reopen answers' : 'Close answers'}
         onClick={() => editor.update<ActivityElement>(a.id, { closed: !a.closed })}
       />
-      <IconButton
-        icon={Smartphone}
-        label="Copy the answer link (for phones)"
-        onClick={() =>
-          void run(
-            editor,
-            () => navigator.clipboard.writeText(answerLink(a.id)),
-            'Answer link copied — anyone who can open the board answers there',
-          )
-        }
-      />
+      <IconButton icon={QrCode} label="Answer link and QR code (phones)" onClick={() => editor.openPanel(LINK_DIALOG, { id: a.id })} />
+      <IconButton icon={Maximize2} label="Show full screen" onClick={() => editor.openPanel(STAGE_DIALOG, { id: a.id })} />
       {engage ? (
         <IconButton
           icon={RotateCcw}

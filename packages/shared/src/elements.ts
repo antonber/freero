@@ -937,6 +937,8 @@ export interface ActivityElement extends BaseElement {
   closed?: boolean;
   /** Accent colour. */
   color: string;
+  /** [additive, #40] Draw the QR code of the phone answer link on the activity (exports keep it). */
+  qr?: boolean;
 }
 
 /**
