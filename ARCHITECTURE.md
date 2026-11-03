@@ -197,6 +197,27 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   editors or selection.
 - The world layer ignores pointer events: hit-testing is geometric (`hitTest`, rotation-aware).
   Mark a node inside an element with `data-fr-interactive` to receive native pointer events.
+- **Low detail** (#131, `engine/canvas/detail.ts`, `LowDetailLayer.tsx`): below zoom 0.18 (back
+  above 0.22: hysteresis, so a zoom resting near it never flickers; `UiState.lowDetail`, derived
+  from the camera in `runtime/core.ts`), items whose type has `lowDetail(el, paint)` and that are
+  small on screen (< 160 px), not edited, not making room for a drag and not in my private layer
+  are painted onto canvases in the world instead of mounting their components — sticky paper with
+  faint lines, a shape's fill and outline, a text's bars, a connector's straight run, a picture's
+  average colour (`canvas/pictureColor.ts`). Consecutive such items share one canvas, items drawn
+  in full sit between canvases, so render order holds. A canvas moves with the world (a pan
+  repaints nothing), covers its items within the cull rect at the zoom's resolution, repaints
+  only the part a change touched (drag, a collaborator's edit) and all of it on selection, focus,
+  theme or zoom changes. Paint only: the doc, hit-testing, selection overlays, exports and
+  thumbnails (`ElementFrame` in export mode) and the live regions / Board as list (they read the
+  doc) never see it; canvases are `aria-hidden`.
+- Items are placed with `left` / `top` (a transform only when rotated) and are each a stacking
+  context (`z-index: 0`). Each item's selected / edited / drag-preview state comes from one ui
+  subscription per editor (`ItemStates` in `WorldLayer.tsx`) that notifies only the items whose
+  state changed; zoom and focus come through `WorldViewProvider` context. A camera move costs the
+  items nothing, and selecting everything is one pass. The selection overlay draws a multiple
+  selection's member outlines as one world-space SVG path (`MemberOutlines`), and the format
+  toolbar keeps its selection-wide work (sections, mixed style, bounds, its controls) out of the
+  per-frame repositioning. Measured: `npm run bench:board`, docs/performance.md.
 
 ### Gestures and undo
 
@@ -647,6 +668,16 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   too small on the picture to show detail (and all but the 150 biggest) as boxes of it, so a
   2,000-card board's thumbnail costs milliseconds; null leaves it out (lines). Default: fill /
   color / stroke (`engine/editor/paintPlan.ts`).
+- `lowDetail(el, paint: LowDetailPaint)` (#131): how the live canvas paints the type zoomed out to
+  low detail ("Rendering"), in the item's own units: `box({ fill, stroke, strokeWidth, radius,
+  round, alpha })`, `rect`, `polygon` (fractions of the box), `line`, `picture(src, fallback)`;
+  `paint.selected` / `selectionColor` for what has no box of its own, `paint.presentation` (the
+  container's `presentChild`, as the component gets it: a kanban's colour-by). Colours may be
+  `canvasInk(…)` values (resolved for the theme, like the full drawing's CSS). Sticky, sticky pad,
+  shape, text, connector, image, card (the side that shows) and chart have one; types without it
+  (frames, kanbans, diagrams, icebreakers…) always draw `Component`. Tests:
+  `TestBoard.world(user)` renders a replica's world layer (culling and low detail as on screen),
+  `TestBoard.exported(user, id)` an item as exports draw it.
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
   feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
   where the format toolbar is (never query the chrome's DOM).
@@ -3597,6 +3628,13 @@ the board, deletions. A suggestion is not board content until someone who can ed
   "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
   depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
+- Performance: `npm run bench:board` (#130) opens a seeded 10,000-item board in the real app
+  (headless Chromium, real server, a real collaborator socket) and measures load, frame times
+  (pan and zoom at fit and 100%, select all, dragging 500, a collaborator's edits) and memory;
+  JSON per run under `bench-results/` (gitignored), `--compare` for a column per run, `--profile`
+  / `--trace` for what is hot. Results and how to read them: docs/performance.md. Engine-session
+  benches: `bench:kanban`, `bench:line-jumps`. Benches are scripts, not tests: they check only
+  that each scenario did what it says.
 
 ### What a test is for
 

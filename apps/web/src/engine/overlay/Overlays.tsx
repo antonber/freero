@@ -1,5 +1,5 @@
 // Screen-space overlays: they stay constant size regardless of zoom.
-import { memo, type CSSProperties } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
 import { useStore } from 'zustand';
 import { isProtectedLock, type BoardElement, type PresenceState } from '@freero/shared';
 import { useCore } from '../context';
@@ -60,6 +60,49 @@ function handlesFor(core: ReturnType<typeof useCore>, els: BoardElement[], scree
   }
 }
 
+/** Corners of `el`'s box (rotated about its center) as an SVG subpath, in world units. */
+function boxPath(el: BoardElement): string {
+  const { x, y, w, h } = el;
+  if (!el.rotation) return `M${x} ${y}h${w}v${h}h${-w}Z`;
+  const a = (el.rotation * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const pt = (dx: number, dy: number) => `${cx + dx * cos - dy * sin} ${cy + dx * sin + dy * cos}`;
+  return `M${pt(-w / 2, -h / 2)}L${pt(w / 2, -h / 2)}L${pt(w / 2, h / 2)}L${pt(-w / 2, h / 2)}Z`;
+}
+
+/**
+ * The outline of every item in a multiple selection: one SVG path in world units (built when the
+ * selection or its items change), its stroke a constant screen pixel, moved with the camera by one
+ * transform — so a camera move with ten thousand items selected redraws one path, not ten
+ * thousand boxes. Locked items' outlines are dashed.
+ */
+function MemberOutlines({ els, cam, ownFrame }: { els: BoardElement[]; cam: Camera; ownFrame: (el: BoardElement) => boolean }) {
+  const [free, locked] = useMemo(() => {
+    let a = '';
+    let b = '';
+    for (const el of els) {
+      if (ownFrame(el)) continue;
+      if (el.locked) b += boxPath(el);
+      else a += boxPath(el);
+    }
+    return [a, b];
+    // ownFrame reads the registry, which never changes in a session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [els]);
+  const transform = `translate(${-cam.x * cam.zoom} ${-cam.y * cam.zoom}) scale(${cam.zoom})`;
+  return (
+    <svg className="fr-ov-members" width="1" height="1" aria-hidden>
+      <g transform={transform}>
+        {free && <path d={free} vectorEffect="non-scaling-stroke" />}
+        {locked && <path className="is-locked" d={locked} vectorEffect="non-scaling-stroke" />}
+      </g>
+    </svg>
+  );
+}
+
 function SelectionOverlay() {
   const core = useCore();
   const cam = useCamera();
@@ -85,12 +128,13 @@ function SelectionOverlay() {
     showHandles && els.every((e) => core.editor.getDefinition(e.type)?.rotatable !== false) && transforming !== 'resize';
   return (
     <>
+      {!single && <MemberOutlines els={els} cam={cam} ownFrame={ownFrame} />}
       {!single &&
         els
-          .filter((el) => !ownFrame(el))
+          .filter((el) => el.locked && !ownFrame(el))
           .map((el) => (
-            <div key={el.id} className={`fr-ov-outline fr-ov-outline--member${el.locked ? ' is-locked' : ''}`} style={boxStyle(el, cam)}>
-              {el.locked && <LockBadge el={el} />}
+            <div key={el.id} className="fr-ov-outline" style={boxStyle(el, cam)}>
+              <LockBadge el={el} />
             </div>
           ))}
       <div className={`fr-ov-selection${editingId ? ' is-editing' : ''}${locked ? ' is-locked' : ''}`} style={style}>

@@ -15,6 +15,7 @@ import {
   useSettings,
   type Editor,
   type ElementRenderProps,
+  type LowDetailPaint,
   type NewElement,
   type Point,
   type Rect,
@@ -45,15 +46,52 @@ const MIN_HOP_PX = 2;
 
 const samePoly = (a: Point[] | undefined, b: Point[]) => !!a && a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
 
-/** Did a changed item land where this line runs (its stored bounds, with routing margin)? */
-function obstacleMovedNear(editor: Editor, c: ConnectorElement, changed: ReadonlySet<string>): boolean {
-  const area = inflate({ x: c.x, y: c.y, w: c.w, h: c.h }, 48);
+/** Grid cell (world units) of the moved-items index below. */
+const MOVED_CELL = 1024;
+interface MovedIndex {
+  all: Rect[];
+  cells: Map<string, Rect[]>;
+}
+/**
+ * The boxes of a change's connectable items, indexed once per follower pass (`changed` is that
+ * pass's set, and the items in it don't move while lines follow): dragging 500 items, every line
+ * on the board used to ask each of them where it went, 2,000 lines × 500 items per pointer move
+ * (docs/performance.md).
+ */
+const movedIndexes = new WeakMap<ReadonlySet<string>, MovedIndex>();
+function movedIndex(editor: Editor, changed: ReadonlySet<string>): MovedIndex {
+  let idx = movedIndexes.get(changed);
+  if (idx) return idx;
+  idx = { all: [], cells: new Map() };
   for (const id of changed) {
     const el = editor.getElement(id);
     if (!el || !isConnectable(editor, el)) continue;
     const r = aabb(el);
-    if (r.x < area.x + area.w && area.x < r.x + r.w && r.y < area.y + area.h && area.y < r.y + r.h) return true;
+    idx.all.push(r);
+    for (let i = Math.floor(r.x / MOVED_CELL); i <= Math.floor((r.x + r.w) / MOVED_CELL); i++)
+      for (let j = Math.floor(r.y / MOVED_CELL); j <= Math.floor((r.y + r.h) / MOVED_CELL); j++) {
+        const k = `${i},${j}`;
+        const cell = idx.cells.get(k);
+        if (cell) cell.push(r);
+        else idx.cells.set(k, [r]);
+      }
   }
+  movedIndexes.set(changed, idx);
+  return idx;
+}
+
+/** Did a changed item land where this line runs (its stored bounds, with routing margin)? */
+function obstacleMovedNear(editor: Editor, c: ConnectorElement, changed: ReadonlySet<string>): boolean {
+  const area = inflate({ x: c.x, y: c.y, w: c.w, h: c.h }, 48);
+  const idx = movedIndex(editor, changed);
+  const hits = (r: Rect) => r.x < area.x + area.w && area.x < r.x + r.w && r.y < area.y + area.h && area.y < r.y + r.h;
+  const i0 = Math.floor(area.x / MOVED_CELL);
+  const i1 = Math.floor((area.x + area.w) / MOVED_CELL);
+  const j0 = Math.floor(area.y / MOVED_CELL);
+  const j1 = Math.floor((area.y + area.h) / MOVED_CELL);
+  // A line across much of the board: fewer boxes than cells to look in.
+  if ((i1 - i0 + 1) * (j1 - j0 + 1) > idx.all.length) return idx.all.some(hits);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (idx.cells.get(`${i},${j}`)?.some(hits)) return true;
   return false;
 }
 import { DEFAULT_LABEL_T, extraPart, hasMainLabel, labelBoxes, moveLabel, parsePart, partAt, writeLabel, type LabelPart } from './lib/labels';
@@ -273,6 +311,17 @@ function Label(props: {
   );
 }
 
+/**
+ * Zoomed out to low detail (#131): a straight run through its stored ends (and bends), in its ink
+ * (the selection colour while selected) — no routing around items, no caps, labels, dashes or
+ * jumps, and no store queries (the full drawing asks the board for the items in its way and the
+ * lines beneath it on every change).
+ */
+function paintConnector(c: ConnectorElement, p: LowDetailPaint) {
+  const pts = [c.start, ...(c.waypoints ?? []), c.end].map((q) => ({ x: q.x - c.x, y: q.y - c.y }));
+  p.line(pts, p.selected ? p.selectionColor : canvasInk(c.stroke), c.strokeWidth);
+}
+
 export default defineElement({
   type: 'connector',
   label: { one: 'Connector', many: 'Connectors' },
@@ -297,6 +346,7 @@ export default defineElement({
     ...DEFAULT_STYLE,
   }),
   Component: ConnectorView,
+  lowDetail: paintConnector,
   toPlainText: (c) =>
     [c.label, ...(c.labels ?? []).map((l) => l.text)]
       .map(richTextToPlain)
