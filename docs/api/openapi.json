@@ -2673,7 +2673,7 @@
           "h": { "type": "number", "minimum": 8, "maximum": 20000 },
           "near": { "type": "string", "description": "Place it on free space next to this item" },
           "frameId": { "type": ["string", "null"] },
-          "color": { "type": "string", "description": "sticky: yellow, lemon, orange, coral, pink, violet, blue, cyan, green, lime, gray, white; card / text: #RRGGBB" },
+          "color": { "type": "string", "description": "sticky: yellow, lemon, orange, coral, pink, violet, blue, cyan, green, lime, gray, white, sun, tangerine, red, magenta, purple, royal, teal, pine, navy, plum, cocoa, charcoal; card / text: #RRGGBB" },
           "shape": { "type": "string", "description": "rect, roundRect, ellipse, triangle, diamond, parallelogram, trapezoid, pentagon, hexagon, octagon, star, cross, arrowRight, arrowLeft, chevron, speech, cloud, cylinder, document, terminator, predefinedProcess" },
           "fill": { "type": "string" },
           "stroke": { "type": "string" },

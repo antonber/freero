@@ -36,7 +36,19 @@
   display: block;
   height: 9%;
   border-radius: 99px;
-  background: rgba(23, 22, 43, 0.22);
+  background: currentColor;
+  opacity: 0.22;
+}
+
+/* Dark papers (light ink, set inline): links keep the ink, underlined, instead of the brand
+   violet that would vanish on navy or plum. */
+.fr-sticky--dark a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.fr-sticky--dark .fr-sticky__lines span {
+  opacity: 0.4;
 }
 
 .fr-sticky__lines span:nth-child(2) {
@@ -73,6 +85,13 @@
   color: var(--fr-ink-3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Shape and size switches (format toolbar popover, tool options). */
+.fr-sticky-box {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 /* Paper sample on the format toolbar's color button. */
@@ -134,6 +153,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font: 600 calc(10.5px * var(--s, 1)) / 1.2 var(--fr-font);
-  color: rgba(23, 22, 43, 0.55);
+  color: #17162b; /* the paper's ink, set inline */
+  opacity: 0.6;
   pointer-events: none;
 }

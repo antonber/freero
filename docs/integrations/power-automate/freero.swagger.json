@@ -4740,7 +4740,7 @@
         },
         "color": {
           "type": "string",
-          "description": "sticky: yellow, lemon, orange, coral, pink, violet, blue, cyan, green, lime, gray, white; card / text: #RRGGBB"
+          "description": "sticky: yellow, lemon, orange, coral, pink, violet, blue, cyan, green, lime, gray, white, sun, tangerine, red, magenta, purple, royal, teal, pine, navy, plum, cocoa, charcoal; card / text: #RRGGBB"
         },
         "shape": {
           "type": "string",
