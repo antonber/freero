@@ -19,6 +19,7 @@ export { cardDraft, cardHeight as itemCardHeight, checkLink } from './items';
 export * from './mindtree';
 export * as timelineLayout from './timeline';
 export * from './kanban';
+export * from './kanbanRows';
 export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
 export { layered, spacedFit } from './layered';
 export { measureText, textWidth } from './measure';

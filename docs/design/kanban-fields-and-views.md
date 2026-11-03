@@ -1,8 +1,8 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **steps 2a–2f built** (schema foundation, card display, group by and swimlanes, filter and
-sort, agents and API, fields from trackers / templates / CSV; see the "as built" sections below);
-phase 3 proposed. The
+Status: **steps 2a–2f and 3e built** (schema foundation, card display, group by and swimlanes,
+filter and sort, agents and API, fields from trackers / templates / CSV; table ↔ kanban conversion;
+see the "as built" sections below); the rest of phase 3 proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -799,7 +799,11 @@ What the next steps need:
 - **Density** (deviation from "compact = one line of up to three chips, comfortable = one row per
   field"): both densities have one line of chips (the card's footer, clipped when it overflows);
   comfortable also shows the description preview, compact doesn't. That keeps card height
-  independent of which fields show, so `show` can be personal without moving anything.
+  independent of which fields show, so `show` can be personal without moving anything. (#95,
+  later: the line no longer clips chips mid-word. It wraps inside a box one chip tall, so a chip
+  that doesn't fit whole drops out of sight and a "+N" chip counts them, their values in its
+  tooltip; a label too long even alone ends in an ellipsis, its full value in the chip's tooltip.
+  The height invariant holds.)
 - **View panel** (dock `kanban.view`: the toolbar's "View" button, "View settings…" in the context
   menu; any role): "Only you see these changes · Save for everyone · Reset", density (editors),
   colour by, fields on cards (toggle and reorder). Commands `kanban.setCardDisplay` and
@@ -1071,6 +1075,65 @@ Fields from the outside world: trackers, templates and CSV.
   kanban feature's write (a feature can't write another's element): it needs a kanban command that
   merges fields by name and type (options by label) and places cards by value into columns and
   rows, plus the dialog's "into this kanban" mapping. Not small; left for a later step.
+
+## Step 3e as built
+
+Table ↔ kanban (decision 4: the free-form table stays a separate sheet). Closes most of #51 ("pin
+a row as a card" is answered by converting; the table's own timeline / grouped grid / several
+filters stay open there).
+
+- **"Convert to kanban…"** (a selected table's context menu, editors, not on a locked table): a
+  dialog picks **Columns from** (any column; the board view's group column, else the first select
+  column, else a text column of a few repeating labels is offered first) and **Card titles from**
+  (the first other text column), and lists what every other column becomes. Columns: a select's
+  options in their order (colours kept), then values it doesn't list, and a "No <column>" column
+  first when some rows have none; other column types give a column per distinct value as read
+  (people by name, numbers and dates as shown), in the order they come; more than 40 is refused
+  with the reason. Column titles that name a status ("Done", "In progress") set their cards'
+  status, as everywhere kanbans are made. Each row that holds anything becomes a card, titled
+  from the title column.
+- **Field types**: a typed column keeps its type (number, date, person, checkbox; a select with its
+  options, the table's tint mapped to the same hue of the option palette); a text column's type is
+  read from its words by `fieldText.ts` `inferFieldType` (with the table's `dayFirst: false`), so
+  a column of a few repeating labels becomes a single select, "a; b" lists a multi-select, links a
+  URL field. **Deviation**: a typed column holding text it can't read (the table keeps such text
+  rather than lose it) becomes a *text* field, so nothing typed is lost; one cell alone never
+  infers a select or link. A column named like a card's own field fills that field when its values
+  fit — Description, Assignee (a person column), Due date / Start date (a date column), Estimate,
+  Link (links) —; any other such name ("Status", "Tags") stays a field, named "Status (field)".
+- **One undo step, where the table was**: the kanban's top-left is the table's (and its frame, if
+  any); the kanban and its cards are created and the table removed in one transaction. Undo brings
+  the table back with every cell (cells are never deleted with the table; they wait under its id).
+- **Ownership** (the precedent is `tags.applyNames` from the CSV import and `kanban.moveToColumn`
+  from card details: a feature asks the owner through a command, inside its own transaction): the
+  table reads its own cells and hands the rows, as words and values, to the kanban feature's new
+  command **`kanban.createFromRows`** (`{ rows, at, id, frameId }`), which makes the kanban and its
+  cards; the table only removes its own element. The rules — field definitions with option ids,
+  values read with `readFieldInputs` (selects by label), the board view showing the short fields
+  then assignee, due date and tags, colour by column, geometry from the shared kanban structure —
+  are pure, in `@freero/shared` `layout/kanbanRows.ts` `layoutKanbanRows`, so a server writer can
+  make the same kanban later. `table.convertToKanban` with `{ columnsFrom, titleFrom }` converts
+  the selected table without the dialog.
+- **"Copy as table"** (a selected kanban's context menu; the table feature's command
+  `table.copyKanbanAsTable`, so the kanban side has no change): a new table on a free spot beside
+  the kanban, a row per card in board order (column by column, swimlane by swimlane, top to
+  bottom), columns Title, Description (when any card has one), every field in schema order (the
+  column field and selects as select columns with their options, people as person columns,
+  numbers, dates and checkboxes typed, multi-selects as "a; b" text), then the card's own
+  assignee, due / start date, estimate, tags ("a; b") and link when any card has them; status is
+  left out (the columns say it). A snapshot: nothing links it to the cards. One undo step; the
+  kanban and its cards are only read (`collectionSchema`, `cardValue`, `builtinValue`).
+- **Agents**: no MCP or REST change. An agent converts today with the tools it has (read the
+  table in the outline, `add_cards` columns mode for the new kanban, `define_fields`,
+  `update_items` with `fields`); `layoutKanbanRows` is the natural base if a one-call "rows to a
+  kanban with fields" path is wanted later (it would also let `add_cards` make a *new* kanban with
+  fields, which 2e refuses).
+- **Tests** (app level, real features, each failing without its change): a table with typed and
+  text columns converts where it stood — columns from the chosen column with "No Stage" first,
+  types kept / inferred, "Status" kept as "Status (field)", "Due date" as the cards' due date, the
+  empty row no card — and one undo restores the table and every cell (fails if the kanban and the
+  removal are two steps); "Copy as table" gives a row per card in board order (a card moved up by
+  hand comes first), typed columns, beside the kanban, which is left as it was.
 
 ## Sources (concepts only; nothing copied)
 

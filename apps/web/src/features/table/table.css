@@ -444,3 +444,55 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* "Convert to kanban" dialog (panel.tsx). */
+.fr-table-convert {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-table-convert__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-table-convert__summary {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+}
+
+.fr-table-convert__fates {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+  list-style: none;
+  font-size: 13px;
+}
+
+.fr-table-convert__fates li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fr-table-convert__fates li span:last-child {
+  color: var(--fr-ink-3);
+}
+
+.fr-table-convert__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-danger);
+}

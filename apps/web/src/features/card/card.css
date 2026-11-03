@@ -122,10 +122,9 @@
   gap: 4px;
   height: 20px;
   min-width: 0;
-  max-width: 96px;
+  max-width: min(96px, 100%);
   padding: 0 7px 0 6px;
   overflow: hidden;
-  text-overflow: ellipsis;
   border-radius: 6px;
   background: color-mix(in srgb, var(--tag) 16%, #fff);
   color: color-mix(in srgb, var(--tag) 70%, #17162b);
@@ -459,6 +458,32 @@
   color: #1fa463;
 }
 
+/*
+ * The chips a kanban's view shows on the card (lib/Chips.tsx): one line that wraps inside a box one
+ * chip tall, so a chip that doesn't fit whole drops out of sight (counted by the "+N" chip) instead
+ * of being cut mid-word; the card's height never depends on them (#95).
+ */
+.fr-card__chips {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 20px;
+  overflow: hidden;
+}
+
+/* A label that can't fit even alone on the line ends in an ellipsis (the chip's tooltip has it all). */
+.fr-card__chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A field value a kanban's view shows on the card (lib/Chips.tsx). */
 .fr-card__chip {
   display: inline-flex;
@@ -467,10 +492,9 @@
   gap: 3px;
   height: 20px;
   min-width: 0;
-  max-width: 110px;
+  max-width: min(110px, 100%);
   padding: 0 7px;
   overflow: hidden;
-  text-overflow: ellipsis;
   border-radius: 6px;
   background: color-mix(in srgb, var(--chip) 18%, #fff);
   color: color-mix(in srgb, var(--chip) 72%, #17162b);
@@ -479,6 +503,12 @@
 .fr-card__chip--plain {
   background: var(--fr-surface-3);
   color: var(--fr-ink-2);
+}
+
+/* "+N": the chips that didn't fit, their values in its tooltip. */
+.fr-card__chip--more {
+  flex: none;
+  color: var(--fr-ink-3);
 }
 
 @media (forced-colors: active) {

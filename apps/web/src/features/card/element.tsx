@@ -37,10 +37,14 @@ function TagChips({ ids }: { ids: string[] }) {
     <>
       {known.slice(0, MAX_TAGS).map((t) => (
         <span key={t.id} className="fr-card__tag" style={{ ['--tag' as string]: t.color }} title={t.name}>
-          {t.name}
+          <span className="fr-card__chip-text">{t.name}</span>
         </span>
       ))}
-      {known.length > MAX_TAGS && <span className="fr-card__more">+{known.length - MAX_TAGS}</span>}
+      {known.length > MAX_TAGS && (
+        <span className="fr-card__more" title={known.slice(MAX_TAGS).map((t) => t.name).join(', ')}>
+          +{known.length - MAX_TAGS}
+        </span>
+      )}
     </>
   );
 }
