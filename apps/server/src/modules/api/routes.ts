@@ -139,6 +139,11 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('patch', '/boards/:boardId/kanbans/:kanbanId/view', 'boards:write', async (call) => ({
     body: await api.configureView(call, call.req.params.boardId, call.req.params.kanbanId, call.req.body),
   }));
+  // A linked view of the kanban beside it (step 3c); PATCH …/kanbans/{linkedViewId}/view configures one.
+  endpoint('post', '/boards/:boardId/kanbans/:kanbanId/linked-views', 'boards:write', async (call) => ({
+    status: 201,
+    body: await api.addView(call, call.req.params.boardId, call.req.params.kanbanId, call.req.body),
+  }));
   endpoint('get', '/boards/:boardId/kanbans/:kanbanId/cards', 'boards:read', async (call) => {
     const q = call.req.query;
     // filter: JSON; sort: "Points:desc,Title"; fields: "Priority,Points".

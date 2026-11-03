@@ -30,6 +30,8 @@ export {
   defineFields,
   configureView,
   queryCards,
+  // Linked views of a kanban elsewhere on the board (step 3c).
+  addView,
   listSuggestions,
   proposeChanges,
   decideSuggestions,

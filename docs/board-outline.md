@@ -90,6 +90,13 @@ OutlineField { id, name, type, options?: Array<{ id, label, status? }> }   // Ou
   stand; a table, list, calendar or timeline draws them its own way), so cards are listed once,
   in their columns, whatever tab is active. Configure a tab with `configure_view` (`view: "Hot list"`)
   and read its rows with `query_cards` (`view`).
+- Linked views: a kanban's cards shown somewhere else on the board read `[lv1] linked view: Launches
+  · source: [k1] Sprint · layout: calendar by Launch · filter: Priority is P0` — its name, the kanban
+  it shows, its layout with what places its cards (as a tab's, above), its saved filter and sort.
+  Its cards are the kanban's and are listed there, once. A kanban the reader doesn't have (deleted,
+  or in a hidden frame or someone's draft) reads `source: [k1] (not on the board: deleted, or not
+  visible to you)`: the view never tells which. Add one with `add_view`, change it with
+  `configure_view` (`kanbanId`: the linked view's id).
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or
   joined by a connector, in the same frame (or outside frames). A text box right above the rest is
   the cluster's title. Containers, tables and mind maps are never clustered.

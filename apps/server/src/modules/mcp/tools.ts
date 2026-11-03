@@ -30,6 +30,7 @@ import {
   listDocs,
   readDocFor,
   backlinksForApi,
+  addView,
   configureView,
   defineFields,
   queryCards,
@@ -671,7 +672,7 @@ export const TOOLS: McpTool[] = [
     name: 'configure_view',
     title: 'Configure a kanban’s view',
     description:
-      'Changes how a kanban shows its cards, for everyone. A kanban has tabs (views in the outline): the Board, where the cards stand, and tables, lists, calendars and timelines of the same cards. On the Board tab (the default): the field its columns are (groupBy: a single select, person or checkbox field — the cards move to their columns), swimlanes (subGroupBy, null for none), which fields cards show and what colours them, card density, a filter (cards it leaves out fold away below the board, still counted), a sort within each column (sort: [] puts every card back in the order people had them), per-column WIP limits, card limits and collapsing, and the view lock (locked: only whoever locked it and the board’s owners change the view then). Other tabs (view: its name or id; addView makes one, layout table, list, calendar or timeline) never move a card on the board; any of them takes filter (which cards it shows), sort and locked. A table: show is its columns after the title. A list: show is the fields on each row, groupBy its groups (any single select, person or checkbox, Status or Assignee; null: none). A calendar: date is the date field cards sit on (Due date by default, Start date or a date field). A timeline: start and end are the date fields bars run between (Start date and Due date by default), scale day, week, month or quarter, subGroupBy its swimlanes (null: none). Any tab: name renames it, active: true makes it the tab everyone starts on, remove: true deletes it (not the Board). Returns the kanban’s fields, columns, view and tabs (views, with their ids and settings). Needs permission to change boards.',
+      'Changes how a kanban shows its cards, for everyone. A kanban has tabs (views in the outline): the Board, where the cards stand, and tables, lists, calendars and timelines of the same cards. On the Board tab (the default): the field its columns are (groupBy: a single select, person or checkbox field — the cards move to their columns), swimlanes (subGroupBy, null for none), which fields cards show and what colours them, card density, a filter (cards it leaves out fold away below the board, still counted), a sort within each column (sort: [] puts every card back in the order people had them), per-column WIP limits, card limits and collapsing, and the view lock (locked: only whoever locked it and the board’s owners change the view then). Other tabs (view: its name or id; addView makes one, layout table, list, calendar or timeline) never move a card on the board; any of them takes filter (which cards it shows), sort and locked. A table: show is its columns after the title. A list: show is the fields on each row, groupBy its groups (any single select, person or checkbox, Status or Assignee; null: none). A calendar: date is the date field cards sit on (Due date by default, Start date or a date field). A timeline: start and end are the date fields bars run between (Start date and Due date by default), scale day, week, month or quarter, subGroupBy its swimlanes (null: none). Any tab: name renames it, active: true makes it the tab everyone starts on, remove: true deletes it (not the Board). Returns the kanban’s fields, columns, view and tabs (views, with their ids and settings). kanbanId may also be a linked view’s id (add_view): then it changes that view for everyone — name, layout (table, list, calendar, timeline; its filter and sort carry over) and the settings of its layout — and returns it. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     input: {
@@ -692,6 +693,7 @@ export const TOOLS: McpTool[] = [
       name: z.string().min(1).max(60).optional().describe('Renames the tab.'),
       active: z.literal(true).optional().describe('true: everyone starts on this tab.'),
       remove: z.literal(true).optional().describe('true: deletes this tab (the Board tab stays).'),
+      layout: z.enum(['table', 'list', 'calendar', 'timeline']).optional().describe('A linked view only: show it as this layout instead.'),
       groupBy: z.string().min(1).max(100).nullable().optional().describe('Board: the field the columns are, by name (e.g. "Stage", "Priority", "Owner"). List: the field its rows are grouped by (null: no groups).'),
       subGroupBy: z.string().min(1).max(100).nullable().optional().describe('Board or timeline: swimlanes by this field (name); null: none.'),
       date: z.string().min(1).max(100).optional().describe('Calendar: the date field cards sit on (Due date, Start date or a date field, by name).'),
@@ -720,9 +722,44 @@ export const TOOLS: McpTool[] = [
     },
     async run(call, a) {
       const { boardId: b, kanbanId: k, ...settings } = a;
-      const { kanban } = await configureView(call, b, k, settings);
+      const out = await configureView(call, b, k, settings);
+      if ('linkedView' in out) return untrustedJson(out.linkedView, { summary: `Linked view ${k}: saved for everyone.` });
+      const { kanban } = out;
       const tab = settings.addView ? kanban.views.find((v) => v.name === settings.addView!.name) : undefined;
       return untrustedJson(kanban, { summary: tab ? `Kanban ${k}: tab “${tab.name}” [${tab.id}] added for everyone.` : `Kanban ${k}: view saved for everyone.` });
+    },
+  }),
+
+  tool({
+    name: 'add_view',
+    title: 'Add a linked view of a kanban',
+    description:
+      'Adds a linked view of a kanban: the same cards as a table, list, calendar or timeline in a box of its own elsewhere on the board — say a calendar of the sprint next to the roadmap. Freero places it beside the kanban. It is live, not a copy: it shows the kanban’s cards as they are, and edits made in it change them. It takes the settings a tab of its layout takes in configure_view (show, groupBy, date, start, end, scale, subGroupBy, filter, sort, locked). Change it later with configure_view (kanbanId: the linked view’s id; layout switches it to another layout), delete it with delete_items. The outline lists it as a linked view with its kanban. Returns its id. Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    input: {
+      boardId,
+      kanbanId,
+      layout: z
+        .enum(['table', 'list', 'calendar', 'timeline'])
+        .optional()
+        .describe('table (the default): the cards as rows; list: a line per card, grouped; calendar: cards on the days of a date field; timeline: bars between two date fields.'),
+      name: z.string().min(1).max(60).optional().describe('Its name (default: the layout’s, e.g. "Calendar").'),
+      show: z.array(z.string().max(100)).max(40).optional().describe('Table: its columns after the title; list: the fields on each row (names).'),
+      groupBy: z.string().min(1).max(100).nullable().optional().describe('List: the field its rows are grouped by (single select, person, checkbox, Status or Assignee; null: none).'),
+      date: z.string().min(1).max(100).optional().describe('Calendar: the date field cards sit on (Due date by default, Start date or a date field).'),
+      start: z.string().min(1).max(100).optional().describe('Timeline: the date field bars start at (default Start date).'),
+      end: z.string().min(1).max(100).optional().describe('Timeline: the date field bars end at (default Due date).'),
+      scale: z.enum(['day', 'week', 'month', 'quarter']).optional().describe('Timeline: how much time a step of its axis is.'),
+      subGroupBy: z.string().min(1).max(100).nullable().optional().describe('Timeline: swimlanes by this field (null: none).'),
+      filter: filter.nullable().optional().describe('Which cards it shows (null: all).'),
+      sort: sortRules.optional().describe('Their order (a table’s rows; a calendar’s within each day; a timeline’s rows; default the board’s order, a timeline by start).'),
+      locked: z.boolean().optional().describe('true: only you and the board’s owners can change its saved settings.'),
+    },
+    async run(call, a) {
+      const { boardId: b, kanbanId: k, ...settings } = a;
+      const { linkedView } = await addView(call, b, k, settings);
+      return untrustedJson(linkedView, { summary: `Linked view “${linkedView.name}” [${linkedView.id}] of kanban ${k} added beside it: ${linkedView.shows}.`, link: linkedView.link });
     },
   }),
 

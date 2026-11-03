@@ -96,7 +96,11 @@ open boards drop them at once (KAI-224).
   date" or a date field); a timeline's `start` and `end` date fields, `scale` and swimlanes
   (`subGroupBy`) — none of which moves a card —, plus `name`, `active: true` (the tab everyone starts
   on) and `remove: true`; `GET` answers the kanban's tabs as `views` (skip a tab whose `layout` you
-  don't know: more may come); `GET …/kanbans/{kanbanId}/cards` reads its cards as
+  don't know: more may come); `POST …/kanbans/{kanbanId}/linked-views` (the MCP `add_view`) adds a
+  linked view of the kanban beside it — `{ "layout": "calendar", "name": "Launches", "date":
+  "Launch" }`: the same cards in a box of its own, live, with the settings a tab of that layout takes
+  — and answers it (`201`, `linkedView`); `PATCH …/kanbans/{linkedViewId}/view` changes one (`name`,
+  `layout`, its layout's settings) and answers `linkedView`; `GET …/kanbans/{kanbanId}/cards` reads its cards as
   rows (`filter` as JSON, `sort=Points:desc,Title`, `fields`, `useView`, `view` — a tab whose filter
   and sort apply; a calendar's or timeline's cards come in date order —, `limit` ≤ 500, `cursor`), by
   the rules the board itself uses. A card's `fields` (on `PATCH` an item, or new cards placed into a

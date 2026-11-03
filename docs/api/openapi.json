@@ -333,20 +333,55 @@
       "patch": {
         "operationId": "configureKanbanView",
         "tags": ["kanbans"],
-        "summary": "Change a kanban’s saved view or tabs: grouping, swimlanes, cards, filter, sort, column limits, lock; table tabs",
-        "description": "Cards move as the board would move them (one change). Refused (400) while the kanban is locked, or its view is locked by someone else (its locker and the board’s owners may change it).",
+        "summary": "Change a kanban’s saved view or tabs, or a linked view: grouping, swimlanes, cards, filter, sort, column limits, lock",
+        "description": "Cards move as the board would move them (one change). Refused (400) while the kanban is locked, or its view is locked by someone else (its locker and the board’s owners may change it). With `kanbanId` a linked view’s id (from `POST …/linked-views` or the outline), it changes that view for everyone — `name`, `layout` (its filter, sort and lock carry over) and the settings of its layout, as a tab of that layout takes them — and answers `linkedView` instead of `kanban`.",
         "x-freero-scope": "boards:write",
         "security": [{ "bearer": ["boards:write"] }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KanbanViewInput" } } } },
         "responses": {
           "200": {
-            "description": "The kanban as it is now",
+            "description": "The kanban as it is now (`kanban`), or the linked view (`linkedView`) when `kanbanId` named one",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["notice", "kanban"],
-                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "kanban": { "$ref": "#/components/schemas/Kanban" } }
+                  "required": ["notice"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "kanban": { "$ref": "#/components/schemas/Kanban" },
+                    "linkedView": { "$ref": "#/components/schemas/LinkedView" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "423": { "$ref": "#/components/responses/AgentPaused" }
+        }
+      }
+    },
+    "/boards/{boardId}/kanbans/{kanbanId}/linked-views": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }, { "$ref": "#/components/parameters/KanbanId" }],
+      "post": {
+        "operationId": "addLinkedView",
+        "tags": ["kanbans"],
+        "summary": "Add a linked view of a kanban beside it: its cards as a table, list, calendar or timeline",
+        "description": "A box of its own elsewhere on the board showing the kanban’s cards, live (never a copy): edits people make in it change the cards. Freero places it right of the kanban, or on the nearest free spot. No card moves. It takes the settings a tab of its layout takes (see KanbanViewInput); change it later with PATCH …/kanbans/{linkedViewId}/view, delete it with DELETE …/items/{id}. Linked views stay on their kanban’s board.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LinkedViewInput" } } } },
+        "responses": {
+          "201": {
+            "description": "The new linked view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "linkedView"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "linkedView": { "$ref": "#/components/schemas/LinkedView" } }
                 }
               }
             }
@@ -2386,6 +2421,7 @@
           "name": { "type": "string", "maxLength": 60, "description": "Renames the tab" },
           "active": { "type": "boolean", "enum": [true], "description": "true: everyone starts on this tab" },
           "remove": { "type": "boolean", "enum": [true], "description": "true: deletes this tab (the Board tab stays)" },
+          "layout": { "type": "string", "enum": ["table", "list", "calendar", "timeline"], "description": "A linked view only: show it as this layout (its filter, sort and lock carry over)" },
           "groupBy": { "type": ["string", "null"], "description": "Board: a single select, person or checkbox field by name (the cards move to their columns). List: the field its rows are grouped by, Status and Assignee too; null: none" },
           "subGroupBy": { "type": ["string", "null"], "description": "Board or timeline: swimlanes by this field; null: none" },
           "date": { "type": "string", "description": "Calendar: the date field cards sit on (Due date, Start date or a date field, by name)" },
@@ -2411,6 +2447,50 @@
             }
           },
           "locked": { "type": "boolean", "description": "Locked: only whoever locked it and the board’s owners change the view" }
+        }
+      },
+      "LinkedViewInput": {
+        "type": "object",
+        "description": "A linked view: its layout (default table), its name (default the layout’s) and the settings a tab of that layout takes. A table takes show (its columns); a list show (fields on each row) and groupBy (its groups, null: none); a calendar date (the date field cards sit on); a timeline start, end (date fields), scale and subGroupBy (swimlanes, null: none); any of them filter, sort and locked.",
+        "properties": {
+          "layout": { "type": "string", "enum": ["table", "list", "calendar", "timeline"] },
+          "name": { "type": "string", "maxLength": 60 },
+          "show": { "type": "array", "items": { "type": "string" } },
+          "groupBy": { "type": ["string", "null"] },
+          "date": { "type": "string" },
+          "start": { "type": "string" },
+          "end": { "type": "string" },
+          "scale": { "type": "string", "enum": ["day", "week", "month", "quarter"] },
+          "subGroupBy": { "type": ["string", "null"] },
+          "filter": { "oneOf": [{ "$ref": "#/components/schemas/KanbanFilter" }, { "type": "null" }] },
+          "sort": { "$ref": "#/components/schemas/KanbanSort" },
+          "locked": { "type": "boolean" }
+        }
+      },
+      "LinkedView": {
+        "type": "object",
+        "required": ["id", "kind", "sourceId", "source", "name", "layout", "shows"],
+        "description": "A linked view: a kanban’s cards shown elsewhere on its board. `source` is null when the kanban isn’t on the board for you (deleted, or somewhere you can’t see). Layouts may be added later: skip a view whose layout you don’t know.",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["linked view"] },
+          "sourceId": { "type": "string", "description": "The kanban it shows (its item id)" },
+          "source": { "type": ["object", "null"], "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "name": { "type": "string" },
+          "layout": { "type": "string", "enum": ["table", "list", "calendar", "timeline"] },
+          "shows": { "type": "string", "description": "What it shows in words: table, list by Stage, calendar by Due date, timeline from Start date to Due date in lanes by Team" },
+          "show": { "type": "array", "items": { "type": "string" } },
+          "groupBy": { "type": ["string", "null"] },
+          "date": { "type": "string" },
+          "start": { "type": "string" },
+          "end": { "type": "string" },
+          "scale": { "type": "string", "enum": ["day", "week", "month", "quarter"] },
+          "subGroupBy": { "type": ["string", "null"] },
+          "filter": { "oneOf": [{ "$ref": "#/components/schemas/KanbanFilter" }, { "type": "null" }] },
+          "filterText": { "type": ["string", "null"] },
+          "sort": { "$ref": "#/components/schemas/KanbanSort" },
+          "locked": { "type": "boolean" },
+          "link": { "type": "string", "description": "add only: the board opened at the view" }
         }
       },
       "CardRow": {
