@@ -204,6 +204,8 @@ export const MAX_CALL_URL = 2000;
 // DELETE /api/boards/:id/activities/:aid/answers  -> ActivityState   (editors: start over)
 // PUT    /api/boards/:id/activities/:aid/key      body { key: Record<questionId, optionId[]> } -> ActivityState
 //        (editors, #147: a quiz's right answers, kept on the server, never in the board)
+// PUT    /api/boards/:id/activities/:aid/key/copy body { boardId, activityId } -> ActivityState
+//        (editors: a copied quiz takes the key of the quiz it was copied from, when they may edit that board)
 export interface ActivityAnswer {
   /** Poll: picked option ids (1..maxChoices). */
   choices?: string[];

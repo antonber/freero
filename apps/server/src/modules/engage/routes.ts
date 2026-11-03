@@ -62,6 +62,12 @@ export default function engageRoutes(_ctx: ServerContext): Router {
     rateLimit('engage', 'user'),
     handle(async (req, res) => send(res, await service.setKey(req.params.id, req.params.aid, currentActor(req), req.body?.key))),
   );
+  r.put(
+    `${BASE}/key/copy`,
+    requireUserOrGuest,
+    rateLimit('engage', 'user'),
+    handle(async (req, res) => send(res, await service.copyKey(req.params.id, req.params.aid, currentActor(req), req.body ?? {}))),
+  );
   r.post(
     `${BASE}/quiz`,
     requireUserOrGuest,

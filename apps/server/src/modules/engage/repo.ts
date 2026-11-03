@@ -159,6 +159,16 @@ export async function quizKey(boardId: string, activityId: string): Promise<Reco
   return r ? parse(r.answer_key) : {};
 }
 
+/** A duplicated board keeps its quizzes' answer keys (same activity ids: the copy keeps them). */
+export async function copyBoardKeys(fromBoard: string, toBoard: string, now: number): Promise<void> {
+  await query(
+    `INSERT INTO engage_keys (board_id, activity_id, answer_key, updated_at)
+     SELECT $2, activity_id, answer_key, $3 FROM engage_keys WHERE board_id = $1
+     ON CONFLICT (board_id, activity_id) DO NOTHING`,
+    [fromBoard, toBoard, new Date(now)],
+  );
+}
+
 /** False if the board is gone. */
 export async function setQuizKey(boardId: string, activityId: string, key: Record<string, string[]>, now: number): Promise<boolean> {
   try {

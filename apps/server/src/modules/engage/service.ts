@@ -300,3 +300,29 @@ export async function runQuiz(boardId: string, activityId: string, actor: Actor,
   await publish(fresh);
   return stateFor(fresh, now);
 }
+
+/**
+ * Editors: a copied quiz (pasted, duplicated, inserted from a template) takes the answer key of
+ * the quiz it was copied from — read on the server, never through the client — when the person
+ * may edit the board it came from (they could read the key there). Questions keep their ids in a
+ * copy, so the key fits; anything that doesn't is dropped. Nothing to copy: the state as it is.
+ */
+export async function copyKey(boardId: string, activityId: string, actor: Actor, from: { boardId?: unknown; activityId?: unknown }, now = Date.now()): Promise<ActivityState> {
+  const c = await load(boardId, activityId, actor);
+  requireEditor(c);
+  if (c.activity.kind !== 'quiz') throw badRequest('Only a quiz has right answers');
+  if (typeof from.boardId !== 'string' || typeof from.activityId !== 'string') throw badRequest('Say which quiz it was copied from');
+  const source = await requireBoardAccess(from.boardId, c.personId).catch(() => null);
+  if (!source || !canEdit(source.role)) throw forbidden('Only people who can edit the board it came from copy its right answers');
+  const key = await repo.quizKey(from.boardId, from.activityId);
+  if (Object.keys(key).length) {
+    if (!(await repo.setQuizKey(boardId, activityId, cleanKey(c.activity, key), now))) throw notFound('Board not found');
+    await publish(c);
+  }
+  return stateFor(c);
+}
+
+/** A duplicated board (boards' lifecycle event): its quizzes keep their keys, for whoever could edit the source. */
+export async function keysOnDuplicate(e: { boardId: string; sourceId?: string; sourceRole?: Role }, now = Date.now()): Promise<void> {
+  if (e.sourceId && e.sourceRole && canEdit(e.sourceRole)) await repo.copyBoardKeys(e.sourceId, e.boardId, now);
+}

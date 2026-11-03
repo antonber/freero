@@ -3091,7 +3091,13 @@ fair whatever the clients' clocks; answers to the open question only, before its
 `ENGAGE_QUIZ_GRACE_MS`) and before its answer is shown, can't be withdrawn, and score more when
 faster. The board gets per question how many answered, and the right options and counts only once
 shown; the leaderboard (names unless anonymous) only once revealed. Each person's own score comes
-with their `ActivityState`. Copies of a board carry a quiz's questions, not its key. Results of any
+with their `ActivityState`. Copies keep the key without it ever reaching a client: a duplicated board gets its
+quizzes' keys copied on the server (boards' `duplicated` lifecycle event, `sourceId` /
+`sourceRole`) when the copier may edit the original; a pasted, Alt-dragged or template-inserted quiz
+carries only a reference (`copyContent`: source board and activity) and asks `PUT …/key/copy`,
+which copies the key only for an editor of the target who may also edit the source board. So a
+template shared with a team gives its quizzes' keys only to teammates who can edit the board the
+template was made from; everyone else gets the questions without right answers (and is told). Results of any
 kind download as CSV from the format toolbar (what the board shows, formula-guarded).
 
 **Icebreakers** (#150, `modules/icebreakers`, `features/icebreakers`): a wheel of names, dice and a

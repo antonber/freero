@@ -4,12 +4,28 @@
 import { memo } from 'react';
 import { ChartColumn, MessageSquareOff } from 'lucide-react';
 import type { ActivityElement, ActivityResults } from '@freero/shared';
-import { defineElement, ElementText, richTextToPlain, useCollection, useEditor, useIsExporting, type ElementRenderProps, type NewElement } from '@engine';
+import { defineElement, ElementText, richTextToPlain, useCollection, useEditor, useIsExporting, type Editor, type ElementRenderProps, type NewElement } from '@engine';
 import { KIND_ICON } from './lib/icons';
 import { ACCENTS, ACTIVITY_H, ACTIVITY_W, ANSWER_DIALOG, RESULTS, answerLink, answersLabel, kindLabel } from './lib/activity';
 import { Body } from './lib/Results';
 import { QrCode } from './lib/qr';
 import './engage.css';
+
+/**
+ * Asks the server for a copied quiz's key once the copy has reached it (the copy is written in the
+ * same transaction that calls this, so the first request may find no activity yet: retry a little).
+ */
+function copyKeyLater(editor: Editor, id: string, from: { boardId: string; activityId: string }, attempt = 0) {
+  const copy = editor.host.engage?.copyKey;
+  if (!copy || !editor.can('editor')) return;
+  setTimeout(() => {
+    copy(id, from).catch((e: unknown) => {
+      const status = (e as { status?: number }).status;
+      if (status === 404 && attempt < 5) copyKeyLater(editor, id, from, attempt + 1);
+      else if (status === 403) editor.host.notify('The quiz’s right answers weren’t copied: only people who can edit the board it came from can copy them.', 'info');
+    });
+  }, 700 * (attempt + 1));
+}
 
 const ActivityView = memo(function ActivityView({ element }: ElementRenderProps<ActivityElement>) {
   const editor = useEditor();
@@ -82,6 +98,13 @@ export default defineElement({
     color: ACCENTS[0],
   }),
   Component: ActivityView,
+  // A copied quiz (paste, duplicate, a template) brings a REFERENCE to the quiz it came from, never
+  // its answer key: the server copies the key for editors who may edit that board (#147).
+  copyContent: (el, editor) => (el.kind === 'quiz' ? { keyFrom: { boardId: editor.boardId, activityId: el.id } } : undefined),
+  pasteContent: (el, content, editor) => {
+    const from = (content as { keyFrom?: { boardId?: unknown; activityId?: unknown } } | undefined)?.keyFrom;
+    if (el.kind === 'quiz' && typeof from?.boardId === 'string' && typeof from.activityId === 'string') copyKeyLater(editor, el.id, { boardId: from.boardId, activityId: from.activityId });
+  },
   toPlainText: (el) =>
     [richTextToPlain(el.question), ...el.options.map((o) => o.text), ...(el.questions ?? []).flatMap((q) => [q.text, ...q.options.map((o) => o.text)])]
       .filter(Boolean)

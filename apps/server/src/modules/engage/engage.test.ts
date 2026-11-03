@@ -6,6 +6,7 @@ import { ENGAGE_RESULTS_COLLECTION, type ActivityElement, type ActivityResults, 
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, getAccount, markEmailVerified, type Actor } from '../auth/index';
 import { createBoard } from '../boards/index';
+import { inviteBoardMember } from '../members/index';
 import { changeBoard, snapshotBoardDoc } from '../realtime/index';
 import * as service from './service';
 
@@ -174,4 +175,27 @@ it('quiz: the right answer reaches the board only once shown, a late answer is r
   await service.reveal(boardId, id, await as(owner), true);
   ({ results } = await boardDoc(boardId));
   expect(results?.quiz?.leaderboard?.map((r) => [r.name, r.right])).toEqual([['Ann', 1], ['Bob', 1], ['Cat', 0]]);
+});
+
+it('a copied quiz takes its answer key only for someone who may edit the board it came from; a duplicated board keeps its keys for an editor of the original, not a viewer', async () => {
+  const [owner, ed] = [await person('Owner'), await person('Ed')];
+  const questions = [{ id: 'q1', text: 'Capital of Peru?', options: [{ id: 'lima', text: 'Lima' }, { id: 'cusco', text: 'Cusco' }] }];
+  const quiz = { kind: 'quiz' as const, options: [], questions };
+  const source = await boardWith(owner, quiz);
+  await service.setKey(source.boardId, source.id, await as(owner), { q1: ['lima'] });
+
+  // Pasted onto another board where Ed edits too, but Ed can't edit the source.
+  const target = await boardWith(owner, quiz);
+  await inviteBoardMember(null, target.boardId, { ...owner, emailVerified: true } as never, { email: ed.email, role: 'editor' });
+  await expect(service.copyKey(target.boardId, target.id, await as(ed), { boardId: source.boardId, activityId: source.id })).rejects.toMatchObject({ status: 403 });
+  expect((await service.activityState(target.boardId, target.id, await as(owner))).key).toEqual({});
+  expect((await service.copyKey(target.boardId, target.id, await as(owner), { boardId: source.boardId, activityId: source.id })).key).toEqual({ q1: ['lima'] });
+
+  // A duplicate keeps the same activity ids.
+  const byEditor = await boardWith(owner, quiz);
+  await service.keysOnDuplicate({ boardId: byEditor.boardId, sourceId: source.boardId, sourceRole: 'editor' });
+  expect((await service.activityState(byEditor.boardId, byEditor.id, await as(owner))).key).toEqual({ q1: ['lima'] });
+  const byViewer = await boardWith(owner, quiz);
+  await service.keysOnDuplicate({ boardId: byViewer.boardId, sourceId: source.boardId, sourceRole: 'viewer' });
+  expect((await service.activityState(byViewer.boardId, byViewer.id, await as(owner))).key).toEqual({});
 });

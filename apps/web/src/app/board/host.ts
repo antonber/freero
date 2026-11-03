@@ -88,6 +88,7 @@ export function engageOf(boardId: string): HostEngage {
     clear: (aid) => api.clearActivity(boardId, aid),
     setKey: (aid, key) => api.setActivityKey(boardId, aid, key),
     runQuiz: (aid, run) => api.runQuiz(boardId, aid, run),
+    copyKey: (aid, from) => api.copyActivityKey(boardId, aid, from),
   };
 }
 

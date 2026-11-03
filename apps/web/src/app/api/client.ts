@@ -385,6 +385,7 @@ export const api = {
   rollIcebreaker: (id: string, elementId: string) =>
     request<{ result: IcebreakerResult }>('POST', `/api/boards/${encodeURIComponent(id)}/icebreakers/${encodeURIComponent(elementId)}/roll`).then((r) => r.result),
   setActivityKey: (id: string, aid: string, key: Record<string, string[]>) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key`, { key }),
+  copyActivityKey: (id: string, aid: string, from: { boardId: string; activityId: string }) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key/copy`, from),
   runQuiz: (id: string, aid: string, run: { step: number } | { showAnswer: true }) => request<ActivityState>('POST', `${activityPath(id, aid)}/quiz`, run),
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),

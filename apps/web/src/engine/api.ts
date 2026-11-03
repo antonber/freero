@@ -525,6 +525,11 @@ export interface HostEngage {
   setKey?(activityId: string, key: Record<string, string[]>): Promise<ActivityState>;
   /** [additive, #147] Owners and editors: open a quiz question (`step`, -1 = back to the start) or show the open one's answer. */
   runQuiz?(activityId: string, run: { step: number } | { showAnswer: true }): Promise<ActivityState>;
+  /**
+   * [additive, #147] Owners and editors: a copied quiz takes the answer key of the quiz it was copied
+   * from (read on the server), when they may edit the board it came from.
+   */
+  copyKey?(activityId: string, from: { boardId: string; activityId: string }): Promise<ActivityState>;
 }
 
 /** [additive] `Host.trackers` (wire: @freero/shared trackers.ts). */

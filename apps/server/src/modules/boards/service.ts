@@ -982,7 +982,7 @@ export async function duplicateBoard(source: Board, userId: string, role: Role, 
     if (editors) await initBoardLayer(copy.id, 'editors', editors);
     return copy;
   });
-  await boardLifecycle({ boardId: made.id, actorId: userId, action: 'duplicated', from: source.title });
+  await boardLifecycle({ boardId: made.id, actorId: userId, action: 'duplicated', from: source.title, sourceId: source.id, sourceRole: role });
   return made;
 }
 
