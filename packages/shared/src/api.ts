@@ -231,7 +231,11 @@ export const LINK_PASSWORD_MAX = 128;
 // DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
 // GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
 // PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
-export type WorkspaceKind = 'personal' | 'team';
+/**
+ * 'organisation' (#108) is the directory row of an organisation above team workspaces: it is never
+ * listed as a workspace and holds no boards (see OrganisationSummary).
+ */
+export type WorkspaceKind = 'personal' | 'team' | 'organisation';
 /** What a team workspace's members get on its boards (owners/admins always edit). */
 export type TeamAccess = 'editor' | 'commenter' | 'viewer';
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
@@ -277,7 +281,68 @@ export interface WorkspaceSummary {
   createdAt: number;
   /** Set when the workspace's boards are closed to you: you were deactivated, or it requires two-step verification you haven't turned on. */
   blocked: WorkspaceBlock | null;
+  /**
+   * [additive, #108] The organisation the team workspace belongs to, and the floors it sets:
+   * `policies` above are already the effective values (never looser than these).
+   */
+  organisation?: WorkspaceOrganisation | null;
 }
+
+// ---- Organisations (#108; docs/design/organisations.md) ----
+// One organisation above many team workspaces: its single sign-on, verified domains, provisioning,
+// audit log (with SIEM streams) and baseline policies are set once and apply to every attached
+// workspace. Policies and security settings are FLOORS: a workspace may be stricter, never looser.
+// Org owners/admins manage it; their org role gives them no board content.
+//
+// GET    /api/organisations                         -> { organisations: OrganisationSummary[] }
+// POST   /api/organisations  body { name }          -> { organisation }
+// DELETE /api/organisations/:id  body { confirm }   -> { ok: true }   (owner; nothing attached)
+// GET    /api/organisations/:id/workspaces          -> { workspaces: OrganisationWorkspace[] }  (org owners/admins)
+// POST   /api/organisations/:id/workspaces  body { workspaceId } -> { workspace: OrganisationWorkspace }
+//        (an OWNER of the team workspace who is an owner/admin of the organisation)
+// DELETE /api/organisations/:id/workspaces/:workspaceId -> { ok: true }   (org owners/admins)
+// GET    /api/organisations/:id/workspaces/:workspaceId/members -> { members: OrganisationWorkspaceMember[] }
+// POST   /api/organisations/:id/members  body { email, role: 'admin' | 'member' } -> { member }
+//        (an existing account in one of its workspaces; admins only by an owner)
+// Under its own id an organisation also answers PATCH /api/workspaces/:id (name; `policies` =
+// its floors), /workspaces/:id/admin/settings (security floors), /admin/members (+ deactivate:
+// organisation-wide), /members/:userId (role, removal), /transfer, /sso…, /scim…, /admin/siem…
+// and /audit… (its merged log).
+/** The policy keys an organisation sets floors for (teamAccess is a team's own). */
+export type OrganisationPolicyKey = Exclude<keyof WorkspacePolicies, 'teamAccess'>;
+export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes';
+export interface WorkspaceOrganisation {
+  id: string;
+  name: string;
+  policies: Pick<WorkspacePolicies, OrganisationPolicyKey>;
+  settings: Pick<WorkspaceSettings, OrganisationSecurityKey>;
+  attachedAt: number;
+}
+/** An organisation as its people see it; shaped like a workspace so the admin console's tabs serve it. */
+export interface OrganisationSummary extends Omit<WorkspaceSummary, 'kind' | 'organisation'> {
+  kind: 'organisation';
+  /** Team workspaces attached to it. */
+  workspaceCount: number;
+}
+export interface OrganisationWorkspace {
+  id: string;
+  name: string;
+  memberCount: number;
+  owners: Array<{ userId: string; name: string; email: string }>;
+  attachedAt: number;
+  /** Its effective policies (its own, raised to the organisation's floors). */
+  policies: WorkspacePolicies;
+  /** Your own role in it (null: none — an org role gives no board content). */
+  yourRole: WorkspaceRole | null;
+}
+export interface OrganisationWorkspaceMember extends WorkspaceMember {
+  deactivated: boolean;
+}
+/** Error code: a workspace tried to loosen a policy its organisation sets a floor for. */
+export const ORGANISATION_POLICY = 'organisation_policy';
+/** At most this many organisations per owner. */
+export const MAX_ORGANISATIONS_PER_USER = 3;
+
 export interface WorkspaceMember {
   userId: string;
   name: string;
@@ -658,7 +723,11 @@ export interface ScimTokenInfo {
   lastUsedAt: number | null;
 }
 /** What a directory group grants in Freero: a workspace role, or membership of a project. */
-export type ScimGroupMapping = { kind: 'role'; role: Exclude<WorkspaceRole, 'owner'> } | { kind: 'project'; projectId: string };
+export type ScimGroupMapping =
+  | { kind: 'role'; role: Exclude<WorkspaceRole, 'owner'> }
+  | { kind: 'project'; projectId: string }
+  /** [additive, #108] An organisation's group: membership of one of its team workspaces, with that role there. */
+  | { kind: 'workspace'; workspaceId: string; role: Exclude<WorkspaceRole, 'owner'> };
 export interface ScimGroupInfo {
   id: string;
   displayName: string;
@@ -1771,7 +1840,9 @@ export const SERVER_PORT = 4000;
 // person is a member (not guest) of. Inside a chain events are numbered (`seq`) and hash-linked
 // (`hash` = sha256 over the event and the previous event's hash), so an edited, removed or
 // reordered row shows up when the chain is verified. Retention removes only the oldest events.
-// Owners and admins of a team workspace read its log (see "Admin console").
+// Owners and admins of a team workspace read its log (see "Admin console"). An event of a workspace
+// attached to an organisation also goes to the organisation's chain ('w:<organisationId>', its
+// merged log, #108); `AuditEvent.workspaceId` is always the workspace it happened in.
 export const AUDIT_ACTIONS = {
   'auth.login': 'Signed in',
   'auth.login_failed': 'Failed sign-in',
@@ -1803,6 +1874,11 @@ export const AUDIT_ACTIONS = {
   'workspace.transferred': 'Transferred workspace ownership',
   'workspace.owner_inherited': 'Became owner (previous owner deleted)',
   'workspace.deleted': 'Deleted the workspace',
+  'organisation.created': 'Created the organisation',
+  'organisation.deleted': 'Deleted the organisation',
+  'organisation.workspace_attached': 'Attached a workspace to the organisation',
+  'organisation.workspace_detached': 'Detached a workspace from the organisation',
+  'organisation.member_added': 'Added someone to the organisation',
   'member.invited': 'Invited someone',
   'member.invite_revoked': 'Revoked an invite',
   'member.joined': 'Joined the workspace',
