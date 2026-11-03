@@ -18,6 +18,11 @@ export {
   templatesFor,
   createBoard,
   getBoard,
+  // Rename, copy, group (#170).
+  updateBoard,
+  copyBoard,
+  groupItems,
+  ungroupItems,
   readOutline,
   exportBoard,
   listItems,

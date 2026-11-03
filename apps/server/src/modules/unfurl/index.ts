@@ -2,4 +2,6 @@
 // (no tables), and the SSRF-safe fetch behind them, for other modules that fetch a URL someone
 // else chose (apiauth: OAuth client metadata documents).
 export { unfurl } from './service';
+// Items the public API makes from a URL (#170): an image copied into the caller's uploads, a link card's preview.
+export { importImageFromUrl, embedPreview, imageSize } from './boardItems';
 export { isBlockedAddress, checkUrl, safeFetch, UnfurlError, type FetchFailure, type FetchOptions, type Fetched, type Resolver } from './fetch';

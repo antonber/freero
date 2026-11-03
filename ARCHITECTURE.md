@@ -2107,6 +2107,16 @@ audit and admin controls are the same code.
   under their center (the app's rule), connectors attached by item id; patches only take fields the
   type has, re-apply the frame rule on moves and move a frame's contents with it. Saved templates
   seed new boards through `changeBoard` (the board is empty, so element ids are kept).
+  **Items from a URL** (#170: `image`, `embed`, `API_URL_ITEM_TYPES`): the server fetches the URL
+  BEFORE planning — unfurl's `importImageFromUrl` (safeFetch, bytes sniffed, `saveUpload` into the
+  person's uploads and quota, never hot-linked; the header's pixel size) and `embedPreview` (an https
+  link on an allow-listed provider, `embedProviderForUrl` over `EmbedProvider.linkHosts` + the
+  operator's `EMBED_EXTRA_ORIGINS`) — and hands `planCreate` what it fetched by input object, so a
+  caller can never set an item's `src` itself. Blocked addresses answer 422 `url_blocked`. They are
+  not proposable (a suggestion would carry a URL nobody fetched). **Boards**: rename
+  (`boards.updateBoardDetails`, the same `renameBoard` as the app's PATCH: `board.renamed` +
+  lifecycle), copy (`boards.duplicateBoardFor`: Duplicate's downloads check, placement and layers),
+  groups (`groupId`, as the editor's Group / Ungroup).
 - **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
   authorised and the apps they registered), from `apiauth.apiDataOf`.
 

@@ -257,8 +257,16 @@ export interface ApiItem {
   /** The rest of the element as stored (rich text as sanitised HTML). */
   data: Record<string, unknown>;
 }
-export const API_CREATABLE_TYPES = ['sticky', 'shape', 'text', 'card', 'frame', 'connector'] as const;
+export const API_CREATABLE_TYPES = ['sticky', 'shape', 'text', 'card', 'frame', 'connector', 'image', 'embed'] as const;
 export type ApiCreatableType = (typeof API_CREATABLE_TYPES)[number];
+/**
+ * [#170] Created from a URL the server fetches itself (unfurl's SSRF-safe fetch): an image is copied
+ * into the caller's uploads (bytes sniffed, their quota), never hot-linked; an embed must be a link
+ * on an allow-listed provider (`embedProviderForUrl`). Not proposable as suggestions.
+ */
+export const API_URL_ITEM_TYPES: readonly ApiCreatableType[] = ['image', 'embed'];
+/** Most items made from a URL per create call (each is an outbound fetch). */
+export const API_MAX_URL_ITEMS_PER_CALL = 20;
 /** Most items one create call may add; a bigger request is refused whole. */
 export const API_MAX_ITEMS_PER_CALL = 500;
 /** Most ids one bulk delete may name. */

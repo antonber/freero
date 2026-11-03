@@ -105,6 +105,9 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('get', '/boards', 'boards:read', async (call) => ({ body: await api.searchBoards(call, call.req.query) }));
   endpoint('post', '/boards', 'boards:write', async (call) => ({ status: 201, body: await api.createBoard(call, body(call.req)) }));
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));
+  // Rename / describe, and copy (#170).
+  endpoint('patch', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.updateBoard(call, call.req.params.boardId, body(call.req)) }));
+  endpoint('post', '/boards/:boardId/copy', 'boards:write', async (call) => ({ status: 201, body: await api.copyBoard(call, call.req.params.boardId, body(call.req)) }));
   endpoint('delete', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.deleteBoard(call, call.req.params.boardId, call.req.query.confirm) }));
 
   // ---- docs (KAI-162): containers like boards, with a document as content ----
@@ -179,6 +182,10 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     if (!Array.isArray(b.ids) || !b.ids.length || b.ids.some((i) => typeof i !== 'string')) throw badRequest('Send { ids: [ … ], confirm: true }');
     return { body: await api.deleteItems(call, call.req.params.boardId, [...new Set(b.ids as string[])], b.confirm, true) };
   });
+
+  // ---- groups (#170): items selected and moved together ----
+  endpoint('post', '/boards/:boardId/groups', 'boards:write', async (call) => ({ status: 201, body: await api.groupItems(call, call.req.params.boardId, body(call.req)) }));
+  endpoint('delete', '/boards/:boardId/groups/:groupId', 'boards:write', async (call) => ({ body: await api.ungroupItems(call, call.req.params.boardId, call.req.params.groupId) }));
 
   // Layout from structure: the caller says what, Freero places it (preview writes nothing;
   // suggestions proposes it for people to accept, KAI-169).

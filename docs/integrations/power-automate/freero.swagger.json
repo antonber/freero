@@ -464,6 +464,146 @@
             "$ref": "#/responses/NotFound"
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "boards"
+        ],
+        "summary": "Rename a board or change its description (owners and editors)",
+        "description": "The board menu’s rename: a new title is a `board.renamed` event and an activity-feed entry. Recorded in the audit log like every call.",
+        "operationId": "updateBoard",
+        "x-freero-scope": "boards:write",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "minProperties": 1,
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The board as it is now",
+            "schema": {
+              "type": "object",
+              "required": [
+                "notice",
+                "board"
+              ],
+              "properties": {
+                "notice": {
+                  "$ref": "#/definitions/Notice"
+                },
+                "board": {
+                  "$ref": "#/definitions/Board"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "423": {
+            "$ref": "#/responses/AgentPaused"
+          }
+        }
+      }
+    },
+    "/boards/{boardId}/copy": {
+      "parameters": [
+        {
+          "$ref": "#/parameters/BoardId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "boards"
+        ],
+        "summary": "Copy a board with its content",
+        "description": "As the app’s Duplicate: in `workspaceId` (and `projectId`) — where you may create boards — or beside the original (else your personal workspace). Hidden frames’ contents are copied only for owners and editors; nobody’s private drafts, no pending suggestions. A copy takes the content out, so it is refused (403 `downloads_restricted`) where the workspace’s downloads policy or the board’s “Viewers and commenters can copy and export” keeps it in. Your board quota and board-creation rate limit apply.",
+        "operationId": "copyBoard",
+        "x-freero-scope": "boards:write",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": false,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Default: “Copy of <title>”"
+                },
+                "workspaceId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "type": "string",
+                  "x-nullable": true
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The copy",
+            "schema": {
+              "type": "object",
+              "required": [
+                "notice",
+                "board"
+              ],
+              "properties": {
+                "notice": {
+                  "$ref": "#/definitions/Notice"
+                },
+                "board": {
+                  "$ref": "#/definitions/Board"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/responses/RateLimited"
+          }
+        }
       }
     },
     "/boards/{boardId}/outline": {
@@ -1044,7 +1184,7 @@
           "items"
         ],
         "summary": "Add items (one, or up to 500 with `items`)",
-        "description": "Owners and editors. Without x/y an item goes on free space (next to `near` if given), never on existing content; it joins the frame under its center unless `frameId` says otherwise. Connectors join items by id (`$0` names items[0] of the same call). One change: everyone on the board sees it at once; a bad item refuses the whole call and nothing is written.",
+        "description": "Owners and editors. Without x/y an item goes on free space (next to `near` if given), never on existing content; it joins the frame under its center unless `frameId` says otherwise. Connectors join items by id (`$0` names items[0] of the same call). One change: everyone on the board sees it at once; a bad item refuses the whole call and nothing is written.\n\nImages and embeds (#170, at most 20 per call) are made from `url`, which the server fetches itself before anything is written: an image (PNG, JPEG, GIF, WebP or SVG, by its bytes) is copied into your uploads — your quota, never hot-linked — at its own proportions; an embed must be an https link on an allow-listed provider (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen, CodeSandbox, or a site the server’s operator added) and gets the page’s preview. A URL on a private, loopback or link-local address (also after a redirect or through DNS) is refused with 422 `url_blocked`; an unreachable link or no image with 422 `url_unusable`.",
         "operationId": "createItems",
         "x-freero-scope": "boards:write",
         "parameters": [
@@ -1090,6 +1230,12 @@
           },
           "404": {
             "$ref": "#/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/responses/UrlRefused"
+          },
+          "429": {
+            "$ref": "#/responses/RateLimited"
           }
         }
       }
@@ -1280,6 +1426,144 @@
           },
           "404": {
             "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/boards/{boardId}/groups": {
+      "parameters": [
+        {
+          "$ref": "#/parameters/BoardId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "items"
+        ],
+        "summary": "Group items (selected and moved together)",
+        "description": "As Group on the board: two or more items you can see and that aren’t locked get one new group id (items of another group leave it). The outline lists a group as `group:<id>`.",
+        "operationId": "groupItems",
+        "x-freero-scope": "boards:write",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "ids"
+              ],
+              "properties": {
+                "ids": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 1000,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The group",
+            "schema": {
+              "type": "object",
+              "required": [
+                "group"
+              ],
+              "properties": {
+                "group": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "itemIds"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "itemIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "423": {
+            "$ref": "#/responses/AgentPaused"
+          }
+        }
+      }
+    },
+    "/boards/{boardId}/groups/{groupId}": {
+      "parameters": [
+        {
+          "$ref": "#/parameters/BoardId"
+        },
+        {
+          "name": "groupId",
+          "in": "path",
+          "required": true,
+          "description": "The group id (`group:<id>` as the outline shows it works too)",
+          "type": "string"
+        }
+      ],
+      "delete": {
+        "tags": [
+          "items"
+        ],
+        "summary": "Ungroup: every item of the group stands on its own again",
+        "operationId": "ungroupItems",
+        "x-freero-scope": "boards:write",
+        "responses": {
+          "200": {
+            "description": "The items that were in the group",
+            "schema": {
+              "type": "object",
+              "required": [
+                "ungrouped"
+              ],
+              "properties": {
+                "ungrouped": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "423": {
+            "$ref": "#/responses/AgentPaused"
           }
         }
       }
@@ -4917,7 +5201,9 @@
             "text",
             "card",
             "frame",
-            "connector"
+            "connector",
+            "image",
+            "embed"
           ]
         },
         "text": {
@@ -5004,6 +5290,16 @@
         "from": {
           "type": "string",
           "description": "connector: an item id, or $<n> for items[n] of this call"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "image: the picture’s link (copied into your uploads); embed: an https link on an allow-listed provider"
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "image: what it shows"
         },
         "to": {
           "type": "string"
@@ -5767,6 +6063,12 @@
         "Retry-After": {
           "type": "integer"
         }
+      }
+    },
+    "UrlRefused": {
+      "description": "A URL the server would fetch was refused (`url_blocked`: a private, loopback or link-local address) or couldn’t be used (`url_unusable`: unreachable, too big, not an image). Nothing changed",
+      "schema": {
+        "$ref": "#/definitions/Error"
       }
     },
     "Deleted": {

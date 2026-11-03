@@ -18,6 +18,7 @@ import {
   UNTRUSTED_CONTENT_NOTICE,
   type ActingApp,
   type ApiBoard,
+  embedProviderForUrl,
   type ApiCommentThread,
   type ApiItem,
   type BoardSummary,
@@ -34,6 +35,7 @@ import {
   type TableCopyContent,
   withKanbanLayout,
 } from '@freero/shared';
+import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
@@ -44,6 +46,8 @@ import {
   boardSummaryFor,
   boardWorkspaceId,
   createBoardFor,
+  duplicateBoardFor,
+  updateBoardDetails,
   listBoardsIn,
   recordBoardExport,
   requireBoardAccess,
@@ -71,7 +75,8 @@ import { insertStructure, newElementId, planMoveInto, readPlacement } from '../s
 import { getTemplate, listTemplates } from '../templates/index';
 import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../workspaces/index';
 import { boardConnections, importCandidates, importIssues, noteProposedImport, projectsOf, sendToTracker } from '../trackers/index';
-import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
+import { embedPreview, importImageFromUrl, UnfurlError } from '../unfurl/index';
+import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem, type UrlItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
 import { kanbanIn, kanbanSummary, linkedViewSummary, peopleOn, planAddView, planConfigureView, planDefineFields, queryCardRows, type CardQuery } from './kanbans';
 import { pausedError, pauseOf } from './pause';
@@ -329,6 +334,37 @@ export async function getBoard(call: ApiCall, boardId: string) {
   return withNotice({ board: apiBoard(call.req, await openBoard(call, boardId)) });
 }
 
+/** Renames a board and / or changes its description (owners and editors; #170). */
+export async function updateBoard(call: ApiCall, boardId: string, body: Record<string, unknown>) {
+  const board = await openBoard(call, boardId);
+  if (body.title === undefined && body.description === undefined) throw badRequest('Send title and / or description');
+  await agentWrite(call, { id: board.id, role: board.role });
+  const updated = await updateBoardDetails(board.id, call.userId, { title: body.title, description: body.description });
+  call.audit.metadata = { changed: ['title', 'description'].filter((k) => body[k] !== undefined) };
+  return withNotice({ board: apiBoard(call.req, updated) });
+}
+
+/**
+ * A copy of the board (#170), as "Duplicate" makes it: in the workspace (and project) the caller
+ * names — one they may create boards in — or beside it. Refused like an export where the downloads
+ * policy or the board's "viewers can copy and export" keeps its content in.
+ */
+export async function copyBoard(call: ApiCall, boardId: string, body: Record<string, unknown>) {
+  const board = await openBoard(call, boardId);
+  const target = typeof body.workspaceId === 'string' && body.workspaceId ? body.workspaceId : null;
+  if (target) {
+    if (!(await workspaceRolesOf(call.userId)).has(target)) throw notFound('Workspace not found');
+    await useInWorkspace(call.cred, target);
+  }
+  await consumeRateLimit('boardCreate', `user:${call.userId}`);
+  await agentWrite(call);
+  const copy = await duplicateBoardFor(board.id, call.userId, { workspaceId: target ?? undefined, projectId: body.projectId });
+  if (body.title !== undefined) await updateBoardDetails(copy.id, call.userId, { title: body.title });
+  const out = body.title !== undefined ? await boardSummaryFor(copy.id, call.userId, 'board') : copy;
+  call.audit.metadata = { copy: copy.id, copyWorkspace: copy.workspaceId };
+  return withNotice({ board: apiBoard(call.req, out) });
+}
+
 export async function deleteBoard(call: ApiCall, boardId: string, confirm: unknown) {
   const board = await openBoard(call, boardId);
   requireConfirm(confirm, 'Deleting a board');
@@ -395,12 +431,47 @@ async function itemsNow(call: ApiCall, boardId: string, role: Role, ids: readonl
   return { items: ids.flatMap((i) => (byId.has(i) ? [toApiItem(byId.get(i)!.el, byId.get(i)!.layer)] : [])), view };
 }
 
+/**
+ * Fetches what items made from a URL need (#170), through unfurl's SSRF-safe fetch: an image is
+ * copied into the person's uploads (bytes sniffed, their quota), an embed must be a link on an
+ * allow-listed provider (or an origin the operator added) and gets its preview. A URL that is
+ * blocked (a private address), unreachable or no image refuses the whole call (422), before
+ * anything is written.
+ */
+async function fetchUrlItems(call: ApiCall, inputs: Array<Record<string, unknown>>): Promise<Map<Record<string, unknown>, UrlItem>> {
+  const out = new Map<Record<string, unknown>, UrlItem>();
+  const cfg = getConfig();
+  for (const [i, it] of inputs.entries()) {
+    if (it.type !== 'image' && it.type !== 'embed') continue;
+    const url = String(it.url).trim();
+    try {
+      if (it.type === 'image') {
+        await consumeRateLimit('remoteImage', `user:${call.userId}`);
+        await consumeRateLimit('upload', `user:${call.userId}`);
+        const img = await importImageFromUrl(url, call.userId, cfg.maxUploadBytes);
+        out.set(it, { type: 'image', src: img.src, naturalW: img.w, naturalH: img.h });
+      } else {
+        const provider = embedProviderForUrl(url, cfg.embedExtraOrigins);
+        if (!provider) throw badRequest(`items[${i}]: embeds are https links on an allow-listed provider (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen, CodeSandbox${cfg.embedExtraOrigins.length ? ', or this server’s own allow-listed sites' : ''})`);
+        await consumeRateLimit('remoteImage', `user:${call.userId}`);
+        const preview = await embedPreview(url, call.userId);
+        out.set(it, { type: 'embed', url, kind: provider === 'operator' ? 'document' : provider.kind, ...preview });
+      }
+    } catch (e) {
+      if (e instanceof UnfurlError) throw new HttpError(422, `items[${i}]: ${e.message}`, e.failure === 'blocked' ? 'url_blocked' : 'url_unusable');
+      throw e;
+    }
+  }
+  return out;
+}
+
 export async function createItems(call: ApiCall, boardId: string, body: unknown) {
-  const inputs = readItemInputs(body);
+  const inputs = readItemInputs(body, { fromUrl: true });
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
   await agentWrite(call, { id, role });
-  const out = await change(() => changeBoard(id, actorOf(call, role), (view) => planCreate(inputs, view, newElementId)));
+  const fetched = await fetchUrlItems(call, inputs);
+  const out = await change(() => changeBoard(id, actorOf(call, role), (view) => planCreate(inputs, view, newElementId, fetched)));
   const { items, view } = await itemsNow(call, id, role, out.ids);
   call.audit.metadata = { items: out.ids.length };
   present(call, id, out.ids, view);
@@ -460,6 +531,53 @@ export async function updateItems(call: ApiCall, boardId: string, patches: Array
   if (!items.length) throw notFound('No such item on this board');
   present(call, id, ids, view);
   return withNotice({ items });
+}
+
+// ---- groups (#170): items selected and moved together, as Group / Ungroup do ----
+
+/**
+ * Groups items (at least two, all visible to the caller and unlocked) under a new group id, as the
+ * board's Group does: items that were in another group leave it. One change; answers the group.
+ */
+export async function groupItems(call: ApiCall, boardId: string, body: Record<string, unknown>) {
+  const ids = body.ids;
+  if (!Array.isArray(ids) || ids.length < 2 || ids.length > API_MAX_DELETE_PER_CALL || ids.some((i) => typeof i !== 'string')) throw badRequest(`ids must list 2 to ${API_MAX_DELETE_PER_CALL} item ids`);
+  const unique = [...new Set(ids as string[])];
+  if (unique.length < 2) throw badRequest('Name at least two different items');
+  const { id, role } = await openBoard(call, boardId);
+  await requireBoardAccess(id, call.userId, 'editor');
+  await agentWrite(call, { id, role });
+  const groupId = newElementId();
+  await change(() =>
+    changeBoard(id, actorOf(call, role), (view) => {
+      for (const itemId of unique) {
+        const hit = view.elements.find((e) => e.el.id === itemId);
+        if (!hit) throw notFound(`No item ${itemId} on this board`);
+        if (hit.el.locked) throw badRequest(`Item ${itemId} is locked`);
+      }
+      return { change: { update: unique.map((itemId) => ({ id: itemId, patch: { groupId } })) } };
+    }),
+  );
+  call.audit.metadata = { items: unique.length, groupId };
+  present(call, id, unique);
+  return { group: { id: groupId, itemIds: unique } };
+}
+
+/** Ungroups: every item of group `groupId` (as the outline names it, `group:<id>` too) is on its own again. */
+export async function ungroupItems(call: ApiCall, boardId: string, groupId: string) {
+  const gid = groupId.replace(/^group:/, '');
+  const { id, role } = await openBoard(call, boardId);
+  await requireBoardAccess(id, call.userId, 'editor');
+  await agentWrite(call, { id, role });
+  const out = await change(() =>
+    changeBoard(id, actorOf(call, role), (view) => {
+      const members = view.elements.filter((e) => e.el.groupId === gid);
+      if (!members.length) throw notFound('No such group on this board');
+      return { change: { update: members.map((e) => ({ id: e.el.id, patch: { groupId: null } })) }, members: members.map((e) => e.el.id) };
+    }),
+  );
+  call.audit.metadata = { items: out.members.length, groupId: gid };
+  return { ungrouped: out.members };
 }
 
 // ---- kanbans (step 2e): fields, the saved board view, cards as rows ----

@@ -7,6 +7,8 @@ import {
   APART_GAP,
   API_CREATABLE_TYPES,
   API_MAX_ITEMS_PER_CALL,
+  API_MAX_URL_ITEMS_PER_CALL,
+  API_URL_ITEM_TYPES,
   NO_GROUP,
   groupFieldId,
   groupKeyOf,
@@ -68,7 +70,19 @@ const DEFAULT_SIZE: Record<ApiCreatableType, { w: number; h: number }> = {
   card: { w: 300, h: 120 },
   frame: { w: 800, h: 600 },
   connector: { w: 1, h: 1 },
+  image: { w: 600, h: 400 },
+  embed: { w: 360, h: 316 },
 };
+/** Link cards as the web app sizes them (features/embed preview.ts): live documents get room to read. */
+const EMBED_SIZE = { video: { w: 360, h: 316 }, document: { w: 560, h: 420 } } as const;
+
+/**
+ * What the server fetched for an item made from a URL (#170), before planning: never taken from
+ * the caller, so an item can't point at an upload or address the server didn't check.
+ */
+export type UrlItem =
+  | { type: 'image'; src: string; naturalW: number; naturalH: number }
+  | { type: 'embed'; url: string; kind: 'video' | 'document'; title: string | null; description: string | null; siteName: string | null; image: string | null; status: 'ready' | 'failed' };
 const CARD_ACCENT = '#5B3FF0';
 
 type Input = Record<string, unknown>;
@@ -101,19 +115,31 @@ function link(v: unknown, i: number | null): string | null | undefined {
   return v;
 }
 
-/** The items a create call asks for: `{ items: [...] }` or one item. Refused whole if any is wrong. */
-export function readItemInputs(body: unknown): Input[] {
+/**
+ * The items a create call asks for: `{ items: [...] }` or one item. Refused whole if any is wrong.
+ * Images and embeds (made from a URL the server fetches) only where `fromUrl` says the caller
+ * resolves them (a direct create; not suggestions).
+ */
+export function readItemInputs(body: unknown, opts: { fromUrl?: boolean } = {}): Input[] {
   const b = body as Input | null;
   if (!b || typeof b !== 'object') throw badRequest('Send an item ({ type, … }) or { items: [ … ] }');
   const items = Array.isArray(b.items) ? b.items : [b];
   if (!items.length) throw badRequest('items is empty');
   if (items.length > API_MAX_ITEMS_PER_CALL) throw badRequest(`At most ${API_MAX_ITEMS_PER_CALL} items per call (nothing was created)`);
-  return items.map((it, i) => {
+  const out = items.map((it, i) => {
     if (!it || typeof it !== 'object' || Array.isArray(it)) throw bad(i, 'must be an object');
     const type = (it as Input).type;
     if (!API_CREATABLE_TYPES.includes(type as ApiCreatableType)) throw bad(i, `type must be one of ${API_CREATABLE_TYPES.join(', ')}`);
+    if (API_URL_ITEM_TYPES.includes(type as ApiCreatableType)) {
+      if (!opts.fromUrl) throw bad(i, `${String(type)} items are added directly (POST /boards/{id}/items), not proposed`);
+      const url = (it as Input).url;
+      if (typeof url !== 'string' || !url.trim() || url.length > 2048) throw bad(i, `${String(type)} needs url: the link to the ${type === 'image' ? 'picture' : 'page'} (at most 2048 characters)`);
+    }
     return it as Input;
   });
+  if (out.filter((it) => API_URL_ITEM_TYPES.includes(it.type as ApiCreatableType)).length > API_MAX_URL_ITEMS_PER_CALL)
+    throw badRequest(`At most ${API_MAX_URL_ITEMS_PER_CALL} images and embeds per call (nothing was created)`);
+  return out;
 }
 
 const frames = (els: Iterable<BoardElement>) => [...els].filter((e) => e.type === 'frame');
@@ -142,7 +168,7 @@ function sideToward(r: Rect, p: { x: number; y: number }): Exclude<Anchor, 'auto
  * just placed), each in the frame under its center. Connectors attach to items by id — on the
  * board or created earlier in the same call (`from: "$0"` names items[0]).
  */
-export function planCreate(inputs: Input[], view: BoardView, newId: () => string): { change: BoardChange; ids: string[] } {
+export function planCreate(inputs: Input[], view: BoardView, newId: () => string, fetched: ReadonlyMap<Input, UrlItem> = new Map()): { change: BoardChange; ids: string[] } {
   const byId = new Map(view.elements.map((e) => [e.el.id, e.el]));
   const obstacles: Rect[] = view.elements.map((e) => rotatedBounds(e.el));
   const content = unionRects(obstacles);
@@ -181,7 +207,20 @@ export function planCreate(inputs: Input[], view: BoardView, newId: () => string
         },
       );
     } else {
+      const got = fetched.get(it);
+      if ((type === 'image' || type === 'embed') && got?.type !== type) throw bad(i, `${type} items need the server to fetch their url first`);
       const size = { w: num(it.w, 'w', i, 8, 20_000) ?? DEFAULT_SIZE[type].w, h: num(it.h, 'h', i, 8, 20_000) ?? DEFAULT_SIZE[type].h };
+      if (got?.type === 'image') {
+        // The picture's own proportions: w (default: its width, at most 600) sets the size, unless both are given.
+        const aspect = got.naturalH / got.naturalW;
+        if (it.w === undefined && it.h === undefined) size.w = Math.min(600, got.naturalW);
+        else if (it.w === undefined) size.w = Math.max(8, Math.round(size.h / aspect));
+        if (it.h === undefined) size.h = Math.max(8, Math.round(size.w * aspect));
+      }
+      if (got?.type === 'embed') {
+        if (it.w === undefined) size.w = EMBED_SIZE[got.kind].w;
+        if (it.h === undefined) size.h = EMBED_SIZE[got.kind].h;
+      }
       if (type === 'sticky') {
         // A shape and size preset (square / rect, s / m / l), else a square of w.
         const shape = oneOf(it.shape, 'shape', STICKY_SHAPES, i);
@@ -218,6 +257,11 @@ export function planCreate(inputs: Input[], view: BoardView, newId: () => string
         });
       } else if (type === 'text') {
         draft = textDraft(id, r.x, r.y, r.w, text, { size: num(it.fontSize, 'fontSize', i, 8, 200), color: color(it.color, 'color', i) });
+      } else if (got?.type === 'image') {
+        draft = { id, type: 'image', ...r, rotation: 0, src: got.src, naturalW: got.naturalW, naturalH: got.naturalH, ...(it.alt !== undefined ? { alt: str(it.alt, 'alt', i, 500) } : {}) } as ElementDraft;
+      } else if (got?.type === 'embed') {
+        const { url, title, description, siteName, image, status } = got;
+        draft = { id, type: 'embed', ...r, rotation: 0, url, title, description, siteName, image, status } as ElementDraft;
       } else if (type === 'frame') {
         draft = { ...frameDraft(id, r, str(it.title, 'title', i, 200) ?? text), ...(it.hidden === true ? { hidden: true } : {}) } as ElementDraft;
       } else {

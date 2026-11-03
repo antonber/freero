@@ -135,6 +135,17 @@ open boards drop them at once (KAI-224).
   cards with owner and due date, points, who spoke (the MCP `import_meeting_notes`;
   [../integrations/README.md](../integrations/README.md)). Automation recipes (n8n, Make, Zapier)
   and a Power Automate connector made from this API are in [../integrations/](../integrations/).
+- Boards (#170): `PATCH /boards/{boardId}` renames a board or changes its description (owners and
+  editors); `POST /boards/{boardId}/copy` copies it with its content (`workspaceId`, `projectId`,
+  `title`; refused like an export where its content may not be taken out). `POST /boards/{boardId}/groups`
+  `{ ids }` groups items, `DELETE /boards/{boardId}/groups/{groupId}` ungroups them.
+- Images and embeds by URL (#170): `POST /boards/{boardId}/items` with `{ "type": "image", "url": … }`
+  or `{ "type": "embed", "url": … }` (≤ 20 per call). The server fetches the URL itself — through the
+  same SSRF-safe fetcher as link previews: http(s) on default ports only, every hop's address
+  checked at connect time — and copies an image into your uploads (your quota; never hot-linked);
+  an embed must be an https link on an allow-listed provider. A private, loopback or link-local
+  address answers `422 url_blocked`, anything else that can't be used `422 url_unusable`; nothing
+  is written then.
 - An agent's control room (`/boards/{boardId}/control-room`, the MCP `post_status` / `get_feedback`):
   a person can pause the agent from its lane on the board; until it is resumed every write of that
   token or app on that board answers `423 agent_paused` ([mcp.md](../mcp.md#agent-control-room)).

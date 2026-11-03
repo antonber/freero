@@ -157,6 +157,16 @@ it('what the API answers in a real session has the shapes its reference promises
   await call('GET', `${B}/control-room?cursor=${encodeURIComponent(lane.json.cursor)}`, '/boards/{boardId}/control-room');
   expect((await call('DELETE', `${B}/items/${frame.id}`, '/boards/{boardId}/items/{itemId}')).status).toBe(400); // takes its contents along
   await call('DELETE', `${B}/items/${frame.id}?confirm=true`, '/boards/{boardId}/items/{itemId}');
+  // Groups, rename and copy (#170).
+  const group = (await call('POST', `${B}/groups`, '/boards/{boardId}/groups', { ids: [card.id, shape.id] })).json.group;
+  expect((await call('GET', `${B}/items/${card.id}`, '/boards/{boardId}/items/{itemId}')).json.item.data.groupId).toBe(group.id);
+  expect((await call('DELETE', `${B}/groups/group:${group.id}`, '/boards/{boardId}/groups/{groupId}')).json.ungrouped.sort()).toEqual([card.id, shape.id].sort());
+  expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed' }, readOnly)).status).toBe(403);
+  expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed', description: 'Q3' })).json.board).toMatchObject({ title: 'Renamed', description: 'Q3' });
+  const copy = (await call('POST', `${B}/copy`, '/boards/{boardId}/copy', { title: 'Renamed, again' })).json.board;
+  expect(copy.title).toBe('Renamed, again');
+  const cards = async (b: string) => (await call('GET', `/boards/${b}/items?type=card`, '/boards/{boardId}/items')).json.items.map((i: { text: string }) => i.text).sort();
+  expect(await cards(copy.id)).toEqual(await cards(board.id));
   await call('POST', `${B}/items/delete`, '/boards/{boardId}/items/delete', { ids: [card.id, shape.id], confirm: true });
   expect((await call('POST', `${B}/items`, '/boards/{boardId}/items', { type: 'sticky', text: 'x' }, readOnly)).status).toBe(403);
   expect((await call('DELETE', B, '/boards/{boardId}')).status).toBe(400);
@@ -177,6 +187,19 @@ it('what the API answers in a real session has the shapes its reference promises
   // A doc is no board for the board operations (and is not listed among boards).
   expect((await call('GET', `/boards/${doc.id}`, '/boards/{boardId}')).status).toBe(404);
   expect((await call('GET', '/boards?q=Decision', '/boards')).json.boards).toEqual([]);
+});
+
+it('an image or embed whose URL points into the server’s own network is refused before anything is fetched or written (SSRF), and an embed off the provider list is refused', async () => {
+  const board = (await call('POST', '/boards', '/boards', { title: 'Pictures' })).json.board;
+  const B = `/boards/${board.id}`;
+  for (const url of ['http://127.0.0.1/logo.png', 'http://169.254.169.254/latest/meta-data/', 'http://[::1]/a.png', 'http://10.0.0.7/a.png']) {
+    const out = await call('POST', `${B}/items`, '/boards/{boardId}/items', { items: [{ type: 'sticky', text: 'kept?' }, { type: 'image', url }] });
+    expect({ url, status: out.status, code: out.json.code }).toEqual({ url, status: 422, code: 'url_blocked' });
+  }
+  expect((await call('POST', `${B}/items`, '/boards/{boardId}/items', { type: 'embed', url: 'https://example.com/page' })).status).toBe(400);
+  // Suggestions can't carry them (the server never fetched their url).
+  expect((await call('POST', `${B}/suggestions`, '/boards/{boardId}/suggestions', { create: [{ type: 'image', url: 'https://example.com/a.png' }] })).status).toBe(400);
+  expect((await call('GET', `${B}/items`, '/boards/{boardId}/items')).json.items).toEqual([]);
 });
 
 it('the operators’ problem endpoints exist only for an operator’s problems:triage token — anyone else’s token gets 404, the scope is refused to them — and answer in the documented shapes', async () => {

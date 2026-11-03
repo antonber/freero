@@ -14,6 +14,8 @@ import {
   createBoard,
   checkEmbeddingChange,
   describeAccess,
+  duplicateBoard,
+  renameBoard,
   embeddingChanged,
   embeddingOf,
   guestRoleFor,
@@ -436,6 +438,33 @@ export async function createBoardFor(
     projectId: fields.projectId ?? null,
   }, undefined, kind);
   return summarize(board, ownerId, { starred: false, lastOpenedAt: null });
+}
+
+/**
+ * Renames a board (or doc) and / or changes its description as PATCH /boards/:id does (owners and
+ * editors): `board.renamed` and the activity feed's entry on a new title. Answers it as they see it.
+ */
+export async function updateBoardDetails(boardId: string, userId: string, fields: { title?: unknown; description?: unknown }): Promise<BoardSummary> {
+  const { board } = await requireAccess(boardId, userId, 'editor');
+  const patch: { title?: string; description?: string } = {};
+  if (fields.title !== undefined) patch.title = cleanTitle(fields.title, board.kind === 'doc' ? 'Untitled doc' : undefined);
+  if (fields.description !== undefined) patch.description = cleanDescription(fields.description);
+  await renameBoard(board, userId, patch);
+  const { board: now, role, access } = await requireAccess(board.id, userId);
+  return toSummary(now, userId, role, access);
+}
+
+/**
+ * A copy of the board for `userId`, as "Duplicate" does: the downloads policy and the board's own
+ * "Viewers and commenters can copy and export" apply (a copy takes the content out), the copy goes
+ * where they chose (`where`: a workspace and project they may create boards in) or beside it, and
+ * hidden frames' contents come along only for owners and editors. Their board quota applies.
+ */
+export async function duplicateBoardFor(boardId: string, userId: string, where: { workspaceId?: unknown; projectId?: unknown } = {}): Promise<BoardSummary> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  await requireDownload(board, userId, access, 'duplicate', role);
+  const copy = await duplicateBoard(board, userId, role, where);
+  return summarize(copy, userId, { starred: false, lastOpenedAt: null });
 }
 
 /** Moves the board to the trash, as DELETE /boards/:id (owner only). */

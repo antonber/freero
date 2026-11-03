@@ -10,6 +10,7 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/serv
 import {
   API_MAX_DELETE_PER_CALL,
   API_MAX_ITEMS_PER_CALL,
+  API_MAX_URL_ITEMS_PER_CALL,
   FIELD_TYPES,
   FILTER_OPS,
   LAYOUT_LIMITS,
@@ -41,8 +42,13 @@ import {
   resolveForApi,
   searchContent,
   boardUrl,
+  copyBoard,
   createBoard,
+  createItems,
   deleteItems,
+  groupItems,
+  ungroupItems,
+  updateBoard,
   exportBoard,
   getFeedback,
   insertStructureFor,
@@ -997,6 +1003,107 @@ export const TOOLS: McpTool[] = [
     async run(call, a) {
       const { deleted } = await deleteItems(call, a.boardId, [...new Set(a.itemIds)], a.confirm === true, true);
       return plain(`Deleted ${deleted.length} item${deleted.length === 1 ? '' : 's'} (including what was inside them): ${deleted.join(', ')}.`, { deleted });
+    },
+  }),
+
+  // ---- boards themselves, pictures and links by URL, groups (#170) ----
+  tool({
+    name: 'rename_board',
+    title: 'Rename a board',
+    description: 'Changes a board’s title and / or description (owners and editors). Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    input: {
+      boardId,
+      title: z.string().min(1).max(200).optional().describe('The new title.'),
+      description: z.string().max(2000).optional().describe('The new description.'),
+    },
+    async run(call, a) {
+      if (a.title === undefined && a.description === undefined) throw new ArgumentError('Give title and / or description.');
+      const { board } = await updateBoard(call, a.boardId, { title: a.title, description: a.description });
+      return plain(`Board ${board.id} updated (${board.url}).`, { boardId: board.id, url: board.url });
+    },
+  }),
+
+  tool({
+    name: 'copy_board',
+    title: 'Copy a board',
+    description:
+      'Makes a copy of a board with everything on it (as Duplicate does), in a workspace you name (list_workspaces) or beside the original. A team’s downloads policy, or a board that doesn’t let viewers copy it, may refuse. Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: ADD,
+    input: {
+      boardId,
+      title: z.string().min(1).max(200).optional().describe('Title of the copy (default “Copy of …”).'),
+      workspaceId: z.string().max(200).optional().describe('Put the copy in this workspace (default: where the board is, when you may create boards there, else your personal one).'),
+      projectId: z.string().max(200).optional().describe('…and in this project of that workspace.'),
+    },
+    async run(call, a) {
+      const { board } = await copyBoard(call, a.boardId, { title: a.title, workspaceId: a.workspaceId, projectId: a.projectId });
+      return plain(`Copied board ${a.boardId} to board ${board.id} (${board.url}).`, { boardId: board.id, url: board.url });
+    },
+  }),
+
+  tool({
+    name: 'add_images',
+    title: 'Add pictures by link',
+    description:
+      'Puts pictures on a board from their links (PNG, JPEG, GIF, WebP or SVG on a public web address). Freero downloads each one and keeps its own copy, so the board never loads it from the other site; links to private or local network addresses are refused. Placed in free space (or next to `near`, or inside `frameId`). Returns the new ids in your order. Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: { ...ADD, openWorldHint: true },
+    input: {
+      boardId,
+      images: z
+        .array(z.object({ url: z.string().url().max(2048).describe('The picture’s https link.'), alt: z.string().max(500).optional().describe('What it shows (for screen readers).'), width: z.number().min(8).max(20_000).optional().describe('Width on the board (default: its own, at most 600).') }).strict())
+        .min(1)
+        .max(API_MAX_URL_ITEMS_PER_CALL),
+      near,
+      frameId: z.string().min(1).max(200).optional().describe('Put them inside this frame.'),
+    },
+    async run(call, a) {
+      const { items } = await createItems(call, a.boardId, { items: a.images.map((i) => ({ type: 'image', url: i.url, alt: i.alt, w: i.width, near: a.near, ...(a.frameId ? { frameId: a.frameId } : {}) })) });
+      return written('Added pictures', boardUrl(call.req, a.boardId), items.map((i) => i.id), `. ${NEXT_AFTER_ADD}`);
+    },
+  }),
+
+  tool({
+    name: 'add_embeds',
+    title: 'Add live links',
+    description:
+      'Puts links on a board as cards that open live after a click: videos (YouTube, Vimeo, Loom), designs (Figma), Google Docs / Sheets / Slides / Forms, CodePen and CodeSandbox — and sites the server’s operator allowed. Freero fetches each page’s title and picture for the card. Other links: put them on an item (`link`) instead. Returns the new ids in your order. Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: { ...ADD, openWorldHint: true },
+    input: {
+      boardId,
+      urls: z.array(z.string().url().max(2048)).min(1).max(API_MAX_URL_ITEMS_PER_CALL).describe('The https links.'),
+      near,
+      frameId: z.string().min(1).max(200).optional().describe('Put them inside this frame.'),
+    },
+    async run(call, a) {
+      const { items } = await createItems(call, a.boardId, { items: a.urls.map((url) => ({ type: 'embed', url, near: a.near, ...(a.frameId ? { frameId: a.frameId } : {}) })) });
+      return written('Added live links', boardUrl(call.req, a.boardId), items.map((i) => i.id), `. ${NEXT_AFTER_ADD}`);
+    },
+  }),
+
+  tool({
+    name: 'group_items',
+    title: 'Group items',
+    description: 'Groups items so people select and move them together (as Group does on the board), or ungroups a group (`ungroup`: its id, from the outline — group:<id> — or this tool). Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    input: {
+      boardId,
+      itemIds: z.array(z.string().min(1).max(200)).min(2).max(API_MAX_DELETE_PER_CALL).optional().describe('The items to group (two or more).'),
+      ungroup: z.string().min(1).max(200).optional().describe('Instead: the group to dissolve.'),
+    },
+    async run(call, a) {
+      if ((a.itemIds === undefined) === (a.ungroup === undefined)) throw new ArgumentError('Give itemIds (to group) or ungroup (a group id), not both.');
+      if (a.ungroup) {
+        const { ungrouped } = await ungroupItems(call, a.boardId, a.ungroup);
+        return plain(`Ungrouped ${ungrouped.length} items.`, { ungrouped });
+      }
+      const { group } = await groupItems(call, a.boardId, { ids: a.itemIds });
+      return plain(`Grouped ${group.itemIds.length} items as group ${group.id}.`, { groupId: group.id, itemIds: group.itemIds });
     },
   }),
 
