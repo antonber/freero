@@ -837,6 +837,16 @@ docs/board-outline.md):
   function the server's insert-structure runs (no round trip; works offline, live preview), puts it
   on `findFreeSpot` near the view with `createMany` (tables, whose cells live outside the elements,
   through `insertElements`), one transaction = one undo step, then fits it into view.
+- PlantUML (#38; `@freero/shared` layout/plantuml.ts, structure kind `plantuml`): an in-house reader
+  of the documented syntax for sequence, class, activity, state, use case and component diagrams
+  (pasted `@startuml` text, the dialog's PlantUML kind, a dropped `.puml`). It produces the same
+  diagram model as the Mermaid reader — a `SequenceInput`, or nodes / edges / groups whose nodes may
+  carry their own size and look (class boxes with compartments) and whose edges carry UML ends and
+  multiplicities — so both land as the same shapes; `layoutPlantUml` lays it out with the layered
+  graph layout and lays the looks and line ends over it (a class is drawn as a table — name, divider,
+  members — until compartments ship). Kept as an editable diagram source like Mermaid. Never
+  fetches anything: `!include` and the preprocessor are refused; styling is skipped; unknown lines
+  are errors naming the line.
 - Mind maps from structure are laid out by `layoutMindTree` (`@freero/shared` layout/mindtree.ts),
   the function `features/mindmap` runs for tidy up / follow / drag: one function, not a copy.
   Org charts and Auto-layout ▸ Tree / Org chart use `tidyTree`; flowcharts and Auto-layout ▸
@@ -855,16 +865,6 @@ docs/board-outline.md):
   a diagram don't carry its source; outline items without a Mermaid id are matched by their path
   of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
   diagram (the second update re-lays from its own source).
-- PlantUML (#38; `@freero/shared` layout/plantuml.ts, structure kind `plantuml`): an in-house reader
-  of the documented syntax for sequence, class, activity, state, use case and component diagrams
-  (pasted `@startuml` text, the dialog's PlantUML kind, a dropped `.puml`). It produces the same
-  diagram model as the Mermaid reader — a `SequenceInput`, or nodes / edges / groups whose nodes may
-  carry their own size and look (class boxes with compartments) and whose edges carry UML ends and
-  multiplicities — so both land as the same shapes; `layoutPlantUml` lays it out with the layered
-  graph layout and lays the looks and line ends over it (a class is drawn as a table — name, divider,
-  members — until compartments ship). Kept as an editable diagram source like Mermaid. Never
-  fetches anything: `!include` and the preprocessor are refused; styling is skipped; unknown lines
-  are errors naming the line.
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
