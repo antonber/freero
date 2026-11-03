@@ -97,3 +97,27 @@
   border-top: 0;
   padding-top: 18px;
 }
+
+/* A page-sized modal: nearly the whole window, the whole of it on phones. */
+.fr-modal--page {
+  width: 100%;
+  height: calc(100vh - 48px);
+}
+
+@media (max-width: 600px) {
+  .fr-modal--page {
+    width: 100vw;
+    max-width: none !important;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    margin: -24px -16px;
+    border-radius: 0;
+  }
+  .fr-modal--page .fr-modal__header {
+    padding: 12px 12px 4px 16px;
+  }
+  .fr-modal--page .fr-modal__body {
+    padding: 8px 0 0;
+  }
+}
