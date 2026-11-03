@@ -1,11 +1,12 @@
 // The security overview for buyers and reviewers (#109): how the hosted service and the software
 // protect data, written from the code and the docs it links (docs/deployment.md "Encryption at
-// rest", docs/operations.md, ARCHITECTURE.md), never from plans. Under review until the operator
-// approves it (`underReview: true`); facts about the hosted service the repository and the public service
-// don't show are marked <ToConfirm />. Deployment facts are `L(...)` tokens (modules/site/legal.ts).
+// rest", docs/operations.md, ARCHITECTURE.md), never from plans. Facts about the hosted service the
+// repository can't show (the providers' encryption, console access, restore tests) are the operator's,
+// approved on 2026-11-03, and the providers' as they document them. Deployment facts are `L(...)`
+// tokens (modules/site/legal.ts).
 import { Table } from '../components/ui';
 import { definePage } from '../lib/define';
-import { L, LegalArticle, ToConfirm } from '../lib/legal';
+import { L, LegalArticle } from '../lib/legal';
 import { abs, docsUrl, SOURCE_REPO } from '../lib/site';
 
 const UPDATED = '2026-11-03';
@@ -18,7 +19,6 @@ export default definePage({
   description:
     'How the hosted Freero service and the open-source software protect data: hosting, encryption, SSO, SCIM, audit log, backups, incidents and AI.',
   updated: UPDATED,
-  underReview: true,
   closingCta: false,
   faq: [
     {
@@ -83,7 +83,7 @@ export default definePage({
         rows={[
           ['Hosting', L('hosting')],
           ['In transit', 'HTTPS only, HSTS for a year including subdomains, TLS certificates from Let’s Encrypt'],
-          ['At rest', <>Credentials hashed, secrets sealed with AES-256-GCM, storage encryption by the hosting provider <ToConfirm /></>],
+          ['At rest', 'Credentials hashed, secrets sealed with AES-256-GCM; the database, its backups and files encrypted (AES-256) by the hosting provider'],
           ['Sign-in', 'Passwords (scrypt), Google, two-step verification, SAML and OpenID Connect SSO per workspace, SCIM 2.0'],
           ['Audit', <>Append-only, hash-chained per workspace, signed hourly checkpoints, streams to your SIEM, kept {L('auditRetentionDays')} days by default</>],
           ['Backups', <>Automated database backups by the hosting provider, kept up to {L('backupRetentionDays')} days</>],
@@ -99,8 +99,8 @@ export default definePage({
         storage. Several instances can run side by side with Redis for shared rate limits and live updates between them.
       </p>
       <p>
-        The hosted service runs one instance in one region: {L('hosting')}, with the provider’s managed PostgreSQL and a storage bucket (
-        {L('storageProvider')}). Browsers connect over HTTPS and secure WebSockets to the provider’s edge network, which terminates TLS and forwards to the
+        The hosted service runs one instance in one region: {L('hosting')}, with the provider’s managed PostgreSQL, reached over its private network, and
+        a storage bucket ({L('storageProvider')}). There is no Redis: one instance doesn’t need it. Browsers connect over HTTPS and secure WebSockets to the provider’s edge network, which terminates TLS and forwards to the
         application. Its domain’s DNS is hosted at Porkbun.
       </p>
       <p>Data leaves the service only along these paths:</p>
@@ -124,8 +124,8 @@ export default definePage({
         <li>Session cookies are Secure, HttpOnly and SameSite=Lax, so they are never sent over plain HTTP or read by scripts.</li>
         <li>Email leaves over TLS to the email delivery service.</li>
         <li>
-          Between the application and its database and storage, traffic stays on the hosting provider’s network; whether it is also encrypted there:{' '}
-          <ToConfirm />. A self-hosted server can require TLS to the database (<code>sslmode=require</code>), to Redis (<code>rediss://</code>) and to the
+          The application reaches its database over the hosting provider’s private network, which the provider encrypts with WireGuard, and its
+          storage bucket over HTTPS. A self-hosted server can require TLS to the database (<code>sslmode=require</code>), to Redis (<code>rediss://</code>) and to the
           bucket.
         </li>
       </ul>
@@ -142,12 +142,14 @@ export default definePage({
           be rotated without breaking sign-ins or links (<a href={docsUrl('docs/operations.md')}>rotation steps</a>).
         </li>
         <li>
-          <strong>The database and files</strong> rely on the storage encryption of the hosting provider’s disks and bucket <ToConfirm />. Board content is
+          <strong>The database, its backups and files</strong> are encrypted at rest by the hosting provider, with AES-256 under keys it manages; this also
+          covers its point-in-time recovery archives and its storage buckets. Board content is
           not encrypted by the application itself: the key would have to live next to the application that opens every board, so it would add little to
           storage encryption, and it would stop search, backlinks and file clean-up from working. <a href={docsUrl('docs/deployment.md')}>Why, in detail</a>.
         </li>
         <li>
-          <strong>Keys:</strong> the server’s secret is held in the hosting provider’s environment settings, not in the code or the image <ToConfirm />. A
+          <strong>Keys:</strong> the server’s secret is held only in the hosting provider’s environment variables, which it keeps envelope-encrypted and
+          decrypts only to hand to the running service; it is never in the code or the image. A
           self-hosted server can encrypt its bucket with its own AWS KMS key (<code>S3_SSE=aws:kms</code>) and its database volume with its cloud’s KMS.
           Customer-managed keys per workspace are not offered.
         </li>
@@ -266,7 +268,9 @@ export default definePage({
         <li>Health and readiness checks gate every deploy; metrics are available to the operator only.</li>
         <li>{L('errorReporting')}</li>
         <li>
-          Alerting on errors, saturation and failed backups for the hosted service: <ToConfirm />.
+          The hosted service has no automated alerting or paging yet. A deploy takes traffic only once its readiness check passes, the image is smoke-tested
+          before every deploy and the live service after it, and the operator watches the hosting provider’s health and
+          deploy status. Problem reports people send are sorted every weekday.
         </li>
       </ul>
 
@@ -289,7 +293,7 @@ export default definePage({
         <li>Rate limits on sign-in, sign-up, two-step codes, password changes, uploads, invitations, reports, AI, exports, search and the API.</li>
         <li>
           Every change runs type checks, architecture-boundary checks and the test suite in continuous integration, and the container image is built and
-          smoke-tested before a deploy. Changes to the hosted service are made by the operator’s own small team <ToConfirm />.
+          smoke-tested before a deploy. Changes to the hosted service, to its code or its configuration, are made only by the operator.
         </li>
         <li>Automated dependency vulnerability scanning and an independent penetration test are not in place yet.</li>
       </ul>
@@ -297,10 +301,13 @@ export default definePage({
       <h2 id="backups">12. Backups, retention and deletion</h2>
       <ul>
         <li>
-          The hosting provider backs up the database automatically (daily and weekly, with point-in-time recovery inside that window); backups are kept up
-          to {L('backupRetentionDays')} days, then deleted. How often a restore is tested: <ToConfirm />.
+          The hosting provider backs up the database automatically, with point-in-time recovery, daily backups kept 6 days and weekly backups kept 27
+          days, all encrypted at rest; no backup is kept longer than {L('backupRetentionDays')} days. We test restoring a backup at least once a quarter.
         </li>
-        <li>Uploaded files are kept in the storage bucket; whether it keeps earlier versions of deleted files: <ToConfirm />.</li>
+        <li>
+          Uploaded files are kept in the storage bucket. It keeps no earlier versions of a file (the provider’s buckets don’t support object
+          versioning), so a deleted file is not kept there.
+        </li>
         <li>
           People can export their own data, and workspace admins a whole workspace, at any time. Boards in the trash are deleted for good after{' '}
           {L('trashDays')} days (a workspace can choose), a deleted account after {L('deletionGraceDays')} days, files nothing uses within a day.
@@ -326,8 +333,9 @@ export default definePage({
           moderation action is audited.
         </li>
         <li>
-          Who can reach the production database, storage and configuration through the hosting provider’s console, and the two-step verification on those
-          accounts: <ToConfirm />. Anything done with the operator command-line tools is recorded in the audit log of the account and workspaces it affects.
+          Today one person, the operator’s owner, holds the accounts that reach the production database, storage and configuration, the source
+          repository and the domain: the consoles of the hosting provider, GitHub and the registrar. We require two-step verification on each of them.
+          Anything done with the operator command-line tools is recorded in the audit log of the account and workspaces it affects.
         </li>
         <li>We open a board you send us only if you ask us to.</li>
       </ul>
@@ -343,6 +351,10 @@ export default definePage({
           restrict downloads also keep their content away from AI actions.
         </li>
         <li>Freero never uses boards, docs or files to train AI models.</li>
+        <li>
+          To sort the problem reports people send us, the operator uses an AI assistant, Anthropic’s Claude Code, which reads them through a token
+          limited to problem reports (see <a href="/subprocessors">subprocessors</a>).
+        </li>
         <li>
           Assistants people connect (Claude, ChatGPT and others) receive only what their requests return, within the permissions granted; the assistant’s
           provider handles the conversation under its own terms. <a href={docsUrl('docs/ai.md')}>AI in Freero</a> has the details.
@@ -377,6 +389,7 @@ export default definePage({
         <li>No SOC 2 report, ISO 27001 certificate or other third-party attestation, and no HIPAA or PCI DSS compliance.</li>
         <li>No independent penetration test and no automated dependency vulnerability scanning.</li>
         <li>No choice of data region, no second region and no service-level agreement.</li>
+        <li>No automated alerting or on-call paging for the hosted service.</li>
         <li>No customer-managed encryption keys on the hosted service.</li>
         <li>No SAML single logout and no encrypted SAML assertions.</li>
       </ul>
