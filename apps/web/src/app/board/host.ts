@@ -181,6 +181,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     fetchImage,
     report: reportOn(board.id),
     engage: engageOf(board.id),
+    icebreakers: { roll: (elementId) => api.rollIcebreaker(board.id, elementId) },
     call: callOf(board.id),
     walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: true }),
     decisions: decisionsOf(board.id),

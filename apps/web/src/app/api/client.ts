@@ -25,6 +25,7 @@ import type {
   TrackerSendResponse,
   ActivityAnswer,
   ActivityState,
+  IcebreakerResult,
   BoardCallResponse,
   PersonalViewsResponse,
   SetBoardCallRequest,
@@ -369,6 +370,8 @@ export const api = {
     request<ActivityState>('PATCH', `${activityPath(id, aid)}/questions/${encodeURIComponent(qid)}`, patch),
   revealActivity: (id: string, aid: string, revealed: boolean) => request<ActivityState>('POST', `${activityPath(id, aid)}/reveal`, { revealed }),
   clearActivity: (id: string, aid: string) => request<ActivityState>('DELETE', `${activityPath(id, aid)}/answers`),
+  rollIcebreaker: (id: string, elementId: string) =>
+    request<{ result: IcebreakerResult }>('POST', `/api/boards/${encodeURIComponent(id)}/icebreakers/${encodeURIComponent(elementId)}/roll`).then((r) => r.result),
   setActivityKey: (id: string, aid: string, key: Record<string, string[]>) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key`, { key }),
   runQuiz: (id: string, aid: string, run: { step: number } | { showAnswer: true }) => request<ActivityState>('POST', `${activityPath(id, aid)}/quiz`, run),
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),

@@ -35,7 +35,8 @@ export type ElementType =
   | 'timelinebar'
   | 'doc'
   | 'kanbanview'
-  | 'stickypad';
+  | 'stickypad'
+  | 'icebreaker';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -234,6 +235,24 @@ export interface StickyElement extends BaseElement, TextStyle {
 export interface StickyPadElement extends BaseElement {
   type: 'stickypad';
   color: StickyColor;
+}
+
+/**
+ * [#150] An icebreaker widget: a wheel of names, dice, or a random speaking order. The element holds
+ * only its set-up; every spin, roll and shuffle is made by the SERVER (POST
+ * /api/boards/:id/icebreakers/:elementId/roll) and published in the `icebreakerResults` collection
+ * (ICEBREAKER_RESULTS_COLLECTION), so every client shows the same result on the same clock.
+ * Older clients that don't know the type show nothing for it.
+ */
+export interface IcebreakerElement extends BaseElement {
+  type: 'icebreaker';
+  kind: 'wheel' | 'dice' | 'speakers';
+  title: string;
+  /** Wheel slices / people to put in order (unused by dice). */
+  entries: string[];
+  /** Dice: how many (1..3). */
+  dice?: number;
+  color: string;
 }
 
 export type ShapeKind =
@@ -1081,7 +1100,8 @@ export type BoardElement =
   | TimelineBarElement
   | DocElement
   | KanbanViewElement
-  | StickyPadElement;
+  | StickyPadElement
+  | IcebreakerElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

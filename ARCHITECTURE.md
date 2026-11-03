@@ -1231,7 +1231,8 @@ credentials that act for a person without their session), `api` (no table: the p
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
-engage_reveals, engage_keys: live audience activities; see "Live activities" below), `trackers`
+engage_reveals, engage_keys: live audience activities; see "Live activities" below), `icebreakers`
+(no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `trackers`
 (tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
@@ -2859,6 +2860,16 @@ faster. The board gets per question how many answered, and the right options and
 shown; the leaderboard (names unless anonymous) only once revealed. Each person's own score comes
 with their `ActivityState`. Copies of a board carry a quiz's questions, not its key. Results of any
 kind download as CSV from the format toolbar (what the board shows, formula-guarded).
+
+**Icebreakers** (#150, `modules/icebreakers`, `features/icebreakers`): a wheel of names, dice and a
+random speaking order are `icebreaker` elements holding only their set-up. Every spin, roll and
+shuffle is made by the SERVER (`POST /boards/:id/icebreakers/:elementId/roll`, `crypto.randomInt`)
+and published in the server-written `icebreakerResults` collection (element content, kept on
+restore, left out of backups) with its start on the server's clock and its length; every client
+animates the same frames from that start (`Host.serverNow`) and lands at the same moment (reduced
+motion and exports: the result at once; screen readers: a live caption). Owners and editors spin;
+while a facilitation session runs only its facilitator and the owner (`rollRefusal`); commenters,
+guests and viewers watch. The module owns no tables.
 
 **Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
 commenters and guests take part in a facilitator's sessions without edit access, like Engage lets

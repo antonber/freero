@@ -271,6 +271,16 @@ export const ENGAGE_QUIZ_GRACE_MS = 1500;
 /** [#147] Points for a right answer: the full amount without a time limit; with one, half plus half again as fast as you were. */
 export const ENGAGE_QUIZ_POINTS = 1000;
 
+// ---- Icebreakers (#150) ----
+// POST /api/boards/:id/icebreakers/:elementId/roll  -> { result: IcebreakerResult }
+//   The server spins the wheel, rolls the dice or shuffles the speakers of the icebreaker as the
+//   caller sees the board, and publishes it in ICEBREAKER_RESULTS_COLLECTION for everyone. Owners
+//   and editors; while a facilitation session runs, only its facilitator (and the owner). Others
+//   (commenters, guests, viewers) watch the result. Rate limited.
+export const ICEBREAKER_MAX_ENTRIES = 60;
+export const ICEBREAKER_SPIN_MS = 4200;
+export const ICEBREAKER_ROLL_MS = 1600;
+
 // ---- Share-link password and expiry (KAI-145) ----
 // The board's owner may protect its link (PATCH /api/boards/:id, owner only):
 //   linkPassword: string (4–128 characters) sets or changes it, null removes it;

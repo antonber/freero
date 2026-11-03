@@ -48,6 +48,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   doc: ['uri'],
   kanbanview: ['sourceId', 'view'],
   stickypad: ['color'],
+  icebreaker: ['kind', 'title', 'entries', 'color'],
 };
 
 let seq = 0;

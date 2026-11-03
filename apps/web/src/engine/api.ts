@@ -57,6 +57,7 @@ import type {
   WalkthroughComment,
   WalkthroughCue,
   WalkthroughSummary,
+  IcebreakerResult,
 } from '@freero/shared';
 
 /** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
@@ -402,6 +403,12 @@ export interface Host {
    * caller's view of the activity and rejects with a showable message. Absent in the offline sandbox.
    */
   engage?: HostEngage;
+  /**
+   * [additive, #150] Icebreakers: asks the SERVER to spin a wheel, roll dice or shuffle speakers;
+   * the result reaches every client through the `icebreakerResults` collection (the call resolves
+   * with it too). Rejects with a showable message (not allowed now, nothing to spin). Absent offline.
+   */
+  icebreakers?: { roll(elementId: string): Promise<IcebreakerResult> };
   /**
    * [additive] Async walkthroughs of this board (KAI-133; wire: @freero/shared walkthroughs.ts):
    * recordings of someone's voice (and camera) with the path they took over the board. Anyone who

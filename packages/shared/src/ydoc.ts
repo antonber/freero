@@ -26,6 +26,8 @@ import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 //                                     SERVER: realtime/facilitation.ts enforces it)
 //   'estimation' -> features/estimation (planning poker; sealed estimates in the PRIVATE layer)
 //   'retro'    -> features/retro      (key 'session' -> the guided retro's phase)
+//   'icebreakerResults' -> features/icebreakers (icebreaker id -> IcebreakerResult; WRITTEN BY THE
+//                                     SERVER only — modules/icebreakers; element content)
 //   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide; element
 //                                     content: in the frame's doc)
 //   'diagramSources' -> features/from-text (diagram id -> the source a diagram was laid out from
@@ -135,6 +137,8 @@ export const ELEMENT_CONTENT_COLLECTIONS: Readonly<Record<string, ElementContent
   // activity id -> its live results (ENGAGE_RESULTS_COLLECTION; written by the server only, which
   // also moves them: see SERVER_WRITTEN_COLLECTIONS)
   engageResults: byKey((key) => key || null),
+  // icebreaker id -> its latest spin / roll / shuffle (ICEBREAKER_RESULTS_COLLECTION, #150; server-written)
+  icebreakerResults: byKey((key) => key || null),
   // Comment records (CommentRecord in elements.ts): a thread pinned to an item (`t:` record's
   // `elementId`) lives with the item, every record of it (`s:`/`m:`/`r:`/`x:`) with its thread.
   // Legacy whole-thread values (no prefix) carry `elementId` themselves.
@@ -174,7 +178,7 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
  * 'walkthroughs' mirrors the recordings modules/walkthroughs keeps (KAI-133): they outlive restores.
  * 'agentPauses' is a person's "stop" to an agent (KAI-249): an older version must not resume it.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs', 'agentPauses'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs', 'agentPauses', 'icebreakerResults'] as const;
 
 /**
  * Top-level types a board BACKUP (`.freero`, KAI-137) leaves out, and a restore drops if a file
@@ -185,7 +189,7 @@ export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 
  * presenter notes, diagram sources — is board content and travels. A new session collection
  * belongs here (and usually in Y_KEPT_ON_RESTORE).
  */
-export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions', 'agentPauses'] as const;
+export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions', 'agentPauses', 'icebreakerResults'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
@@ -329,7 +333,34 @@ export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
  * any socket's change to them). When one of them is also element content
  * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
  */
-export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION];
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION, 'icebreakerResults'];
+
+/** [#150] Icebreaker results, written only by the server (modules/icebreakers): one per widget. */
+export const ICEBREAKER_RESULTS_COLLECTION = 'icebreakerResults';
+
+/**
+ * [#150] The latest spin, roll or shuffle of an icebreaker. Everyone animates it from `at` for
+ * `ms` (the SERVER's clock), so all screens land on the same result at the same moment.
+ */
+export interface IcebreakerResult {
+  elementId: string;
+  /** Counts up with every spin (a new one starts the animation again). */
+  seq: number;
+  /** When it started (server clock, ms) and how long it turns or tumbles. */
+  at: number;
+  ms: number;
+  /** Who spun it (their display name). */
+  by: string;
+  /** Wheel: the entry it lands on, out of `of` entries as they were (the list may change after). */
+  index?: number;
+  of?: number;
+  /** The entry's text when it was picked. */
+  picked?: string;
+  /** Dice: each die, 1..6. */
+  dice?: number[];
+  /** Speakers: the entries in the order drawn. */
+  order?: string[];
+}
 
 export interface ActivityResults {
   activityId: string;
