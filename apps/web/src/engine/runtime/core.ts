@@ -158,6 +158,7 @@ export function createCore(
   };
 
   // ---- store → ui/events
+  let endReported = false;
   disposers.push(
     // Items dragged over a folding part of a container stay in hand until dropped (EditorImpl.isFolded).
     ui.subscribe((s, p) => {
@@ -183,6 +184,10 @@ export function createCore(
     store.subscribeStatus(() => {
       ui.setState({ connection: store.status, synced: store.synced });
       core.emitter.emit('connection');
+      if (store.ended && !endReported) {
+        endReported = true;
+        core.hostRef.current.onConnectionEnded?.(store.ended);
+      }
     }),
     store.subscribeRole(() => {
       const role = store.serverRole ?? core.hostRef.current.board.role;

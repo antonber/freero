@@ -24,6 +24,7 @@ import {
   type ElementContentRule,
   SUGGESTIONS_COLLECTION,
   WS_CLOSE_BOARD_REMOVED,
+  WS_CLOSE_EMBED_FULL,
   WS_MESSAGE_LAYER,
   WS_MESSAGE_LAYER_OP,
   WS_MESSAGE_ROLE,
@@ -106,6 +107,8 @@ export class BoardStore {
   readonly layers: Record<BoardLayer, LayerDoc>;
 
   status: ConnectionStatus;
+  /** Why the server closed the socket for good ('denied' / 'removed'), or null. */
+  ended: { code: number; reason: string } | null = null;
   synced = false;
   serverRole: Role | null = null;
   /**
@@ -216,8 +219,9 @@ export class BoardStore {
         this.emit(this.statusListeners);
       });
       provider.on('connection-close', (event: CloseEvent | null) => {
-        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED)) {
+        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || event.code === WS_CLOSE_EMBED_FULL)) {
           this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : 'denied';
+          this.ended = { code: event.code, reason: event.reason };
           provider.shouldConnect = false;
           provider.disconnect();
           this.emit(this.statusListeners);
