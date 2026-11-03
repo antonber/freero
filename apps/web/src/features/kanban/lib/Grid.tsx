@@ -52,6 +52,8 @@ export interface GridProps {
 const OVERSCAN = 6;
 
 type Cell = { row: number; col: number };
+/** No cell marked active: a grid that doesn't take keys (an unselected kanban's table). */
+const NO_CELL: Cell = { row: -1, col: -1 };
 
 const isCard = (e: GridEntry | undefined): e is Extract<GridEntry, { kind: 'card' }> => e?.kind === 'card';
 
@@ -389,7 +391,7 @@ export function Grid(props: GridProps) {
         rowH={rowH}
         width={width}
         descriptions={!!props.descriptions}
-        active={at}
+        active={props.interactive ? at : NO_CELL}
         editing={editing}
         canEdit={canEdit}
         personName={personName}
