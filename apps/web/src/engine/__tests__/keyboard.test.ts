@@ -335,3 +335,34 @@ describe('arrow keys a feature claims', () => {
     expect(core.editor.getElement(loose)).toMatchObject({ x: 501, y: 0 });
   });
 });
+
+describe('shortcut aliases', () => {
+  const key = (init: KeyboardEventInit) => document.body.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
+
+  it("an alias never shadows another command's own key: Mod+K opens the palette with nothing selected and stays “Link to…” on one selected item, whichever registered first", () => {
+    const ran: string[] = [];
+    const palette: CommandDefinition = { id: 'a.palette', label: 'Palette', shortcut: 'mod+/', extraShortcuts: ['mod+k'], minRole: 'viewer', run: () => void ran.push('palette') };
+    const link: CommandDefinition = { id: 'b.link', label: 'Link to…', shortcut: 'mod+k', when: (ed) => ed.getSelection().length === 1, run: () => void ran.push('link') };
+    core = makeCore({ bundles: [bundle('a', { commands: [palette] }), bundle('b', { elements: [boxDef as ElementDefinition<any>], commands: [link] })] });
+    uninstall = installKeyboard(core);
+    key({ key: 'k', code: 'KeyK', ctrlKey: true });
+    core.editor.select([box(0, 0)]);
+    key({ key: 'k', code: 'KeyK', ctrlKey: true });
+    expect(ran).toEqual(['palette', 'link']);
+  });
+
+  it('Page Up / Page Down bring the selection to front / send it to back, unless its type claims them (a document turning pages)', () => {
+    let paged = 0;
+    const doc = { ...boxDef, onKeyDown: (e: KeyboardEvent) => (e.key === 'PageDown' ? (paged++, true) : false) };
+    core = makeCore({ bundles: [bundle('boxes', { elements: [doc as ElementDefinition<any>] })] });
+    uninstall = installKeyboard(core);
+    const a = box(0, 0);
+    const b = box(50, 50);
+    const onTop = () => core.editor.getElement(a)!.z > core.editor.getElement(b)!.z;
+    core.editor.select([a]);
+    key({ key: 'PageUp', code: 'PageUp' });
+    expect(onTop()).toBe(true);
+    key({ key: 'PageDown', code: 'PageDown' });
+    expect([onTop(), paged]).toEqual([true, 1]);
+  });
+});

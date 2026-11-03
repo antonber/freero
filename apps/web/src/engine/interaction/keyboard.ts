@@ -87,17 +87,25 @@ export function installKeyboard(core: EngineCore): () => void {
   const commandsByShortcut = () =>
     [...core.registry.commands.values()].filter((c) => c.def.shortcut && !NATIVE_CLIPBOARD_COMMANDS.has(c.def.id));
 
-  /** `altGr`: AltGr + a bracket also answers mod+bracket (see MatchOptions); never while typing text. */
+  /**
+   * `altGr`: AltGr + a bracket also answers mod+bracket (see MatchOptions); never while typing text.
+   * A command's own `shortcut` goes before any command's `extraShortcuts`: an alias (Mod+K for the
+   * command palette) answers only where no command that has the key as its own applies right now
+   * (Mod+K on one selected item is still "Link to…").
+   */
   const tryCommands = (e: KeyboardEvent, filter: (shortcut: string) => boolean, { altGr = true } = {}): boolean => {
-    for (const { def, feature } of commandsByShortcut()) {
-      const bindings = [def.shortcut!, ...(def.extraShortcuts ?? [])];
-      if (!bindings.some((sc) => filter(sc) && matchShortcut(e, sc, { altGr }))) continue;
-      const scoped = core.scoped(feature);
-      if (!editor.can(def.minRole ?? 'editor')) continue;
-      if (def.when && !def.when(scoped)) continue;
-      e.preventDefault();
-      def.run(scoped);
-      return true;
+    const commands = commandsByShortcut();
+    for (const primary of [true, false]) {
+      for (const { def, feature } of commands) {
+        const bindings = primary ? [def.shortcut!] : (def.extraShortcuts ?? []);
+        if (!bindings.some((sc) => filter(sc) && matchShortcut(e, sc, { altGr }))) continue;
+        const scoped = core.scoped(feature);
+        if (!editor.can(def.minRole ?? 'editor')) continue;
+        if (def.when && !def.when(scoped)) continue;
+        e.preventDefault();
+        def.run(scoped);
+        return true;
+      }
     }
     return false;
   };
@@ -407,6 +415,8 @@ export function installKeyboard(core: EngineCore): () => void {
         editor.stopEditing();
         return;
       }
+      // A key that types a character here types it: Option+1 is '¡' on a Mac, not "zoom to fit".
+      if (isPrintableKey(e)) return;
       // Feature commands that make sense mid-edit (e.g. Tab → next sticky).
       tryCommands(
         e,

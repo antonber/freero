@@ -38,7 +38,7 @@ function Sheet({ editor }: PanelProps) {
                     <dd>
                       {r.keys.map((k, i) => (
                         <span key={k} className="fr-shortcuts__alt">
-                          {i > 0 && r.keys.length === 2 && <span className="fr-shortcuts__or">or</span>}
+                          {i > 0 && r.alternatives && <span className="fr-shortcuts__or">or</span>}
                           <Kbd>{k}</Kbd>
                         </span>
                       ))}

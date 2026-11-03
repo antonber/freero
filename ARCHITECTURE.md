@@ -215,7 +215,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   while its `when` holds (a kanban card's arrows move it between and within columns, where a nudge
   would only be laid back); when no such command applies the arrows work as usual.
 - `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
-  the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
+  the shortcut reference; menus show `shortcut`). Every command's own `shortcut` is tried before
+  any command's extras, so an alias answers only where no command owning that key applies right
+  now (Mod+K: "Link to…" on one selected item, else the palette alias), whatever the feature order.
+  While text is edited, a key press that types a character (Option+1 on a Mac) is never a shortcut. Punctuation shortcuts match the typed character,
   and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
   `mod+<character>`, so Ctrl+[ / Ctrl+] work where brackets need AltGr; Bring to front / Send to
   back also have Ctrl+Shift+↑ / ↓ on every layout.
