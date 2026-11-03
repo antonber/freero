@@ -422,7 +422,7 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
             ))}
           </ul>
           {outside.length ? (
-            <div className="fr-admin-sso__inline">
+            <div className="fr-admin-domain__actions">
               <Button size="sm" variant="ghost" onClick={() => setPicked(picked.size === outside.length ? new Set() : new Set(outside.map((a) => a.userId)))}>
                 {picked.size === outside.length ? 'Select none' : 'Select all'}
               </Button>

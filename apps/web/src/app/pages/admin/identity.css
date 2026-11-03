@@ -154,3 +154,15 @@
   flex-direction: column;
   min-width: 0;
 }
+
+.fr-admin-domain__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fr-admin-domain__actions > :first-child {
+  margin-right: auto;
+}

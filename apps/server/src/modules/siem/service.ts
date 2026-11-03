@@ -305,8 +305,11 @@ export async function testSink(workspaceId: string, userId: string, id: string):
   const s = await sinkOf(workspaceId, userId, id);
   const now = Date.now();
   const outcome = await send(s, [{ type: 'freero.audit.test', workspaceId, time: new Date(now).toISOString() }]);
-  if (!outcome.ok) await repo.markFailed(s.id, outcome.error ?? 'Failed', now, now);
-  else await repo.markDelivered(s.id, s.cursorSeq, s.cursorSeq, null, now);
+  if (!outcome.ok) {
+    await repo.markFailed(s.id, outcome.error ?? 'Failed', now, now);
+    throw new HttpError(409, `The test didn’t arrive: ${outcome.error ?? 'failed'}`);
+  }
+  await repo.markDelivered(s.id, s.cursorSeq, s.cursorSeq, null, now);
   const fresh = (await repo.getSink(workspaceId, id)) ?? s;
   return info(fresh, await workspaceHeadSeq(workspaceId));
 }
