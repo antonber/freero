@@ -1,8 +1,8 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **steps 2a–2f built** (schema foundation, card display, group by and swimlanes, filter and
-sort, agents and API, fields from trackers / templates / CSV; see the "as built" sections below);
-phase 3 proposed. The
+Status: **steps 2a–2f and 3a built** (schema foundation, card display, group by and swimlanes,
+filter and sort, agents and API, fields from trackers / templates / CSV; view tabs, the Table tab
+and focus mode; see the "as built" sections below); the rest of phase 3 proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -1071,6 +1071,106 @@ Fields from the outside world: trackers, templates and CSV.
   kanban feature's write (a feature can't write another's element): it needs a kanban command that
   merges fields by name and type (options by label) and places cards by value into columns and
   rows, plus the dialog's "into this kanban" mapping. Not small; left for a later step.
+
+## Step 3a as built
+
+View tabs, the Table projection and focus mode.
+
+- **Tabs** (`@freero/shared` `tabs.ts`): `views[]` holds the board view (views.ts, unchanged) and
+  any number of **table views** (`TableViewConfig`: `id`, `name`, `layout: 'table'`, `columns` —
+  fields after the title —, `filter`, `sort`, `locked`); `activeView` is the tab everyone starts on.
+  `viewTabs(k)` reads them read-time and deterministically: one Board tab always (the board view
+  `boardView` lays the cards out by; first when none is stored), then the tables; malformed entries
+  are skipped. A kanban from before tabs has one tab, "Board", and nothing is written until someone
+  adds a tab (which writes the synthesised board view out first, so the board reads the same). One
+  board tab per kanban: it is the tab whose layout places the real cards, and a second board view
+  would mean re-stacking every card on a tab switch.
+- **The tab I look at is mine (decision 2)**: switching tabs is personal view state (key `_tab`
+  under the kanban, any role, never in the doc). "Save for everyone" (View panel, editors) saves
+  the tab I look at — its own changes (the board's fields shown and colour, or a table's columns,
+  filter and sort) — and makes it `activeView`, in one undo step, and clears my overrides. Picking
+  the saved tab clears my choice, so I follow the saved tab again. Adding, renaming and deleting
+  tabs are saved changes (editors, an unlocked kanban, a tab not locked by someone else); deleting
+  the tab someone looks at sends them back to the saved tab. **Deviation** from §3 "the active tab
+  is shared": decision 2 replaced it, and this is that decision's shape for tabs.
+- **Cards are hidden while I look at a table** (as §3 says), for me alone: the engine's
+  `hidesMember` now gets the viewer's editor (`hidesMember(k, el, { editor })`) and is asked again
+  when personal view state changes (EditorEvent `'personal-views'`, which also prunes the
+  selection). They stay in the doc, in their columns and in the outline; the board keeps laying
+  them out, so switching back is instant. The kanban's box keeps the board's size (it is shared
+  geometry and the tab is personal); the table is drawn inside it and scrolls there. **Deviation**
+  from §8's `hidesChild`: the existing `hidesMember` hook covers it with the added argument.
+- **Table tab on the canvas** (`lib/TableTab.tsx`, `lib/Grid.tsx`): the kanban's cards as rows —
+  every card, folded-away ones too —, the title then the tab's columns (default: the kanban's
+  fields, assignee, due date), in the board's order (column by column, top to bottom) unless
+  sorted. Its filter and sort are the shared `query.ts` ones and really leave rows out / order them
+  (a projection moves no shared geometry); mine until saved. Every cell has a typed editor (text,
+  number, date, link: an input; select, multi-select, person — the board's members —, status,
+  tags: a menu of options with their colours; checkbox: toggles), and every edit is one
+  `card.setValues` (one undo step, live for everyone; a new value for the grouped field moves the
+  real card, as card details do). The grid is a real `role="grid"`: arrows, Home / End, Page Up /
+  Down, Enter / F2 / a click on the active cell to edit, Tab / Enter / Escape in an editor. It takes
+  pointer, wheel and keys only while the kanban is selected (`data-fr-interactive`,
+  `data-fr-scrollable`, `data-fr-keyboard-trap`). **Windowed**: rows are drawn only where the box's
+  own scroll and the window (`useWorldViewport`, a new engine hook: the visible world rect snapped
+  to an eighth of the view) overlap, so a 5,000-card table costs the rows on screen. The View panel
+  on a table tab: filter, sort, columns (toggle, reorder), "Save for everyone" / "Reset".
+- **Focus mode** (`lib/Focus.tsx`, dialog panel `kanban.focus`; the header's ⤢ button, "Open in
+  focus mode" in the context menu and a tab's menu): the kanban as a page (`Modal` gained
+  `size="page"` and `escapeToContent`). Arranged by me alone (personal key `_focus`, follows me to
+  other devices): group by any single select, person or checkbox field **and the card's own status
+  or assignee** (a projection may), compact or comfortable rows (comfortable shows a description
+  line), my filter, my sort, which fields are columns, "As on the board" to drop all of it. It
+  starts from the board: grouped as the board is, its saved filter and sort. The same grid, so the
+  same keyboard path and screen-reader labels (`aria-rowcount` while windowed, group header rows,
+  the title as each row's header, "Checked" / "Not checked" in check cells). **On phones** (the
+  ≤ 600 px layout while viewing, not editing) tapping a kanban opens it here; its groups are a row
+  of chips and a horizontal swipe on the list moves to the next or previous group. A column's
+  "+N more" opens it for people who can't show every card on the board (viewers, commenters, a
+  locked kanban). **Per-person grouping and density** — kept shared on the canvas by 2b / 2c —
+  live here. **Not built**: "Save to view" from focus mode (its grouping and density can't become
+  the board's without moving the real cards; the View panel saves what can be saved), a separate
+  list layout (comfortable rows and fewer columns on phones stand in), bottom-sheet card details
+  (cells edit in place), long-press "Move to ▸" (the grouped field's cell does it).
+- **Agents**: `configure_view` takes `view` (a tab by name or id; default the Board), `addView`
+  (`{ name, layout: "table" }`; the rest of the call configures the new tab), `name`, `active: true`
+  and `remove: true`; a table tab takes `show` (its columns), `filter`, `sort` and `locked`, and
+  refuses what moves cards (that belongs to the Board tab). `query_cards` takes `view` (that tab's
+  filter and sort apply first). The kanban summary (`GET …/kanbans/{id}`, both tools' answers)
+  lists `views` with ids, layouts, `active` and a table's settings. The outline reads
+  `views: Board, Hot list* (table)` once a kanban has more than its board. MCP schemas stay
+  fixed-depth with no `$ref` (mcp.test.ts). **Deviation**: REST keeps `PATCH …/view` (same body)
+  rather than `POST / PATCH / DELETE …/views/{viewId}`: one endpoint, as the tool is one.
+- **Rollout** (as for 2c / 2d): clients from 2b to 2f read only the board view —
+  `storedBoardView` takes the active view when it is a board, else the first board view — so when
+  everyone starts on a table they show the board, cards in place; they write the board view with
+  `savedViews`, which keeps every other entry and `activeView` (tested: regrouping while everyone
+  starts on a table keeps the tab and keeps them on it). They never hide cards and know nothing of
+  personal tabs. Clients from before 2b ignore `views`. Table views carry only ids and filter
+  values, like the board view. The server switched in the same release. The new personal keys
+  (`_tab`, `_focus`, a table tab's id) count toward the 200 personal settings per board.
+- **Performance**: opening focus mode on 5,000 cards takes ~35 ms in tests (rows windowed; the
+  rows are recomputed when the kanban's cards change, not on unrelated edits). Found while testing:
+  creating cards *inside* a kanban grows faster than linearly (2,000 in one transaction ~2.5 s,
+  5,000 ~16 s in the test harness; outside a kanban 2,000 take 0.2 s). That predates 3a (the same
+  without the new fold) and matters for big imports; it belongs with the benchmark script §18 asks
+  for, still not written.
+- **Tests** (each fails without its change): a table tab folds the cards away for its viewer only —
+  out of their selection, the collaborator keeps them, nobody's doc changes — and deleting the tab
+  brings them back; Save for everyone on a table tab makes it everyone's tab with its sort, and the
+  collaborator on the saved Board moves to it; regrouping while everyone starts on a table keeps the
+  tab (the older clients' write path); in focus mode, arrow keys walk to a cell, Enter / typing /
+  Enter write it for everyone in one undo step, and picking Done for Stage moves the real card;
+  grouping by Priority in focus mode is mine (the collaborator's focus mode and every doc
+  unchanged); 1,000 cards open with fewer than 50 rows drawn and the right `aria-rowcount`; an
+  agent adds a sorted, filtered table tab without moving a card, the outline lists the tabs,
+  query_cards with that view reads its rows in its order, and the Board tab can't be deleted.
+
+Left for 3b / 3c: list, calendar and timeline layouts (`ViewTab.layout` widens; 3a clients skip
+tabs of layouts they don't know and keep them when they write), grouped sections and column widths
+in a table tab (the design's `groupBy` / `table.columns[].w`), comment and "open details" from a
+row, "Save to view" from focus mode where it can apply, linked views (`kanbanview`, 3c), the
+5,000-card benchmark.
 
 ## Sources (concepts only; nothing copied)
 

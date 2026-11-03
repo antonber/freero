@@ -26,7 +26,7 @@ export const MCP_TOOLS: Array<[name: string, needs: 'read' | 'suggest' | 'write'
   ['import_meeting_notes', 'write', 'Meeting notes or a transcript (Markdown, text, WebVTT, SRT) as one frame: decisions as a cluster, action items as cards with owner and due date, points as notes, who spoke. Read as written, no AI.'],
   ['add_diagram', 'write', 'A Mermaid flowchart or sequence diagram, a mind map or tree from an outline, or a node-and-edge graph, laid out by Freero.'],
   ['define_fields', 'write', 'A kanban’s fields (Priority, Points, Owner …) and their options added, renamed, reordered or deleted in one step.'],
-  ['configure_view', 'write', 'How a kanban shows its cards, for everyone: columns by any field, swimlanes, what cards show, a filter, a sort, column limits and the view lock.'],
+  ['configure_view', 'write', 'How a kanban shows its cards, for everyone: columns by any field, swimlanes, what cards show, a filter, a sort, column limits and the view lock — and its tabs: tables of the same cards with their own columns, filter and sort.'],
   ['update_items', 'write', 'Several items changed in one all-or-nothing step: text, fields, colours, frames, locks, links, and moves into a frame, kanban column or cluster.'],
   ['delete_items', 'write', 'Deletes items, only with an explicit confirmation.'],
   ['create_doc', 'write', 'A new doc from Markdown, personal or in a team workspace.'],

@@ -333,7 +333,7 @@
       "patch": {
         "operationId": "configureKanbanView",
         "tags": ["kanbans"],
-        "summary": "Change a kanban’s saved board view: grouping, swimlanes, cards, filter, sort, column limits, lock",
+        "summary": "Change a kanban’s saved view or tabs: grouping, swimlanes, cards, filter, sort, column limits, lock; table tabs",
         "description": "Cards move as the board would move them (one change). Refused (400) while the kanban is locked, or its view is locked by someone else (its locker and the board’s owners may change it).",
         "x-freero-scope": "boards:write",
         "security": [{ "bearer": ["boards:write"] }],
@@ -378,6 +378,7 @@
           { "name": "sort", "in": "query", "schema": { "type": "string" }, "description": "Fields by name with an optional direction: Points:desc,Title" },
           { "name": "fields", "in": "query", "schema": { "type": "string" }, "description": "Only these fields in each row (comma-separated names)" },
           { "name": "useView", "in": "query", "schema": { "type": "boolean" }, "description": "Apply the saved filter and sort first" },
+          { "name": "view", "in": "query", "schema": { "type": "string" }, "description": "A tab (name or id) whose saved filter and sort apply first: a table tab’s rows in its order" },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 500 }, "description": "Rows per page (default 100)" },
           { "$ref": "#/components/parameters/Cursor" }
         ],
@@ -2266,8 +2267,8 @@
       },
       "Kanban": {
         "type": "object",
-        "description": "A kanban: its fields, columns, swimlane rows and saved board view. Board content: untrusted.",
-        "required": ["id", "title", "fields", "groupBy", "subGroupBy", "columns", "view"],
+        "description": "A kanban: its fields, columns, swimlane rows, saved board view and tabs. Board content: untrusted.",
+        "required": ["id", "title", "fields", "groupBy", "subGroupBy", "columns", "view", "views"],
         "properties": {
           "id": { "type": "string" },
           "title": { "type": "string" },
@@ -2305,6 +2306,25 @@
               "sort": { "$ref": "#/components/schemas/KanbanSort" },
               "sortText": { "type": ["string", "null"] },
               "locked": { "type": "boolean" }
+            }
+          },
+          "views": {
+            "type": "array",
+            "description": "Its tabs, in order: the Board (where the cards stand) and tables of the same cards. `active`: the tab everyone starts on.",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "layout"],
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "layout": { "type": "string", "enum": ["board", "table"] },
+                "active": { "type": "boolean" },
+                "show": { "type": "array", "items": { "type": "string" }, "description": "A table’s columns after the title, by field name" },
+                "filter": { "oneOf": [{ "$ref": "#/components/schemas/KanbanFilter" }, { "type": "null" }] },
+                "filterText": { "type": ["string", "null"] },
+                "sort": { "$ref": "#/components/schemas/KanbanSort" },
+                "locked": { "type": "boolean" }
+              }
             }
           }
         }
@@ -2348,8 +2368,18 @@
       },
       "KanbanViewInput": {
         "type": "object",
-        "description": "Only what you send changes. The saved view: everyone sees it (an API caller has no personal view).",
+        "description": "Only what you send changes. The saved view: everyone sees it (an API caller has no personal view). `view` / `addView` pick the tab (default the Board); a table tab takes show (its columns), filter, sort and locked; grouping, swimlanes, colour, density and columns belong to the Board tab.",
         "properties": {
+          "view": { "type": "string", "description": "The tab to change, by name or id (default: the Board tab)" },
+          "addView": {
+            "type": "object",
+            "required": ["name"],
+            "description": "Adds a table tab; the rest of the call configures it",
+            "properties": { "name": { "type": "string", "maxLength": 60 }, "layout": { "type": "string", "enum": ["table"] } }
+          },
+          "name": { "type": "string", "maxLength": 60, "description": "Renames the tab" },
+          "active": { "type": "boolean", "enum": [true], "description": "true: everyone starts on this tab" },
+          "remove": { "type": "boolean", "enum": [true], "description": "true: deletes this table tab (the Board tab stays)" },
           "groupBy": { "type": "string", "description": "A single select, person or checkbox field by name: the cards move to their columns" },
           "subGroupBy": { "type": ["string", "null"], "description": "Swimlanes by this field; null: none" },
           "show": { "type": "array", "items": { "type": "string" } },
