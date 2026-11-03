@@ -394,7 +394,8 @@ export interface WorkspaceSummary {
 // and /audit… (its merged log).
 /** The policy keys an organisation sets floors for (teamAccess is a team's own). */
 export type OrganisationPolicyKey = Exclude<keyof WorkspacePolicies, 'teamAccess'>;
-export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes';
+/** The settings an organisation sets floors for: sign-in and sessions, and (#154) the inactive-board rule. */
+export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes' | 'inactiveBoardAction' | 'inactiveBoardDays';
 /**
  * Each policy an organisation sets a floor for, its values from the loosest to the strictest (the
  * server enforces floors with it; the admin console disables what a floor rules out). A new policy
@@ -2057,6 +2058,7 @@ export const AUDIT_ACTIONS = {
   'board.restored': 'Restored a board from the trash',
   'board.archived': 'Archived a board',
   'board.unarchived': 'Unarchived a board',
+  'board.retention_notice': 'Warned a board’s owner that a retention rule applies soon',
   'board.deleted': 'Deleted a board forever',
   'board.purged': 'Board purged after trash retention',
   'board.transferred': 'Transferred board ownership',
@@ -2328,13 +2330,29 @@ export interface WorkspaceSettings {
   versionRetentionDays: number | null;
   /** Days audit events are kept. */
   auditRetentionDays: number;
+  /**
+   * [#154] What happens to a board nobody opened or changed for `inactiveBoardDays`: nothing,
+   * archived (#153), or moved to the trash. Owners are emailed RETENTION_NOTICE_DAYS before, and
+   * any activity (an edit, someone opening it, unarchiving) resets the clock. Archived boards are
+   * never moved to the trash by it, nor are boards under a legal hold. An organisation's rule is a
+   * floor for its workspaces: the stricter action (trash over archive) and the shorter period win.
+   */
+  inactiveBoardAction: InactiveBoardAction;
+  /** [#154] Days without activity before the rule applies (null: no rule). */
+  inactiveBoardDays: number | null;
 }
+export type InactiveBoardAction = 'none' | 'archive' | 'trash';
+/** Loosest to strictest (#154; an organisation's floor). */
+export const INACTIVE_BOARD_ACTIONS: readonly InactiveBoardAction[] = ['none', 'archive', 'trash'];
+/** Owners hear this many days before a retention rule archives or trashes their board (#154). */
+export const RETENTION_NOTICE_DAYS = 14;
 export const WORKSPACE_SETTING_LIMITS = {
   sessionMaxHours: { min: 1, max: 24 * 90 },
   sessionIdleMinutes: { min: 15, max: 60 * 24 * 30 },
   trashRetentionDays: { min: 1, max: 365 },
   versionRetentionDays: { min: 7, max: 3650 },
   auditRetentionDays: { min: 30, max: 3650 },
+  inactiveBoardDays: { min: 30, max: 3650 },
 } as const;
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 /** Why the workspace's boards are closed to you right now (see WorkspaceSummary.blocked). */

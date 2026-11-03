@@ -3,6 +3,8 @@
 import type { Request } from 'express';
 import {
   ADMIN_SCOPE_REQUIRED,
+  INACTIVE_BOARD_ACTIONS,
+  type InactiveBoardAction,
   LINK_MAX_DAYS_LIMIT,
   ORGANISATION_POLICY,
   WORKSPACE_CREATION_BLOCKED,
@@ -306,6 +308,8 @@ const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {
   requireTwoFactor: 'Require two-step verification',
   sessionMaxHours: 'Sign-in lasts at most',
   sessionIdleMinutes: 'Sign out after inactivity',
+  inactiveBoardAction: 'Boards nobody uses',
+  inactiveBoardDays: 'Boards nobody uses, after',
 };
 
 // ---- security and retention settings (admin console) ----
@@ -321,6 +325,8 @@ export const SETTING_SCOPE: Record<keyof WorkspaceSettings, AdminScope> = {
   auditRetentionDays: 'security',
   trashRetentionDays: 'content',
   versionRetentionDays: 'content',
+  inactiveBoardAction: 'content',
+  inactiveBoardDays: 'content',
 };
 
 /** A team workspace's effective settings (its own raised to its organisation's floors); an organisation's floors. */
@@ -350,6 +356,11 @@ function cleanSettings(body: Record<string, unknown>): Partial<WorkspaceSettings
   num('trashRetentionDays', false);
   num('versionRetentionDays', true);
   num('auditRetentionDays', false);
+  num('inactiveBoardDays', true);
+  if (body.inactiveBoardAction !== undefined) {
+    if (!(INACTIVE_BOARD_ACTIONS as readonly unknown[]).includes(body.inactiveBoardAction)) throw badRequest('inactiveBoardAction must be none, archive or trash');
+    out.inactiveBoardAction = body.inactiveBoardAction as InactiveBoardAction;
+  }
   return out;
 }
 
@@ -371,6 +382,11 @@ export async function updateSettings(workspaceId: string, userId: string, body: 
       const v = patch[k];
       if (v !== undefined && looserSetting(k, v, floor[k])) throw floorRefusal(workspace, SETTING_LABELS[k]);
     }
+  // #154: a rule that archives or trashes needs a period (its own, or the organisation's).
+  const action = patch.inactiveBoardAction ?? workspace.ownSettings.inactiveBoardAction;
+  const days = patch.inactiveBoardDays !== undefined ? patch.inactiveBoardDays : workspace.ownSettings.inactiveBoardDays;
+  if (action !== 'none' && days === null && !workspace.organisation?.settings.inactiveBoardDays)
+    throw badRequest('Choose after how many days without activity boards are archived or moved to the trash');
   if (patch.requireTwoFactor && !workspace.ownSettings.requireTwoFactor && !(await hasTwoFactor(userId)))
     throw forbidden('Turn on two-step verification for your own account first (Settings → Security)');
   const changed = (Object.keys(patch) as Array<keyof WorkspaceSettings>).filter((k) => patch[k] !== workspace.ownSettings[k]);
@@ -905,6 +921,22 @@ export async function twoFactorRequirementOf(userId: string): Promise<string | n
   const names = await repo.twoFactorRequiredBy(userId);
   return names.length ? `${names.join(', ')} require${names.length === 1 ? 's' : ''} two-step verification` : null;
 }
+
+/**
+ * The inactive-board rule of every team workspace that has one (#154), as it applies: its own
+ * raised to its organisation's floor. A rule needs an action and a period.
+ */
+export async function inactiveBoardRules(): Promise<Array<{ workspaceId: string; name: string; action: 'archive' | 'trash'; days: number }>> {
+  const out: Array<{ workspaceId: string; name: string; action: 'archive' | 'trash'; days: number }> = [];
+  for (const w of await repo.workspacesWithInactiveRule()) {
+    const { inactiveBoardAction: action, inactiveBoardDays: days } = w.settings;
+    if (action !== 'none' && days !== null) out.push({ workspaceId: w.id, name: w.name, action, days });
+  }
+  return out;
+}
+
+/** Why a workspace's data must be kept as it is (a legal hold, KAI-51 / #157), or null. */
+export { deletionHoldOn as workspaceHoldOn } from './holds';
 
 /** Workspaces whose retention differs from the defaults (trash 30 days, versions kept, audit 365 days). */
 export function retentionOverrides(): Promise<Array<{ id: string; trashDays: number; versionDays: number | null; auditDays: number }>> {

@@ -5,8 +5,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  INACTIVE_BOARD_ACTIONS,
   looserPolicy,
   POLICY_STRICTNESS,
+  RETENTION_NOTICE_DAYS,
+  type InactiveBoardAction,
   type LinkComplianceIssue,
   type OrderedPolicyKey,
   type WorkspacePolicies,
@@ -15,7 +18,7 @@ import {
 } from '@freero/shared';
 import { Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
-import { LINK_MAX_DAYS_FIELD, parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
+import { INACTIVE_ACTION_OPTIONS, LINK_MAX_DAYS_FIELD, parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
@@ -259,6 +262,70 @@ export function AdminRetention({ workspace }: { workspace: WorkspaceSummary }) {
         {scopes.includes('security') ? <SettingSelect field="auditRetentionDays" settings={settings} save={save} /> : null}
         <p className="fr-admin-card__note">Freero applies these every hour. What is removed can’t be brought back.</p>
       </div>
+      {scopes.includes('content') ? <InactiveBoards workspace={workspace} settings={settings} save={save} /> : null}
     </section>
+  );
+}
+
+/**
+ * #154: archive or trash boards nobody used for a while. For an organisation it is the floor of
+ * its workspaces; in an attached workspace, gentler actions and longer periods than the
+ * organisation's are greyed out.
+ */
+function InactiveBoards({ workspace, settings, save }: { workspace: WorkspaceSummary; settings: WorkspaceSettings; save: ReturnType<typeof useSettings>['save'] }) {
+  const org = workspace.kind === 'organisation';
+  const floor = workspace.organisation ?? null;
+  const leastAction = floor?.settings.inactiveBoardAction ?? 'none';
+  const leastDays = floor?.settings.inactiveBoardDays ?? null;
+  const rank = (a: InactiveBoardAction) => INACTIVE_BOARD_ACTIONS.indexOf(a);
+  const action = settings.inactiveBoardAction ?? 'none';
+  const days = settings.inactiveBoardDays ?? null;
+  const daysField = SETTING_FIELDS.inactiveBoardDays;
+  const value = settingValue(days);
+  const dayOptions = (daysField.options.some((o) => o.value === value) ? daysField.options : [...daysField.options, { value, label: `${value} days` }]).map((o) => ({
+    ...o,
+    disabled: o.value === '' || (leastDays !== null && Number(o.value) > leastDays),
+  }));
+  const done = (a: InactiveBoardAction, d: number | null) =>
+    a === 'none' || d === null ? 'Boards are no longer archived or trashed for being unused' : `Saved — owners hear ${RETENTION_NOTICE_DAYS} days before anything happens`;
+  return (
+    <div className="fr-admin-card">
+      <h2 className="fr-admin-card__title">Boards nobody uses</h2>
+      <Row
+        label="What happens to them"
+        hint={
+          <>
+            {org
+              ? `The least every workspace in ${workspace.name} does. `
+              : floor && leastAction !== 'none'
+                ? `${floor.name} requires at least “${INACTIVE_ACTION_OPTIONS.find((o) => o.value === leastAction)?.label}”. `
+                : ''}
+            Owners are emailed {RETENTION_NOTICE_DAYS} days before. Archived boards and boards under a legal hold are never moved to the trash.
+          </>
+        }
+      >
+        <Select<InactiveBoardAction>
+          aria-label="What happens to boards nobody uses"
+          options={INACTIVE_ACTION_OPTIONS.map((o) => ({ ...o, disabled: rank(o.value) < rank(leastAction) }))}
+          value={action}
+          onChange={(a) => {
+            const d = a === 'none' ? days : (days ?? leastDays ?? 365);
+            void save(a === 'none' ? { inactiveBoardAction: a } : { inactiveBoardAction: a, inactiveBoardDays: d }, done(a, d));
+          }}
+          width={230}
+        />
+      </Row>
+      {action !== 'none' ? (
+        <Row label={daysField.label} hint={leastDays !== null && !org ? `${daysField.hint} ${floor!.name} allows at most ${leastDays} days.` : daysField.hint}>
+          <Select<string>
+            aria-label="Days without activity"
+            options={dayOptions}
+            value={value}
+            onChange={(v) => void save({ inactiveBoardDays: parseSetting(v) }, done(action, parseSetting(v)))}
+            width={230}
+          />
+        </Row>
+      ) : null}
+    </div>
   );
 }

@@ -9,6 +9,7 @@ import { sealStoredCallLinks } from './call';
 import { applyExpiredLinks } from './linkProtection';
 import { registerBoardObjectTypes } from './objects';
 import * as repo from './repo';
+import { applyRetentionLocked, RETENTION_LOCK_KEY } from './retention';
 import { purgeExpiredTrashLocked, TRASH_PURGE_LOCK_KEY } from './service';
 
 const LINK_EXPIRY_LOCK_KEY = 7_202_611_031; // arbitrary, constant across releases
@@ -24,6 +25,18 @@ export default function initBoards(ctx: ServerContext): void {
     run: async () => {
       const n = await purgeExpiredTrashLocked();
       if (n > 0) log(`boards: purged ${n} board(s) from the trash`);
+    },
+  });
+  // Retention of inactive boards (#154): owners warned first, then archived or trashed. Hourly so a
+  // missed round costs an hour; a round with nothing due changes nothing.
+  scheduleExclusiveJob(ctx, {
+    name: 'boards:retention',
+    lockKey: RETENTION_LOCK_KEY,
+    intervalMs: 60 * 60 * 1000,
+    firstRunMs: 5 * 60 * 1000,
+    run: async () => {
+      const r = await applyRetentionLocked();
+      if (r.noticed || r.archived || r.trashed) log(`boards: retention warned about ${r.noticed}, archived ${r.archived}, trashed ${r.trashed} board(s)`);
     },
   });
   // Call links sealed at rest (KAI-143): plain ones from before, and ones a previous

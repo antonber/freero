@@ -79,3 +79,5 @@ export {
 // Policies other modules enforce (KAI-51): auth (sessions, two-step), boards (trash), realtime
 // (version history), audit (its retention and which workspaces see an account's own events).
 export { sessionLimitsFor, allSessionLimits, twoFactorRequirementOf, retentionOverrides, auditScopeOf } from './service';
+// Retention of inactive boards (#154, boards' job): each workspace's rule as it applies, and holds.
+export { inactiveBoardRules, workspaceHoldOn } from './service';

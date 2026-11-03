@@ -130,7 +130,8 @@ export interface BoardEventRecord {
   type: 'board.created' | 'board.renamed' | 'board.moved' | 'board.trashed' | 'board.restored';
   boardId: string;
   workspaceId: string;
-  actorId: string;
+  /** Who did it; null: Freero itself (#154: a retention rule). */
+  actorId: string | null;
   at: number;
   title: string;
   from?: string | null;
@@ -357,12 +358,80 @@ export async function restoreBoard(id: string): Promise<boolean> {
  * Archives (`at`, `by`: who; null: a retention rule) or unarchives (null) a LIVE board, in one
  * statement; false when that changed nothing (already so, trashed, taken down, gone).
  */
-export async function setArchived(id: string, at: number | null, by: string | null): Promise<boolean> {
+export async function setArchived(id: string, at: number | null, by: string | null, now = Date.now()): Promise<boolean> {
+  // Either way it is activity (#154): an unarchived board starts its retention clock again.
   return (
     (await one(
-      `UPDATE boards SET archived_at = $2, archived_by = CASE WHEN $2::timestamptz IS NULL THEN NULL ELSE $3 END
+      `UPDATE boards SET archived_at = $2, archived_by = CASE WHEN $2::timestamptz IS NULL THEN NULL ELSE $3 END, updated_at = GREATEST(updated_at, $4)
        WHERE id = $1 AND ${LIVE} AND (archived_at IS NULL) = ($2::timestamptz IS NOT NULL) RETURNING id`,
-      [id, at === null ? null : new Date(at), by],
+      [id, at === null ? null : new Date(at), by, new Date(now)],
+    )) !== null
+  );
+}
+
+// ---- retention of inactive boards (#154) ----
+
+/** A board's last activity: an edit or rename (updated_at), or anyone opening it. */
+const LAST_ACTIVITY = `GREATEST(b.updated_at, b.created_at, COALESCE((SELECT max(o.opened_at) FROM board_opens o WHERE o.board_id = b.id), b.created_at))`;
+/** Live, not archived, and nothing happened since `$2`. */
+const INACTIVE_SINCE = `b.deleted_at IS NULL AND b.removed_at IS NULL AND b.archived_at IS NULL AND ${LAST_ACTIVITY} <= $2`;
+
+export interface InactiveBoard {
+  id: string;
+  kind: ObjectKind;
+  title: string;
+  ownerId: string;
+  lastActivityAt: number;
+  noticeAt: number | null;
+}
+
+/**
+ * Up to `limit` live, unarchived boards of ONE workspace with no activity since `before`, the least
+ * recently active first, after `after` (the last of the previous page).
+ */
+export async function inactiveBoardsIn(workspaceId: string, before: number, limit: number, after: InactiveBoard | null = null): Promise<InactiveBoard[]> {
+  const rows = await query<{ id: string; kind: ObjectKind; title: string; owner_id: string; last_at: Date; retention_notice_at: Date | null }>(
+    `SELECT * FROM (
+       SELECT b.id, b.kind, b.title, b.owner_id, ${LAST_ACTIVITY} AS last_at, b.retention_notice_at FROM boards b
+       WHERE b.workspace_id = $1 AND ${INACTIVE_SINCE}
+     ) x WHERE $4::timestamptz IS NULL OR (x.last_at, x.id) > ($4::timestamptz, $5::text)
+     ORDER BY x.last_at, x.id LIMIT $3`,
+    [workspaceId, new Date(before), limit, after ? new Date(after.lastActivityAt) : null, after?.id ?? null],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind === 'doc' ? 'doc' : 'board',
+    title: r.title,
+    ownerId: r.owner_id,
+    lastActivityAt: new Date(r.last_at).getTime(),
+    noticeAt: r.retention_notice_at ? new Date(r.retention_notice_at).getTime() : null,
+  }));
+}
+
+/** Records that the owner was told (now); only for boards still inactive since `before`. Returns the ids marked. */
+export async function markRetentionNoticed(workspaceId: string, ids: string[], before: number, now: number): Promise<string[]> {
+  if (!ids.length) return [];
+  return (
+    await query<{ id: string }>(
+      `UPDATE boards b SET retention_notice_at = $4 WHERE b.workspace_id = $1 AND ${INACTIVE_SINCE} AND b.id = ANY($3::text[]) RETURNING b.id`,
+      [workspaceId, new Date(before), ids, new Date(now)],
+    )
+  ).map((r) => r.id);
+}
+
+/**
+ * Applies a rule to one board in ONE statement, only if it is still in that workspace, live,
+ * unarchived and inactive since `before`, and its owner was told at least by `noticedBy` (and after
+ * its last activity): a board someone opened a second ago, or moved elsewhere, is left alone.
+ */
+export async function applyInactiveRule(workspaceId: string, id: string, action: 'archive' | 'trash', before: number, noticedBy: number, now: number): Promise<boolean> {
+  const set = action === 'archive' ? `archived_at = $5, archived_by = NULL, updated_at = GREATEST(updated_at, $5)` : `deleted_at = $5, deleted_by = NULL`;
+  return (
+    (await one(
+      `UPDATE boards b SET ${set} WHERE b.id = $3 AND b.workspace_id = $1 AND ${INACTIVE_SINCE}
+         AND b.retention_notice_at IS NOT NULL AND b.retention_notice_at <= $4 AND b.retention_notice_at > ${LAST_ACTIVITY}
+       RETURNING b.id`,
+      [workspaceId, new Date(before), id, new Date(noticedBy), new Date(now)],
     )) !== null
   );
 }

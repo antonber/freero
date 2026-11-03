@@ -2,6 +2,7 @@
 import { ADMIN_SCOPES, looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
 import type {
   AdminScope,
+  InactiveBoardAction,
   LinkAccess,
   OrderedPolicyKey,
   OrganisationPolicyKey,
@@ -145,7 +146,7 @@ export { looserPolicy };
 // Plus the numeric link lifetime limit (the shorter wins; null: no limit).
 const ORDERED_KEYS = Object.keys(POLICY_STRICTNESS) as OrderedPolicyKey[];
 export const FLOOR_POLICY_KEYS: OrganisationPolicyKey[] = [...ORDERED_KEYS, 'linkMaxDays'];
-export const FLOOR_SETTING_KEYS: OrganisationSecurityKey[] = ['requireTwoFactor', 'sessionMaxHours', 'sessionIdleMinutes'];
+export const FLOOR_SETTING_KEYS: OrganisationSecurityKey[] = ['requireTwoFactor', 'sessionMaxHours', 'sessionIdleMinutes', 'inactiveBoardAction', 'inactiveBoardDays'];
 export type PolicyFloor = Pick<WorkspacePolicies, OrganisationPolicyKey>;
 export type SettingsFloor = Pick<WorkspaceSettings, OrganisationSecurityKey>;
 
@@ -163,7 +164,13 @@ export function strictestPolicies(own: WorkspacePolicies, floor: PolicyFloor | n
 /** The shorter of two optional limits (null: no limit). */
 const shorter = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : Math.min(a, b));
 
-/** A workspace's own security settings raised to its organisation's floors (retention stays the workspace's own). */
+const ACTION_RANK: Record<InactiveBoardAction, number> = { none: 0, archive: 1, trash: 2 };
+
+/**
+ * A workspace's own security settings raised to its organisation's floors (trash, version and
+ * audit retention stay the workspace's own). The inactive-board rule (#154) combines key by key,
+ * like every floor: the stricter action, the shorter period.
+ */
 export function strictestSettings(own: WorkspaceSettings, floor: SettingsFloor | null): WorkspaceSettings {
   if (!floor) return own;
   return {
@@ -171,11 +178,14 @@ export function strictestSettings(own: WorkspaceSettings, floor: SettingsFloor |
     requireTwoFactor: own.requireTwoFactor || floor.requireTwoFactor,
     sessionMaxHours: shorter(own.sessionMaxHours, floor.sessionMaxHours),
     sessionIdleMinutes: shorter(own.sessionIdleMinutes, floor.sessionIdleMinutes),
+    inactiveBoardAction: ACTION_RANK[floor.inactiveBoardAction] > ACTION_RANK[own.inactiveBoardAction] ? floor.inactiveBoardAction : own.inactiveBoardAction,
+    inactiveBoardDays: shorter(own.inactiveBoardDays, floor.inactiveBoardDays),
   };
 }
 
 /** Is a requested security setting looser than the organisation's floor? */
 export function looserSetting<K extends OrganisationSecurityKey>(k: K, value: WorkspaceSettings[K], floor: WorkspaceSettings[K]): boolean {
   if (k === 'requireTwoFactor') return floor === true && value !== true;
+  if (k === 'inactiveBoardAction') return ACTION_RANK[value as InactiveBoardAction] < ACTION_RANK[floor as InactiveBoardAction];
   return floor !== null && (value === null || (value as number) > (floor as number));
 }

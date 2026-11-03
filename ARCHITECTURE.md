@@ -2640,6 +2640,23 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   their sockets. Edits over a board socket count as activity (`auth.noteSessionActivity`).
 - Trash retention: boards' purge job; version-history retention: realtime's prune job (above);
   audit retention: the audit job. All idempotent, one instance at a time.
+- Inactive boards (#154; `inactiveBoardAction` none / archive / trash + `inactiveBoardDays`, content
+  admins): boards' `boards:retention` job (hourly, `boards/retention.ts`) takes each workspace's
+  rule as it applies (workspaces' `inactiveBoardRules`: its own raised to its organisation's floor —
+  the stricter action, the shorter period, combined key by key like every floor; a workspace asking
+  for less gets 403 `organisation_policy`). Last activity = the latest of an edit / rename
+  (`boards.updated_at`, realtime touches it on save), anyone opening it (`board_opens`) and
+  (un)archiving. A board idle for `days − RETENTION_NOTICE_DAYS` gets a notice (one email per owner,
+  `boards.retention_notice_at`, audited `board.retention_notice`); the rule applies only once the
+  board is idle for `days` AND a notice newer than its last activity is at least
+  `RETENTION_NOTICE_DAYS` old — activity makes the notice stale, so the clock restarts. Each board is
+  re-checked in the one UPDATE that archives / trashes it (`applyInactiveRule`: that workspace,
+  still inactive, still noticed), so the job is idempotent and never races an open. Audited
+  `board.archived` / `board.trashed` with no actor and `reason: 'retention'`. Never touched:
+  archived boards (archiving is how a board is kept), taken-down boards, boards a hold check names
+  (`boards.onBoardRetentionHold`, the seam for legal holds, #157; a failing check holds them all)
+  and every board of a workspace with a deletion hold (`workspaceHoldOn`). Board events with no
+  actor reach the event stream as `actor: { kind: 'system' }`.
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 

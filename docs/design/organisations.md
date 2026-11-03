@@ -102,6 +102,8 @@ policy is.
 | `linkMaxDays` | none → more days → fewer days (the shorter limit) |
 | `requireTwoFactor` | off → on |
 | `sessionMaxHours`, `sessionIdleMinutes` | none → longer → shorter (the smaller limit) |
+| `inactiveBoardAction` (#154) | none → archive → trash |
+| `inactiveBoardDays` (#154) | none → more days → fewer days (the shorter period) |
 
 - A board moved into an attached workspace (#124) is adjusted to the target's EFFECTIVE policies
   (its link lowered or turned off, embedding off), since the move reads the target through the same

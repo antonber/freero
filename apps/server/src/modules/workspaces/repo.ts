@@ -1,6 +1,6 @@
 // The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects` and
 // `project_members` [S4].
-import type { AdminScope, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
+import type { AdminScope, InactiveBoardAction, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
 import { NO_FLOOR_POLICIES, strictestPolicies, strictestSettings, type InvitableWorkspaceRole, type PolicyFloor, type SettingsFloor } from './roles';
 
@@ -49,6 +49,8 @@ interface WsRow {
   trash_retention_days: number;
   version_retention_days: number | null;
   audit_retention_days: number;
+  inactive_board_action: InactiveBoardAction | null;
+  inactive_board_days: number | null;
   organisation_id: string | null;
   organisation_attached_at: Date | null;
   created_at: Date;
@@ -67,6 +69,8 @@ interface WsRow {
   org_require_two_factor: boolean | null;
   org_session_max_hours: number | null;
   org_session_idle_minutes: number | null;
+  org_inactive_board_action: InactiveBoardAction | null;
+  org_inactive_board_days: number | null;
 }
 
 /**
@@ -77,7 +81,8 @@ const WS_SELECT = `SELECT w.*, o.name AS org_name, o.external_sharing AS org_ext
     o.guest_invites AS org_guest_invites, o.downloads AS org_downloads, o.public_links AS org_public_links,
     o.live_embeds AS org_live_embeds, o.board_embeds AS org_board_embeds, o.require_two_factor AS org_require_two_factor,
     o.link_password AS org_link_password, o.link_max_days AS org_link_max_days,
-    o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes
+    o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes,
+    o.inactive_board_action AS org_inactive_board_action, o.inactive_board_days AS org_inactive_board_days
   FROM workspaces w LEFT JOIN workspaces o ON o.id = w.organisation_id`;
 
 const publicLinks = (v: 'anyone' | 'signed_in'): WorkspacePolicies['publicLinks'] => (v === 'signed_in' ? 'signedIn' : 'anyone');
@@ -102,6 +107,8 @@ function toWorkspace(r: WsRow): Workspace {
     trashRetentionDays: r.trash_retention_days,
     versionRetentionDays: r.version_retention_days,
     auditRetentionDays: r.audit_retention_days,
+    inactiveBoardAction: r.inactive_board_action ?? 'none',
+    inactiveBoardDays: r.inactive_board_days ?? null,
   };
   const organisation =
     r.organisation_id && r.org_name !== null
@@ -123,6 +130,8 @@ function toWorkspace(r: WsRow): Workspace {
             requireTwoFactor: r.org_require_two_factor ?? false,
             sessionMaxHours: r.org_session_max_hours,
             sessionIdleMinutes: r.org_session_idle_minutes,
+            inactiveBoardAction: r.org_inactive_board_action ?? 'none',
+            inactiveBoardDays: r.org_inactive_board_days ?? null,
           },
           attachedAt: (r.organisation_attached_at ?? r.updated_at).getTime(),
         }
@@ -161,6 +170,16 @@ export async function ensurePersonal(userId: string, newWorkspaceId: string, now
   const r = await one<{ id: string }>(`SELECT id FROM workspaces WHERE personal_of = $1`, [userId]);
   if (!r) throw new Error(`no personal workspace for ${userId} (account deleted?)`);
   return r.id;
+}
+
+/**
+ * Team workspaces where an inactive-board rule may apply (#154): their own, or their
+ * organisation's (the floor). Effective values: `settings` (toWorkspace raised them).
+ */
+export async function workspacesWithInactiveRule(): Promise<Workspace[]> {
+  return (await query<WsRow>(`${WS_SELECT} WHERE w.kind = 'team' AND (w.inactive_board_action <> 'none' OR o.inactive_board_action <> 'none') ORDER BY w.id`)).map(
+    toWorkspace,
+  );
 }
 
 /** A team workspace with its creator as owner (inside a transaction: both rows or none). */
@@ -265,6 +284,8 @@ export async function updateSettings(id: string, patch: Partial<WorkspaceSetting
     ['trashRetentionDays', 'trash_retention_days'],
     ['versionRetentionDays', 'version_retention_days'],
     ['auditRetentionDays', 'audit_retention_days'],
+    ['inactiveBoardAction', 'inactive_board_action'],
+    ['inactiveBoardDays', 'inactive_board_days'],
   ];
   const sets: string[] = [];
   const params: unknown[] = [id, new Date(now)];
