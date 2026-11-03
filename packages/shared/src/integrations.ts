@@ -343,6 +343,52 @@ const TRACKERS: Integration[] = [
       description: 'Turn board notes and cards into GitHub issues and import issues as linked cards, kept in sync both ways. GitHub Enterprise Server too.',
     },
   },
+  {
+    id: 'asana',
+    name: 'Asana',
+    category: 'trackers',
+    oneLiner: 'Board items become Asana tasks, and a project comes onto a kanban with its sections as columns.',
+    description: [
+      'Send notes, clusters or cards to an Asana project as tasks, or import a project (or a filter of it) as linked cards: into a kanban, each card lands in the column named after its section. Name, notes, assignee, start and due dates, tags, completion and section stay in step both ways, and mapped custom fields too.',
+      'Freero registers its own webhooks in Asana for the projects you use, verifies every delivery’s signature, and polls as a fallback.',
+    ],
+    status: 'settings',
+    connect: {
+      ...trackerConnect('Asana', 'a personal access token'),
+      steps: [
+        'In Settings → Your issue trackers (or your team’s admin console → Issue trackers), add an Asana connection with a personal access token. Freero tests it before keeping it.',
+        'On a board, select notes or cards and choose Send to tracker…, or use Import issues… to bring in a project. Freero asks Asana for webhooks itself.',
+      ],
+    },
+    keywords: ['tasks', 'projects', 'sections', 'subtasks', 'kanban', 'sync'],
+    seo: {
+      title: 'Asana integration: whiteboard notes to Asana tasks',
+      description: 'Turn sticky notes and cards into Asana tasks and import a project onto a kanban, sections as columns, kept in sync both ways.',
+    },
+  },
+  {
+    id: 'monday',
+    name: 'monday.com',
+    category: 'trackers',
+    oneLiner: 'Board items become monday.com items, and a board comes onto a kanban with its statuses as columns.',
+    description: [
+      'Send notes, clusters or cards to a monday.com board as items, or import a board (or a filter of it: a group, a status, a person) as linked cards. Name, the Status column (or the group), the People column, Date and Timeline columns and the description update stay in step both ways, and mapped columns too.',
+      'Freero registers its own webhooks on the boards you use, answers monday.com’s challenge, and polls as a fallback; it waits out monday.com’s complexity limits.',
+    ],
+    status: 'settings',
+    connect: {
+      ...trackerConnect('monday.com', 'an API token'),
+      steps: [
+        'In Settings → Your issue trackers (or your team’s admin console → Issue trackers), add a monday.com connection with an API token. Freero tests it before keeping it.',
+        'On a board, select notes or cards and choose Send to tracker…, or use Import issues… to bring in a board. Freero asks monday.com for webhooks itself.',
+      ],
+    },
+    keywords: ['monday', 'items', 'boards', 'groups', 'status', 'work management', 'sync'],
+    seo: {
+      title: 'monday.com integration: whiteboard notes to board items',
+      description: 'Turn sticky notes and cards into monday.com items and import a board onto a kanban, statuses as columns, kept in sync both ways.',
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------
