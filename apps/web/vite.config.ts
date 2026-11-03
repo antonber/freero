@@ -80,6 +80,11 @@ export default defineConfig({
       '@blocknote/ariakit',
     ],
   },
+  build: {
+    // Font files stay files: inlined into the CSS they would load with every page, whether or not
+    // any text uses that face (see scripts/fonts.mjs).
+    assetsInlineLimit: (file: string) => (file.endsWith('.woff2') ? false : undefined),
+  },
   server: {
     port: 5173,
     // Keep the browser's Host (changeOrigin: false): the server refuses state-changing requests

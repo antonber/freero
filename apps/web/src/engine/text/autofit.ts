@@ -2,23 +2,13 @@
 // Words are measured ONCE at a reference size with canvas measureText (no layout), then
 // wrapping at any size is pure arithmetic, so fitting 2000 stickies stays cheap.
 import type { FontFamily } from '@freero/shared';
+import { FONTS, fontOf } from './fonts';
 
 export const LINE_HEIGHT = 1.3;
 const REF = 100;
 
-export const FONT_STACKS: Record<FontFamily, string> = {
-  sans: "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif",
-  serif: "'Source Serif 4', Georgia, serif",
-  mono: "'JetBrains Mono', ui-monospace, monospace",
-  hand: "Caveat, 'Comic Sans MS', cursive",
-};
-
-export const FONT_VARS: Record<FontFamily, string> = {
-  sans: 'var(--fr-font)',
-  serif: 'var(--fr-font-serif)',
-  mono: 'var(--fr-font-mono)',
-  hand: 'var(--fr-font-hand)',
-};
+/** The CSS `font-family` DOM text in `family` uses (see fonts.ts). */
+export const FONT_VARS = Object.fromEntries(Object.entries(FONTS).map(([id, f]) => [id, f.css])) as Record<FontFamily, string>;
 
 let ctx: CanvasRenderingContext2D | null | undefined;
 const widths = new Map<string, number>();
@@ -43,7 +33,7 @@ export function measureRef(s: string, family: FontFamily, bold = false): number 
   const c = measureCtx();
   let w: number;
   if (c) {
-    c.font = `${bold ? 700 : 400} ${REF}px ${FONT_STACKS[family]}`;
+    c.font = `${bold ? 700 : 400} ${REF}px ${fontOf(family).stack}`;
     w = c.measureText(s).width;
   } else {
     w = s.length * REF * (family === 'mono' ? 0.6 : family === 'hand' ? 0.45 : 0.55);

@@ -100,7 +100,26 @@ export interface BaseElement {
 export type TextAlign = 'left' | 'center' | 'right';
 export type VerticalAlign = 'top' | 'middle' | 'bottom';
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
-export type FontFamily = 'sans' | 'serif' | 'mono' | 'hand';
+/**
+ * A board typeface (the web's engine/text/fonts.ts names and loads them). Ids are stored on items,
+ * so they are only ever added; a client that doesn't know one draws Inter.
+ */
+export type FontFamily =
+  | 'sans'
+  | 'serif'
+  | 'mono'
+  | 'hand'
+  | 'legible'
+  | 'rounded'
+  | 'geometric'
+  | 'grotesk'
+  | 'condensed'
+  | 'book'
+  | 'display'
+  | 'slab'
+  | 'typewriter'
+  | 'print'
+  | 'marker';
 
 /**
  * Rich text is stored as a small sanitized HTML subset:

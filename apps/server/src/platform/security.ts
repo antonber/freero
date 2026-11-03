@@ -126,9 +126,10 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
   return [
     "default-src 'self'",
     "script-src 'self'",
-    // React style attributes + Google Fonts stylesheet.
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' data: https://fonts.gstatic.com",
+    // React style attributes. Fonts are self-hosted (scripts/fonts.mjs); data: is an export's
+    // inlined faces.
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
     // Board images may link any https image (pasted URLs); exports render through data:/blob:.
     `img-src 'self' data: blob: https: ${s3}`.trim(),
     // Video and audio items play our own uploads (redirected to the bucket when it serves them);
