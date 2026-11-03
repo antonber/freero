@@ -316,9 +316,9 @@ export interface Config {
   oauthClientMetadataLoopback: boolean;
   /**
    * Google Analytics 4 (GA_MEASUREMENT_ID, `G-…`): the marketing pages and the app measure page
-   * views and a few product events with it, only after the visitor accepts in the consent banner
-   * (modules/analytics; ARCHITECTURE.md "Analytics"). Null: no Google script, no banner, no CSP
-   * change, anywhere.
+   * views and a few product events with it, unless a browser opted out or sends GPC / Do Not Track
+   * (modules/analytics; ARCHITECTURE.md "Analytics"). Null: no Google script, no opt-out control,
+   * no CSP change, anywhere.
    */
   googleAnalyticsId: string | null;
   /**
