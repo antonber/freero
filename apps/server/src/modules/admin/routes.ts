@@ -1,12 +1,13 @@
 // Admin console routes (contract: @freero/shared api.ts "Admin console"). Every route checks on the
 // server that the caller is an owner or admin of that team workspace (requireAdmin).
 import { Router, type Request } from 'express';
-import type { AdminMember, AuditEvent, AuditIntegrity, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
+import type { AdminMember, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAudit, verifyWorkspaceAudit } from '../audit/index';
-import { currentUser, requireUser } from '../auth/index';
+import { currentUser, getUsers, requireUser } from '../auth/index';
+import { linksOutOfPolicy } from '../boards/index';
 import { getWorkspaceSettings, setMemberDeactivated, updateWorkspaceSettings } from '../workspaces/index';
 import { adminMembers, auditBatches, auditFilter, auditPage, CSV_COLUMNS, csvRow, requireAdmin, workspaceUsage } from './service';
 
@@ -29,6 +30,30 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       await requireAdmin(req.params.id, currentUser(req).id);
       res.json({ usage: (await workspaceUsage(req.params.id)) satisfies WorkspaceUsage });
+    }),
+  );
+
+  // Boards whose link is on but doesn't meet the link policy (#39): links from before the policy
+  // keep working, so admins see which to ask about.
+  r.get(
+    `${base}/admin/link-compliance`,
+    requireUser,
+    handle(async (req, res) => {
+      await requireAdmin(req.params.id, currentUser(req).id);
+      const boards = await linksOutOfPolicy(req.params.id);
+      const owners = await getUsers(boards.map((b) => b.ownerId));
+      res.json({
+        boards: boards.map(
+          (b): LinkComplianceIssue => ({
+            boardId: b.id,
+            title: b.title,
+            ownerName: owners.get(b.ownerId)?.name ?? 'Unknown',
+            linkAccess: b.linkAccess as LinkComplianceIssue['linkAccess'],
+            expiresAt: b.expiresAt,
+            problems: b.problems,
+          }),
+        ),
+      });
     }),
   );
 

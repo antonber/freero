@@ -5723,6 +5723,27 @@ async function facilitationChecks() {
       fac(f).delete('session');
       els(o).set('prot', note({ x: 40, locked: false, lockProtected: false }));
       await waitFor(() => els(p).get('prot')?.locked === false && els(p).get('prot')?.x === 40, 5000, 'the owner to unlock it for everyone');
+
+      // #122: a co-owner may protect and unprotect like the owner — decided by the server from the
+      // membership (its socket's role still reads 'editor'), and only while they are one.
+      els(o).set('prot', note({ x: 0 }));
+      await waitFor(() => els(p).get('prot')?.lockProtected === true, 5000, 'the re-protected sticky to reach the participant');
+      assert((await O.req('PATCH', `/api/boards/${board.id}/members/${P.id}`, { role: 'coowner' })).status === 200, 'make the participant a co-owner');
+      await waitFor(async () => (await P.req('GET', `/api/boards/${board.id}`)).json.board?.coOwner === true, 5000, 'the participant to co-own the board');
+      assert(p.role === 'editor', `a co-owner's socket role must read editor, got ${p.role}`);
+      els(p).set('prot', note({ x: 77 }));
+      els(p).set('coProt', { id: 'coProt', type: 'sticky', x: 600, y: 0, w: 200, h: 200, locked: true, lockProtected: true });
+      await waitFor(() => els(o).get('prot')?.x === 77 && els(o).get('coProt')?.lockProtected === true, 5000, 'the co-owner’s change of a protected item and its own protection to reach the owner');
+      els(f).set('coProt', { id: 'coProt', type: 'sticky', x: 999, y: 0, w: 200, h: 200, locked: false });
+      await settled(f, [o]);
+      await waitFor(() => els(f).get('coProt')?.x === 600 && els(f).get('coProt')?.lockProtected === true, 5000, 'a plain editor to converge on the co-owner’s protected sticky');
+      assert((await O.req('PATCH', `/api/boards/${board.id}/members/${P.id}`, { role: 'editor' })).status === 200, 'back to editor');
+      await waitFor(async () => !(await P.req('GET', `/api/boards/${board.id}`)).json.board?.coOwner, 5000, 'the co-ownership to end');
+      // The refresh after the role change has run once the REST answer says so; prove it on the socket.
+      els(p).set('prot', note({ x: 5 }));
+      await settled(p, [o]);
+      await waitFor(() => els(p).get('prot')?.x === 77, 5000, 'the former co-owner to converge: protection is the owner’s again');
+      assert(els(o).get('prot')?.x === 77, 'a former co-owner changed a protected item');
     });
 
     await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {

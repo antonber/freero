@@ -40,6 +40,15 @@ from.
 `boards:read`, `boards:write`, `boards:suggest` (reserved), `comments:write`, `members:read`,
 `members:write`. A call can do what your role on the board allows AND the scope allows.
 
+Roles on a board are `owner`, `editor`, `commenter` and `viewer`. A **co-owner** (#122) reads
+`role: "editor"` with `coOwner: true` (boards, docs, members): an editor who also manages the
+board's sharing — members' roles (`PATCH …/members/{userId}` with `role: "coowner"` makes one),
+removing people, the link, its password and expiry — but never deletes or transfers the board.
+Clients that don't know `coOwner` see an editor, which is exactly what a co-owner may do on the
+board itself. A board's owner and co-owners can also keep editors from inviting people (403
+`board_sharing_restricted`) and viewers and commenters from reading its content out (403
+`downloads_restricted` on the reads that take content out, as the workspace's downloads policy does).
+
 `problems:triage` is for Freero's operators only (OPERATOR_EMAILS, verified): a personal access
 token of an operator account may carry it (the server refuses it to anyone else and to OAuth apps),
 and it works only while the account is an operator. See below.

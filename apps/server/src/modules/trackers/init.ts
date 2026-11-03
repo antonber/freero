@@ -8,10 +8,11 @@ import { logError } from '../../platform/log';
 import { consumeOutbox } from '../../platform/outbox';
 import { DECIDED_SUGGESTION_TTL_MS } from '@freero/shared';
 import { onSignedOutEverywhere } from '../auth/index';
+import { onBoardMovedWorkspace } from '../boards/index';
 import { onSuggestionsDecided } from '../realtime/index';
 import { registerIssueObjects } from './objects';
 import * as repo from './repo';
-import { pollOnce, proposalsDecided, trackersConsumer } from './service';
+import { pauseLinksOutside, pollOnce, proposalsDecided, trackersConsumer } from './service';
 
 const POLL_LOCK_KEY = 7_202_611_101; // arbitrary, constant across releases
 
@@ -24,6 +25,11 @@ export default function initTrackers(ctx: ServerContext): void {
     intervalMs: Math.min(15_000, ctx.config.trackers.pollMs),
     // Proposed imports decided longer ago than a suggestion's undo window are forgotten with it.
     run: () => pollOnce().then(() => repo.pruneProposals(Date.now() - DECIDED_SUGGESTION_TTL_MS - 3_600_000).then(() => undefined)),
+  });
+  // A board moved to another workspace (#124): the old team's connections stop syncing it.
+  onBoardMovedWorkspace(async (e) => {
+    const count = await pauseLinksOutside(e.boardId, e.toWorkspaceId);
+    return count ? [{ kind: 'tracker_links_paused', count }] : [];
   });
   // An accepted proposed import becomes linked cards (#82): realtime reports the decisions.
   onSuggestionsDecided((e) => void proposalsDecided(e).catch((err) => logError('trackers: could not record decisions on proposed imports', err)));

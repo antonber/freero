@@ -44,6 +44,8 @@ function boardEvent(key: string, r: BoardEventRecord): repo.NewEvent {
   if (r.from !== undefined) data.from = r.from;
   if (r.to !== undefined) data.to = r.to;
   if (r.copyOf) data.copyOf = r.copyOf;
+  if (r.fromWorkspace) data.fromWorkspace = r.fromWorkspace;
+  if (r.toWorkspace) data.toWorkspace = r.toWorkspace;
   return { sourceKey: `outbox:${key}`, type: r.type, workspaceId: r.workspaceId, boardId: r.boardId, objectUri: boardUri(r.boardId), actor: { kind: 'user', id: r.actorId }, data, at: r.at };
 }
 
@@ -51,6 +53,8 @@ function memberEvent(key: string, r: MemberEventRecord, workspaceId: string): re
   const data: MemberEventData = { userId: r.userId };
   if (r.role) data.role = r.role;
   if (r.type === 'member.role_changed') data.previousRole = r.previousRole;
+  if (r.coOwner !== undefined) data.coOwner = r.coOwner;
+  if (r.type === 'member.role_changed' && r.previousCoOwner !== undefined) data.previousCoOwner = r.previousCoOwner;
   return {
     sourceKey: `outbox:${key}`,
     type: r.type,

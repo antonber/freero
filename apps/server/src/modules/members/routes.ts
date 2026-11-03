@@ -9,7 +9,7 @@ import { commentPeopleOf } from '../realtime/index';
 import { decideRequest, listRequests, requestAccess, requestState, withdrawRequest } from './accessRequests';
 import { acceptInvite, listPending, previewInvite, resendInvite } from './invites';
 import * as repo from './repo';
-import { inviteBoardMember, listBoardMembers, removeBoardMember, setBoardMemberRole } from './service';
+import { inviteBoardMember, listBoardMembers, removeBoardMember, requireMayInvite, setBoardMemberRole } from './service';
 
 const MAX_PEOPLE = 100;
 
@@ -116,7 +116,9 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     rateLimit('invite', 'user'),
     handle(async (req, res) => {
       const me = currentUser(req);
-      const { title, canShareExternally } = await requireBoardAccess(req.params.id, me.id, 'editor');
+      const access = await requireBoardAccess(req.params.id, me.id, 'editor');
+      const { title, canShareExternally } = access;
+      requireMayInvite(access);
       if (!me.emailVerified) throw forbidden('Verify your email address before inviting people');
       if (!canShareExternally) throw forbidden('This workspace only lets you share its boards with people in it');
       res.json({ invite: await resendInvite(req, req.params.id, title, req.params.inviteId, me) });
@@ -127,9 +129,9 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     '/boards/:id/invites/:inviteId',
     handle(async (req, res) => {
       const me = currentUser(req);
-      const { role } = await requireBoardAccess(req.params.id, me.id, 'editor');
-      // The owner revokes any invite; an editor only the ones they sent.
-      if (!(await repo.deleteInvite(req.params.id, req.params.inviteId, role === 'owner' ? null : me.id)))
+      const { manages } = await requireBoardAccess(req.params.id, me.id, 'editor');
+      // The owner and co-owners revoke any invite; an editor only the ones they sent.
+      if (!(await repo.deleteInvite(req.params.id, req.params.inviteId, manages ? null : me.id)))
         throw notFound('No such pending invite (or it was sent by someone else)');
       res.json({ ok: true });
     }),

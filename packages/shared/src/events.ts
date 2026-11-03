@@ -43,6 +43,12 @@ export interface BoardEventData {
   to?: string | null;
   /** board.created as a copy: the id of the board it was copied from. */
   copyOf?: string;
+  /**
+   * [additive, #124] board.moved into another workspace: in the workspace it left, `toWorkspace`
+   * (its id); in the one it moved to, `fromWorkspace`. `from` / `to` are its projects there.
+   */
+  fromWorkspace?: string;
+  toWorkspace?: string;
 }
 export interface MemberEventData {
   userId: string;
@@ -50,6 +56,12 @@ export interface MemberEventData {
   role?: Exclude<Role, 'owner'>;
   /** member.role_changed: the role before. */
   previousRole?: Exclude<Role, 'owner'> | null;
+  /**
+   * [additive, #122] A co-owner (role 'editor' that also manages sharing). member.role_changed is
+   * raised when only this changed; `previousCoOwner` says what it was.
+   */
+  coOwner?: boolean;
+  previousCoOwner?: boolean;
 }
 export interface ItemEventData {
   /**

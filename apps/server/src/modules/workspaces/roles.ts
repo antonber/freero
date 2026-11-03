@@ -28,6 +28,8 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   publicLinks: 'anyone',
   liveEmbeds: 'on',
   boardEmbeds: 'on',
+  linkPassword: 'optional',
+  linkMaxDays: null,
 };
 
 /** The team access level of a board: its project's own level, else the workspace's. */

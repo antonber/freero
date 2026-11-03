@@ -63,9 +63,17 @@ export interface HostDeps {
   trackers?: BoardTrackersResponse['connections'];
   /** Opens "Report a problem" (app/problems) for this board. */
   reportProblem?: Host['reportProblem'];
+  /**
+   * The server ended this board's socket because access is gone (4403). The page re-asks for the
+   * board: a link that just got a password offers its password form in place (#39).
+   */
+  onAccessLost?: () => void;
   /** The person's theme (app/lib/theme.ts; saved to their account when they have one). */
   colorTheme?: Host['colorTheme'];
 }
+
+/** Close code of a board socket whose access ended (y-websocket contract in @freero/shared api.ts). */
+const WS_CLOSE_NO_ACCESS = 4403;
 
 /** Live activities (KAI-132): the same REST for accounts and guests (the server decides who may answer). */
 export function engageOf(boardId: string): HostEngage {
@@ -118,12 +126,15 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       title: board.title,
       role: board.role,
       canExport: board.permissions.canExport,
+      canCopy: board.permissions.canCopy !== false,
+      coOwner: board.coOwner === true,
       team: deps.team ? { name: deps.team.name } : null,
       call: board.call ?? null,
       jitsiCalls: board.permissions.jitsiCalls === true,
       embeds: embedsOf(board.permissions),
     },
     syncUrl: `${wsBase()}/ws/boards`,
+    ...(deps.onAccessLost ? { onConnectionEnded: (end: { code: number }) => void (end.code === WS_CLOSE_NO_ACCESS && deps.onAccessLost?.()) } : {}),
     personalViews: personalViewsOf(board.id),
     uploadImage,
     uploadFile,
@@ -199,7 +210,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
  */
 export function createGuestHost(
   board: BoardSummary,
-  deps: { user: HostUser; navigate(path: string): void; notify: Host['notify']; signUpPath: string },
+  deps: { user: HostUser; navigate(path: string): void; notify: Host['notify']; signUpPath: string; onAccessLost?: () => void },
 ): Host {
   syncServerClock();
   const needsAccount = (what: string) => () => Promise.reject(new Error(`${what} needs a free Freero account.`));
@@ -209,8 +220,19 @@ export function createGuestHost(
     });
   return {
     user: deps.user,
-    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false, call: board.call ?? null, embeds: embedsOf(board.permissions) },
+    board: {
+      id: board.id,
+      title: board.title,
+      role: board.role,
+      canExport: board.permissions.canExport,
+      canCopy: board.permissions.canCopy !== false,
+      team: null,
+      signedIn: false,
+      call: board.call ?? null,
+      embeds: embedsOf(board.permissions),
+    },
     syncUrl: `${wsBase()}/ws/boards`,
+    ...(deps.onAccessLost ? { onConnectionEnded: (end: { code: number }) => void (end.code === WS_CLOSE_NO_ACCESS && deps.onAccessLost?.()) } : {}),
     // Guests may report what they can open (KAI-181), with an optional address for the outcome.
     report: async ({ target, reason, note, contactEmail }) => {
       await api.report({ boardId: board.id, target, reason, ...(note ? { note } : {}), ...(contactEmail ? { contactEmail } : {}) });

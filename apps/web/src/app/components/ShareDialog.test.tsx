@@ -18,21 +18,22 @@ vi.mock('../api/client', async (importOriginal) => {
 const user = (id: string, name: string): Account => ({ id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, createdAt: 0, emailVerified: true, deletionScheduledFor: null, timeZone: 'UTC' });
 const member = (id: string, name: string, role: Role): BoardMember => ({ userId: id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, role });
 const MEMBERS = [member('u1', 'Ada', 'owner'), member('u2', 'Bob', 'editor'), member('u3', 'Cy', 'viewer')];
-const board = (role: Role): BoardSummary => ({
+const board = (role: Role, extra: Partial<BoardSummary> = {}): BoardSummary => ({
   id: 'b1', kind: 'board', title: 'Roadmap', description: '', ownerId: 'u1', ownerName: 'Ada', role, starred: false,
   thumbnail: null, linkAccess: 'viewer', createdAt: 0, updatedAt: 0, lastOpenedAt: null,
   workspaceId: 'w1', projectId: null, team: null, member: role !== 'owner',
   permissions: { canExport: true, canShareExternally: true, maxLinkAccess: 'editor', canMove: role === 'owner', canTransfer: role === 'owner' },
+  ...extra,
 });
 
 let root: Root;
 let host: HTMLDivElement;
 
 /** `role` = the server's current role; `pageRole` = what the board page loaded earlier (may be stale). */
-async function open(me: Account, role: Role, pageRole: Role = role) {
+async function open(me: Account, role: Role, pageRole: Role = role, extra: Partial<BoardSummary> = {}, members: BoardMember[] = MEMBERS) {
   vi.mocked(api.session).mockResolvedValue({ user: me });
-  vi.mocked(api.getBoard).mockResolvedValue({ board: board(role) });
-  vi.mocked(api.listMembers).mockResolvedValue({ members: MEMBERS });
+  vi.mocked(api.getBoard).mockResolvedValue({ board: board(role, extra) });
+  vi.mocked(api.listMembers).mockResolvedValue({ members });
   act(() => {
     root.render(
       <MemoryRouter>
@@ -93,5 +94,21 @@ describe('ShareDialog permissions', () => {
     expect(ui.inviteForm()).toBeNull();
     expect(ui.removeButtons()).toHaveLength(0);
     expect(ui.linkSelect()).toBeNull();
+  });
+
+  it('gives a co-owner the owner’s sharing controls — never on the owner’s own row — and lets them leave; an editor the board keeps from inviting is told why', async () => {
+    const co = { ...member('u2', 'Bob', 'editor'), coOwner: true };
+    const managing = { coOwner: true, permissions: { ...board('editor').permissions, manageSharing: true, invite: true } };
+    const ui = await open(user('u2', 'Bob'), 'editor', 'editor', managing, [MEMBERS[0], co, MEMBERS[2]]);
+    expect(ui.linkSelect()).not.toBeNull();
+    expect([...ui.roleSelects()].map((b) => b.getAttribute('aria-label')).sort()).toEqual(['Role for Bob', 'Role for Cy']);
+    expect(ui.leaveButton()).toBeDefined();
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    const kept = { sharing: { editorsCanShare: false, viewersCanExport: true }, permissions: { ...board('editor').permissions, invite: false } };
+    const editor = await open(user('u2', 'Bob'), 'editor', 'editor', kept);
+    expect(editor.inviteForm()).toBeNull();
+    expect(document.body.textContent).toContain('lets only owners and co-owners invite');
   });
 });

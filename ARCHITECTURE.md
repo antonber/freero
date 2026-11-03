@@ -134,7 +134,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A kanban's saved views (`KanbanElement.views` / `activeView`: what cards show, density, colour-by, `groupBy`, `subGroupBy`, other fields' column settings, `filter`, `sort` and the manual order kept while sorted, the view `locked`; since 3a also its table tabs — columns, filter, sort, lock — and the tab everyone starts on; since 3b list, calendar and timeline tabs — a list's fields and grouping, a calendar's date field, a timeline's start / end fields, scale and swimlanes) and swimlane geometry (`lanes`) — read only through `@freero/shared` `views.ts` (`boardView`), `tabs.ts` (`viewTabs`, `projectionView`, `savedTabId`; entries of layouts a client doesn't know are kept when it writes, and so is an `activeView` naming one) and `projections.ts` (where a calendar or timeline places a card, what moving it writes) and `fields.ts` (`groupFieldId`); filters and sorts are evaluated only by `@freero/shared` `query.ts` (the free-form table's typed filter / sort too); the layout itself is `@freero/shared` `layout/kanban.ts` `planKanban` | `features/kanban` (View panel: "Save for everyone", density, group by, swimlanes, sort, lock); it keeps `colorCards` equal to "coloured by column" for older clients. Regrouping writes the old group field's values onto the cards from their positions in the same transaction, a drop into another swimlane writes that row's value (the layout's one write to card values), and the layout drops `manualOrder` once a cleared sort is undone. Server: `modules/api` `configure_view` (the saved view or a tab — `view`, `addView`, `name`, `active`, `remove` —, refused while locked by someone else) | `runCommand('kanban.setCardDisplay' / 'kanban.saveViewForEveryone' / 'kanban.groupBy' / 'kanban.setSwimlanes' / 'kanban.setMyFilter' / 'kanban.setSort' / 'kanban.lockView' / 'kanban.addTab' / 'kanban.addTableTab' / 'kanban.renameTab' / 'kanban.deleteTab')` |
 | A linked view (`KanbanViewElement`, type `kanbanview`, step 3c: a kanban's cards as a table, list, calendar or timeline elsewhere on its board — `sourceId` and one projection view, ids only, never a copy of the cards or their labels) — read only through `@freero/shared` `linkedViews.ts` (`linkedView`, `linkedSource`) | `features/kanban` (the second element of its `element.tsx`; "Add linked view ▸" in a kanban's context menu and tab menu, the View panel: name, layout, lock, "Save for everyone"); server `modules/api` `add_view` (placed beside the kanban, `linkedViewSpot`) and `configure_view` with the linked view's id | `runCommand('kanban.addLinkedView' / 'kanban.setMyLinkedView' / 'kanban.saveLinkedView' / 'kanban.configureLinkedView')`. Its edits write the real cards through `card.setValues`, as a tab's do. Copying keeps `sourceId` (with the kanban copied along, the engine's id remap points the copy at the kanban's copy); pasted onto another board without its kanban it is left out (`pasteContent`; step 3d makes it a cross-board view) |
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
-| An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner only (`@freero/shared` `mayProtect(role)`, the one place co-owners join; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
+| An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
@@ -1558,7 +1558,9 @@ members with roles owner / admin / member / guest (separate from board roles).
   an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
   viewer's client, the frames being third-party pages the CSP already confines), `boardEmbeds`
   (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
-  embed page's framing header, its sockets and oEmbed all ask). All other
+  embed page's framing header, its sockets and oEmbed all ask), `linkPassword` / `linkMaxDays`
+  (#39: what a board's link needs before it is turned on or changed; see "Co-owners, board
+  sharing settings and moving boards"). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
@@ -1689,7 +1691,7 @@ approval lets the requester in at once.
 
 ### Share-link password and expiry (`boards/linkProtection.ts`, KAI-145)
 
-- The owner may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
+- The owner (or a co-owner, #122) may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
   expiry is applied where a board is read (`repo.toBoard`: `linkAccess` reads 'none' from then on,
   for everyone, like an operator's block); a job (`boards:link-expiry`, every 10 s, one instance)
   re-checks the live sockets of links that just expired, so link-only visitors are disconnected.
@@ -1702,6 +1704,65 @@ approval lets the requester in at once.
   the link would let that person in after the password; `POST /boards/:id/link-unlock` (and the
   guest join / `/guest/boards/:id/unlock`) check it, rate limited per IP and per board + person,
   refusals audited (`board.link_password_refused`), changes audited (`board.link_protection_changed`).
+- A link-only visitor disconnected because the link just got a password (socket closed 4403) is
+  offered the password form in place: the board page (accounts and guests) re-asks for the board
+  through `Host.onConnectionEnded` and shows `LinkPassword` when the answer is
+  `link_password_required` (#39).
+
+### Co-owners, board sharing settings and moving boards (#122, #123, #39, #124)
+
+- **Co-owners** (`board_members.co_owner`, written only by members' repo; `role` stays 'editor'):
+  an editor membership that also manages the board's sharing. `members/roles.ts` `resolveCoOwner`
+  decides whether it counts (not while the workspace blocks the person, not for someone outside a
+  workspace with `externalSharing: 'none'` — exactly when `resolveRole` ignores the membership);
+  `managesSharing(role, coOwner)` (owner or co-owner) is the ONE check for members' roles,
+  removing people, revoking any invite, deciding (and being told about) access requests, the link and its password /
+  expiry, embedding (#2) and the board's sharing settings. Ownership itself — trash, delete,
+  transfer, moving to another workspace — stays `role === 'owner'` (`requireAccess(…, 'owner')`),
+  which a co-owner never is, and the owner holds no membership row, so nobody can change or remove
+  the owner's access. On the wire a co-owner reads `role: 'editor'` plus `coOwner: true`
+  (`BoardSummary`, `BoardMember`, the public API's Board / Doc / Member, MCP `search_boards`), and
+  the socket's role message says 'editor': a client — or a server instance, mid-deploy — that
+  doesn't know co-owners treats them as the editors they also are, never as owners. Setting it:
+  `PATCH /boards/:id/members/:userId { role: 'coowner' }` (any other role ends it), audited as
+  `board.member_role_changed` with the roles as PATCH takes them; member events carry
+  `coOwner` / `previousCoOwner`. Inside the board a co-owner is an editor (hidden frames, layers,
+  facilitation), except protected locks, which co-owners may set and lift like the owner (`mayProtect`).
+- **A board's own sharing settings** (#123; `boards.editors_can_share`, `boards.viewers_can_export`,
+  boards' repo; `PATCH /boards/:id { sharing }`, owners and co-owners, `board.sharing_settings_changed`).
+  "Editors can share" off: members' `requireMayInvite` refuses an editor's invite / resend with 403
+  `board_sharing_restricted` (the share dialog says why). "Viewers and commenters can copy and
+  export" off: boards' `requireDownload` — the one check behind exports, duplicates, templates,
+  backups, file downloads, the outline, the public API, MCP and AI — refuses viewers, commenters and
+  guests, like the workspace's downloads policy does (audited `board.download_refused`, `by:
+  'board'`); `BoardSummary.permissions.canExport` / `canCopy` tell the UI, and the engine puts
+  nothing on the clipboard when `Host.board.canCopy` is false. Both are ANDed with the workspace's
+  policies: a board can be stricter than its workspace, never looser. Nothing prevents a screenshot;
+  the dialog says so.
+- **Link policy** (#39; `workspaces.link_password`, `workspaces.link_max_days`): boards'
+  `checkLinkPolicy` checks the link as the whole PATCH leaves it (link access, password, expiry
+  validated together BEFORE anything is stored, protection written first), and `shareByLink` (an
+  app's "Share with team") the same way. Turning a link on (or back on) or changing its role needs
+  everything the policy asks; a link that stays as it is may be made safer step by step but never
+  weaker. Links that were on before the policy keep working; `GET /workspaces/:id/admin/link-compliance`
+  (boards' `linksOutOfPolicy`) lists them in the admin console. The policy change itself is
+  `workspace.policies_changed`.
+- **Moving a board to another workspace** (#124; `POST /boards/:id/move`, boards' `moveToWorkspace`):
+  its owner, a full member of the target (or it is their personal workspace), and the SOURCE's
+  downloads policy must let them take the content out (`via: 'move'`). One row update keeps the
+  id, content, comments, files, versions, memberships and pending invites; access is resolved from
+  the target from the next request on (old team access ends; the target's two-step requirement,
+  downloads, external sharing and guest policies apply). What the target forbids is turned off in
+  the same transaction — a link above its `linkSharing` is lowered, a link the owner couldn't share
+  there or without the password / expiry it requires is turned off, embedding off where
+  `boardEmbeds` is off — and returned as `adjusted`. Audited as `board.moved_workspace` in BOTH
+  workspaces, a `board.moved` event in each (`toWorkspace` / `fromWorkspace`), live sockets
+  re-resolved on every instance. Other modules keep their per-workspace state right through boards'
+  `onBoardMovedWorkspace` (after commit): trackers pause issues linked through the old team's
+  connections (`pauseLinksOutside`; `syncLink` refuses a team connection of another workspace than
+  the board's anyway). Team templates are copies with their own workspace and are not touched.
+  Duplicating takes `{ workspaceId, projectId }` (where the person may create boards, createBoard's
+  checks); the dashboard's Duplicate and "Move to another workspace" dialogs pick both.
 
 ### Activity (`modules/activity`, `realtime/changes.ts`, KAI-44)
 

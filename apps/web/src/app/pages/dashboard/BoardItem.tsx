@@ -1,6 +1,6 @@
 import { memo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, Crown, Ellipsis, Folder, FolderInput, FolderLock, House, LogOut, Pencil, Share2, SquareArrowOutUpRight, Star, Trash } from 'lucide-react';
+import { Building2, Copy, Crown, Ellipsis, Folder, FolderInput, FolderLock, House, LogOut, Pencil, Share2, SquareArrowOutUpRight, Star, Trash } from 'lucide-react';
 import type { BoardSummary, ProjectSummary } from '@freero/shared';
 import { Avatar, IconButton, Menu, type MenuItem } from '@ui';
 import { BoardThumb } from './BoardThumb';
@@ -19,6 +19,8 @@ export interface BoardActions {
   leave(b: BoardSummary): void;
   /** Into a project of the board's workspace (null: the workspace root). */
   move(b: BoardSummary, projectId: string | null): void;
+  /** Into another workspace (#124; its owner). */
+  moveToWorkspace(b: BoardSummary): void;
   transfer(b: BoardSummary): void;
   describe(b: BoardSummary, description: string): void;
 }
@@ -43,10 +45,10 @@ export function boardMenuItems(b: BoardSummary, actions: BoardActions, projects:
     { id: 'rename', label: 'Rename', icon: Pencil, disabled: !canEdit, disabledReason: 'Only editors can rename this board', onSelect: () => actions.rename(b) },
     {
       id: 'duplicate',
-      label: 'Duplicate',
+      label: 'Duplicate…',
       icon: Copy,
       disabled: !b.permissions.canExport,
-      disabledReason: 'This workspace doesn’t allow copying its boards',
+      disabledReason: b.permissions.canCopy === false ? 'The board’s owner doesn’t let viewers and commenters copy it' : 'This workspace doesn’t allow copying its boards',
       onSelect: () => actions.duplicate(b),
     },
     { id: 'star', label: b.starred ? 'Remove from starred' : 'Star', icon: Star, onSelect: () => actions.toggleStar(b) },
@@ -71,6 +73,7 @@ export function boardMenuItems(b: BoardSummary, actions: BoardActions, projects:
           } satisfies MenuItem,
         ]
       : []),
+    ...(b.role === 'owner' ? [{ id: 'move-workspace', label: 'Move to another workspace…', icon: Building2, onSelect: () => actions.moveToWorkspace(b) } satisfies MenuItem] : []),
     ...(b.permissions.canTransfer ? [{ id: 'transfer', label: 'Transfer ownership…', icon: Crown, onSelect: () => actions.transfer(b) } satisfies MenuItem] : []),
     // Only a board you were invited to can be left; team or link access ends with the workspace / link.
     ...(b.role === 'owner'

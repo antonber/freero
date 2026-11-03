@@ -1143,7 +1143,7 @@
         "operationId": "inviteMember",
         "tags": ["members"],
         "summary": "Share the board with an email address",
-        "description": "Owners and editors with a verified email, within the workspace's sharing policies. An existing account becomes a member; any other address gets an emailed invite.",
+        "description": "Owners, co-owners and editors (while the board's \"Editors can share\" is on; else 403 `board_sharing_restricted`) with a verified email, within the workspace's sharing policies. An existing account becomes a member; any other address gets an emailed invite.",
         "x-freero-scope": "members:write",
         "security": [{ "bearer": ["members:write"] }],
         "requestBody": {
@@ -1196,12 +1196,13 @@
       "patch": {
         "operationId": "setMemberRole",
         "tags": ["members"],
-        "summary": "Change a member's role (owner only)",
+        "summary": "Change a member's role (owner or co-owner)",
+        "description": "`coowner` makes them a co-owner: an editor who also manages the board's sharing (members' roles, the link, embedding). Any other role ends it. Nobody changes the owner's own access.",
         "x-freero-scope": "members:write",
         "security": [{ "bearer": ["members:write"] }],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "$ref": "#/components/schemas/MemberRole" } } } } }
+          "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "$ref": "#/components/schemas/MemberRoleChange" } } } } }
         },
         "responses": {
           "200": {
@@ -1221,7 +1222,7 @@
       "delete": {
         "operationId": "removeMember",
         "tags": ["members"],
-        "summary": "Remove a member (owner; or yourself, to leave)",
+        "summary": "Remove a member (owner or co-owner; or yourself, to leave)",
         "x-freero-scope": "members:write",
         "security": [{ "bearer": ["members:write"] }],
         "responses": {
@@ -2254,6 +2255,7 @@
           "description": { "type": "string" },
           "url": { "type": "string" },
           "role": { "type": "string", "enum": ["owner", "editor", "commenter", "viewer"] },
+          "coOwner": { "type": "boolean", "description": "You co-own it: `role` is `editor`, and you also manage its sharing. Absent: no." },
           "workspaceId": { "type": "string" },
           "projectId": { "type": ["string", "null"] },
           "owner": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
@@ -2696,6 +2698,7 @@
           "description": { "type": "string" },
           "url": { "type": "string" },
           "role": { "type": "string", "enum": ["owner", "editor", "commenter", "viewer"] },
+          "coOwner": { "type": "boolean", "description": "You co-own it: `role` is `editor`, and you also manage its sharing. Absent: no." },
           "workspaceId": { "type": "string" },
           "projectId": { "type": ["string", "null"] },
           "owner": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
@@ -2821,6 +2824,11 @@
         }
       },
       "MemberRole": { "type": "string", "enum": ["editor", "commenter", "viewer"] },
+      "MemberRoleChange": {
+        "type": "string",
+        "enum": ["coowner", "editor", "commenter", "viewer"],
+        "description": "`coowner`: an editor who also manages the board's sharing (the member then reads `role: editor`, `coOwner: true`)."
+      },
       "Member": {
         "type": "object",
         "required": ["userId", "name", "color", "avatarUrl", "role"],
@@ -2831,6 +2839,7 @@
           "color": { "type": "string" },
           "avatarUrl": { "type": ["string", "null"] },
           "role": { "type": "string", "enum": ["owner", "editor", "commenter", "viewer"] },
+          "coOwner": { "type": "boolean", "description": "A co-owner: `role` is `editor`, and they also manage the board's sharing. Absent: no." },
           "team": { "type": "boolean" }
         }
       },

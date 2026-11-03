@@ -269,6 +269,11 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
     await repo.markFailed(link.id, 'paused', `${name} can no longer edit this board, so syncing ${link.externalKey} is paused.`, null);
     return null;
   }
+  // A team's connection only ever syncs that team's boards: the board moved to another workspace (#124).
+  if (conn.workspaceId && conn.workspaceId !== who.workspaceId) {
+    await repo.markFailed(link.id, 'paused', movedNote(link, conn), null);
+    return null;
+  }
   if (conn.status === 'needs_auth' || !conn.credentialsSealed) {
     await failLink(link, conn, new TrackerError(`${conn.name} needs to be connected again.`, 'auth'), who);
     return null;
@@ -1285,6 +1290,35 @@ export async function unlink(userId: string, boardId: string, linkId: string): P
 export async function requestSync(userId: string, boardId: string, linkId: string): Promise<void> {
   const { link } = await requireLinkOnBoard(userId, boardId, linkId);
   await enqueueSync([link.id]);
+}
+
+const movedNote = (link: Pick<StoredLink, 'externalKey'>, conn: Pick<StoredConnection, 'name'>) =>
+  `This board moved to another workspace, so ${link.externalKey} no longer syncs through ${conn.name}.`;
+
+/**
+ * A board moved into another workspace (#124): issues linked through a TEAM connection of another
+ * workspace stop syncing — that team's tracker must not keep receiving a board it no longer holds,
+ * nor write into it (syncLink refuses them too, whatever path queues them). Their badges say why;
+ * the items and the issues stay as they are. A person's own connections go with them. Returns how
+ * many it paused.
+ */
+export async function pauseLinksOutside(boardId: string, workspaceId: string): Promise<number> {
+  const paused: Array<{ link: StoredLink; conn: StoredConnection }> = [];
+  for (const link of await repo.linksOfBoard(boardId)) {
+    const conn = await repo.getConnection(link.connectionId);
+    if (!conn?.workspaceId || conn.workspaceId === workspaceId) continue;
+    await repo.markFailed(link.id, 'paused', movedNote(link, conn), null);
+    paused.push({ link, conn });
+  }
+  for (const { link, conn } of paused) {
+    const who = await actorFor(link, conn);
+    if (who === 'gone' || who === 'no_access') continue;
+    await writeBoard(boardId, who.actor, (view) => {
+      const prev = view.collection(TRACKER_COLLECTION).get(link.id) as TrackerIssueRecord | undefined;
+      return prev ? { collections: { [TRACKER_COLLECTION]: { [link.id]: { ...prev, state: 'paused', note: movedNote(link, conn), syncedAt: Date.now() } } } } : null;
+    });
+  }
+  return paused.length;
 }
 
 /**

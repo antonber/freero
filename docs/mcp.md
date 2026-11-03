@@ -214,7 +214,7 @@ import_from_tracker) somewhere people already have or a new container:
 | Tool | Needs | What it does |
 |---|---|---|
 | `list_workspaces` | read | Your workspaces (personal and teams) and your role in each. |
-| `search_boards` | read | Boards you can open, newest change first; `query` searches titles; `workspaceId`, `limit`, `cursor`. |
+| `search_boards` | read | Boards you can open, newest change first; `query` searches titles; `workspaceId`, `limit`, `cursor`. Each with your role (`coOwner: true`: an editor who also manages its sharing, #122). |
 | `search` | read | Words in what your boards say — titles, notes, text, shapes, cards, frame titles, table cells, tags, connector labels, comments — across the boards you can open (`workspaceId` or `boardId` to narrow it): each match with its board id, item id, a snippet and a link. Never private drafts or hidden frames; boards whose downloads policy keeps their content from you are left out. Changes are searchable within seconds (read a board you just changed with `get_board_outline`). |
 | `resolve_links` | read | What Freero links (board / item URLs, `freero://` addresses; up to 200) point at — type, title, board, your access — or `unavailable` (no access and no such object read the same). |
 | `find_backlinks` | read | Items and comments on boards you can open that link to a board or an item. |

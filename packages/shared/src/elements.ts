@@ -61,7 +61,7 @@ export interface BaseElement {
   z: number;
   locked?: boolean;
   /**
-   * [additive] With `locked`: a protected lock. Only the board owner (`mayProtect`) may change,
+   * [additive] With `locked`: a protected lock. Only the board owner and co-owners (`mayProtect`) may change,
    * unlock, unprotect or delete the item; the server undoes anyone else's change. A client that
    * doesn't know the field sees an ordinary lock.
    */
