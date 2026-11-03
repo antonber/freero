@@ -24,10 +24,12 @@
 //
 // Who may write the collection: anyone who may edit may START a session naming themselves; once
 // one runs, only its facilitator or the board owner may change or end it, and nobody may hand it
-// to someone else. Other writes are compensated the same way. Following and hidden cursors are
+// to someone else. The participation switch (PARTICIPATION_KEY, participation.ts) is changed by the
+// owner, or by an editor while nobody facilitates, or by the facilitator. Other writes are
+// compensated the same way. Following and hidden cursors are
 // views each client applies; they are not enforceable and not enforced.
 import * as Y from 'yjs';
-import { FACILITATION_COLLECTION, FACILITATION_KEY, type FacilitationSession, type Role, type SessionLimits } from '@freero/shared';
+import { FACILITATION_COLLECTION, FACILITATION_KEY, PARTICIPATION_KEY, type FacilitationSession, type Role, type SessionLimits } from '@freero/shared';
 
 const canEdit = (role: Role) => role === 'owner' || role === 'editor';
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -129,13 +131,29 @@ function restore(map: Y.Map<unknown>, key: string, before: unknown): void {
   else map.set(key, before);
 }
 
+/**
+ * May `who` turn the participation switch (PARTICIPATION_KEY, participation.ts) `before` into
+ * `after`? An owner always; an editor while nobody facilitates, or as the facilitator (`session`:
+ * the one running after this change, if any).
+ */
+export function mayChangeParticipation(before: unknown, after: unknown, who: { userId: string; access: Role }, session: FacilitationSession | null): boolean {
+  if (JSON.stringify(before) === JSON.stringify(after)) return true;
+  if (!canEdit(who.access)) return false;
+  if (after !== undefined && !(isObj(after) && typeof after.open === 'boolean')) return false;
+  return who.access === 'owner' || !session || session.by === who.userId;
+}
+
 /** Undoes changes of the facilitation collection `who` may not make. True when it did. */
 export function guardSession(tr: Y.Transaction, doc: Y.Doc, who: { userId: string; access: Role }): boolean {
   if (!doc.share.has(FACILITATION_COLLECTION)) return false;
   const map = doc.getMap<unknown>(FACILITATION_COLLECTION);
   let reverted = false;
-  for (const [key, { before, after }] of changedKeys(tr, map)) {
+  const changes = changedKeys(tr, map);
+  // The switch is judged against the session as it was: a facilitator can't be bypassed by ending the session in the same update.
+  const sessionBefore = asSession(changes.get(FACILITATION_KEY)?.before ?? map.get(FACILITATION_KEY));
+  for (const [key, { before, after }] of changes) {
     if (key === FACILITATION_KEY && mayChangeSession(before, after, who)) continue;
+    if (key === PARTICIPATION_KEY && mayChangeParticipation(before, after, who, sessionBefore)) continue;
     restore(map, key, before);
     reverted = true;
   }

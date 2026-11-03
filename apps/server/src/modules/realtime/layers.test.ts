@@ -58,3 +58,33 @@ it('an anonymous reveal sends the other members nothing that says who wrote a dr
   // The thread goes with the draft, not left in Ana's layer for the next load to move into the board.
   expect(comments.size).toBe(0);
 });
+
+it('revealing an anonymous vote writes its ballots with no voter, in an order that does not follow who voted, removes the "has voted" markers, and adds to (never overwrites) ballots an earlier reveal wrote', () => {
+  const ballotsOf = (map: Y.Map<unknown>) => [...map.entries()].filter(([k]) => k !== 'session').map(([k, v]) => [k, v]);
+  const run = (voters: string[]) => {
+    const main = new Y.Doc();
+    const voting = main.getMap('voting');
+    voting.set('session', { id: 's1', active: true, title: 'V', votesPerUser: 3, elementIds: null, anonymous: true, anonymousBallots: true, startedBy: 'lead', startedAt: 1, endedAt: null });
+    const picks: Record<string, string[]> = { ana: ['b', 'a'], ben: ['c'], cat: ['a'] };
+    for (const u of voters) voting.set(`s1:${u}`, { sessionId: 's1', userId: u, elementIds: [], sealed: true });
+    const layers = new Map(voters.map((u) => [privateLayerOf(u), layer({ [`s1:${u}`]: { sessionId: 's1', userId: u, elementIds: picks[u], anonymous: true } })]));
+    let bytes = Buffer.alloc(0);
+    main.on('update', (u: Uint8Array) => (bytes = Buffer.concat([bytes, Buffer.from(u)])));
+    applyLayerOp({ type: 'reveal', collection: 'voting', prefix: 's1:' }, main, layers, 'server');
+    return { main, bytes };
+  };
+  const one = run(['ana', 'ben', 'cat']);
+  const other = run(['cat', 'ben', 'ana']);
+  expect(ballotsOf(one.main.getMap('voting'))).toEqual([
+    ['s1:anon:0', { sessionId: 's1', userId: 'anon:0', elementIds: ['a'] }],
+    ['s1:anon:1', { sessionId: 's1', userId: 'anon:1', elementIds: ['a', 'b'] }],
+    ['s1:anon:2', { sessionId: 's1', userId: 'anon:2', elementIds: ['c'] }],
+  ]);
+  expect(ballotsOf(other.main.getMap('voting'))).toEqual(ballotsOf(one.main.getMap('voting')));
+  for (const u of ['ana', 'ben', 'cat']) expect(one.bytes.includes(Buffer.from(`s1:${u}"`)) || one.bytes.includes(Buffer.from(`"userId":"${u}"`))).toBe(false);
+
+  // A ballot that arrives after the reveal (another instance) is revealed later: it adds to the count.
+  const late = new Map([[privateLayerOf('dan'), layer({ 's1:dan': { sessionId: 's1', userId: 'dan', elementIds: ['c'], anonymous: true } })]]);
+  applyLayerOp({ type: 'reveal', collection: 'voting', prefix: 's1:' }, one.main, late, 'server');
+  expect(ballotsOf(one.main.getMap('voting')).length).toBe(4);
+});
