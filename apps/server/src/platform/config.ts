@@ -67,6 +67,13 @@ export interface TrackersConfig {
   /** Atlassian's authorization server and API gateway (overridden only to test against a mock). */
   jiraAuthUrl: string;
   jiraApiUrl: string;
+  /** Asana and monday.com OAuth apps the operator registered (#120, #121), or null: tokens only. */
+  asanaOAuth: { clientId: string; clientSecret: string } | null;
+  mondayOAuth: { clientId: string; clientSecret: string } | null;
+  /** Asana's app (OAuth and API: <url>/api/1.0) and monday.com's authorization server (overridden only to test against a mock). */
+  asanaUrl: string;
+  mondayAuthUrl: string;
+  mondayApiUrl: string;
 }
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
@@ -833,6 +840,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const jiraClientId = str('TRACKER_JIRA_CLIENT_ID');
   const jiraClientSecret = str('TRACKER_JIRA_CLIENT_SECRET');
   if (!!jiraClientId !== !!jiraClientSecret) problems.push('TRACKER_JIRA_CLIENT_ID and TRACKER_JIRA_CLIENT_SECRET go together (the Jira Cloud OAuth app)');
+  const pair = (id: string, secret: string, what: string) => {
+    const a = str(id);
+    const b = str(secret);
+    if (!!a !== !!b) problems.push(`${id} and ${secret} go together (${what})`);
+    return a && b ? { clientId: a, clientSecret: b } : null;
+  };
   const trackers: TrackersConfig = {
     privateEndpoints: bool('TRACKER_PRIVATE_ENDPOINTS', false),
     pollMs: int('TRACKER_POLL_SECONDS', 60, 5, 86_400) * 1000,
@@ -840,6 +853,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jiraOAuth: jiraClientId && jiraClientSecret ? { clientId: jiraClientId, clientSecret: jiraClientSecret } : null,
     jiraAuthUrl: (url('TRACKER_JIRA_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.atlassian.com').replace(/\/+$/, ''),
     jiraApiUrl: (url('TRACKER_JIRA_API_URL', ['https:', 'http:']) ?? 'https://api.atlassian.com').replace(/\/+$/, ''),
+    asanaOAuth: pair('TRACKER_ASANA_CLIENT_ID', 'TRACKER_ASANA_CLIENT_SECRET', 'the Asana OAuth app'),
+    mondayOAuth: pair('TRACKER_MONDAY_CLIENT_ID', 'TRACKER_MONDAY_CLIENT_SECRET', 'the monday.com OAuth app'),
+    asanaUrl: (url('TRACKER_ASANA_URL', ['https:', 'http:']) ?? 'https://app.asana.com').replace(/\/+$/, ''),
+    mondayAuthUrl: (url('TRACKER_MONDAY_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.monday.com').replace(/\/+$/, ''),
+    mondayApiUrl: (url('TRACKER_MONDAY_API_URL', ['https:', 'http:']) ?? 'https://api.monday.com').replace(/\/+$/, ''),
   };
   // Slack link unfurls: both halves of the operator's Slack app, or off. One without the other is a
   // mistake worth saying out loud rather than a silently missing feature.

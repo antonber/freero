@@ -201,6 +201,9 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 | `TRACKER_FALLBACK_POLL_SECONDS` | `900` | How often connections with webhooks poll anyway, to catch a delivery that never arrived. |
 | `TRACKER_JIRA_CLIENT_ID` / `TRACKER_JIRA_CLIENT_SECRET` | — | An OAuth 2.0 (3LO) app you registered at developer.atlassian.com (callback `<PUBLIC_URL>/api/trackers/oauth/jira/callback`; scopes `read:jira-work write:jira-work read:jira-user offline_access`). Set: "Connect with Atlassian" is offered next to API tokens. Both or neither. |
 | `TRACKER_JIRA_AUTH_URL` / `TRACKER_JIRA_API_URL` | `https://auth.atlassian.com` / `https://api.atlassian.com` | Atlassian's authorization server and API gateway. Only changed to test against a mock. |
+| `TRACKER_ASANA_CLIENT_ID` / `TRACKER_ASANA_CLIENT_SECRET` | — | An Asana OAuth app you registered in the Asana developer console (redirect URL `<PUBLIC_URL>/api/trackers/oauth/asana/callback`; full permissions, or the `default` scope). Set: "Connect with Asana" is offered next to personal access tokens. Both or neither. |
+| `TRACKER_MONDAY_CLIENT_ID` / `TRACKER_MONDAY_CLIENT_SECRET` | — | A monday.com app with OAuth you registered in the monday.com Developer Center (redirect URL `<PUBLIC_URL>/api/trackers/oauth/monday/callback`; scopes `boards:read boards:write users:read updates:read updates:write webhooks:write me:read`). Set: "Connect with monday.com" is offered next to API tokens. Both or neither. |
+| `TRACKER_ASANA_URL` / `TRACKER_MONDAY_AUTH_URL` / `TRACKER_MONDAY_API_URL` | `https://app.asana.com` / `https://auth.monday.com` / `https://api.monday.com` | Asana's app (its OAuth endpoints and `/api/1.0`), monday.com's authorization server and API. Only changed to test against a mock. |
 
 ## Public API and OAuth apps
 

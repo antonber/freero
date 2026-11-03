@@ -91,6 +91,23 @@ export interface WebhookDelivery {
   /** The connection's webhook secret. */
   secret: string;
   now: number;
+  /**
+   * A webhook Freero registered itself (`TrackerProvider.webhooks`: Asana, monday.com), its address
+   * already checked (it names the registration and carries a key made with the connection's
+   * secret): whether Freero is registering it right now — the only time a handshake is answered —
+   * and the secret the tracker issued in its handshake (Asana), once it has.
+   */
+  hook?: { pending: boolean; secret: string | null };
+}
+
+export interface WebhookResult {
+  /** The issues it is about (ids or keys); each is read back, never taken from the body. */
+  issues: string[];
+  /**
+   * A handshake, answered with this instead of 202 and nothing queued: Asana's X-Hook-Secret echoed
+   * (`keep`: the secret its deliveries will be signed with), monday.com's challenge echoed.
+   */
+  handshake?: { headers?: Record<string, string>; body?: unknown; keep?: string };
 }
 
 export interface TrackerProvider {
@@ -141,7 +158,18 @@ export interface TrackerProvider {
   /** How a board tag becomes one of this tracker's labels (Jira labels can't hold spaces). */
   label(tag: string): string;
   /** The issues a webhook delivery is about (ids or keys), or null when its signature doesn't verify. */
-  webhook(d: WebhookDelivery): { issues: string[] } | null;
+  webhook(d: WebhookDelivery): WebhookResult | null;
+  /**
+   * Webhooks Freero registers itself, one per project it sends to or imports from (Asana, monday.com:
+   * people can't paste an address there). `register` may be called back by the tracker to shake
+   * hands before it answers; `signed`: deliveries are signed with a secret that handshake issued,
+   * so a registration without one is no use.
+   */
+  webhooks?: {
+    signed: boolean;
+    register(conn: ProviderConnection, project: string, address: string): Promise<{ id: string }>;
+    unregister(conn: ProviderConnection, id: string): Promise<void>;
+  };
 }
 
 /** OAuth 2.0 (authorization code) for providers that offer it to Freero's operator. */

@@ -88,6 +88,18 @@ export function checkTrackerUrl(raw: string, rules: HttpRules): URL {
   return url;
 }
 
+/** A multipart/form-data body of plain text fields (Asana takes an external attachment only so). */
+export class FormFields {
+  constructor(readonly fields: Record<string, string>) {}
+}
+
+function multipart(f: FormFields): { boundary: string; payload: Buffer } {
+  const boundary = `freero-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const CRLF = "\r\n";
+  const parts = Object.entries(f.fields).map(([k, v]) => `--${boundary}${CRLF}content-disposition: form-data; name="${k.replace(/[^\w.-]/g, '')}"${CRLF}${CRLF}${v.replace(/\r?\n/g, ' ')}${CRLF}`);
+  return { boundary, payload: Buffer.from(`${parts.join('')}--${boundary}--${CRLF}`) };
+}
+
 function once(req: HttpRequest, rules: HttpRules): Promise<HttpResponse> {
   const url = checkTrackerUrl(req.url, rules);
   let payload: Buffer | null = null;
@@ -96,7 +108,11 @@ function once(req: HttpRequest, rules: HttpRules): Promise<HttpResponse> {
     'user-agent': 'Freero-Tracker-Sync',
     ...req.headers,
   };
-  if (req.body instanceof URLSearchParams) {
+  if (req.body instanceof FormFields) {
+    const m = multipart(req.body);
+    payload = m.payload;
+    headers['content-type'] = `multipart/form-data; boundary=${m.boundary}`;
+  } else if (req.body instanceof URLSearchParams) {
     payload = Buffer.from(req.body.toString());
     headers['content-type'] = 'application/x-www-form-urlencoded';
   } else if (req.body !== undefined) {

@@ -37,12 +37,14 @@ import { importIntoKanban, kanbanOf, planKanbanImport } from './kanban';
 import type { ProviderConnection, RemoteIssue } from './providers/types';
 import { trackerRequest, TrackerError } from './http';
 import { planRoadmapImport } from './roadmap';
-import { adfToMarkdown, htmlToMarkdown, markdownToAdf, markdownToHtml, markdownToWiki, wikiToMarkdown } from './markup';
+import { adfToMarkdown, asanaHtmlToMarkdown, htmlToMarkdown, markdownToAdf, markdownToAsanaHtml, markdownToHtml, markdownToWiki, wikiToMarkdown } from './markup';
+import { asana } from './providers/asana';
 import { azure } from './providers/azure';
 
 import { github, managedPart, withManagedPart } from './providers/github';
 import { jira } from './providers/jira';
 import { linear } from './providers/linear';
+import { monday } from './providers/monday';
 
 const card = (title: string): IssueValues => ({ title, description: '', status: 'todo', labels: ['ux'], dueDate: null });
 
@@ -92,7 +94,7 @@ it('labels a tracker reorders or re-cases are not mistaken for an edit', () => {
   expect(mergeField('labels', base, { labels: ['ux', 'Checkout'] }, { labels: ['checkout', 'UX'] }, { push: true, pull: true }).decision).toBe('none');
 });
 
-it('board text with markup characters reaches Jira and Azure DevOps as text, links as links, and reads back the same (ADF, wiki markup, HTML)', () => {
+it('board text with markup characters reaches Jira, Azure DevOps and Asana as text, links as links, and reads back the same (ADF, wiki markup, HTML, Asana rich text)', () => {
   const md = 'Card form *resets* on error {code} | [x]\n\n- Coupon field hidden ([open](https://freero.example/board/b?item=n1))\n- Too many steps';
   const adf = markdownToAdf(md);
   const texts = JSON.stringify(adf);
@@ -109,6 +111,11 @@ it('board text with markup characters reaches Jira and Azure DevOps as text, lin
   const html = markdownToHtml(risky);
   expect(html).not.toMatch(/<img|href="javascript/i);
   expect(htmlToMarkdown(html)).toBe(risky);
+  // Asana: its rich text (a <body>, newlines, no <p>), from the same escaped template.
+  const notes = markdownToAsanaHtml(risky);
+  expect(notes.startsWith('<body>') && notes.endsWith('</body>')).toBe(true);
+  expect(notes).not.toMatch(/<img|<p>|<br|href="javascript/i);
+  expect(asanaHtmlToMarkdown(notes)).toBe(risky);
 });
 
 it('a webhook signed with another secret or altered after signing is refused, and a replayed Linear delivery too', () => {
@@ -533,4 +540,130 @@ it('a tracker that answers 429 is asked again after the wait it named; a longer 
   // An admin-typed private address is never called unless the operator allows private trackers.
   await expect(trackerRequest({ method: 'GET', url: `https://127.0.0.1:${port}/x` }, { allowPrivate: false })).rejects.toMatchObject({ kind: 'refused' });
   await expect(trackerRequest({ method: 'GET', url: `http://jira.example.com/x` }, { allowPrivate: false })).rejects.toMatchObject({ kind: 'invalid' });
+});
+
+// ---- Asana (#120) and monday.com (#121) ----
+
+type Sent = { method: string; path: string; body?: unknown; headers?: Record<string, string> };
+const fakeConn = (provider: 'asana' | 'monday', answer: (r: Sent) => { status?: number; json: unknown }, settings: Record<string, unknown> = {}) => {
+  const sent: Sent[] = [];
+  const conn = {
+    id: provider,
+    provider,
+    deployment: null,
+    site: provider === 'asana' ? 'https://app.asana.com' : 'https://monday.com',
+    apiBase: provider === 'asana' ? 'https://app.asana.com/api/1.0' : 'https://api.monday.com',
+    settings,
+    async call(req: Sent) {
+      sent.push(req);
+      const a = answer(req);
+      return { status: a.status ?? 200, headers: {}, text: JSON.stringify(a.json), json: a.json };
+    },
+  } as unknown as ProviderConnection;
+  return { conn, sent };
+};
+
+it('an Asana handshake is answered only while Freero is registering that webhook and only once, and a delivery not signed with the secret it issued is refused', () => {
+  const now = Date.now();
+  const empty = Buffer.alloc(0);
+  const handshake = { 'x-hook-secret': 'b7e4c1d0a9f8e7d6' };
+  // Registering: the secret goes back in the answer and is kept.
+  expect(asana.webhook({ headers: handshake, rawBody: empty, secret: 's', now, hook: { pending: true, secret: null } })).toEqual({
+    issues: [],
+    handshake: { headers: { 'X-Hook-Secret': 'b7e4c1d0a9f8e7d6' }, keep: 'b7e4c1d0a9f8e7d6' },
+  });
+  // Not registering, or a secret already kept: a stranger can't swap it for their own.
+  expect(asana.webhook({ headers: handshake, rawBody: empty, secret: 's', now, hook: { pending: false, secret: null } })).toBeNull();
+  expect(asana.webhook({ headers: handshake, rawBody: empty, secret: 's', now, hook: { pending: true, secret: 'b7e4c1d0a9f8e7d6' } })).toBeNull();
+  const body = Buffer.from(JSON.stringify({ events: [{ action: 'changed', resource: { gid: '1201', resource_type: 'task' } }, { action: 'added', resource: { gid: '77', resource_type: 'story' }, parent: { gid: '1202', resource_type: 'task' } }] }));
+  const sig = (s: string, b = body) => createHmac('sha256', s).update(b).digest('hex');
+  const hook = { pending: false, secret: 'issued-by-asana' };
+  expect(asana.webhook({ headers: { 'x-hook-signature': sig('issued-by-asana') }, rawBody: body, secret: 's', now, hook })).toEqual({ issues: ['1201', '1202'] });
+  // Signed with the connection's own secret (not the one Asana issued), altered, or unsigned: refused.
+  expect(asana.webhook({ headers: { 'x-hook-signature': sig('s') }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(asana.webhook({ headers: { 'x-hook-signature': sig('issued-by-asana') }, rawBody: Buffer.from(body.toString().replace('1201', '1299')), secret: 's', now, hook })).toBeNull();
+  expect(asana.webhook({ headers: {}, rawBody: body, secret: 's', now, hook })).toBeNull();
+  // monday.com: its challenge is echoed only while Freero registers the webhook.
+  const challenge = Buffer.from(JSON.stringify({ challenge: 'c-123' }));
+  expect(monday.webhook({ headers: {}, rawBody: challenge, secret: 's', now, hook: { pending: true, secret: null } })).toEqual({ issues: [], handshake: { body: { challenge: 'c-123' } } });
+  expect(monday.webhook({ headers: {}, rawBody: challenge, secret: 's', now, hook: { pending: false, secret: null } })).toBeNull();
+});
+
+it('a title pushed to Asana or monday.com writes only the title, so a field someone changed there in the meantime is not written over', async () => {
+  const task = {
+    gid: '1201',
+    name: 'Old',
+    html_notes: '<body>Edited in Asana a moment ago</body>',
+    completed: false,
+    due_on: '2026-12-01',
+    memberships: [{ project: { gid: '900', name: 'Launch' }, section: { gid: '901', name: 'To do' } }],
+    workspace: { gid: '1' },
+  };
+  const a = fakeConn('asana', (r) => ({ json: { data: r.method === 'GET' ? task : {} } }));
+  const issue = { id: '1201', key: '1201', url: '', project: '900', values: { title: 'Old', description: '', labels: [] }, assigneeName: null, updatedAt: 0 } as RemoteIssue;
+  await asana.updateIssue(a.conn, issue, { title: 'New' });
+  const put = a.sent.filter((r) => r.method !== 'GET');
+  expect(put).toEqual([{ method: 'PUT', path: '/tasks/1201', body: { data: { name: 'New' } } }]);
+
+  const item = {
+    id: '7001',
+    name: 'Old',
+    board: { id: '5001', name: 'Roadmap', columns: [{ id: 'status', title: 'Status', type: 'status', settings_str: '{"labels":{"0":"Working on it","1":"Done"},"done_colors":[1]}' }, { id: 'date4', title: 'Due', type: 'date' }], groups: [] },
+    column_values: [{ id: 'status', type: 'status', text: 'Done', value: '{"index":1}' }],
+    updates: [],
+  };
+  const m = fakeConn('monday', (r) => ({ json: { data: /items \(ids/.test(String((r.body as { query: string }).query)) ? { items: [item] } : { change_multiple_column_values: { id: '7001' } } } }));
+  await monday.updateIssue(m.conn, { ...issue, id: '7001', key: '7001', project: '5001' }, { title: 'New' });
+  const writes = m.sent.map((r) => r.body as { query: string; variables: Record<string, unknown> }).filter((b) => /mutation/.test(b.query));
+  expect(writes).toHaveLength(1);
+  expect(JSON.parse(String(writes[0].variables.values))).toEqual({ name: 'New' });
+});
+
+it('a card moved to the In progress column moves its done Asana task to that section and reopens it; a monday.com item takes the label of the column, by name', async () => {
+  const task = {
+    gid: '1201',
+    name: 'Ship it',
+    completed: true,
+    memberships: [{ project: { gid: '900', name: 'Launch' }, section: { gid: '903', name: 'Done' } }],
+    workspace: { gid: '1' },
+  };
+  const sections = [
+    { gid: '901', name: 'To do' },
+    { gid: '902', name: 'In progress' },
+    { gid: '903', name: 'Done' },
+  ];
+  const a = fakeConn('asana', (r) => ({ json: { data: r.path.startsWith('/projects/900/sections') ? sections : r.method === 'GET' ? task : {} } }));
+  const issue = { id: '1201', key: '1201', url: '', project: '900', values: { title: 'Ship it', description: '', labels: [] }, assigneeName: null, updatedAt: 0 } as RemoteIssue;
+  await asana.updateIssue(a.conn, issue, { statusName: 'In progress', status: 'doing' });
+  const writes = a.sent.filter((r) => r.method !== 'GET');
+  expect(writes).toContainEqual({ method: 'POST', path: '/sections/902/addTask', body: { data: { task: '1201' } } });
+  expect(writes).toContainEqual({ method: 'PUT', path: '/tasks/1201', body: { data: { completed: false } } });
+
+  const item = {
+    id: '7001',
+    name: 'Ship it',
+    board: { id: '5001', name: 'Roadmap', columns: [{ id: 'status', title: 'Status', type: 'status', settings_str: '{"labels":{"0":"Working on it","1":"Done","2":"Stuck"},"done_colors":[1]}' }], groups: [] },
+    column_values: [{ id: 'status', type: 'status', text: 'Done', value: '{"index":1}' }],
+    updates: [],
+  };
+  const m = fakeConn('monday', (r) => ({ json: { data: /items \(ids/.test(String((r.body as { query: string }).query)) ? { items: [item] } : { change_multiple_column_values: { id: '7001' } } } }));
+  await monday.updateIssue(m.conn, { ...issue, id: '7001', key: '7001', project: '5001' }, { statusName: 'Stuck', status: 'doing' });
+  const w = m.sent.map((r) => r.body as { query: string; variables: Record<string, unknown> }).find((b) => /change_multiple_column_values/.test(b.query))!;
+  expect(JSON.parse(String(w.variables.values))).toEqual({ status: { label: 'Stuck' } });
+  // Read back, the label marked done in the column's settings is done; another is in progress.
+  const read = fakeConn('monday', (r) => ({ json: { data: /users/.test(String((r.body as { query: string }).query)) ? { users: [] } : { items: [{ ...item, column_values: [{ id: 'status', type: 'status', text: 'Stuck', value: '{"index":2}' }] }] } } }));
+  expect((await monday.getIssue(read.conn, '7001'))?.values).toMatchObject({ statusName: 'Stuck', status: 'doing' });
+});
+
+it('a spent monday.com complexity budget is waited out when it resets in a moment and handed back as a wait otherwise, never read as an answer', async () => {
+  const spent = (s: number) => ({ errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: s } }] });
+  const answers = [spent(1), { data: { items: [] } }];
+  const soon = fakeConn('monday', () => ({ json: answers.shift() }));
+  expect(await monday.getIssue(soon.conn, '7001')).toBeNull();
+  expect(soon.sent).toHaveLength(2);
+  const later = fakeConn('monday', () => ({ json: spent(40) }));
+  const err = await monday.getIssue(later.conn, '7001').catch((e) => e);
+  expect(err).toBeInstanceOf(TrackerError);
+  expect(err).toMatchObject({ kind: 'rate', retryAfterMs: 40_000 });
+  expect(later.sent).toHaveLength(1);
 });

@@ -12,15 +12,17 @@ import { currentUser, requireUser } from '../auth/index';
 import { createConnection, deleteConnectionRecord, listManaged, requireManaged, rotateWebhookSecret, testConnection, info, trackerFieldsOf, updateConnection } from './connections';
 import { finishOAuth, oauthOffered, startOAuth } from './oauth';
 import * as repo from './repo';
+import { dropWebhooks, ensureWebhooks } from './hooks';
 import { boardConnections, importIssues, issueTypesOf, markDisconnected, previewSend, projectsOf, receiveWebhook, requestSync, resyncConnection, sendToTracker, sprintsOf, unlink } from './service';
 
 // Trackers post webhooks from their own servers: no browser, no cookie — the signature over the
 // body with the connection's secret is the only credential (service.receiveWebhook); Azure DevOps,
-// which can't sign, sends the secret as its basic auth password.
-allowCrossSitePost(/^\/api\/trackers\/webhooks\/[^/]+$/, 'tracker webhooks are posted by the tracker’s servers and verified by their HMAC signature (or the secret, for Azure DevOps service hooks)');
+// which can't sign, sends the secret as its basic auth password; for webhooks Freero registers
+// itself (Asana, monday.com) the address carries a key made with the secret (hooks.ts).
+allowCrossSitePost(/^\/api\/trackers\/webhooks\/[^/]+$/, 'tracker webhooks are posted by the tracker’s servers and verified by their HMAC signature (or the secret, for Azure DevOps service hooks; or the address’s key, for webhooks Freero registered)');
 
 const origin = (req: Parameters<typeof appUrl>[0]) => appUrl(req, '');
-const providerParam = (p: string): TrackerProviderKind => (p === 'jira' || p === 'linear' || p === 'github' ? p : 'jira');
+const providerParam = (p: string): TrackerProviderKind => (p === 'asana' || p === 'monday' ? p : 'jira');
 
 export default function trackerRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -108,7 +110,7 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
       const workspaceId = typeof req.query.workspace === 'string' && req.query.workspace ? req.query.workspace : null;
       res.json({
         connections: await listManaged(currentUser(req).id, workspaceId, req),
-        oauth: { jira: oauthOffered('jira') },
+        oauth: { jira: oauthOffered('jira'), asana: oauthOffered('asana'), monday: oauthOffered('monday') },
       });
     }),
   );
@@ -124,8 +126,17 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
     '/trackers/connections/:id',
     requireUser,
     handle(async (req, res) => {
+      const before = await repo.getConnection(req.params.id);
       const connection = await updateConnection(req.params.id, currentUser(req).id, req.body, req);
       if (connection.status === 'active') await resyncConnection(connection.id);
+      // Webhooks Freero registered itself stop with polling, and come back with webhooks.
+      const after = await repo.getConnection(connection.id);
+      if (before && after && before.inbound !== after.inbound) {
+        const hooks = await repo.hooksOfConnection(after.id);
+        if (after.inbound === 'polling') await dropWebhooks(after, hooks, 'The connection polls instead.');
+        else
+          for (const h of hooks) await ensureWebhooks(after, [h.project], h.appOrigin);
+      }
       res.json({ connection });
     }),
   );
@@ -158,23 +169,33 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
     requireUser,
     handle(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
-      res.json({
-        webhookSecret: await rotateWebhookSecret(req.params.id, currentUser(req).id),
-      });
+      const webhookSecret = await rotateWebhookSecret(req.params.id, currentUser(req).id);
+      // The addresses Freero registered carry a key made with the old secret: register them again.
+      const conn = await repo.getConnection(req.params.id);
+      if (conn) {
+        const hooks = await repo.hooksOfConnection(conn.id);
+        if (hooks.length) {
+          await dropWebhooks(conn, hooks, 'The webhook secret changed.');
+          for (const h of hooks) await ensureWebhooks(conn, [h.project], h.appOrigin);
+        }
+      }
+      res.json({ webhookSecret });
     }),
   );
   r.delete(
     '/trackers/connections/:id',
     requireUser,
     handle(async (req, res) => {
-      const { connection, links } = await deleteConnectionRecord(req.params.id, currentUser(req).id);
-      // Sync stopped with the delete; the badges say so, board items stay as they are.
+      const { connection, links, hooks } = await deleteConnectionRecord(req.params.id, currentUser(req).id);
+      // Sync stopped with the delete; the badges say so, board items stay as they are, and the
+      // tracker stops posting (webhooks Freero registered there).
       void markDisconnected(connection, links);
+      void dropWebhooks(connection, hooks, 'The connection was removed.');
       res.json({ ok: true });
     }),
   );
 
-  // ---- OAuth (Jira Cloud) ----
+  // ---- OAuth (Jira Cloud, Asana, monday.com) ----
 
   r.get(
     '/trackers/oauth/:provider/start',
@@ -194,7 +215,12 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
   r.post(
     '/trackers/webhooks/:id',
     handle(async (req, res) => {
-      res.status(202).json(await receiveWebhook(req.params.id, req));
+      const out = await receiveWebhook(req.params.id, req);
+      if (!out.reply) return void res.status(202).json(out);
+      // A handshake: Asana wants its X-Hook-Secret back, monday.com its challenge.
+      for (const [k, v] of Object.entries(out.reply.headers ?? {})) res.setHeader(k, v);
+      if (out.reply.body === undefined) res.status(200).end();
+      else res.status(200).json(out.reply.body);
     }),
   );
   return r;

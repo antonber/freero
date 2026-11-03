@@ -30,7 +30,13 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 /** What a tracker calls its sprints (#119); none: it has none Freero imports by. */
 const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprint', linear: 'Cycle', azure: 'Iteration' };
 /** What a tracker calls the issue others go under (#43); none: not from Freero (GitHub). */
-const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: 'Parent issue', azure: 'Parent work item' };
+const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: 'Parent issue', azure: 'Parent work item', asana: 'Parent task', monday: 'Parent item' };
+/** What a tracker's project is called where it isn't one (#120, #121). */
+const PROJECT_NAME: Partial<Record<TrackerProviderKind, string>> = { github: 'Repository', linear: 'Team', monday: 'Board' };
+/** A parent's key, as people find it in each tracker. */
+const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: 'Task id or link', monday: 'Item id' };
+/** Trackers whose whole project (board) can be imported without a query (#120, #121). */
+const WHOLE_PROJECT: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday']);
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 /** The connection picker and its projects, shared by both dialogs. */
@@ -93,7 +99,7 @@ function ConnectionFields({ c, projectLabel = 'Project', withProject = true }: {
       </div>
       {withProject && (
         <div>
-          <span className="fr-trackers-dialog__label">{c.connection?.provider === 'github' ? 'Repository' : c.connection?.provider === 'linear' ? 'Team' : projectLabel}</span>
+          <span className="fr-trackers-dialog__label">{(c.connection && PROJECT_NAME[c.connection.provider]) ?? projectLabel}</span>
           {c.projects?.length ? (
             <Select
               aria-label={projectLabel}
@@ -305,7 +311,7 @@ function SendDialog({ editor, props }: PanelProps) {
           {parentName && mode !== 'clusters' && (
             <div>
               <span className="fr-trackers-dialog__label">Under (optional)</span>
-              <Input aria-label={parentName} value={parent} placeholder={provider === 'azure' ? '#12' : provider === 'linear' ? 'ENG-12' : 'WEB-12'} onChange={(e) => setParent(e.target.value)} />
+              <Input aria-label={parentName} value={parent} placeholder={(provider && PARENT_HINT[provider]) ?? 'WEB-12'} onChange={(e) => setParent(e.target.value)} />
             </div>
           )}
         </div>
@@ -355,6 +361,8 @@ const QUERY_HINT: Record<string, string> = {
   linear: 'e.g. onboarding',
   github: 'e.g. repo:acme/web is:open label:bug',
   azure: "e.g. SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = 'Fabrikam'",
+  asana: 'e.g. project:Launch section:"In progress" assignee:me',
+  monday: 'e.g. board:Roadmap group:"This week" status:"Working on it"',
 };
 
 const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
@@ -364,7 +372,7 @@ const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
   { value: 'none', label: 'One lane' },
 ];
 
-type ImportBy = 'query' | 'sprint' | 'epic';
+type ImportBy = 'query' | 'project' | 'sprint' | 'epic';
 
 /** A project's sprints for the picker (#119): the current one first, closed ones shown but not picked. */
 function useSprints(editor: Editor, connectionId: string, project: string, wanted: boolean) {
@@ -399,9 +407,9 @@ function ImportDialog({ editor, props }: PanelProps) {
   const parentName = provider ? PARENT_NAME[provider] : undefined;
   const s = useSprints(editor, c.connectionId, c.project, by === 'sprint' && !!sprintName && c.projectReady);
   useEffect(() => {
-    if ((by === 'sprint' && !sprintName) || (by === 'epic' && !parentName)) setBy('query');
-  }, [by, sprintName, parentName]);
-  const ready = by === 'query' ? !!query.trim() : by === 'sprint' ? !!c.project && !!sprint : !!c.project && !!epic.trim();
+    if ((by === 'sprint' && !sprintName) || (by === 'epic' && !parentName) || (by === 'project' && !(provider && WHOLE_PROJECT.has(provider)))) setBy('query');
+  }, [by, sprintName, parentName, provider]);
+  const ready = by === 'query' ? !!query.trim() : by === 'project' ? !!c.project : by === 'sprint' ? !!c.project && !!sprint : !!c.project && !!epic.trim();
   // Roadmap mode (KAI-160): opened on a timeline, the issues become its bars, in lanes.
   const timeline = useMemo(() => {
     const el = typeof props?.timelineId === 'string' ? editor.getElement(props.timelineId) : undefined;
@@ -422,7 +430,7 @@ function ImportDialog({ editor, props }: PanelProps) {
     try {
       const out = await c.t.importIssues({
         connectionId: c.connectionId,
-        ...(by === 'query' ? { query: query.trim() } : { scope: { project: c.project, ...(by === 'sprint' ? { sprint } : { epic: epic.trim() }) } }),
+        ...(by === 'query' ? { query: query.trim() } : { scope: { project: c.project, ...(by === 'sprint' ? { sprint } : by === 'epic' ? { epic: epic.trim() } : {}) } }),
         ...(timeline ? { timeline: { id: timeline.id, groupBy } } : {}),
         ...(kanban ? { placement: { into: kanban.id } } : {}),
       });
@@ -476,7 +484,7 @@ function ImportDialog({ editor, props }: PanelProps) {
     >
       <div className="fr-trackers-dialog">
         <ConnectionFields c={c} withProject={by !== 'query'} />
-        {(sprintName || parentName) && (
+        {(sprintName || parentName || (provider && WHOLE_PROJECT.has(provider))) && (
           <div className="fr-trackers-dialog__row">
             <span className="fr-trackers-dialog__label">Bring in</span>
             <SegmentedControl<ImportBy>
@@ -485,6 +493,7 @@ function ImportDialog({ editor, props }: PanelProps) {
               value={by}
               options={[
                 { value: 'query', label: c.queryLanguage || 'Query' },
+                ...(provider && WHOLE_PROJECT.has(provider) ? [{ value: 'project' as const, label: provider === 'monday' ? 'A board' : 'A project' }] : []),
                 ...(sprintName ? [{ value: 'sprint' as const, label: `A ${sprintName.toLowerCase()}` }] : []),
                 ...(parentName ? [{ value: 'epic' as const, label: parentName === 'Epic' ? 'An epic' : `A ${parentName.toLowerCase()}` }] : []),
               ]}
@@ -530,7 +539,7 @@ function ImportDialog({ editor, props }: PanelProps) {
           </div>
         )}
         {by === 'epic' && parentName && (
-          <Input label={`${parentName} key`} value={epic} placeholder={provider === 'azure' ? '#12' : provider === 'linear' ? 'ENG-12' : 'WEB-12'} onChange={(e) => setEpic(e.target.value)} />
+          <Input label={`${parentName} key`} value={epic} placeholder={(provider && PARENT_HINT[provider]) ?? 'WEB-12'} onChange={(e) => setEpic(e.target.value)} />
         )}
         {timeline && (
           <div className="fr-trackers-dialog__row">

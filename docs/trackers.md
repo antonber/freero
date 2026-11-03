@@ -1,11 +1,11 @@
-# Issue trackers (Jira, Linear, GitHub, Azure DevOps)
+# Issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com)
 
 Freero links board items to issues in the tracker a team already uses, and keeps both in step:
 select sticky notes, a cluster or cards → **Send to tracker…** → one issue (or one per item) with
 every field kept and a link back to each item; each item then shows the issue's key, status and
 assignee, live. **Import issues…** (board menu) turns a JQL / search query into linked cards, or
 — without writing a query — a project's current (or a chosen) sprint, Linear cycle or Azure DevOps
-iteration, or an epic's issues (#119, #43).
+iteration, or an epic's issues (#119, #43) — or a whole Asana project or monday.com board (#120, #121).
 Agents do the same through the MCP tool `sync_to_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/send`, #84), and import with `import_from_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/import`) — the same rules as *Import issues…*, placed into a
@@ -38,9 +38,14 @@ nobody can link an item to an issue by editing the board.
 | GitHub / GitHub Enterprise Server | `https://github.com` or the GHES address | fine-grained token (Issues: read & write) | webhooks (repository → Webhooks, content type JSON, the secret Freero shows, event *Issues*) |
 | Azure DevOps Services (#6) | `https://dev.azure.com/<organization>` | personal access token (Work Items: read & write) | service hooks (Project settings → Service hooks → Web Hooks, event *Work item updated*, the URL Freero shows, basic authentication with any user name and the webhook secret as the password — Azure DevOps doesn't sign deliveries), or polling |
 | Azure DevOps Server 2020 or later | the collection's address (`https://tfs.acme.internal/tfs/DefaultCollection`) | personal access token | service hooks as above where the server can reach Freero, otherwise polling (`System.ChangedDate`) |
+| Asana (#120) | `https://app.asana.com` (the default) | personal access token, or OAuth (when the operator registered an app: `TRACKER_ASANA_CLIENT_ID`) | webhooks Freero registers itself, one per project you send to or import from (nothing to paste in Asana), and polling (`modified_at`, ten tasks per batch call) as the fallback |
+| monday.com (#121) | `https://monday.com` (the default) | API token (Developers → My access tokens), or OAuth (`TRACKER_MONDAY_CLIENT_ID`) | webhooks Freero registers itself on each board you send to or import from, and polling (`updated_at`) as the fallback |
 
 Freero tests every new connection before keeping it. The webhook secret is shown once (a new one
-can be made at any time; the old one stops working at once). A self-hosted tracker on a private
+can be made at any time; the old one stops working at once — for Asana and monday.com, where Freero
+registered the webhooks, it registers them again with the new secret). Switching an Asana or
+monday.com connection to polling removes the webhooks Freero registered there; switching back
+registers them again. A self-hosted tracker on a private
 network needs `TRACKER_PRIVATE_ENDPOINTS=true` ([configuration.md](configuration.md)).
 
 ## What maps to what
@@ -60,12 +65,42 @@ network needs `TRACKER_PRIVATE_ENDPOINTS=true` ([configuration.md](configuration
 | a kanban card's Sprint (a single select called "Sprint", "Cycle" or "Iteration", #119) | Jira sprint, Linear cycle, Azure DevOps iteration path | by name. Jira: the issue's open sprint (closed ones it passed through are history), moved through Jira Software's agile API (the backlog for none); Linear: the team's cycles ("Cycle 12" when unnamed); Azure DevOps: the path below the project ("Sprint 3", "Release 1\Sprint 3"). A closed sprint is a read-only option: cards keep it, nobody picks it, and one set anyway (an old client, the API) stays in the tracker with a note. Not on GitHub (GitHub Projects iterations are #42) |
 | a kanban field the connection's field map names (#43) | a custom field (Jira: select, multi-select, number, date, text, user; Azure DevOps: picklist, number, date, text, identity) | by the kanban field's name and kind, the tracker field's id. A kanban without a field of that name holds no value: nothing is sent or cleared, and what changes in the tracker meanwhile reaches the card once a field of that name is back (rename the field back, or point the map at its new name) |
 | parent (send *One per cluster*, or *Under* an epic) | Jira parent (Data Center: Epic Link), Linear parent issue, Azure DevOps parent (Hierarchy-Reverse) | not synced afterwards; not on GitHub |
-| each linked item | a remote link (Jira), an attachment (Linear), a line in Freero's section (GitHub), a Hyperlink relation (Azure DevOps) | removed when the item is deleted; the issue stays |
+| each linked item | a remote link (Jira), an attachment (Linear), a line in Freero's section (GitHub), a Hyperlink relation (Azure DevOps), an external attachment (Asana), a line in Freero's “On a Freero board” update (monday.com) | removed when the item is deleted; the issue stays |
 
 Azure DevOps descriptions are HTML written from a fixed template (paragraphs, bullets, http(s)
 links; every piece of board text escaped) and read back as text and links. Its state follows the
 work item type's state categories (Proposed → to do, In progress and Resolved → in progress,
 Completed and Removed → done); priority is 1–4; the due date is the Target Date.
+
+**Asana (#120).** Tasks are the issues, projects the projects. A kanban card's column is the task's
+**section** (by name; from Asana, the card goes to the column named after its section), and done is
+Asana's *completed*: a card moved to Done completes the task and moves it to that section, one
+moved out of Done reopens it. Elsewhere a section's name says where a task stands (In progress,
+Review… → in progress; Done, Shipped… → done; else to do). Notes are Asana's rich text
+(`html_notes`, from the same escaped template), the assignee is matched by email (Asana takes an
+address), `start_on` / `due_on` are the start and due dates (Asana keeps a start date only with a
+due date: one without is noted, not sent), tags are labels (made in the workspace when missing).
+Custom fields (text, number, enum, multi-enum, date, people) map by gid in the field map; one the
+task's project lacks is noted. *Under* / *One per cluster* make subtasks (`parent`), and **A parent
+task** imports a task's subtasks (its id or link). Asana's own search needs a paid plan, so the
+import query is a filter of a project: `project:Launch section:"In progress" assignee:me done:no
+words` (without `project:` the connection's default project; with only words and no default, Asana's
+search). No priority, estimate or sprint of Asana's own: map a custom field for those.
+
+**monday.com (#121).** Items are the issues, boards the projects. On each item's board Freero uses
+the first **Status** column (not one called Priority) as the card's column — by label; a label the
+column marks done is done, a blank or "Not started" one to do, any other in progress — or, on a
+board without a Status column, the item's **group**. The first People column is the assignee (by
+email; writing it sets just that person), a Timeline column holds the start date (and the due date
+when there is no Date column), the first Date column the due date. The description is an
+**update** on the item: the one Freero wrote (edited in place, never a new one per change), else
+the item's first; the links back to the board are one more update by Freero. Mapped fields are the
+board's columns by id (text, long text, numbers, date, status and dropdown, people; a board without
+that column is noted). *Under* makes subitems; **A parent item** imports an item's subitems. The
+import query is a filter of a board: `board:Roadmap group:"This week" status:"Working on it"
+assignee:me words`. GraphQL complexity: an exhausted budget that resets within a few seconds is
+waited out, a longer one is handed back as a wait (the sync retries after it);
+429s are retried like every tracker's.
 
 ## The field map (#43)
 
@@ -139,7 +174,9 @@ A change on either side while a sync runs is never taken as agreed: a board chan
 during the sync is sent by the next one, and a tracker change that lands between Freero's write and
 its read-back is pulled by the next one. Azure DevOps writes name the revision the sync read, so a
 work item someone changed meanwhile is refused instead of overwritten; the sync then reads both
-sides again and merges once more (#6).
+sides again and merges once more (#6). Asana and monday.com have no revision to name, so their writes
+name only the fields that changed (a PUT of just those fields, a column write of just those
+columns): what someone else changed meanwhile in another field is never written over.
 
 ## Security
 
@@ -150,7 +187,14 @@ sides again and merges once more (#6).
 - Webhooks are verified with HMAC-SHA256 over the raw body and the connection's secret (Jira
   `X-Hub-Signature`, GitHub `X-Hub-Signature-256`, Linear `Linear-Signature` plus a timestamp no
   older than a minute); Azure DevOps service hooks, which can't sign, carry the secret as their
-  basic authentication password (compared in constant time). A verified delivery only says WHICH
+  basic authentication password (compared in constant time). Webhooks Freero registers itself
+  (Asana, monday.com) post to an address that names the registration and carries a key (an HMAC
+  of it with the connection's secret); Asana's handshake (`X-Hook-Secret`, echoed back) and
+  monday.com's challenge are answered only while Freero is registering that webhook, and Asana's
+  secret is kept only once — so nobody who learns an address can make it sign with their own
+  secret. Asana deliveries are then verified with `X-Hook-Signature` (HMAC-SHA256 of the body
+  with the secret Asana issued); monday.com doesn't sign deliveries of webhooks made with a token,
+  so its address's key is the credential. A verified delivery only says WHICH
   issue changed: Freero reads the issue back with the connection's own credentials, so even a
   valid replay changes nothing by itself.
 - Data exports: a person's own connections (tracker, name, address, account, field map) and the
@@ -180,12 +224,20 @@ sides again and merges once more (#6).
 `npm run verify -- --only tracker` runs everything above against local mock trackers
 (`scripts/lib/mock-jira.mjs` — Cloud, Data Center, Atlassian OAuth and the agile API's sprints —
 `mock-linear.mjs` with cycles, `mock-github.mjs`, `mock-azure.mjs` — Services and Server, JSON
-Patch with revision checks, iterations, service hooks). They also run standalone for the UI (`node
-scripts/lib/mock-jira.mjs --port 4482`, `node scripts/lib/mock-azure.mjs --port 4484`, with
+Patch with revision checks, iterations, service hooks —, `mock-asana.mjs` — sections, tags, an enum
+custom field, external attachments, OAuth and webhooks with Asana's handshake and signatures — and
+`mock-monday.mjs` — Status / People / Date / Timeline columns, groups, updates, subitems, webhooks
+with the challenge, a spent complexity budget). They also run standalone for the UI (`node
+scripts/lib/mock-jira.mjs --port 4482`, `node scripts/lib/mock-azure.mjs --port 4484`, `node
+scripts/lib/mock-asana.mjs --port 4485`, `node scripts/lib/mock-monday.mjs --port 4486`, with
 `TRACKER_PRIVATE_ENDPOINTS=true`).
 
 Not done yet: Microsoft Entra OAuth for Azure DevOps Services (needs the operator's Entra app
 registration; PATs work on both Services and Server), GitHub Projects iterations (#42), and the
 manual checks against real trackers (a Jira Cloud site with Jira Software, a Linear workspace, an
-Azure DevOps organization) that #43, #119 and #6 ask to record in their PRs.
+Azure DevOps organization, an Asana workspace, a monday.com account) that #43, #119, #6, #120 and
+#121 ask to record in their PRs, and the operator's Asana and monday.com OAuth apps (off until
+registered: tokens work without them). monday.com subitems sync their name, people and dates on
+their own board (its columns); a whole project imported into a new kanban gets columns for the
+sections / statuses its tasks have (an empty section gets none).
 
