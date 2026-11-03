@@ -1,0 +1,44 @@
+{
+  "name": "composeExtension/queryLink",
+  "type": "invoke",
+  "timestamp": "2026-10-28T14:02:11.482Z",
+  "localTimestamp": "2026-10-28T09:02:11.482-05:00",
+  "id": "f:6c1e8f0b-61a4-1b39-2f6d-4d0b1e2a7c55",
+  "channelId": "msteams",
+  "serviceUrl": "https://smba.trafficmanager.net/amer/",
+  "from": {
+    "id": "29:1Xo4xP2nKq7G8b3cZr0tWm5vY9aLdHs6eFj2uQiN0kTgR",
+    "name": "Rosa Delgado",
+    "aadObjectId": "4a6d2c1e-9b7f-4e3a-8d5c-2f1b0a9e8c7d"
+  },
+  "conversation": {
+    "isGroup": true,
+    "conversationType": "channel",
+    "tenantId": "8f3c2b1a-7d6e-4f5a-9b8c-1e2d3f4a5b6c",
+    "id": "19:5b7c9d2e4f6a8b0c1d3e5f7a9b2c4d6e@thread.tacv2;messageid=1730124131482"
+  },
+  "recipient": {
+    "id": "28:{{BOT_ID}}",
+    "name": "Freero"
+  },
+  "entities": [
+    {
+      "locale": "en-US",
+      "country": "US",
+      "platform": "Windows",
+      "timezone": "America/Chicago",
+      "type": "clientInfo"
+    }
+  ],
+  "channelData": {
+    "tenant": { "id": "8f3c2b1a-7d6e-4f5a-9b8c-1e2d3f4a5b6c" },
+    "source": { "name": "compose" },
+    "team": { "id": "19:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6@thread.tacv2" },
+    "channel": { "id": "19:5b7c9d2e4f6a8b0c1d3e5f7a9b2c4d6e@thread.tacv2" }
+  },
+  "value": {
+    "url": "{{URL}}"
+  },
+  "locale": "en-US",
+  "localTimezone": "America/Chicago"
+}
