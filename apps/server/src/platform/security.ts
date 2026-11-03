@@ -119,13 +119,25 @@ export function allowFraming(path: RegExp, reason: string): void {
 }
 const framable = (path: string) => framablePaths.some((p) => p.path.test(path));
 
-/** Content-Security-Policy for the app's own pages and API responses. */
-export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean, opts: { framable?: boolean } = {}): string {
+/** Where Google Analytics' loader comes from (GA_MEASUREMENT_ID). */
+export const GA_SCRIPT_ORIGIN = 'https://www.googletagmanager.com';
+/** Where it sends what it measures (Google's published CSP sources for GA4). */
+export const GA_CONNECT_SOURCES = ['https://*.google-analytics.com', 'https://*.analytics.google.com', 'https://*.googletagmanager.com'];
+
+/**
+ * Content-Security-Policy for the app's own pages and API responses. `selfFramed`: a page only this
+ * origin may frame (the analytics frame, modules/analytics).
+ */
+export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean, opts: { framable?: boolean; selfFramed?: boolean } = {}): string {
   const ws = host ? (secure ? `wss://${host}` : `ws://${host} wss://${host}`) : '';
   const s3 = config.s3?.publicUrl ? new URL(config.s3.publicUrl).origin : '';
+  // Google Analytics, only when GA_MEASUREMENT_ID is set: its loader, where it reports, and the
+  // app's same-origin analytics frame. Never on pages assistants frame (the live board view loads
+  // no analytics).
+  const ga = !!config.googleAnalyticsId && !opts.framable;
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    ga ? `script-src 'self' ${GA_SCRIPT_ORIGIN}` : "script-src 'self'",
     // React style attributes + Google Fonts stylesheet.
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
@@ -135,15 +147,15 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
     // blob: is the file being dropped, read locally for its poster frame before it is uploaded.
     `media-src 'self' blob: ${s3}`.trim(),
     // https: lets "paste an image URL" fetch and re-host the image, and exports inline web fonts.
-    `connect-src 'self' ${ws} https:`.replace(/\s+/g, ' '),
+    `connect-src 'self' ${ws} https:${ga ? ` ${GA_CONNECT_SOURCES.join(' ')}` : ''}`.replace(/\s+/g, ' '),
     "worker-src 'self' blob:",
     // Live embeds in link cards (features/embed): the built-in providers' players and viewers plus
     // the operator's EMBED_EXTRA_ORIGINS — only these origins, only after a click.
-    `frame-src ${[...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
+    `frame-src ${[...(ga ? ["'self'"] : []), ...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    `frame-ancestors ${opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors.join(' ') : "'none'"}`,
+    `frame-ancestors ${opts.selfFramed ? "'self'" : opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors.join(' ') : "'none'"}`,
     ...(secure ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 }
