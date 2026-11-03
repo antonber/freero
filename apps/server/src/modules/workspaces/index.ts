@@ -26,7 +26,7 @@ export { registerWorkspaceObjectTypes } from './objects';
 // Someone left a workspace or changed role there (templates unshare what they shared with it).
 export { onMembershipChanged, WORKSPACE_MEMBERSHIP_TOPIC, type MembershipChangedEvent } from './events';
 // Managing a team (its routes use these; so may provisioning later, e.g. SCIM).
-export { createTeamWorkspace, updateWorkspace, transferWorkspace, removeMember as removeWorkspaceMember, changeRole as changeWorkspaceRole } from './service';
+export { createTeamWorkspace, updateWorkspace, transferWorkspace, deleteWorkspace, removeMember as removeWorkspaceMember, changeRole as changeWorkspaceRole } from './service';
 export { createProject } from './projects';
 export { inviteToWorkspace } from './invites';
 export { mayDownload, mayShareExternally, isFullMember, mayInvite as mayInviteToWorkspace } from './roles';
@@ -86,3 +86,5 @@ export { sessionLimitsFor, allSessionLimits, twoFactorRequirementOf, retentionOv
 export { inactiveBoardRules, workspaceHoldOn } from './service';
 // Company templates (#155): who may share or publish templates.
 export { templatePublishingOf } from './service';
+// Usage trends (#65, modules/admin's rollup).
+export { allTeamWorkspaceIds } from './service';

@@ -2363,6 +2363,9 @@ export interface SiemSinkInfo {
 // trash/retention settings), security (the security settings, the audit log); usage, the member
 // list and reading the settings need none. 403 `admin_scope_required` otherwise.
 // GET   /api/workspaces/:id/admin/usage                 -> { usage: WorkspaceUsage }
+// GET   /api/workspaces/:id/admin/usage/history?days=90 -> { days: UsageDay[] }  (#65; any admin; one
+//       point per day the daily rollup ran, oldest first)
+// GET   /api/workspaces/:id/admin/usage/history.csv?days=90 -> the same as CSV
 // GET   /api/workspaces/:id/admin/members?q=           -> { members: AdminMember[] }
 // POST  /api/workspaces/:id/admin/members/:userId/deactivate  -> { member: AdminMember }
 // POST  /api/workspaces/:id/admin/members/:userId/reactivate  -> { member: AdminMember }
@@ -2496,6 +2499,24 @@ export interface AdminTrashedBoard {
   deletedAt: number;
   purgeAt: number;
 }
+/**
+ * One day of a workspace's usage (#65), as the daily rollup recorded it: counts only, never who —
+ * API / MCP calls by app come from the audit log, which already records them.
+ */
+export interface UsageDay {
+  /** UTC date, YYYY-MM-DD. */
+  day: string;
+  activeUsers7d: number;
+  activeUsers30d: number;
+  boardsCreated: number;
+  docsCreated: number;
+  members: number;
+  guests: number;
+  /** App or token name -> calls that day. */
+  apiCalls: Record<string, number>;
+}
+export const USAGE_HISTORY_MAX_DAYS = 400;
+
 export interface WorkspaceUsage {
   /** Live boards (archived ones not included). */
   boards: number;

@@ -342,8 +342,13 @@ export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
 }
 
 /** Board usage of a workspace for its admin console (trash counted apart; owners of live boards). */
-export function workspaceBoardStats(workspaceId: string): ReturnType<typeof repo.workspaceStats> {
-  return repo.workspaceStats(workspaceId, Date.now());
+export function workspaceBoardStats(workspaceId: string, now = Date.now()): ReturnType<typeof repo.workspaceStats> {
+  return repo.workspaceStats(workspaceId, now);
+}
+
+/** Boards and docs created in a workspace in [from, to) (#65: usage trends). */
+export function boardsCreatedIn(workspaceId: string, from: number, to: number): Promise<{ boards: number; docs: number }> {
+  return repo.createdIn(workspaceId, from, to);
 }
 
 export function boardIdsInProject(projectId: string): Promise<string[]> {

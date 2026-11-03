@@ -4,6 +4,7 @@ import type {
   AdminBoardsResponse,
   AdminScope,
   AdminTrashedBoard,
+  UsageDay,
   BoardGroupGrant,
   DirectoryGroup,
   WorkspaceGroup,
@@ -521,6 +522,9 @@ export const api = {
     request<{ workspaceId: string }>('POST', `/api/workspace-invites/${encodeURIComponent(token)}/accept`),
 
   // admin console (owners/admins of a team workspace; checked by the server)
+  /** #65: the daily usage rollups, and the same as a CSV file (a plain link: the cookie authenticates it). */
+  usageHistory: (id: string, days: number) => request<{ days: UsageDay[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage/history?days=${days}`),
+  usageHistoryCsvUrl: (id: string, days: number) => `/api/workspaces/${encodeURIComponent(id)}/admin/usage/history.csv?days=${days}`,
   adminUsage: (id: string) => request<{ usage: WorkspaceUsage }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage`),
   /** Boards whose link is on but doesn't meet the workspace's link policy (#39). */
   linkCompliance: (id: string) => request<{ boards: LinkComplianceIssue[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/link-compliance`),

@@ -176,6 +176,11 @@ export async function ensurePersonal(userId: string, newWorkspaceId: string, now
   return r.id;
 }
 
+/** Every team workspace's id (#65: the daily usage rollup). */
+export async function teamIds(): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM workspaces WHERE kind = 'team' ORDER BY id`)).map((r) => r.id);
+}
+
 /**
  * Team workspaces where an inactive-board rule may apply (#154): their own, or their
  * organisation's (the floor). Effective values: `settings` (toWorkspace raised them).

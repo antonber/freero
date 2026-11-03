@@ -1223,9 +1223,9 @@ sso_domain_policies, sso_domain_captures: domain control),
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains, audit_anchors: the append-only audit log
 and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed to workspaces'
-SIEMs; see "Audit log, admin console and workspace policies"), `admin` (no
-table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
+SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
+admin console of team workspaces; see "Audit log, admin console and workspace
+policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
 (ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
@@ -2631,6 +2631,15 @@ security and retention settings, sharing policies, the audit log (filters, pagin
 — streamed, rate limited, recorded before it starts, CSV cells can't become formulas). Other modules
 add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
 `admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
+
+**Usage trends** (#65; admin's own table `workspace_usage_daily`, `admin/usage.ts`): the
+`admin:usage-rollup` job (hourly, one instance) upserts each team workspace's row for the UTC day —
+active people over 7 / 30 days (board opens), boards and docs created that day, members and guests,
+and API / MCP calls by app counted from the audit log's `api.call` events (`auditCountsBy`) —
+nothing per person. One row per (workspace, day): a second run replaces the day, never adds to it.
+Rows go with their workspace (cascade) and after `USAGE_HISTORY_MAX_DAYS`. `GET
+…/admin/usage/history` (JSON) and `…/history.csv` (cells formula-safe), any admin; the Overview
+charts 90 days as small multiples with a table view.
 
 **Board inventory** (#152; content admins; admin's `boardInventory`): `GET /workspaces/:id/admin/boards`
 composes boards' `inventoryBoards` (live boards, archived included, with the last activity and whether

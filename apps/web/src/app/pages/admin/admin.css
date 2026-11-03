@@ -708,3 +708,75 @@ td > .fr-admin-pill:first-child {
   align-items: center;
   gap: 8px;
 }
+
+/* Usage over time (#65): small multiples, one measure and one axis each. */
+.fr-admin-trends {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.fr-admin-trend {
+  margin: 0;
+  padding: 12px 14px 8px;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-lg);
+}
+.fr-admin-trend__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.fr-admin-trend__label {
+  color: var(--fr-ink-2);
+}
+.fr-admin-trend__value {
+  font-weight: 600;
+  color: var(--fr-ink);
+  font-variant-numeric: tabular-nums;
+}
+.fr-admin-trend__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 6px;
+}
+.fr-admin-trend__grid {
+  stroke: var(--fr-line);
+  stroke-width: 1;
+}
+.fr-admin-trend__tick {
+  font-size: 9px;
+  fill: var(--fr-ink-3);
+}
+.fr-admin-trend__line {
+  fill: none;
+  stroke: var(--fr-primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.fr-admin-trend__bar {
+  fill: var(--fr-primary);
+}
+.fr-admin-trend__cross {
+  stroke: var(--fr-line-strong);
+  stroke-width: 1;
+}
+.fr-admin-trend__dot {
+  fill: var(--fr-primary);
+  stroke: var(--fr-surface);
+  stroke-width: 2;
+}
+.fr-admin-trends__csv {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--fr-primary);
+}
+.fr-admin-trends__table {
+  margin-top: 10px;
+  font-size: 13px;
+}

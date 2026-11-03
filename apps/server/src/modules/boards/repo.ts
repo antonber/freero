@@ -369,6 +369,16 @@ export async function setArchived(id: string, at: number | null, by: string | nu
   );
 }
 
+/** Boards and docs a workspace's people created in [from, to), trashed ones included (#65's daily rollup). */
+export async function createdIn(workspaceId: string, from: number, to: number): Promise<{ boards: number; docs: number }> {
+  const r = await one<{ boards: number; docs: number }>(
+    `SELECT count(*) FILTER (WHERE kind = 'board')::int AS boards, count(*) FILTER (WHERE kind = 'doc')::int AS docs
+     FROM boards WHERE workspace_id = $1 AND created_at >= $2 AND created_at < $3`,
+    [workspaceId, new Date(from), new Date(to)],
+  );
+  return { boards: r?.boards ?? 0, docs: r?.docs ?? 0 };
+}
+
 // ---- the admin inventory (#152) ----
 
 /** Every live board of a workspace (archived ones included) with its last activity. */

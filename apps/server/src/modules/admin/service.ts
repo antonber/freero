@@ -1,6 +1,7 @@
 // The admin console of a team workspace (KAI-47): members, usage, security / retention settings
-// and the audit log. Owns no tables: it composes the owning modules' functions, and every entry
-// point checks first that the caller is an owner or admin of the workspace (requireAdmin).
+// and the audit log. It composes the owning modules' functions — its one table is the daily usage
+// rollup (#65, usage.ts / repo.ts) — and every entry point checks first that the caller is an
+// owner or admin of the workspace (requireAdmin).
 import {
   AUDIT_ACTIONS,
   type AdminBoardFilter,

@@ -940,6 +940,11 @@ export async function inactiveBoardRules(): Promise<Array<{ workspaceId: string;
   return out;
 }
 
+/** Every team workspace (#65: the daily usage rollup). */
+export function allTeamWorkspaceIds(): Promise<string[]> {
+  return repo.teamIds();
+}
+
 /** Who may share templates with a team workspace (its effective policy) or publish to an organisation (its own), #155. */
 export async function templatePublishingOf(workspaceId: string): Promise<'members' | 'admins'> {
   const w = await repo.getWorkspace(workspaceId);

@@ -1,6 +1,7 @@
 // Admin console routes (contract: @freero/shared api.ts "Admin console"). Every route checks on the
 // server that the caller is an owner or admin of that team workspace (requireAdmin).
 import { Router, type Request } from 'express';
+import { USAGE_HISTORY_MAX_DAYS, type UsageDay } from '@freero/shared';
 import type { AdminBoardsResponse, AdminMember, AdminTrashedBoard, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle, notFound } from '../../platform/http';
@@ -12,6 +13,7 @@ import { removeOutsideMembers } from '../members/index';
 import { getWorkspaceSettings, setMemberDeactivated, updateWorkspaceSettings } from '../workspaces/index';
 import { adminMembers, auditBatches, auditFilter, auditPage, boardInventory, CSV_COLUMNS, csvRow, inventoryQuery, requireAdmin, workspaceUsage } from './service';
 import { workspaceAdminFacts } from '../workspaces/index';
+import { usageCsv, usageHistory } from './usage';
 
 const MAX_PAGE = 200;
 /** Members (with organisation-wide deactivation), settings and the audit log also serve an organisation (#108). */
@@ -37,6 +39,32 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       await requireAdmin(req.params.id, currentUser(req).id);
       res.json({ usage: (await workspaceUsage(req.params.id)) satisfies WorkspaceUsage });
+    }),
+  );
+
+  // #65: the daily rollups (any admin), as JSON or CSV.
+  const historyDays = (req: Request) => {
+    const n = Number(req.query.days ?? 90);
+    return Number.isInteger(n) && n > 0 ? Math.min(n, USAGE_HISTORY_MAX_DAYS) : 90;
+  };
+  r.get(
+    `${base}/admin/usage/history`,
+    requireUser,
+    handle(async (req, res) => {
+      await requireAdmin(req.params.id, currentUser(req).id);
+      res.json({ days: (await usageHistory(req.params.id, historyDays(req))) satisfies UsageDay[] });
+    }),
+  );
+  r.get(
+    `${base}/admin/usage/history.csv`,
+    requireUser,
+    handle(async (req, res) => {
+      const { name } = await requireAdmin(req.params.id, currentUser(req).id);
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace';
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="freero-usage-${slug}-${new Date().toISOString().slice(0, 10)}.csv"`);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(usageCsv(await usageHistory(req.params.id, historyDays(req))));
     }),
   );
 

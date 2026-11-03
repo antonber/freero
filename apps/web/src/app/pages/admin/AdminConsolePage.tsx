@@ -16,6 +16,7 @@ import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
 import { WorkspaceOrganisation } from './AdminOrganisation';
 import { AdminOverview } from './AdminOverview';
+import { AdminTrends } from './AdminTrends';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
 import { AdminSiem, siemOffered } from './AdminSiem';
 import { AdminWebhooks, webhooksOffered } from './AdminWebhooks';
@@ -135,6 +136,7 @@ export function AdminConsolePage() {
             {tab === 'overview' ? (
               <>
                 <AdminOverview workspace={workspace} onOpen={(t) => setParams({ tab: t })} />
+                <AdminTrends workspace={workspace} />
                 <WorkspaceOrganisation key={workspace.organisation?.id ?? 'none'} workspace={workspace} onChanged={reload} />
               </>
             ) : null}
