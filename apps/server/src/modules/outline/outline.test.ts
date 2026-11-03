@@ -355,6 +355,19 @@ it('keeps a 2 000-token budget on a 5 000-item board, says it truncated, and kee
   expect(new Set(seen)).toEqual(new Set(allIds(full.items)));
 });
 
+it('grouped items read as one group holding them — on the board and in a frame — instead of regrouping without end', async () => {
+  const boardId = await boardWith([
+    stickyEl('a', 0, 0, 'One', 'yellow', { groupId: 'g1' }),
+    stickyEl('b', 220, 0, 'Two', 'yellow', { groupId: 'g1' }),
+    frameEl('f', 1000, 0, 800, 600, 'Later'),
+    stickyEl('c', 1100, 100, 'Three', 'yellow', { groupId: 'g2', frameId: 'f' }),
+    stickyEl('d', 1320, 100, 'Four', 'yellow', { groupId: 'g2', frameId: 'f' }),
+  ]);
+  const o = await outlineAs(boardId, owner, 'owner');
+  expect(byId(o, 'group:g1')?.children?.map((i) => i.id)).toEqual(['a', 'b']);
+  expect(byId(o, 'group:g2')?.children?.map((i) => i.id)).toEqual(['c', 'd']);
+});
+
 it('answers "not modified" until something the reader can see changes', async () => {
   const boardId = await boardWith([stickyEl('a', 0, 0, 'One')]);
   const q = { format: 'json' as const, authors: false, comments: true };
