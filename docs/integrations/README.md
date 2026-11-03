@@ -11,6 +11,7 @@ server ([../mcp.md](../mcp.md)). Nothing here needs a marketplace listing or any
 | **Discord messages** | The same, as an embed; never pings | format `discord` |
 | **Google Chat messages** | The same, as a text message | format `google-chat` |
 | **Mattermost messages** | The same, as Markdown; never pings | format `mattermost` (its own format, not an alias of `slack`) |
+| **Live board embeds** | A board live in Notion, Confluence, a wiki, a blog or any web page (iframe); pasting a board link into oEmbed-aware tools embeds it; never shows more than the board's sharing | Share dialog → *Embed on other sites*, [embedding.md](embedding.md) |
 | **Slack link unfurls** | A board link posted in Slack shows a preview (title and picture only for public boards) | Operator: a Slack app from a manifest, [slack.md](slack.md) |
 | **Meeting notes import** | A summary or transcript (Granola-, Otter-, Fathom-, Meetily-style Markdown or text; WebVTT, SRT) becomes one frame: decisions, action items with owner and due date, points, who spoke | Board menu → *Import meeting notes…*, drop a `.vtt` / `.srt`, REST structure `kind: "meeting"`, MCP `import_meeting_notes`; [samples](meeting-notes/) |
 | **n8n** | Importable workflows: GitHub issue → card, board comment → Slack | [n8n.md](n8n.md) |
