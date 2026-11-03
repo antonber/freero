@@ -944,9 +944,18 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["query"],
                 "properties": {
-                  "query": { "type": "string", "maxLength": 2000, "description": "JQL (Jira), a Linear search, or a GitHub search (repo:owner/name is:open label:bug)" },
+                  "query": { "type": "string", "maxLength": 2000, "description": "JQL (Jira), a Linear search, a GitHub search (repo:owner/name is:open label:bug) or WIQL (Azure DevOps). Give query or scope." },
+                  "scope": {
+                    "type": "object",
+                    "description": "Instead of a query (#119, #43): a project's sprint (Linear cycle, Azure DevOps iteration) and / or an epic's issues. Into a kanban, a sprint import gives it a Sprint field with the project's sprints (closed ones read-only).",
+                    "required": ["project"],
+                    "properties": {
+                      "project": { "type": "string", "maxLength": 200, "description": "Jira project key, Linear team key or Azure DevOps project" },
+                      "sprint": { "type": "string", "maxLength": 64, "description": "\"current\" for the active sprint, or a sprint id" },
+                      "epic": { "type": "string", "maxLength": 100, "description": "The epic's / parent issue's key" }
+                    }
+                  },
                   "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
                   "connection": { "type": "string", "description": "The tracker connection’s name or id" },
                   "placement": { "$ref": "#/components/schemas/Placement" },
@@ -990,7 +999,8 @@
                   "connection": { "type": "string", "maxLength": 200, "description": "The tracker connection’s name or id" },
                   "project": { "type": "string", "maxLength": 200, "description": "Jira project key, Linear team key or GitHub owner/repo (default: the connection’s default project)" },
                   "issueType": { "type": "string", "maxLength": 100, "description": "Jira issue type (default: the connection’s, else Task)" },
-                  "mode": { "type": "string", "enum": ["one", "each"], "description": "one (default): one issue for all the items; each: one issue per item" }
+                  "mode": { "type": "string", "enum": ["one", "each", "clusters"], "description": "one (default): one issue for all the items; each: one issue per item; clusters: a new epic (parent) with one issue under it per cluster of the items (#43; not GitHub)" },
+                  "parent": { "type": "string", "maxLength": 100, "description": "An existing epic / parent issue's key the new issues go under (not GitHub)" }
                 }
               }
             }
@@ -1143,7 +1153,7 @@
         "operationId": "inviteMember",
         "tags": ["members"],
         "summary": "Share the board with an email address",
-        "description": "Owners and editors with a verified email, within the workspace's sharing policies. An existing account becomes a member; any other address gets an emailed invite.",
+        "description": "Owners, co-owners and editors (while the board's \"Editors can share\" is on; else 403 `board_sharing_restricted`) with a verified email, within the workspace's sharing policies. An existing account becomes a member; any other address gets an emailed invite.",
         "x-freero-scope": "members:write",
         "security": [{ "bearer": ["members:write"] }],
         "requestBody": {
@@ -1196,12 +1206,13 @@
       "patch": {
         "operationId": "setMemberRole",
         "tags": ["members"],
-        "summary": "Change a member's role (owner only)",
+        "summary": "Change a member's role (owner or co-owner)",
+        "description": "`coowner` makes them a co-owner: an editor who also manages the board's sharing (members' roles, the link, embedding). Any other role ends it. Nobody changes the owner's own access.",
         "x-freero-scope": "members:write",
         "security": [{ "bearer": ["members:write"] }],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "$ref": "#/components/schemas/MemberRole" } } } } }
+          "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "$ref": "#/components/schemas/MemberRoleChange" } } } } }
         },
         "responses": {
           "200": {
@@ -1221,7 +1232,7 @@
       "delete": {
         "operationId": "removeMember",
         "tags": ["members"],
-        "summary": "Remove a member (owner; or yourself, to leave)",
+        "summary": "Remove a member (owner or co-owner; or yourself, to leave)",
         "x-freero-scope": "members:write",
         "security": [{ "bearer": ["members:write"] }],
         "responses": {
@@ -2254,6 +2265,7 @@
           "description": { "type": "string" },
           "url": { "type": "string" },
           "role": { "type": "string", "enum": ["owner", "editor", "commenter", "viewer"] },
+          "coOwner": { "type": "boolean", "description": "You co-own it: `role` is `editor`, and you also manage its sharing. Absent: no." },
           "workspaceId": { "type": "string" },
           "projectId": { "type": ["string", "null"] },
           "owner": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
@@ -2696,6 +2708,7 @@
           "description": { "type": "string" },
           "url": { "type": "string" },
           "role": { "type": "string", "enum": ["owner", "editor", "commenter", "viewer"] },
+          "coOwner": { "type": "boolean", "description": "You co-own it: `role` is `editor`, and you also manage its sharing. Absent: no." },
           "workspaceId": { "type": "string" },
           "projectId": { "type": ["string", "null"] },
           "owner": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
@@ -2821,6 +2834,11 @@
         }
       },
       "MemberRole": { "type": "string", "enum": ["editor", "commenter", "viewer"] },
+      "MemberRoleChange": {
+        "type": "string",
+        "enum": ["coowner", "editor", "commenter", "viewer"],
+        "description": "`coowner`: an editor who also manages the board's sharing (the member then reads `role: editor`, `coOwner: true`)."
+      },
       "Member": {
         "type": "object",
         "required": ["userId", "name", "color", "avatarUrl", "role"],
@@ -2831,6 +2849,7 @@
           "color": { "type": "string" },
           "avatarUrl": { "type": ["string", "null"] },
           "role": { "type": "string", "enum": ["owner", "editor", "commenter", "viewer"] },
+          "coOwner": { "type": "boolean", "description": "A co-owner: `role` is `editor`, and they also manage the board's sharing. Absent: no." },
           "team": { "type": "boolean" }
         }
       },

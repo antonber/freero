@@ -4,3 +4,4 @@
 // activity feed listens to `onTrackerActivity`.
 export { sendToTracker, previewSend, boardConnections, projectsOf, importIssues, importCandidates, noteProposedImport, syncLink, TRACKER_SYNC_TOPIC } from './service';
 export { onTrackerActivity, type TrackerActivityEvent } from './events';
+export { trackersExportOf, trackersWorkspaceExportOf } from './dataExport';

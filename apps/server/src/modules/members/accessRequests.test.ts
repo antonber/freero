@@ -6,6 +6,7 @@ import { createBoard, getBoardAccess } from '../boards/index';
 import { createProject, createTeamWorkspace, inviteToWorkspace, setMemberDeactivated, updateWorkspace } from '../workspaces/index';
 import { decideRequest, listRequests, requestAccess, requestOutcomes, requestState } from './accessRequests';
 import { onAccessRequested, type AccessRequestedEvent } from './events';
+import { inviteBoardMember, setBoardMemberRole } from './service';
 
 const requested: AccessRequestedEvent[] = [];
 beforeAll(async () => {
@@ -91,4 +92,17 @@ it('a deactivated member can neither ask for nor be let into a board of the team
   expect(await requestState(board.id, paused.id)).toMatchObject({ canRequest: false });
   await expect(decideRequest(board.id, owner, paused.id, { decision: 'approve' })).rejects.toMatchObject({ status: 403 });
   expect((await getBoardAccess(board.id, paused.id)).role).toBeNull();
+});
+
+it('a co-owner hears about a request and can let the person in; a plain editor neither hears nor decides', async () => {
+  const [owner, co, editor, asker] = await Promise.all([person('Holder'), person('CoHolder'), person('Helper'), person('Asking')]);
+  const board = await createBoard(owner.id, 'Roadmap', '', 'none');
+  for (const p of [co, editor]) await inviteBoardMember(null, board.id, owner, { email: p.email, role: 'editor' });
+  await setBoardMemberRole(board.id, owner.id, co.id, 'coowner');
+
+  await requestAccess(board.id, asker, { role: 'commenter' });
+  expect(requested.find((e) => e.boardId === board.id)?.recipientIds.sort()).toEqual([owner.id, co.id].sort());
+  await expect(decideRequest(board.id, editor, asker.id, { decision: 'approve' })).rejects.toMatchObject({ status: 403 });
+  await decideRequest(board.id, co, asker.id, { decision: 'approve' });
+  expect((await getBoardAccess(board.id, asker.id)).role).toBe('commenter');
 });

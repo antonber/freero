@@ -2,6 +2,7 @@
 // a workspace grants on its boards (asked by modules/boards for every access decision).
 import type { Request } from 'express';
 import {
+  LINK_MAX_DAYS_LIMIT,
   ORGANISATION_POLICY,
   WORKSPACE_CREATION_BLOCKED,
   WORKSPACE_SETTING_LIMITS,
@@ -207,6 +208,13 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('publicLinks', ['anyone', 'signedIn']);
   pick('liveEmbeds', ['on', 'off']);
   pick('boardEmbeds', ['on', 'off']);
+  pick('linkPassword', ['optional', 'required']);
+  if (p.linkMaxDays !== undefined) {
+    const d = p.linkMaxDays;
+    if (d !== null && (typeof d !== 'number' || !Number.isInteger(d) || d < 1 || d > LINK_MAX_DAYS_LIMIT))
+      throw badRequest(`policies.linkMaxDays must be a whole number of days from 1 to ${LINK_MAX_DAYS_LIMIT}, or null`);
+    out.linkMaxDays = d;
+  }
   return out;
 }
 
@@ -257,6 +265,8 @@ const POLICY_LABELS: Record<(typeof FLOOR_POLICY_KEYS)[number], string> = {
   publicLinks: 'Visitors without an account',
   liveEmbeds: 'Live embeds',
   boardEmbeds: 'Embedding boards on other sites',
+  linkPassword: 'Password on board links',
+  linkMaxDays: 'Board links expire within',
 };
 const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {
   requireTwoFactor: 'Require two-step verification',

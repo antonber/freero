@@ -11,6 +11,11 @@
 // workflow refuse a move, `rateLimitNext(n, seconds)` answers the next calls 429. Every request is
 // recorded (method, path, auth header kind — never the secret) in `requests`.
 //
+// Jira Software's agile API too (#119): project WEB has a scrum board with sprints 1 (closed),
+// 2 (active) and 3 (future); `edit(key, { sprint: id | null })` moves an issue like the backlog
+// view does, `closeSprint(id)` completes one. A select custom field "Team" (customfield_10050,
+// options Web / Mobile / Platform) stands for the custom fields a field map pairs (#43).
+//
 //   node scripts/lib/mock-jira.mjs --port 4482 [--deployment datacenter]
 
 import { createHmac, randomBytes } from 'node:crypto';
@@ -33,6 +38,9 @@ const TRANSITIONS = [
 const PRIORITIES = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
 const ESTIMATE = 'customfield_10016';
 const START = 'customfield_10015';
+const SPRINT = 'customfield_10020';
+const TEAM = 'customfield_10050';
+const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString();
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -62,6 +70,20 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     { id: '10001', key: 'OPS', name: 'Operations' },
   ];
   const users = [];
+  const sprints = [
+    { id: 1, name: 'WEB Sprint 1', state: 'closed', startDate: day(-28), endDate: day(-14), originBoardId: 1 },
+    { id: 2, name: 'WEB Sprint 2', state: 'active', startDate: day(-7), endDate: day(7), originBoardId: 1 },
+    { id: 3, name: 'WEB Sprint 3', state: 'future', startDate: day(7), endDate: day(21), originBoardId: 1 },
+  ];
+  const boards = [{ id: 1, name: 'WEB board', type: 'scrum', location: { projectKey: 'WEB' } }];
+  const sprintView = (s) => ({ id: s.id, name: s.name, state: s.state, boardId: s.originBoardId, startDate: s.startDate, endDate: s.endDate });
+  /** Puts the issue in sprint `id` (its closed sprints stay in its history), or none. */
+  const moveSprint = (issue, id) => {
+    const past = (issue.fields[SPRINT] ?? []).filter((s) => sprints.find((x) => x.id === s.id)?.state === 'closed');
+    const to = id === null ? null : sprints.find((s) => s.id === Number(id));
+    issue.fields[SPRINT] = [...past, ...(to && to.state !== 'closed' ? [sprintView(to)] : [])].map((s) => sprintView(sprints.find((x) => x.id === s.id)));
+    if (!issue.fields[SPRINT].length) issue.fields[SPRINT] = null;
+  };
   let rateLimited = 0;
   let rateLimitSeconds = 1;
   let nextId = 10_001;
@@ -87,7 +109,7 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     counters.set(projectKey, n);
     const id = String(nextId++);
     const project = projects.find((p) => p.key === projectKey);
-    const issue = { id, key: `${projectKey}-${n}`, status: 'todo', fields: { summary: '', description: null, labels: [], duedate: null, assignee: null, [ESTIMATE]: null, [START]: null, project: project ? { key: project.key, name: project.name } : undefined, ...fields }, remotelinks: new Map() };
+    const issue = { id, key: `${projectKey}-${n}`, status: 'todo', fields: { summary: '', description: null, labels: [], duedate: null, assignee: null, [ESTIMATE]: null, [START]: null, [SPRINT]: null, [TEAM]: null, project: project ? { key: project.key, name: project.name } : undefined, ...fields }, remotelinks: new Map() };
     touch(issue);
     issues.set(id, issue);
     byKey.set(issue.key, issue);
@@ -107,6 +129,8 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     if (changes.estimate !== undefined) issue.fields[ESTIMATE] = changes.estimate;
     if (changes.duedate !== undefined) issue.fields.duedate = changes.duedate;
     if (changes.startdate !== undefined) issue.fields[START] = changes.startdate;
+    if (changes.sprint !== undefined) moveSprint(issue, changes.sprint);
+    if (changes.team !== undefined) issue.fields[TEAM] = changes.team ? { value: changes.team, id: changes.team } : null;
     if (changes.assigneeEmail !== undefined) {
       const u = users.find((x) => x.emailAddress === changes.assigneeEmail) ?? addUser(changes.assigneeEmail, changes.assigneeEmail.split('@')[0]);
       issue.fields.assignee = changes.assigneeEmail === null ? null : u;
@@ -130,6 +154,8 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
         return (i) => Date.parse(i.fields.updated.replace('+0000', 'Z')) >= since;
       }
       if ((m = /^labels\s*=\s*"?([^"]+)"?$/i.exec(c))) return (i) => i.fields.labels.includes(m[1]);
+      if ((m = /^sprint\s*=\s*(\d+)$/i.exec(c))) return (i) => (i.fields[SPRINT] ?? []).some((s) => s.id === Number(m[1]) && s.state !== 'closed');
+      if ((m = /^parent\s*=\s*"?([A-Z][A-Z0-9]*-\d+)"?$/i.exec(c))) return (i) => i.fields.parent?.key === m[1].toUpperCase();
       throw Object.assign(new Error(`Error in the JQL Query: unsupported clause '${c}'`), { jql: true });
     });
     return [...issues.values()].filter((i) => tests.every((t) => t(i)));
@@ -210,10 +236,51 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     if (path === `${p}/myself`) return json(200, { accountId: 'acc-bot', name: 'freero-bot', emailAddress: email, displayName: 'Freero bot' });
     if (path === `${p}/field`)
       return json(200, [
-        { id: 'summary', name: 'Summary' },
-        { id: ESTIMATE, name: 'Story point estimate' },
-        { id: START, name: 'Start date' },
+        { id: 'summary', name: 'Summary', custom: false, schema: { type: 'string', system: 'summary' } },
+        { id: ESTIMATE, name: 'Story point estimate', custom: true, schema: { type: 'number', custom: 'com.pyxis.greenhopper.jira:jsw-story-points' } },
+        { id: START, name: 'Start date', custom: true, schema: { type: 'date', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:datepicker' } },
+        { id: SPRINT, name: 'Sprint', custom: true, schema: { type: 'array', items: 'json', custom: 'com.pyxis.greenhopper.jira:gh-sprint' } },
+        { id: TEAM, name: 'Team', custom: true, schema: { type: 'option', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:select' } },
       ]);
+    if ((m = new RegExp(`^${p}/issue/createmeta/([^/]+)/issuetypes$`).exec(path))) {
+      if (!projects.some((x) => x.key === m[1])) return json(404, { errorMessages: ['No project could be found'] });
+      const types = [{ name: 'Task', subtask: false }, { name: 'Bug', subtask: false }, { name: 'Story', subtask: false }, { name: 'Epic', subtask: false }, { name: 'Sub-task', subtask: true }];
+      return json(200, deployment === 'cloud' ? { issueTypes: types, total: types.length } : { values: types, total: types.length });
+    }
+    // ---- agile (Jira Software) ----
+    if (path === '/rest/agile/1.0/board' && req.method === 'GET') {
+      const key = u.searchParams.get('projectKeyOrId');
+      return json(200, { values: boards.filter((b) => !key || b.location.projectKey === key), isLast: true });
+    }
+    if ((m = /^\/rest\/agile\/1\.0\/board\/(\d+)\/sprint$/.exec(path)) && req.method === 'GET') {
+      const at = Number(u.searchParams.get('startAt') ?? 0);
+      const mine = sprints.filter((s) => s.originBoardId === Number(m[1]));
+      return json(200, { values: mine.slice(at, at + 50).map(sprintView), isLast: at + 50 >= mine.length });
+    }
+    if ((m = /^\/rest\/agile\/1\.0\/sprint\/(\d+)\/issue$/.exec(path)) && req.method === 'POST') {
+      const s = sprints.find((x) => x.id === Number(m[1]));
+      if (!s) return json(404, { errorMessages: ['Sprint does not exist'] });
+      if (s.state === 'closed') return json(400, { errorMessages: ['Cannot move issues to a closed sprint'] });
+      for (const k of body?.issues ?? []) {
+        const issue = find(k);
+        if (!issue) return json(400, { errorMessages: [`Issue ${k} does not exist`] });
+        moveSprint(issue, s.id);
+        touch(issue);
+      }
+      res.writeHead(204);
+      return res.end();
+    }
+    if (path === '/rest/agile/1.0/backlog/issue' && req.method === 'POST') {
+      for (const k of body?.issues ?? []) {
+        const issue = find(k);
+        if (issue) {
+          moveSprint(issue, null);
+          touch(issue);
+        }
+      }
+      res.writeHead(204);
+      return res.end();
+    }
     if (path === '/rest/api/3/project/search' && deployment === 'cloud') return json(200, { values: projects, isLast: true });
     if (path === '/rest/api/2/project' && deployment !== 'cloud') return json(200, projects);
     if (path === `${p}/user/search`) {
@@ -229,7 +296,21 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
       if (deployment !== 'cloud' && f.description && typeof f.description !== 'string') return json(400, { errors: { description: 'Operation value must be a string' } });
       const assignee = f.assignee ? users.find((x) => x.accountId === f.assignee.accountId || x.name === f.assignee.name) : null;
       if (f.priority && !PRIORITIES.includes(f.priority.name)) return json(400, { errorMessages: [], errors: { priority: 'Specify a valid priority' } });
-      const issue = create(project.key, { summary: f.summary, description: f.description ?? null, labels: f.labels ?? [], duedate: f.duedate ?? null, assignee: assignee ?? null, priority: f.priority ?? { name: 'Medium' }, [ESTIMATE]: f[ESTIMATE] ?? null, [START]: f[START] ?? null });
+      const parent = f.parent?.key ? find(f.parent.key) : null;
+      if (f.parent?.key && !parent) return json(400, { errorMessages: [], errors: { parent: 'Could not find issue by id or key.' } });
+      const issue = create(project.key, {
+        summary: f.summary,
+        description: f.description ?? null,
+        labels: f.labels ?? [],
+        duedate: f.duedate ?? null,
+        assignee: assignee ?? null,
+        priority: f.priority ?? { name: 'Medium' },
+        issuetype: { name: f.issuetype?.name ?? 'Task' },
+        [ESTIMATE]: f[ESTIMATE] ?? null,
+        [START]: f[START] ?? null,
+        [TEAM]: f[TEAM] ?? null,
+        ...(parent ? { parent: { key: parent.key, fields: { summary: parent.fields.summary } } } : {}),
+      });
       return json(201, { id: issue.id, key: issue.key, self: `${url}${p}/issue/${issue.id}` });
     }
     if ((m = new RegExp(`^${p}/issue/([^/]+)$`).exec(path))) {
@@ -303,8 +384,26 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     edit,
     issue: (key) => {
       const i = find(key);
-      return i ? { ...i, statusCategory: STATUSES[i.status].statusCategory.key, statusName: STATUSES[i.status].name, text: plainOf(i.fields.description), remotelinks: [...i.remotelinks.values()] } : null;
+      const open = (i?.fields[SPRINT] ?? []).find((s) => s.state !== 'closed');
+      return i
+        ? {
+            ...i,
+            statusCategory: STATUSES[i.status].statusCategory.key,
+            statusName: STATUSES[i.status].name,
+            text: plainOf(i.fields.description),
+            remotelinks: [...i.remotelinks.values()],
+            sprint: open?.name ?? null,
+            team: i.fields[TEAM]?.value ?? null,
+          }
+        : null;
     },
+    sprints,
+    closeSprint: (id) => {
+      const s = sprints.find((x) => x.id === Number(id));
+      s.state = 'closed';
+      for (const i of issues.values()) if (i.fields[SPRINT]) i.fields[SPRINT] = i.fields[SPRINT].map((x) => sprintView(sprints.find((y) => y.id === x.id)));
+    },
+
     forbidTransition: (key, category) => {
       const i = find(key);
       forbidden.set(i.id, new Set([...(forbidden.get(i.id) ?? []), category]));

@@ -403,6 +403,26 @@ td > .fr-admin-pill:first-child {
   color: var(--fr-ink-3);
 }
 
+/* Board links outside the link policy (#39). */
+.fr-admin-compliance {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0 4px;
+}
+.fr-admin-compliance__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.fr-admin-compliance__list li {
+  margin: 2px 0;
+}
+.fr-admin-compliance__list a {
+  color: var(--fr-primary);
+  font-weight: 600;
+}
+
 .fr-admin-row {
   display: flex;
   align-items: center;

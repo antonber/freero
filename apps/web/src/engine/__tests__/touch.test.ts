@@ -15,6 +15,12 @@ describe('fingers and pens on the canvas', () => {
     expect(press({ penSeen: false, toolId: 'pen' })).toBe('tool');
   });
 
+  it('with the lasso a finger loops round items on empty canvas; once a pen was used the pen loops and fingers pan', () => {
+    expect(press({ toolId: 'lasso', onItem: false })).toBe('tool');
+    expect(press({ toolId: 'lasso', penSeen: true })).toBe('pan');
+    expect(press({ pointerType: 'pen', toolId: 'lasso', penSeen: true })).toBe('tool');
+  });
+
   it('with the select tool a finger pans empty canvas but still drags items, and the mouse is never affected', () => {
     expect(press({ toolId: 'select', onItem: false })).toBe('pan');
     expect(press({ toolId: 'select', onItem: true })).toBe('tool');

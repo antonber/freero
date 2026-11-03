@@ -161,7 +161,10 @@ export default definePage({
         log (see <a href="#workspaces">Team workspaces</a>).
       </p>
       <h3>Service providers</h3>
-      <p>These process data for us, under contract, only to run the service:</p>
+      <p>
+        These process data for us, under contract, only to run the service. The <a href="/subprocessors">subprocessor list</a> names each of them with what
+        it handles and where, and says how we announce changes.
+      </p>
       <Table
         caption="Service providers"
         stack
@@ -173,11 +176,6 @@ export default definePage({
           ['AI model provider', L('aiProvider'), 'Prompts and board content of AI actions you run'],
           ['Error tracking', L('errorReporting'), 'Error details, request method and path, account id'],
           ['Analytics', L('analyticsProvider'), L('analyticsData')],
-          [
-            'Web fonts',
-            'Google Fonts (Google LLC)',
-            'The app loads its fonts from Google’s servers, which receive your IP address and browser details when a page loads',
-          ],
         ]}
       />
       <h3>Services you choose to connect</h3>
@@ -301,14 +299,14 @@ export default definePage({
         If you work in a team workspace an organization runs, that organization decides who is in it and how its boards may be shared. Its admins can see
         members and their activity, export everything in the workspace, read its audit log, set retention periods and, with single sign-on or SCIM, manage
         your access. For data in such a workspace we act on the organization’s instructions, so some requests are best sent to its admins; we will help them
-        answer you.
+        answer you. Organizations can agree our <a href="/dpa">data processing addendum</a> with us for that processing.
       </p>
 
       <h2 id="security">9. Security</h2>
       <p>
         Connections are encrypted (HTTPS). Passwords are hashed; two-step secrets, AI keys and integration tokens are encrypted at rest; tokens and API keys are
-        stored only as hashes. Access by apps is limited to the permissions you grant, and every app call is audited. More on the{' '}
-        <a href="/security">security page</a>. No system is perfectly secure: if we learn of a breach affecting your data, we will tell you and the
+        stored only as hashes. Access by apps is limited to the permissions you grant, and every app call is audited. More in the{' '}
+        <a href="/security">security overview</a>. No system is perfectly secure: if we learn of a breach affecting your data, we will tell you and the
         authorities as the law requires. To report a vulnerability: {L('securityContact')}.
       </p>
 

@@ -46,6 +46,13 @@ export interface PageDef {
    * (lib/legal.tsx). Fill the operator's facts with `legal(key)` tokens.
    */
   legal?: boolean;
+  /**
+   * A draft the operator hasn't approved yet (the trust pages: security overview, subprocessors,
+   * DPA): the page shows "Draft — under review", is `noindex` and stays out of the sitemap, and the
+   * server keeps it `noindex` even once the legal pages are in effect. Linked and reachable as usual.
+   * Approving it = removing this flag (and its `<ToConfirm />` marks).
+   */
+  underReview?: boolean;
   sitemap?: SitemapGroup;
   /** Shown after the body, before the closing call to action, and as FAQPage JSON-LD. */
   faq?: FaqItem[];

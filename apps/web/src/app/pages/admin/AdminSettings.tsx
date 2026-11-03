@@ -4,10 +4,18 @@
 // choices looser than the organisation's floor are shown but disabled (the server refuses them).
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { looserPolicy, POLICY_STRICTNESS, type OrganisationPolicyKey, type WorkspacePolicies, type WorkspaceSettings, type WorkspaceSummary } from '@freero/shared';
+import {
+  looserPolicy,
+  POLICY_STRICTNESS,
+  type LinkComplianceIssue,
+  type OrderedPolicyKey,
+  type WorkspacePolicies,
+  type WorkspaceSettings,
+  type WorkspaceSummary,
+} from '@freero/shared';
 import { Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
-import { parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
+import { LINK_MAX_DAYS_FIELD, parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
@@ -82,9 +90,10 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
   useEffect(() => setPolicies(workspace.policies), [workspace.policies]);
   const org = workspace.kind === 'organisation';
   const floor = workspace.organisation ?? null;
-  const floorOf = (key: keyof WorkspacePolicies) => (floor && key !== 'teamAccess' ? floor.policies[key as OrganisationPolicyKey] : null);
+  const floorOf = (key: keyof WorkspacePolicies) => (floor && key !== 'teamAccess' && key !== 'linkMaxDays' ? floor.policies[key as OrderedPolicyKey] : null);
+  const maxDaysFloor = floor?.policies.linkMaxDays ?? null;
 
-  const setPolicy = async (key: keyof WorkspacePolicies, value: string) => {
+  const setPolicy = async <K extends keyof WorkspacePolicies>(key: K, value: WorkspacePolicies[K]) => {
     const prev = policies;
     setPolicies({ ...policies, [key]: value });
     try {
@@ -95,6 +104,8 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
       notify(errorText(e, 'Could not update the policy'), 'error');
     }
   };
+  const maxDays = settingValue(policies.linkMaxDays);
+  const maxDaysOptions = LINK_MAX_DAYS_FIELD.options.some((o) => o.value === maxDays) ? LINK_MAX_DAYS_FIELD.options : [...LINK_MAX_DAYS_FIELD.options, { value: maxDays, label: `${maxDays} days` }];
 
   if (!settings) return <Spinner />;
   return (
@@ -149,18 +160,77 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
         <h2 className="fr-admin-card__title">Sharing</h2>
         {POLICY_FIELDS.filter((f) => !org || f.key !== 'teamAccess').map((f) => {
           const least = floorOf(f.key);
-          const options = least === null ? f.options : f.options.map((o) => ({ ...o, disabled: looserPolicy(f.key as OrganisationPolicyKey, o.value as never, least as never) }));
+          const key = f.key as OrderedPolicyKey;
+          const options = least === null ? f.options : f.options.map((o) => ({ ...o, disabled: looserPolicy(key, o.value as never, least as never) }));
           // Only a floor that rules something out is worth a word (the loosest value is no floor).
-          const binding = least !== null && least !== POLICY_STRICTNESS[f.key as OrganisationPolicyKey][0];
+          const binding = least !== null && least !== POLICY_STRICTNESS[key][0];
           const hint = binding ? `${f.hint} Set by ${floor!.name}: ${f.options.find((o) => o.value === least)?.label} at most.` : f.hint;
           return (
             <Row key={f.key} label={f.label} hint={hint}>
-              <Select<string> aria-label={f.label} options={options} value={policies[f.key]} onChange={(v) => void setPolicy(f.key, v)} width={230} />
+              <Select<string>
+                aria-label={f.label}
+                options={options}
+                value={policies[f.key]}
+                onChange={(v) => void setPolicy(f.key, v as WorkspacePolicies[typeof f.key])}
+                width={230}
+              />
             </Row>
           );
         })}
+        <Row label={LINK_MAX_DAYS_FIELD.label} hint={maxDaysFloor === null ? LINK_MAX_DAYS_FIELD.hint : `${LINK_MAX_DAYS_FIELD.hint} Set by ${floor!.name}: ${maxDaysFloor} days at most.`}>
+          <Select<string>
+            aria-label={LINK_MAX_DAYS_FIELD.label}
+            options={maxDaysFloor === null ? maxDaysOptions : maxDaysOptions.map((o) => ({ ...o, disabled: o.value === '' || Number(o.value) > maxDaysFloor }))}
+            value={maxDays}
+            onChange={(v) => void setPolicy('linkMaxDays', parseSetting(v))}
+            width={230}
+          />
+        </Row>
+        {org ? null : <LinkCompliance workspaceId={workspace.id} policies={policies} />}
       </div>
     </section>
+  );
+}
+
+const PROBLEM_TEXT = { no_password: 'no password', no_expiry: 'no expiry', expiry_too_late: 'expires too late' } as const;
+
+/**
+ * The boards whose link is on but doesn't meet the link policy (#39): turning the policy on never
+ * breaks them, so admins see which ones to ask their owners about.
+ */
+function LinkCompliance({ workspaceId, policies }: { workspaceId: string; policies: WorkspacePolicies }) {
+  const [boards, setBoards] = useState<LinkComplianceIssue[] | null>(null);
+  const active = policies.linkPassword === 'required' || policies.linkMaxDays !== null;
+  useEffect(() => {
+    if (!active) return setBoards(null);
+    let live = true;
+    api.linkCompliance(workspaceId).then(
+      (r) => live && setBoards(r.boards),
+      () => live && setBoards([]),
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceId, active, policies.linkPassword, policies.linkMaxDays]);
+  if (!active || !boards) return null;
+  return (
+    <div className="fr-admin-compliance" aria-label="Board links outside the policy">
+      <span className="fr-admin-row__label">{boards.length ? `${boards.length} board ${boards.length === 1 ? 'link doesn’t' : 'links don’t'} meet the link policy yet` : 'Every board link meets the policy'}</span>
+      {boards.length ? (
+        <ul className="fr-admin-compliance__list">
+          {boards.map((b) => (
+            <li key={b.boardId}>
+              <Link to={`/board/${encodeURIComponent(b.boardId)}?share=1`}>{b.title || 'Untitled board'}</Link>
+              <span className="fr-admin-row__hint">
+                {' '}
+                · {b.ownerName} · {b.problems.map((p) => PROBLEM_TEXT[p]).join(', ')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <span className="fr-admin-row__hint">They keep working until their owner changes the link, which then has to meet the policy.</span>
+    </div>
   );
 }
 

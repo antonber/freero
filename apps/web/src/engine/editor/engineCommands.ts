@@ -27,7 +27,7 @@ import type { EngineCore } from '../runtime/core';
 import { nextZoomStep } from '../camera/camera';
 import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from './boardSettings';
 
-const PROTECTED_NOTE = 'Only the board owner can unlock a protected item.';
+const PROTECTED_NOTE = 'Only the board’s owner and co-owners can unlock a protected item.';
 
 /** Commands whose shortcut is display-only: the keyboard path is the native copy/cut/paste event. */
 export const NATIVE_CLIPBOARD_COMMANDS = new Set(['engine.copy', 'engine.cut', 'engine.paste']);
@@ -52,7 +52,18 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     { id: 'engine.redo', label: 'Redo', shortcut: 'mod+shift+z', run: (e) => e.redo() },
     { id: 'engine.redoAlt', label: 'Redo', shortcut: 'mod+y', run: (e) => e.redo() },
     { id: 'engine.cut', icon: Scissors, label: 'Cut', shortcut: 'mod+x', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.cut() },
-    { id: 'engine.copy', icon: Copy, label: 'Copy', shortcut: 'mod+c', minRole: 'viewer', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.copy() },
+    {
+      id: 'engine.copy',
+      icon: Copy,
+      label: 'Copy',
+      shortcut: 'mod+c',
+      minRole: 'viewer',
+      menus: ['context'],
+      // #123: off for viewers and commenters of a board whose owner turned copying off.
+      when: (e) => hasSel(e) && e.host.board.canCopy !== false,
+      disabledReason: (e) => (e.host.board.canCopy === false ? 'The board’s owner turned copying off for viewers and commenters' : NEEDS_SEL),
+      run: (e) => e.copy(),
+    },
     {
       id: 'engine.paste',
       icon: ClipboardPaste,
@@ -161,7 +172,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       menus: ['context'],
       detail: (e) => (selected(e).length && selected(e).every(isProtectedLock) ? 'on' : undefined),
       when: (e) => hasSel(e) && e.mayProtect(),
-      disabledReason: 'Only the board owner can do this',
+      disabledReason: 'Only the board’s owner and co-owners can do this',
       run: (e) => {
         const els = selected(e);
         const protect = !els.every(isProtectedLock);

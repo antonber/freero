@@ -3,8 +3,11 @@
 import type { LinkAccess, WorkspacePolicies, WorkspaceSettings } from '@freero/shared';
 import type { SelectOption } from '@ui';
 
+/** The policies that are a choice among words (`linkMaxDays`, a number of days, has its own field). */
+export type ChoicePolicy = Exclude<keyof WorkspacePolicies, 'linkMaxDays'>;
+
 export const POLICY_FIELDS: Array<{
-  key: keyof WorkspacePolicies;
+  key: ChoicePolicy;
   label: string;
   hint: string;
   options: SelectOption<string>[];
@@ -39,6 +42,15 @@ export const POLICY_FIELDS: Array<{
       { value: 'viewer', label: 'Up to “can view”' },
       { value: 'none', label: 'Links are off' },
     ] satisfies SelectOption<LinkAccess>[],
+  },
+  {
+    key: 'linkPassword',
+    label: 'Password on board links',
+    hint: 'Required: a board’s link can only be turned on or changed with a password. Links that are on today keep working; the list below shows them.',
+    options: [
+      { value: 'optional', label: 'Up to the board' },
+      { value: 'required', label: 'Required' },
+    ],
   },
   {
     key: 'publicLinks',
@@ -87,6 +99,16 @@ export const POLICY_FIELDS: Array<{
     ],
   },
 ];
+
+/** `linkMaxDays` (#39): '' stands for no limit. */
+export const LINK_MAX_DAYS_FIELD = {
+  label: 'Board links expire within',
+  hint: 'Turning a board’s link on or changing it needs an expiry no later than this. Links that are on today keep working; the list below shows them.',
+  options: [
+    { value: '', label: 'No limit' },
+    ...[1, 7, 14, 30, 90, 180, 365].map((d) => ({ value: String(d), label: d === 1 ? '1 day' : `${d} days` })),
+  ] satisfies SelectOption<string>[],
+};
 
 type NumberSetting = Exclude<keyof WorkspaceSettings, 'requireTwoFactor'>;
 

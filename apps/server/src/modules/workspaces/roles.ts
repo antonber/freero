@@ -2,6 +2,7 @@
 import { looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
 import type {
   LinkAccess,
+  OrderedPolicyKey,
   OrganisationPolicyKey,
   OrganisationSecurityKey,
   ProjectAccess,
@@ -39,6 +40,8 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   publicLinks: 'anyone',
   liveEmbeds: 'on',
   boardEmbeds: 'on',
+  linkPassword: 'optional',
+  linkMaxDays: null,
 };
 
 /** The team access level of a board: its project's own level, else the workspace's. */
@@ -119,13 +122,15 @@ export function mayRemove(actor: WorkspaceRole | null, target: WorkspaceRole): b
 
 // The order of every floored policy, loosest to strictest, is POLICY_STRICTNESS in @freero/shared.
 export { looserPolicy };
-export const FLOOR_POLICY_KEYS = Object.keys(POLICY_STRICTNESS) as OrganisationPolicyKey[];
+// Plus the numeric link lifetime limit (the shorter wins; null: no limit).
+const ORDERED_KEYS = Object.keys(POLICY_STRICTNESS) as OrderedPolicyKey[];
+export const FLOOR_POLICY_KEYS: OrganisationPolicyKey[] = [...ORDERED_KEYS, 'linkMaxDays'];
 export const FLOOR_SETTING_KEYS: OrganisationSecurityKey[] = ['requireTwoFactor', 'sessionMaxHours', 'sessionIdleMinutes'];
 export type PolicyFloor = Pick<WorkspacePolicies, OrganisationPolicyKey>;
 export type SettingsFloor = Pick<WorkspaceSettings, OrganisationSecurityKey>;
 
 /** What a new organisation starts with: the loosest value of every key, i.e. no floor at all. */
-export const NO_FLOOR_POLICIES = Object.fromEntries(FLOOR_POLICY_KEYS.map((k) => [k, POLICY_STRICTNESS[k][0]])) as PolicyFloor;
+export const NO_FLOOR_POLICIES = { ...Object.fromEntries(ORDERED_KEYS.map((k) => [k, POLICY_STRICTNESS[k][0]])), linkMaxDays: null } as PolicyFloor;
 
 /** A workspace's own policies raised to its organisation's floors, key by key (the effective policies). */
 export function strictestPolicies(own: WorkspacePolicies, floor: PolicyFloor | null): WorkspacePolicies {

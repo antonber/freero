@@ -124,6 +124,7 @@ export function apiBoard(req: Request, b: BoardSummary): ApiBoard {
     description: b.description,
     url: boardUrl(req, b.id),
     role: b.role,
+    ...(b.coOwner ? { coOwner: true } : {}),
     workspaceId: b.workspaceId,
     projectId: b.projectId,
     owner: { id: b.ownerId, name: b.ownerName },
@@ -825,7 +826,7 @@ export async function importFromTracker(call: ApiCall, boardId: string, body: Re
   await requireBoardAccess(id, call.userId, 'editor');
   const conn = await trackerConnection(call, id, body.connection);
   const placement = body.placement === undefined || body.placement === null ? undefined : readPlacement(body.placement);
-  const req = { connectionId: conn.id, query: body.query, limit: body.limit };
+  const req = { connectionId: conn.id, query: body.query, limit: body.limit, ...(body.scope !== undefined && body.scope !== null ? { scope: body.scope } : {}) };
   call.audit.metadata = { connection: conn.id, provider: conn.provider };
   if (body.target === 'suggestions') {
     const found = await importCandidates(call.userId, id, req);
@@ -858,12 +859,12 @@ export async function importFromTracker(call: ApiCall, boardId: string, body: Re
   return { target: 'board' as const, cards: (out.cards ?? []).map(({ id: cardId, key, url }) => ({ id: cardId, key, url })), skipped: out.skipped, ...(out.containerId ? { containerId: out.containerId } : {}) };
 }
 
-export async function syncToTracker(call: ApiCall, boardId: string, body: { itemIds?: unknown; connection?: unknown; project?: unknown; issueType?: unknown; mode?: unknown }) {
+export async function syncToTracker(call: ApiCall, boardId: string, body: { itemIds?: unknown; connection?: unknown; project?: unknown; issueType?: unknown; mode?: unknown; parent?: unknown }) {
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
   await agentWrite(call, { id, role });
   const conn = await trackerConnection(call, id, body.connection);
-  const out = await sendToTracker(call.userId, id, { connectionId: conn.id, itemIds: body.itemIds, project: body.project, issueType: body.issueType, mode: body.mode }, appUrl(call.req, ''));
+  const out = await sendToTracker(call.userId, id, { connectionId: conn.id, itemIds: body.itemIds, project: body.project, issueType: body.issueType, mode: body.mode, parent: body.parent }, appUrl(call.req, ''));
   call.audit.metadata = { issues: out.issues.map((i) => i.key), items: out.issues.reduce((n, i) => n + i.itemIds.length, 0) };
   return out;
 }

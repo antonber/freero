@@ -20,7 +20,11 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 const RETRY_BUDGET_MS = 8_000;
 const MAX_ATTEMPTS = 4;
 
-export type TrackerErrorKind = 'auth' | 'rate' | 'unavailable' | 'not_found' | 'refused' | 'invalid';
+/**
+ * `conflict`: the issue changed in the tracker after Freero read it (Azure DevOps refuses a write
+ * against an older revision); the sync reads it again and merges once more instead of overwriting.
+ */
+export type TrackerErrorKind = 'auth' | 'rate' | 'unavailable' | 'not_found' | 'refused' | 'invalid' | 'conflict';
 
 /** A tracker call failed. `message` is Freero's own words (safe to show and to store). */
 export class TrackerError extends Error {
@@ -97,8 +101,10 @@ function once(req: HttpRequest, rules: HttpRules): Promise<HttpResponse> {
     headers['content-type'] = 'application/x-www-form-urlencoded';
   } else if (req.body !== undefined) {
     payload = Buffer.from(JSON.stringify(req.body));
-    headers['content-type'] = 'application/json';
+    // A JSON body in another media type stays so (Azure DevOps: application/json-patch+json).
+    if (!/json/i.test(headers['content-type'] ?? '')) headers['content-type'] = 'application/json';
   }
+
   if (payload) headers['content-length'] = String(payload.length);
   const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {

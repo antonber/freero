@@ -65,10 +65,10 @@ arrive in that order (retries), so order by `id` if it matters.
 |---|---|
 | `board.created` | `title`, `copyOf?` (the board it is a copy of) |
 | `board.renamed` | `title` (new), `from`, `to` |
-| `board.moved` | `title`, `to` (the project's name, or `null`: out of its project) |
+| `board.moved` | `title`, `to` (the project's name, or `null`: out of its project); moved into another workspace (#124): one event in each, `toWorkspace` in the one it left, `fromWorkspace` in the one it joined |
 | `board.trashed`, `board.restored` | `title` |
 | `member.added` | `userId`, `role` (`viewer` / `commenter` / `editor`) |
-| `member.role_changed` | `userId`, `role`, `previousRole` |
+| `member.role_changed` | `userId`, `role`, `previousRole`; a co-owner (#122, an editor who also manages sharing) adds `coOwner` / `previousCoOwner`, and becoming or ceasing to be one is a role change of its own |
 | `member.removed` | `userId` |
 | `item.created`, `item.updated` | `item`: `{ id, type, text?, containerId? }` — up to 280 characters of the item's text; `containerId`: the frame or kanban it sits in directly (a card in an agent's control-room lane: the lane's kanban) |
 | `item.deleted` | `item`: `{ id, type, containerId? }` (the container it was in) |

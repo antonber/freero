@@ -1,4 +1,20 @@
-import { BOARD_REMOVED, DEFAULT_BOARD_TITLE, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type ObjectKind, type Role } from '@freero/shared';
+import {
+  BOARD_REMOVED,
+  DEFAULT_BOARD_TITLE,
+  DOWNLOADS_RESTRICTED,
+  isGuestId,
+  LINK_PASSWORD_REQUIRED,
+  LINK_POLICY_REQUIRED,
+  TRASH_RETENTION_DAYS,
+  type BoardPermissions,
+  type BoardSharingSettings,
+  type BoardSummary,
+  type LinkAccess,
+  type MoveAdjustment,
+  type ObjectKind,
+  type Role,
+  type WorkspacePolicies,
+} from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -6,7 +22,19 @@ import { runExclusive } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
-import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveGuestRole, resolveRole, ROLE_RANK } from '../members/index';
+import {
+  atLeast,
+  coOwnedBoardIds,
+  getMemberRole,
+  getMembership,
+  managesSharing,
+  membershipsOf,
+  ownershipTransferred,
+  resolveCoOwner,
+  resolveGuestRole,
+  resolveRole,
+  ROLE_RANK,
+} from '../members/index';
 import {
   closeBoardDoc,
   initBoardDoc,
@@ -34,7 +62,7 @@ import {
   workspaceRolesOf,
 } from '../workspaces/index';
 import { callOf, jitsiAvailable } from './call';
-import { boardLifecycle } from './events';
+import { boardLifecycle, boardMovedWorkspace } from './events';
 import * as repo from './repo';
 import type { Board } from './repo';
 
@@ -49,12 +77,13 @@ export const DEFAULT_TITLE = DEFAULT_BOARD_TITLE;
 export const boardTarget = (b: { id: string; title: string; kind?: ObjectKind }) => ({ type: b.kind === 'doc' ? 'doc' : 'board', id: b.id, label: b.title });
 
 /**
- * Throws unless `user` (with `role` on the board) may set its link to `linkAccess`: the owner only,
- * never while an operator blocks the link, a verified address to turn it on, and within the
- * workspace's policies (links at all, up to which role, sharing outside the workspace).
+ * Throws unless `user` may set the board's link to `linkAccess`: its owner or a co-owner (`manages`,
+ * #122), never while an operator blocks the link, a verified address to turn it on, and within the
+ * workspace's policies (links at all, up to which role, sharing outside the workspace). The link
+ * policy (#39, password / expiry) is `checkLinkPolicy`, on the link as the whole change leaves it.
  */
-export function checkLinkAccessChange(board: Board, role: Role, access: BoardWorkspaceAccess, user: { emailVerified: boolean }, linkAccess: LinkAccess): void {
-  if (role !== 'owner') throw forbidden('Only the board owner can change link sharing');
+export function checkLinkAccessChange(board: Board, manages: boolean, access: BoardWorkspaceAccess, user: { emailVerified: boolean }, linkAccess: LinkAccess): void {
+  if (!manages) throw forbidden('Only the board’s owner and co-owners can change link sharing');
   if (board.linkBlocked) throw new HttpError(403, 'Freero’s moderators turned link sharing off for this board. Use the appeal link in the email we sent you.', 'link_blocked');
   if (linkAccess !== 'none' && !user.emailVerified) throw forbidden('Verify your email address before sharing by link');
   if (linkAccess !== 'none' && linkAccess !== board.linkAccess) {
@@ -66,6 +95,71 @@ export function checkLinkAccessChange(board: Board, role: Role, access: BoardWor
   }
 }
 
+/** A change to a board's link as checked against the workspace's link policy (#39). */
+export interface LinkChange {
+  linkAccess?: LinkAccess;
+  /** The password is set (or changed) / removed. */
+  password?: 'set' | 'removed';
+  /** A new expiry (epoch ms), or null for none. */
+  expiresAt?: number | null;
+}
+
+/** Whether a link that works until `expiresAt` stays within `maxDays` (until the end of the last allowed day). */
+const withinMaxDays = (expiresAt: number | null, maxDays: number, now: number) => expiresAt !== null && expiresAt <= now + (maxDays + 1) * DAY_MS;
+
+/** What a workspace's link policy (#39) requires, in words (null: nothing). */
+export function linkPolicyText(p: Pick<WorkspacePolicies, 'linkPassword' | 'linkMaxDays'>): string | null {
+  const pw = p.linkPassword === 'required';
+  const days = p.linkMaxDays;
+  if (!pw && days === null) return null;
+  const expiry = days === null ? '' : `an expiry within ${days === 1 ? '1 day' : `${days} days`}`;
+  return `This workspace requires board links to have ${pw ? 'a password' : ''}${pw && expiry ? ' and ' : ''}${expiry}`;
+}
+
+/**
+ * The workspace's link policy (#39) against the link as `change` leaves it: turning the link on
+ * (or back on after it expired) or changing its role needs everything the policy requires — the
+ * password and expiry may come in the same change. A link that stays as it is may still be made
+ * safer step by step (a password added, a closer expiry) but never weaker: its password removed
+ * or its expiry pushed beyond the limit. Links turned off are never refused, so existing links
+ * that predate the policy keep working until someone changes them.
+ */
+export function checkLinkPolicy(board: Board, change: LinkChange, policies: Pick<WorkspacePolicies, 'linkPassword' | 'linkMaxDays'>, now = Date.now()): void {
+  const required = linkPolicyText(policies);
+  if (!required) return;
+  const after = {
+    access: change.linkAccess ?? board.storedLinkAccess,
+    password: change.password ? change.password === 'set' : board.linkPasswordHash !== null,
+    expiresAt: change.expiresAt !== undefined ? change.expiresAt : board.linkExpiresAt,
+  };
+  const liveAfter = after.access !== 'none' && (after.expiresAt === null || after.expiresAt > now);
+  if (!liveAfter) return;
+  const refuse = () => {
+    throw new HttpError(403, required, LINK_POLICY_REQUIRED);
+  };
+  const needsPassword = policies.linkPassword === 'required';
+  const maxDays = policies.linkMaxDays;
+  const opensOrChanges = board.linkAccess === 'none' || (change.linkAccess !== undefined && change.linkAccess !== board.linkAccess);
+  if (opensOrChanges) {
+    if (needsPassword && !after.password) refuse();
+    if (maxDays !== null && !withinMaxDays(after.expiresAt, maxDays, now)) refuse();
+    return;
+  }
+  if (needsPassword && change.password === 'removed') refuse();
+  if (maxDays !== null && change.expiresAt !== undefined && !withinMaxDays(change.expiresAt, maxDays, now)) refuse();
+}
+
+/** Whether a board's live link meets its workspace's link policy (#39; the admin console lists the ones that don't). */
+export function linkProblems(board: Board, policies: Pick<WorkspacePolicies, 'linkPassword' | 'linkMaxDays'>, now = Date.now()): Array<'no_password' | 'no_expiry' | 'expiry_too_late'> {
+  const out: Array<'no_password' | 'no_expiry' | 'expiry_too_late'> = [];
+  if (policies.linkPassword === 'required' && board.linkPasswordHash === null) out.push('no_password');
+  if (policies.linkMaxDays !== null) {
+    if (board.linkExpiresAt === null) out.push('no_expiry');
+    else if (!withinMaxDays(board.linkExpiresAt, policies.linkMaxDays, now)) out.push('expiry_too_late');
+  }
+  return out;
+}
+
 /** After a stored link change: audited, and every live socket's access re-resolved. */
 export async function linkAccessChanged(board: Board, actorId: string, to: LinkAccess): Promise<void> {
   await recordAuditQuietly({ action: 'board.link_sharing_changed', workspaceId: board.workspaceId, actorId, target: boardTarget(board), metadata: { from: board.linkAccess, to } });
@@ -75,12 +169,14 @@ export async function linkAccessChanged(board: Board, actorId: string, to: LinkA
 /**
  * Shares the board by its link with at least `linkAccess` (an app's "Share with team", KAI-171):
  * a link that already lets people in as much or more is kept as it is; otherwise the same rules as
- * the share dialog apply (owner, verified address, workspace policies, operator blocks).
+ * the share dialog apply (owner or co-owner, verified address, workspace policies — a required
+ * password or expiry included — operator blocks).
  */
 export async function shareByLink(boardId: string, user: { id: string; emailVerified: boolean }, linkAccess: Exclude<LinkAccess, 'none'>): Promise<{ linkAccess: LinkAccess; changed: boolean }> {
-  const { board, role, access } = await requireAccess(boardId, user.id);
+  const { board, role, access, coOwner } = await requireAccess(boardId, user.id);
   if (board.linkAccess !== 'none' && ROLE_RANK[board.linkAccess] >= ROLE_RANK[linkAccess]) return { linkAccess: board.linkAccess, changed: false };
-  checkLinkAccessChange(board, role, access, user, linkAccess);
+  checkLinkAccessChange(board, managesSharing(role, coOwner), access, user, linkAccess);
+  checkLinkPolicy(board, { linkAccess }, access.policies);
   await repo.updateBoardFields(board.id, { linkAccess }, Date.now());
   await linkAccessChanged(board, user.id, linkAccess);
   return { linkAccess, changed: true };
@@ -95,8 +191,8 @@ export const EXPORT_FORMATS = ['png', 'jpg', 'svg', 'pdf', 'csv', 'json', 'markd
  * server can't see a browser export, so this is as complete as the clients reporting it.
  */
 export async function recordExport(boardId: string, userId: string, format: unknown): Promise<void> {
-  const { board, access } = await requireAccess(boardId, userId);
-  await requireDownload(board, userId, access, 'export');
+  const { board, role, access } = await requireAccess(boardId, userId);
+  await requireDownload(board, userId, access, 'export', role);
   const f = (EXPORT_FORMATS as readonly unknown[]).includes(format) ? (format as string) : 'other';
   await recordAudit({ action: board.kind === 'doc' ? 'doc.exported' : 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
 }
@@ -112,7 +208,7 @@ export async function authorizeFileDownload(
   userId: string,
 ): Promise<{ role: Role; record(file: { name: string; upload: string }): Promise<void> }> {
   const { board, role, access } = await requireAccess(boardId, userId);
-  await requireDownload(board, userId, access, 'file');
+  await requireDownload(board, userId, access, 'file', role);
   const guest = isGuestId(userId);
   return {
     role,
@@ -144,7 +240,7 @@ export async function authorizeBackup(
   const { board, role, access } = await requireAccess(boardId, userId);
   // A doc's document is rich text, not board content: it exports as Markdown (modules/docs).
   if (board.kind !== 'board') throw badRequest('Only boards have a .freero backup; export a doc as Markdown');
-  await requireDownload(board, userId, access, 'backup');
+  await requireDownload(board, userId, access, 'backup', role);
   return {
     role,
     board: { id: board.id, title: board.title, description: board.description, createdAt: board.createdAt },
@@ -177,24 +273,26 @@ const linkLocked = (board: Board) => board.linkPasswordHash !== null && board.li
  * The role of `userId` on a board and what its workspace contributes (policies, team access).
  * `userId` may be a guest id: a guest gets only the board they joined, as resolveGuestRole allows
  * (never once their session expired). `needsPassword`: no access now, but the board's link would
- * let them in once they give its password.
+ * let them in once they give its password. `coOwner` (#122): they co-own it — their role is
+ * 'editor' and they also manage its sharing.
  */
 export async function describeAccess(
   board: Board,
   userId: string,
-): Promise<{ role: Role | null; access: BoardWorkspaceAccess; needsPassword: boolean }> {
+): Promise<{ role: Role | null; access: BoardWorkspaceAccess; needsPassword: boolean; coOwner: boolean }> {
   const unlocked = linkLocked(board) && userId !== board.ownerId ? (await repo.unlocksOf(userId, [board.id])).get(board.id) : undefined;
   const seen = linkAsSeenBy(board, unlocked);
   if (isGuestId(userId)) {
     const [guest, access] = await Promise.all([getGuests([userId]), boardAccess(userId, board)]);
     const joined = guest.get(userId)?.boardId === board.id;
     const role = joined ? resolveGuestRole(seen, access) : null;
-    return { role, access, needsPassword: joined && role === null && seen !== board && resolveGuestRole(board, access) !== null };
+    return { role, access, needsPassword: joined && role === null && seen !== board && resolveGuestRole(board, access) !== null, coOwner: false };
   }
-  const [memberRole, access] = await Promise.all([getMemberRole(board.id, userId), boardAccess(userId, board)]);
+  const [membership, access] = await Promise.all([getMembership(board.id, userId), boardAccess(userId, board)]);
+  const memberRole = membership?.role ?? null;
   const role = resolveRole(seen, userId, memberRole, access);
   const needsPassword = role === null && seen !== board && resolveRole(board, userId, memberRole, access) !== null;
-  return { role, access, needsPassword };
+  return { role, access, needsPassword, coOwner: role !== null && resolveCoOwner(board, userId, membership, access) };
 }
 
 /** May visitors without an account join this board by its link, and as what (null: no)? */
@@ -220,27 +318,40 @@ export async function removedFor(boardId: string, userId: string): Promise<boole
 export const boardRemoved = () =>
   new HttpError(451, 'This board was removed by Freero’s moderators while they review a report.', BOARD_REMOVED);
 
-/** Loads a board and checks the user's role: 404 if missing, 451 if taken down, 403 if below `min`. */
+/**
+ * Loads a board and checks the user's role: 404 if missing, 451 if taken down, 403 if below `min`.
+ * `coOwner` (#122): see describeAccess; `managesSharing(role, coOwner)` is who manages sharing.
+ */
 export async function requireAccess(
   boardId: string,
   userId: string,
   min: Role = 'viewer',
-): Promise<{ board: Board; role: Role; access: BoardWorkspaceAccess }> {
+): Promise<{ board: Board; role: Role; access: BoardWorkspaceAccess; coOwner: boolean }> {
   const board = await repo.getBoard(boardId);
   if (!board) throw (await removedFor(boardId, userId)) ? boardRemoved() : notFound('Board not found');
-  const { role, access, needsPassword } = await describeAccess(board, userId);
+  const { role, access, needsPassword, coOwner } = await describeAccess(board, userId);
   if (!role && needsPassword) throw new HttpError(403, 'This board’s link asks for a password', LINK_PASSWORD_REQUIRED);
   if (!role) throw forbidden();
   if (!atLeast(role, min)) throw forbidden(min === 'owner' ? 'Only the board owner can do that' : `You need ${min} access to do that`);
-  return { board, role, access };
+  return { board, role, access, coOwner };
 }
 
+/**
+ * The board's own "Viewers and commenters can copy and export" (#123): may someone with `role`
+ * take its content out? Editors, co-owners and the owner always may (the workspace's policy still
+ * applies to them); guests are viewers or commenters.
+ */
+export const boardLetsCopy = (board: Pick<Board, 'viewersCanExport'>, role: Role | null): boolean => board.viewersCanExport || atLeast(role, 'editor');
+
 /** What the user may do beyond their role, under the workspace's policies (each re-checked where it's done). */
-export function permissionsFor(board: Board, userId: string, role: Role, access: BoardWorkspaceAccess): BoardPermissions {
+export function permissionsFor(board: Board, userId: string, role: Role, access: BoardWorkspaceAccess, coOwner = false): BoardPermissions {
   const isOwner = board.ownerId === userId;
   const admin = isManager(access.workspaceRole);
+  const manages = managesSharing(role, coOwner);
+  const copies = boardLetsCopy(board, role);
   return {
-    canExport: mayDownload(access.workspaceRole, access.policies),
+    // A board can be stricter than its workspace (#123), never looser.
+    canExport: mayDownload(access.workspaceRole, access.policies) && copies,
     canShareExternally: atLeast(role, 'editor') && mayShareExternally(access.workspaceRole, access.policies),
     maxLinkAccess: access.maxLink,
     canMove: isOwner || admin,
@@ -250,19 +361,52 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     liveEmbeds: access.policies.liveEmbeds !== 'off',
     embedOrigins: getConfig().embedExtraOrigins,
     boardEmbeds: access.policies.boardEmbeds !== 'off',
+    manageSharing: manages,
+    invite: manages || (atLeast(role, 'editor') && board.editorsCanShare),
+    canCopy: copies,
+    ...(access.policies.linkPassword === 'required' || access.policies.linkMaxDays !== null
+      ? { linkPolicy: { passwordRequired: access.policies.linkPassword === 'required', maxDays: access.policies.linkMaxDays } }
+      : {}),
   };
 }
 
 /**
- * Throws unless the owner may turn embedding on other sites on or off (#2): the owner only, like
- * the link; turning it ON also needs the workspace's `boardEmbeds` policy. Turning it off is
- * always possible.
+ * Throws unless the person may turn embedding on other sites on or off (#2): the owner or a
+ * co-owner (`manages`, #122), like the link; turning it ON also needs the workspace's
+ * `boardEmbeds` policy. Turning it off is always possible.
  */
-export function checkEmbeddingChange(board: Board, role: Role, access: BoardWorkspaceAccess, embeddable: boolean): void {
-  if (role !== 'owner') throw forbidden('Only the board owner can change embedding');
+export function checkEmbeddingChange(board: Board, manages: boolean, access: BoardWorkspaceAccess, embeddable: boolean): void {
+  if (!manages) throw forbidden('Only the board’s owner and co-owners can change embedding');
   if (board.kind !== 'board') throw badRequest('Only boards can be embedded on other sites');
   if (embeddable && !board.embeddable && access.policies.boardEmbeds === 'off')
-    throw forbidden('This workspace doesnâ€™t allow embedding its boards on other sites');
+    throw forbidden('This workspace doesn’t allow embedding its boards on other sites');
+}
+
+/** Validates PATCH /boards/:id `sharing` (#123): the settings it changes. */
+export function cleanSharing(v: unknown): Partial<BoardSharingSettings> {
+  if (v === undefined || v === null) return {};
+  if (typeof v !== 'object' || Array.isArray(v)) throw badRequest('sharing must be an object');
+  const out: Partial<BoardSharingSettings> = {};
+  for (const k of ['editorsCanShare', 'viewersCanExport'] as const) {
+    const x = (v as Record<string, unknown>)[k];
+    if (x === undefined) continue;
+    if (typeof x !== 'boolean') throw badRequest(`sharing.${k} must be true or false`);
+    out[k] = x;
+  }
+  return out;
+}
+
+/** After a stored change of the board's sharing settings (#123): audited, with what changed. */
+export async function sharingSettingsChanged(board: Board, actorId: string, patch: Partial<BoardSharingSettings>): Promise<void> {
+  const changed = (Object.keys(patch) as Array<keyof BoardSharingSettings>).filter((k) => patch[k] !== board[k]);
+  if (!changed.length) return;
+  await recordAuditQuietly({
+    action: 'board.sharing_settings_changed',
+    workspaceId: board.workspaceId,
+    actorId,
+    target: boardTarget(board),
+    metadata: Object.fromEntries(changed.flatMap((k) => [[`${k}.from`, board[k]], [`${k}.to`, patch[k]!]])),
+  });
 }
 
 /** After a stored embedding change: audited, and every live socket re-checked (embeds close). */
@@ -273,7 +417,7 @@ export async function embeddingChanged(board: Board, actorId: string, embeddable
 
 /**
  * Whether other sites may frame the board now (#2) and what a visitor without an account may do
- * there. Null when there is no such board in service, it is a doc, or embedding is off â€” by its
+ * there. Null when there is no such board in service, it is a doc, or embedding is off — by its
  * owner or by its workspace's policy: one answer, so it tells nobody which. `visitor` is 'viewer'
  * exactly when the board's link would let a visitor without an account in as a guest (no
  * password): an embed never shows more than the link would, and never lets a visitor write.
@@ -288,16 +432,20 @@ export async function embeddingOf(boardId: string): Promise<{ board: Board; visi
 }
 
 /** How someone tried to take a board's content out (recorded with a refusal). */
-export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outline' | 'api' | 'ai' | 'backup';
+export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outline' | 'api' | 'ai' | 'backup' | 'move';
 
 /**
- * The one check of the workspace's "downloads" policy, for everything that takes a board's content
- * out of the workspace's control: exports, duplicates, templates, and machine-readable reads (the
- * outline, the public API, later MCP and AI — KAI-197). Refusals answer 403 `downloads_restricted`
- * and are audited. Personal workspaces have no policies, so they always pass.
+ * The one check of what may take a board's content out of its workspace's control: exports,
+ * duplicates, templates, backups, file downloads, moves to another workspace and machine-readable
+ * reads (the outline, the public API, MCP and AI — KAI-197). Two rules, the stricter wins: the
+ * workspace's "downloads" policy, and the board's own "Viewers and commenters can copy and export"
+ * (#123: `role` viewer or commenter, guests included). Refusals answer 403 `downloads_restricted`
+ * and are audited. Personal workspaces have no policies, so only the board's setting applies there.
  */
-export async function requireDownload(board: Board, userId: string, access: BoardWorkspaceAccess, via: DownloadVia): Promise<void> {
-  if (mayDownload(access.workspaceRole, access.policies)) return;
+export async function requireDownload(board: Board, userId: string, access: BoardWorkspaceAccess, via: DownloadVia, role: Role | null): Promise<void> {
+  const workspaceAllows = mayDownload(access.workspaceRole, access.policies);
+  const boardAllows = boardLetsCopy(board, role);
+  if (workspaceAllows && boardAllows) return;
   // A visitor without an account is no actor; their guest id is kept in the event.
   const guest = isGuestId(userId);
   await recordAuditQuietly({
@@ -305,9 +453,13 @@ export async function requireDownload(board: Board, userId: string, access: Boar
     workspaceId: board.workspaceId,
     actorId: guest ? null : userId,
     target: boardTarget(board),
-    metadata: { via, ...(guest ? { guestId: userId } : {}) },
+    metadata: { via, by: workspaceAllows ? 'board' : 'workspace', ...(guest ? { guestId: userId } : {}) },
   });
-  throw new HttpError(403, 'This workspace doesn’t allow you to export, download or copy its boards', DOWNLOADS_RESTRICTED);
+  throw new HttpError(
+    403,
+    workspaceAllows ? 'The board’s owner doesn’t let viewers and commenters copy, export or download it' : 'This workspace doesn’t allow you to export, download or copy its boards',
+    DOWNLOADS_RESTRICTED,
+  );
 }
 
 export async function toSummary(
@@ -315,10 +467,13 @@ export async function toSummary(
   userId: string,
   role: Role,
   access: BoardWorkspaceAccess,
-  extra?: { starred?: boolean; lastOpenedAt?: number | null; ownerName?: string; member?: boolean },
+  extra?: { starred?: boolean; lastOpenedAt?: number | null; ownerName?: string; member?: boolean; coOwner?: boolean },
 ): Promise<BoardSummary> {
   const starred = extra?.starred ?? (await repo.isStarred(board.id, userId));
-  const member = extra?.member ?? (await getMemberRole(board.id, userId)) !== null;
+  const membership = extra?.member === undefined || extra.coOwner === undefined ? await getMembership(board.id, userId) : null;
+  const member = extra?.member ?? membership !== null;
+  const coOwner = extra?.coOwner ?? (role !== 'owner' && resolveCoOwner(board, userId, membership, access));
+  const manages = managesSharing(role, coOwner);
   const lastOpenedAt =
     extra && 'lastOpenedAt' in extra ? (extra.lastOpenedAt ?? null) : await repo.lastOpenedAt(board.id, userId);
   const ownerName = extra?.ownerName ?? (await getUser(board.ownerId))?.name ?? 'Unknown';
@@ -340,20 +495,22 @@ export async function toSummary(
     projectId: board.projectId,
     team: access.team,
     member,
-    permissions: permissionsFor(board, userId, role, access),
+    permissions: permissionsFor(board, userId, role, access, coOwner),
     ...(board.linkBlocked ? { linkBlocked: true } : {}),
-    ...(role === 'owner' ? { linkProtection: linkProtectionOf(board) } : {}),
+    ...(manages ? { linkProtection: linkProtectionOf(board) } : {}),
     call: callOf(board),
     embeddable: board.embeddable,
+    ...(coOwner ? { coOwner: true } : {}),
+    sharing: { editorsCanShare: board.editorsCanShare, viewersCanExport: board.viewersCanExport },
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + access.trashRetentionDays * DAY_MS } : {}),
   };
 }
 
 /** The summary of a board for the user (re-reads their role and the workspace context). */
 export async function summarize(board: Board, userId: string, extra?: { starred?: boolean; lastOpenedAt?: number | null }): Promise<BoardSummary> {
-  const { role, access } = await describeAccess(board, userId);
+  const { role, access, coOwner } = await describeAccess(board, userId);
   if (!role) throw forbidden();
-  return toSummary(board, userId, role, access, extra);
+  return toSummary(board, userId, role, access, { ...extra, coOwner });
 }
 
 /**
@@ -373,12 +530,13 @@ export async function listBoards(
   if (!myWorkspaces.has(workspaceId)) throw notFound('Workspace not found');
   if (filter === 'trash') return listTrash(userId, workspaceId, q);
 
-  const [memberships, opens, stars, ws, unlocks] = await Promise.all([
+  const [memberships, opens, stars, ws, unlocks, coOwned] = await Promise.all([
     membershipsOf(userId),
     repo.opensOf(userId),
     repo.starredBoardIds(userId),
     getWorkspaceInfo(workspaceId),
     repo.unlocksOf(userId),
+    coOwnedBoardIds(userId),
   ]);
   const inWorkspace = filter === 'shared' ? [] : await repo.boardsInWorkspace(workspaceId);
   const seen = new Set(inWorkspace.map((b) => b.id));
@@ -396,8 +554,10 @@ export async function listBoards(
   for (const board of boards) {
     if (scope.projectId && board.projectId !== scope.projectId) continue;
     const access = accessOf(board);
-    const role = resolveRole(linkAsSeenBy(board, unlocks.get(board.id)), userId, memberships.get(board.id) ?? null, access);
+    const memberRole = memberships.get(board.id) ?? null;
+    const role = resolveRole(linkAsSeenBy(board, unlocks.get(board.id)), userId, memberRole, access);
     if (!role) continue; // e.g. a team board in a private project, or link access revoked / locked
+    const membership = memberRole && memberRole !== 'owner' ? { role: memberRole, coOwner: coOwned.has(board.id) } : null;
     if (filter === 'mine' && role !== 'owner') continue;
     if (filter === 'starred' && !stars.has(board.id)) continue;
     if (filter === 'recent' && !opens.has(board.id)) continue;
@@ -406,6 +566,7 @@ export async function listBoards(
       await toSummary(board, userId, role, access, {
         starred: stars.has(board.id),
         member: memberships.has(board.id),
+        coOwner: role !== 'owner' && resolveCoOwner(board, userId, membership, access),
         lastOpenedAt: opens.get(board.id) ?? null,
         ownerName: owners.get(board.ownerId)?.name ?? 'Unknown',
       }),
@@ -495,6 +656,8 @@ export async function createBoard(
         callUrl: null,
         callJitsi: false,
         embeddable: false,
+        editorsCanShare: true,
+        viewersCanExport: true,
       };
       await repo.insertBoard(board);
       await recordAudit({ action: kind === 'doc' ? 'doc.created' : 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
@@ -521,6 +684,86 @@ export async function moveToProject(board: Board, userId: string, projectId: str
   });
   await refreshBoardAccess(board.id);
   await boardLifecycle({ boardId: board.id, actorId: userId, action: 'moved', to });
+}
+
+/**
+ * Moves a board into another workspace (#124) and a project there (or none): its owner only, when
+ * they may create boards in the target (a full member of a team, or their own personal workspace)
+ * and the SOURCE's downloads policy lets them take its content out. The board keeps its id, content,
+ * comments, files, versions, members and links; from the next request on it is the target's:
+ * team access of the old workspace ends, the target's policies decide everything, and what they
+ * forbid is turned off here (a link above its maximum is lowered; a link the owner couldn't share
+ * there, or without the password / expiry it requires, is turned off; embedding when it doesn't
+ * allow it). Both workspaces audit it and get a `board.moved` event; connected people are
+ * re-checked on every instance; other modules adjust what they keep per workspace (trackers pause
+ * issues linked through the old workspace's connections).
+ */
+export async function moveToWorkspace(board: Board, userId: string, body: { workspaceId?: unknown; projectId?: unknown }): Promise<{ board: Board; adjusted: MoveAdjustment[] }> {
+  const targetId = body.workspaceId;
+  if (typeof targetId !== 'string' || !targetId) throw badRequest('workspaceId is required');
+  if (body.projectId !== undefined && body.projectId !== null && typeof body.projectId !== 'string') throw badRequest('projectId must be a project id or null');
+  const projectId = (body.projectId as string | null | undefined) || null;
+  if (board.ownerId !== userId) throw forbidden('Only the board’s owner can move it to another workspace');
+  if (targetId === board.workspaceId) throw badRequest('The board is already in that workspace');
+  const target = await getWorkspaceInfo(targetId);
+  if (!target || (target.kind === 'personal' && target.personalOf !== userId)) throw notFound('Workspace not found');
+  // Moving a board out takes its content out of the source workspace's control.
+  await requireDownload(board, userId, await boardAccess(userId, board), 'move', 'owner');
+
+  // What the target's policies forbid, as the owner would have them there.
+  const there = await boardAccess(userId, { workspaceId: targetId, projectId });
+  const adjusted: MoveAdjustment[] = [];
+  let linkAccess: LinkAccess | undefined;
+  const stored = board.storedLinkAccess;
+  if (stored !== 'none' && !board.linkBlocked) {
+    const capped = ROLE_RANK[stored] > (there.maxLink === 'none' ? 0 : ROLE_RANK[there.maxLink]) ? there.maxLink : stored;
+    const off = capped === 'none' || !mayShareExternally(there.workspaceRole, there.policies) || linkProblems(board, there.policies).length > 0;
+    if (off) {
+      linkAccess = 'none';
+      adjusted.push({ kind: 'link_off' });
+    } else if (capped !== stored) {
+      linkAccess = capped;
+      adjusted.push({ kind: 'link_lowered', to: capped });
+    }
+  }
+  const embeddingOff = board.embeddable && there.policies.boardEmbeds === 'off';
+  if (embeddingOff) adjusted.push({ kind: 'embedding_off' });
+
+  const now = Date.now();
+  const fromName = (await getWorkspaceInfo(board.workspaceId))?.name ?? null;
+  const toName = target.kind === 'personal' ? 'Personal' : target.name;
+  await repo.transaction(async () => {
+    // A full member there (not a guest, not deactivated), and the workspace / project kept from
+    // being deleted until this commits.
+    await lockWorkspaceForNewBoard(targetId, userId);
+    const project = projectId ? await lockProjectForBoard(projectId, targetId, userId) : null;
+    if (!(await repo.moveToWorkspace(board.id, { workspaceId: targetId, projectId, ...(linkAccess ? { linkAccess } : {}), ...(embeddingOff ? { embeddable: false } : {}) }, now)))
+      throw notFound('Board not found');
+    const detail = { adjusted: adjusted.map((a) => a.kind) };
+    await recordAudit({
+      action: 'board.moved_workspace',
+      workspaceId: board.workspaceId,
+      actorId: userId,
+      target: boardTarget(board),
+      metadata: { toWorkspace: targetId, toWorkspaceName: toName, ...detail },
+    });
+    await recordAudit({
+      action: 'board.moved_workspace',
+      workspaceId: targetId,
+      actorId: userId,
+      target: boardTarget(board),
+      metadata: { fromWorkspace: board.workspaceId, fromWorkspaceName: fromName, toProject: projectId, ...detail },
+    });
+    await repo.appendBoardEvent({ type: 'board.moved', boardId: board.id, workspaceId: board.workspaceId, actorId: userId, title: board.title, to: null, toWorkspace: targetId });
+    await repo.appendBoardEvent({ type: 'board.moved', boardId: board.id, workspaceId: targetId, actorId: userId, title: board.title, to: project?.name ?? null, fromWorkspace: board.workspaceId });
+  });
+  // The target's policies apply from now on: everyone connected is re-checked on every instance.
+  await refreshBoardAccess(board.id);
+  adjusted.push(...(await boardMovedWorkspace({ boardId: board.id, actorId: userId, fromWorkspaceId: board.workspaceId, toWorkspaceId: targetId })));
+  await boardLifecycle({ boardId: board.id, actorId: userId, action: 'moved_workspace', to: toName });
+  const moved = await repo.getBoard(board.id);
+  if (!moved) throw notFound('Board not found');
+  return { board: moved, adjusted };
 }
 
 /**
@@ -699,15 +942,24 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
 }
 
 /**
- * A copy of `source` owned by `userId`, with the source's current content: in the same workspace
- * and project when the user may create boards there, else in their personal workspace. The new
- * board row and its content are written in one transaction: if saving the content fails there is
- * no empty copy. Hidden frames' contents (the 'editors' layer) are copied only for someone who may
- * see them (`role` owner/editor); nobody's private layer (drafts, sealed ballots) is ever copied.
+ * A copy of `source` owned by `userId`, with the source's current content: where they chose
+ * (`where`, #124: a workspace and project they may create boards in — createBoard checks), else in
+ * the same workspace and project when the user may create boards there, else in their personal
+ * workspace. The new board row and its content are written in one transaction: if saving the
+ * content fails there is no empty copy. Hidden frames' contents (the 'editors' layer) are copied
+ * only for someone who may see them (`role` owner/editor); nobody's private layer (drafts, sealed
+ * ballots) is ever copied.
  */
-export async function duplicateBoard(source: Board, userId: string, role: Role): Promise<Board> {
-  const wsRole = await workspaceRole(source.workspaceId, userId);
-  const place: BoardPlace = isFullMember(wsRole) ? { workspaceId: source.workspaceId, projectId: source.projectId } : {};
+export async function duplicateBoard(source: Board, userId: string, role: Role, where: { workspaceId?: unknown; projectId?: unknown } = {}): Promise<Board> {
+  let place: BoardPlace;
+  if (where.workspaceId !== undefined && where.workspaceId !== null) {
+    if (typeof where.workspaceId !== 'string' || !where.workspaceId) throw badRequest('workspaceId must be a workspace id');
+    if (where.projectId !== undefined && where.projectId !== null && typeof where.projectId !== 'string') throw badRequest('projectId must be a project id or null');
+    place = { workspaceId: where.workspaceId, projectId: (where.projectId as string | null | undefined) || null };
+  } else {
+    const wsRole = await workspaceRole(source.workspaceId, userId);
+    place = isFullMember(wsRole) ? { workspaceId: source.workspaceId, projectId: source.projectId } : {};
+  }
   // Read the content BEFORE the transaction: it may wait for the live doc to finish loading,
   // which queries the database outside this transaction.
   const state = await snapshotBoardDoc(source.id);

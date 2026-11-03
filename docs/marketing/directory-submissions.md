@@ -56,9 +56,9 @@ developer mode in a workspace that allows it, and OpenAI organization verificati
    - **Request logs.** The policy states `SITE_LEGAL_LOG_DAYS`. Railway's docs say logs are viewable
      7 days on Hobby and 30 on Pro, but Railway staff have said on its forum that logs are stored
      90 days on every plan. Until Railway confirms in writing, set `SITE_LEGAL_LOG_DAYS=90`.
-   - **Google Fonts.** The app (not the marketing site) loads its fonts from Google, which receives
-     visitors' IP addresses. It is disclosed; self-hosting the fonts would remove it (and a GDPR
-     risk some EU courts have found in it).
+   - **Google Fonts.** Resolved: the app self-hosts its fonts since 2026-11-03 (the CSP allows no
+     font origin but its own), so Google no longer receives visitors' IP addresses for them, and
+     the policy no longer lists it.
    - The age floor (16), the liability cap (US$100), the international-transfer clause, and the
      consumer-law carve-outs.
 3. **Make the documentation public** (the repository, or the guides on the site): both programmes

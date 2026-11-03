@@ -218,11 +218,12 @@ export const isProtectedLock = (el: { locked?: boolean; lockProtected?: boolean 
 
 /**
  * May someone with this role on the board protect items, unprotect them, or change a protected
- * one? The board owner only, never a facilitator (any editor can start a facilitation session).
- * The one place to widen it (co-owners, #122).
+ * one? The board owner and its co-owners (#122: an editor membership that also manages the board,
+ * `coOwner` — which the server resolves itself, never from a client's word), never a facilitator
+ * (any editor can start a facilitation session).
  */
-export function mayProtect(role: string): boolean {
-  return role === 'owner';
+export function mayProtect(role: string, coOwner = false): boolean {
+  return role === 'owner' || (coOwner && role === 'editor');
 }
 
 export interface BoardSettings {

@@ -1869,14 +1869,35 @@
             "required": true,
             "schema": {
               "type": "object",
-              "required": [
-                "query"
-              ],
               "properties": {
                 "query": {
                   "type": "string",
                   "maxLength": 2000,
-                  "description": "JQL (Jira), a Linear search, or a GitHub search (repo:owner/name is:open label:bug)"
+                  "description": "JQL (Jira), a Linear search, a GitHub search (repo:owner/name is:open label:bug) or WIQL (Azure DevOps). Give query or scope."
+                },
+                "scope": {
+                  "type": "object",
+                  "description": "Instead of a query (#119, #43): a project's sprint (Linear cycle, Azure DevOps iteration) and / or an epic's issues. Into a kanban, a sprint import gives it a Sprint field with the project's sprints (closed ones read-only).",
+                  "required": [
+                    "project"
+                  ],
+                  "properties": {
+                    "project": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "description": "Jira project key, Linear team key or Azure DevOps project"
+                    },
+                    "sprint": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "description": "\"current\" for the active sprint, or a sprint id"
+                    },
+                    "epic": {
+                      "type": "string",
+                      "maxLength": 100,
+                      "description": "The epic's / parent issue's key"
+                    }
+                  }
                 },
                 "limit": {
                   "type": "integer",
@@ -1993,9 +2014,15 @@
                   "type": "string",
                   "enum": [
                     "one",
-                    "each"
+                    "each",
+                    "clusters"
                   ],
-                  "description": "one (default): one issue for all the items; each: one issue per item"
+                  "description": "one (default): one issue for all the items; each: one issue per item; clusters: a new epic (parent) with one issue under it per cluster of the items (#43; not GitHub)"
+                },
+                "parent": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "An existing epic / parent issue's key the new issues go under (not GitHub)"
                 }
               }
             }
@@ -2264,7 +2291,7 @@
           "members"
         ],
         "summary": "Share the board with an email address",
-        "description": "Owners and editors with a verified email, within the workspace's sharing policies. An existing account becomes a member; any other address gets an emailed invite.",
+        "description": "Owners, co-owners and editors (while the board's \"Editors can share\" is on; else 403 `board_sharing_restricted`) with a verified email, within the workspace's sharing policies. An existing account becomes a member; any other address gets an emailed invite.",
         "operationId": "inviteMember",
         "x-freero-scope": "members:write",
         "parameters": [
@@ -2341,7 +2368,7 @@
         "tags": [
           "members"
         ],
-        "summary": "Remove a member (owner; or yourself, to leave)",
+        "summary": "Remove a member (owner or co-owner; or yourself, to leave)",
         "operationId": "removeMember",
         "x-freero-scope": "members:write",
         "responses": {
@@ -2376,7 +2403,8 @@
         "tags": [
           "members"
         ],
-        "summary": "Change a member's role (owner only)",
+        "summary": "Change a member's role (owner or co-owner)",
+        "description": "`coowner` makes them a co-owner: an editor who also manages the board's sharing (members' roles, the link, embedding). Any other role ends it. Nobody changes the owner's own access.",
         "operationId": "setMemberRole",
         "x-freero-scope": "members:write",
         "parameters": [
@@ -2391,7 +2419,7 @@
               ],
               "properties": {
                 "role": {
-                  "$ref": "#/definitions/MemberRole"
+                  "$ref": "#/definitions/MemberRoleChange"
                 }
               }
             }
@@ -3417,6 +3445,10 @@
             "commenter",
             "viewer"
           ]
+        },
+        "coOwner": {
+          "type": "boolean",
+          "description": "You co-own it: `role` is `editor`, and you also manage its sharing. Absent: no."
         },
         "workspaceId": {
           "type": "string"
@@ -4738,6 +4770,10 @@
             "viewer"
           ]
         },
+        "coOwner": {
+          "type": "boolean",
+          "description": "You co-own it: `role` is `editor`, and you also manage its sharing. Absent: no."
+        },
         "workspaceId": {
           "type": "string"
         },
@@ -5162,6 +5198,16 @@
         "viewer"
       ]
     },
+    "MemberRoleChange": {
+      "type": "string",
+      "enum": [
+        "coowner",
+        "editor",
+        "commenter",
+        "viewer"
+      ],
+      "description": "`coowner`: an editor who also manages the board's sharing (the member then reads `role: editor`, `coOwner: true`)."
+    },
     "Member": {
       "type": "object",
       "required": [
@@ -5196,6 +5242,10 @@
             "commenter",
             "viewer"
           ]
+        },
+        "coOwner": {
+          "type": "boolean",
+          "description": "A co-owner: `role` is `editor`, and they also manage the board's sharing. Absent: no."
         },
         "team": {
           "type": "boolean"

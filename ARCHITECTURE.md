@@ -130,11 +130,11 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 | `walkthroughs` collection (one summary per recording) | server `modules/walkthroughs` (realtime's `writeServerCollection`) | `Host.walkthroughs` (REST); the web feature only reads it |
-| A kanban's fields (`KanbanElement.fields`; the group field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the field the board is grouped by — a card's value for it is the column it stands in); server `modules/api` (`update_items` / `add_cards` `fields`, `define_fields`) and `modules/trackers` (an import into a kanban adds the status columns and the Priority field it needs and sets cards' Stage / Priority; pulls set them, adding a priority level; `trackers/kanban.ts`). New kanbans may be created WITH fields and values by templates (the Kit), the CSV import and the kanban feature's `kanban.createFromRows` (rows another feature hands over: the table's "Convert to kanban", laid out by `@freero/shared` `layoutKanbanRows`); words ↔ values go through `@freero/shared` `fieldText.ts`. Every server change to a kanban (API, MCP, tracker import and pull) is laid out with `@freero/shared` `withKanbanLayout` in the same change | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
+| A kanban's fields (`KanbanElement.fields`; the group field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the field the board is grouped by — a card's value for it is the column it stands in); server `modules/api` (`update_items` / `add_cards` `fields`, `define_fields`) and `modules/trackers` (an import into a kanban adds the status columns and the Priority, Sprint (#119) and field-map (#43) fields it needs and sets cards' Stage / Priority / Sprint / mapped values; pulls set them, adding a priority level or sprint and marking closed sprints `readOnly`; `trackers/kanban.ts`). New kanbans may be created WITH fields and values by templates (the Kit), the CSV import and the kanban feature's `kanban.createFromRows` (rows another feature hands over: the table's "Convert to kanban", laid out by `@freero/shared` `layoutKanbanRows`); words ↔ values go through `@freero/shared` `fieldText.ts`. Every server change to a kanban (API, MCP, tracker import and pull) is laid out with `@freero/shared` `withKanbanLayout` in the same change | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
 | A kanban's saved views (`KanbanElement.views` / `activeView`: what cards show, density, colour-by, `groupBy`, `subGroupBy`, other fields' column settings, `filter`, `sort` and the manual order kept while sorted, the view `locked`; since 3a also its table tabs — columns, filter, sort, lock — and the tab everyone starts on; since 3b list, calendar and timeline tabs — a list's fields and grouping, a calendar's date field, a timeline's start / end fields, scale and swimlanes) and swimlane geometry (`lanes`) — read only through `@freero/shared` `views.ts` (`boardView`), `tabs.ts` (`viewTabs`, `projectionView`, `savedTabId`; entries of layouts a client doesn't know are kept when it writes, and so is an `activeView` naming one) and `projections.ts` (where a calendar or timeline places a card, what moving it writes) and `fields.ts` (`groupFieldId`); filters and sorts are evaluated only by `@freero/shared` `query.ts` (the free-form table's typed filter / sort too); the layout itself is `@freero/shared` `layout/kanban.ts` `planKanban` | `features/kanban` (View panel: "Save for everyone", density, group by, swimlanes, sort, lock); it keeps `colorCards` equal to "coloured by column" for older clients. Regrouping writes the old group field's values onto the cards from their positions in the same transaction, a drop into another swimlane writes that row's value (the layout's one write to card values), and the layout drops `manualOrder` once a cleared sort is undone. Server: `modules/api` `configure_view` (the saved view or a tab — `view`, `addView`, `name`, `active`, `remove` —, refused while locked by someone else) | `runCommand('kanban.setCardDisplay' / 'kanban.saveViewForEveryone' / 'kanban.groupBy' / 'kanban.setSwimlanes' / 'kanban.setMyFilter' / 'kanban.setSort' / 'kanban.lockView' / 'kanban.addTab' / 'kanban.addTableTab' / 'kanban.renameTab' / 'kanban.deleteTab')` |
 | A linked view (`KanbanViewElement`, type `kanbanview`, step 3c: a kanban's cards as a table, list, calendar or timeline elsewhere on its board — `sourceId` and one projection view, ids only, never a copy of the cards or their labels) — read only through `@freero/shared` `linkedViews.ts` (`linkedView`, `linkedSource`) | `features/kanban` (the second element of its `element.tsx`; "Add linked view ▸" in a kanban's context menu and tab menu, the View panel: name, layout, lock, "Save for everyone"); server `modules/api` `add_view` (placed beside the kanban, `linkedViewSpot`) and `configure_view` with the linked view's id | `runCommand('kanban.addLinkedView' / 'kanban.setMyLinkedView' / 'kanban.saveLinkedView' / 'kanban.configureLinkedView')`. Its edits write the real cards through `card.setValues`, as a tab's do. Copying keeps `sourceId` (with the kanban copied along, the engine's id remap points the copy at the kanban's copy); pasted onto another board without its kanban it is left out (`pasteContent`; step 3d makes it a cross-board view) |
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
-| An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner only (`@freero/shared` `mayProtect(role)`, the one place co-owners join; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
+| An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
@@ -404,8 +404,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
 - `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
-  unlink }`, present only when the server listed a tracker connection this person may use on this
-  board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
+  unlink, sprints?, issueTypes? }` (the last two additive, #119 / #43), present only when the server
+  listed a tracker connection this person may use on this board (`GET /boards/:id/trackers`).
+  `features/trackers` hides every entry point without it.
+
 - `Host.walkthroughs?` / `Host.decisions?` (additive, KAI-133 / KAI-161; see "Walkthroughs and
   decision snapshots"): absent without a server; guests watch and open but don't record or comment.
   A command's `urlParam` run also gets `args.query` (every URL parameter: a walkthrough's `t`).
@@ -944,6 +946,31 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
   them; their drafts join no container). Collections in `PARTICIPANT_WRITABLE` (`voting`,
   `estimation`) are writable for a participant, shared and private; the server decides which keys.
 
+Pen tools: lasso (#111) and smart drawing (#3):
+- Lasso: the engine's built-in `lasso` tool (`interaction/selectTool.ts`, `createSelectTool(core,
+  'lasso')`; in the "+" grid and the pen's flyout) is the select tool whose drag on empty canvas
+  draws a freeform loop (`UiState.lasso`, drawn by `overlay/Overlays.tsx`) instead of a marquee;
+  Alt+drag on empty canvas does the same with the select tool, Shift adds. What a loop takes is
+  `Editor.elementsInLasso(points, mode)` (`geometry/lasso.ts`): `'inside'` (default) = items wholly
+  in the loop, or — for a type with `ElementDefinition.lassoPoints(el)` (the pen's centerline) —
+  most of those points; `'touch'` = the marquee's rule (a rectangular loop takes what a marquee
+  over it would). Containers only when wholly inside; locked and hidden items never. The mode is
+  the lasso tool's option (its flyout: Inside / Touching, per browser). A finger draws a loop
+  like any non-select tool, until "pen draws, finger pans" makes fingers pan.
+- Smart drawing (`features/pen`, option `smart` in the pen's flyout, off by default; the pen only,
+  never the highlighter): `lib/recognise.ts` reads a finished stroke as a line, an arrow, a
+  closed rectangle / ellipse / triangle / diamond, a scratch-out, or nothing (pure geometry,
+  deterministic; tests run on frozen strokes in `lib/recordedStrokes.ts`). The ink is created by
+  the stroke's gesture as always; `Editor.afterGesture(fn)` then replaces it in an undo step of its
+  own (`lib/smart.ts`), so Undo once brings the ink back. Shapes go through the shape feature's
+  `shape.insert` command (`{ kind, x, y, w, h, rotation?, stroke?, strokeWidth?, fill?, id? }`),
+  lines and arrows through the connector feature's `connector.insert` (`{ from, to, endCap?,
+  stroke?, strokeWidth?, id? }`, ends attached to the items they land on): each feature stays the
+  single writer of its defaults. A scratch-out over items erases those it mostly covers (never
+  locked items or containers; a toast offers Undo); over nothing it stays ink. Resting the pen
+  650 ms straightens the stroke into a line; a Shift-ruled stroke stays ink. Participants'
+  drafts stay ink.
+
 ### Installable app (PWA, KAI-140)
 
 `apps/web/public/manifest.webmanifest` + icons (rendered from `freero.svg`; maskable source in
@@ -967,7 +994,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`, `/features/<slug>`) are a separate workspace
+`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/subprocessors`, `/dpa`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`, `/features/<slug>`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -1043,7 +1070,7 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   pages only, with its origin in their CSP; `GA_MEASUREMENT_ID` adds the Google Analytics runtime
   (see "Analytics" below). The build itself never contains a script: both are added when served. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
   `scripts/indexnow.mjs` submits the live sitemaps' URLs (or those changed since a day) after a deploy.
-- **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
+- **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`, `/subprocessors`, `/dpa`; drafts for legal review,
   written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
   (`src/lib/legal.tsx`) where a deployment's facts go: the operator, address, governing law and
   contacts (`SITE_LEGAL_*`, `ABUSE_CONTACT_EMAIL`, `SECURITY_CONTACT`), retention periods and the
@@ -1054,6 +1081,14 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `X-Robots-Tag: noindex`, and `GET /api/site/legal` answers `null`, so the app's sign-up asks
   nobody to agree to a draft. A page about the deployment never hard-codes a value the server
   knows from its configuration.
+- **The trust pack** (#109: `/security`, `/subprocessors`, `/dpa`, plus `SECURITY.md`) is written
+  from the code and the production deployment as the repository and the public service show it.
+  Until the operator approves it, each page is `underReview: true` (`PageDef`): the build shows
+  "Draft — under review", makes it `noindex` and leaves it out of the sitemap (still linked from
+  the footer), and the manifest's `underReview` list keeps the server from lifting that `noindex`
+  (and adds `X-Robots-Tag`) even once the legal pages are in effect; no setting removes either.
+  `<ToConfirm />` marks every statement the repository can't confirm. Approving = removing the
+  flag and the marks (after fixing any statement that turned out wrong).
 - **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
   like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
   and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
@@ -1535,7 +1570,9 @@ members with roles owner / admin / member / guest (separate from board roles).
   an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
   viewer's client, the frames being third-party pages the CSP already confines), `boardEmbeds`
   (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
-  embed page's framing header, its sockets and oEmbed all ask). All other
+  embed page's framing header, its sockets and oEmbed all ask), `linkPassword` / `linkMaxDays`
+  (#39: what a board's link needs before it is turned on or changed; see "Co-owners, board
+  sharing settings and moving boards"). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
@@ -1565,7 +1602,8 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   `rolesOf` never return organisations (lists, search, board access, the public API), and
   `lockWorkspaceForNewBoard` refuses one, so it never holds boards or projects. **An org role gives
   no board content**; board access is resolved from the board's own workspace only.
-- **Floors**: the organisation's policy columns (all but `teamAccess`) and `requireTwoFactor` /
+- **Floors**: the organisation's policy columns (all but `teamAccess`; the link policy too: a required
+  password beats optional, the shorter `linkMaxDays` wins) and `requireTwoFactor` /
   session limits are the least its workspaces get. `repo.ts` reads every workspace joined with its
   organisation and `roles.ts` `strictestPolicies` / `strictestSettings` raise it (order: `@freero/shared`
   `POLICY_STRICTNESS`), so `Workspace.policies` / `.settings` are always EFFECTIVE values and every
@@ -1708,7 +1746,7 @@ approval lets the requester in at once.
 
 ### Share-link password and expiry (`boards/linkProtection.ts`, KAI-145)
 
-- The owner may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
+- The owner (or a co-owner, #122) may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
   expiry is applied where a board is read (`repo.toBoard`: `linkAccess` reads 'none' from then on,
   for everyone, like an operator's block); a job (`boards:link-expiry`, every 10 s, one instance)
   re-checks the live sockets of links that just expired, so link-only visitors are disconnected.
@@ -1721,6 +1759,65 @@ approval lets the requester in at once.
   the link would let that person in after the password; `POST /boards/:id/link-unlock` (and the
   guest join / `/guest/boards/:id/unlock`) check it, rate limited per IP and per board + person,
   refusals audited (`board.link_password_refused`), changes audited (`board.link_protection_changed`).
+- A link-only visitor disconnected because the link just got a password (socket closed 4403) is
+  offered the password form in place: the board page (accounts and guests) re-asks for the board
+  through `Host.onConnectionEnded` and shows `LinkPassword` when the answer is
+  `link_password_required` (#39).
+
+### Co-owners, board sharing settings and moving boards (#122, #123, #39, #124)
+
+- **Co-owners** (`board_members.co_owner`, written only by members' repo; `role` stays 'editor'):
+  an editor membership that also manages the board's sharing. `members/roles.ts` `resolveCoOwner`
+  decides whether it counts (not while the workspace blocks the person, not for someone outside a
+  workspace with `externalSharing: 'none'` — exactly when `resolveRole` ignores the membership);
+  `managesSharing(role, coOwner)` (owner or co-owner) is the ONE check for members' roles,
+  removing people, revoking any invite, deciding (and being told about) access requests, the link and its password /
+  expiry, embedding (#2) and the board's sharing settings. Ownership itself — trash, delete,
+  transfer, moving to another workspace — stays `role === 'owner'` (`requireAccess(…, 'owner')`),
+  which a co-owner never is, and the owner holds no membership row, so nobody can change or remove
+  the owner's access. On the wire a co-owner reads `role: 'editor'` plus `coOwner: true`
+  (`BoardSummary`, `BoardMember`, the public API's Board / Doc / Member, MCP `search_boards`), and
+  the socket's role message says 'editor': a client — or a server instance, mid-deploy — that
+  doesn't know co-owners treats them as the editors they also are, never as owners. Setting it:
+  `PATCH /boards/:id/members/:userId { role: 'coowner' }` (any other role ends it), audited as
+  `board.member_role_changed` with the roles as PATCH takes them; member events carry
+  `coOwner` / `previousCoOwner`. Inside the board a co-owner is an editor (hidden frames, layers,
+  facilitation), except protected locks, which co-owners may set and lift like the owner (`mayProtect`).
+- **A board's own sharing settings** (#123; `boards.editors_can_share`, `boards.viewers_can_export`,
+  boards' repo; `PATCH /boards/:id { sharing }`, owners and co-owners, `board.sharing_settings_changed`).
+  "Editors can share" off: members' `requireMayInvite` refuses an editor's invite / resend with 403
+  `board_sharing_restricted` (the share dialog says why). "Viewers and commenters can copy and
+  export" off: boards' `requireDownload` — the one check behind exports, duplicates, templates,
+  backups, file downloads, the outline, the public API, MCP and AI — refuses viewers, commenters and
+  guests, like the workspace's downloads policy does (audited `board.download_refused`, `by:
+  'board'`); `BoardSummary.permissions.canExport` / `canCopy` tell the UI, and the engine puts
+  nothing on the clipboard when `Host.board.canCopy` is false. Both are ANDed with the workspace's
+  policies: a board can be stricter than its workspace, never looser. Nothing prevents a screenshot;
+  the dialog says so.
+- **Link policy** (#39; `workspaces.link_password`, `workspaces.link_max_days`): boards'
+  `checkLinkPolicy` checks the link as the whole PATCH leaves it (link access, password, expiry
+  validated together BEFORE anything is stored, protection written first), and `shareByLink` (an
+  app's "Share with team") the same way. Turning a link on (or back on) or changing its role needs
+  everything the policy asks; a link that stays as it is may be made safer step by step but never
+  weaker. Links that were on before the policy keep working; `GET /workspaces/:id/admin/link-compliance`
+  (boards' `linksOutOfPolicy`) lists them in the admin console. The policy change itself is
+  `workspace.policies_changed`.
+- **Moving a board to another workspace** (#124; `POST /boards/:id/move`, boards' `moveToWorkspace`):
+  its owner, a full member of the target (or it is their personal workspace), and the SOURCE's
+  downloads policy must let them take the content out (`via: 'move'`). One row update keeps the
+  id, content, comments, files, versions, memberships and pending invites; access is resolved from
+  the target from the next request on (old team access ends; the target's two-step requirement,
+  downloads, external sharing and guest policies apply). What the target forbids is turned off in
+  the same transaction — a link above its `linkSharing` is lowered, a link the owner couldn't share
+  there or without the password / expiry it requires is turned off, embedding off where
+  `boardEmbeds` is off — and returned as `adjusted`. Audited as `board.moved_workspace` in BOTH
+  workspaces, a `board.moved` event in each (`toWorkspace` / `fromWorkspace`), live sockets
+  re-resolved on every instance. Other modules keep their per-workspace state right through boards'
+  `onBoardMovedWorkspace` (after commit): trackers pause issues linked through the old team's
+  connections (`pauseLinksOutside`; `syncLink` refuses a team connection of another workspace than
+  the board's anyway). Team templates are copies with their own workspace and are not touched.
+  Duplicating takes `{ workspaceId, projectId }` (where the person may create boards, createBoard's
+  checks); the dashboard's Duplicate and "Move to another workspace" dialogs pick both.
 
 ### Activity (`modules/activity`, `realtime/changes.ts`, KAI-44)
 
@@ -2363,7 +2460,8 @@ target itself:
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
-one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked both ways.
+one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub or Azure DevOps Boards (Services /
+Server, #6), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -2375,12 +2473,24 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   projects, get / create / update / search issues, `changedSince` (polling), backlinks, how a tag
   becomes a label, and webhook verification. Plain HTTP (`http.ts`): untrusted addresses (https,
   no private addresses unless `TRACKER_PRIVATE_ENDPOINTS`, no redirects, size caps), retries with
-  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`.
+  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
+  capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
+  (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
+  `issueTypes`, `parents`. `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
+  fresh reads (at most twice) instead of overwriting.
+- **Field map (#43)**: a connection's `settings` hold the picked estimate / start date fields,
+  issue type per project and `fieldMap` (tracker field id ↔ kanban field NAME and kind). Mapped
+  fields are `custom:<id>` IssueFields, merged like every other; a kanban without a field of that
+  name holds no value (nothing is pushed or cleared), and a pull it can't hold keeps the previous
+  agreement (`syncedBase(…, previous)`), so the value arrives once the field is back.
 - **The mapping and the merge are pure** (`@freero/shared` `trackers.ts`: `issueValuesFromBoard`,
-  `pullableFields`, `canonical`, `mergeField`). Per field against `base`: one-sided changes flow
+  `pullableFields`, `canonical`, `mergeField`, `syncedBase`, `trackerAgreed`). Per field against `base`: one-sided changes flow
   across; the same field changed differently on both sides in one window keeps the tracker's value
   and the board's goes into a comment on the item; a field a side can't hold (a cluster's title)
-  is never written back. The server previews with the same code the send uses.
+  is never written back. The server previews with the same code the send uses. What a sync stores
+  as agreed is what it merged (`syncedBase` for the board, `trackerAgreed` for the tracker) plus
+  the fields it wrote: a change on either side while it ran reaches the other side next time.
 - **One sync path** (`service.ts` `syncLink`), run only by the `trackers` outbox consumer, so a link
   never syncs twice at once: read the issue, read the items from the live board as the linking
   person sees them, merge, write the tracker, write the board through `changeBoard` ("Jira for
@@ -2396,7 +2506,10 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   for everyone through Yjs, kept on version restore (`Y_KEPT_ON_RESTORE`). `BoardChange.collections`
   entries set to `null` delete (owners/editors), so unlinking removes the record. A card whose status
   comes from the tracker moves to the kanban column with that status (`KANBAN_LAYOUT`, shared with
-  the kanban feature). The board side of a send is ONE server change (nobody ever sees part of a
+  the kanban feature). A kanban's Sprint field (#119: "Sprint" / "Cycle" / "Iteration") is written
+  like Priority (`trackers/kanban.ts`): made by an import, its options the project's sprints with
+  closed ones `readOnly` (`FieldOption.readOnly`, `KanbanColumn.readOnly`: kept, never offered by
+  `features/card` and `features/kanban`'s pickers). The board side of a send is ONE server change (nobody ever sees part of a
   cluster linked); like any change the server makes it is not in anyone's Ctrl+Z — "Unlink" undoes it.
 - **Suite primitives**: an issue is an object, `freero://issue/<linkId>` (its board's access); the
   references index adds kind `tracker` from items to it, so its backlinks are its items. Every sync
@@ -2420,9 +2533,12 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   the board yet is retried on the next `board.content`; a reject, an issue imported meanwhile or a
   proposer who lost access leaves a plain card; an undone accept clears the row (the link goes
   when its card does). Sockets never write a link: they can only decide the server's records.
+- **Data exports**: `trackersExportOf` (a person's own connections and the links they made) and
+  `trackersWorkspaceExportOf` (a team's connections) feed `privacy/archive.ts`; never credentials.
 - `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
-  Atlassian OAuth), `mock-linear.mjs` and `mock-github.mjs`, which implement the subset of each
-  public API used, webhooks included.
+  Atlassian OAuth, agile sprints), `mock-linear.mjs` (cycles), `mock-github.mjs` and
+  `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks), which
+  implement the subset of each public API used, webhooks included.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 

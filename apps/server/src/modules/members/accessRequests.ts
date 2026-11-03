@@ -2,10 +2,10 @@
 // who joins that board approve (as a role of their choice) or decline. Approval is a board
 // membership like an invite's; the requester's open page lets them in when they hear back.
 //
-// Deciders: the board's owner, and for a team board its workspace's owners/admins plus, for a board
-// in a private project, the project's creator (workspaces.boardGatekeepers). Who is NOTIFIED is
+// Deciders: the board's owner and co-owners (#122), and for a team board its workspace's owners/admins
+// plus, for a board in a private project, the project's creator (workspaces.boardGatekeepers). Who is NOTIFIED is
 // narrower: the owner plus the admins, or for a private project's board the people running the
-// project — not every admin of a large workspace. Someone outside the workspace can be let in only
+// project — not every admin of a large workspace — plus the board's co-owners. Someone outside the workspace can be let in only
 // as its "external sharing" policy allows (like an invite).
 import type { AccessRequestState, Account, BoardAccessRequest } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
@@ -81,7 +81,7 @@ export async function requestAccess(boardId: string, user: Account, body: { role
       metadata: { role },
     });
     const { notify } = await boardGatekeepers(place);
-    const recipients = [...new Set([place.ownerId, ...notify])].filter((id) => id !== user.id);
+    const recipients = [...new Set([place.ownerId, ...notify, ...(await coOwnersOf(boardId))])].filter((id) => id !== user.id);
     await accessRequested({ boardId, boardTitle: place.title, requesterId: user.id, role, message, createdAt: now, recipientIds: recipients });
   }
   return requestState(boardId, user.id);
@@ -92,10 +92,19 @@ export async function withdrawRequest(boardId: string, userId: string): Promise<
   return requestState(boardId, userId);
 }
 
+/** The board's co-owners whose co-ownership counts now (#122): they hear about requests like its owner. */
+async function coOwnersOf(boardId: string): Promise<string[]> {
+  const candidates = (await repo.listByBoard(boardId)).filter((m) => m.coOwner).map((m) => m.userId);
+  const counts = await Promise.all(candidates.map(async (id) => (await getBoardAccess(boardId, id)).coOwner));
+  return candidates.filter((_, i) => counts[i]);
+}
+
 /** May `userId` decide requests for this board (approve / decline)? */
 async function isDecider(place: Place, userId: string): Promise<boolean> {
   if (place.ownerId === userId) return true;
-  return (await boardGatekeepers(place)).deciders.includes(userId);
+  if ((await boardGatekeepers(place)).deciders.includes(userId)) return true;
+  // Co-owners manage who joins the board (#122), like its owner.
+  return (await getBoardAccess(place.id, userId)).coOwner;
 }
 
 /** For the share dialog: the pending requests (deciders only; others get 403). */

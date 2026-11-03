@@ -71,6 +71,14 @@ it('an attached workspace can’t get out from under its organisation’s floors
   await expect(updateSettings(ws, owner.id, { sessionMaxHours: null })).rejects.toMatchObject({ status: 403, code: 'organisation_policy' });
   await updateWorkspace(ws, owner.id, { policies: { linkSharing: 'none' } });
   expect((await getBoardAccess(board.id, outsider.id)).role).toBeNull();
+  // The link policy too: a password required beats optional, the shorter lifetime wins.
+  await updateWorkspace(ws, owner.id, { policies: { linkMaxDays: 90 } });
+  await updateWorkspace(org.id, owner.id, { policies: { linkPassword: 'required', linkMaxDays: 30 } });
+  expect((await boardAccess(member.id, placeOf(ws))).policies).toMatchObject({ linkPassword: 'required', linkMaxDays: 30 });
+  await expect(updateWorkspace(ws, owner.id, { policies: { linkMaxDays: null } })).rejects.toMatchObject({ status: 403, code: 'organisation_policy' });
+  await expect(updateWorkspace(ws, owner.id, { policies: { linkPassword: 'optional' } })).rejects.toMatchObject({ status: 403, code: 'organisation_policy' });
+  await updateWorkspace(ws, owner.id, { policies: { linkMaxDays: 7 } });
+  expect((await boardAccess(member.id, placeOf(ws))).policies.linkMaxDays).toBe(7);
 
   // A team owner who no longer runs the organisation can't detach their team to escape the floors.
   const ws2 = await team(teamOwner);

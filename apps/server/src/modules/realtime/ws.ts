@@ -64,7 +64,7 @@ function objectDocRoute(kind: ObjectKind, PREFIX: string): WsRoute {
         } catch {
           /* falls through to 4403 */
         }
-        const access = boardId && !boardId.includes('/') ? await getBoardAccess(boardId, user.id) : { role: null, removed: false, kind: null };
+        const access = boardId && !boardId.includes('/') ? await getBoardAccess(boardId, user.id) : { role: null, removed: false, kind: null, coOwner: false };
         if (access.removed) return { code: WS_CLOSE_BOARD_REMOVED, reason: 'Board removed for review' };
         // The other kind's id reads like no access: a socket never learns what a container is.
         const role = access.kind === kind ? access.role : null;
@@ -74,6 +74,8 @@ function objectDocRoute(kind: ObjectKind, PREFIX: string): WsRoute {
           kind,
           userId: user.id,
           role,
+          // Resolved by boards (resolveCoOwner): protected locks follow it (#122).
+          coOwner: 'coOwner' in access && access.coOwner === true,
           sessionKey: key,
           identity: user,
           // Comments must carry the author's own name (realtime/commentRules.ts, KAI-187): a guest's

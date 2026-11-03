@@ -767,3 +767,18 @@ button.fr-title:hover {
     outline-offset: -2px;
   }
 }
+
+/* Lasso tool flyout (#111). */
+.fr-lasso-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fr-lasso-options__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

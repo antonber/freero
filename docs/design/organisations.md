@@ -98,9 +98,14 @@ policy is.
 | `downloads` | anyone → members → admins |
 | `publicLinks` | anyone → signedIn |
 | `liveEmbeds`, `boardEmbeds` | on → off |
+| `linkPassword` | optional → required |
+| `linkMaxDays` | none → more days → fewer days (the shorter limit) |
 | `requireTwoFactor` | off → on |
 | `sessionMaxHours`, `sessionIdleMinutes` | none → longer → shorter (the smaller limit) |
 
+- A board moved into an attached workspace (#124) is adjusted to the target's EFFECTIVE policies
+  (its link lowered or turned off, embedding off), since the move reads the target through the same
+  joined read; an organisation is never a move target (`lockWorkspaceForNewBoard`).
 - An organisation is created with the LOOSEST value of every key, which means "no floor": attaching
   a workspace changes nothing until the organisation tightens something.
 - **A workspace may tighten, never loosen.** `PATCH /workspaces/:id` and `PATCH …/admin/settings`

@@ -25,6 +25,13 @@ type LoadState =
   | { status: 'ready'; board: BoardSummary; team?: Team; ai?: BoardAiStatus | null; trackers?: BoardTrackersResponse['connections'] }
   | { status: 'error'; code: number; message: string; reason?: string };
 
+const errorState = (err: unknown): LoadState => ({
+  status: 'error',
+  code: err instanceof ApiError ? err.status : 0,
+  message: err instanceof Error ? err.message : String(err),
+  reason: err instanceof ApiError ? err.code : undefined,
+});
+
 /** `guest`: a visitor without an account who joined this board by its link (GuestGate). */
 export default function BoardPage({ guest, onGuestEnded }: { guest?: GuestInfo; onGuestEnded?: () => void } = {}) {
   const { id = '' } = useParams();
@@ -64,6 +71,8 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
   const board = state.status === 'ready' ? state.board : null;
   const go = useCallback((path: string) => navigate(path), [navigate]);
   const toast = useMemo(() => toastNotify(notify), [notify]);
+  // Disconnected because the link just got a password (#39): offer its form in place.
+  const onAccessLost = useCallback(() => void api.guestBoard(id).catch((err) => err instanceof ApiError && err.code === LINK_PASSWORD_REQUIRED && setState(errorState(err))), [id]);
   const host = useMemo<Host | null>(
     () =>
       board
@@ -72,9 +81,10 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
             navigate: go,
             notify: toast,
             signUpPath: loginPath(next, 'signup'),
+            onAccessLost,
           })
         : null,
-    [board, guest, go, toast, next],
+    [board, guest, go, toast, next, onAccessLost],
   );
   const signUp = useMemo(
     () => (
@@ -181,6 +191,8 @@ function ServerBoard({ id }: { id: string }) {
   const problems = useProblemReport();
   useShowingBoard(board ? { id: board.id, role: board.role } : null);
   const reportProblem = useMemo(() => (board ? (c: { role: Role }) => problems.open({ id: board.id, role: c.role }) : undefined), [board?.id, problems]);
+  // Disconnected because the board's link just got a password (#39): its form, in place of the board.
+  const onAccessLost = useCallback(() => void api.getBoard(id).catch((err) => err instanceof ApiError && err.code === LINK_PASSWORD_REQUIRED && setState(errorState(err))), [id]);
   // The board menu's Theme (features/appearance): saved to the account like the settings page's.
   const chooseTheme = useChooseTheme();
   const chooseRef = useRef(chooseTheme);
@@ -199,10 +211,11 @@ function ServerBoard({ id }: { id: string }) {
       ai,
       trackers,
       reportProblem,
+      onAccessLost,
       colorTheme,
     });
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
-  }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem, colorTheme]);
+  }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem, onAccessLost, colorTheme]);
 
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;

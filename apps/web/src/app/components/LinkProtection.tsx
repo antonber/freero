@@ -1,4 +1,5 @@
-// The board owner's protection of its share link (KAI-145): a password the link asks for and a day
+// The protection of a board's share link by its owner and co-owners (KAI-145, #122; the workspace may
+// require both, #39): a password the link asks for and a day
 // it stops working. The server enforces both (for link visitors and guests); members never need them.
 import { useState, type FormEvent } from 'react';
 import { CalendarClock, KeyRound } from 'lucide-react';
@@ -53,6 +54,9 @@ export function LinkProtection({ board, onChange }: { board: BoardSummary; onCha
   };
 
   const today = localDay(Date.now());
+  // The workspace's link policy (#39): the latest day the link may work until.
+  const maxDays = board.permissions.linkPolicy?.maxDays ?? null;
+  const lastDay = maxDays === null ? undefined : localDay(Date.now() + maxDays * 24 * 60 * 60 * 1000);
   return (
     <div className="fr-share__protect" aria-label="Link protection">
       <div className="fr-share__protect-row">
@@ -104,6 +108,7 @@ export function LinkProtection({ board, onChange }: { board: BoardSummary; onCha
           className="fr-share__date"
           aria-label="Link expiry date"
           min={today}
+          max={lastDay}
           value={p.expiresAt !== null && !p.expired ? localDay(p.expiresAt) : ''}
           onChange={(e) => e.target.value && void save({ linkExpiresAt: endOfDay(e.target.value) }, `The link works until ${new Date(endOfDay(e.target.value)).toLocaleDateString()}`)}
         />

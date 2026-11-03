@@ -3,7 +3,7 @@ import { memo, useMemo } from 'react';
 import type { PenElement } from '@freero/shared';
 import { canvasInk, defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { HIGHLIGHTER_OPACITY, PEN_COLORS, PEN_WIDTHS } from './lib/constants';
-import { strokeDistance, strokePath, unpack } from './lib/stroke';
+import { strokeDistance, strokePath, strokePoints, unpack } from './lib/stroke';
 import './pen.css';
 
 const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement>) {
@@ -46,6 +46,8 @@ export default defineElement({
   Component: PenView,
   // Hits within the engine's screen tolerance of the ink; the eraser asks the same distance.
   distanceTo: (el, local) => strokeDistance(el, local),
+  // A lasso set to "inside" takes a stroke when most of its ink is in the loop (#111).
+  lassoPoints: (el) => strokePoints(el),
   // Highlighter ink multiplies with what's beneath (overlaps darken like real markers). It must
   // sit on the positioned wrapper: that is the stacking context the blend composites against.
   wrapperStyle: (el) => (el.highlighter ? { mixBlendMode: 'multiply' } : undefined),
