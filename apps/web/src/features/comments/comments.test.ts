@@ -3,7 +3,7 @@ import type { CommentMessage, CommentThread } from '@freero/shared';
 import { createTestBoard, type Editor, type TestBoard } from '@engine';
 import manifest from './feature';
 import { decodeMentions, encodeMentions, mentionQuery } from './lib/mentions';
-import { anchorFor, assembleThreads, isUnread, threadPoint, upgradeLegacy } from './lib/model';
+import { anchorFor, assembleThreads, isUnread, listThreads, threadPoint, upgradeLegacy } from './lib/model';
 import { authorName } from './lib/people';
 import { deleteMessage, deleteThread, editMessage, getThreads, replaceInMessages, reply, setResolved, startDraft, submitDraft, toggleReaction } from './lib/state';
 
@@ -166,6 +166,17 @@ describe('unread', () => {
 
   it('a reply from someone else after I last looked makes it unread', () => {
     expect(isUnread(thread([msg('a', 'ann', 1), msg('b', 'bob', 7)]), 5, 'me')).toBe(true);
+  });
+
+  it('the @Me filter lists threads where someone else mentioned me (resolved ones too), not ones where I only mentioned myself or others', () => {
+    const say = (id: string, authorId: string, text: string): CommentMessage => ({ ...msg(id, authorId, 1), text });
+    const t = (id: string, resolved: boolean, ...messages: CommentMessage[]): CommentThread => ({ ...thread(messages), id, resolved });
+    const threads = [
+      t('asked-me', true, say('a', 'ann', 'can <@me> check?')),
+      t('i-asked', false, say('b', 'me', 'note to <@me>, ask <@ann>')),
+      t('look-alike', false, say('c', 'ann', 'ping <@mel>')),
+    ];
+    expect(listThreads(threads, 'mentions', 'me').map((x) => x.id)).toEqual(['asked-me']);
   });
 });
 

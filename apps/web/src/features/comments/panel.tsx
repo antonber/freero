@@ -290,9 +290,19 @@ function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: bool
 
 const FILTERS: Array<{ value: ThreadFilter; label: string }> = [
   { value: 'open', label: 'Open' },
+  { value: 'unread', label: 'Unread' },
+  { value: 'mentions', label: '@Me' },
   { value: 'resolved', label: 'Resolved' },
   { value: 'mine', label: 'Mine' },
 ];
+
+const EMPTY: Record<ThreadFilter, string> = {
+  open: 'No open comments',
+  unread: 'You’re all caught up',
+  mentions: 'Nobody has mentioned you yet',
+  resolved: 'Nothing resolved yet',
+  mine: 'You haven’t commented yet',
+};
 
 function CommentsDock({ editor }: { editor: Editor }) {
   const threads = useThreads();
@@ -300,7 +310,7 @@ function CommentsDock({ editor }: { editor: Editor }) {
   const { filter, showResolved, seen } = useCommentsUi(editor, (s) => s);
   const now = useNow(editor);
   const ids = useMemo(() => new Set(elements.map((e) => e.id)), [elements]);
-  const list = listThreads(threads, filter, editor.user.id);
+  const list = listThreads(threads, filter, editor.user.id, seen);
   const firsts = useMemo(() => threads.map((t) => t.messages[0]), [threads]);
   const people = usePeopleOf(editor, firsts);
   const canWrite = editor.can('commenter');
@@ -329,9 +339,9 @@ function CommentsDock({ editor }: { editor: Editor }) {
         <div className="fr-cm-empty">
           <MessageSquareText size={28} strokeWidth={1.6} />
           <div className="fr-cm-empty__title">
-            {filter === 'open' ? 'No open comments' : filter === 'resolved' ? 'Nothing resolved yet' : 'You haven’t commented yet'}
+            {EMPTY[filter]}
           </div>
-          {canWrite && filter !== 'resolved' && <div className="fr-cm-empty__hint">Press C, then click anywhere on the board to start a thread.</div>}
+          {canWrite && (filter === 'open' || filter === 'mine') && <div className="fr-cm-empty__hint">Press C, then click anywhere on the board to start a thread.</div>}
         </div>
       )}
     </div>
