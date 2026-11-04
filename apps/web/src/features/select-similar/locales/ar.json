@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "selectAll",
+    "lengthItemsSelected",
+    "selectOnly",
+    "onlyOneKindOfItem",
+    "noNameInTheSelection",
+    "ofThisType",
+    "selectSomethingFirst",
+    "withThisColour",
+    "selectSomethingWithAColour",
+    "withThisTag",
+    "selectSomethingTagged"
+  ],
+  "selectAll": "تحديد الكل",
+  "lengthItemsSelected": "تم تحديد {length} عنصر",
+  "selectOnly": "تحديد فقط",
+  "onlyOneKindOfItem": "تم تحديد نوع واحد فقط من العناصر",
+  "noNameInTheSelection": "لا يوجد {name} في التحديد",
+  "ofThisType": "من هذا النوع",
+  "selectSomethingFirst": "حدد شيئًا أولًا",
+  "withThisColour": "بهذا اللون",
+  "selectSomethingWithAColour": "حدد شيئًا له لون",
+  "withThisTag": "بهذه العلامة",
+  "selectSomethingTagged": "حدد شيئًا له علامة"
+}
