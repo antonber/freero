@@ -1,5 +1,5 @@
 // The only writer of `tracker_connections`, `tracker_links`, `tracker_link_sources`,
-// `tracker_proposals`, `tracker_oauth_flows` and `tracker_webhooks` [S4].
+// `tracker_proposals`, `tracker_oauth_flows`, `tracker_webhooks` and `tracker_relations` [S4].
 import type { FieldMapEntry, SyncBase, TrackerProviderKind } from '@freero/shared';
 import { isUniqueViolation, one, query, tx } from '../../platform/db';
 
@@ -688,4 +688,28 @@ export async function hooksToRetry(before: number, limit = 50): Promise<StoredHo
       [new Date(before), limit],
     )
   ).map(toHook);
+}
+
+// ---- dependencies between linked issues (#50) ----
+
+/** The "blocker blocks blocked" pairs both sides last agreed on that involve this link. */
+export async function relationsOf(linkId: string): Promise<Array<{ blocker: string; blocked: string }>> {
+  return (await query<{ blocker_link: string; blocked_link: string }>(`SELECT blocker_link, blocked_link FROM tracker_relations WHERE blocker_link = $1 OR blocked_link = $1`, [linkId])).map((r) => ({
+    blocker: r.blocker_link,
+    blocked: r.blocked_link,
+  }));
+}
+
+/** Makes the agreed pairs that involve `linkId` exactly `pairs` (a pair whose other link is gone is skipped). */
+export async function setRelations(linkId: string, pairs: Array<{ blocker: string; blocked: string }>, at = Date.now()): Promise<void> {
+  await tx(async () => {
+    await query(`DELETE FROM tracker_relations WHERE blocker_link = $1 OR blocked_link = $1`, [linkId]);
+    for (const p of pairs)
+      await query(
+        `INSERT INTO tracker_relations (blocker_link, blocked_link, created_at)
+         SELECT $1, $2, $3 WHERE EXISTS (SELECT 1 FROM tracker_links WHERE id = $1) AND EXISTS (SELECT 1 FROM tracker_links WHERE id = $2)
+         ON CONFLICT DO NOTHING`,
+        [p.blocker, p.blocked, new Date(at)],
+      );
+  });
 }

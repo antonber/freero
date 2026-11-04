@@ -371,6 +371,7 @@ const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
   { value: 'epic', label: 'Epic' },
   { value: 'team', label: 'Team' },
   { value: 'label', label: 'Label' },
+  { value: 'quarter', label: 'Quarter' },
   { value: 'none', label: 'One lane' },
 ];
 

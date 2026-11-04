@@ -184,6 +184,10 @@ export function clickupToRemote(conn: ProviderConnection, t: ClickUpTask): Remot
     updatedAt: Number(t.date_updated) || 0,
     groups: { team: t.folder?.name && t.folder.name !== 'hidden' ? t.folder.name : (t.list?.name ?? null), epic: t.parent ?? null },
     project: t.list?.id ?? null,
+    relations: {
+      blocks: (t.dependencies ?? []).filter((d) => d.depends_on === t.id && d.task_id).map((d) => d.task_id!),
+      blockedBy: (t.dependencies ?? []).filter((d) => d.task_id === t.id && d.depends_on).map((d) => d.depends_on!),
+    },
   };
 }
 
@@ -504,6 +508,17 @@ export const clickup: TrackerProvider = {
       return out;
     }
     return (await listTasks(conn, await listNamed(conn, scope.project), limit)).map((t) => clickupToRemote(conn, t));
+  },
+
+  dependencies: {
+    // ClickUp's "waiting on": the blocked task depends on the blocker.
+    async add(conn, blocker, blocked) {
+      await api(conn, 'POST', `/task/${seg(blocked)}/dependency`, 'add a dependency', { depends_on: blocker });
+    },
+    async remove(conn, blocker, blocked) {
+      const res = await conn.call({ method: 'DELETE', path: `/task/${seg(blocked)}/dependency?depends_on=${seg(blocker)}` });
+      if (!ok(res) && res.status !== 404) throw refused(res, 'remove a dependency');
+    },
   },
 
   async changedSince(conn, issues, since) {

@@ -78,8 +78,10 @@ export function planRoadmapImport(
     return lanes.length - 1;
   };
   const laneOfCard = new Map<string, number>();
-  for (const { c } of dated) {
-    const name = ctx.groupBy === 'none' ? null : (roadmapLaneOf(ctx.groupBy, c.issue.groups, c.issue.values.labels) ?? ROADMAP_NO_GROUP[ctx.groupBy]);
+  // Lanes by quarter (#50) come in date order; the others in the order issues name them.
+  const ordered = ctx.groupBy === 'quarter' ? [...dated].sort((a, b) => a.span.start.localeCompare(b.span.start)) : dated;
+  for (const { c, span } of ordered) {
+    const name = ctx.groupBy === 'none' ? null : (roadmapLaneOf(ctx.groupBy, c.issue.groups, c.issue.values.labels, span.start) ?? ROADMAP_NO_GROUP[ctx.groupBy]);
     laneOfCard.set(c.id, laneIndex(name));
   }
 

@@ -72,6 +72,11 @@ export interface RemoteIssue {
    * the write when someone changed the issue since (TrackerError 'conflict').
    */
   version?: string | null;
+  /**
+   * Its dependencies (#50), by the other issues' ids (as `id` above): those it blocks and those it
+   * is blocked by. Read where the provider has `dependencies`.
+   */
+  relations?: { blocks: string[]; blockedBy: string[] };
 }
 
 export interface CreateIssueInput {
@@ -172,6 +177,16 @@ export interface TrackerProvider {
    * cluster of clusters is of this type (Jira "Epic"; null where the tracker has no types).
    */
   parents?: { issueType: string | null };
+
+  /**
+   * "Blocks" links between issues (#50: Jira issue links, Linear relations, GitHub issue
+   * dependencies, ClickUp dependencies), by the issues' ids; `getIssue` reads them into
+   * `RemoteIssue.relations`.
+   */
+  dependencies?: {
+    add(conn: ProviderConnection, blocker: string, blocked: string): Promise<void>;
+    remove(conn: ProviderConnection, blocker: string, blocked: string): Promise<void>;
+  };
 
   /** Which of these issues changed at or after `since` (polling). */
   changedSince(conn: ProviderConnection, issues: Array<{ id: string; key: string }>, since: number): Promise<string[]>;

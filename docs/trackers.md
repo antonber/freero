@@ -192,13 +192,30 @@ what comes in, and a column an import opens between others carries the cards alr
 "Import issues onto this timeline…" (a selected timeline's context menu) runs a query and puts each
 issue on the timeline as a linked task card drawn as a bar from its start to its due date, in a lane
 per epic (Jira: the parent; Linear: the project; GitHub: the milestone), team (Jira: the project;
-Linear: the team; GitHub: the repository) or first label. Lanes are matched by name; an empty
+Linear: the team; GitHub: the repository), first label or quarter (the one each bar starts in,
+"2026 Q4", lanes in date order). Lanes are matched by name; an empty
 timeline's starter lanes give way to the groups; the range grows to hold the dates. Issues without
 dates go to an "Unscheduled · <timeline>" frame below (skipped in presentations); drag one onto the
 timeline to give it dates. Moving or resizing a bar writes the card's dates, which sync like any
 field; a date changed in the tracker moves the bar in the same board change (the server lays the
 timeline out with the shared `timelineLayout.planTimeline`). The timeline's "Now · Next · Later"
 view shows the same bars by horizon.
+
+**Start dates.** Jira's Start date field and, on GitHub, a Project's Start date field (#42) sync
+both ways. Linear issues have no planned start date (only when work started, which Linear sets
+itself), so a Linear bar's start stays on the board and the send preview lists it as not mapped.
+
+**Dependencies (#50).** A connector between two linked task cards (two bars, or cards anywhere)
+with one arrowhead — the Dependency style: dashed, an arrow at the end — is a dependency: the card
+at the tail blocks the one at the arrow. It becomes the tracker's own "blocks" link: a Jira issue
+link of type *Blocks*, a Linear *blocks* relation, a GitHub issue dependency (*blocked by*), a
+ClickUp dependency (*waiting on*); one made in the tracker between two issues linked on the board
+(through the same connection) draws such a connector, and one removed on either side is removed on
+the other. Like fields, each pair is merged against what both sides last agreed on
+(`tracker_relations`), so a dependency added on one side while it's removed on the other never
+comes back by itself, and a change on either side while a sync runs waits for the next one.
+Connectors without exactly one arrowhead, or touching notes, shapes or unlinked cards, mean nothing
+to the tracker. Not on Asana, monday.com, Trello or Azure DevOps yet.
 
 ## Sprints (#119)
 

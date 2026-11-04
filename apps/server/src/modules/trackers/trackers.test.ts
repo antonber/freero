@@ -37,6 +37,7 @@ import { importIntoKanban, kanbanOf, planKanbanImport } from './kanban';
 import type { ProviderConnection, RemoteIssue } from './providers/types';
 import { trackerRequest, TrackerError } from './http';
 import { planRoadmapImport } from './roadmap';
+import { boardPairs, pairOf, planRelations, type Pair } from './relations';
 import { adfToMarkdown, asanaHtmlToMarkdown, htmlToMarkdown, markdownToAdf, markdownToAsanaHtml, markdownToHtml, markdownToWiki, wikiToMarkdown } from './markup';
 import { asana } from './providers/asana';
 import { azure } from './providers/azure';
@@ -226,6 +227,25 @@ it('roadmap import: issues join the timeline lane already named after their epic
   const tray = made.get(made.get('c3')!.frameId as string)!;
   expect(tray).toMatchObject({ type: 'frame', skip: true, index: 3 });
   expect(plan.unscheduled).toBe(1);
+});
+
+it('roadmap import by quarter: an empty timeline gets a lane per quarter its bars start in, in date order, whatever order the tracker listed them', () => {
+  const t = { id: 'tl', type: 'timeline', x: 0, y: 0, w: 900, h: 300, rotation: 0, z: 0, createdBy: 'u', createdAt: 0, updatedAt: 0, title: 'Plan', start: '2026-09-01', end: '2027-02-28', scale: 'month', lanes: [{ id: 'l0', title: 'Lane', color: '#000', rows: 2 }] } as unknown as TimelineElement;
+  const issue = (id: string, startDate: string) => ({ id, key: id, url: '', values: { title: id, description: '', labels: [], startDate, dueDate: startDate }, assigneeName: null, updatedAt: 0 });
+  const draft = (id: string) => ({ id, type: 'card', x: 0, y: 0, w: 300, h: 120 }) as unknown as ElementDraft;
+  let n = 0;
+  const plan = planRoadmapImport(
+    { elements: [{ el: t as unknown as BoardElement, layer: 'shared' as const }] },
+    t,
+    [
+      { id: 'c1', issue: issue('A', '2027-01-12'), draft: draft('c1') },
+      { id: 'c2', issue: issue('B', '2026-10-01'), draft: draft('c2') },
+      { id: 'c3', issue: issue('C', '2026-12-31'), draft: draft('c3') },
+    ],
+    { groupBy: 'quarter', today: 20_400, newId: () => `id${++n}`, frameIndex: 0 },
+  );
+  const lanes = plan.update.find((u) => u.id === 'tl')?.patch.lanes as Array<{ title: string }>;
+  expect(lanes.map((l) => l.title.replace(/<[^>]+>/g, ''))).toEqual(['2026 Q4', '2027 Q1']);
 });
 
 // ---- kanban fields (step 2f) ----
@@ -728,4 +748,49 @@ it('labels and an assignee pushed to GitHub add and remove just those, so a labe
     { method: 'POST', path: '/repos/acme/web/issues/4/assignees', body: { assignees: ['cy'] } },
     { method: 'DELETE', path: '/repos/acme/web/issues/4/assignees', body: { assignees: ['ann'] } },
   ]);
+});
+
+// ---- dependencies (#50) ----
+
+it('a dependency removed on one side is removed on the other, one added on one side is added on the other, and one both sides already agree on is left alone', () => {
+  const set = (...p: Pair[]) => new Set<Pair>(p);
+  const ab = pairOf('A', 'B');
+  const bc = pairOf('B', 'C');
+  const cd = pairOf('C', 'D');
+  const de = pairOf('D', 'E');
+  // Agreed: A>B and B>C. Since: A>B deleted on the board, B>C deleted in the tracker, C>D drawn on the board, D>E made in the tracker.
+  const plan = planRelations(set(bc, cd), set(ab, de), set(ab, bc));
+  expect(plan.remove).toEqual([ab]);
+  expect(plan.erase).toEqual([bc]);
+  expect(plan.add).toEqual([cd]);
+  expect(plan.draw).toEqual([de]);
+  expect(new Set(plan.agreed)).toEqual(set(cd, de));
+  // Once that is done both sides hold C>D and D>E: the next merge changes nothing.
+  const again = planRelations(set(cd, de), set(cd, de), set(...plan.agreed));
+  expect([again.add, again.remove, again.draw, again.erase]).toEqual([[], [], [], []]);
+});
+
+it('only a connector with one arrowhead between two linked task cards is a dependency, read from its tail to its head', () => {
+  const card = (id: string) => ({ el: { id, type: 'card', x: 0, y: 0, w: 100, h: 30 } as unknown as BoardElement });
+  const sticky = { el: { id: 's', type: 'sticky', x: 0, y: 0, w: 100, h: 100 } as unknown as BoardElement };
+  const line = (id: string, from: string, to: string, startCap: string, endCap: string) => ({ el: { id, type: 'connector', start: { elementId: from, x: 0, y: 0 }, end: { elementId: to, x: 0, y: 0 }, startCap, endCap } as unknown as BoardElement });
+  const linkOf = (id: string) => ({ a: 'LA', b: 'LB', a2: 'LA', s: 'LS' })[id];
+  const pairs = boardPairs(
+    {
+      elements: [
+        card('a'),
+        card('b'),
+        card('a2'),
+        sticky,
+        line('forward', 'a', 'b', 'none', 'arrow'),
+        line('backward', 'b', 'a', 'arrow', 'none'),
+        line('both', 'a', 'b', 'arrow', 'arrow'),
+        line('plain', 'b', 'a', 'none', 'none'),
+        line('same-issue', 'a', 'a2', 'none', 'arrow'),
+        line('to-a-sticky', 'a', 's', 'none', 'arrow'),
+      ],
+    },
+    linkOf,
+  );
+  expect([...pairs]).toEqual([[pairOf('LA', 'LB'), ['forward', 'backward']]]);
 });

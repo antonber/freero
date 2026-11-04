@@ -642,7 +642,8 @@ export interface TrackerImportRequest {
   limit?: number;
   /**
    * Roadmap mode (KAI-160): the issues become bars on this timeline instead of a grid of cards —
-   * still linked task cards, so their dates sync both ways — in a lane per team, epic or label
+   * still linked task cards, so their dates sync both ways — in a lane per team, epic, label or
+   * [additive, #50] quarter (the one each bar starts in)
    * (lanes are matched by name, missing ones added). Issues without dates go to an "Unscheduled"
    * frame below the timeline.
    */
@@ -657,7 +658,7 @@ export interface TrackerImportRequest {
 }
 
 /** How a roadmap import puts issues into lanes. */
-export type RoadmapGroupBy = 'none' | 'team' | 'epic' | 'label';
+export type RoadmapGroupBy = 'none' | 'team' | 'epic' | 'label' | 'quarter';
 
 /** What a tracker says an issue belongs to, for roadmap lanes (not synced fields). */
 export interface IssueGroups {
@@ -667,9 +668,17 @@ export interface IssueGroups {
   epic?: string | null;
 }
 
-/** The lane an issue goes to: its team / epic / first label (sorted), or null for "none". */
-export function roadmapLaneOf(groupBy: RoadmapGroupBy, groups: IssueGroups | undefined, labels: readonly string[]): string | null {
+/** A day's quarter as a lane is called ("2026 Q4"). */
+export const quarterOf = (day: string): string | null => (/^\d{4}-\d{2}/.test(day) ? `${day.slice(0, 4)} Q${Math.floor((Number(day.slice(5, 7)) - 1) / 3) + 1}` : null);
+
+/**
+ * The lane an issue goes to: its team / epic / first label (sorted) / the quarter it starts in
+ * (#50; `start`: its bar's first day), or null for "none".
+ */
+export function roadmapLaneOf(groupBy: RoadmapGroupBy, groups: IssueGroups | undefined, labels: readonly string[], start?: string | null): string | null {
   switch (groupBy) {
+    case 'quarter':
+      return start ? quarterOf(start) : null;
     case 'team':
       return groups?.team?.trim() || null;
     case 'epic':
@@ -681,7 +690,7 @@ export function roadmapLaneOf(groupBy: RoadmapGroupBy, groups: IssueGroups | und
   }
 }
 
-export const ROADMAP_NO_GROUP: Record<RoadmapGroupBy, string> = { none: '', team: 'No team', epic: 'No epic', label: 'No label' };
+export const ROADMAP_NO_GROUP: Record<RoadmapGroupBy, string> = { none: '', team: 'No team', epic: 'No epic', label: 'No label', quarter: 'No date' };
 
 export interface TrackerImportResponse {
   /** Cards created for issues new to this board. */

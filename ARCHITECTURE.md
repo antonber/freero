@@ -1399,7 +1399,7 @@ below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals, engage_keys: live audience activities; see "Live activities" below), `icebreakers`
 (no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `presentations`
 (no tables: who presents a board, its handoffs, #146), `trackers`
-(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
+(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks, tracker_relations: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
@@ -2856,6 +2856,13 @@ Server, #6), Asana (#120), monday.com (#121), ClickUp (#180) or Trello (#181), a
   `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
   (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
   Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
+- **Dependencies (#50)** are a synced RELATION, not a field (`relations.ts`, `tracker_relations`):
+  a connector with one arrowhead between two linked task cards of one connection is "tail blocks
+  head"; `TrackerProvider.dependencies` adds / removes the tracker's own blocks link and `getIssue`
+  reads them into `RemoteIssue.relations`. `syncLink` merges the pairs involving its link against
+  the agreed rows (`planRelations`: one-sided changes flow across), writes the tracker, draws or
+  removes connectors in the same board change, then stores the pairs as agreed;
+  `boardSideChanged` also notices a dependency connector drawn or removed.
 - **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, ClickUp, Trello, where
   nobody can paste an address): one per connection and project, registered after a send or import
   into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,

@@ -102,6 +102,7 @@ import { ensureWebhooks, hookAddress, hookOfAddress, keepHandshakeSecret, retryW
 import { emitTrackerActivity } from './events';
 import { dayNumber } from './board';
 import { planRoadmapImport } from './roadmap';
+import { boardPairs, dependencyConnector, pairOf, partsOf, planRelations, type Pair, type RelationPlan } from './relations';
 import { importIntoKanban, kanbanOf, personValues, planKanbanImport, statusColumns } from './kanban';
 import { TrackerError } from './http';
 import { providerOf, type RemoteIssue, type TrackerProvider } from './providers/index';
@@ -192,6 +193,32 @@ async function actorFor(link: Pick<StoredLink, 'boardId' | 'createdBy'>, conn: S
 }
 
 // ---- sync ----
+
+/**
+ * A link's dependencies on this board (#50): the other links of its connection here, which link
+ * each item belongs to, and the pairs involving it on the board (with their connectors), in the
+ * tracker and as last agreed.
+ */
+async function relationState(link: StoredLink, view: Pick<BoardView, 'elements'>, issue: Pick<RemoteIssue, 'relations'> | null) {
+  const links = (await repo.linksOfBoard(link.boardId)).filter((l) => l.connectionId === link.connectionId);
+  const byId = new Map(links.map((l) => [l.id, l]));
+  const byExternal = new Map(links.map((l) => [l.externalId, l.id]));
+  const itemLink = new Map<string, string>();
+  for (const l of links) for (const s of l.sources) itemLink.set(s, l.id);
+  const mine = (p: Pair) => partsOf(p).includes(link.id);
+  const onBoard = new Map([...boardPairs(view, (id) => itemLink.get(id))].filter(([p]) => mine(p)));
+  const inTracker = new Set<Pair>();
+  for (const id of issue?.relations?.blocks ?? []) {
+    const other = byExternal.get(id);
+    if (other && other !== link.id) inTracker.add(pairOf(link.id, other));
+  }
+  for (const id of issue?.relations?.blockedBy ?? []) {
+    const other = byExternal.get(id);
+    if (other && other !== link.id) inTracker.add(pairOf(other, link.id));
+  }
+  const agreed = new Set((await repo.relationsOf(link.id)).map((r) => pairOf(r.blocker, r.blocked)));
+  return { byId, itemLink, onBoard, inTracker, agreed };
+}
 
 /** The sprints of an issue's project (#119), or null when the tracker has none or can't say. */
 async function sprintsFor(provider: TrackerProvider, pc: ReturnType<typeof openConnection>, issue: Pick<RemoteIssue, 'project'>): Promise<TrackerSprint[] | null> {
@@ -419,6 +446,18 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
         removed,
       );
 
+    // Dependencies (#50): a "blocks" link made or removed on one side since the last agreement goes
+    // to the other — the tracker's writes here, the board's connectors in the change below.
+    let relations: (Awaited<ReturnType<typeof relationState>> & { plan: RelationPlan }) | null = null;
+    if (provider.dependencies && issue.relations) {
+      const st = await relationState(link, view, issue);
+      const plan = planRelations(new Set(st.onBoard.keys()), st.inTracker, st.agreed);
+      const ext = (id: string) => st.byId.get(id)?.externalId ?? '';
+      for (const p of plan.add) await provider.dependencies.add(pc, ext(partsOf(p)[0]), ext(partsOf(p)[1]));
+      for (const p of plan.remove) await provider.dependencies.remove(pc, ext(partsOf(p)[0]), ext(partsOf(p)[1]));
+      relations = { ...st, plan };
+    }
+
     // The tracker's side onto the board, plus the badge and notes, in one change.
     let pull: IssueValues = {};
     for (const f of pulled) pull = withIssueField(pull, f, issueFieldValue(issue.values, f));
@@ -474,9 +513,25 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
       if (Object.keys(plan.tags).length) collections.tags = plan.tags;
       if (notes.length && liveItems[0])
         collections.comments = noteThread(liveItems[0], author, `${providerName(conn)} sync: ${notes.join(' ')}`, { thread: newId(12), message: newId(12) });
-      if (!update.length && !Object.keys(collections).length) return null;
-      return { update, collections };
+      // Dependencies the tracker made or removed: connectors drawn between the cards, or taken off.
+      const create: ElementDraft[] = [];
+      const remove: string[] = [];
+      if (relations && (relations.plan.draw.length || relations.plan.erase.length)) {
+        const now = boardPairs(live, (id) => relations!.itemLink.get(id));
+        const cardOf = (linkId: string) => (relations!.byId.get(linkId)?.sources ?? []).map((id) => live.elements.find((e) => e.el.id === id)?.el).find((el) => el?.type === 'card');
+        for (const p of relations.plan.draw) {
+          const [a, b] = partsOf(p);
+          const from = cardOf(a);
+          const to = cardOf(b);
+          if (from && to && !now.has(p)) create.push(dependencyConnector(newId(10), from, to));
+        }
+        for (const p of relations.plan.erase) remove.push(...(now.get(p) ?? []));
+      }
+      if (!update.length && !Object.keys(collections).length && !create.length && !remove.length) return null;
+      return { update, collections, ...(create.length ? { create } : {}), ...(remove.length ? { remove } : {}) };
     });
+    // Agreed once both sides hold them: a dependency changed on either side meanwhile is the next sync's.
+    if (relations) await repo.setRelations(link.id, relations.plan.agreed.map((p) => ({ blocker: partsOf(p)[0], blocked: partsOf(p)[1] })));
 
     // Fields this sync didn't pull are agreed as it read them: a change made on the board while it
     // ran (a bar dragged right after an import) is still sent by the next sync, never swallowed.
@@ -486,7 +541,8 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
     await repo.markSynced(link.id, base, present);
     await noteOutcome(conn, null);
 
-    if (pushed.length || pulled.length || conflicts.length) {
+    const dependencies = relations ? { sent: relations.plan.add.length + relations.plan.remove.length, received: relations.plan.draw.length + relations.plan.erase.length } : null;
+    if (pushed.length || pulled.length || conflicts.length || (dependencies && (dependencies.sent || dependencies.received))) {
       await recordAudit({
         action: 'tracker.synced',
         workspaceId: who.workspaceId,
@@ -498,6 +554,7 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
           pushed,
           pulled,
           conflicts,
+          ...(dependencies && (dependencies.sent || dependencies.received) ? { dependenciesSent: dependencies.sent, dependenciesReceived: dependencies.received } : {}),
         },
       });
       if (pushed.length)
@@ -537,11 +594,14 @@ async function boardSideChanged(link: StoredLink, conn: StoredConnection, view: 
     heading: read.heading,
     itemUrl: (id) => itemUrl(link.appOrigin, link.boardId, id),
   });
-  return fieldsIn(board).some((f) => {
-
+  const changed = fieldsIn(board).some((f) => {
     const now = canonical(f, board);
     return now !== undefined && link.base.board[f] !== undefined && now !== link.base.board[f];
   });
+  if (changed || !provider.dependencies) return changed;
+  // A dependency connector drawn or removed between this link's cards and another's (#50).
+  const st = await relationState(link, view, null);
+  return st.onBoard.size !== st.agreed.size || [...st.onBoard.keys()].some((p) => !st.agreed.has(p));
 }
 
 /** The outbox consumer: saved board changes and queued syncs, one at a time (one instance). */
@@ -1439,14 +1499,14 @@ function probeLaid(): LaidOut {
   };
 }
 
-const GROUPS = new Set<RoadmapGroupBy>(['none', 'team', 'epic', 'label']);
+const GROUPS = new Set<RoadmapGroupBy>(['none', 'team', 'epic', 'label', 'quarter']);
 
 /** A roadmap import's target from a request body (`timeline: { id, groupBy? }`), or null. */
 function roadmapTarget(v: unknown): { id: string; groupBy: RoadmapGroupBy } | null {
   if (v === undefined || v === null) return null;
   const t = v as { id?: unknown; groupBy?: unknown };
   if (typeof t.id !== 'string' || !t.id || t.id.length > 64) throw badRequest('timeline.id must name a timeline');
-  if (t.groupBy !== undefined && !GROUPS.has(t.groupBy as RoadmapGroupBy)) throw badRequest('timeline.groupBy must be none, team, epic or label');
+  if (t.groupBy !== undefined && !GROUPS.has(t.groupBy as RoadmapGroupBy)) throw badRequest('timeline.groupBy must be none, team, epic, label or quarter');
   return { id: t.id, groupBy: (t.groupBy as RoadmapGroupBy | undefined) ?? 'none' };
 }
 

@@ -375,6 +375,20 @@ async function readIssue(conn: ProviderConnection, id: string): Promise<{ repo: 
   return { ...raw, items, nodeId: nodeId ?? raw.issue.node_id ?? null };
 }
 
+/** An issue's dependencies (#50): the issues it blocks and is blocked by (none where the server has no such API). */
+async function dependenciesOf(conn: ProviderConnection, repo: string, number: number): Promise<{ blocks: string[]; blockedBy: string[] }> {
+  const list = async (which: 'blocking' | 'blocked_by') => {
+    const res = await conn.call({ method: 'GET', path: `/repos/${repo}/issues/${number}/dependencies/${which}?per_page=100` });
+    if (res.status === 404) return [];
+    if (!ok(res)) throw refused(res, 'read the issue’s dependencies');
+    return ((res.json as GhIssue[]) ?? []).flatMap((i) => {
+      const r = /\/repos\/([\w.-]+\/[\w.-]+)$/.exec(i.repository_url ?? '')?.[1];
+      return r ? [`${r}#${i.number}`] : [];
+    });
+  };
+  return { blocks: await list('blocking'), blockedBy: await list('blocked_by') };
+}
+
 // ---- writing ----
 
 async function setField(conn: ProviderConnection, projectId: string, itemId: string, fieldId: string, value: Record<string, unknown> | null, what: string) {
@@ -579,7 +593,25 @@ export const github: TrackerProvider = {
 
   async getIssue(conn, id) {
     const cur = await readIssue(conn, id);
-    return cur ? toRemote(conn, cur.repo, cur.issue, cur.items) : null;
+    if (!cur) return null;
+    return { ...(await toRemote(conn, cur.repo, cur.issue, cur.items)), relations: await dependenciesOf(conn, cur.repo, cur.issue.number) };
+  },
+
+  dependencies: {
+    async add(conn, blocker, blocked) {
+      const a = await rawIssue(conn, blocker);
+      if (!a?.issue.id) throw new TrackerError(`${LABEL} couldn’t find ${blocker}.`, 'not_found', 404);
+      const { repo, number } = parseId(blocked);
+      const res = await conn.call({ method: 'POST', path: `/repos/${repo}/issues/${number}/dependencies/blocked_by`, body: { issue_id: a.issue.id } });
+      if (!ok(res)) throw refused(res, `mark ${blocked} as blocked by ${blocker}`);
+    },
+    async remove(conn, blocker, blocked) {
+      const a = await rawIssue(conn, blocker);
+      if (!a?.issue.id) return;
+      const { repo, number } = parseId(blocked);
+      const res = await conn.call({ method: 'DELETE', path: `/repos/${repo}/issues/${number}/dependencies/blocked_by/${a.issue.id}` });
+      if (!ok(res) && res.status !== 404) throw refused(res, `remove a dependency of ${blocked}`);
+    },
   },
 
   async createIssue(conn, input: CreateIssueInput) {

@@ -7550,6 +7550,39 @@ async function trackerChecks() {
       await waitFor(() => E.get(other.id).dueDate === '2026-12-18' && Math.abs(E.get(other.id).x - wantX) < 1 && Math.abs(E.get(other.id).w - 12 * PPD) < 1, 10_000, `the bar at its new dates (x ${E.get(other.id).x}, want ${wantX})`);
     });
 
+    await check('trackers (#50): a dependency connector between two roadmap bars becomes a Jira “blocks” link, one made in Jira draws a connector, and one removed on either side is removed on the other', async () => {
+      const make = (n) => cloud.create('WEB', { summary: `Dependency ${n}`, labels: ['deps'], customfield_10015: `2026-11-${String(2 + n * 4).padStart(2, '0')}`, duedate: `2026-11-${String(5 + n * 4).padStart(2, '0')}`, description: { type: 'doc', version: 1, content: [] } });
+      const [a, b, d] = [make(1), make(2), make(3)];
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = deps', timeline: { id: 'tl', groupBy: 'none' } });
+      assert(r.status === 201 && r.json.cards.length === 3, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      const cardOf = (key) => E.get(r.json.cards.find((x) => x.key === key).id);
+      await waitFor(() => r.json.cards.every((x) => E.get(x.id)), 8000, 'the bars');
+      await waitFor(() => [a, b, d].every((i) => cloud.issue(i.key).remotelinks.length === 1), 10_000, 'the first syncs');
+      const connectors = () => [...E.values()].filter((x) => x?.type === 'connector');
+      const between = (from, to) => connectors().filter((x) => x.start.elementId === cardOf(from).id && x.end.elementId === cardOf(to).id && x.endCap !== 'none');
+      // On the board: a Dependency connector from bar A to bar B → "A blocks B" in Jira.
+      const ca = cardOf(a.key);
+      const cb = cardOf(b.key);
+      E.set('dep1', { ...base, id: 'dep1', type: 'connector', x: ca.x + ca.w, y: ca.y, w: Math.max(1, cb.x - ca.x - ca.w), h: Math.max(1, cb.y - ca.y), start: { elementId: ca.id, anchor: 'right', x: ca.x + ca.w, y: ca.y + ca.h / 2 }, end: { elementId: cb.id, anchor: 'left', x: cb.x, y: cb.y + cb.h / 2 }, routing: 'elbow', stroke: '#1F1A33', strokeWidth: 2, strokeStyle: 'dashed', startCap: 'none', endCap: 'arrow', label: '' });
+      await waitFor(() => JSON.stringify(cloud.blocks(a.key)) === JSON.stringify([b.key]), 15_000, `${a.key} blocks ${b.key} in Jira`);
+      // In Jira: B blocks D → a connector from bar B to bar D.
+      cloud.block(b.key, d.key);
+      assert((await cloud.webhook(webhookUrl, secret, b.key)) === 202, 'webhook');
+      await waitFor(() => between(b.key, d.key).length === 1, 15_000, 'the connector from Jira on the board');
+      const drawn = between(b.key, d.key)[0];
+      assert(drawn.strokeStyle === 'dashed' && drawn.endCap === 'arrow' && drawn.startCap === 'none', `the drawn connector: ${JSON.stringify(drawn)}`);
+      await settled(c);
+      assert(JSON.stringify(cloud.blocks(b.key)) === JSON.stringify([d.key]) && JSON.stringify(cloud.blocks(a.key)) === JSON.stringify([b.key]), 'the drawn connector was sent back as another link');
+      // Removed on the board → removed in Jira.
+      E.delete('dep1');
+      await waitFor(() => cloud.blocks(a.key).length === 0, 15_000, `${a.key} no longer blocks ${b.key} in Jira`);
+      // Removed in Jira → removed on the board.
+      cloud.unblock(b.key, d.key);
+      assert((await cloud.webhook(webhookUrl, secret, d.key)) === 202, 'webhook');
+      await waitFor(() => between(b.key, d.key).length === 0, 15_000, 'the connector gone from the board');
+      assert(cloud.blocks(b.key).length === 0 && cloud.blocks(a.key).length === 0, 'a removed link came back');
+    });
+
     await check('trackers: MCP sync_to_tracker sends items as one issue for the agent’s person', async () => {
       const tok = await O.req('POST', '/api/auth/tokens', { name: 'Planner agent', scopes: ['boards:read', 'boards:write'], expiresInDays: 1 });
       assert(tok.status === 201, tok.text);
