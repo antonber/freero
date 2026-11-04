@@ -891,10 +891,10 @@ export const api = {
     }
     return ((await res.json()) as { sticker: Sticker }).sticker;
   },
-  // shape packs (#4): the board's workspace's own icon sets
+  // shape packs (#4): the board's workspace's own icon sets, and the person's own library
   shapePacks: (boardId: string) => request<ShapePacksResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`),
-  createShapePack: (boardId: string, name: string, upload: string) =>
-    request<ShapePackCreated>('POST', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`, { name, upload }),
+  createShapePack: (boardId: string, name: string, upload: string, personal = false) =>
+    request<ShapePackCreated>('POST', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`, { name, upload, ...(personal ? { personal: true } : {}) }),
   renameShapePack: (packId: string, name: string) => request<{ pack: ShapePack }>('PATCH', `/api/shape-packs/${encodeURIComponent(packId)}`, { name }),
   removeShapePack: (packId: string) => request<{ ok: true }>('DELETE', `/api/shape-packs/${encodeURIComponent(packId)}`),
   removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),

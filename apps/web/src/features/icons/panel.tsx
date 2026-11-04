@@ -48,7 +48,7 @@ function Tile({ editor, hit, canEdit }: { editor: Editor; hit: Hit; canEdit: boo
   );
 }
 
-/** The workspace's shape packs (#4), read once per opening of the library. */
+/** The workspace's shape packs and the person's own (#4), read once per opening of the library. */
 function usePacks(editor: Editor): { data: ShapePacksResponse | null; reload: () => void } {
   const none: ShapePacksResponse = { packs: [], canManage: false };
   const [data, setData] = useState<ShapePacksResponse | null>(editor.host.shapePacks ? null : none);
@@ -123,7 +123,7 @@ function IconLibrary({ editor, props }: PanelProps) {
         <h2 className="fr-icons__title">{t('icons')}</h2>
         <p className="fr-icons__sub">{t('clickToAddOrDrag')}</p>
       </DockHeader>
-      {(list.length > 0 || packs.data?.canManage) && (
+      {(list.length > 0 || (packs.data && editor.host.shapePacks)) && (
         <div className="fr-icons__source">
           <Select<string>
             aria-label={t('whichIcons')}
@@ -137,13 +137,14 @@ function IconLibrary({ editor, props }: PanelProps) {
             options={[
               { value: ALL, label: t('allIcons') },
               { value: FREERO, label: t('freeroIcons') },
-              ...list.map((p) => ({ value: p.id, label: t('packNameCount', { name: p.name, count: p.icons.length }) })),
+              ...list.map((p) => ({ value: p.id, label: p.personal ? t('myPackNameCount', { name: p.name, count: p.icons.length }) : t('packNameCount', { name: p.name, count: p.icons.length }) })),
             ]}
           />
-          {packs.data?.canManage && editor.host.shapePacks && (
+          {packs.data && editor.host.shapePacks && (
             <UploadPack
               host={editor.host.shapePacks}
               notify={editor.host.notify}
+              canShare={packs.data.canManage}
               onCreated={(id) => {
                 packs.reload();
                 setSource(id);
@@ -152,7 +153,7 @@ function IconLibrary({ editor, props }: PanelProps) {
           )}
         </div>
       )}
-      {pack && packs.data?.canManage && editor.host.shapePacks && (
+      {pack && (pack.personal || packs.data?.canManage) && editor.host.shapePacks && (
         <PackManager host={editor.host.shapePacks} notify={editor.host.notify} pack={pack} onChanged={packs.reload} onRemoved={() => (setSource(ALL), packs.reload())} />
       )}
       <Input

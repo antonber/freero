@@ -134,9 +134,9 @@ export function stickersOf(boardId: string): NonNullable<Host['stickers']> {
 export function shapePacksOf(boardId: string): NonNullable<Host['shapePacks']> {
   return {
     list: () => api.shapePacks(boardId),
-    async create(name, zip) {
+    async create(name, zip, opts) {
       const { url } = await api.uploadAttachment(zip);
-      return api.createShapePack(boardId, name, url);
+      return api.createShapePack(boardId, name, url, !!opts?.personal);
     },
     rename: async (packId, name) => (await api.renameShapePack(packId, name)).pack,
     remove: async (packId) => void (await api.removeShapePack(packId)),

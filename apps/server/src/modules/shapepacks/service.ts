@@ -3,6 +3,9 @@
 // - See and place: anyone in the board's workspace (its guests too: they place icons on boards they
 //   edit). Someone on a board through a board invite only sees none: the packs are the workspace's.
 // - Upload, rename, remove: the workspace's owners and admins.
+// - A person's own library (`personal`): anyone signed in uploads packs of their own from any board
+//   they can open; those show to them on every board, to nobody else, and only they rename or
+//   remove them (a workspace's admins never see them).
 //
 // The upload itself goes through modules/uploads like any file (its size cap, the uploader's quota
 // and the upload rate limit): the app uploads a ZIP of SVGs (or one SVG) and names it here. It must
@@ -101,10 +104,15 @@ async function boardWorkspace(boardId: string, userId: string) {
   return { workspaceId, role: await workspaceRole(workspaceId, userId) };
 }
 
-/** A pack and the caller's role in its workspace; 404 unless they are in that workspace. */
+/** A pack the caller may manage: their own, or their workspace's as its owner / admin; 404 unless they may see it. */
 async function packFor(packId: string, userId: string) {
   const pack = await repo.getPack(packId);
-  const role = pack ? await workspaceRole(pack.workspaceId, userId) : null;
+  if (pack?.ownerId) {
+    // Someone else's own library doesn't exist for anyone but them.
+    if (pack.ownerId !== userId) throw notFound('Shape pack not found');
+    return pack;
+  }
+  const role = pack?.workspaceId ? await workspaceRole(pack.workspaceId, userId) : null;
   if (!pack || !role) throw notFound('Shape pack not found');
   if (!isManager(role)) throw forbidden('Only this workspace’s owners and admins manage its shape packs', 'shape_pack_admins_only');
   return pack;
@@ -121,22 +129,34 @@ async function present(packs: repo.StoredPack[]): Promise<ShapePack[]> {
     createdBy: p.createdBy ? (people.get(p.createdBy)?.name ?? null) : null,
     createdAt: p.createdAt,
     icons: byPack.get(p.id) ?? [],
+    personal: p.ownerId !== null,
   }));
 }
 
-/** The shape packs of the board's workspace, as `userId` may use them. */
+/** The shape packs of the board's workspace, as `userId` may use them, then their own library. */
 export async function listPacks(boardId: string, userId: string): Promise<ShapePacksResponse> {
   const { workspaceId, role } = await boardWorkspace(boardId, userId);
   // On the board through a board invite only: the workspace's packs aren't theirs to see.
-  if (!role) return { packs: [], canManage: false };
-  return { packs: await present(await repo.packsIn(workspaceId)), canManage: isManager(role) };
+  const shared = role ? await repo.packsIn({ workspaceId }) : [];
+  return { packs: await present([...shared, ...(await repo.packsIn({ ownerId: userId }))]), canManage: isManager(role) };
 }
 
-/** A new pack in the board's workspace, from the caller's upload (`{ name, upload: "/uploads/<name>" }`). */
+/** The packs a workspace keeps, or a person keeps for themselves, with every drawing (data exports). */
+export async function packsExportOf(home: repo.PackHome) {
+  const packs = await present(await repo.packsIn(home));
+  return packs.map(({ personal: _personal, ...p }) => ({ ...p, createdAt: new Date(p.createdAt).toISOString() }));
+}
+
+/**
+ * A new pack in the board's workspace — or, with `personal: true`, in the caller's own library —
+ * from the caller's upload (`{ name, upload: "/uploads/<name>", personal? }`).
+ */
 export async function createPack(boardId: string, userId: string, body: unknown): Promise<ShapePackCreated> {
-  const b = (body ?? {}) as { name?: unknown; upload?: unknown };
+  const b = (body ?? {}) as { name?: unknown; upload?: unknown; personal?: unknown };
   const { workspaceId, role } = await boardWorkspace(boardId, userId);
-  if (!isManager(role)) throw forbidden('Only this workspace’s owners and admins manage its shape packs', 'shape_pack_admins_only');
+  const personal = b.personal === true;
+  if (!personal && !isManager(role)) throw forbidden('Only this workspace’s owners and admins manage its shape packs', 'shape_pack_admins_only');
+  const home: repo.PackHome = personal ? { ownerId: userId } : { workspaceId };
   const name = cleanName(b.name);
   const url = typeof b.upload === 'string' ? b.upload : '';
   const file = url.startsWith('/uploads/') ? url.slice('/uploads/'.length) : '';
@@ -157,21 +177,27 @@ export async function createPack(boardId: string, userId: string, body: unknown)
   if (read.icons.length > SHAPE_PACK_LIMITS.icons)
     throw badRequest(`A pack holds at most ${SHAPE_PACK_LIMITS.icons} icons: split these into several packs`, 'shape_pack_too_many', { max: SHAPE_PACK_LIMITS.icons });
   const chars = icons.reduce((n, ic) => n + JSON.stringify(ic.nodes).length, 0);
-  const pack: repo.StoredPack = { id: newId(), workspaceId, name, createdBy: userId, createdAt: Date.now(), chars };
+  const pack: repo.StoredPack = { id: newId(), workspaceId: personal ? null : workspaceId, ownerId: personal ? userId : null, name, createdBy: userId, createdAt: Date.now(), chars };
+  const max = personal ? { packs: SHAPE_PACK_LIMITS.personalPacks, chars: SHAPE_PACK_LIMITS.personalChars } : { packs: SHAPE_PACK_LIMITS.packs, chars: SHAPE_PACK_LIMITS.workspaceChars };
   await repo.transaction(async () => {
-    await repo.lockWorkspace(workspaceId);
-    const used = await repo.usage(workspaceId);
-    if (used.packs >= SHAPE_PACK_LIMITS.packs)
-      throw badRequest(`A workspace can have at most ${SHAPE_PACK_LIMITS.packs} shape packs. Remove one you no longer use first.`, 'shape_pack_limit', { max: SHAPE_PACK_LIMITS.packs });
-    if (used.chars + chars > SHAPE_PACK_LIMITS.workspaceChars)
-      throw new HttpError(413, 'This workspace’s shape packs are full. Remove a pack you no longer use first.', 'shape_pack_workspace_full');
+    await repo.lockHome(home);
+    const used = await repo.usage(home);
+    if (used.packs >= max.packs)
+      throw personal
+        ? badRequest(`You can keep at most ${max.packs} shape packs of your own. Remove one you no longer use first.`, 'shape_pack_personal_limit', { max: max.packs })
+        : badRequest(`A workspace can have at most ${max.packs} shape packs. Remove one you no longer use first.`, 'shape_pack_limit', { max: max.packs });
+    if (used.chars + chars > max.chars)
+      throw personal
+        ? new HttpError(413, 'Your own shape packs are full. Remove a pack you no longer use first.', 'shape_pack_personal_full')
+        : new HttpError(413, 'This workspace’s shape packs are full. Remove a pack you no longer use first.', 'shape_pack_workspace_full');
     await repo.insertPack(pack, icons.map((ic, position) => ({ ...ic, position })));
     await recordAudit({
       action: 'shape_pack.created',
-      workspaceId,
+      // A personal pack is the account's own business, not its workspace's.
+      ...(personal ? { accountId: userId, fanOut: false } : { workspaceId }),
       actorId: userId,
       target: { type: 'shape_pack', id: pack.id, label: name },
-      metadata: { icons: icons.length, skipped: read.skipped.length },
+      metadata: { icons: icons.length, skipped: read.skipped.length, ...(personal ? { personal: true } : {}) },
     });
   });
   const [out] = await present([pack]);
@@ -191,6 +217,11 @@ export async function removePack(packId: string, userId: string): Promise<void> 
   const pack = await packFor(packId, userId);
   await repo.transaction(async () => {
     await repo.deletePack(pack.id);
-    await recordAudit({ action: 'shape_pack.removed', workspaceId: pack.workspaceId, actorId: userId, target: { type: 'shape_pack', id: pack.id, label: pack.name } });
+    await recordAudit({
+      action: 'shape_pack.removed',
+      ...(pack.workspaceId ? { workspaceId: pack.workspaceId } : { accountId: userId, fanOut: false }),
+      actorId: userId,
+      target: { type: 'shape_pack', id: pack.id, label: pack.name },
+    });
   });
 }

@@ -41,7 +41,13 @@
     "removePack",
     "removeName",
     "iconsAlreadyOnBoardsStay",
-    "remove"
+    "remove",
+    "svgIconsOnlyYou",
+    "whoCanUseIt",
+    "everyoneInThisWorkspace",
+    "onlyMe",
+    "onlyYouSeeThisPack",
+    "myPackNameCount"
   ],
   "openTheIconLibrary": "打开图标库",
   "icon": "图标",
@@ -84,5 +90,11 @@
   "removePack": "删除图标包",
   "removeName": "删除“{name}”？",
   "iconsAlreadyOnBoardsStay": "已放在白板上的图标保持不变。之后无法再从这个图标包添加新图标。",
-  "remove": "删除"
+  "remove": "删除",
+  "svgIconsOnlyYou": "只有你能搜索和放置的 SVG 图标，可用于你打开的任何白板。",
+  "whoCanUseIt": "谁可以使用",
+  "everyoneInThisWorkspace": "此工作区的所有人",
+  "onlyMe": "仅我自己",
+  "onlyYouSeeThisPack": "你自己的图标包：只有你能看到",
+  "myPackNameCount": "{name} · 我的（{count, number}）"
 }

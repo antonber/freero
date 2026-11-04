@@ -1359,15 +1359,20 @@ export interface GifPlaceResponse {
 // the icon library on any of its boards. Each SVG is reduced on the server to the primitives an
 // `icon` element may draw (`sanitizeSvg`, icons.ts) and a placed icon holds its drawing, so it keeps
 // showing after its pack is removed.
-// GET    /api/boards/:id/shape-packs      -> ShapePacksResponse  (the packs of the board's workspace;
-//                                          none when you aren't in that workspace)
-// POST   /api/boards/:id/shape-packs      body { name, upload } -> ShapePackCreated  (owners / admins
-//                                          of the board's workspace; `upload` is "/uploads/<name>" of
+// A person may also keep packs of their own (a personal library, `personal: true`): shown to them on
+// every board they open, to nobody else, whatever the workspace.
+// GET    /api/boards/:id/shape-packs      -> ShapePacksResponse  (the packs of the board's workspace —
+//                                          none when you aren't in that workspace — then your own)
+// POST   /api/boards/:id/shape-packs      body { name, upload, personal? } -> ShapePackCreated
+//                                          (owners / admins of the board's workspace; with
+//                                          `personal: true` anyone signed in who can open the board,
+//                                          into their own library; `upload` is "/uploads/<name>" of
 //                                          the caller's own upload — a ZIP of SVGs uploaded as an
 //                                          attachment, or one SVG — read once and deleted; uploads'
 //                                          size cap, quota and rate limit apply to it)
-// PATCH  /api/shape-packs/:id             body { name } -> { pack: ShapePack }  (owners / admins)
-// DELETE /api/shape-packs/:id             -> { ok: true }  (owners / admins)
+// PATCH  /api/shape-packs/:id             body { name } -> { pack: ShapePack }  (owners / admins; a
+//                                          personal pack: its owner only)
+// DELETE /api/shape-packs/:id             -> { ok: true }  (owners / admins; personal: its owner)
 export interface ShapePackIcon {
   id: string;
   /** From the file name ("Arch_Amazon-EC2_64"). */
@@ -1383,6 +1388,8 @@ export interface ShapePack {
   createdBy: string | null;
   createdAt: number;
   icons: ShapePackIcon[];
+  /** Your own pack (your personal library), not the workspace's. Absent from older servers: false. */
+  personal?: boolean;
 }
 export interface ShapePacksResponse {
   packs: ShapePack[];
@@ -1405,6 +1412,10 @@ export const SHAPE_PACK_LIMITS = {
   zipEntries: 2000,
   /** Characters of all of a workspace's drawings together (what the library loads). */
   workspaceChars: 12_000_000,
+  /** Packs one person may keep in their own library. */
+  personalPacks: 20,
+  /** Characters of all of one person's own drawings together. */
+  personalChars: 4_000_000,
 } as const;
 
 // ---- Saved templates (a board or a selection saved for reuse) ----

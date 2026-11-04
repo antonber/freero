@@ -41,7 +41,13 @@
     "removePack",
     "removeName",
     "iconsAlreadyOnBoardsStay",
-    "remove"
+    "remove",
+    "svgIconsOnlyYou",
+    "whoCanUseIt",
+    "everyoneInThisWorkspace",
+    "onlyMe",
+    "onlyYouSeeThisPack",
+    "myPackNameCount"
   ],
   "openTheIconLibrary": "アイコンライブラリを開く",
   "icon": "アイコン",
@@ -84,5 +90,11 @@
   "removePack": "パックを削除",
   "removeName": "「{name}」を削除しますか？",
   "iconsAlreadyOnBoardsStay": "すでにボードに置かれたアイコンはそのまま残ります。このパックから新しく追加することはできなくなります。",
-  "remove": "削除"
+  "remove": "削除",
+  "svgIconsOnlyYou": "自分だけが検索して配置できる SVG アイコン。開いたどのボードでも使えます。",
+  "whoCanUseIt": "使用できる人",
+  "everyoneInThisWorkspace": "このワークスペースの全員",
+  "onlyMe": "自分のみ",
+  "onlyYouSeeThisPack": "自分専用のパック：自分だけに表示されます",
+  "myPackNameCount": "{name}・自分用（{count, number}）"
 }

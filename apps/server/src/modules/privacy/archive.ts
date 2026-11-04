@@ -2,10 +2,12 @@
 // other module's tables). Layout — personal:
 //   README.txt, account.json, api.json, listings.json, memberships.json, activity.json, comments.json, notifications.json, slack.json,
 //   problems/index.json + problems/<id>.<ext> (screenshots),
-//   templates/<name>-<id>.json, uploads/index.json + uploads/<file>,
+//   templates/<name>-<id>.json, shape-packs/<name>-<id>.json (your own library, #4),
+//   uploads/index.json + uploads/<file>,
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
 //   (a doc, KAI-162: the same folder, plus doc.md — its document as Markdown)
-// workspace: README.txt, workspace.json, templates/…, boards/… (the same board layout).
+// workspace: README.txt, workspace.json, templates/…, shape-packs/<name>-<id>.json,
+//   stickers/index.json + stickers/<file> (#4, #138), boards/… (the same board layout).
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { aiAssistantExportOf, aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { apiDataOf } from '../apiauth/index';
@@ -21,7 +23,9 @@ import { personalViewsExportOf } from '../personalviews/index';
 import { problemsExportOf } from '../problems/index';
 import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
 import { scimExportOf, scimRecordsOf } from '../scim/index';
+import { shapePacksExportOf } from '../shapepacks/index';
 import { ssoExportOf, ssoRolesOf } from '../sso/index';
+import { stickerSetsExportOf } from '../stickers/index';
 import { templatesExportOf } from '../templates/index';
 import { trackersExportOf, trackersWorkspaceExportOf } from '../trackers/index';
 import { readUpload, uploadNamesIn, uploadsOwnedBy } from '../uploads/index';
@@ -104,7 +108,9 @@ listings.json       community listings you submitted to Apps & agents, with thei
 problems/           problems you reported with "Report a problem": index.json (your note, the
                     diagnostics sent with it, its status) and the screenshots you attached
 templates/          templates you saved (Freero's own JSON; insertable again)
-uploads/            files you uploaded (images, PDFs, video, audio, recordings), with index.json
+shape-packs/        the shape packs of your own library: each icon's name and drawing (the
+                    sanitised SVG shapes Freero keeps; the files you uploaded were not kept)
+uploads/           files you uploaded (images, PDFs, video, audio, recordings), with index.json
 boards/             boards you own: board.json (readable JSON of every item, comment and setting,
                     plus your private drafts and hidden frames' contents), board.yjs (the board's
                     complete Yjs document, lossless) and the images the board uses; docs the same,
@@ -119,7 +125,11 @@ workspace.json  the workspace, its sharing policies, members (with email address
                 AI settings (no key) with AI usage per person and month, and the issue-tracker
                 connections (tracker, name, address, account, field map; never tokens or secrets)
 templates/      templates shared with the workspace
-boards/         every board in the workspace (trash included): board.json (readable JSON of every
+shape-packs/    the workspace's shape packs: each icon's name and drawing (the sanitised SVG shapes
+                Freero keeps; the uploaded files were not kept)
+stickers/       the workspace's sticker sets: index.json (sets, stickers, who added them) and each
+                sticker's image
+boards/        every board in the workspace (trash included): board.json (readable JSON of every
                 item, comment and setting, and hidden frames' contents — never anyone's private
                 drafts), board.yjs (the complete Yjs document) and the images each board uses;
                 docs too, with doc.md (the document as Markdown)
@@ -180,6 +190,7 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   for (const p of problems) if (p.screenshot) await a.addFile(`problems/${p.screenshot.name}`, p.screenshot.read);
 
   for (const t of await templatesExportOf({ ownerId: userId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
+  for (const p of await shapePacksExportOf({ ownerId: userId })) a.addJson(`shape-packs/${slug(p.name)}-${p.id}.json`, p);
 
   const uploads = await uploadsOwnedBy(userId);
   a.addJson('uploads/index.json', uploads.map((u) => ({ ...u, createdAt: new Date(u.createdAt).toISOString(), url: `${appOrigin}/uploads/${u.name}` })));
@@ -204,6 +215,12 @@ export async function buildWorkspaceArchive(workspaceId: string, appOrigin: stri
     webhooks: await webhooksWorkspaceExportOf(workspaceId),
   });
   for (const t of await templatesExportOf({ workspaceId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
+  for (const p of await shapePacksExportOf({ workspaceId })) a.addJson(`shape-packs/${slug(p.name)}-${p.id}.json`, p);
+  const stickerSets = await stickerSetsExportOf(workspaceId);
+  if (stickerSets.length) {
+    a.addJson('stickers/index.json', stickerSets);
+    for (const s of stickerSets) for (const k of s.stickers) await a.addUpload(`stickers/${k.uploadName}`, k.uploadName);
+  }
   for (const b of await boardRecords(await boardIdsInWorkspace(workspaceId))) await addBoard(a, b, appOrigin, { editorsLayer: true, privateLayerOf: null });
   return a.zip();
 }

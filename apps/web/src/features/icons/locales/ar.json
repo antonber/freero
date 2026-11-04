@@ -41,7 +41,13 @@
     "removePack",
     "removeName",
     "iconsAlreadyOnBoardsStay",
-    "remove"
+    "remove",
+    "svgIconsOnlyYou",
+    "whoCanUseIt",
+    "everyoneInThisWorkspace",
+    "onlyMe",
+    "onlyYouSeeThisPack",
+    "myPackNameCount"
   ],
   "openTheIconLibrary": "فتح مكتبة الأيقونات",
   "icon": "أيقونة",
@@ -84,5 +90,11 @@
   "removePack": "إزالة الحزمة",
   "removeName": "إزالة «{name}»؟",
   "iconsAlreadyOnBoardsStay": "تبقى الأيقونات الموضوعة على اللوحات كما هي. لن يستطيع أحد إضافة أيقونات جديدة من هذه الحزمة.",
-  "remove": "إزالة"
+  "remove": "إزالة",
+  "svgIconsOnlyYou": "أيقونات SVG لا يمكن لأحد غيرك البحث عنها ووضعها، على أي لوحة تفتحها.",
+  "whoCanUseIt": "من يمكنه استخدامها",
+  "everyoneInThisWorkspace": "كل من في مساحة العمل هذه",
+  "onlyMe": "أنا فقط",
+  "onlyYouSeeThisPack": "حزمتك الخاصة: لا يراها غيرك",
+  "myPackNameCount": "{name} · خاصتك ({count, number})"
 }

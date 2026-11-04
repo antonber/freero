@@ -12,7 +12,7 @@ import { createBoard } from '../boards/index';
 import { inviteBoardMember } from '../members/index';
 import { readUpload, saveUpload } from '../uploads/index';
 import { createTeamWorkspace, inviteToWorkspace } from '../workspaces/index';
-import { createPack, listPacks, removePack } from './service';
+import { createPack, listPacks, removePack, renamePack } from './service';
 
 let dir = '';
 beforeAll(async () => {
@@ -108,4 +108,26 @@ it('a workspace’s packs show to its members and guests only — not to someone
 
   await removePack(pack.id, owner.id);
   expect((await listPacks(board.id, member.id)).packs).toEqual([]);
+});
+
+it('a personal pack follows its owner to boards of other workspaces, and nobody else — not even the workspace’s owner — sees, renames or removes it', async () => {
+  const { owner, member, board } = await team();
+  const svg = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>';
+  // A plain member (no right to upload the workspace's packs) keeps one of their own.
+  const { pack } = await createPack(board.id, member.id, { name: 'My sketches', upload: await uploadZip(member.id, { 'dot.svg': svg }), personal: true });
+  expect(pack).toMatchObject({ personal: true, icons: [{ name: 'dot' }] });
+
+  // Theirs on this board, and on a board of a workspace they are only invited to.
+  expect((await listPacks(board.id, member.id)).packs).toMatchObject([{ id: pack.id, personal: true }]);
+  const other = await team();
+  await inviteBoardMember(null, other.board.id, other.owner, { email: member.email, role: 'viewer' });
+  expect((await listPacks(other.board.id, member.id)).packs.map((p) => p.id)).toEqual([pack.id]);
+
+  // Nobody else's library, the workspace owner's included; they can't reach it either.
+  expect((await listPacks(board.id, owner.id)).packs).toEqual([]);
+  await expect(renamePack(pack.id, owner.id, { name: 'Ours now' })).rejects.toMatchObject({ status: 404 });
+  await expect(removePack(pack.id, owner.id)).rejects.toMatchObject({ status: 404 });
+
+  await removePack(pack.id, member.id);
+  expect((await listPacks(other.board.id, member.id)).packs).toEqual([]);
 });

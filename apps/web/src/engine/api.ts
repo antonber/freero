@@ -161,9 +161,14 @@ export interface HostGifs {
 
 /** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
 export interface HostShapePacks {
+  /** The workspace's packs (for its members), then the person's own library (`personal`). */
   list(): Promise<ShapePacksResponse>;
-  /** Uploads `zip` (a ZIP of SVG files) through the server's upload checks and makes it a pack. */
-  create(name: string, zip: Blob): Promise<ShapePackCreated>;
+  /**
+   * Uploads `zip` (a ZIP of SVG files) through the server's upload checks and makes it a pack: the
+   * workspace's (its owners / admins), or with `personal` one of the person's own, shown to them on
+   * every board.
+   */
+  create(name: string, zip: Blob, opts?: { personal?: boolean }): Promise<ShapePackCreated>;
   rename(packId: string, name: string): Promise<ShapePack>;
   remove(packId: string): Promise<void>;
 }
