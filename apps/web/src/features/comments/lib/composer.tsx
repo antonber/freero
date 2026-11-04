@@ -8,6 +8,7 @@ import { Avatar, Spinner } from '@ui';
 import { isEmailQuery, matchMembers, mentionQuery, segments, type MentionPick } from './mentions';
 import { addMember, useMembers } from './people';
 
+import { t } from '../messages';
 /** Enter sends (like every chat and comment box); Shift+Enter is a new line. IME composition never sends. */
 const isSend = (e: KeyboardEvent) => e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing;
 
@@ -96,14 +97,14 @@ export function MentionText(props: MentionTextProps) {
         if ('user' in r) {
           addMember(editor, r.user);
           insert(`@${r.user.name} `, { id: r.user.id, name: r.user.name });
-          editor.host.notify(`${r.user.name} can open this board and will be notified of the mention.`, 'success');
+          editor.host.notify(t('nameCanOpenThisBoard', { name: r.user.name }), 'success');
         } else {
           insert(`${r.pendingEmail} `);
           // The server keeps the comment for them: it becomes a mention once they join (KAI-92).
-          editor.host.notify(`Invite sent to ${r.pendingEmail}. They'll be notified about this comment when they join.`, 'success');
+          editor.host.notify(t('inviteSentToPendingemailThey', { pendingEmail: r.pendingEmail }), 'success');
         }
       })
-      .catch((err: unknown) => editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not send the invite', 'error'))
+      .catch((err: unknown) => editor.host.notify(err instanceof Error && err.message ? err.message : t('couldNotSendTheInvite'), 'error'))
       .finally(() => setInviting(false));
   };
 
@@ -138,7 +139,7 @@ export function MentionText(props: MentionTextProps) {
   return (
     <div className="fr-cm-mentionbox">
       {showList && (
-        <div className="fr-cm-mentions" role="listbox" id={listId} aria-label="Mention someone">
+        <div className="fr-cm-mentions" role="listbox" id={listId} aria-label={t('mentionSomeone')}>
           {members === null ? (
             <div className="fr-cm-mentions__empty">
               <Spinner size={16} />
@@ -164,9 +165,7 @@ export function MentionText(props: MentionTextProps) {
                 ) : (
                   <>
                     <span className="fr-cm-mentions__icon">{inviting ? <Spinner size={14} /> : <MailPlus size={14} />}</span>
-                    <span className="fr-cm-mentions__invite">
-                      Invite <strong>{o.email}</strong> to comment
-                    </span>
+                    <span className="fr-cm-mentions__invite">{t('invite')}{' '}<strong>{o.email}</strong>{' '}{t('toComment')}</span>
                   </>
                 )}
               </div>

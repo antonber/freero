@@ -7,6 +7,7 @@ import { currentKind, shapeInRect } from './lib/actions';
 import { dragRect, insetPaths } from './lib/geometry';
 import { ShapeIcon } from './lib/ShapeIcon';
 
+import { t } from './messages';
 // Drag state for the current press. Module-level is fine: one pointer gesture at a time.
 let drag: { start: Point; screen: Point; kind: ShapeKind; id: string | null } | null = null;
 const listeners = new Set<() => void>();
@@ -31,7 +32,7 @@ function finish(editor: Editor, id: string, edit: boolean) {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Shapes',
+  label: t('shapes'),
   icon: Shapes,
   shortcut: 's',
   order: 30,
@@ -86,7 +87,7 @@ export default defineTool({
     const { kind = 'rect' } = useToolOptions<ShapeToolOptions>(TOOL_ID);
     return (
       <div className="fr-shape-options">
-      <div className="fr-shape-picker" role="radiogroup" aria-label="Shape">
+      <div className="fr-shape-picker" role="radiogroup" aria-label={t('shape')}>
         {SHAPE_KINDS.map((s) => (
           <button
             key={s.kind}
@@ -103,9 +104,7 @@ export default defineTool({
         ))}
       </div>
       <button type="button" className="fr-shape-options__more" onClick={() => editor.openDock(LIBRARY_PANEL_ID)}>
-        <LibraryBig size={16} aria-hidden />
-        More shapes
-      </button>
+        <LibraryBig size={16} aria-hidden />{t('moreShapes')}</button>
       </div>
     );
   },

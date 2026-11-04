@@ -11,6 +11,7 @@ import { BoardThumb } from './BoardThumb';
 import { projectPath, subProjects } from './projectTree';
 import { RecentActivity } from './RecentActivity';
 
+import { t } from './messages';
 export function ProjectOverview({
   project,
   projects,
@@ -36,9 +37,9 @@ export function ProjectOverview({
   const empty = !project.description && subs.length === 0 && pinned.length === 0 && !project.canManage;
 
   return (
-    <section className="fr-dash-projpage" aria-label="About this project">
+    <section className="fr-dash-projpage" aria-label={t('aboutThisProject')}>
       {path.length > 1 ? (
-        <nav className="fr-dash-projpage__path" aria-label="Project path">
+        <nav className="fr-dash-projpage__path" aria-label={t('projectPath')}>
           {path.slice(0, -1).map((p) => (
             <span key={p.id} className="fr-dash-projpage__crumb">
               <button type="button" onClick={() => onOpenProject(p.id)}>
@@ -52,30 +53,26 @@ export function ProjectOverview({
       ) : null}
       <h1 className="fr-dash-projpage__name">
         {project.name}
-        {project.access === 'private' ? <span className="fr-dash-proj__private">Private</span> : null}
+        {project.access === 'private' ? <span className="fr-dash-proj__private">{t('private')}</span> : null}
       </h1>
       {empty ? null : (
         <div className="fr-dash-projpage__about">
           {project.description ? (
             <p className="fr-dash-projpage__desc">{project.description}</p>
           ) : project.canManage ? (
-            <p className="fr-dash-projpage__desc fr-dash-projpage__desc--empty">Say what this project is for, so people know what they’ll find here.</p>
+            <p className="fr-dash-projpage__desc fr-dash-projpage__desc--empty">{t('sayWhatThisProjectIs')}</p>
           ) : null}
           {project.canManage ? (
             <div className="fr-dash-projpage__tools">
-              <Button size="sm" variant="ghost" icon={Settings2} onClick={onEdit}>
-                Edit description
-              </Button>
-              <Button size="sm" variant="ghost" icon={Pin} onClick={() => setChoosing(true)} disabled={!boards || boards.length === 0}>
-                Pin boards
-              </Button>
+              <Button size="sm" variant="ghost" icon={Settings2} onClick={onEdit}>{t('editDescription')}</Button>
+              <Button size="sm" variant="ghost" icon={Pin} onClick={() => setChoosing(true)} disabled={!boards || boards.length === 0}>{t('pinBoards')}</Button>
             </div>
           ) : null}
         </div>
       )}
       {subs.length ? (
         <div className="fr-dash-projpage__block">
-          <h2 className="fr-dash-projpage__title">Sub-projects</h2>
+          <h2 className="fr-dash-projpage__title">{t('subProjects')}</h2>
           <ul className="fr-dash-projpage__subs">
             {subs.map((s) => {
               const Icon = s.access === 'private' ? FolderLock : Folder;
@@ -94,14 +91,13 @@ export function ProjectOverview({
       {pinned.length ? (
         <div className="fr-dash-projpage__block">
           <h2 className="fr-dash-projpage__title">
-            <Pin size={14} aria-hidden /> Pinned
-          </h2>
+            <Pin size={14} aria-hidden />{' '}{t('pinned')}</h2>
           <ul className="fr-dash-projpage__pinned">
             {pinned.map((b) => (
               <li key={b.id}>
                 <a className="fr-dash-projpage__pin" href={objectHref(b)}>
                   <BoardThumb board={b} />
-                  <span className="fr-dash-projpage__pin-name">{b.title || 'Untitled board'}</span>
+                  <span className="fr-dash-projpage__pin-name">{b.title || t('untitledBoard')}</span>
                 </a>
               </li>
             ))}
@@ -126,7 +122,7 @@ function PinBoardsDialog({ project, boards, onClose, onSaved }: { project: Proje
       onSaved((await api.updateProject(project.id, { pinnedBoardIds: ids })).project);
       onClose();
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : 'Could not pin the boards', 'error');
+      notify(e instanceof ApiError ? e.message : t('couldNotPinTheBoards'), 'error');
     } finally {
       setBusy(false);
     }
@@ -135,18 +131,16 @@ function PinBoardsDialog({ project, boards, onClose, onSaved }: { project: Proje
     <Modal
       open
       onClose={onClose}
-      title="Pin boards on this project’s page"
+      title={t('pinBoardsOnThisProject')}
       width={440}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" loading={busy} onClick={() => void save()}>
-            Save
-          </Button>
+          <Button onClick={onClose}>{t('cancel')}</Button>
+          <Button variant="primary" loading={busy} onClick={() => void save()}>{t('save')}</Button>
         </>
       }
     >
-      <p className="fr-dash-projpage__hint">Everyone who opens the project sees these first (up to {PROJECT_MAX_PINNED_BOARDS}).</p>
+      <p className="fr-dash-projpage__hint">{t('everyoneWhoOpensTheProject', { project_max_pinned_boards: PROJECT_MAX_PINNED_BOARDS })}</p>
       <ul className="fr-dash-projpage__choose">
         {inProject.map((b) => {
           const on = ids.includes(b.id);
@@ -154,7 +148,7 @@ function PinBoardsDialog({ project, boards, onClose, onSaved }: { project: Proje
             <li key={b.id}>
               <button type="button" className={`fr-dash-projpage__choice${on ? ' fr-dash-projpage__choice--on' : ''}`} aria-pressed={on} onClick={() => toggle(b.id)}>
                 {on ? <Pin size={15} aria-hidden /> : <PinOff size={15} aria-hidden />}
-                <span>{b.title || 'Untitled board'}</span>
+                <span>{b.title || t('untitledBoard')}</span>
               </button>
             </li>
           );

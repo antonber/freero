@@ -5,6 +5,7 @@ import type { ActionEntry, CommandDefinition, Editor, ShortcutEntry } from '../a
 import type { Registry } from './registry';
 import { ENGINE_KEYS } from '../interaction/keyboard';
 
+import { t } from '../messages';
 export function listShortcuts(registry: Registry, can: (minRole: Role) => boolean): ShortcutEntry[] {
   const out: ShortcutEntry[] = [];
   /** Same label from the same feature (Redo: mod+shift+z and mod+y) is one row with alternatives. */
@@ -35,9 +36,9 @@ export function listShortcuts(registry: Registry, can: (minRole: Role) => boolea
 }
 
 const ROLE_REASON: Record<Role, string> = {
-  owner: 'Only the board owner can do this',
-  editor: 'Needs edit access to this board',
-  commenter: 'Needs comment access to this board',
+  owner: t('onlyTheBoardOwnerCan'),
+  editor: t('needsEditAccessToThis'),
+  commenter: t('needsCommentAccessToThis'),
   viewer: '',
 };
 

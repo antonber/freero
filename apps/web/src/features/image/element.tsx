@@ -6,6 +6,7 @@ import { imageUrlFromPaste, isImageFile } from './lib/files';
 import { insertImageFiles, insertImageUrl } from './lib/insert';
 import { visibleCrop } from './lib/crop';
 import { CROP_PANEL, useIsCropping } from './lib/cropping';
+import { t } from './messages';
 import './image.css';
 
 type Status = 'loading' | 'loaded' | 'error';
@@ -46,11 +47,11 @@ const ImageView = memo(function ImageView({ element }: ElementRenderProps<ImageE
           onError={() => setStatus({ src, state: 'error' })}
         />
       )}
-      {state === 'loading' && <div className="fr-image__shimmer" aria-label="Loading image" />}
+      {state === 'loading' && <div className="fr-image__shimmer" aria-label={t('loadingImage')} />}
       {state === 'error' && (
-        <div className="fr-image__error" role="img" aria-label={alt ? `Image unavailable: ${alt}` : 'Image unavailable'}>
+        <div className="fr-image__error" role="img" aria-label={alt ? t('imageUnavailableAlt', { alt }) : t('imageUnavailable')}>
           <ImageOff size={Math.max(16, Math.min(40, Math.min(element.w, element.h) / 4))} strokeWidth={1.6} />
-          {element.w >= 120 && element.h >= 80 && <span>Image unavailable</span>}
+          {element.w >= 120 && element.h >= 80 && <span>{t('imageUnavailable')}</span>}
         </div>
       )}
     </div>
@@ -64,7 +65,7 @@ function paintImage(el: ImageElement, p: LowDetailPaint) {
 
 export default defineElement({
   type: 'image',
-  label: { one: 'Image', many: 'Images' },
+  label: { one: t('image'), many: t('images') },
   icon: ImageIcon,
   resize: 'aspect',
   minSize: { w: 24, h: 24 },

@@ -10,6 +10,7 @@ import type { Editor } from '@engine';
 import { TimelineRecorder, type Pt, type ViewRect } from './timeline';
 import { openWalkthrough } from './playback';
 
+import { t as tr } from '../messages';
 export type RecorderPhase = 'idle' | 'starting' | 'recording' | 'saving';
 
 export interface RecorderState {
@@ -71,17 +72,17 @@ const now = () => performance.now();
 function message(e: unknown, camera: boolean): string {
   const name = (e as { name?: string } | null)?.name;
   if (name === 'NotAllowedError' || name === 'SecurityError')
-    return `Freero can’t use your ${camera ? 'microphone and camera' : 'microphone'}: your browser blocked it. Allow it for this site (the icon in the address bar) and try again.`;
-  if (name === 'NotFoundError' || name === 'OverconstrainedError') return camera ? 'No camera or microphone was found.' : 'No microphone was found. Plug one in and try again.';
-  if (name === 'NotReadableError') return 'Another app is using your microphone or camera.';
-  return 'Recording couldn’t start in this browser.';
+    return tr('freeroCanTUseYour', { value: camera ? tr('microphoneAndCamera') : tr('microphone') });
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return camera ? tr('noCameraOrMicrophoneWas') : tr('noMicrophoneWasFoundPlug');
+  if (name === 'NotReadableError') return tr('anotherAppIsUsingYour');
+  return tr('recordingCouldnTStartIn');
 }
 
 /** Asks for the microphone (and camera) and starts recording. Resolves once recording or refused. */
 export async function startRecording(editor: Editor, opts: { title: string; camera: boolean }): Promise<boolean> {
   if (state.phase !== 'idle') return false;
   if (!canRecord()) {
-    set({ error: 'This browser can’t record here. Use a current Chrome, Edge, Firefox or Safari over https.' });
+    set({ error: tr('thisBrowserCanTRecord') });
     return false;
   }
   set({ ...IDLE, phase: 'starting', camera: opts.camera, title: opts.title });
@@ -98,7 +99,7 @@ export async function startRecording(editor: Editor, opts: { title: string; came
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         camera = false;
-        editor.host.notify('The camera isn’t available, so this walkthrough records your voice only.', 'info');
+        editor.host.notify(tr('theCameraIsnTAvailable'), 'info');
       } catch (e2) {
         set({ ...IDLE, error: message(e2, false) });
         return false;
@@ -157,7 +158,7 @@ export async function stopRecording(save: boolean): Promise<void> {
   for (const t of state.stream?.getTracks() ?? []) t.stop();
   if (!save || durationMs < 500) {
     set(IDLE);
-    if (save) s.editor.host.notify('That was too short to keep.', 'info');
+    if (save) s.editor.host.notify(tr('thatWasTooShortTo'), 'info');
     return;
   }
   set({ phase: 'saving', stream: null });
@@ -168,10 +169,10 @@ export async function stopRecording(save: boolean): Promise<void> {
     if (!walkthroughs) throw new Error('Walkthroughs need a Freero server.');
     const w = await walkthroughs.create(blob, { title, media: camera ? 'video' : 'audio', durationMs, timeline: s.timeline.finish(durationMs) });
     set(IDLE);
-    s.editor.host.notify(`Saved “${w.title}”`, 'success', { action: { label: 'Watch', run: () => void openWalkthrough(s.editor, w.id) } });
+    s.editor.host.notify(tr('savedTitle', { title: w.title }), 'success', { action: { label: tr('watch'), run: () => void openWalkthrough(s.editor, w.id) } });
   } catch (e) {
     set(IDLE);
-    s.editor.host.notify(e instanceof Error && e.message ? `The walkthrough couldn’t be saved: ${e.message}` : 'The walkthrough couldn’t be saved.', 'error');
+    s.editor.host.notify(e instanceof Error && e.message ? tr('theWalkthroughCouldnTBe', { message: e.message }) : tr('theWalkthroughCouldnTBe2'), 'error');
   }
 }
 

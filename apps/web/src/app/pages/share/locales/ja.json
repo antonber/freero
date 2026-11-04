@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "共有されたアイテム",
+  "couldNotCreateABoard": "ボードを作成できませんでした",
+  "addToABoard": "ボードに追加",
+  "nothingArrivedThatFreeroCan": "Freero に配置できるものが届きませんでした。画像、リンク、テキストを共有してください。",
+  "shared": "共有済み",
+  "failedFilesWerenTImages": "{failed, plural, other {{failed} 個のファイルは Freero に保存できる画像ではありませんでした（またはアップロード容量の上限に達しています）。}}",
+  "newBoard": "新しいボード",
+  "orABoardYouCan": "または編集できるボード",
+  "untitledBoard": "無題のボード",
+  "noBoardsYouCanEdit": "まだ編集できるボードはありません。"
+}

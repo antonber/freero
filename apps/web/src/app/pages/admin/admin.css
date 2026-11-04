@@ -83,7 +83,7 @@
   font: inherit;
   font-size: 14px;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -301,7 +301,7 @@
   color: var(--fr-ink-2);
   font-size: 12px;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
   white-space: nowrap;
 }
 
@@ -324,7 +324,7 @@
 }
 
 .fr-admin-table__actions {
-  text-align: right;
+  text-align: end;
   white-space: nowrap;
 }
 
@@ -368,7 +368,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 12px;
@@ -377,7 +377,7 @@
 }
 
 td > .fr-admin-pill:first-child {
-  margin-left: 0;
+  margin-inline-start: 0;
 }
 
 .fr-admin-pill--ok {
@@ -427,7 +427,7 @@ td > .fr-admin-pill:first-child {
 }
 .fr-admin-compliance__list {
   margin: 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   font-size: 13px;
 }
 .fr-admin-compliance__list li {
@@ -621,7 +621,7 @@ td > .fr-admin-pill:first-child {
 }
 
 .fr-admin-org__you {
-  margin-left: 21px;
+  margin-inline-start: 21px;
 }
 
 .fr-admin-org__people {
@@ -687,7 +687,7 @@ td > .fr-admin-pill:first-child {
   padding: 0;
   font: inherit;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
   color: var(--fr-ink);
   background: none;
   border: 0;
@@ -809,7 +809,7 @@ td > .fr-admin-pill:first-child {
   font-weight: 600;
   color: var(--fr-primary);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 .fr-admin-link:hover {
   text-decoration: underline;

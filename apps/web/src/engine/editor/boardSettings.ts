@@ -2,6 +2,7 @@
 // background or grid option shows up everywhere at once.
 import { GRID_SIZES, type BoardSettings } from '@freero/shared';
 
+import { t } from '../messages';
 /** Board backgrounds, in menu order, with the names people see. */
 export const BACKGROUNDS: ReadonlyArray<{ color: string; name: string }> = [
   { color: '#F3F2F8', name: 'Mist' },
@@ -15,9 +16,9 @@ export const BACKGROUNDS: ReadonlyArray<{ color: string; name: string }> = [
 ];
 
 export const GRID_STYLES: ReadonlyArray<{ value: BoardSettings['grid']; label: string }> = [
-  { value: 'dots', label: 'Dots' },
-  { value: 'lines', label: 'Lines' },
-  { value: 'none', label: 'None' },
+  { value: 'dots', label: t('dots') },
+  { value: 'lines', label: t('lines') },
+  { value: 'none', label: t('none') },
 ];
 
 export { GRID_SIZES };

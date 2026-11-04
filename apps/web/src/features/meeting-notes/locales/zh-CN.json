@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "summarise",
+    "importMeetingNotes",
+    "youNeedEditAccessTo",
+    "couldNotImportThatTranscript",
+    "couldNotImportTheseNotes",
+    "importMeetingNotes2",
+    "aSummaryMarkdownOrText",
+    "cancel",
+    "importText",
+    "importing",
+    "chooseAFileMdTxt",
+    "orPasteTheNotes",
+    "forTranscriptsAddWhoSpoke",
+    "droppingAVttOrSrt"
+  ],
+  "summarise": "总结",
+  "importMeetingNotes": "导入会议记录…",
+  "youNeedEditAccessTo": "你需要编辑权限才能导入",
+  "couldNotImportThatTranscript": "无法导入该转录稿",
+  "couldNotImportTheseNotes": "无法导入这些记录",
+  "importMeetingNotes2": "导入会议记录",
+  "aSummaryMarkdownOrText": "来自笔记应用的摘要（Markdown 或文本）或转录稿（.vtt、.srt）会变成一个框架：包含决策、带负责人和截止日期的行动项，以及其他要点。一次撤销即可还原。",
+  "cancel": "取消",
+  "importText": "导入文本",
+  "importing": "正在导入…",
+  "chooseAFileMdTxt": "选择文件（.md、.txt、.vtt、.srt）",
+  "orPasteTheNotes": "或粘贴记录",
+  "forTranscriptsAddWhoSpoke": "对于转录稿，添加发言人及发言时长",
+  "droppingAVttOrSrt": "将 .vtt 或 .srt 文件拖放到白板上也可以导入。"
+}

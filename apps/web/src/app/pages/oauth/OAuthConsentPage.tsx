@@ -16,6 +16,7 @@ import { Button, Spinner } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AuthNotice, AuthShell } from '../auth/AuthShell';
+import { t } from './messages';
 import './oauth.css';
 
 export function OAuthConsentPage() {
@@ -36,7 +37,7 @@ export function OAuthConsentPage() {
         if ('redirect' in out) window.location.replace(out.redirect);
         else setConsent(out.consent);
       },
-      (err) => live && setError(err instanceof ApiError ? err.message : 'Could not reach Freero. Try again.'),
+      (err) => live && setError(err instanceof ApiError ? err.message : t('couldNotReachFreeroTry')),
     );
     return () => {
       live = false;
@@ -48,21 +49,21 @@ export function OAuthConsentPage() {
     try {
       window.location.assign((await api.oauthDecide(params, decision, grant)).redirect);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+      setError(err instanceof ApiError ? err.message : t('somethingWentWrongTryAgain'));
       setBusy(null);
     }
   };
 
   if (error)
     return (
-      <AuthShell docTitle="Connect an app" title="This app can’t connect">
+      <AuthShell docTitle={t('connectAnApp')} title={t('thisAppCanTConnect')}>
         <AuthNotice kind="error">{error}</AuthNotice>
       </AuthShell>
     );
   if (!consent)
     return (
-      <AuthShell docTitle="Connect an app" title="Checking the app…">
-        <Spinner size={22} label="Checking the app" />
+      <AuthShell docTitle={t('connectAnApp')} title={t('checkingTheApp')}>
+        <Spinner size={22} label={t('checkingTheApp2')} />
       </AuthShell>
     );
 
@@ -72,7 +73,7 @@ export function OAuthConsentPage() {
   const nothing = always.length === 0 && grant.length === 0;
   const who = client.host ? `${client.name} (${client.host})` : client.name;
   return (
-    <AuthShell docTitle={`Connect ${who}`} title={`${who} wants to use your Freero account`} sub={user ? `Signed in as ${user.name} (${user.email})` : undefined}>
+    <AuthShell docTitle={t('connectWho', { who })} title={t('whoWantsToUseYour', { who })} sub={user ? t('signedInAsNameEmail', { name: user.name, email: user.email }) : undefined}>
       <div className="fr-oauth">
         <div className="fr-oauth__app">
           <span className="fr-oauth__app-icon" aria-hidden>
@@ -81,8 +82,7 @@ export function OAuthConsentPage() {
           <span className="fr-oauth__app-name">
             <strong>{client.name}</strong>
             {client.host ? (
-              <span className="fr-oauth__host" data-testid="oauth-client-host">
-                Published at <strong>{client.host}</strong>
+              <span className="fr-oauth__host" data-testid="oauth-client-host">{t('publishedAt')}{' '}<strong>{client.host}</strong>
               </span>
             ) : null}
             {client.website ? <span>{client.website}</span> : null}
@@ -91,25 +91,22 @@ export function OAuthConsentPage() {
         {client.registration === 'dynamic' ? (
           <p className="fr-oauth__warn">
             <ShieldAlert size={16} aria-hidden />
-            <span>This app registered itself and hasn’t been reviewed by Freero. Only allow apps you trust.</span>
+            <span>{t('thisAppRegisteredItselfAnd')}</span>
           </p>
         ) : null}
         {client.registration === 'metadata' ? (
           <p className="fr-oauth__warn">
             <ShieldAlert size={16} aria-hidden />
-            <span>
-              Freero checked that this app’s details are published at {client.host}, but hasn’t reviewed it. The name is the app’s own claim: only allow it if {client.host} is who
-              you expect.
-            </span>
+            <span>{t('freeroCheckedThatThisApp', { host: client.host })}</span>
           </p>
         ) : null}
         {client.registration === 'metadata' && consent.localRedirect ? (
           <p className="fr-oauth__warn">
             <ShieldAlert size={16} aria-hidden />
-            <span>It sends you back to a program on this computer. Any program here could ask in this app’s name, so only allow it if you just started connecting it yourself.</span>
+            <span>{t('itSendsYouBackTo')}</span>
           </p>
         ) : null}
-        <p className="fr-oauth__lead">It will be able to use the {consent.resource} to:</p>
+        <p className="fr-oauth__lead">{t('itWillBeAbleTo', { resource: consent.resource })}</p>
         <ul className="fr-oauth__scopes">
           {always.map((s) => (
             <li key={s.id}>
@@ -120,7 +117,7 @@ export function OAuthConsentPage() {
         </ul>
         {optional.length ? (
           <fieldset className="fr-oauth__optional">
-            <legend>It also asks to — off unless you turn it on:</legend>
+            <legend>{t('itAlsoAsksToOff')}</legend>
             {optional.map((s) => (
               <label key={s.id}>
                 <input
@@ -133,20 +130,12 @@ export function OAuthConsentPage() {
             ))}
           </fieldset>
         ) : null}
-        <p className="fr-oauth__fine">
-          It acts as you and never gets more access than you have. Text on boards is passed to it as content, not as instructions. You can revoke it any time in
-          Settings → Connected apps.
-        </p>
-        <p className="fr-oauth__fine">
-          Afterwards you’ll go to <strong className="fr-oauth__origin">{consent.redirectOrigin}</strong>.
+        <p className="fr-oauth__fine">{t('itActsAsYouAnd')}</p>
+        <p className="fr-oauth__fine">{t('afterwardsYouLlGoTo')}{' '}<strong className="fr-oauth__origin">{consent.redirectOrigin}</strong>.
         </p>
         <div className="fr-oauth__actions">
-          <Button size="lg" onClick={() => decide('deny')} loading={busy === 'deny'} disabled={busy !== null}>
-            Cancel
-          </Button>
-          <Button variant="primary" size="lg" onClick={() => decide('allow')} loading={busy === 'allow'} disabled={busy !== null || nothing}>
-            Allow
-          </Button>
+          <Button size="lg" onClick={() => decide('deny')} loading={busy === 'deny'} disabled={busy !== null}>{t('cancel')}</Button>
+          <Button variant="primary" size="lg" onClick={() => decide('allow')} loading={busy === 'allow'} disabled={busy !== null || nothing}>{t('allow')}</Button>
         </div>
       </div>
     </AuthShell>

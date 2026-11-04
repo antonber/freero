@@ -6,6 +6,7 @@ import { DockHeader, useCanEdit, useCollection, useElements, useSelection, type 
 import { slides } from './model';
 import { NOTES_COLLECTION, readNote, setNote, type PresenterNote } from './notes';
 
+import { t } from '../messages';
 export function useNotes(): Map<string, string> {
   const entries = useCollection<PresenterNote>(NOTES_COLLECTION);
   return useMemo(() => new Map(entries.map(([k, v]) => [k, readNote(v)])), [entries]);
@@ -34,8 +35,8 @@ function NoteField({ editor, frame, value, readOnly, highlight }: { editor: Edit
       className={`fr-present-notes__field${highlight ? ' is-current' : ''}`}
       value={draft}
       readOnly={readOnly}
-      placeholder={readOnly ? 'No notes' : 'What to say on this slide…'}
-      aria-label={`Notes for ${frame.title || 'untitled frame'}`}
+      placeholder={readOnly ? t('noNotes') : t('whatToSayOnThis')}
+      aria-label={t('notesForValue', { value: frame.title || t('untitledFrame') })}
       onFocus={() => (editing.current = true)}
       onChange={(e) => {
         const text = e.target.value;
@@ -61,13 +62,13 @@ export function NotesPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-present-notes">
       <DockHeader>
-        <h2 className="fr-present-notes__title">Presenter notes</h2>
+        <h2 className="fr-present-notes__title">{t('presenterNotes')}</h2>
       </DockHeader>
       <p className="fr-present-notes__hint">
         <Info size={14} />
-        <span>Shown only on your screen while you present, never in exports. Anyone who can edit this board can read them.</span>
+        <span>{t('shownOnlyOnYourScreen')}</span>
       </p>
-      {!list.length && <p className="fr-present-notes__empty">Add frames to the board: each frame is a slide with its own notes.</p>}
+      {!list.length && <p className="fr-present-notes__empty">{t('addFramesToTheBoard')}</p>}
       <ol className="fr-present-notes__list">
         {list.map((f, i) => (
           <li key={f.id} className="fr-present-notes__slide">
@@ -75,7 +76,7 @@ export function NotesPanel({ editor }: { editor: Editor }) {
                 editor.select([f.id]);
                 editor.zoomToFit([f.id]);
               }}>
-              {i + 1}. {f.title || 'Untitled frame'}
+              {i + 1}. {f.title || t('untitledFrame2')}
             </button>
             <NoteField editor={editor} frame={f} value={notes.get(f.id) ?? ''} readOnly={!canEdit} highlight={selection.includes(f.id)} />
           </li>
@@ -91,12 +92,10 @@ export function PresenterNotes({ frameId, onClose }: { frameId: string | null; o
   const text = frameId ? notes.get(frameId) ?? '' : '';
   if (!text.trim()) return null;
   return (
-    <aside className="fr-present-mynotes" data-fr-interactive="" aria-label="Your notes for this slide">
+    <aside className="fr-present-mynotes" data-fr-interactive="" aria-label={t('yourNotesForThisSlide')}>
       <div className="fr-present-mynotes__head">
-        <span>Your notes · only you see these</span>
-        <button type="button" onClick={onClose} aria-label="Hide notes">
-          Hide (N)
-        </button>
+        <span>{t('yourNotesOnlyYouSee')}</span>
+        <button type="button" onClick={onClose} aria-label={t('hideNotes')}>{t('hideN')}</button>
       </div>
       <div className="fr-present-mynotes__body">{text}</div>
     </aside>

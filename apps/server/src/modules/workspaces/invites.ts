@@ -9,9 +9,10 @@ import { badRequest, forbidden, HttpError, notFound } from '../../platform/http'
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
-import { findUserByEmail, getUser, getUsers, markEmailVerified, normalizeEmail } from '../auth/index';
+import { findUserByEmail, getUser, getUsers, localeOfEmail, localesOf, markEmailVerified, normalizeEmail } from '../auth/index';
 import { recordAudit } from '../audit/index';
 import { notify } from '../notifications/index';
+import { t } from './messages';
 import * as repo from './repo';
 import { isInvitableWorkspaceRole, mayInvite, type InvitableWorkspaceRole } from './roles';
 import { memberOf, refreshWorkspaceBoards, requireWorkspace } from './service';
@@ -19,12 +20,6 @@ import { memberOf, refreshWorkspaceBoards, requireWorkspace } from './service';
 export const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
-
-const ROLE_PHRASE: Record<InvitableWorkspaceRole, string> = {
-  admin: 'as an admin',
-  member: 'as a member',
-  guest: 'as a guest (you’ll see the boards shared with you)',
-};
 
 const toInvite = (i: repo.InviteRow, inviterName: string): WorkspaceInvite => ({
   id: i.id,
@@ -45,14 +40,18 @@ export async function listInvites(workspaceId: string, userId: string): Promise<
 
 async function sendInviteMail(req: Request | null, to: string, token: string, workspaceName: string, inviter: User, role: InvitableWorkspaceRole) {
   try {
+    // The invitee's language if the address has an account, else the inviter's (#5).
+    const locale = (await localeOfEmail(to)) ?? (await localesOf([inviter.id])).get(inviter.id) ?? null;
+    const vars = { inviter: inviter.name, workspace: workspaceName, email: inviter.email, role };
     await sendMail({
       to,
       ...renderMail({
-        subject: `${inviter.name} invited you to the “${workspaceName}” workspace on Freero`,
-        title: `Join “${workspaceName}” on Freero`,
-        paragraphs: [`${inviter.name} invited you to join their team workspace ${ROLE_PHRASE[role]}. Freero is a free online whiteboard; you'll need a free account.`],
-        action: { label: 'Join the workspace', url: appUrl(req, `/workspace-invite/${token}`) },
-        outro: `${inviter.name} (${inviter.email}) sent this invite. The link works once and expires in 14 days.`,
+        locale,
+        subject: t(locale, 'invite.subject', vars),
+        title: t(locale, 'invite.title', vars),
+        paragraphs: [t(locale, 'invite.body', vars)],
+        action: { label: t(locale, 'invite.action'), url: appUrl(req, `/workspace-invite/${token}`) },
+        outro: t(locale, 'invite.outro', vars),
       }),
     });
   } catch (e) {

@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "Board melden…",
+  "report": "Melden…",
+  "report2": "Melden",
+  "thanksForYourReportFreero": "Danke für Ihre Meldung. Die Moderatoren von Freero werden sie prüfen.",
+  "yourReportCouldNotBe": "Ihre Meldung konnte nicht gesendet werden. Versuchen Sie es erneut.",
+  "reportTargetNoun": "Melden: {target_noun}",
+  "tellFreeroSModeratorsWhat": "Teilen Sie den Moderatoren von Freero mit, was nicht stimmt. Der Eigentümer des Boards erfährt nicht, wer es gemeldet hat.",
+  "cancel": "Abbrechen",
+  "sendReport": "Meldung senden",
+  "whatSTheProblem": "Was ist das Problem?",
+  "detailsOptional": "Details (optional)",
+  "anythingThatHelpsUsUnderstand": "Alles, was uns beim Verständnis hilft, z. B. wo auf dem Board es sich befindet",
+  "yourEmailOptional": "Ihre E-Mail-Adresse (optional)",
+  "toHearWhatWeDecided": "Damit Sie unsere Entscheidung erfahren"
+}

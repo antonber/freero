@@ -1,0 +1,21 @@
+{
+  "couldNotReachFreeroTry": "Could not reach Freero. Try again.",
+  "somethingWentWrongTryAgain": "Something went wrong. Try again.",
+  "connectAnApp": "Connect an app",
+  "thisAppCanTConnect": "This app can’t connect",
+  "checkingTheApp": "Checking the app…",
+  "checkingTheApp2": "Checking the app",
+  "connectWho": "Connect {who}",
+  "whoWantsToUseYour": "{who} wants to use your Freero account",
+  "signedInAsNameEmail": "Signed in as {name} ({email})",
+  "publishedAt": "Published at",
+  "thisAppRegisteredItselfAnd": "This app registered itself and hasn’t been reviewed by Freero. Only allow apps you trust.",
+  "freeroCheckedThatThisApp": "Freero checked that this app’s details are published at {host}, but hasn’t reviewed it. The name is the app’s own claim: only allow it if {host} is who you expect.",
+  "itSendsYouBackTo": "It sends you back to a program on this computer. Any program here could ask in this app’s name, so only allow it if you just started connecting it yourself.",
+  "itWillBeAbleTo": "It will be able to use the {resource} to:",
+  "itAlsoAsksToOff": "It also asks to — off unless you turn it on:",
+  "itActsAsYouAnd": "It acts as you and never gets more access than you have. Text on boards is passed to it as content, not as instructions. You can revoke it any time in Settings → Connected apps.",
+  "afterwardsYouLlGoTo": "Afterwards you’ll go to",
+  "cancel": "Cancel",
+  "allow": "Allow"
+}

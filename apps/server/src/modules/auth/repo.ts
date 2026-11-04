@@ -18,6 +18,7 @@ interface UserRow {
   password_via_link_at: Date | null;
   time_zone: string | null;
   color_theme: ColorThemePreference;
+  locale: string | null;
 }
 
 export interface UserWithHash extends Account {
@@ -41,6 +42,7 @@ const toUser = (r: UserRow): UserWithHash => ({
   deletionScheduledFor: r.deletion_scheduled_for?.getTime() ?? null,
   timeZone: r.time_zone ?? null,
   theme: r.color_theme,
+  locale: r.locale ?? null,
   passwordHash: r.password_hash,
   passwordViaLink: r.password_via_link_at !== null,
 });
@@ -53,9 +55,9 @@ export async function insertUser(u: UserWithHash, identity?: Omit<IdentityRecord
   try {
     await tx(async () => {
       await query(
-        `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at, email_verified_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, new Date(u.createdAt), u.emailVerified ? new Date(u.createdAt) : null],
+        `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at, email_verified_at, locale)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, new Date(u.createdAt), u.emailVerified ? new Date(u.createdAt) : null, u.locale ?? null],
       );
       if (identity) await insertIdentity({ ...identity, userId: u.id, createdAt: u.createdAt });
     });
@@ -87,16 +89,16 @@ export async function countUsers(): Promise<number> {
 /** Changes only the given fields, in one statement (no read-modify-write that could drop a concurrent edit). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string; theme?: ColorThemePreference },
+  patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string; theme?: ColorThemePreference; locale?: string },
 ): Promise<void> {
   await query(
     `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
        avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END, time_zone = COALESCE($6, time_zone),
-       color_theme = COALESCE($7, color_theme),
+       color_theme = COALESCE($7, color_theme), locale = COALESCE($8, locale),
        previous_names = CASE WHEN $2 IS NULL OR $2 = name THEN previous_names
                              ELSE (ARRAY[name] || array_remove(previous_names, name))[1:5] END
      WHERE id = $1`,
-    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null, patch.timeZone ?? null, patch.theme ?? null],
+    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null, patch.timeZone ?? null, patch.theme ?? null, patch.locale ?? null],
   );
 }
 
@@ -105,6 +107,19 @@ export async function timeZonesOf(ids: string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const rows = await query<{ id: string; time_zone: string }>(`SELECT id, time_zone FROM users WHERE id = ANY($1::text[]) AND time_zone IS NOT NULL`, [ids]);
   return new Map(rows.map((r) => [r.id, r.time_zone]));
+}
+
+/** Interface languages of these accounts (absent: none chosen yet, or no such account). */
+export async function localesOf(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await query<{ id: string; locale: string }>(`SELECT id, locale FROM users WHERE id = ANY($1::text[]) AND locale IS NOT NULL`, [ids]);
+  return new Map(rows.map((r) => [r.id, r.locale]));
+}
+
+/** The interface language of whoever has this address, if they have an account and chose one. */
+export async function localeOfEmail(email: string): Promise<string | null> {
+  const r = await one<{ locale: string | null }>(`SELECT locale FROM users WHERE email = $1`, [email]);
+  return r?.locale ?? null;
 }
 
 /** The account's current name and the few it had before (comment authorship, KAI-187). */

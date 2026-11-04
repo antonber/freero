@@ -5,13 +5,14 @@ import { Button, IconButton, Input } from '@ui';
 import { PANEL_ID, replaceMatches, revealMatch, type Match } from './lib/search';
 import { setFindUi, useFindUi } from './lib/state';
 import { useMatches } from './lib/useMatches';
+import { t } from './messages';
 import './find.css';
 
 const MAX_ROWS = 200;
 
 function context(editor: Editor, m: Match): string {
   const s = m.source;
-  const parts = s.kind === 'element' ? [describeElementType(editor, s.type).one, s.frameTitle && `in ${s.frameTitle}`] : [`Comment by ${s.author}`];
+  const parts = s.kind === 'element' ? [describeElementType(editor, s.type).one, s.frameTitle && `in ${s.frameTitle}`] : [t('commentByAuthor', { author: s.author })];
   if (m.count > 1) parts.push(`${m.count} matches`);
   return parts.filter(Boolean).join(' · ');
 }
@@ -58,10 +59,10 @@ function FindPanel({ editor }: { editor: Editor }) {
     if (!changed) {
       editor.host.notify(
         s.kind === 'comment'
-          ? `Only ${s.author} can edit their comment.`
+          ? t('onlyAuthorCanEditTheir', { author: s.author })
           : el?.locked
-            ? 'Unlock this item to replace its text.'
-            : 'This match can’t be replaced here.',
+            ? t('unlockThisItemToReplace')
+            : t('thisMatchCanTBe'),
         'info',
       );
       return step(1);
@@ -78,22 +79,22 @@ function FindPanel({ editor }: { editor: Editor }) {
     const { changed: n, othersComments } = replaceMatches(editor, matches, query, replacement, opts);
     setFindUi(editor, (st) => ({ revision: st.revision + 1 }));
     const left = othersComments ? ` · ${othersComments} comment${othersComments === 1 ? '' : 's'} by others left as written` : '';
-    editor.host.notify(n ? `Replaced in ${n} item${n === 1 ? '' : 's'}${left}` : `Nothing to replace${left}`, n ? 'success' : 'info');
+    editor.host.notify(n ? t('replacedInNItemsLeft', { n, left }) : t('nothingToReplaceLeft', { left }), n ? 'success' : 'info');
   };
 
   return (
     <div className="fr-find">
       <DockHeader className="fr-find__head">
-        <h2 className="fr-find__title">Find on board</h2>
+        <h2 className="fr-find__title">{t('findOnBoard')}</h2>
         <IconButton
           icon={CaseSensitive}
-          label="Match case"
+          label={t('matchCase')}
           size={32}
           active={caseSensitive}
           onClick={() => setFindUi(editor, { caseSensitive: !caseSensitive, currentKey: null })}
         />
         {canEdit && (
-          <IconButton icon={Replace} label="Replace" size={32} active={showReplace} onClick={() => setFindUi(editor, { showReplace: !showReplace })} />
+          <IconButton icon={Replace} label={t('replace')} size={32} active={showReplace} onClick={() => setFindUi(editor, { showReplace: !showReplace })} />
         )}
       </DockHeader>
       <div className="fr-find__bar">
@@ -102,8 +103,8 @@ function FindPanel({ editor }: { editor: Editor }) {
           size="sm"
           icon={Search}
           className="fr-find__input"
-          placeholder="Search text, titles, comments"
-          aria-label="Find on board"
+          placeholder={t('searchTextTitlesComments')}
+          aria-label={t('findOnBoard')}
           value={query}
           suffix={query ? <span className="fr-find__count">{matches.length ? `${index + 1 || '–'}/${matches.length}` : '0'}</span> : undefined}
           onChange={(e) => setFindUi(editor, { query: e.target.value, currentKey: null })}
@@ -117,16 +118,16 @@ function FindPanel({ editor }: { editor: Editor }) {
             }
           }}
         />
-        <IconButton icon={ChevronUp} label="Previous match" shortcut="Shift+Enter" size={32} disabled={!matches.length} onClick={() => step(-1)} />
-        <IconButton icon={ChevronDown} label="Next match" shortcut="Enter" size={32} disabled={!matches.length} onClick={() => step(1)} />
+        <IconButton icon={ChevronUp} label={t('previousMatch')} shortcut="Shift+Enter" size={32} disabled={!matches.length} onClick={() => step(-1)} />
+        <IconButton icon={ChevronDown} label={t('nextMatch')} shortcut="Enter" size={32} disabled={!matches.length} onClick={() => step(1)} />
       </div>
       {showReplace && (
         <div className="fr-find__replace">
           <Input
             size="sm"
             className="fr-find__input"
-            placeholder="Replace with"
-            aria-label="Replace with"
+            placeholder={t('replaceWith')}
+            aria-label={t('replaceWith')}
             value={replacement}
             onChange={(e) => setFindUi(editor, { replacement: e.target.value })}
             onKeyDown={(e) => {
@@ -136,26 +137,22 @@ function FindPanel({ editor }: { editor: Editor }) {
               }
             }}
           />
-          <Button size="sm" variant="secondary" disabled={!matches.length} onClick={replaceCurrent}>
-            Replace
-          </Button>
-          <Button size="sm" variant="secondary" disabled={!matches.length} onClick={replaceEverywhere}>
-            All
-          </Button>
+          <Button size="sm" variant="secondary" disabled={!matches.length} onClick={replaceCurrent}>{t('replace')}</Button>
+          <Button size="sm" variant="secondary" disabled={!matches.length} onClick={replaceEverywhere}>{t('all')}</Button>
         </div>
       )}
       {!query.trim() ? (
         <div className="fr-find__empty">
           <TextSearch size={28} strokeWidth={1.5} />
-          <span>Search every sticky, shape, card, table, mind map, frame title, connector label and comment.</span>
+          <span>{t('searchEveryStickyShapeCard')}</span>
         </div>
       ) : !matches.length ? (
         <div className="fr-find__empty">
-          <strong>No results</strong>
-          <span>Nothing on this board matches “{query}”.</span>
+          <strong>{t('noResults')}</strong>
+          <span>{t('nothingOnThisBoardMatches', { query })}</span>
         </div>
       ) : (
-        <ul className="fr-find__results" ref={listRef} aria-label="Results">
+        <ul className="fr-find__results" ref={listRef} aria-label={t('results')}>
           {matches.slice(0, MAX_ROWS).map((m, i) => {
             const Icon = m.source.kind === 'element' ? describeElementType(editor, m.source.type).icon : MessageSquare;
             return (
@@ -184,7 +181,7 @@ function FindPanel({ editor }: { editor: Editor }) {
               </li>
             );
           })}
-          {matches.length > MAX_ROWS && <li className="fr-find__more">+{matches.length - MAX_ROWS} more — refine the search</li>}
+          {matches.length > MAX_ROWS && <li className="fr-find__more">+{matches.length - MAX_ROWS}{' '}{t('moreRefineTheSearch')}</li>}
         </ul>
       )}
     </div>

@@ -8,6 +8,7 @@ import { FAMILY_ICON, extensionOf, familyOf, formatBytes, formatTime, typeLabel 
 import { CARD_H, CARD_W, VIDEO_W } from './lib/layout';
 import { Controls, togglePlayback, usePlayback } from './lib/Player';
 import { registerPlayer, togglePlayer } from './lib/players';
+import { t } from './messages';
 import './media.css';
 
 const stop = (e: PointerEvent) => e.stopPropagation();
@@ -63,8 +64,8 @@ function VideoView({ element: el }: { element: MediaElement }) {
               type="button"
               className="fr-media__bigplay"
               data-fr-interactive=""
-              aria-label={`Play ${el.name}`}
-              title="Play"
+              aria-label={t('playName', { name: el.name })}
+              title={t('play')}
               onPointerDown={stop}
               onDoubleClick={(e) => e.stopPropagation()}
               onClick={toggle}
@@ -108,8 +109,8 @@ function AudioView({ element: el }: { element: MediaElement }) {
           type="button"
           className="fr-media-card__playbtn"
           data-fr-interactive=""
-          aria-label={state.playing ? `Pause ${el.name}` : `Play ${el.name}`}
-          title={state.playing ? 'Pause' : 'Play'}
+          aria-label={state.playing ? t('pauseName', { name: el.name }) : t('playName', { name: el.name })}
+          title={state.playing ? t('pause') : t('play')}
           onPointerDown={stop}
           onDoubleClick={(e) => e.stopPropagation()}
           onClick={toggle}
@@ -122,8 +123,7 @@ function AudioView({ element: el }: { element: MediaElement }) {
           {el.name}
         </div>
         {exporting ? (
-          <div className="fr-media-card__meta">
-            Audio{el.duration > 0 ? ` · ${formatTime(el.duration)}` : ''}
+          <div className="fr-media-card__meta">{t('audio')}{el.duration > 0 ? ` · ${formatTime(el.duration)}` : ''}
             {el.size ? ` · ${formatBytes(el.size)}` : ''}
           </div>
         ) : (
@@ -167,8 +167,8 @@ const FileView = memo(function FileView({ element: el }: ElementRenderProps<File
           type="button"
           className="fr-file__download"
           data-fr-interactive=""
-          aria-label={`Download ${el.name}`}
-          title={blocked ?? 'Download'}
+          aria-label={t('downloadName', { name: el.name })}
+          title={blocked ?? t('download')}
           disabled={!!blocked}
           onPointerDown={stop}
           onDoubleClick={(e) => e.stopPropagation()}
@@ -195,7 +195,7 @@ function playPauseKey(e: KeyboardEvent, { selection }: { editor: Editor; selecti
 export default [
   defineElement({
     type: 'media',
-    label: { one: 'Video or audio', many: 'Videos and audio' },
+    label: { one: t('videoOrAudio'), many: t('videosAndAudio') },
     icon: Film,
     resize: 'aspect',
     minSize: { w: 120, h: 32 },
@@ -214,7 +214,7 @@ export default [
     }),
     Component: MediaView,
     toPlainText: (el) => el.name,
-    keys: [{ shortcuts: ['space'], label: 'Play or pause the selected video or audio', minRole: 'viewer' }],
+    keys: [{ shortcuts: ['space'], label: t('playOrPauseTheSelected'), minRole: 'viewer' }],
     onKeyDown: playPauseKey,
     // Below images (100) and PDFs (15): every other dropped or pasted file lands here — video and
     // audio this browser plays as players, anything else as a file card. Above link / text (≤ 10).
@@ -228,7 +228,7 @@ export default [
   }),
   defineElement({
     type: 'file',
-    label: { one: 'File', many: 'Files' },
+    label: { one: t('file'), many: t('files') },
     icon: Paperclip,
     resize: 'aspect',
     minSize: { w: 120, h: 32 },

@@ -4,8 +4,10 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import type { ActivityEntry, CatchUpChanges, CatchUpItem, CatchUpSummary } from '@freero/shared';
 import type { Editor } from '@engine';
+import { formatDate, formatList, formatTime } from '@ui';
 import { PANEL_ID } from './ids';
 
+import { t } from '../messages';
 export type MarkKind = 'added' | 'changed';
 
 export interface Highlight {
@@ -45,36 +47,34 @@ const set = (editor: Editor, patch: Partial<CatchUpUi>) => catchUpStore(editor).
 
 export const totalChanges = (s: CatchUpSummary) => s.counts.added + s.counts.changed + s.counts.removed;
 
-/** "Ann", "Ann and Bob", "Ann, Bob and 3 others" */
+/** "Ann", "Ann and Bob", "Ann, Bob and 3 others" (in the interface's language) */
 export function peopleText(names: string[]): string {
-  if (names.length <= 2) return names.join(' and ') || 'Someone';
-  if (names.length === 3) return `${names[0]}, ${names[1]} and ${names[2]}`;
-  return `${names[0]}, ${names[1]} and ${names.length - 2} others`;
+  if (!names.length) return t('catchUp.someone');
+  if (names.length <= 3) return formatList(names);
+  return t('catchUp.namesAndOthers', { first: names[0], second: names[1], count: names.length - 2 });
 }
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** "added 4, changed 2 and removed 1 item · 3 new comments" */
 export function countsText(c: CatchUpSummary['counts']): string {
   const parts: string[] = [];
-  if (c.added) parts.push(`added ${c.added}`);
-  if (c.changed) parts.push(`changed ${c.changed}`);
-  if (c.removed) parts.push(`removed ${c.removed}`);
+  if (c.added) parts.push(t('catchUp.added', { count: c.added }));
+  if (c.changed) parts.push(t('catchUp.changed', { count: c.changed }));
+  if (c.removed) parts.push(t('catchUp.removed', { count: c.removed }));
   const total = c.added + c.changed + c.removed;
-  const edits = parts.length ? `${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]} ${total === 1 ? 'item' : 'items'}` : '';
-  return [edits, c.comments ? plural(c.comments, 'new comment') : ''].filter(Boolean).join(' · ');
+  const edits = parts.length ? t('catchUp.edits', { what: formatList(parts), count: total }) : '';
+  return [edits, c.comments ? t('countNewComment', { count: c.comments }) : ''].filter(Boolean).join(' · ');
 }
 
 /** "Tue 14:05", "yesterday 09:30", "today 08:10" (the reader's own clock). */
 export function sinceText(ts: number, now = Date.now()): string {
   const d = new Date(ts);
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const time = formatTime(d, { hour: '2-digit', minute: '2-digit' });
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((day(new Date(now)) - day(d)) / 86_400_000);
-  if (days <= 0) return `today ${time}`;
-  if (days === 1) return `yesterday ${time}`;
-  if (days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (days <= 0) return t('catchUp.todayAt', { time });
+  if (days === 1) return t('catchUp.yesterdayAt', { time });
+  if (days < 7) return t('catchUp.weekdayAt', { day: formatDate(d, { weekday: 'short' }), time });
+  return formatDate(d, { month: 'short', day: 'numeric' });
 }
 
 /** Asks the server once per board session whether others changed the board since the last visit. */
@@ -109,17 +109,17 @@ export async function showChanges(editor: Editor): Promise<void> {
     const changes = await source.catchUpChanges();
     if (totalChanges(changes) === 0) {
       set(editor, { changes: null, summary: changes, loading: false });
-      editor.host.notify(changes.since ? 'Nobody else changed the board since your last visit.' : 'There’s no earlier visit of yours to compare with yet.', 'info');
+      editor.host.notify(changes.since ? t('nobodyElseChangedTheBoard') : t('thereSNoEarlierVisit'), 'info');
       return;
     }
     const items = stepItems(changes, (id) => !!editor.getElement(id));
-    set(editor, { changes, summary: changes, loading: false, dismissed: false, highlight: { label: 'Recent changes', items, index: -1, source: 'catch-up' } });
+    set(editor, { changes, summary: changes, loading: false, dismissed: false, highlight: { label: t('recentChanges'), items, index: -1, source: 'catch-up' } });
     if (items.length) step(editor, 1);
     else if (changes.removed.length) editor.openDock(PANEL_ID);
-    else editor.host.notify('Nothing others changed is on the board any more.', 'info');
+    else editor.host.notify(t('nothingOthersChangedIsOn'), 'info');
   } catch (err) {
-    set(editor, { loading: false, error: err instanceof Error && err.message ? err.message : 'Recent changes couldn’t be loaded.' });
-    editor.host.notify('Recent changes couldn’t be loaded.', 'error');
+    set(editor, { loading: false, error: err instanceof Error && err.message ? err.message : t('recentChangesCouldnTBe') });
+    editor.host.notify(t('recentChangesCouldnTBe'), 'error');
   }
 }
 
@@ -167,11 +167,11 @@ export function locateEntry(editor: Editor, e: ActivityEntry): void {
   const ids = e.items ?? [];
   const here = ids.filter((id) => !!editor.getElement(id));
   if (!here.length) {
-    editor.host.notify(ids.length ? 'Those items aren’t on the board any more.' : 'Nothing of this is on the board any more.', 'info');
+    editor.host.notify(ids.length ? t('thoseItemsArenTOn') : t('nothingOfThisIsOn'), 'info');
     return;
   }
-  set(editor, { highlight: { label: `${e.actorName}’s changes`, items: here.map((id) => ({ id, kind: 'changed' })), index: -1, source: 'entry' } });
+  set(editor, { highlight: { label: t('actornameSChanges', { actorName: e.actorName }), items: here.map((id) => ({ id, kind: 'changed' })), index: -1, source: 'entry' } });
   editor.zoomToFit(here, { maxZoom: Math.max(1, editor.getCamera().zoom), padding: 160 });
   const gone = ids.length - here.length;
-  if (gone > 0) editor.host.notify(`${gone} of ${ids.length} ${ids.length === 1 ? 'item is' : 'items are'} no longer on the board.`, 'info');
+  if (gone > 0) editor.host.notify(t('goneOfLengthItemsAre', { length: ids.length, gone }), 'info');
 }

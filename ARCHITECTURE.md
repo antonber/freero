@@ -56,7 +56,12 @@ app/                Shell: routing, pages, auth, REST client, Host implementatio
 - `@engine` (= `engine/index.ts`) and `@ui` (= `ui/index.ts`) are the only entry points into those
   layers from outside. Deep imports fail [W0].
 - `yjs`, `y-websocket`, `y-protocols`, `lib0` may only be imported in `engine/store/` [W5].
-- `import.meta.glob` is only allowed in `app/board/features.ts` [W6].
+- `import.meta.glob` is only allowed in the discovery roots: `app/board/features.ts` (features) and
+  `app/i18n/catalogs.ts` (translations) [W6].
+- Stylesheets use logical properties (`inset-inline-start`, `margin-inline-end`, `text-align: start` …),
+  never physical `left` / `right` (except `left: 50%` centring) [W14]: the chrome mirrors in
+  right-to-left languages, and the board is pinned `dir="ltr"`, where they resolve as before.
+- Interface text lives in catalogues, never inline (`npm run check:i18n`; see "Interface languages").
 - Only the app talks to Freero's server: `'/api/…'` / `'/ws/…'` paths in `features/`, `engine/` or
   `ui/` fail [W9]. Need server data? Add a typed method to `Host` (e.g. `serverNow()`).
 - Raw HTML sinks (`innerHTML =`, `dangerouslySetInnerHTML`, `insertAdjacentHTML`, …) are allowed only
@@ -87,6 +92,9 @@ features/<name>/
                            add to items (votes, tags, comments). Runs on the SERVER and in the
                            browser (Editor.getOutline, "Board as list"), so it is pure:
                            '@freero/shared', files of its own feature, type-only imports [W13]
+  messages.ts    optional  export const t = defineMessages('features/<name>', en) (@ui), English in
+                           locales/en.json, translations beside it (locales/<lang>.json); see
+                           "Interface languages"
   importer.ts    optional  export default defineImporter({ id, importPriority, importData }) (or an
                            array): pasted / dropped data no single element type owns — a whole file
                            of another tool (features/import), offered in the same priority order and
@@ -136,6 +144,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A diagram (#117, #118; `DiagramElement`, type `diagram`: title, layout, layers, `laidOut`, its box) and its members' layout — positions, `diagramPinned`, `diagramLayer` on join, layer locks (`locked` + `layerLocked`), stacking, lines between members joining it — read through `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `memberLayerId`, `hiddenByLayer`, `diagramSignature`) | `features/diagram`: its element's `arrange` (`planDiagram`, the one writer of members' positions: it reflows only when `laidOut`, the structure's signature, changes; a member moved by hand is pinned) and its commands (layout, Lay out again, unpin, layers); server `modules/structure` / `modules/api` through `withDiagramLayout` in the same change; `layoutStructure` wraps graph-like structures in one (`wrapInDiagram`) | `runCommand('diagram.setLayout' / 'diagram.relayout' / 'diagram.unpin' / 'diagram.wrap' / 'diagram.focus')`. Features that write member positions of a diagram (from-text's source edits) leave them to it. Focus is engine UI state (`Editor.setFocus`); the layer a person adds to is a personal view (`_layer`). See docs/design/diagrams.md |
+| A person's interface language (`users.locale`, `Account.locale`, #5) and the page's `<html lang dir>` | server `modules/auth` (`PATCH /api/auth/me` `{ locale }`, sign-up's `locale`); in the browser `app/i18n/locale.ts` is the only writer of `lang` / `dir` and of the language this browser remembers — decided once before the app loads (`?lang=` for the tab > the account's > this browser's > `navigator.languages` > English), a change saves and reloads | `LanguagePicker` (`app/components`): account settings → Language, under the sign-in card |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
@@ -1301,6 +1310,34 @@ byte-for-byte what it was). When on:
   `allowFraming`, `frameFromAnySite` — nor on `/embed/*`): `script-src` +
   `https://www.googletagmanager.com`, `connect-src` + Google's collection hosts, `frame-src` +
   `'self'`. The privacy policy's analytics tokens (`modules/site/legal.ts`) describe exactly this.
+
+## Interface languages (#5; docs/design/i18n.md)
+
+- Ten languages (`LOCALES` in `@freero/shared`): English (the source), German, French, Spanish,
+  Portuguese (Brazil), Japanese, Korean, Simplified Chinese, Arabic and Hebrew (right to left).
+- Every owned unit keeps its English in `<unit>/locales/en.json`, translations in
+  `locales/<lang>.json` beside it, bound once by its `messages.ts`
+  (`export const t = defineMessages('<unit path>', en)`): each feature, `engine/`, `ui/`, `app/`
+  and each `app/pages/<page>/`; on the server each module that words emails
+  (`modules/<m>/messages.ts` with `platform/i18n.ts`'s `defineMessages(import.meta.url, en)`,
+  called as `t(locale, key, vars)`). Messages are ICU (`{count, plural, one {# vote} other {# votes}}`),
+  formatted by `@freero/shared` `formatMessage` with the platform's Intl. Never build plurals or
+  dates by hand: `formatDate` / `formatNumber` / `formatRelative` / `formatList` from `@ui`.
+- The language is fixed for a page: `main.tsx` awaits `bootLocale()` (which loads that language's
+  chunk, found by `app/i18n/catalogs.ts`) before importing the app, so module-level labels are
+  translated too. Choosing a language reloads.
+- Board content is never translated: `t()` is for interface text only; defaults written into a
+  board are written in the writer's language and belong to the board. The canvas, exports and
+  text measuring are `dir="ltr"` whatever the interface's direction.
+- Server errors keep their English `error` and add a `code` (+ `params`); `app/api/client.ts`
+  shows `errors.<code>` from the app catalogue when it has one. Emails are worded in the
+  recipient's language (invites: the invitee's account language, else the inviter's).
+- `npm run check:i18n` (in `npm run check`): keys used but missing in English, English keys unused,
+  namespaces that aren't their unit's path, stale / argument-changing / invalid translations, and
+  new hard-coded JSX text or label props beyond `i18n.baseline.json` (it only goes down).
+  `npm run i18n:extract -- <files>` moves hard-coded text into catalogues; `npm run i18n:status`
+  shows coverage. Machine translations are listed in each file's `"@@unreviewed"` until a person
+  checks them.
 
 ## UI kit (`ui/`) — exports from `@ui`
 

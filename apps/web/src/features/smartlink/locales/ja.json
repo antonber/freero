@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "doc",
+    "thatItemIsnTOn",
+    "thisKindOfLinkHas",
+    "openYouMayBeAble",
+    "open",
+    "openLink",
+    "openTitle",
+    "smartLink",
+    "smartLinks"
+  ],
+  "doc": "ドキュメント",
+  "thatItemIsnTOn": "その項目はこのボード上にないか、非表示になっています。",
+  "thisKindOfLinkHas": "この種類のリンクには、まだ開くページがありません。",
+  "openYouMayBeAble": "開く（アクセスをリクエストできる場合があります）",
+  "open": "開く",
+  "openLink": "リンクを開く",
+  "openTitle": "{title} を開く",
+  "smartLink": "スマートリンク",
+  "smartLinks": "スマートリンク"
+}

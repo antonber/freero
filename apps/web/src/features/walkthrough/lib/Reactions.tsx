@@ -7,7 +7,8 @@ import { WALKTHROUGH_REACTIONS, type WalkthroughReaction } from '@freero/shared'
 import type { Editor } from '@engine';
 import { IconButton, Popover } from '@ui';
 
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong');
+import { t as tr } from '../messages';
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : tr('somethingWentWrong'));
 
 export interface ReactionsState {
   list: WalkthroughReaction[];
@@ -48,11 +49,11 @@ export function ReactButton({ editor, id, t, state }: { editor: Editor; id: stri
   };
   return (
     <>
-      <IconButton ref={button} icon={SmilePlus} label="React at this moment" active={open} onClick={() => setOpen((o) => !o)} />
-      <Popover open={open} anchor={button.current} onClose={() => setOpen(false)} side="top" aria-label="Pick a reaction">
-        <div className="fr-walkthrough-reactions" role="group" aria-label="Reactions">
+      <IconButton ref={button} icon={SmilePlus} label={tr('reactAtThisMoment')} active={open} onClick={() => setOpen((o) => !o)} />
+      <Popover open={open} anchor={button.current} onClose={() => setOpen(false)} side="top" aria-label={tr('pickAReaction')}>
+        <div className="fr-walkthrough-reactions" role="group" aria-label={tr('reactions')}>
           {WALKTHROUGH_REACTIONS.map((e) => (
-            <button key={e} type="button" className="fr-walkthrough-reactions__pick" onClick={() => void react(e)} aria-label={`React ${e}`}>
+            <button key={e} type="button" className="fr-walkthrough-reactions__pick" onClick={() => void react(e)} aria-label={tr('reactE', { e })}>
               {e}
             </button>
           ))}

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import { CircleAlert, CircleCheck, Info, X } from 'lucide-react';
 import { IGNORE_OUTSIDE_ATTR } from './layers';
+import { t as tr } from './messages';
 import './Toast.css';
 
 export type ToastKind = 'info' | 'success' | 'error';
@@ -117,7 +118,7 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) =
           {item.options.action.label}
         </button>
       ) : null}
-      <button type="button" className="fr-toast__close" aria-label="Dismiss" onClick={() => onDismiss(item.id)}>
+      <button type="button" className="fr-toast__close" aria-label={tr('dismiss')} onClick={() => onDismiss(item.id)}>
         <X size={15} />
       </button>
     </div>

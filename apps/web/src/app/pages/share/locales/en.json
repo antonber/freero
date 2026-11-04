@@ -1,0 +1,12 @@
+{
+  "sharedItems": "Shared items",
+  "couldNotCreateABoard": "Could not create a board",
+  "addToABoard": "Add to a board",
+  "nothingArrivedThatFreeroCan": "Nothing arrived that Freero can place: share images, a link or text.",
+  "shared": "Shared",
+  "failedFilesWerenTImages": "{failed, plural, one {One file wasn’t an image Freero could store (or your upload quota is full).} other {{failed} files weren’t images Freero could store (or your upload quota is full).}}",
+  "newBoard": "New board",
+  "orABoardYouCan": "Or a board you can edit",
+  "untitledBoard": "Untitled board",
+  "noBoardsYouCanEdit": "No boards you can edit yet."
+}

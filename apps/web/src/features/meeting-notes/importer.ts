@@ -6,6 +6,7 @@ import { LayoutError } from '@freero/shared';
 import { defineImporter } from '@engine';
 import { announce, importMeetingFile, TRANSCRIPT_FILE } from './lib/insert';
 
+import { t } from './messages';
 export default defineImporter({
   id: 'meeting-notes',
   importPriority: 50,
@@ -19,7 +20,7 @@ export default defineImporter({
         const near = data.alongside ? undefined : { x: at.x + i * 40, y: at.y + i++ * 40 };
         await importMeetingFile(editor, f, {}, near).then(
           (r) => announce(editor, r),
-          (e: unknown) => editor.host.notify(e instanceof LayoutError ? e.message : 'Could not import that transcript', 'error'),
+          (e: unknown) => editor.host.notify(e instanceof LayoutError ? e.message : t('couldNotImportThatTranscript'), 'error'),
         );
       }
     })();

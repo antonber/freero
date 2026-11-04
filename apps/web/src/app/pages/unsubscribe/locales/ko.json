@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "링크가 불완전해요. 이메일의 링크를 다시 여세요.",
+  "couldNotReachFreeroTry": "Freero에 연결하지 못했어요. 다시 시도해 주세요.",
+  "unsubscribe": "수신 거부",
+  "unsubscribing": "수신 거부하는 중…",
+  "unsubscribing2": "수신 거부하는 중",
+  "youReUnsubscribed": "수신 거부했어요",
+  "thatLinkDidnTWork": "링크가 작동하지 않았어요",
+  "emailWonTGetThe": "{email}(으)로 더 이상 “내 보드의 변경 사항” 요약이 발송되지 않아요. 다른 이메일은 그대로예요.",
+  "emailWonTGetNotification": "{email}(으)로 더 이상 알림 이메일이 발송되지 않아요. 멘션과 답글은 Freero에서 계속 볼 수 있어요.",
+  "chooseWhichEmailsYouGet": "받을 이메일 선택",
+  "logInToChooseWhich": "로그인하고 받을 이메일 선택"
+}

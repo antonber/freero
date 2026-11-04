@@ -11,6 +11,7 @@ import { Button, Input } from '@ui';
 import { addRow, addSeries, CELLS, cellOf, isValue, pasteRows, removeRow, removeSeries, setCell } from './lib/data';
 import { DATA_PANEL } from './lib/constants';
 
+import { t } from './messages';
 function Cell({
   editor,
   chart,
@@ -40,7 +41,7 @@ function Cell({
     setDraft(null);
     if (draft.trim() === value) return;
     if (numeric && !isValue(draft)) {
-      editor.host.notify(`“${draft.trim().slice(0, 40)}” isn’t a number: the value stays ${value || 'empty'}.`, 'error');
+      editor.host.notify(t('sliceIsnTANumber', { slice: draft.trim().slice(0, 40), value: value || t('empty') }), 'error');
       return;
     }
     editor.beginGesture();
@@ -103,8 +104,8 @@ function ChartData({ editor, chart }: { editor: Editor; chart: ChartElement }) {
     <div className="fr-chart-data">
       <Input
         size="sm"
-        aria-label="Chart title"
-        placeholder="Title (optional)"
+        aria-label={t('chartTitle')}
+        placeholder={t('titleOptional')}
         disabled={!canEdit}
         value={title ?? chart.title}
         onChange={(e) => setTitle(e.target.value)}
@@ -114,18 +115,16 @@ function ChartData({ editor, chart }: { editor: Editor; chart: ChartElement }) {
         }}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
       />
-      <p className="fr-chart-data__hint">Type over the numbers, or paste rows from a spreadsheet or CSV: the first row names the series.</p>
-      <div className="fr-chart-grid" role="table" aria-label="Chart data" data-fr-scrollable="">
+      <p className="fr-chart-data__hint">{t('typeOverTheNumbersOr')}</p>
+      <div className="fr-chart-grid" role="table" aria-label={t('chartData')} data-fr-scrollable="">
         <div className="fr-chart-grid__row" role="row" style={{ gridTemplateColumns: `minmax(84px, 1.2fr) repeat(${chart.series.length}, minmax(72px, 1fr)) 24px` }}>
-          <span className="fr-chart-grid__corner" role="columnheader">
-            Label
-          </span>
+          <span className="fr-chart-grid__corner" role="columnheader">{t('label')}</span>
           {chart.series.map((s, i) => (
             <span key={s.id} className="fr-chart-grid__head" role="columnheader">
               <span className="fr-chart-grid__dot" style={{ background: chartColor(s, i) }} />
               {cell(CHART_HEAD, s.id, false, `Series ${i + 1} name`, `Series ${i + 1}`)}
               {canEdit && chart.series.length > 1 && (
-                <button type="button" className="fr-chart-grid__x" aria-label={`Remove series ${i + 1}`} title="Remove this series" onClick={() => removeSeries(editor, chart, s.id)}>
+                <button type="button" className="fr-chart-grid__x" aria-label={t('removeSeriesValue', { value: i + 1 })} title={t('removeThisSeries')} onClick={() => removeSeries(editor, chart, s.id)}>
                   <X size={12} aria-hidden />
                 </button>
               )}
@@ -138,7 +137,7 @@ function ChartData({ editor, chart }: { editor: Editor; chart: ChartElement }) {
             {cell(r.id, CHART_LABEL, false, `Row ${ri + 1} label`, `Row ${ri + 1}`)}
             {chart.series.map((s, i) => cell(r.id, s.id, true, `Row ${ri + 1}, series ${i + 1}`))}
             {canEdit && chart.rows.length > 1 ? (
-              <button type="button" className="fr-chart-grid__x" aria-label={`Remove row ${ri + 1}`} title="Remove this row" onClick={() => removeRow(editor, chart, r.id)}>
+              <button type="button" className="fr-chart-grid__x" aria-label={t('removeRowValue', { value: ri + 1 })} title={t('removeThisRow')} onClick={() => removeRow(editor, chart, r.id)}>
                 <X size={12} aria-hidden />
               </button>
             ) : (
@@ -149,12 +148,8 @@ function ChartData({ editor, chart }: { editor: Editor; chart: ChartElement }) {
       </div>
       {canEdit && (
         <div className="fr-chart-data__actions">
-          <Button size="sm" variant="secondary" icon={Plus} onClick={() => addRow(editor, chart)}>
-            Row
-          </Button>
-          <Button size="sm" variant="secondary" icon={Plus} onClick={() => addSeries(editor, chart)}>
-            Series
-          </Button>
+          <Button size="sm" variant="secondary" icon={Plus} onClick={() => addRow(editor, chart)}>{t('row')}</Button>
+          <Button size="sm" variant="secondary" icon={Plus} onClick={() => addSeries(editor, chart)}>{t('series')}</Button>
         </div>
       )}
     </div>
@@ -167,9 +162,9 @@ function ChartDataPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-chart-panel">
       <DockHeader className="fr-chart-panel__head">
-        <h2 className="fr-chart-panel__title">Chart data</h2>
+        <h2 className="fr-chart-panel__title">{t('chartData')}</h2>
       </DockHeader>
-      {chart ? <ChartData editor={editor} chart={chart} /> : <p className="fr-chart-data__hint">Select one chart to edit its data.</p>}
+      {chart ? <ChartData editor={editor} chart={chart} /> : <p className="fr-chart-data__hint">{t('selectOneChartToEdit')}</p>}
     </div>
   );
 }

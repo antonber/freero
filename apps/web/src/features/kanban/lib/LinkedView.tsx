@@ -17,6 +17,7 @@ import { linkedCardsEditable } from './linked';
 import { ProjectionBody, clipOf } from './ProjectionTab';
 import { LAYOUT_ICONS } from './TabStrip';
 
+import { t } from '../messages';
 /** Below this zoom text is unreadable: draw only the view's name. */
 const LOD_ZOOM = 0.15;
 const PAD = 6;
@@ -66,21 +67,18 @@ export function LinkedViewBody({ editor, lv, selected, canEdit, viewport, lod, p
             type="button"
             className="fr-kanban-linked__source"
             data-fr-interactive=""
-            title={`Linked to the kanban “${title}”: show it`}
+            title={t('linkedToTheKanbanTitle', { title })}
             onPointerDown={stop}
             onClick={() => {
               editor.select([k.id]);
               editor.zoomToFit([k.id], { animate: true, padding: 48 });
             }}
-          >
-            of <strong>{title}</strong>
+          >{t('of')}{' '}<strong>{title}</strong>
           </button>
         )}
         {k && !lod && editable === false && canEdit && (
-          <span className="fr-kanban-linked__chip" title={k.locked ? 'The kanban is locked: its cards are read only here' : 'This view is locked: its cards are read only here'}>
-            <Lock size={12} aria-hidden />
-            Read only
-          </span>
+          <span className="fr-kanban-linked__chip" title={k.locked ? t('theKanbanIsLockedIts') : t('thisViewIsLockedIts')}>
+            <Lock size={12} aria-hidden />{t('readOnly')}</span>
         )}
         <span className="fr-kanban-linked__spacer" />
         {k && !lod && (selected || phone) && (
@@ -88,8 +86,8 @@ export function LinkedViewBody({ editor, lv, selected, canEdit, viewport, lod, p
             type="button"
             className="fr-kanban__focus"
             data-fr-interactive=""
-            title="Open the kanban in focus mode: all its cards as a page you arrange your way"
-            aria-label="Open in focus mode"
+            title={t('openTheKanbanInFocus')}
+            aria-label={t('openInFocusMode')}
             onPointerDown={stop}
             onClick={() => editor.openPanel(FOCUS_PANEL, { id: k.id })}
           >
@@ -117,20 +115,18 @@ function Missing({ editor, lv, canEdit, selected }: { editor: Editor; lv: Kanban
       {canEdit ? (
         <>
           <Unlink size={28} strokeWidth={1.5} aria-hidden />
-          <strong>The kanban this view showed was deleted</strong>
-          <span>Undo brings it back, and this view shows its cards again.</span>
+          <strong>{t('theKanbanThisViewShowed')}</strong>
+          <span>{t('undoBringsItBackAnd')}</span>
           {selected && !lv.locked && (
             <button type="button" className="fr-kanban-linked__remove" data-fr-interactive="" onPointerDown={stop} onClick={() => editor.remove([lv.id])}>
-              <Trash2 size={14} aria-hidden />
-              Delete this view
-            </button>
+              <Trash2 size={14} aria-hidden />{t('deleteThisView')}</button>
           )}
         </>
       ) : (
         <>
           <EyeOff size={28} strokeWidth={1.5} aria-hidden />
-          <strong>Not visible to you</strong>
-          <span>The kanban this view shows was deleted, or is somewhere on the board you can’t see.</span>
+          <strong>{t('notVisibleToYou')}</strong>
+          <span>{t('theKanbanThisViewShows')}</span>
         </>
       )}
     </div>

@@ -9,11 +9,12 @@ import { Select } from '@ui';
 import { cardCollection, setValues } from './values';
 import { useBoardPeople } from './people';
 
+import { t } from '../messages';
 function Chip({ option }: { option: FieldOption }) {
   return (
     <span className="fr-card-fields__chip" style={{ ['--opt' as string]: option.color }}>
       <span className="fr-card-fields__dot" aria-hidden />
-      {option.label || 'Untitled'}
+      {option.label || t('untitled')}
     </span>
   );
 }
@@ -65,9 +66,9 @@ function PersonPicker({ editor, id, value, disabled, onChange }: { editor: Edito
         disabled={disabled}
         value={value ?? ''}
         options={[
-          { value: '', label: 'Nobody' },
+          { value: '', label: t('nobody') },
           ...people.map((p) => ({ value: p.id, label: p.name })),
-          ...(known ? [] : [{ value: value!, label: 'Someone who no longer has access' }]),
+          ...(known ? [] : [{ value: value!, label: t('someoneWhoNoLongerHas2') }]),
         ]}
         onChange={(v) => onChange(v || null)}
       />
@@ -93,11 +94,11 @@ function FieldControl({ editor, card, kanban, field }: { editor: Editor; card: C
           value={str}
           options={[
             // Grouped by the column field, a card always has a value: the column it is in.
-            ...(field.id === COLUMN_FIELD_ID && groupFieldId(kanban) === COLUMN_FIELD_ID ? [] : [{ value: '', label: <span className="fr-card-fields__none">None</span> }]),
+            ...(field.id === COLUMN_FIELD_ID && groupFieldId(kanban) === COLUMN_FIELD_ID ? [] : [{ value: '', label: <span className="fr-card-fields__none">{t('none')}</span> }]),
             // A read-only option (a tracker's closed sprint) shows on the card that holds it; nobody picks it.
             ...(field.options ?? [])
               .filter((o) => !o.readOnly || o.id === str)
-              .map((o) => ({ value: o.id, label: <Chip option={o} />, ...(o.readOnly ? { disabled: true, description: 'Closed' } : {}) })),
+              .map((o) => ({ value: o.id, label: <Chip option={o} />, ...(o.readOnly ? { disabled: true, description: t('closed') } : {}) })),
           ]}
           onChange={(v) => set(v || null)}
         />
@@ -119,7 +120,7 @@ function FieldControl({ editor, card, kanban, field }: { editor: Editor; card: C
               <Chip option={o} />
             </button>
           ))}
-          {!field.options?.length && <span className="fr-card-fields__none">No options yet</span>}
+          {!field.options?.length && <span className="fr-card-fields__none">{t('noOptionsYet')}</span>}
         </div>
       );
       break;
@@ -138,7 +139,7 @@ function FieldControl({ editor, card, kanban, field }: { editor: Editor; card: C
         <span className="fr-card-fields__url">
           <CommitBox id={id} type="url" value={str} disabled={disabled} onCommit={(v) => set(v.trim() || null)} />
           {str && isSafeHref(str) && (
-            <a href={str} target="_blank" rel="noopener noreferrer nofollow" className="fr-card-fields__open" aria-label={`Open ${field.name}`}>
+            <a href={str} target="_blank" rel="noopener noreferrer nofollow" className="fr-card-fields__open" aria-label={t('openName', { name: field.name })}>
               <ExternalLink size={14} aria-hidden />
             </a>
           )}
@@ -170,7 +171,7 @@ export function CardFields({ editor, card }: { editor: Editor; card: CardElement
   if (!coll) return null;
   return (
     <div className="fr-card-fields">
-      <div className="fr-card-pop__label">Fields</div>
+      <div className="fr-card-pop__label">{t('fields')}</div>
       <div className="fr-card-fields__grid">
         {coll.schema.map((f) => (
           <FieldControl key={f.id} editor={editor} card={card} kanban={coll.kanban} field={f} />

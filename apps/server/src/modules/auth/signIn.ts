@@ -94,7 +94,7 @@ async function openSession(
   sendSecurityNotice(req, user.email, { kind: 'new_sign_in', method: how.method === 'password' ? 'password' : providerLabel(how.method) });
 }
 
-const signInExpired = () => unauthorized('Your sign-in expired. Please log in again.');
+const signInExpired = () => unauthorized('Your sign-in expired. Please log in again.', 'sign_in_expired');
 
 /**
  * The pending sign-in of this browser (first factor proven, second not yet), without counting an

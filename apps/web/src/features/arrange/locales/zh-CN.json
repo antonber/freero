@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "无标签",
+  "selectTwoOrMoreUnlocked": "请选择两个或更多未锁定的项目",
+  "selectThreeOrMoreUnlocked": "请选择三个或更多未锁定的项目",
+  "autoLayout": "自动布局",
+  "selectTwoOrMoreUnlocked2": "请选择两个或更多由连接线相连的未锁定项目",
+  "alignAndDistribute": "对齐和分布",
+  "clusterStickies": "聚类便利贴"
+}

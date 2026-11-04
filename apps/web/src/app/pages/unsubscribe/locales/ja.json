@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "このリンクは不完全です。メールのリンクをもう一度開いてください。",
+  "couldNotReachFreeroTry": "Freero に接続できませんでした。もう一度お試しください。",
+  "unsubscribe": "配信停止",
+  "unsubscribing": "配信を停止しています…",
+  "unsubscribing2": "配信を停止しています",
+  "youReUnsubscribed": "配信を停止しました",
+  "thatLinkDidnTWork": "このリンクは使用できませんでした",
+  "emailWonTGetThe": "{email} には今後「ボードの変更」のまとめが届きません。その他のメールは変わりません。",
+  "emailWonTGetNotification": "{email} には今後通知メールが届きません。メンションや返信は引き続き Freero で確認できます。",
+  "chooseWhichEmailsYouGet": "受け取るメールを選択",
+  "logInToChooseWhich": "ログインして受け取るメールを選択"
+}

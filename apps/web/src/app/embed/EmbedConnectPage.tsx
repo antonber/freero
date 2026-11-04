@@ -22,9 +22,10 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { RequestAccess } from '../board/RequestAccess';
 import { loginPath } from '../lib/nav';
+import { t as tr } from '../messages';
 import '../board/BoardPage.css';
 
-const ROLE_TEXT: Record<Role, string> = { owner: 'edit (you own it)', editor: 'edit', commenter: 'view and comment', viewer: 'view' };
+const ROLE_TEXT: Record<Role, string> = { owner: tr('editYouOwnIt'), editor: 'edit', commenter: tr('viewAndComment'), viewer: 'view' };
 
 const tellOpener = (msg: EmbedConnectMessage) => window.opener?.postMessage(msg, window.location.origin);
 
@@ -84,7 +85,7 @@ export default function EmbedConnectPage() {
         if (e instanceof ApiError && e.status === 403 && e.code !== 'link_password_required') {
           setNoAccess(true);
           tell({ freeroEmbedConnect: 'no-access', boardId: id });
-        } else setError(e instanceof ApiError ? e.message : 'Could not reach Freero.');
+        } else setError(e instanceof ApiError ? e.message : tr('couldNotReachFreero'));
       },
     );
     return () => {
@@ -101,52 +102,45 @@ export default function EmbedConnectPage() {
       if (!teams) window.close(); // Teams closes its own window
     } catch (e) {
       if (e instanceof ApiError && e.code === EMBED_NO_ACCESS) setNoAccess(true);
-      else setError(e instanceof ApiError ? e.message : 'Could not reach Freero.');
+      else setError(e instanceof ApiError ? e.message : tr('couldNotReachFreero'));
     } finally {
       setBusy(false);
     }
   }, [id, readonly, tell, teams]);
 
-  if (teams && teamsReady === null) return <Card title="Signing in"><Spinner size={22} label="Connecting to Teams" /></Card>;
+  if (teams && teamsReady === null) return <Card title={tr('signingIn')}><Spinner size={22} label={tr('connectingToTeams')} /></Card>;
   if (!opened)
     return (
-      <Card title="Open this from the embedded board">
-        <p>This window signs you in to a Freero board shown on another site. Use “Sign in” on the board there.</p>
+      <Card title={tr('openThisFromTheEmbedded')}>
+        <p>{tr('thisWindowSignsYouIn')}</p>
       </Card>
     );
-  if (loading) return <Card title="Signing in"><Spinner size={22} label="Checking your session" /></Card>;
+  if (loading) return <Card title={tr('signingIn')}><Spinner size={22} label={tr('checkingYourSession')} /></Card>;
   if (!user)
     return (
-      <Card title="Sign in to Freero">
-        <p>Sign in to see this board on {site}.{signInHere ? '' : ' A new tab opens; come back here when you’re signed in.'}</p>
+      <Card title={tr('signInToFreero')}>
+        <p>{tr('signInToSeeThis2', { site })}{signInHere ? '' : tr('aNewTabOpensCome')}</p>
         <div className="fr-boarderror__actions">
-          <Button variant="primary" onClick={() => signInFromWindow('login', signInHere)}>
-            Sign in
-          </Button>
-          <Button onClick={() => signInFromWindow('signup', signInHere)}>Create an account</Button>
+          <Button variant="primary" onClick={() => signInFromWindow('login', signInHere)}>{tr('signIn')}</Button>
+          <Button onClick={() => signInFromWindow('signup', signInHere)}>{tr('createAnAccount')}</Button>
         </div>
       </Card>
     );
   if (noAccess) return <RequestAccess boardId={id} onGranted={granted} />;
   if (error)
     return (
-      <Card title="Couldn’t sign in here">
+      <Card title={tr('couldnTSignInHere')}>
         <p>{error}</p>
       </Card>
     );
-  if (!board) return <Card title="Signing in"><Spinner size={22} label="Opening the board" /></Card>;
+  if (!board) return <Card title={tr('signingIn')}><Spinner size={22} label={tr('openingTheBoard')} /></Card>;
   const role: Role = readonly ? 'viewer' : board.role;
   return (
-    <Card title={`Show “${board.title || 'Untitled board'}” on ${site}?`}>
-      <p>
-        You’ll see it there as {user.name} and can {ROLE_TEXT[role]}.{role !== 'viewer' && !teams ? ' Changes start only after you click Edit on the board there.' : ''} Signing out of
-        Freero ends it.
-      </p>
+    <Card title={tr('showValueOnSite', { value: board.title || tr('untitledBoard'), site })}>
+      <p>{tr('youLlSeeItThere', { name: user.name, role_text: ROLE_TEXT[role] })}{role !== 'viewer' && !teams ? tr('changesStartOnlyAfterYou') : ''}{' '}{tr('signingOutOfFreeroEnds')}</p>
       <div className="fr-boarderror__actions">
-        <Button variant="primary" loading={busy} onClick={() => void allow()}>
-          Continue
-        </Button>
-        <Button onClick={() => window.close()}>Cancel</Button>
+        <Button variant="primary" loading={busy} onClick={() => void allow()}>{tr('continue')}</Button>
+        <Button onClick={() => window.close()}>{tr('cancel')}</Button>
       </div>
     </Card>
   );

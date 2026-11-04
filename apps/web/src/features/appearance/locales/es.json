@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "sameAsDevice",
+    "themeSameAsDevice",
+    "themeTheme",
+    "theme"
+  ],
+  "sameAsDevice": "Igual que el dispositivo",
+  "themeSameAsDevice": "Tema: igual que el dispositivo",
+  "themeTheme": "Tema: {theme}",
+  "theme": "Tema"
+}

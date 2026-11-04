@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "タグなし",
+  "selectTwoOrMoreUnlocked": "ロックされていないアイテムを2つ以上選択してください",
+  "selectThreeOrMoreUnlocked": "ロックされていないアイテムを3つ以上選択してください",
+  "autoLayout": "自動レイアウト",
+  "selectTwoOrMoreUnlocked2": "コネクタでつながった、ロックされていないアイテムを2つ以上選択してください",
+  "alignAndDistribute": "整列と分布",
+  "clusterStickies": "付箋をグループ化"
+}

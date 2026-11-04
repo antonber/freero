@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "ボードをリストで表示",
+  "everyItemInReadingOrder": "すべての項目を読む順に並べ、フレーム内の項目はその下に表示します。矢印キーで移動、右キーと左キーでフレームを開閉、Enterでボード上の項目を表示します。",
+  "thisBoardIsEmpty": "このボードは空です。",
+  "boardItems": "ボードの項目",
+  "connections": "接続"
+}

@@ -28,7 +28,8 @@ import type { EngineCore } from '../runtime/core';
 import { nextZoomStep } from '../camera/camera';
 import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from './boardSettings';
 
-const PROTECTED_NOTE = 'Only the board’s owner and co-owners can unlock a protected item.';
+import { t } from '../messages';
+const PROTECTED_NOTE = t('onlyTheBoardSOwner');
 
 /** Commands whose shortcut is display-only: the keyboard path is the native copy/cut/paste event. */
 export const NATIVE_CLIPBOARD_COMMANDS = new Set(['engine.copy', 'engine.cut', 'engine.paste']);
@@ -44,31 +45,31 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
   const sel = (e: Editor) => e.getSelection();
   const hasSel = (e: Editor) => sel(e).length > 0;
   /** Why selection commands are greyed out in the command palette. */
-  const NEEDS_SEL = 'Select something first';
+  const NEEDS_SEL = t('selectSomethingFirst');
   const selected = (e: Editor) => sel(e).map((id) => e.getElement(id)!).filter(Boolean);
   /** Zoom commands are the user's own camera moves (shortcuts, zoom controls): see Editor 'camera-user'. */
   const user = (fn: () => void) => core.editor.asUser(fn);
   return [
-    { id: 'engine.undo', label: 'Undo', shortcut: 'mod+z', run: (e) => e.undo() },
-    { id: 'engine.redo', label: 'Redo', shortcut: 'mod+shift+z', run: (e) => e.redo() },
-    { id: 'engine.redoAlt', label: 'Redo', shortcut: 'mod+y', run: (e) => e.redo() },
-    { id: 'engine.cut', icon: Scissors, label: 'Cut', shortcut: 'mod+x', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.cut() },
+    { id: 'engine.undo', label: t('undo'), shortcut: 'mod+z', run: (e) => e.undo() },
+    { id: 'engine.redo', label: t('redo'), shortcut: 'mod+shift+z', run: (e) => e.redo() },
+    { id: 'engine.redoAlt', label: t('redo'), shortcut: 'mod+y', run: (e) => e.redo() },
+    { id: 'engine.cut', icon: Scissors, label: t('cut'), shortcut: 'mod+x', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.cut() },
     {
       id: 'engine.copy',
       icon: Copy,
-      label: 'Copy',
+      label: t('copy'),
       shortcut: 'mod+c',
       minRole: 'viewer',
       menus: ['context'],
       // #123: off for viewers and commenters of a board whose owner turned copying off.
       when: (e) => hasSel(e) && e.host.board.canCopy !== false,
-      disabledReason: (e) => (e.host.board.canCopy === false ? 'The board’s owner turned copying off for viewers and commenters' : NEEDS_SEL),
+      disabledReason: (e) => (e.host.board.canCopy === false ? t('theBoardSOwnerTurned') : NEEDS_SEL),
       run: (e) => e.copy(),
     },
     {
       id: 'engine.paste',
       icon: ClipboardPaste,
-      label: 'Paste',
+      label: t('paste'),
       shortcut: 'mod+v',
       menus: ['context'],
       run: (e) => {
@@ -76,7 +77,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
         e.paste(m ? m.world : undefined);
       },
     },
-    { id: 'engine.duplicate', icon: CopyPlus, label: 'Duplicate', shortcut: 'mod+d', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.duplicate(sel(e)) },
+    { id: 'engine.duplicate', icon: CopyPlus, label: t('duplicate'), shortcut: 'mod+d', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.duplicate(sel(e)) },
     {
       id: 'engine.delete',
       icon: Trash2,
@@ -90,7 +91,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     {
       id: 'engine.selectAll',
       icon: MousePointerSquareDashed,
-      label: 'Select all',
+      label: t('selectAll'),
       shortcut: 'mod+a',
       minRole: 'viewer',
       run: (e) => e.select(e.getElements().map((el) => el.id)),
@@ -98,34 +99,34 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     {
       id: 'engine.group',
       icon: Group,
-      label: 'Group',
+      label: t('group'),
       shortcut: 'mod+g',
       menus: ['context'],
       when: (e) => {
         const els = selected(e);
         return els.length > 1 && !(els[0].groupId && els.every((el) => el.groupId === els[0].groupId));
       },
-      disabledReason: 'Select two or more items that aren’t one group',
+      disabledReason: t('selectTwoOrMoreItems'),
       run: (e) => e.group(sel(e)),
     },
     {
       id: 'engine.ungroup',
       icon: Ungroup,
-      label: 'Ungroup',
+      label: t('ungroup'),
       shortcut: 'mod+shift+g',
       menus: ['context'],
       when: (e) => selected(e).some((el) => el.groupId),
-      disabledReason: 'Select a group',
+      disabledReason: t('selectAGroup'),
       run: (e) => e.ungroup(sel(e)),
     },
     // Brackets need AltGr on many layouts (handled in matchShortcut); the arrows work on every one.
     // Mod+Shift+] / [ is the tab switch of Chrome and Safari on macOS, which can take it before the
     // board does: Mod+Alt+↑ / ↓ step forward / backward on every platform and layout (KAI-175).
-    { id: 'engine.bringToFront', icon: BringToFront, label: 'Bring to front', shortcut: 'mod+]', extraShortcuts: ['mod+shift+arrowup', 'pageup'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.bringToFront(sel(e)) },
+    { id: 'engine.bringToFront', icon: BringToFront, label: t('bringToFront'), shortcut: 'mod+]', extraShortcuts: ['mod+shift+arrowup', 'pageup'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.bringToFront(sel(e)) },
     {
       id: 'engine.bringForward',
       icon: ArrowUp,
-      label: 'Bring forward',
+      label: t('bringForward'),
       shortcut: 'mod+shift+]',
       extraShortcuts: ['mod+alt+arrowup'],
       menus: ['context'],
@@ -136,7 +137,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     {
       id: 'engine.sendBackward',
       icon: ArrowDown,
-      label: 'Send backward',
+      label: t('sendBackward'),
       shortcut: 'mod+shift+[',
       extraShortcuts: ['mod+alt+arrowdown'],
       menus: ['context'],
@@ -144,11 +145,11 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       disabledReason: NEEDS_SEL,
       run: (e) => e.sendBackward(sel(e)),
     },
-    { id: 'engine.sendToBack', icon: SendToBack, label: 'Send to back', shortcut: 'mod+[', extraShortcuts: ['mod+shift+arrowdown', 'pagedown'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.sendToBack(sel(e)) },
+    { id: 'engine.sendToBack', icon: SendToBack, label: t('sendToBack'), shortcut: 'mod+[', extraShortcuts: ['mod+shift+arrowdown', 'pagedown'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.sendToBack(sel(e)) },
     {
       id: 'engine.lock',
       icon: Lock,
-      label: 'Lock / unlock',
+      label: t('lockUnlock'),
       shortcut: 'mod+shift+l',
       menus: ['context'],
       when: hasSel,
@@ -158,7 +159,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
         const lock = !els.every((el) => el.locked);
         // A protected lock is lifted only by the owner (the server enforces it).
         const held = !lock && !e.mayProtect() ? els.filter(isProtectedLock) : [];
-        if (held.length) e.host.notify(held.length === els.length ? PROTECTED_NOTE : `${PROTECTED_NOTE} The others are unlocked.`, 'info');
+        if (held.length) e.host.notify(held.length === els.length ? PROTECTED_NOTE : t('protectedNoteTheOthersAre', { protected_note: PROTECTED_NOTE }), 'info');
         const open = els.filter((el) => !held.includes(el));
         if (open.length) e.updateMany(open.map((el) => ({ id: el.id, patch: lock ? { locked: true } : { locked: false, lockProtected: false } })));
       },
@@ -168,12 +169,12 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       // elsewhere, opens a private window in Firefox and can't be taken there.
       id: 'engine.protectLock',
       icon: ShieldCheck,
-      label: 'Lock for the owner only',
+      label: t('lockForTheOwnerOnly'),
       shortcut: 'mod+alt+shift+l',
       menus: ['context'],
       detail: (e) => (selected(e).length && selected(e).every(isProtectedLock) ? 'on' : undefined),
       when: (e) => hasSel(e) && e.mayProtect(),
-      disabledReason: 'Only the board’s owner and co-owners can do this',
+      disabledReason: t('onlyTheBoardSOwner2'),
       run: (e) => {
         const els = selected(e);
         const protect = !els.every(isProtectedLock);
@@ -184,24 +185,24 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     {
       id: 'engine.copyLink',
       icon: Link2,
-      label: 'Copy link to item',
+      label: t('copyLinkToItem'),
       minRole: 'viewer',
       menus: ['context'],
       when: (e) => sel(e).length === 1,
-      disabledReason: 'Select one item',
+      disabledReason: t('selectOneItem'),
       run: (e) => {
         const link = elementLink(window.location.pathname, sel(e)[0]);
         navigator.clipboard
           ?.writeText(link)
-          .then(() => e.host.notify('Link copied to clipboard', 'success'))
+          .then(() => e.host.notify(t('linkCopiedToClipboard'), 'success'))
           .catch(() => e.host.notify(link, 'info'));
       },
     },
     // Alt+1 / Alt+2 / Mod+0: the keys people bring from other whiteboards, beside Freero's own.
-    { id: 'engine.zoomToFit', icon: Maximize, label: 'Zoom to fit', shortcut: 'shift+1', extraShortcuts: ['alt+1'], minRole: 'viewer', run: () => user(() => core.editor.zoomToFit()) },
+    { id: 'engine.zoomToFit', icon: Maximize, label: t('zoomToFit'), shortcut: 'shift+1', extraShortcuts: ['alt+1'], minRole: 'viewer', run: () => user(() => core.editor.zoomToFit()) },
     {
       id: 'engine.zoomToSelection',
-      label: 'Zoom to selection',
+      label: t('zoomToSelection'),
       shortcut: 'shift+2',
       extraShortcuts: ['alt+2'],
       minRole: 'viewer',
@@ -209,18 +210,18 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       disabledReason: NEEDS_SEL,
       run: (e) => user(() => e.zoomToFit(sel(e), { maxZoom: 2 })),
     },
-    { id: 'engine.zoom100', label: 'Zoom to 100%', shortcut: 'shift+0', extraShortcuts: ['mod+0'], minRole: 'viewer', run: (e) => user(() => e.zoomTo(1)) },
-    { id: 'engine.zoomIn', label: 'Zoom in', shortcut: 'mod+=', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, 1))) },
-    { id: 'engine.zoomOut', label: 'Zoom out', shortcut: 'mod+-', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, -1))) },
+    { id: 'engine.zoom100', label: t('zoomTo100'), shortcut: 'shift+0', extraShortcuts: ['mod+0'], minRole: 'viewer', run: (e) => user(() => e.zoomTo(1)) },
+    { id: 'engine.zoomIn', label: t('zoomIn'), shortcut: 'mod+=', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, 1))) },
+    { id: 'engine.zoomOut', label: t('zoomOut'), shortcut: 'mod+-', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, -1))) },
     {
       id: 'engine.editText',
-      label: 'Edit text',
+      label: t('editText'),
       shortcut: 'enter',
       when: (e) => {
         const els = selected(e);
         return els.length === 1 && !!e.getDefinition(els[0].type)?.textField && !els[0].locked;
       },
-      disabledReason: 'Select one unlocked item with text',
+      disabledReason: t('selectOneUnlockedItemWith'),
       run: (e) => e.startEditing(sel(e)[0], { selectAll: true }),
     },
     ...settingsCommands(),
@@ -232,12 +233,12 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
  * they have no shortcut or menu entry of their own; the board menu keeps its own controls).
  */
 function settingsCommands(): CommandDefinition[] {
-  const current = 'Already the current setting';
+  const current = t('alreadyTheCurrentSetting');
   return [
     {
       id: 'engine.settings.snapToGrid',
       icon: Magnet,
-      label: 'Snap to grid',
+      label: t('snapToGrid'),
       palette: true,
       detail: (e) => (e.getSettings().snapToGrid ? 'on' : 'off'),
       run: (e) => e.updateSettings({ snapToGrid: !e.getSettings().snapToGrid }),
@@ -245,7 +246,7 @@ function settingsCommands(): CommandDefinition[] {
     {
       id: 'engine.settings.lineJumps',
       icon: Spline,
-      label: 'Line jumps',
+      label: t('lineJumps'),
       palette: true,
       detail: (e) => (e.getSettings().lineJumps ? 'on' : 'off'),
       run: (e) => e.updateSettings({ lineJumps: !e.getSettings().lineJumps }),
@@ -254,7 +255,7 @@ function settingsCommands(): CommandDefinition[] {
       (g): CommandDefinition => ({
         id: `engine.settings.grid.${g.value}`,
         icon: Grid3x3,
-        label: g.value === 'none' ? 'Hide the grid' : `Grid: ${g.label.toLowerCase()}`,
+        label: g.value === 'none' ? t('hideTheGrid') : t('gridLabel', { label: g.label.toLowerCase() }),
         palette: true,
         when: (e) => e.getSettings().grid !== g.value,
         disabledReason: current,
@@ -265,7 +266,7 @@ function settingsCommands(): CommandDefinition[] {
       (n): CommandDefinition => ({
         id: `engine.settings.gridSize.${n}`,
         icon: Grid3x3,
-        label: `Grid size: ${n}`,
+        label: t('gridSizeN', { n }),
         palette: true,
         when: (e) => e.getSettings().gridSize !== n,
         disabledReason: current,
@@ -276,7 +277,7 @@ function settingsCommands(): CommandDefinition[] {
       (b): CommandDefinition => ({
         id: `engine.settings.background.${b.name.toLowerCase()}`,
         icon: PaintBucket,
-        label: `Background: ${b.name}`,
+        label: t('backgroundName', { name: b.name }),
         palette: true,
         when: (e) => e.getSettings().background.toLowerCase() !== b.color.toLowerCase(),
         disabledReason: current,

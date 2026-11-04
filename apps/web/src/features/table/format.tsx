@@ -21,8 +21,9 @@ import { CELLS, cellText } from './lib/cells';
 import { activeCell, addCol, addRow, currentFill, deleteCol, deleteRow, exportCsv, fillCells, groupColumns, setFilter, setView } from './lib/actions';
 import { FILTER_OPS, typeOf } from './lib/columns';
 
+import { t as tr } from './messages';
 const FILLS = ['transparent', '#FFF3A3', '#FFC98B', '#FFA9A0', '#F9B9E0', '#D3C4FF', '#B5D6FF', '#A7EBEB', '#C2EFB0', '#E6E6EA', '#FFFFFF', '#2B2A44'];
-const FILL_NAMES: Record<string, string> = { transparent: 'No fill', '#FFFFFF': 'White', '#2B2A44': 'Ink' };
+const FILL_NAMES: Record<string, string> = { transparent: tr('noFill'), '#FFFFFF': 'White', '#2B2A44': 'Ink' };
 
 function FillControl({ editor, table }: { editor: Editor; table: TableElement }) {
   const [open, setOpen] = useState(false);
@@ -30,7 +31,7 @@ function FillControl({ editor, table }: { editor: Editor; table: TableElement })
   useCollection(CELLS); // follow fills set by others
   useEditingPart();
   const fill = currentFill(editor, table);
-  const target = activeCell(editor, table) ? 'Cell fill' : 'Fill all cells';
+  const target = activeCell(editor, table) ? tr('cellFill') : tr('fillAllCells');
   return (
     <>
       <Tooltip content={target} side="bottom">
@@ -65,8 +66,8 @@ function StructureMenu({ editor, table }: { editor: Editor; table: TableElement 
   const t = () => editor.getElement<TableElement>(table.id) ?? table;
   return (
     <>
-      <Tooltip content="Rows and columns" side="bottom">
-        <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label="Rows and columns" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <Tooltip content={tr('rowsAndColumns')} side="bottom">
+        <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label={tr('rowsAndColumns')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <BetweenHorizontalEnd size={16} strokeWidth={2} />
         </button>
       </Tooltip>
@@ -77,15 +78,15 @@ function StructureMenu({ editor, table }: { editor: Editor; table: TableElement 
         side="bottom"
         align="center"
         minWidth={190}
-        aria-label="Rows and columns"
+        aria-label={tr('rowsAndColumns')}
         items={[
-          { id: 'ra', label: 'Insert row above', icon: <BetweenHorizontalStart size={16} />, onSelect: run(() => addRow(editor, t(), 'above')) },
-          { id: 'rb', label: 'Insert row below', icon: <BetweenHorizontalEnd size={16} />, onSelect: run(() => addRow(editor, t(), 'below')) },
-          { id: 'cl', label: 'Insert column left', icon: <BetweenVerticalStart size={16} />, onSelect: run(() => addCol(editor, t(), 'left')) },
-          { id: 'cr', label: 'Insert column right', icon: <BetweenVerticalEnd size={16} />, onSelect: run(() => addCol(editor, t(), 'right')) },
+          { id: 'ra', label: tr('insertRowAbove'), icon: <BetweenHorizontalStart size={16} />, onSelect: run(() => addRow(editor, t(), 'above')) },
+          { id: 'rb', label: tr('insertRowBelow'), icon: <BetweenHorizontalEnd size={16} />, onSelect: run(() => addRow(editor, t(), 'below')) },
+          { id: 'cl', label: tr('insertColumnLeft'), icon: <BetweenVerticalStart size={16} />, onSelect: run(() => addCol(editor, t(), 'left')) },
+          { id: 'cr', label: tr('insertColumnRight'), icon: <BetweenVerticalEnd size={16} />, onSelect: run(() => addCol(editor, t(), 'right')) },
           { divider: true },
-          { id: 'dr', label: 'Delete row', icon: <Trash2 size={16} />, danger: true, disabled: table.rows.length <= 1, disabledReason: 'A table needs at least one row', onSelect: run(() => deleteRow(editor, t())) },
-          { id: 'dc', label: 'Delete column', icon: <Trash2 size={16} />, danger: true, disabled: table.cols.length <= 1, disabledReason: 'A table needs at least one column', onSelect: run(() => deleteCol(editor, t())) },
+          { id: 'dr', label: tr('deleteRow'), icon: <Trash2 size={16} />, danger: true, disabled: table.rows.length <= 1, disabledReason: tr('aTableNeedsAtLeast'), onSelect: run(() => deleteRow(editor, t())) },
+          { id: 'dc', label: tr('deleteColumn'), icon: <Trash2 size={16} />, danger: true, disabled: table.cols.length <= 1, disabledReason: tr('aTableNeedsAtLeast2'), onSelect: run(() => deleteCol(editor, t())) },
         ]}
       />
     </>
@@ -119,28 +120,28 @@ function FilterControl({ editor, table }: { editor: Editor; table: TableElement 
   const inputType = typeOf(col) === 'date' ? 'date' : typeOf(col) === 'number' ? 'number' : 'text';
   return (
     <>
-      <Tooltip content={f ? 'Filter (on)' : 'Filter rows'} side="bottom">
-        <button ref={ref} type="button" className={`fr-table-fmt-btn${f ? ' is-on' : ''}`} aria-label="Filter rows" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <Tooltip content={f ? tr('filterOn') : tr('filterRows')} side="bottom">
+        <button ref={ref} type="button" className={`fr-table-fmt-btn${f ? ' is-on' : ''}`} aria-label={tr('filterRows')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <Filter size={16} strokeWidth={2} />
         </button>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Filter rows">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={tr('filterRows')}>
         <div className="fr-table-filter">
-          <div className="fr-table-filter__title">Show rows where</div>
+          <div className="fr-table-filter__title">{tr('showRowsWhere')}</div>
           <Select
             size="sm"
-            aria-label="Column"
+            aria-label={tr('column')}
             value={col.id}
             options={table.cols.map((c) => ({ value: c.id, label: columnName(editor, table, c.id) }))}
             onChange={(colId) => apply({ colId, op: FILTER_OPS[typeOf(table.cols.find((c) => c.id === colId))][0].value, value: '' })}
           />
-          <Select size="sm" aria-label="Condition" value={op.value} options={ops.map((o) => ({ value: o.value, label: o.label }))} onChange={(v) => apply({ ...draft, colId: col.id, op: v })} />
+          <Select size="sm" aria-label={tr('condition')} value={op.value} options={ops.map((o) => ({ value: o.value, label: o.label }))} onChange={(v) => apply({ ...draft, colId: col.id, op: v })} />
           {op.needsValue &&
             (typeOf(col) === 'select' ? (
               <Select
                 size="sm"
-                aria-label="Value"
-                placeholder="Choose…"
+                aria-label={tr('value')}
+                placeholder={tr('choose')}
                 value={draft.value ?? ''}
                 options={(col.options ?? []).map((o) => ({ value: o.label, label: o.label }))}
                 onChange={(v) => apply({ ...draft, colId: col.id, op: op.value, value: v })}
@@ -149,16 +150,14 @@ function FilterControl({ editor, table }: { editor: Editor; table: TableElement 
               <input
                 className="fr-table-filter__input"
                 type={inputType}
-                aria-label="Value"
-                placeholder="Value"
+                aria-label={tr('value')}
+                placeholder={tr('value')}
                 value={draft.value ?? ''}
                 onChange={(e) => apply({ ...draft, colId: col.id, op: op.value, value: e.target.value })}
               />
             ))}
           {f && (
-            <button type="button" className="fr-table-filter__clear" onClick={() => setFilter(editor, table.id, null)}>
-              Clear filter
-            </button>
+            <button type="button" className="fr-table-filter__clear" onClick={() => setFilter(editor, table.id, null)}>{tr('clearFilter')}</button>
           )}
         </div>
       </Popover>
@@ -181,11 +180,11 @@ export default defineFormat({
         {(canGroup || board) && (
           <SegmentedControl<'grid' | 'board'>
             size="sm"
-            aria-label="View"
+            aria-label={tr('view')}
             value={board ? 'board' : 'grid'}
             options={[
-              { value: 'grid', icon: Table2, title: 'Table' },
-              { value: 'board', icon: KanbanSquare, title: 'Board: rows as cards by a select column' },
+              { value: 'grid', icon: Table2, title: tr('table') },
+              { value: 'board', icon: KanbanSquare, title: tr('boardRowsAsCardsBy') },
             ]}
             onChange={(v) => setView(editor, table.id, v)}
           />
@@ -193,7 +192,7 @@ export default defineFormat({
         {board && groupColumns(table).length > 1 && (
           <Select
             size="sm"
-            aria-label="Group by"
+            aria-label={tr('groupBy')}
             value={table.groupBy ?? groupColumns(table)[0].id}
             options={groupColumns(table).map((c) => ({ value: c.id, label: columnName(editor, table, c.id) }))}
             onChange={(id) => setView(editor, table.id, 'board', id)}
@@ -204,18 +203,18 @@ export default defineFormat({
         {!board && <FillControl editor={editor} table={table} />}
         {!board && <IconButton
           icon={Heading}
-          label={table.header ? 'Plain first row' : 'Header row'}
+          label={table.header ? tr('plainFirstRow') : tr('headerRow')}
           size={32}
           active={table.header}
           onClick={() => editor.update<TableElement>(table.id, { header: !table.header })}
         />}
         {editing && (
           <>
-            <IconButton icon={Bold} label="Bold" shortcut="Mod+B" size={32} active={fmt.bold} onClick={() => editor.formatText('bold')} />
-            <IconButton icon={Italic} label="Italic" shortcut="Mod+I" size={32} active={fmt.italic} onClick={() => editor.formatText('italic')} />
+            <IconButton icon={Bold} label={tr('bold')} shortcut="Mod+B" size={32} active={fmt.bold} onClick={() => editor.formatText('bold')} />
+            <IconButton icon={Italic} label={tr('italic')} shortcut="Mod+I" size={32} active={fmt.italic} onClick={() => editor.formatText('italic')} />
           </>
         )}
-        <IconButton icon={Download} label="Export as CSV" size={32} onClick={() => void exportCsv(editor, table)} />
+        <IconButton icon={Download} label={tr('exportAsCsv')} size={32} onClick={() => void exportCsv(editor, table)} />
       </>
     );
   },

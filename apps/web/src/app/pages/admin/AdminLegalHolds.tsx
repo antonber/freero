@@ -8,6 +8,7 @@ import { Button, Input, Modal, Spinner, TextArea, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 
+import { t as tr } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 const STATE_LABEL = { live: 'Live', archived: 'Archived', trashed: 'In the trash', deleted: 'Deleted by its owner (kept)', taken_down: 'Taken down' } as const;
 
@@ -20,7 +21,7 @@ export function AdminLegalHolds({ workspace }: { workspace: WorkspaceSummary }) 
   const load = useCallback(() => {
     api.legalCases(workspace.id).then(
       (r) => setCases(r.cases),
-      (e) => notify(errorText(e, 'Could not load the legal holds'), 'error'),
+      (e) => notify(errorText(e, tr('couldNotLoadTheLegal')), 'error'),
     );
   }, [workspace.id, notify]);
   useEffect(load, [load]);
@@ -29,7 +30,7 @@ export function AdminLegalHolds({ workspace }: { workspace: WorkspaceSummary }) 
     try {
       setOpen((await api.legalCase(workspace.id, id)).case);
     } catch (e) {
-      notify(errorText(e, 'Could not open the case'), 'error');
+      notify(errorText(e, tr('couldNotOpenTheCase')), 'error');
     }
   };
 
@@ -37,27 +38,21 @@ export function AdminLegalHolds({ workspace }: { workspace: WorkspaceSummary }) 
   return (
     <section aria-labelledby="admin-holds-title">
       <div className="fr-admin__head">
-        <h1 id="admin-holds-title" className="fr-admin__title">
-          Legal holds
-        </h1>
-        <span className="fr-admin__muted">
-          While a case is open, nothing it covers can be deleted — not by the trash, retention rules, its owner or an account deletion. Its people aren’t told.
-        </span>
+        <h1 id="admin-holds-title" className="fr-admin__title">{tr('legalHolds')}</h1>
+        <span className="fr-admin__muted">{tr('whileACaseIsOpen')}</span>
         <div className="fr-admin__head-actions">
-          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
-            New case
-          </Button>
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{tr('newCase')}</Button>
         </div>
       </div>
       <div className="fr-admin-table-wrap">
         <table className="fr-admin-table">
           <thead>
             <tr>
-              <th scope="col">Case</th>
-              <th scope="col">Custodians</th>
-              <th scope="col">Boards held</th>
-              <th scope="col">Opened</th>
-              <th scope="col">Status</th>
+              <th scope="col">{tr('case')}</th>
+              <th scope="col">{tr('custodians')}</th>
+              <th scope="col">{tr('boardsHeld')}</th>
+              <th scope="col">{tr('opened')}</th>
+              <th scope="col">{tr('status')}</th>
             </tr>
           </thead>
           <tbody>
@@ -72,16 +67,14 @@ export function AdminLegalHolds({ workspace }: { workspace: WorkspaceSummary }) 
                 <td>{c.releasedAt === null ? c.heldBoards : '—'}</td>
                 <td className="fr-admin__muted">
                   {relativeTime(c.createdAt)}
-                  {c.createdBy ? ` by ${c.createdBy.name}` : ''}
+                  {c.createdBy ? tr('byName', { name: c.createdBy.name }) : ''}
                 </td>
-                <td>{c.releasedAt === null ? <strong>On hold</strong> : <span className="fr-admin__muted">Released {relativeTime(c.releasedAt)}</span>}</td>
+                <td>{c.releasedAt === null ? <strong>{tr('onHold')}</strong> : <span className="fr-admin__muted">{tr('releasedValue', { value: relativeTime(c.releasedAt) })}</span>}</td>
               </tr>
             ))}
             {cases.length === 0 ? (
               <tr>
-                <td colSpan={5} className="fr-admin__muted">
-                  No legal holds. Open a case to keep a person’s boards, or chosen boards, from being deleted.
-                </td>
+                <td colSpan={5} className="fr-admin__muted">{tr('noLegalHoldsOpenA')}</td>
               </tr>
             ) : null}
           </tbody>
@@ -135,10 +128,10 @@ function NewCase({ workspace, onClose, onCreated }: { workspace: WorkspaceSummar
     setBusy(true);
     try {
       const r = await api.createLegalCase(workspace.id, { name, description, custodianIds: [...people], boardIds: [...picked] });
-      notify(`Legal hold “${r.case.name}” is in place`, 'success');
+      notify(tr('legalHoldNameIsIn', { name: r.case.name }), 'success');
       onCreated(r.case);
     } catch (e) {
-      notify(errorText(e, 'Could not open the case'), 'error');
+      notify(errorText(e, tr('couldNotOpenTheCase')), 'error');
     } finally {
       setBusy(false);
     }
@@ -148,22 +141,20 @@ function NewCase({ workspace, onClose, onCreated }: { workspace: WorkspaceSummar
       open
       onClose={onClose}
       width={560}
-      title="New legal hold"
-      description="Everything it covers is kept — every version too — until you release it."
+      title={tr('newLegalHold')}
+      description={tr('everythingItCoversIsKept')}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" icon={Gavel} loading={busy} disabled={!name.trim() || (!people.size && !picked.size)} onClick={() => void create()}>
-            Place the hold
-          </Button>
+          <Button onClick={onClose}>{tr('cancel')}</Button>
+          <Button variant="primary" icon={Gavel} loading={busy} disabled={!name.trim() || (!people.size && !picked.size)} onClick={() => void create()}>{tr('placeTheHold')}</Button>
         </>
       }
     >
       <div className="fr-admin-holds__form">
-        <Input label="Case name" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} autoFocus />
-        <TextArea label="Notes (optional)" value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} />
+        <Input label={tr('caseName')} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} autoFocus />
+        <TextArea label={tr('notesOptional')} value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} />
         <fieldset className="fr-admin-holds__pick">
-          <legend>Custodians — every board they own here, now and later</legend>
+          <legend>{tr('custodiansEveryBoardTheyOwn')}</legend>
           {members === null ? <Spinner /> : null}
           {members?.map((m) => (
             <label key={m.userId} className="fr-admin-holds__option">
@@ -173,12 +164,12 @@ function NewCase({ workspace, onClose, onCreated }: { workspace: WorkspaceSummar
           ))}
         </fieldset>
         <fieldset className="fr-admin-holds__pick">
-          <legend>Boards</legend>
-          <Input size="sm" placeholder="Find a board" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a board" />
+          <legend>{tr('boards')}</legend>
+          <Input size="sm" placeholder={tr('findABoard')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={tr('findABoard')} />
           {boards?.map((b) => (
             <label key={b.boardId} className="fr-admin-holds__option">
               <input type="checkbox" checked={picked.has(b.boardId)} onChange={() => setPicked((s) => toggle(s, b.boardId))} />
-              {b.title || 'Untitled board'} <span className="fr-admin__muted">{b.ownerName}</span>
+              {b.title || tr('untitledBoard')} <span className="fr-admin__muted">{b.ownerName}</span>
             </label>
           ))}
         </fieldset>
@@ -209,7 +200,7 @@ function CaseDetail({ workspace, detail, onChange, onClose }: { workspace: Works
       if (c) onChange(c);
       notify(done, 'success');
     } catch (e) {
-      notify(errorText(e, 'That didn’t work'), 'error');
+      notify(errorText(e, tr('thatDidnTWork')), 'error');
     } finally {
       setBusy(null);
     }
@@ -221,13 +212,11 @@ function CaseDetail({ workspace, detail, onChange, onClose }: { workspace: Works
       onClose={onClose}
       width={680}
       title={detail.name}
-      description={openCase ? `On hold since ${new Date(detail.createdAt).toLocaleDateString()}${detail.createdBy ? `, placed by ${detail.createdBy.name}` : ''}` : `Released ${relativeTime(detail.releasedAt!)}${detail.releasedBy ? ` by ${detail.releasedBy.name}` : ''}`}
+      description={openCase ? tr('onHoldSinceTolocaledatestringValue', { toLocaleDateString: new Date(detail.createdAt).toLocaleDateString(), value: detail.createdBy ? tr('placedByName', { name: detail.createdBy.name }) : '' }) : tr('releasedValueValue2', { value: relativeTime(detail.releasedAt!), value2: detail.releasedBy ? tr('byName', { name: detail.releasedBy.name }) : '' })}
       footer={
         <>
           {openCase ? (
-            <Button variant="danger" icon={Unlock} onClick={() => setConfirmRelease(true)}>
-              Release the hold
-            </Button>
+            <Button variant="danger" icon={Unlock} onClick={() => setConfirmRelease(true)}>{tr('releaseTheHold')}</Button>
           ) : null}
           <Button
             icon={FileArchive}
@@ -239,22 +228,21 @@ function CaseDetail({ workspace, detail, onChange, onClose }: { workspace: Works
                   await api.exportLegalCase(workspace.id, detail.id);
                   return (await api.legalCase(workspace.id, detail.id)).case;
                 },
-                'Preparing the export…',
+                tr('preparingTheExport'),
               )
             }
           >
-            {pending ? 'Preparing export' : 'Export the case'}
+            {pending ? tr('preparingExport') : tr('exportTheCase')}
           </Button>
           {latest ? (
             <a className="fr-btn fr-btn--primary fr-btn--md" href={api.legalCaseExportUrl(workspace.id, detail.id, latest.id)} download>
-              <Download size={16} aria-hidden /> Download ({Math.max(1, Math.round((latest.bytes ?? 0) / 1024))} KB)
-            </a>
+              <Download size={16} aria-hidden />{' '}{tr('downloadMaxKb', { max: Math.max(1, Math.round((latest.bytes ?? 0) / 1024)) })}</a>
           ) : null}
         </>
       }
     >
       {detail.description ? <p className="fr-admin__muted">{detail.description}</p> : null}
-      <h3 className="fr-admin-card__title">Custodians</h3>
+      <h3 className="fr-admin-card__title">{tr('custodians')}</h3>
       <ul className="fr-admin-holds__list">
         {detail.custodians.map((p) => (
           <li key={p.userId}>
@@ -264,67 +252,61 @@ function CaseDetail({ workspace, detail, onChange, onClose }: { workspace: Works
                 size="sm"
                 variant="ghost"
                 loading={busy === p.userId}
-                onClick={() => void act(p.userId, async () => (await api.changeLegalCase(workspace.id, detail.id, { removeCustodianIds: [p.userId] })).case, `${p.name} is no longer a custodian`)}
-              >
-                Remove
-              </Button>
+                onClick={() => void act(p.userId, async () => (await api.changeLegalCase(workspace.id, detail.id, { removeCustodianIds: [p.userId] })).case, tr('nameIsNoLongerA', { name: p.name }))}
+              >{tr('remove')}</Button>
             ) : null}
           </li>
         ))}
-        {detail.custodians.length === 0 ? <li className="fr-admin__muted">None</li> : null}
+        {detail.custodians.length === 0 ? <li className="fr-admin__muted">{tr('none')}</li> : null}
       </ul>
-      <h3 className="fr-admin-card__title">{openCase ? `Boards held (${detail.boards.length})` : 'Boards'}</h3>
+      <h3 className="fr-admin-card__title">{openCase ? tr('boardsHeldLength', { length: detail.boards.length }) : tr('boards')}</h3>
       {openCase ? (
         <div className="fr-admin-table-wrap">
           <table className="fr-admin-table">
             <thead>
               <tr>
-                <th scope="col">Board</th>
-                <th scope="col">Owner</th>
-                <th scope="col">State</th>
-                <th scope="col">Held as</th>
+                <th scope="col">{tr('board')}</th>
+                <th scope="col">{tr('owner')}</th>
+                <th scope="col">{tr('state')}</th>
+                <th scope="col">{tr('heldAs')}</th>
               </tr>
             </thead>
             <tbody>
               {detail.boards.map((b) => (
                 <tr key={b.id}>
-                  <td className="fr-admin-person__name">{b.title || (b.kind === 'doc' ? 'Untitled doc' : 'Untitled board')}</td>
+                  <td className="fr-admin-person__name">{b.title || (b.kind === 'doc' ? tr('untitledDoc') : tr('untitledBoard'))}</td>
                   <td>{b.ownerName}</td>
                   <td>{STATE_LABEL[b.state]}</td>
-                  <td className="fr-admin__muted">{b.named ? 'Named in the case' : 'A custodian’s'}</td>
+                  <td className="fr-admin__muted">{b.named ? tr('namedInTheCase') : tr('aCustodianS')}</td>
                 </tr>
               ))}
               {detail.boards.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="fr-admin__muted">
-                    Nothing yet: boards the custodians make from now on are held as they are made.
-                  </td>
+                  <td colSpan={4} className="fr-admin__muted">{tr('nothingYetBoardsTheCustodians')}</td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
       ) : (
-        <p className="fr-admin__muted">Released: the boards follow their workspace’s retention again.</p>
+        <p className="fr-admin__muted">{tr('releasedTheBoardsFollowTheir')}</p>
       )}
       {confirmRelease ? (
         <Modal
           open
           onClose={() => setConfirmRelease(false)}
-          title={`Release “${detail.name}”?`}
-          description="Its boards follow normal retention again: boards their owners deleted while held are deleted for good, and the trash and retention rules apply. The case stays listed."
+          title={tr('releaseName', { name: detail.name })}
+          description={tr('itsBoardsFollowNormalRetention')}
           footer={
             <>
-              <Button onClick={() => setConfirmRelease(false)}>Keep the hold</Button>
+              <Button onClick={() => setConfirmRelease(false)}>{tr('keepTheHold')}</Button>
               <Button
                 variant="danger"
                 loading={busy === 'release'}
                 onClick={() =>
-                  void act('release', async () => (await api.releaseLegalCase(workspace.id, detail.id)).case, 'The hold was released').then(() => setConfirmRelease(false))
+                  void act('release', async () => (await api.releaseLegalCase(workspace.id, detail.id)).case, tr('theHoldWasReleased')).then(() => setConfirmRelease(false))
                 }
-              >
-                Release
-              </Button>
+              >{tr('release')}</Button>
             </>
           }
         />

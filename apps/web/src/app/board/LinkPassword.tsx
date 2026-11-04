@@ -5,6 +5,7 @@ import { KeyRound } from 'lucide-react';
 import { LINK_PASSWORD_MAX } from '@freero/shared';
 import { Button, Input, Logo } from '@ui';
 import { ApiError } from '../api/client';
+import { t } from '../messages';
 import './BoardPage.css';
 
 export function LinkPassword({ unlock, onUnlocked, footer }: { unlock: (password: string) => Promise<unknown>; onUnlocked: () => void; footer?: React.ReactNode }) {
@@ -13,14 +14,14 @@ export function LinkPassword({ unlock, onUnlocked, footer }: { unlock: (password
   const [error, setError] = useState<string | null>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!password) return setError('Enter the password');
+    if (!password) return setError(t('enterThePassword'));
     setBusy(true);
     setError(null);
     try {
       await unlock(password);
       onUnlocked();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not check the password');
+      setError(err instanceof ApiError ? err.message : t('couldNotCheckThePassword'));
       setBusy(false);
     }
   };
@@ -28,15 +29,14 @@ export function LinkPassword({ unlock, onUnlocked, footer }: { unlock: (password
     <div className="fr-boarderror">
       <div className="fr-boarderror__card fr-reqaccess">
         <Logo size={36} />
-        <h1>This link asks for a password</h1>
+        <h1>{t('thisLinkAsksForA')}</h1>
         <p>
-          <KeyRound size={15} aria-hidden /> The board’s owner protected its link. Ask them for the password.
-        </p>
+          <KeyRound size={15} aria-hidden />{' '}{t('theBoardSOwnerProtected')}</p>
         <form className="fr-reqaccess__form" onSubmit={submit} noValidate>
           <Input
             type="password"
-            aria-label="Link password"
-            placeholder="Password"
+            aria-label={t('linkPassword')}
+            placeholder={t('password')}
             autoComplete="off"
             autoFocus
             maxLength={LINK_PASSWORD_MAX}
@@ -47,9 +47,7 @@ export function LinkPassword({ unlock, onUnlocked, footer }: { unlock: (password
             }}
             error={error ?? undefined}
           />
-          <Button type="submit" variant="primary" size="lg" loading={busy}>
-            Open board
-          </Button>
+          <Button type="submit" variant="primary" size="lg" loading={busy}>{t('openBoard')}</Button>
         </form>
         {footer}
       </div>

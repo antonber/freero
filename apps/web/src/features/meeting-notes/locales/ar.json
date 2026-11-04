@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "summarise",
+    "importMeetingNotes",
+    "youNeedEditAccessTo",
+    "couldNotImportThatTranscript",
+    "couldNotImportTheseNotes",
+    "importMeetingNotes2",
+    "aSummaryMarkdownOrText",
+    "cancel",
+    "importText",
+    "importing",
+    "chooseAFileMdTxt",
+    "orPasteTheNotes",
+    "forTranscriptsAddWhoSpoke",
+    "droppingAVttOrSrt"
+  ],
+  "summarise": "تلخيص",
+  "importMeetingNotes": "استيراد ملاحظات الاجتماع…",
+  "youNeedEditAccessTo": "تحتاج إلى صلاحية التعديل للاستيراد",
+  "couldNotImportThatTranscript": "تعذّر استيراد هذا النص المفرّغ",
+  "couldNotImportTheseNotes": "تعذّر استيراد هذه الملاحظات",
+  "importMeetingNotes2": "استيراد ملاحظات الاجتماع",
+  "aSummaryMarkdownOrText": "يتحول الملخص (Markdown أو نص) أو النص المفرّغ (.vtt، .srt) من تطبيق الملاحظات إلى إطار واحد: القرارات، وبنود العمل مع المسؤول وتاريخ الاستحقاق، وبقية النقاط. تراجع واحد يلغيه.",
+  "cancel": "إلغاء",
+  "importText": "استيراد النص",
+  "importing": "جارٍ الاستيراد…",
+  "chooseAFileMdTxt": "اختر ملفًا (.md، .txt، .vtt، .srt)",
+  "orPasteTheNotes": "أو ألصق الملاحظات",
+  "forTranscriptsAddWhoSpoke": "للنصوص المفرّغة، أضف من تحدث ولكم من الوقت",
+  "droppingAVttOrSrt": "إفلات ملف .vtt أو .srt على اللوحة يستورده أيضًا."
+}

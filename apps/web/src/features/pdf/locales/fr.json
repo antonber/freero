@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "nameIsnTAPdf",
+    "couldnTUploadNameTry",
+    "couldnTOpenThisPdf",
+    "placingTheFirstNOf",
+    "placingNPages",
+    "couldnTPlaceThePages",
+    "placeAllPages",
+    "namePagePage",
+    "couldnTOpenThisPdf2",
+    "document",
+    "previousPage",
+    "nextPage",
+    "pdfs",
+    "nextPreviousPageOfA"
+  ],
+  "nameIsnTAPdf": "« {name} » n’est pas un PDF que Freero peut ouvrir.",
+  "couldnTUploadNameTry": "Impossible d’importer « {name} ». Réessayez plus tard.",
+  "couldnTOpenThisPdf": "Impossible d’ouvrir ce PDF.",
+  "placingTheFirstNOf": "Placement des {n} premières pages sur {numPages}.",
+  "placingNPages": "{n, plural, one {Placement de {n} page…} other {Placement de {n} pages…}}",
+  "couldnTPlaceThePages": "Impossible de placer les pages. Réessayez plus tard.",
+  "placeAllPages": "Placer toutes les pages",
+  "namePagePage": "{name}, page {page}",
+  "couldnTOpenThisPdf2": "Impossible d’ouvrir ce PDF",
+  "document": "Document",
+  "previousPage": "Page précédente",
+  "nextPage": "Page suivante",
+  "pdfs": "PDF",
+  "nextPreviousPageOfA": "Page suivante / précédente d’un document"
+}

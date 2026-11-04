@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "分享的内容",
+  "couldNotCreateABoard": "无法创建白板",
+  "addToABoard": "添加到白板",
+  "nothingArrivedThatFreeroCan": "没有收到 Freero 可以放置的内容：请分享图片、链接或文本。",
+  "shared": "已分享",
+  "failedFilesWerenTImages": "{failed, plural, other {有 {failed} 个文件不是 Freero 可以存储的图片（或你的上传配额已满）。}}",
+  "newBoard": "新建白板",
+  "orABoardYouCan": "或选择一个你可以编辑的白板",
+  "untitledBoard": "未命名白板",
+  "noBoardsYouCanEdit": "还没有你可以编辑的白板。"
+}

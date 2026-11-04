@@ -2,11 +2,12 @@ import { Workflow } from 'lucide-react';
 import { defineTool } from '@engine';
 import { insertDiagram } from './lib/actions';
 
+import { t } from './messages';
 // Insert ▸ Diagram (the "+" tools): an empty diagram on a free spot; double-click inside it to add a
 // step, or drop shapes onto it.
 export default defineTool({
   id: 'diagram',
-  label: 'Diagram',
+  label: t('diagram'),
   icon: Workflow,
   order: 43,
   placement: 'more',

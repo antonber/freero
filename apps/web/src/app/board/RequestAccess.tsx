@@ -12,10 +12,11 @@ import { useAuth } from '../auth/AuthContext';
 import { loginPath } from '../lib/nav';
 import { notificationsStore, retainLiveConnection } from '../notifications/store';
 
+import { t } from '../messages';
 const ROLE_OPTIONS: SelectOption<Exclude<Role, 'owner'>>[] = [
-  { value: 'editor', label: 'Can edit' },
-  { value: 'commenter', label: 'Can comment' },
-  { value: 'viewer', label: 'Can view' },
+  { value: 'editor', label: t('canEdit') },
+  { value: 'commenter', label: t('canComment') },
+  { value: 'viewer', label: t('canView') },
 ];
 const POLL_MS = 20_000;
 
@@ -36,7 +37,7 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
       setState(s);
       if (s.status === 'granted') onGranted();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not reach Freero. Check your connection.');
+      setError(err instanceof ApiError ? err.message : t('couldNotReachFreeroCheck'));
     }
   }, [boardId, onGranted]);
 
@@ -67,7 +68,7 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
     try {
       setState(await api.requestAccess(boardId, role, message.trim()));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not send the request');
+      setError(err instanceof ApiError ? err.message : t('couldNotSendTheRequest'));
     } finally {
       setBusy(false);
     }
@@ -78,7 +79,7 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
     try {
       setState(await api.withdrawAccessRequest(boardId));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not withdraw the request');
+      setError(err instanceof ApiError ? err.message : t('couldNotWithdrawTheRequest'));
     } finally {
       setBusy(false);
     }
@@ -102,16 +103,13 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
             <span className="fr-reqaccess__badge" aria-hidden>
               <Clock size={18} />
             </span>
-            <h1>Request sent</h1>
-            <p>The {noun}’s owner has been asked. Keep this page open — you’ll be taken to the {noun} as soon as they let you in.</p>
+            <h1>{t('requestSent')}</h1>
+            <p>{t('theNounSOwnerHas', { noun })}</p>
             <div className="fr-reqaccess__waiting" role="status">
-              <Spinner size={16} /> Waiting for an answer…
-            </div>
+              <Spinner size={16} />{' '}{t('waitingForAnAnswer')}</div>
             <div className="fr-boarderror__actions">
-              <Button onClick={() => navigate('/app')}>Back to dashboard</Button>
-              <Button variant="ghost" loading={busy} onClick={withdraw}>
-                Withdraw request
-              </Button>
+              <Button onClick={() => navigate('/app')}>{t('backToDashboard')}</Button>
+              <Button variant="ghost" loading={busy} onClick={withdraw}>{t('withdrawRequest')}</Button>
             </div>
           </>
         ) : (
@@ -119,15 +117,14 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
             <span className="fr-reqaccess__badge" aria-hidden>
               <Lock size={18} />
             </span>
-            <h1>{state.status === 'denied' ? 'Your request was declined' : `You need access to this ${noun}`}</h1>
+            <h1>{state.status === 'denied' ? t('yourRequestWasDeclined') : t('youNeedAccessToThis', { noun })}</h1>
             <p>
               {state.canRequest
-                ? 'Ask for access and the board’s owner will get a notification. You can say why you need it.'
-                : (state.reason ?? `Ask the ${noun} owner to invite you, or switch to the account they shared it with.`)}
+                ? t('askForAccessAndThe')
+                : (state.reason ?? t('askTheNounOwnerTo', { noun }))}
             </p>
             {user ? (
-              <p className="fr-boarderror__account">
-                Signed in as <strong>{user.email}</strong>
+              <p className="fr-boarderror__account">{t('signedInAs')}{' '}<strong>{user.email}</strong>
               </p>
             ) : null}
             {state.canRequest ? (
@@ -139,12 +136,12 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
                 }}
               >
                 <label className="fr-reqaccess__role">
-                  <span>Access you need</span>
-                  <Select<Exclude<Role, 'owner'>> aria-label="Access you need" options={ROLE_OPTIONS} value={role} onChange={setRole} width={170} />
+                  <span>{t('accessYouNeed')}</span>
+                  <Select<Exclude<Role, 'owner'>> aria-label={t('accessYouNeed')} options={ROLE_OPTIONS} value={role} onChange={setRole} width={170} />
                 </label>
                 <TextArea
-                  aria-label="Message to the owner"
-                  placeholder="Add a note (optional)"
+                  aria-label={t('messageToTheOwner')}
+                  placeholder={t('addANoteOptional')}
                   value={message}
                   maxLength={500}
                   rows={3}
@@ -155,9 +152,7 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
                     {error}
                   </p>
                 ) : null}
-                <Button type="submit" variant="primary" size="lg" loading={busy}>
-                  Request access
-                </Button>
+                <Button type="submit" variant="primary" size="lg" loading={busy}>{t('requestAccess')}</Button>
               </form>
             ) : error ? (
               <p className="fr-reqaccess__error" role="alert">
@@ -165,10 +160,8 @@ export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId:
               </p>
             ) : null}
             <div className="fr-boarderror__actions">
-              <Button onClick={() => navigate('/app')}>Back to dashboard</Button>
-              <Button variant="ghost" onClick={switchAccount}>
-                Switch account
-              </Button>
+              <Button onClick={() => navigate('/app')}>{t('backToDashboard')}</Button>
+              <Button variant="ghost" onClick={switchAccount}>{t('switchAccount')}</Button>
             </div>
           </>
         )}

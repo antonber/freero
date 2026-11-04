@@ -5,6 +5,7 @@ import { Avatar } from '@ui';
 import { anchorFor, areaFromDrag } from './lib/model';
 import { TOOL_ID, setUi, startDraft, useCommentsUi } from './lib/state';
 
+import { t } from './messages';
 // A speech-bubble cursor with the hotspot at its tail (Freero's own drawing).
 const CURSOR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M2 22V7a5 5 0 0 1 5-5h10a5 5 0 0 1 5 5v6a5 5 0 0 1-5 5H7z" fill="#5b3ff0" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 9h8M8 12.5h5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>`;
 const CURSOR = `url("data:image/svg+xml,${encodeURIComponent(CURSOR_SVG)}") 2 22, crosshair`;
@@ -14,7 +15,7 @@ const pressing = new WeakMap<Editor, { start: Point; target: BoardElement | null
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Comment',
+  label: t('comment'),
   icon: MessageSquarePlus,
   shortcut: 'c',
   order: 80,

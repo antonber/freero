@@ -72,3 +72,9 @@
     forced-color-adjust: auto;
   }
 }
+
+/* Icons that point somewhere (a submenu chevron, back / forward) point the other way in a
+   right-to-left interface (#5). The board never mirrors: it is pinned dir="ltr". */
+[dir='rtl'] .fr-rtl-flip {
+  transform: scaleX(-1);
+}

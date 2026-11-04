@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "erasePartsOfStrokes",
+    "eraseWholeStrokes",
+    "eraserMode",
+    "eraserSize",
+    "eraser"
+  ],
+  "erasePartsOfStrokes": "Effacer des parties de traits",
+  "eraseWholeStrokes": "Effacer des traits entiers",
+  "eraserMode": "Mode de la gomme",
+  "eraserSize": "Taille de la gomme",
+  "eraser": "Gomme"
+}

@@ -25,8 +25,8 @@
 
 .fr-text-content ul,
 .fr-text-content ol {
-  padding-left: 1.2em;
-  text-align: left;
+  padding-inline-start: 1.2em;
+  text-align: start;
 }
 
 .fr-text-content a {
@@ -54,8 +54,8 @@
   color: rgba(23, 22, 43, 0.35);
   pointer-events: none;
   position: absolute;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   top: 0;
 }
 

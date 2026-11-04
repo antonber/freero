@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "Etiquetar itens pelo nome da etiqueta",
+  "searchOrCreateATag": "Pesquise ou crie uma etiqueta",
+  "nameYourFirstTag": "Dê um nome à sua primeira etiqueta",
+  "tags": "Etiquetas",
+  "tagsGroupStickiesAndCards": "Etiquetas agrupam notas adesivas e cartões por tema, responsável ou prioridade.",
+  "createName": "Criar “{name}”",
+  "newTagColor": "Cor da nova etiqueta",
+  "manageTags": "Gerenciar etiquetas",
+  "colorOfName": "Cor de {name}",
+  "renameName": "Renomear {name}",
+  "deleteUses": "Excluir ({uses})",
+  "deleteTagUsedOnUses": "Excluir etiqueta (usada em {uses})",
+  "deleteTag": "Excluir etiqueta",
+  "backToTags": "Voltar às etiquetas"
+}

@@ -6,6 +6,7 @@ import type { Editor, NewElement, Point } from '@engine';
 import { addDays, dayOf, isISODate, isoOf, localDay, mondayOf } from './dates';
 import { BAR_H, DEFAULT_DAYS, HORIZON_PAD, HORIZON_W, LABEL_W, LANE_COLORS, LANE_PAD, ROW_H, barSpan, dayAt, gridOf, horizonAt, horizonStart, horizonsOf, laneAt, rangeFor } from './layout';
 
+import { t as tr } from '../messages';
 /** Lane header tints, in the order new lanes take them (shared with roadmap imports on the server). */
 export { LANE_COLORS };
 /** Bar colours (Freero's accents). */
@@ -16,7 +17,7 @@ const lane = (title: string, i: number): TimelineLane => ({ id: nanoid(8), title
 /** A new timeline centered on `at`: eight weeks from this week's Monday, by week, three lanes. */
 export function newTimeline(at: Point, nowMs: number): NewElement<'timeline'> {
   const start = isoOf(mondayOf(dayOf(localDay(nowMs))));
-  const fields = { title: 'Roadmap', start, end: addDays(start, 8 * 7 - 1), scale: 'week' as const, lanes: ['Planning', 'Build', 'Launch'].map(lane) };
+  const fields = { title: tr('roadmap'), start, end: addDays(start, 8 * 7 - 1), scale: 'week' as const, lanes: ['Planning', 'Build', 'Launch'].map(lane) };
   const { w, h } = gridOf(fields);
   return { type: 'timeline', ...fields, x: Math.round(at.x - w / 2), y: Math.round(at.y - h / 2), w, h };
 }
@@ -46,7 +47,7 @@ export function addLane(editor: Editor, id: string, index?: number): string | nu
   const t = fresh(editor, id);
   if (!t) return null;
   const at = Math.max(0, Math.min(t.lanes.length, index ?? t.lanes.length));
-  const l = lane('New lane', t.lanes.length);
+  const l = lane(tr('newLane'), t.lanes.length);
   editor.update<TimelineElement>(id, { lanes: [...t.lanes.slice(0, at), l, ...t.lanes.slice(at)] });
   return l.id;
 }

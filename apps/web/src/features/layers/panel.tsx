@@ -6,6 +6,7 @@ import { Button, IconButton } from '@ui';
 import { buildOutline, previewOf, restackZ, type OutlineGroup } from './lib/outline';
 import { PANEL_ID } from './lib/ids';
 import { layoutRows, scrollToShow, slotAt, visibleRange, type LayerRow } from './lib/rows';
+import { t } from './messages';
 import './layers.css';
 
 const DRAG_PX = 4;
@@ -30,7 +31,7 @@ function Toggles({ editor, el, viewHidden, canEdit }: { editor: Editor; el: Boar
       {(canEdit || el.locked) && (
         <IconButton
           icon={el.locked ? Lock : LockOpen}
-          label={el.locked ? 'Unlock' : 'Lock'}
+          label={el.locked ? t('unlock') : t('lock')}
           size={32}
           active={!!el.locked}
           disabled={!canEdit}
@@ -44,7 +45,7 @@ function Toggles({ editor, el, viewHidden, canEdit }: { editor: Editor; el: Boar
       )}
       <IconButton
         icon={hidden ? EyeOff : Eye}
-        label={inherited ? 'Hidden with its frame or the item it’s attached to' : hidden ? 'Show (hidden for you only)' : 'Hide for me (others still see it)'}
+        label={inherited ? t('hiddenWithItsFrameOr') : hidden ? t('showHiddenForYouOnly') : t('hideForMeOthersStill')}
         size={32}
         active={hidden}
         disabled={inherited}
@@ -218,7 +219,7 @@ function LayersPanel({ editor }: { editor: Editor }) {
         >
           <IconButton
             icon={open ? ChevronDown : ChevronRight}
-            label={open ? 'Collapse' : 'Expand'}
+            label={open ? t('collapse') : t('expand')}
             size={32}
             onClick={(e) => {
               e.stopPropagation();
@@ -226,7 +227,7 @@ function LayersPanel({ editor }: { editor: Editor }) {
             }}
           />
           {g.frame && <Frame size={15} className="fr-layers__headicon" />}
-          <span className="fr-layers__headname">{g.frame ? g.frame.title || 'Untitled frame' : 'Not in a frame'}</span>
+          <span className="fr-layers__headname">{g.frame ? g.frame.title || t('untitledFrame') : t('notInAFrame')}</span>
           <span className="fr-layers__count">{g.items.length}</span>
           {g.frame && <Toggles editor={editor} el={g.frame} viewHidden={viewHidden} canEdit={canEdit} />}
         </div>
@@ -269,25 +270,22 @@ function LayersPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-layers">
       <DockHeader className="fr-layers__dockhead">
-        <h2 className="fr-layers__title">
-          Layers<span className="fr-layers__count">{elements.length}</span>
+        <h2 className="fr-layers__title">{t('layers')}<span className="fr-layers__count">{elements.length}</span>
         </h2>
       </DockHeader>
       {hiddenCount > 0 && (
         <div className="fr-layers__hiddenbar" role="status">
           <EyeOff size={14} />
-          <span>{hiddenCount} hidden for you only</span>
-          <Button size="sm" variant="ghost" onClick={() => editor.setViewHidden(editor.getViewHidden(), false)}>
-            Show all
-          </Button>
+          <span>{t('hiddencountHiddenForYouOnly', { hiddenCount })}</span>
+          <Button size="sm" variant="ghost" onClick={() => editor.setViewHidden(editor.getViewHidden(), false)}>{t('showAll')}</Button>
         </div>
       )}
-      {!groups.length && <div className="fr-layers__empty">Nothing on the board yet.</div>}
+      {!groups.length && <div className="fr-layers__empty">{t('nothingOnTheBoardYet')}</div>}
       <div
         ref={scrollRef}
         className="fr-layers__scroll"
         role="tree"
-        aria-label="Layers"
+        aria-label={t('layers')}
         tabIndex={rows.length ? 0 : -1}
         data-fr-keyboard-trap
         onKeyDown={onKeyDown}
@@ -300,7 +298,7 @@ function LayersPanel({ editor }: { editor: Editor }) {
           {rows.slice(from, to).map(renderRow)}
         </div>
       </div>
-      {canEdit && groups.some((g) => g.items.length > 1) && <p className="fr-layers__tip">Drag to restack: the top of each list is in front.</p>}
+      {canEdit && groups.some((g) => g.items.length > 1) && <p className="fr-layers__tip">{t('dragToRestackTheTop')}</p>}
     </div>
   );
 }

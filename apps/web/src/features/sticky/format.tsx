@@ -14,6 +14,7 @@ import { COLOR_HEX, COLOR_NAMES, FONT_SIZES, TOOL_ID, colorFromHex, stickyPreset
 import { setStickyBox } from './lib/actions';
 import { BoxControl, shapeIcon } from './lib/BoxControl';
 
+import { t } from './messages';
 function patchAll(editor: Editor, stickies: StickyElement[], patch: Partial<StickyElement>) {
   editor.updateMany(stickies.map((s) => ({ id: s.id, patch })));
 }
@@ -25,7 +26,7 @@ function ColorControl({ editor, stickies }: { editor: Editor; stickies: StickyEl
   const mixed = stickies.some((s) => s.color !== current);
   return (
     <>
-      <ToolbarButton ref={ref} label="Sticky color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} label={t('stickyColor')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span
           className="fr-sticky-swatch"
           style={{
@@ -35,7 +36,7 @@ function ColorControl({ editor, stickies }: { editor: Editor; stickies: StickyEl
           }}
         />
       </ToolbarButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Sticky color">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('stickyColor')}>
         <ColorSwatches
           colors={COLOR_HEX}
           names={COLOR_NAMES}
@@ -48,7 +49,7 @@ function ColorControl({ editor, stickies }: { editor: Editor; stickies: StickyEl
             // The next sticky you place uses the color you picked last.
             editor.setToolOptions(TOOL_ID, { color });
           }}
-          aria-label="Sticky color"
+          aria-label={t('stickyColor')}
         />
       </Popover>
     </>
@@ -66,10 +67,10 @@ function BoxButton({ editor, stickies }: { editor: Editor; stickies: StickyEleme
   const remember = (o: StickyToolOptions) => editor.setToolOptions(TOOL_ID, { ...o });
   return (
     <>
-      <ToolbarButton ref={ref} label="Shape and size" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} label={t('shapeAndSize')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <Icon size={18} aria-hidden />
       </ToolbarButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Shape and size">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('shapeAndSize')}>
         <BoxControl
           shape={shape}
           size={size}

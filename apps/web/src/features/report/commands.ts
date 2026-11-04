@@ -2,6 +2,7 @@ import { Flag } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
 import { isReportTarget, REPORT_DIALOG, reportTargetOf } from './lib/target';
 
+import { t } from './messages';
 // Reporting never writes the board: viewers (and, with KAI-43, visitors on a public link) report
 // too. Owners don't report their own board; they can delete what they don't want.
 const notOwner = (editor: Editor) => editor.getRole() !== 'owner';
@@ -10,7 +11,7 @@ export default defineCommands([
   {
     id: 'report.board',
     icon: Flag,
-    label: 'Report board…',
+    label: t('reportBoard'),
     menus: ['board'],
     minRole: 'viewer',
     when: notOwner,
@@ -21,7 +22,7 @@ export default defineCommands([
   {
     id: 'report.item',
     icon: Flag,
-    label: 'Report…',
+    label: t('report'),
     menus: ['context'],
     minRole: 'viewer',
     when: (editor) => notOwner(editor) && editor.getSelection().length === 1,
@@ -33,7 +34,7 @@ export default defineCommands([
   {
     // For other features (comments' "Report" on a message): args { target: ReportTarget }.
     id: 'report.open',
-    label: 'Report',
+    label: t('report2'),
     minRole: 'viewer',
     run(editor, args) {
       if (isReportTarget(args?.target)) editor.openPanel(REPORT_DIALOG, { target: args.target });

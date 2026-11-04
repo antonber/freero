@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "nameIsnTAPdf",
+    "couldnTUploadNameTry",
+    "couldnTOpenThisPdf",
+    "placingTheFirstNOf",
+    "placingNPages",
+    "couldnTPlaceThePages",
+    "placeAllPages",
+    "namePagePage",
+    "couldnTOpenThisPdf2",
+    "document",
+    "previousPage",
+    "nextPage",
+    "pdfs",
+    "nextPreviousPageOfA"
+  ],
+  "nameIsnTAPdf": "「{name}」はFreeroで開けるPDFではありません。",
+  "couldnTUploadNameTry": "「{name}」をアップロードできませんでした。後でもう一度お試しください。",
+  "couldnTOpenThisPdf": "このPDFを開けませんでした。",
+  "placingTheFirstNOf": "{numPages}ページのうち最初の{n}ページを配置しています。",
+  "placingNPages": "{n, plural, other {{n}ページを配置しています…}}",
+  "couldnTPlaceThePages": "ページを配置できませんでした。後でもう一度お試しください。",
+  "placeAllPages": "すべてのページを配置",
+  "namePagePage": "{name}、{page}ページ",
+  "couldnTOpenThisPdf2": "このPDFを開けませんでした",
+  "document": "ドキュメント",
+  "previousPage": "前のページ",
+  "nextPage": "次のページ",
+  "pdfs": "PDF",
+  "nextPreviousPageOfA": "ドキュメントの次 / 前のページ"
+}

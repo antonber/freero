@@ -1,0 +1,22 @@
+{
+  "thatItemLinkIsNot": "That item link is not valid.",
+  "enterAWebAddressHttps": "Enter a web address (https://…) or an item link.",
+  "onlyWebEmailAndPhone": "Only web, email and phone links are allowed.",
+  "thatAddressIsNotValid": "That address is not valid.",
+  "thisLinkCanTBe": "This link can't be opened.",
+  "theLinkedItemIsHidden": "The linked item is hidden right now.",
+  "theLinkedItemIsNo": "The linked item is no longer on this board.",
+  "linkTo": "Link to…",
+  "openLink": "Open link",
+  "removeLink": "Remove link",
+  "goToLinkedItem": "Go to linked item",
+  "editLink": "Edit link",
+  "anItemCanTLink": "An item can’t link to itself.",
+  "addLink": "Add link",
+  "cancel": "Cancel",
+  "save": "Save",
+  "link": "Link",
+  "orJumpToAFrame": "Or jump to a frame",
+  "untitledFrame": "Untitled frame",
+  "toLinkToAnyOther": "To link to any other item, right-click it, choose “Copy link to item” and paste the link here."
+}

@@ -2,6 +2,7 @@
 // by anyone, so untrusted — is allowed to do when followed (resolveLink).
 import { isSafeHref } from '@engine';
 
+import { t } from '../messages';
 export const LINK_DIALOG = 'links.editor';
 
 export type LinkTarget =
@@ -32,15 +33,15 @@ function sameBoardItem(url: URL, origin: string, boardId: string): string | null
 export function normalizeLink(input: string, ctx: { origin: string; boardId: string }): { link: string } | { error: string } {
   const raw = input.trim();
   if (!raw) return { link: '' };
-  if (raw.startsWith('#')) return ITEM_ID.test(raw.slice(1)) ? { link: raw } : { error: 'That item link is not valid.' };
+  if (raw.startsWith('#')) return ITEM_ID.test(raw.slice(1)) ? { link: raw } : { error: t('thatItemLinkIsNot') };
   let candidate = raw;
   if (raw.startsWith('//')) candidate = `https:${raw}`;
   else if (!/^[a-z][a-z0-9+.-]*:/i.test(raw) && !raw.startsWith('/')) {
     // Bare domain ("example.com/page"): assume https. Words with spaces are not links.
-    if (/\s/.test(raw) || !/^[^/]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(raw)) return { error: 'Enter a web address (https://…) or an item link.' };
+    if (/\s/.test(raw) || !/^[^/]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(raw)) return { error: t('enterAWebAddressHttps') };
     candidate = `https://${raw}`;
   }
-  if (!isSafeHref(candidate)) return { error: 'Only web, email and phone links are allowed.' };
+  if (!isSafeHref(candidate)) return { error: t('onlyWebEmailAndPhone') };
   if (candidate.startsWith('/')) {
     const url = new URL(candidate, ctx.origin);
     const id = sameBoardItem(url, ctx.origin, ctx.boardId);
@@ -50,7 +51,7 @@ export function normalizeLink(input: string, ctx: { origin: string; boardId: str
   try {
     url = new URL(candidate);
   } catch {
-    return { error: 'That address is not valid.' };
+    return { error: t('thatAddressIsNotValid') };
   }
   const id = sameBoardItem(url, ctx.origin, ctx.boardId);
   if (id) return { link: `#${id}` };

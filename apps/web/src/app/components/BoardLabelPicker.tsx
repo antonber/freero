@@ -6,6 +6,7 @@ import { Tag } from 'lucide-react';
 import type { BoardLabel, BoardLabelSummary, BoardSummary, LabelCaps } from '@freero/shared';
 import { Select, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
+import { t } from '../messages';
 import './BoardLabelPicker.css';
 
 const NONE = '__none__';
@@ -60,9 +61,9 @@ export function BoardLabelPicker({ board, onChange }: { board: BoardSummary; onC
     try {
       const { board: updated } = await api.setBoardLabel(board.id, id === NONE ? null : id);
       onChange(updated);
-      notify(updated.label ? `Labelled ${updated.label.name}` : 'Label removed', 'success');
+      notify(updated.label ? t('labelledName', { name: updated.label.name }) : t('labelRemoved'), 'success');
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : 'Could not change the label', 'error');
+      notify(e instanceof ApiError ? e.message : t('couldNotChangeTheLabel'), 'error');
     } finally {
       setBusy(false);
     }
@@ -72,23 +73,22 @@ export function BoardLabelPicker({ board, onChange }: { board: BoardSummary; onC
   if (!board.label && (!manages || !labels?.length)) return null;
   const limits = board.label ? capsText(board.label.caps) : [];
   return (
-    <section className="fr-share__settings" aria-label="Classification">
+    <section className="fr-share__settings" aria-label={t('classification')}>
       <h3 className="fr-share__heading">
-        <Tag size={14} aria-hidden /> Classification
-      </h3>
+        <Tag size={14} aria-hidden />{' '}{t('classification')}</h3>
       {manages && labels?.length ? (
         <Select
           size="sm"
-          aria-label="Classification label"
+          aria-label={t('classificationLabel')}
           value={board.label?.id ?? NONE}
           disabled={busy}
           onChange={(v) => void pick(v)}
-          options={[...(required ? [] : [{ value: NONE, label: 'No label' }]), ...labels.map((l) => ({ value: l.id, label: l.name }))]}
+          options={[...(required ? [] : [{ value: NONE, label: t('noLabel') }]), ...labels.map((l) => ({ value: l.id, label: l.name }))]}
         />
       ) : board.label ? (
         <LabelBadge label={board.label} />
       ) : null}
-      {limits.length ? <p className="fr-share__settings-note">This label limits the board: {limits.join('; ')}.</p> : null}
+      {limits.length ? <p className="fr-share__settings-note">{t('thisLabelLimitsTheBoard', { limits: limits.join('; ') })}</p> : null}
     </section>
   );
 }

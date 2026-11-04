@@ -3,7 +3,7 @@
 .fr-sg-ghost,
 .fr-sg-anchor {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 0;
   height: 0;
@@ -26,7 +26,7 @@
 
 .fr-sg-ghost__box {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   transform-origin: center center;
   outline: 2px dashed var(--fr-primary);
@@ -47,7 +47,7 @@
 /* Per-item accept / reject, at the item's top-right corner (constant size: scale 1/zoom). */
 .fr-sg-item {
   position: absolute;
-  left: 6px;
+  inset-inline-start: 6px;
   bottom: 6px;
   display: flex;
   align-items: center;
@@ -92,7 +92,7 @@
 /* The proposer's badge above a proposal. */
 .fr-sg-badge {
   position: absolute;
-  left: -3px;
+  inset-inline-start: -3px;
   bottom: 10px;
   display: flex;
   align-items: center;
@@ -237,7 +237,7 @@
   background: transparent;
   color: var(--fr-ink);
   font: 13px/1.35 var(--fr-font);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -292,7 +292,7 @@
   background: transparent;
   color: var(--fr-ink);
   font: 13px/1.35 var(--fr-font);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 

@@ -4,6 +4,7 @@
 import type { FrameElement } from '@freero/shared';
 import type { Editor, ElementsSnapshot, SavedTemplateInfo } from '@engine';
 
+import { t as tr } from '../messages';
 export const SAVE_DIALOG_ID = 'templates.save';
 
 /** Longest side of the preview image saved with a template (px). */
@@ -97,7 +98,7 @@ export async function deleteSavedTemplate(editor: Editor, id: string): Promise<v
  */
 export async function insertSavedTemplate(editor: Editor, id: string): Promise<string[]> {
   if (!editor.can('editor')) {
-    editor.host.notify('You need edit access to add templates.', 'info');
+    editor.host.notify(tr('youNeedEditAccessTo'), 'info');
     return [];
   }
   const snapshot = await editor.host.loadTemplate(id);

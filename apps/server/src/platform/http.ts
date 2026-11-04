@@ -7,22 +7,28 @@ import { metricsRoute } from './metrics';
 import { requestLogger } from './requestLog';
 import { csrfGuard, securityHeaders } from './security';
 
-/** Throw from a handler to answer with { error } and the given status. */
+/**
+ * Throw from a handler to answer with { error } and the given status. `error` stays English; a
+ * `code` (with `params` for its numbers and names) lets the app show it in the reader's language
+ * (`errors.<code>` in app/locales; docs/design/i18n.md). Clients that don't know a code show `error`.
+ */
 export class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
     /** Machine-readable reason sent as `code` next to `error` (e.g. 'reauth_required'). */
     public code?: string,
+    /** The values the message names, sent as `params` (only with a `code`). */
+    public params?: Record<string, string | number>,
   ) {
     super(message);
   }
 }
 
-export const badRequest = (msg: string) => new HttpError(400, msg);
-export const unauthorized = (msg = 'Not logged in') => new HttpError(401, msg);
-export const forbidden = (msg = 'You do not have access to this board') => new HttpError(403, msg);
-export const notFound = (msg = 'Not found') => new HttpError(404, msg);
+export const badRequest = (msg: string, code?: string, params?: Record<string, string | number>) => new HttpError(400, msg, code, params);
+export const unauthorized = (msg?: string, code?: string) => new HttpError(401, msg ?? 'Not logged in', code ?? (msg ? undefined : 'not_signed_in'));
+export const forbidden = (msg?: string, code?: string) => new HttpError(403, msg ?? 'You do not have access to this board', code ?? (msg ? undefined : 'no_board_access'));
+export const notFound = (msg?: string, code?: string) => new HttpError(404, msg ?? 'Not found', code ?? (msg ? undefined : 'not_found'));
 
 /** Wraps a (possibly async) handler so thrown errors and rejections reach the error handler. */
 export function handle(fn: (req: Request, res: Response, next: NextFunction) => unknown): RequestHandler {
@@ -87,7 +93,7 @@ export function errorHandler() {
     if (err instanceof HttpError) {
       const retryAfter = (err as { retryAfter?: unknown }).retryAfter;
       if (typeof retryAfter === 'number') res.setHeader('Retry-After', String(retryAfter));
-      return res.status(err.status).json(err.code ? { error: err.message, code: err.code } : { error: err.message });
+      return res.status(err.status).json(err.code ? { error: err.message, code: err.code, ...(err.params ? { params: err.params } : {}) } : { error: err.message });
     }
     const e = (err ?? {}) as { status?: number; statusCode?: number; type?: string; expose?: boolean; message?: string };
     const status = e.status ?? e.statusCode;

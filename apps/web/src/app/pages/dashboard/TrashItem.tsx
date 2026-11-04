@@ -7,6 +7,7 @@ import { Button, IconButton } from '@ui';
 import { BoardThumb } from './BoardThumb';
 import { relativeTime } from '../../lib/time';
 
+import { t } from './messages';
 export interface TrashActions {
   restore(b: BoardSummary): void;
   deleteForever(b: BoardSummary): void;
@@ -18,7 +19,7 @@ const DAY = 86_400_000;
 function purgeLabel(purgeAt: number | undefined, now = Date.now()): string {
   if (purgeAt === undefined) return '';
   const days = Math.ceil((purgeAt - now) / DAY);
-  return days <= 1 ? 'Less than a day left' : `${days} days left`;
+  return days <= 1 ? t('lessThanADayLeft') : `${days} days left`;
 }
 
 export const TrashItem = memo(function TrashItem({
@@ -30,15 +31,13 @@ export const TrashItem = memo(function TrashItem({
   layout: 'grid' | 'list';
   actions: TrashActions;
 }) {
-  const title = b.title || 'Untitled board';
+  const title = b.title || t('untitledBoard');
   const deleted = b.deletedAt ? `Deleted ${relativeTime(b.deletedAt)}` : 'Deleted';
   const restore = (
-    <Button size="sm" icon={RotateCcw} onClick={() => actions.restore(b)}>
-      Restore
-    </Button>
+    <Button size="sm" icon={RotateCcw} onClick={() => actions.restore(b)}>{t('restore')}</Button>
   );
   const forever = (
-    <IconButton size={32} icon={Trash2} label="Delete forever" tooltipSide="top" className="fr-dash-trash__forever" onClick={() => actions.deleteForever(b)} />
+    <IconButton size={32} icon={Trash2} label={t('deleteForever')} tooltipSide="top" className="fr-dash-trash__forever" onClick={() => actions.deleteForever(b)} />
   );
 
   if (layout === 'list') {

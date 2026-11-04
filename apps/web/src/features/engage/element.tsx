@@ -9,6 +9,7 @@ import { KIND_ICON } from './lib/icons';
 import { ACCENTS, ACTIVITY_H, ACTIVITY_W, ANSWER_DIALOG, RESULTS, answerLink, answersLabel, kindLabel } from './lib/activity';
 import { Body } from './lib/Results';
 import { QrCode } from './lib/qr';
+import { t } from './messages';
 import './engage.css';
 
 /**
@@ -22,7 +23,7 @@ function copyKeyLater(editor: Editor, id: string, from: { boardId: string; activ
     copy(id, from).catch((e: unknown) => {
       const status = (e as { status?: number }).status;
       if (status === 404 && attempt < 5) copyKeyLater(editor, id, from, attempt + 1);
-      else if (status === 403) editor.host.notify('The quiz’s right answers weren’t copied: only people who can edit the board it came from can copy them.', 'info');
+      else if (status === 403) editor.host.notify(t('theQuizSRightAnswers'), 'info');
     });
   }, 700 * (attempt + 1));
 }
@@ -40,21 +41,20 @@ const ActivityView = memo(function ActivityView({ element }: ElementRenderProps<
         </span>
         {element.closed ? (
           <span className="fr-engage__chip">
-            <MessageSquareOff size={11} aria-hidden /> Closed
-          </span>
+            <MessageSquareOff size={11} aria-hidden />{' '}{t('closed')}</span>
         ) : null}
-        {element.anonymous ? <span className="fr-engage__chip">Anonymous</span> : null}
+        {element.anonymous ? <span className="fr-engage__chip">{t('anonymous')}</span> : null}
         <span className="fr-engage__count">{answersLabel(element.kind, results)}</span>
       </div>
       <div className="fr-engage__question">
-        <ElementText element={element} field="question" fontSize={22} fontFamily="sans" align="left" vAlign="top" color="var(--fr-ink)" padding={0} placeholder="Ask something" style={{ fontWeight: 650, lineHeight: 1.25 }} />
+        <ElementText element={element} field="question" fontSize={22} fontFamily="sans" align="left" vAlign="top" color="var(--fr-ink)" padding={0} placeholder={t('askSomething')} style={{ fontWeight: 650, lineHeight: 1.25 }} />
       </div>
       <div className="fr-engage__body">
         <Body a={element} r={results} now={() => editor.host.serverNow()} />
         {element.qr ? (
           <figure className="fr-engage__qr">
-            <QrCode text={answerLink(editor.boardId, element.id, !!editor.host.engage)} label="QR code of the answer link" />
-            <figcaption>Scan to answer</figcaption>
+            <QrCode text={answerLink(editor.boardId, element.id, !!editor.host.engage)} label={t('qrCodeOfTheAnswer')} />
+            <figcaption>{t('scanToAnswer')}</figcaption>
           </figure>
         ) : null}
       </div>
@@ -66,7 +66,7 @@ const ActivityView = memo(function ActivityView({ element }: ElementRenderProps<
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => editor.openPanel(ANSWER_DIALOG, { id: element.id })}
         >
-          {element.kind === 'qna' ? 'Ask or upvote' : 'Answer'}
+          {element.kind === 'qna' ? t('askOrUpvote') : t('answer')}
         </button>
       ) : null}
     </div>
@@ -75,7 +75,7 @@ const ActivityView = memo(function ActivityView({ element }: ElementRenderProps<
 
 export default defineElement({
   type: 'activity',
-  label: { one: 'Activity', many: 'Activities' },
+  label: { one: t('activity'), many: t('activities') },
   icon: ChartColumn,
   resize: 'free',
   minSize: { w: 320, h: 240 },

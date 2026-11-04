@@ -41,7 +41,7 @@
 .fr-walkthrough-bar__rec {
   width: 10px;
   height: 10px;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   border-radius: 50%;
   background: var(--fr-danger);
   box-shadow: 0 0 0 4px var(--fr-danger-soft);
@@ -121,7 +121,7 @@
   top: -9px;
   width: 8px;
   height: 8px;
-  margin-left: -4px;
+  margin-inline-start: -4px;
   padding: 0;
   border: 2px solid var(--fr-surface);
   border-radius: 50%;
@@ -199,7 +199,7 @@
 .fr-walkthrough-topbar__count {
   position: absolute;
   top: 2px;
-  right: 2px;
+  inset-inline-end: 2px;
   min-width: 15px;
   height: 15px;
   padding: 0 3px;
@@ -228,7 +228,7 @@
 .fr-walkthrough-bubble {
   position: absolute;
   /* Clear of the left toolbar. */
-  left: 76px;
+  inset-inline-start: 76px;
   bottom: 16px;
   display: grid;
   place-items: center;
@@ -276,7 +276,7 @@
 /* ---- the narrator's pointer (screen position from the recorded world point) ---- */
 .fr-walkthrough-pointer {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   pointer-events: none;
   will-change: transform;
@@ -284,7 +284,7 @@
 
 .fr-walkthrough-pointer__dot {
   position: absolute;
-  left: -9px;
+  inset-inline-start: -9px;
   top: -9px;
   width: 18px;
   height: 18px;
@@ -295,7 +295,7 @@
 
 .fr-walkthrough-pointer__name {
   position: absolute;
-  left: 12px;
+  inset-inline-start: 12px;
   top: 10px;
   padding: 2px 8px;
   border-radius: 999px;
@@ -354,7 +354,7 @@
 }
 
 .fr-walkthrough-chapters .fr-walkthrough-comments__head h2 {
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 
 .fr-walkthrough-chapters__summary {
@@ -376,7 +376,7 @@
   color: var(--fr-ink);
   font: inherit;
   font-size: 14px;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -397,7 +397,7 @@
 
 .fr-walkthrough-comments {
   position: absolute;
-  right: 16px;
+  inset-inline-end: 16px;
   bottom: 76px;
   display: flex;
   flex-direction: column;
@@ -510,7 +510,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -618,7 +618,7 @@
   background: transparent;
   color: var(--fr-primary);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 

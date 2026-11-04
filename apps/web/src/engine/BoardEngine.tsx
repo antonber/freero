@@ -13,6 +13,7 @@ import { LiveRegion } from './ui/LiveRegion';
 import { useCompactLayout } from './ui/compact';
 import { useStore } from 'zustand';
 import { createExportRenderer, startThumbnails } from './editor/export';
+import { t } from './messages';
 import './board.css';
 
 export interface BoardEngineProps {
@@ -79,7 +80,7 @@ export function BoardEngine({ host, features, topbarAccessory, location, initial
   if (error)
     return (
       <div className="fr-board fr-board--error" role="alert">
-        <h2>This board couldn't start</h2>
+        <h2>{t('thisBoardCouldnTStart')}</h2>
         <pre>{error.message}</pre>
       </div>
     );

@@ -13,6 +13,7 @@ import { BRANCH_COLORS, ROOT_COLOR } from './constants';
 import { cx, growsDown, orphanIds, rootOf, sideOf, subtreeIds, type Direction, type MindNode, type Side, type TreeIndex } from './tree';
 import { syncTree } from './store';
 
+import { t } from '../messages';
 export const isNode = (el: BoardElement | undefined | null): el is MindmapElement => el?.type === 'mindmap';
 
 /** Current mind-map nodes. */
@@ -387,7 +388,7 @@ export function insertOutline(editor: Editor, roots: OutlineNodeInput[], at: Poi
     editor.select(top);
     return top;
   }
-  const outline = roots.length === 1 ? roots[0] : { text: 'Outline', children: roots };
+  const outline = roots.length === 1 ? roots[0] : { text: t('outline'), children: roots };
   const laid = layoutStructure({ kind: 'mindmap', root: outline }, { newId: nanoid });
   const now = Date.now();
   let ids: string[] = [];

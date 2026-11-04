@@ -19,6 +19,7 @@ import { ExactControls } from './ExactControls';
 import { MixedStyleSection, hasMixedStyle } from './MixedStyle';
 import { useCompactLayout } from './compact';
 
+import { t as tr } from '../messages';
 const GAP = 14;
 const TOP_SAFE = 68;
 /** How far (screen px) the toolbar may move from its natural spot to keep nearby items clickable. */
@@ -186,11 +187,11 @@ export function FormatToolbar() {
   if (clearTop !== null) top = clearTop;
   placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };
   const arrangeItems: MenuItem[] = [
-    { id: 'front', label: 'Bring to front', shortcut: 'Mod+]', onSelect: () => editor.bringToFront(ids) },
+    { id: 'front', label: tr('bringToFront'), shortcut: 'Mod+]', onSelect: () => editor.bringToFront(ids) },
     // On macOS the browser may take Mod+Shift+] / [ (tab switch): show the key that always works there.
-    { id: 'forward', label: 'Bring forward', shortcut: isMac ? 'Mod+Alt+ArrowUp' : 'Mod+Shift+]', onSelect: () => editor.bringForward(ids) },
-    { id: 'backward', label: 'Send backward', shortcut: isMac ? 'Mod+Alt+ArrowDown' : 'Mod+Shift+[', onSelect: () => editor.sendBackward(ids) },
-    { id: 'back', label: 'Send to back', shortcut: 'Mod+[', onSelect: () => editor.sendToBack(ids) },
+    { id: 'forward', label: tr('bringForward'), shortcut: isMac ? 'Mod+Alt+ArrowUp' : tr('modShift'), onSelect: () => editor.bringForward(ids) },
+    { id: 'backward', label: tr('sendBackward'), shortcut: isMac ? 'Mod+Alt+ArrowDown' : tr('modShift2'), onSelect: () => editor.sendBackward(ids) },
+    { id: 'back', label: tr('sendToBack'), shortcut: 'Mod+[', onSelect: () => editor.sendToBack(ids) },
   ];
 
   return (
@@ -202,7 +203,7 @@ export function FormatToolbar() {
       data-fr-region="format"
       data-fr-chrome=""
       role="toolbar"
-      aria-label="Format"
+      aria-label={tr('format')}
       onMouseDown={(e) => {
         // Keep the text editor's selection: clicks here must not steal focus.
         const t = e.target as HTMLElement;
@@ -305,16 +306,16 @@ const ToolbarBody = memo(function ToolbarBody({
       {!locked && (mixed || sections.length > 0) && <div className="fr-format__sep" />}
       <div className="fr-format__section">
         {!locked && (
-          <IconButton ref={arrangeRef} icon={Layers} label="Arrange" size={32} active={arrangeOpen} onClick={() => setArrangeOpen((o) => !o)} />
+          <IconButton ref={arrangeRef} icon={Layers} label={tr('arrange')} size={32} active={arrangeOpen} onClick={() => setArrangeOpen((o) => !o)} />
         )}
         {!locked && <ExactControls editor={editor} selection={els} />}
-        {!locked && canGroup && <IconButton icon={Group} label="Group" shortcut="Mod+G" size={32} onClick={() => editor.runCommand('engine.group')} />}
+        {!locked && canGroup && <IconButton icon={Group} label={tr('group')} shortcut="Mod+G" size={32} onClick={() => editor.runCommand('engine.group')} />}
         {!locked && canUngroup && (
-          <IconButton icon={Ungroup} label="Ungroup" shortcut="Mod+Shift+G" size={32} onClick={() => editor.runCommand('engine.ungroup')} />
+          <IconButton icon={Ungroup} label={tr('ungroup')} shortcut="Mod+Shift+G" size={32} onClick={() => editor.runCommand('engine.ungroup')} />
         )}
         <IconButton
           icon={held ? ShieldCheck : locked ? LockOpen : Lock}
-          label={held ? 'Locked by the board owner' : locked ? 'Unlock' : someLocked ? 'Lock all (some are locked)' : 'Lock'}
+          label={held ? tr('lockedByTheBoardOwner') : locked ? tr('unlock') : someLocked ? tr('lockAllSomeAreLocked') : tr('lock')}
           className={someLocked ? 'fr-format__partial' : undefined}
           disabled={held}
 
@@ -323,10 +324,10 @@ const ToolbarBody = memo(function ToolbarBody({
           active={locked}
           onClick={() => editor.runCommand('engine.lock')}
         />
-        {els.length === 1 && <IconButton icon={Share} label="Copy link to item" size={32} onClick={() => editor.runCommand('engine.copyLink')} />}
-        {!locked && <IconButton icon={Copy} label="Duplicate" shortcut="Mod+D" size={32} onClick={() => editor.duplicate(ids)} />}
+        {els.length === 1 && <IconButton icon={Share} label={tr('copyLinkToItem')} size={32} onClick={() => editor.runCommand('engine.copyLink')} />}
+        {!locked && <IconButton icon={Copy} label={tr('duplicate')} shortcut="Mod+D" size={32} onClick={() => editor.duplicate(ids)} />}
         {!locked && <IconButton icon={Trash2} label="Delete" shortcut="Del" size={32} onClick={() => editor.runCommand('engine.delete')} />}
-        <IconButton ref={moreRef} icon={Ellipsis} label="More" size={32} active={moreOpen} onClick={() => setMoreOpen((o) => !o)} />
+        <IconButton ref={moreRef} icon={Ellipsis} label={tr('more')} size={32} active={moreOpen} onClick={() => setMoreOpen((o) => !o)} />
       </div>
     </>
   );

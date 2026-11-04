@@ -11,7 +11,7 @@ import {
   verifiedUsersAtDomain as repoVerifiedUsersAtDomain,
 } from './repo';
 // People's time zones (IANA; absent: not known yet — read as UTC): reminders and email dates.
-export { timeZonesOf } from './repo';
+export { timeZonesOf, localesOf, localeOfEmail } from './repo';
 
 export {
   requireUser,

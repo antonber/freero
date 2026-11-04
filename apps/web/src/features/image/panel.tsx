@@ -3,6 +3,7 @@ import { usePending } from './lib/pending';
 import { CropOverlay } from './lib/CropOverlay';
 import { CROP_PANEL } from './lib/cropping';
 
+import { t } from './messages';
 export default [
   /** Local shimmer placeholders where uploading images will land (world space, not synced). */
   definePanel({
@@ -18,7 +19,7 @@ export default [
               key={i}
               className="fr-image-pending"
               style={{ width: r.w, height: r.h, transform: `translate(${r.x}px, ${r.y}px)` }}
-              aria-label="Uploading image"
+              aria-label={t('uploadingImage')}
             />
           ))}
         </>

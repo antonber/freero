@@ -9,6 +9,7 @@ import { boardTime, objectHref, type BoardSort } from '../../lib/boards';
 import { relativeTime } from '../../lib/time';
 import { personColor } from '../../lib/placeholder';
 
+import { t } from './messages';
 export interface BoardActions {
   open(b: BoardSummary): void;
   rename(b: BoardSummary): void;
@@ -43,18 +44,18 @@ export function boardMenuItems(b: BoardSummary, actions: BoardActions, projects:
   const canEdit = b.role === 'owner' || b.role === 'editor';
   const movable = b.permissions.canMove && b.workspaceId === workspaceId;
   return [
-    { id: 'open', label: 'Open', icon: SquareArrowOutUpRight, onSelect: () => actions.open(b) },
-    { id: 'rename', label: 'Rename', icon: Pencil, disabled: !canEdit, disabledReason: 'Only editors can rename this board', onSelect: () => actions.rename(b) },
+    { id: 'open', label: t('open'), icon: SquareArrowOutUpRight, onSelect: () => actions.open(b) },
+    { id: 'rename', label: t('rename'), icon: Pencil, disabled: !canEdit, disabledReason: t('onlyEditorsCanRenameThis'), onSelect: () => actions.rename(b) },
     {
       id: 'duplicate',
-      label: 'Duplicate…',
+      label: t('duplicate'),
       icon: Copy,
       disabled: !b.permissions.canExport,
-      disabledReason: b.permissions.canCopy === false ? 'The board’s owner doesn’t let viewers and commenters copy it' : 'This workspace doesn’t allow copying its boards',
+      disabledReason: b.permissions.canCopy === false ? t('theBoardSOwnerDoesn') : t('thisWorkspaceDoesnTAllow'),
       onSelect: () => actions.duplicate(b),
     },
-    { id: 'star', label: b.starred ? 'Remove from starred' : 'Star', icon: Star, onSelect: () => actions.toggleStar(b) },
-    { id: 'share', label: 'Share', icon: Share2, onSelect: () => actions.share(b) },
+    { id: 'star', label: b.starred ? t('removeFromStarred') : t('star'), icon: Star, onSelect: () => actions.toggleStar(b) },
+    { id: 'share', label: t('share'), icon: Share2, onSelect: () => actions.share(b) },
     ...(movable
       ? [
           {
@@ -88,7 +89,7 @@ export function boardMenuItems(b: BoardSummary, actions: BoardActions, projects:
     ...(b.role === 'owner'
       ? [{ divider: true } as const, { id: 'delete', label: 'Delete', icon: Trash, danger: true, onSelect: () => actions.remove(b) }]
       : b.member
-        ? [{ divider: true } as const, { id: 'leave', label: 'Leave board', icon: LogOut, danger: true, onSelect: () => actions.leave(b) }]
+        ? [{ divider: true } as const, { id: 'leave', label: t('leaveBoard'), icon: LogOut, danger: true, onSelect: () => actions.leave(b) }]
         : []),
   ];
 }
@@ -102,7 +103,7 @@ function Description({ board: b, actions }: { board: BoardSummary; actions: Boar
     return (
       <textarea
         className="fr-dash-card__desc-input"
-        aria-label={`Description of ${b.title || 'Untitled board'}`}
+        aria-label={t('descriptionOfValue', { value: b.title || t('untitledBoard') })}
         value={draft}
         maxLength={2000}
         rows={2}
@@ -130,13 +131,13 @@ function Description({ board: b, actions }: { board: BoardSummary; actions: Boar
     <button
       type="button"
       className={`fr-dash-card__desc fr-dash-card__desc--edit${b.description ? '' : ' fr-dash-card__desc--empty'}`}
-      aria-label={b.description ? `Edit description: ${b.description}` : 'Add a description'}
+      aria-label={b.description ? t('editDescriptionDescription', { description: b.description }) : t('addADescription')}
       onClick={() => {
         setDraft(b.description);
         setEditing(true);
       }}
     >
-      {b.description || 'Add a description'}
+      {b.description || t('addADescription')}
     </button>
   );
 }
@@ -146,7 +147,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
   const [menuOpen, setMenuOpen] = useState(false);
   const time = boardTime(b, sort);
   const owner = b.ownerId === userId ? 'You' : b.ownerName;
-  const title = b.title || 'Untitled board';
+  const title = b.title || t('untitledBoard');
   const draggable = b.permissions.canMove && b.workspaceId === workspaceId;
   const drag = draggable
     ? {
@@ -162,7 +163,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
     <IconButton
       size={32}
       icon={<Star size={17} fill={b.starred ? 'currentColor' : 'none'} />}
-      label={b.starred ? 'Unstar' : 'Star'}
+      label={b.starred ? t('unstar') : t('star')}
       active={b.starred}
       className={`fr-board__star${b.starred ? ' fr-board__star--on' : ''}`}
       tooltipSide="top"
@@ -175,7 +176,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
         ref={menuBtn}
         size={32}
         icon={Ellipsis}
-        label="Board actions"
+        label={t('boardActions')}
         tooltipSide="top"
         className="fr-board__more"
         aria-haspopup="menu"
@@ -188,7 +189,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
         anchor={menuBtn.current}
         align="end"
         items={boardMenuItems(b, actions, projects, workspaceId)}
-        aria-label={`Actions for ${title}`}
+        aria-label={t('actionsForTitle', { title })}
       />
     </>
   );
@@ -196,7 +197,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
   if (layout === 'list') {
     return (
       <div className={`fr-row${menuOpen ? ' fr-row--active' : ''}`} onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }} {...drag}>
-        <Link to={objectHref(b)} className="fr-board__link" aria-label={`Open ${title}`} draggable={false} />
+        <Link to={objectHref(b)} className="fr-board__link" aria-label={t('openTitle', { title })} draggable={false} />
         <div className="fr-row__thumb">
           <BoardThumb board={b} />
         </div>
@@ -218,7 +219,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
 
   return (
     <div className={`fr-dash-card${menuOpen ? ' fr-dash-card--active' : ''}`} onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }} {...drag}>
-      <Link to={objectHref(b)} className="fr-board__link" aria-label={`Open ${title}`} draggable={false} />
+      <Link to={objectHref(b)} className="fr-board__link" aria-label={t('openTitle', { title })} draggable={false} />
       <div className="fr-dash-card__thumb">
         <BoardThumb board={b} />
         <div className="fr-dash-card__hover-actions">

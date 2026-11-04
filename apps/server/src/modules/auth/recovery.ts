@@ -88,7 +88,7 @@ const needsOwnPassword = () =>
  */
 export async function startTwoFactorRecovery(req: Request, challenge: repo.Challenge): Promise<{ readyAt: number }> {
   const user = await repo.findUserById(challenge.userId);
-  if (!user) throw unauthorized('Your sign-in expired. Please log in again.');
+  if (!user) throw unauthorized('Your sign-in expired. Please log in again.', 'sign_in_expired');
   const ownFactor = challenge.method === 'password' ? !user.passwordViaLink : challenge.method !== 'email_link' && challenge.link === null;
   if (!ownFactor) throw needsOwnPassword();
   await consumeRateLimit('twoFactorRecovery', `user:${user.id}`);

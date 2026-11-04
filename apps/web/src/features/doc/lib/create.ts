@@ -3,6 +3,7 @@
 import type { Editor, Point } from '@engine';
 import { setEditingDoc } from './state';
 
+import { t } from '../messages';
 const W = 560;
 const H = 640;
 
@@ -32,8 +33,8 @@ export async function createDocFrom(editor: Editor, input: { title?: string; mar
     // Placed on a free spot (not where someone pointed): bring it into view.
     if (id && !at) editor.zoomToFit([id], { animate: true, maxZoom: 1, padding: 80 });
     if (id && !input.markdown) setEditingDoc(id);
-    if (input.markdown) editor.host.notify(`Made the doc “${doc.title}” from Markdown`, 'success');
+    if (input.markdown) editor.host.notify(t('madeTheDocTitleFrom', { title: doc.title }), 'success');
   } catch (err) {
-    editor.host.notify(err instanceof Error ? err.message : 'Could not create the doc', 'error');
+    editor.host.notify(err instanceof Error ? err.message : t('couldNotCreateTheDoc'), 'error');
   }
 }

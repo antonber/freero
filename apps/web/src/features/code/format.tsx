@@ -5,10 +5,11 @@ import { IconButton, Select, type SelectOption } from '@ui';
 import { AUTO, LANGUAGES, PLAIN } from './lib/languages';
 import { copyCode } from './lib/actions';
 
+import { t } from './messages';
 const OPTIONS: SelectOption<string>[] = [
-  { value: AUTO, label: 'Auto-detect' },
+  { value: AUTO, label: t('autoDetect') },
   ...LANGUAGES.map((l) => ({ value: l.id, label: l.label })),
-  { value: PLAIN, label: 'Plain text' },
+  { value: PLAIN, label: t('plainText') },
 ];
 
 /** Code blocks: language, line numbers, light / dark paper, copy. */
@@ -27,20 +28,20 @@ export default defineFormat({
         <Select
           size="sm"
           variant="ghost"
-          aria-label="Language"
-          placeholder="Mixed"
+          aria-label={t('language')}
+          placeholder={t('mixed')}
           options={OPTIONS}
           value={language}
           onChange={(v) => patchAll({ language: v })}
         />
-        <IconButton icon={ListOrdered} label="Line numbers" size={32} active={numbered} onClick={() => patchAll({ lineNumbers: !numbered })} />
+        <IconButton icon={ListOrdered} label={t('lineNumbers')} size={32} active={numbered} onClick={() => patchAll({ lineNumbers: !numbered })} />
         <IconButton
           icon={dark ? Sun : Moon}
-          label={dark ? 'Light background' : 'Dark background'}
+          label={dark ? t('lightBackground') : t('darkBackground')}
           size={32}
           onClick={() => patchAll({ theme: dark ? 'light' : 'dark' })}
         />
-        {blocks.length === 1 && <IconButton icon={Copy} label="Copy code" size={32} onClick={() => void copyCode(editor, blocks[0].code)} />}
+        {blocks.length === 1 && <IconButton icon={Copy} label={t('copyCode')} size={32} onClick={() => void copyCode(editor, blocks[0].code)} />}
       </>
     );
   },

@@ -1,0 +1,8 @@
+{
+  "@@unreviewed": [
+    "placeSharedContent",
+    "addedWhatYouSharedValue"
+  ],
+  "placeSharedContent": "放置分享的内容",
+  "addedWhatYouSharedValue": "已添加你分享的内容{value}"
+}

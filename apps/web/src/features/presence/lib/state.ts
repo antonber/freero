@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import type { Editor, Point } from '@engine';
 import { BURST_CAPACITY, REACTIONS, isReactionEmoji, newTally, takeToken, type Bucket, type PresenceExt, type Reaction, type Tally, type Viewport } from './model';
 
+import { t } from '../messages';
 export interface Burst {
   id: string;
   emoji: Reaction;
@@ -99,7 +100,7 @@ export function bringEveryone(editor: Editor) {
   const cam = editor.getCamera();
   const size = editor.getViewportSize();
   publish(editor, { summon: { id: nanoid(10), viewport: { ...cam, ...size } } });
-  editor.host.notify('Asked everyone to come to your view', 'success');
+  editor.host.notify(t('askedEveryoneToComeTo'), 'success');
 }
 
 /** Shows exactly what someone sees (their whole screen fits yours), once. */

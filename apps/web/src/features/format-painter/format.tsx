@@ -3,6 +3,7 @@ import { defineFormat, useToolId } from '@engine';
 import { IconButton } from '@ui';
 import { pickUp, TOOL_ID } from './lib/style';
 
+import { t } from './messages';
 /** One item selected: the brush that picks up its style and arms the painter. */
 export default defineFormat({
   id: 'format-painter.format',
@@ -13,7 +14,7 @@ export default defineFormat({
     return (
       <IconButton
         icon={Paintbrush}
-        label={active ? 'Stop painting format' : 'Format painter: click other items to copy this style'}
+        label={active ? t('stopPaintingFormat') : t('formatPainterClickOtherItems')}
         shortcut="Alt+Mod+C"
         size={32}
         active={active}

@@ -6,6 +6,7 @@ import { AvatarStack, Button, Input, Menu, Modal, Select, Slider, Toggle, Toolti
 import { MAX_VOTES, MIN_VOTES, ranked, timeLeft } from './lib/voting';
 import { RESULTS_PANEL_ID, START_DIALOG_ID, previewOf, useServerNow, useVoting, useVotingUi, type VotingView } from './lib/state';
 import { clear, end, endWhenTimeIsUp, forget, start, unvote, vote } from './lib/actions';
+import { t as tr } from './messages';
 import './voting.css';
 
 /** Does the board let commenters and guests take part (the facilitation feature's switch)? */
@@ -21,14 +22,14 @@ function clock(ms: number): string {
 }
 
 const TIMER_OPTIONS = [
-  { value: 0, label: 'No timer' },
-  { value: 1, label: '1 minute' },
-  { value: 2, label: '2 minutes' },
-  { value: 3, label: '3 minutes' },
-  { value: 5, label: '5 minutes' },
-  { value: 10, label: '10 minutes' },
-  { value: 15, label: '15 minutes' },
-  { value: 30, label: '30 minutes' },
+  { value: 0, label: tr('noTimer') },
+  { value: 1, label: tr('n1Minute') },
+  { value: 2, label: tr('n2Minutes') },
+  { value: 3, label: tr('n3Minutes') },
+  { value: 5, label: tr('n5Minutes') },
+  { value: 10, label: tr('n10Minutes') },
+  { value: 15, label: tr('n15Minutes') },
+  { value: 30, label: tr('n30Minutes') },
 ];
 
 // ---------------------------------------------------------------------------
@@ -78,17 +79,13 @@ function StartDialog({ editor }: { editor: Editor }) {
     <Modal
       open
       onClose={close}
-      title="Start voting"
-      description={open ? 'Everyone on the board can vote, including people who can only comment and guests on the link.' : 'Everyone with edit access can vote.'}
+      title={tr('startVoting2')}
+      description={open ? tr('everyoneOnTheBoardCan') : tr('everyoneWithEditAccessCan')}
       width={480}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={Vote} onClick={submit} disabled={scope === 'selected' && !picked.length}>
-            Start voting
-          </Button>
+          <Button variant="ghost" onClick={close}>{tr('cancel')}</Button>
+          <Button variant="primary" icon={Vote} onClick={submit} disabled={scope === 'selected' && !picked.length}>{tr('startVoting2')}</Button>
         </>
       }
     >
@@ -99,28 +96,28 @@ function StartDialog({ editor }: { editor: Editor }) {
           submit();
         }}
       >
-        <Input label="Title" placeholder="What are we deciding?" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
-        <Slider label="Votes per person" min={MIN_VOTES} max={MAX_VOTES} value={votes} onChange={setVotes} showValue aria-label="Votes per person" />
+        <Input label={tr('title')} placeholder={tr('whatAreWeDeciding')} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
+        <Slider label={tr('votesPerPerson')} min={MIN_VOTES} max={MAX_VOTES} value={votes} onChange={setVotes} showValue aria-label={tr('votesPerPerson')} />
         <div className="fr-vote-hide">
-          <Toggle label="Anonymous" checked={anonymous} onChange={setAnonymous} />
+          <Toggle label={tr('anonymous')} checked={anonymous} onChange={setAnonymous} />
           <small>
             {anonymous
-              ? 'Nobody, you included, can ever see who voted for what: ballots are counted without names when the vote ends.'
-              : 'After the vote, the results show who voted for what.'}
+              ? tr('nobodyYouIncludedCanEver')
+              : tr('afterTheVoteTheResults')}
           </small>
         </div>
         <div className="fr-vote-hide">
-          <Toggle label="Hide results until voting ends" checked={hide || anonymous} disabled={anonymous} onChange={setHide} />
+          <Toggle label={tr('hideResultsUntilVotingEnds')} checked={hide || anonymous} disabled={anonymous} onChange={setHide} />
           <small>
             {anonymous
-              ? 'An anonymous vote is always counted at the end: running totals would show whose click moved which count.'
+              ? tr('anAnonymousVoteIsAlways')
               : hide
-                ? 'Each ballot stays sealed on the server, so nobody (you included) can see the votes until you end the vote.'
-                : 'Everyone sees the running totals while people vote.'}
+                ? tr('eachBallotStaysSealedOn')
+                : tr('everyoneSeesTheRunningTotals')}
           </small>
         </div>
         <div className="fr-vote-row-opt">
-          <Toggle label="Limit votes on one item" checked={capOn} onChange={setCapOn} />
+          <Toggle label={tr('limitVotesOnOneItem')} checked={capOn} onChange={setCapOn} />
           {capOn && (
             <Input
               size="sm"
@@ -129,28 +126,25 @@ function StartDialog({ editor }: { editor: Editor }) {
               max={votes}
               value={String(perItem)}
               onChange={(e) => setCap(Math.max(1, Math.min(votes, Number.parseInt(e.target.value, 10) || 1)))}
-              aria-label="Most votes one person can give one item"
+              aria-label={tr('mostVotesOnePersonCan')}
               className="fr-vote-row-opt__n"
             />
           )}
         </div>
         <div className="fr-vote-row-opt">
           <span className="fr-vote-row-opt__label">
-            <Timer size={15} /> Close the vote after
-          </span>
-          <Select options={TIMER_OPTIONS} value={minutes} onChange={setMinutes} size="sm" aria-label="Close the vote after" />
+            <Timer size={15} />{' '}{tr('closeTheVoteAfter')}</span>
+          <Select options={TIMER_OPTIONS} value={minutes} onChange={setMinutes} size="sm" aria-label={tr('closeTheVoteAfter')} />
         </div>
         <fieldset className="fr-vote-scope">
-          <legend>What can people vote on?</legend>
+          <legend>{tr('whatCanPeopleVoteOn')}</legend>
           <label className={`fr-vote-scope__opt${scope === 'all' ? ' is-on' : ''}`}>
             <input type="radio" name="fr-vote-scope" checked={scope === 'all'} onChange={() => setScope('all')} />
-            <span>All stickies, cards and shapes</span>
+            <span>{tr('allStickiesCardsAndShapes')}</span>
           </label>
           <label className={`fr-vote-scope__opt${scope === 'selected' ? ' is-on' : ''}${picked.length ? '' : ' is-disabled'}`}>
             <input type="radio" name="fr-vote-scope" checked={scope === 'selected'} disabled={!picked.length} onChange={() => setScope('selected')} />
-            <span>
-              Only selected elements
-              <small>{picked.length ? `${picked.length} selected` : 'Select elements on the board first'}</small>
+            <span>{tr('onlySelectedElements')}<small>{picked.length ? tr('lengthSelected', { length: picked.length }) : tr('selectElementsOnTheBoard')}</small>
             </span>
           </label>
         </fieldset>
@@ -181,19 +175,19 @@ function VoteButton({ editor }: { editor: Editor }) {
     editor.openDock(RESULTS_PANEL_ID);
   };
   if (session?.active) {
-    if (v.canManage) items.push({ id: 'end', label: 'End voting', icon: Trophy, onSelect: () => end(editor) });
-    items.push({ id: 'results', label: 'Voting results', icon: ListOrdered, onSelect: showResults });
+    if (v.canManage) items.push({ id: 'end', label: tr('endVoting'), icon: Trophy, onSelect: () => end(editor) });
+    items.push({ id: 'results', label: tr('votingResults'), icon: ListOrdered, onSelect: showResults });
   } else if (session) {
     items.push(
-      { id: 'results', label: 'Show results', icon: ListOrdered, onSelect: showResults },
-      { id: 'new', label: 'Start new session', icon: Vote, onSelect: () => editor.openPanel(START_DIALOG_ID) },
+      { id: 'results', label: tr('showResults'), icon: ListOrdered, onSelect: showResults },
+      { id: 'new', label: tr('startNewSession'), icon: Vote, onSelect: () => editor.openPanel(START_DIALOG_ID) },
       { divider: true },
-      { id: 'clear', label: 'Clear results', icon: X, danger: true, onSelect: () => clear(editor) },
+      { id: 'clear', label: tr('clearResults'), icon: X, danger: true, onSelect: () => clear(editor) },
     );
   } else if (v.history.length) {
     items.push(
-      { id: 'new', label: 'Start voting', icon: Vote, onSelect: () => editor.openPanel(START_DIALOG_ID) },
-      { id: 'past', label: 'Past votes', icon: History, onSelect: pastVotes },
+      { id: 'new', label: tr('startVoting2'), icon: Vote, onSelect: () => editor.openPanel(START_DIALOG_ID) },
+      { id: 'past', label: tr('pastVotes'), icon: History, onSelect: pastVotes },
     );
   }
   const hasMenu = items.length > 0;
@@ -208,9 +202,7 @@ function VoteButton({ editor }: { editor: Editor }) {
         aria-haspopup={hasMenu ? 'menu' : 'dialog'}
         aria-expanded={menu}
         onClick={() => (hasMenu ? setMenu((o) => !o) : editor.openPanel(START_DIALOG_ID))}
-      >
-        Vote
-      </Button>
+      >{tr('vote')}</Button>
       <Menu open={menu} onClose={() => setMenu(false)} anchor={ref.current} side="bottom" align="end" items={items} />
     </>
   );
@@ -299,7 +291,7 @@ const VoteControl = memo(function VoteControl({
     <div className="fr-vote-anchor" style={{ transform: `translate(${p.x}px, ${p.y}px) scale(var(--fr-vote-s, 1))` }}>
       <div className={`fr-vote-ctl${mine ? ' has-mine' : ''}`} data-fr-interactive="">
         {total != null && total > 0 && (
-          <span className="fr-vote-ctl__total" title={`${total} vote${total === 1 ? '' : 's'} in total`}>
+          <span className="fr-vote-ctl__total" title={tr('totalVotesInTotal', { total })}>
             {total}
           </span>
         )}
@@ -307,7 +299,7 @@ const VoteControl = memo(function VoteControl({
           <button
             type="button"
             className="fr-vote-ctl__minus"
-            aria-label="Remove one of your votes"
+            aria-label={tr('removeOneOfYourVotes')}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
@@ -321,8 +313,8 @@ const VoteControl = memo(function VoteControl({
           <button
             type="button"
             className={`fr-vote-ctl__plus${noVotesLeft ? ' is-spent' : ''}`}
-            aria-label={mine ? `Your votes: ${mine}. Add a vote (Alt-click removes one)` : 'Add a vote (Alt-click removes one)'}
-            title="Click to vote · Alt-click to remove"
+            aria-label={mine ? tr('yourVotesMineAddA', { mine }) : tr('addAVoteAltClick')}
+            title={tr('clickToVoteAltClick')}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={onAdd}
           >
@@ -339,7 +331,7 @@ function ResultBadge({ el, votes, rank }: { el: BoardElement; votes: number; ran
   const p = topRight(el);
   return (
     <div className="fr-vote-anchor" style={{ transform: `translate(${p.x}px, ${p.y}px) scale(var(--fr-vote-s, 1))` }}>
-      <div className={`fr-vote-badge${rank === 1 ? ' is-top' : ''}`} title={`${votes} vote${votes === 1 ? '' : 's'}`}>
+      <div className={`fr-vote-badge${rank === 1 ? ' is-top' : ''}`} title={tr('votesVotes', { votes })}>
         {votes}
       </div>
     </div>
@@ -393,12 +385,12 @@ function VotingWorld({ editor }: { editor: Editor }) {
 // Floating session bar (screen space)
 // ---------------------------------------------------------------------------
 function votesLeftText(v: VotingView, role: Role, closed: boolean): string {
-  if (closed) return "Time's up: no more votes";
+  if (closed) return tr('timeSUpNoMore');
   if (!v.canVote)
-    return role === 'commenter' ? 'You can comment; voting is open to editors on this board' : 'View only: you can watch, but not vote';
-  if (!v.eligible.length) return 'Nothing to vote on yet';
-  if (v.votesLeft === 0) return "You've used all your votes";
-  return `You have ${v.votesLeft} vote${v.votesLeft === 1 ? '' : 's'} left`;
+    return role === 'commenter' ? tr('youCanCommentVotingIs') : tr('viewOnlyYouCanWatch');
+  if (!v.eligible.length) return tr('nothingToVoteOnYet');
+  if (v.votesLeft === 0) return tr('youVeUsedAllYour');
+  return tr('youHaveVotesleftVotesLeft', { votesLeft: v.votesLeft });
 }
 
 function SessionBar({ editor }: { editor: Editor }) {
@@ -426,22 +418,22 @@ function SessionBar({ editor }: { editor: Editor }) {
 
   if (session.active) {
     return (
-      <div className="fr-vote-bar" data-fr-interactive="" role="region" aria-label="Voting session">
+      <div className="fr-vote-bar" data-fr-interactive="" role="region" aria-label={tr('votingSession')}>
         <span className="fr-vote-bar__icon">
           <Vote size={16} />
         </span>
         <div className="fr-vote-bar__text">
           <strong>
             {session.title}
-            {anonymous && <span className="fr-vote-bar__tag">Anonymous</span>}
+            {anonymous && <span className="fr-vote-bar__tag">{tr('anonymous')}</span>}
           </strong>
           <span className={(v.canVote && v.votesLeft === 0) || closed ? 'is-spent' : undefined}>
             {votesLeftText(v, role, closed)}
-            {session.maxPerItem ? ` · at most ${session.maxPerItem} per item` : ''}
+            {session.maxPerItem ? tr('atMostMaxperitemPerItem', { maxPerItem: session.maxPerItem }) : ''}
           </span>
         </div>
         {left !== null && (
-          <span className={`fr-vote-bar__clock${left < 10_000 ? ' is-low' : ''}`} aria-label="Time left to vote" role="timer">
+          <span className={`fr-vote-bar__clock${left < 10_000 ? ' is-low' : ''}`} aria-label={tr('timeLeftToVote')} role="timer">
             <Timer size={14} />
             {clock(left)}
           </span>
@@ -449,38 +441,34 @@ function SessionBar({ editor }: { editor: Editor }) {
         <div className="fr-vote-bar__voters">
           {people ? (
             anonymous ? (
-              <span className="fr-vote-bar__muted">{people} voted</span>
+              <span className="fr-vote-bar__muted">{tr('peopleVoted', { people })}</span>
             ) : (
               <Tooltip content={v.voters.map((p) => p.name).join(', ')} side="bottom">
                 <span className="fr-vote-bar__stack">
                   <AvatarStack users={v.voters} max={4} size={24} />
-                  <span>{people} voted</span>
+                  <span>{tr('peopleVoted', { people })}</span>
                 </span>
               </Tooltip>
             )
           ) : (
-            <span className="fr-vote-bar__muted">No votes yet</span>
+            <span className="fr-vote-bar__muted">{tr('noVotesYet')}</span>
           )}
         </div>
         {v.canManage && (
-          <Button size="sm" variant="primary" icon={Trophy} onClick={() => end(editor)}>
-            End voting
-          </Button>
+          <Button size="sm" variant="primary" icon={Trophy} onClick={() => end(editor)}>{tr('endVoting')}</Button>
         )}
       </div>
     );
   }
 
   return (
-    <div className="fr-vote-bar is-results" data-fr-interactive="" role="region" aria-label="Voting results">
+    <div className="fr-vote-bar is-results" data-fr-interactive="" role="region" aria-label={tr('votingResults')}>
       <span className="fr-vote-bar__icon">
         <Trophy size={16} />
       </span>
       <div className="fr-vote-bar__text">
-        <strong>Results: {session.title}</strong>
-        <span>
-          {v.totalVotes} vote{v.totalVotes === 1 ? '' : 's'} from {people} {people === 1 ? 'person' : 'people'}
-          {anonymous ? ' · anonymous' : ''}
+        <strong>{tr('resultsTitle', { title: session.title })}</strong>
+        <span>{tr('nVotesFromNPeople', { totalVotes: v.totalVotes, people })}{anonymous ? tr('anonymous2') : ''}
         </span>
       </div>
       {dock !== RESULTS_PANEL_ID && (
@@ -491,20 +479,16 @@ function SessionBar({ editor }: { editor: Editor }) {
             useVotingUi.getState().openPast(null);
             editor.openDock(RESULTS_PANEL_ID);
           }}
-        >
-          View results
-        </Button>
+        >{tr('viewResults')}</Button>
       )}
       {canEdit && (
-        <Button size="sm" variant="ghost" icon={Vote} onClick={() => editor.openPanel(START_DIALOG_ID)}>
-          Start new session
-        </Button>
+        <Button size="sm" variant="ghost" icon={Vote} onClick={() => editor.openPanel(START_DIALOG_ID)}>{tr('startNewSession')}</Button>
       )}
-      <Tooltip content="Hide results" side="bottom">
+      <Tooltip content={tr('hideResults')} side="bottom">
         <button
           type="button"
           className="fr-vote-bar__close"
-          aria-label="Hide results"
+          aria-label={tr('hideResults')}
           onClick={() => {
             useVotingUi.getState().hide(session.id);
             if (editor.getDock() === RESULTS_PANEL_ID) editor.openDock(null);
@@ -529,7 +513,7 @@ const PAD_PX = 72;
 function RankedList({ editor, ranking }: { editor: Editor; ranking: Array<{ id: string; votes: number; rank: number }> }) {
   const [topN, setTopN] = useState('3');
   const rows = ranking.filter((r) => editor.getElement(r.id));
-  if (!rows.length) return <p className="fr-vote-results__empty">No votes on items that are still on the board.</p>;
+  if (!rows.length) return <p className="fr-vote-results__empty">{tr('noVotesOnItemsThat')}</p>;
   const n = Math.max(1, Math.min(rows.length, Number.parseInt(topN, 10) || 0));
   const max = rows[0].votes;
   const focus = (id: string) => {
@@ -539,7 +523,7 @@ function RankedList({ editor, ranking }: { editor: Editor; ranking: Array<{ id: 
   return (
     <>
       <div className="fr-vote-results__top">
-        <span>Select top</span>
+        <span>{tr('selectTop')}</span>
         <Input
           size="sm"
           type="number"
@@ -547,7 +531,7 @@ function RankedList({ editor, ranking }: { editor: Editor; ranking: Array<{ id: 
           max={rows.length}
           value={topN}
           onChange={(e) => setTopN(e.target.value)}
-          aria-label="Number of top results to select"
+          aria-label={tr('numberOfTopResultsTo')}
           className="fr-vote-results__n"
         />
         <Button
@@ -557,9 +541,7 @@ function RankedList({ editor, ranking }: { editor: Editor; ranking: Array<{ id: 
             editor.select(ids);
             editor.zoomToFit(ids, { maxZoom: 1, padding: PAD_PX });
           }}
-        >
-          Select
-        </Button>
+        >{tr('select')}</Button>
       </div>
       <ol className="fr-vote-results__list">
         {rows.map((r) => (
@@ -590,13 +572,10 @@ function PastResults({ editor, entry, order }: { editor: Editor; entry: VotingHi
   return (
     <>
       <button type="button" className="fr-vote-results__back" onClick={() => useVotingUi.getState().openPast(null)}>
-        <ArrowLeft size={14} /> All votes
-      </button>
+        <ArrowLeft size={14} />{' '}{tr('allVotes')}</button>
       <div className="fr-vote-results__meta">
         <strong>{entry.session.title}</strong>
-        <span>
-          {dateOf(entry.session.endedAt ?? entry.archivedAt)} · {total} vote{total === 1 ? '' : 's'} · {entry.voters} {entry.voters === 1 ? 'voter' : 'voters'}
-          {entry.session.anonymousBallots ? ' · anonymous' : ''}
+        <span>{tr('dateofNVotesNVoters', { dateOf: dateOf(entry.session.endedAt ?? entry.archivedAt), total, voters: entry.voters })}{entry.session.anonymousBallots ? tr('anonymous2') : ''}
         </span>
       </div>
       <RankedList editor={editor} ranking={ranked(new Map(entry.totals), order)} />
@@ -609,9 +588,7 @@ function PastResults({ editor, entry, order }: { editor: Editor; entry: VotingHi
             forget(editor, entry.session.id);
             useVotingUi.getState().openPast(null);
           }}
-        >
-          Delete from history
-        </Button>
+        >{tr('deleteFromHistory')}</Button>
       )}
     </>
   );
@@ -629,16 +606,13 @@ function ResultsPanel({ editor }: { editor: Editor }) {
   if (past) {
     body = <PastResults editor={editor} entry={past} order={order} />;
   } else if (!session) {
-    body = <p className="fr-vote-results__empty">{v.history.length ? 'No vote running. Earlier votes are listed below.' : 'No voting session on this board yet.'}</p>;
+    body = <p className="fr-vote-results__empty">{v.history.length ? tr('noVoteRunningEarlierVotes') : tr('noVotingSessionOnThis')}</p>;
   } else if (session.active && session.anonymous) {
     body = (
-      <p className="fr-vote-results__empty">
-        Ballots are sealed on the server until voting ends{session.anonymousBallots ? ', and counted without names' : ''}. {v.voters.length}{' '}
-        {v.voters.length === 1 ? 'person has' : 'people have'} voted so far.
-      </p>
+      <p className="fr-vote-results__empty">{tr('ballotsAreSealedOnThe')}{session.anonymousBallots ? tr('andCountedWithoutNames') : ''}{tr('lengthPeopleHaveVotedSo', { length: v.voters.length })}</p>
     );
   } else if (!v.ranking.length) {
-    body = <p className="fr-vote-results__empty">No votes yet.</p>;
+    body = <p className="fr-vote-results__empty">{tr('noVotesYet2')}</p>;
   } else {
     body = <RankedList editor={editor} ranking={v.ranking} />;
   }
@@ -646,29 +620,26 @@ function ResultsPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-vote-results">
       <DockHeader className="fr-vote-results__head">
-        <h2 className="fr-vote-results__title">Voting results</h2>
+        <h2 className="fr-vote-results__title">{tr('votingResults')}</h2>
       </DockHeader>
       {session && !past && (
         <div className="fr-vote-results__meta">
           <strong>{session.title}</strong>
           <span>
-            {session.active ? 'In progress' : 'Ended'} · {v.totalVotes} vote{v.totalVotes === 1 ? '' : 's'} · {v.voters.length}{' '}
-            {v.voters.length === 1 ? 'voter' : 'voters'}
-            {session.anonymousBallots ? ' · anonymous' : ''}
+            {session.active ? tr('inProgress') : tr('ended')}{' '}{tr('nVotesLengthVoters', { totalVotes: v.totalVotes, length: v.voters.length })}{session.anonymousBallots ? tr('anonymous2') : ''}
           </span>
         </div>
       )}
       {body}
       {canEdit && !past && (!session || !session.active) && (
         <Button variant="secondary" icon={Vote} block onClick={() => editor.openPanel(START_DIALOG_ID)}>
-          {session ? 'Start new session' : 'Start voting'}
+          {session ? tr('startNewSession') : tr('startVoting2')}
         </Button>
       )}
       {!past && v.history.length > 0 && (
-        <section className="fr-vote-history" aria-label="Past votes">
+        <section className="fr-vote-history" aria-label={tr('pastVotes')}>
           <h3>
-            <History size={14} /> Past votes
-          </h3>
+            <History size={14} />{' '}{tr('pastVotes')}</h3>
           <ul>
             {v.history.map((h) => {
               const total = h.totals.reduce((n, [, x]) => n + x, 0);
@@ -676,9 +647,7 @@ function ResultsPanel({ editor }: { editor: Editor }) {
                 <li key={h.session.id}>
                   <button type="button" className="fr-vote-history__row" onClick={() => useVotingUi.getState().openPast(h.session.id)}>
                     <span className="fr-vote-history__title">{h.session.title}</span>
-                    <span className="fr-vote-history__meta">
-                      {dateOf(h.session.endedAt ?? h.archivedAt)} · {total} vote{total === 1 ? '' : 's'}
-                    </span>
+                    <span className="fr-vote-history__meta">{tr('dateofTotalVotes', { total, dateOf: dateOf(h.session.endedAt ?? h.archivedAt) })}</span>
                   </button>
                 </li>
               );

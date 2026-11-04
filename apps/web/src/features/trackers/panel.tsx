@@ -19,22 +19,22 @@ import {
 import { definePanel, type Editor, type PanelProps } from '@engine';
 import { Button, Input, Modal, SegmentedControl, Select, TextArea } from '@ui';
 import { IMPORT_DIALOG, openIssue, SEND_DIALOG } from './lib/links';
+import { t as tr } from './messages';
 import './trackers.css';
 
 const STATUS_LABEL: Record<string, string> = {
-  todo: 'To do',
-  doing: 'In progress',
-  done: 'Done',
+  todo: tr('toDo'),
+  doing: tr('inProgress'),
+  done: tr('done'),
 };
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 /** What a tracker calls its sprints (#119); none: it has none Freero imports by. */
 const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprint', linear: 'Cycle', azure: 'Iteration' };
 /** What a tracker calls the issue others go under (#43); none: not from Freero (GitHub). */
-const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: 'Parent issue', azure: 'Parent work item', asana: 'Parent task', monday: 'Parent item' };
+const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: tr('parentIssue'), azure: tr('parentWorkItem'), asana: tr('parentTask'), monday: tr('parentItem') };
 /** What a tracker's project is called where it isn't one (#120, #121). */
 const PROJECT_NAME: Partial<Record<TrackerProviderKind, string>> = { github: 'Repository', linear: 'Team', monday: 'Board' };
 /** A parent's key, as people find it in each tracker. */
-const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: 'Task id or link', monday: 'Item id' };
+const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: tr('taskIdOrLink'), monday: tr('itemId') };
 /** Trackers whose whole project (board) can be imported without a query (#120, #121). */
 const WHOLE_PROJECT: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday']);
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
@@ -63,7 +63,7 @@ function useConnection(editor: Editor) {
         const preferred = t.connections.find((c) => c.id === connectionId)?.defaults.project;
         setProject(preferred && r.projects.some((p) => p.key === preferred) ? preferred : (r.projects[0]?.key ?? preferred ?? ''));
       },
-      (e) => live && (setProjects([]), setError(message(e, 'The tracker didn’t list its projects.'))),
+      (e) => live && (setProjects([]), setError(message(e, tr('theTrackerDidnTList')))),
     );
     return () => {
       live = false;
@@ -94,8 +94,8 @@ function ConnectionFields({ c, projectLabel = 'Project', withProject = true }: {
   return (
     <div className="fr-trackers-dialog__row">
       <div>
-        <span className="fr-trackers-dialog__label">Tracker</span>
-        <Select aria-label="Tracker" options={options} value={c.connectionId} onChange={c.setConnectionId} width="100%" />
+        <span className="fr-trackers-dialog__label">{tr('tracker')}</span>
+        <Select aria-label={tr('tracker')} options={options} value={c.connectionId} onChange={c.setConnectionId} width="100%" />
       </div>
       {withProject && (
         <div>
@@ -112,7 +112,7 @@ function ConnectionFields({ c, projectLabel = 'Project', withProject = true }: {
               width="100%"
             />
           ) : (
-            <Input aria-label={projectLabel} value={c.project} placeholder={c.projects === null ? 'Loading…' : 'Key'} onChange={(e) => c.setProject(e.target.value)} />
+            <Input aria-label={projectLabel} value={c.project} placeholder={c.projects === null ? tr('loading') : tr('key')} onChange={(e) => c.setProject(e.target.value)} />
           )}
         </div>
       )}
@@ -218,7 +218,7 @@ function SendDialog({ editor, props }: PanelProps) {
       })
       .then(
         (p) => live && (setPreview(p), c.setError(null)),
-        (e) => live && c.setError(message(e, 'Freero couldn’t prepare the issue.')),
+        (e) => live && c.setError(message(e, tr('freeroCouldnTPrepareThe'))),
       );
     return () => {
       live = false;
@@ -236,15 +236,13 @@ function SendDialog({ editor, props }: PanelProps) {
       const first = out.issues[0];
       editor.host.notify(
         out.parent
-          ? `Created ${out.parent.key} with ${plural(out.issues.length, 'issue')} under it`
-          : out.issues.length === 1
-            ? `Created ${first.key} for ${plural(first.itemIds.length, 'item')}`
-            : `Created ${plural(out.issues.length, 'issue')}`,
+          ? tr('createdKeyWithValueUnder', { key: out.parent.key, value: tr('countIssue', { count: out.issues.length }) })
+          : tr('createdValue2', { length: out.issues.length, key: first.key, value: tr('countItem', { count: first.itemIds.length }), value2: tr('countIssue', { count: out.issues.length }) }),
         'success',
-        first ? { action: { label: 'Open', run: () => openIssue(first.url) } } : undefined,
+        first ? { action: { label: tr('open'), run: () => openIssue(first.url) } } : undefined,
       );
     } catch (e) {
-      c.setError(message(e, 'The tracker didn’t create the issue.'));
+      c.setError(message(e, tr('theTrackerDidnTCreate')));
     } finally {
       setBusy(false);
     }
@@ -258,17 +256,14 @@ function SendDialog({ editor, props }: PanelProps) {
       onClose={close}
       title={
         <span className="fr-trackers-dialog__title">
-          <TicketPlus size={18} aria-hidden /> Send to tracker
-        </span>
+          <TicketPlus size={18} aria-hidden />{' '}{tr('sendToTracker2')}</span>
       }
       width={560}
       footer={
         <>
-          <Button variant="ghost" onClick={close} disabled={busy}>
-            Cancel
-          </Button>
+          <Button variant="ghost" onClick={close} disabled={busy}>{tr('cancel')}</Button>
           <Button variant="primary" onClick={send} loading={busy} disabled={!preview || !c.project.trim()} data-autofocus>
-            {count === 1 ? 'Create issue' : `Create ${count} issues`}
+            {tr('createCountIssues', { count })}
           </Button>
         </>
       }
@@ -278,14 +273,14 @@ function SendDialog({ editor, props }: PanelProps) {
         <div className="fr-trackers-dialog__row">
           {ids.length > 1 && (
             <div style={parentName ? { flexBasis: '100%' } : undefined}>
-              <span className="fr-trackers-dialog__label">Issues</span>
+              <span className="fr-trackers-dialog__label">{tr('issues')}</span>
               <SegmentedControl<'one' | 'each' | 'clusters'>
-                aria-label="How many issues"
+                aria-label={tr('howManyIssues')}
                 size="sm"
                 options={[
-                  { value: 'one', label: 'One for all' },
-                  { value: 'each', label: `One per item (${ids.length})` },
-                  ...(parentName ? [{ value: 'clusters' as const, label: 'One per cluster' }] : []),
+                  { value: 'one', label: tr('oneForAll') },
+                  { value: 'each', label: tr('onePerItemLength', { length: ids.length }) },
+                  ...(parentName ? [{ value: 'clusters' as const, label: tr('onePerCluster') }] : []),
                 ]}
                 value={mode}
                 onChange={setMode}
@@ -294,37 +289,35 @@ function SendDialog({ editor, props }: PanelProps) {
           )}
           {typed && (
             <div>
-              <span className="fr-trackers-dialog__label">{provider === 'azure' ? 'Work item type' : 'Issue type'}</span>
+              <span className="fr-trackers-dialog__label">{provider === 'azure' ? tr('workItemType') : tr('issueType')}</span>
               {types?.issueTypes.length ? (
                 <Select
-                  aria-label="Issue type"
+                  aria-label={tr('issueType')}
                   options={types.issueTypes.map((t) => ({ value: t, label: t }))}
                   value={issueType || (types.preferred && types.issueTypes.includes(types.preferred) ? types.preferred : types.issueTypes.includes('Task') ? 'Task' : types.issueTypes[0])}
                   onChange={setIssueType}
                   width="100%"
                 />
               ) : (
-                <Input aria-label="Issue type" value={issueType} placeholder={types?.preferred ?? c.connection?.defaults.issueType ?? 'Task'} onChange={(e) => setIssueType(e.target.value)} />
+                <Input aria-label={tr('issueType')} value={issueType} placeholder={types?.preferred ?? c.connection?.defaults.issueType ?? tr('task')} onChange={(e) => setIssueType(e.target.value)} />
               )}
             </div>
           )}
           {parentName && mode !== 'clusters' && (
             <div>
-              <span className="fr-trackers-dialog__label">Under (optional)</span>
-              <Input aria-label={parentName} value={parent} placeholder={(provider && PARENT_HINT[provider]) ?? 'WEB-12'} onChange={(e) => setParent(e.target.value)} />
+              <span className="fr-trackers-dialog__label">{tr('underOptional')}</span>
+              <Input aria-label={parentName} value={parent} placeholder={(provider && PARENT_HINT[provider]) ?? tr('web12')} onChange={(e) => setParent(e.target.value)} />
             </div>
           )}
         </div>
         <p className="fr-trackers-dialog__hint">
           {mode === 'clusters'
-            ? `A new ${parentName === 'Epic' ? 'epic' : 'parent'} for the ${plural(ids.length, 'selected item')}, with an issue under it for each cluster of items close together.`
+            ? tr('aNewValueForThe', { value: parentName === 'Epic' ? tr('epic') : tr('parent'), value2: tr('countSelectedItem', { count: ids.length }) })
             : mode === 'one' && ids.length > 1
-              ? `One issue for the ${plural(ids.length, 'selected item')}, each listed with a link back to the board.`
-              : 'Each item becomes an issue with a link back to the board.'}{' '}
-          The items show the issue and stay in sync with it.
-        </p>
+              ? tr('oneIssueForTheValue', { value: tr('countSelectedItem', { count: ids.length }) })
+              : tr('eachItemBecomesAnIssue')}{tr('theItemsShowTheIssue')}</p>
         {preview ? (
-          <div className="fr-trackers-preview" aria-label="What will be sent">
+          <div className="fr-trackers-preview" aria-label={tr('whatWillBeSent')}>
             {preview.map((p, n) => (
               <div key={p.itemIds.join(',') || `parent-${n}`} className="fr-trackers-preview__issue">
                 <p className="fr-trackers-preview__title">
@@ -334,9 +327,9 @@ function SendDialog({ editor, props }: PanelProps) {
                 {p.values.description && <Description text={p.values.description} />}
                 <Fields values={p.values} />
                 {p.unmapped.length > 0 && (
-                  <ul className="fr-trackers-preview__unmapped" aria-label="Not sent">
+                  <ul className="fr-trackers-preview__unmapped" aria-label={tr('notSent')}>
                     {p.unmapped.map((u) => (
-                      <li key={u}>Not sent: {u}</li>
+                      <li key={u}>{tr('notSentU', { u })}</li>
                     ))}
                   </ul>
                 )}
@@ -344,7 +337,7 @@ function SendDialog({ editor, props }: PanelProps) {
             ))}
           </div>
         ) : (
-          !c.error && <p className="fr-trackers-dialog__fine">Preparing the preview…</p>
+          !c.error && <p className="fr-trackers-dialog__fine">{tr('preparingThePreview')}</p>
         )}
         {c.error && (
           <p className="fr-trackers-dialog__error" role="alert">
@@ -366,10 +359,10 @@ const QUERY_HINT: Record<string, string> = {
 };
 
 const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
-  { value: 'epic', label: 'Epic' },
-  { value: 'team', label: 'Team' },
-  { value: 'label', label: 'Label' },
-  { value: 'none', label: 'One lane' },
+  { value: 'epic', label: tr('epic2') },
+  { value: 'team', label: tr('team') },
+  { value: 'label', label: tr('label') },
+  { value: 'none', label: tr('oneLane') },
 ];
 
 type ImportBy = 'query' | 'project' | 'sprint' | 'epic';
@@ -386,7 +379,7 @@ function useSprints(editor: Editor, connectionId: string, project: string, wante
     let live = true;
     t.sprints(connectionId, project).then(
       (r) => live && setSprints(r.sprints),
-      (e) => live && (setSprints([]), setError(message(e, 'The tracker didn’t list its sprints.'))),
+      (e) => live && (setSprints([]), setError(message(e, tr('theTrackerDidnTList2')))),
     );
     return () => {
       live = false;
@@ -438,10 +431,10 @@ function ImportDialog({ editor, props }: PanelProps) {
       const where = timeline ? ` onto the timeline${out.unscheduled ? ` (${out.unscheduled} without dates in Unscheduled)` : ''}` : kanban ? ` into “${kanbanTitle}”` : ' as cards';
       editor.host.notify(
         out.created.length
-          ? `Imported ${plural(out.created.length, 'issue')}${where}${out.skipped ? ` (${out.skipped} already here)` : ''}`
+          ? tr('importedValueWhereValue2', { value: tr('countIssue', { count: out.created.length }), where, value2: out.skipped ? tr('skippedAlreadyHere', { skipped: out.skipped }) : '' })
           : out.skipped
-            ? `Those ${plural(out.skipped, 'issue')} are already on this board`
-            : 'No issues matched',
+            ? tr('thoseValueAreAlreadyOn', { value: tr('countIssue', { count: out.skipped }) })
+            : tr('noIssuesMatched'),
         out.created.length ? 'success' : 'info',
       );
       if (out.created.length) {
@@ -455,7 +448,7 @@ function ImportDialog({ editor, props }: PanelProps) {
         show(0);
       }
     } catch (e) {
-      c.setError(message(e, 'The tracker didn’t answer the search.'));
+      c.setError(message(e, tr('theTrackerDidnTAnswer2')));
     } finally {
       setBusy(false);
     }
@@ -467,18 +460,14 @@ function ImportDialog({ editor, props }: PanelProps) {
       onClose={close}
       title={
         <span className="fr-trackers-dialog__title">
-          <Download size={18} aria-hidden /> {timeline ? 'Import issues onto the timeline' : kanban ? 'Import issues into the kanban' : 'Import issues'}
+          <Download size={18} aria-hidden /> {timeline ? tr('importIssuesOntoTheTimeline') : kanban ? tr('importIssuesIntoTheKanban') : tr('importIssues2')}
         </span>
       }
       width={520}
       footer={
         <>
-          <Button variant="ghost" onClick={close} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={run} loading={busy} disabled={!ready}>
-            Import
-          </Button>
+          <Button variant="ghost" onClick={close} disabled={busy}>{tr('cancel')}</Button>
+          <Button variant="primary" onClick={run} loading={busy} disabled={!ready}>{tr('import')}</Button>
         </>
       }
     >
@@ -486,16 +475,16 @@ function ImportDialog({ editor, props }: PanelProps) {
         <ConnectionFields c={c} withProject={by !== 'query'} />
         {(sprintName || parentName || (provider && WHOLE_PROJECT.has(provider))) && (
           <div className="fr-trackers-dialog__row">
-            <span className="fr-trackers-dialog__label">Bring in</span>
+            <span className="fr-trackers-dialog__label">{tr('bringIn')}</span>
             <SegmentedControl<ImportBy>
               size="sm"
-              aria-label="Bring in"
+              aria-label={tr('bringIn')}
               value={by}
               options={[
-                { value: 'query', label: c.queryLanguage || 'Query' },
-                ...(provider && WHOLE_PROJECT.has(provider) ? [{ value: 'project' as const, label: provider === 'monday' ? 'A board' : 'A project' }] : []),
+                { value: 'query', label: c.queryLanguage || tr('query') },
+                ...(provider && WHOLE_PROJECT.has(provider) ? [{ value: 'project' as const, label: provider === 'monday' ? tr('aBoard') : tr('aProject') }] : []),
                 ...(sprintName ? [{ value: 'sprint' as const, label: `A ${sprintName.toLowerCase()}` }] : []),
-                ...(parentName ? [{ value: 'epic' as const, label: parentName === 'Epic' ? 'An epic' : `A ${parentName.toLowerCase()}` }] : []),
+                ...(parentName ? [{ value: 'epic' as const, label: parentName === 'Epic' ? tr('anEpic') : `A ${parentName.toLowerCase()}` }] : []),
               ]}
               onChange={setBy}
             />
@@ -503,7 +492,7 @@ function ImportDialog({ editor, props }: PanelProps) {
         )}
         {by === 'query' && (
           <TextArea
-            label={c.queryLanguage || 'Query'}
+            label={c.queryLanguage || tr('query')}
             value={query}
             rows={3}
             maxLength={2000}
@@ -522,11 +511,11 @@ function ImportDialog({ editor, props }: PanelProps) {
               width="100%"
               value={sprint}
               options={[
-                { value: 'current', label: `Current ${sprintName.toLowerCase()}`, description: s.sprints?.find((x) => x.state === 'active')?.name ?? (s.sprints ? 'None is active' : 'Loading…') },
+                { value: 'current', label: tr('currentSprintname', { sprintName: sprintName.toLowerCase() }), description: s.sprints?.find((x) => x.state === 'active')?.name ?? (s.sprints ? tr('noneIsActive') : tr('loading')) },
                 ...[...(s.sprints ?? [])].reverse().map((x) => ({
                   value: x.id,
                   label: x.name,
-                  description: x.state === 'active' ? 'Now' : x.state === 'closed' ? 'Closed' : x.startDate ? `Starts ${x.startDate}` : 'Upcoming',
+                  description: x.state === 'active' ? tr('now') : x.state === 'closed' ? tr('closed') : x.startDate ? tr('startsStartdate', { startDate: x.startDate }) : tr('upcoming'),
                 })),
               ]}
               onChange={setSprint}
@@ -539,21 +528,21 @@ function ImportDialog({ editor, props }: PanelProps) {
           </div>
         )}
         {by === 'epic' && parentName && (
-          <Input label={`${parentName} key`} value={epic} placeholder={(provider && PARENT_HINT[provider]) ?? 'WEB-12'} onChange={(e) => setEpic(e.target.value)} />
+          <Input label={tr('parentnameKey', { parentName })} value={epic} placeholder={(provider && PARENT_HINT[provider]) ?? tr('web12')} onChange={(e) => setEpic(e.target.value)} />
         )}
         {timeline && (
           <div className="fr-trackers-dialog__row">
-            <span className="fr-trackers-dialog__label">Lanes by</span>
-            <SegmentedControl<RoadmapGroupBy> size="sm" aria-label="Lanes by" value={groupBy} options={GROUP_BY} onChange={setGroupBy} />
+            <span className="fr-trackers-dialog__label">{tr('lanesBy')}</span>
+            <SegmentedControl<RoadmapGroupBy> size="sm" aria-label={tr('lanesBy')} value={groupBy} options={GROUP_BY} onChange={setGroupBy} />
           </div>
         )}
         <p className="fr-trackers-dialog__fine">
           {timeline
-            ? `Each issue becomes a bar on “${richTextToPlain(String((timeline as { title?: string }).title ?? '')) || 'the timeline'}” at its start and due dates, linked to it: moving a bar changes the issue’s dates, and dates changed in the tracker move the bar. Issues without dates wait in an “Unscheduled” frame below. Up to 50 at a time.`
+            ? tr('eachIssueBecomesABar', { value: richTextToPlain(String((timeline as { title?: string }).title ?? '')) || tr('theTimeline') })
             : kanban
-              ? `Each issue becomes a card in “${kanbanTitle}”, linked to it: in the column named after its status (else one of its kind, else a new column), with its priority in a Priority field${sprintName ? ` and its ${sprintName.toLowerCase()} in a ${sprintName} field (the project’s ${sprintName.toLowerCase()}s as options; closed ones can’t be picked)` : ''}. Moving a card or changing its fields updates the issue. Up to 50 at a time.`
+              ? tr('eachIssueBecomesACard', { kanbanTitle, value: sprintName ? ` and its ${sprintName.toLowerCase()} in a ${sprintName} field (the project’s ${sprintName.toLowerCase()}s as options; closed ones can’t be picked)` : '' })
 
-              : 'Each issue becomes a task card linked to it (up to 50 at a time). Issues already on this board are left out.'}
+              : tr('eachIssueBecomesATask')}
         </p>
         {c.error && (
           <p className="fr-trackers-dialog__error" role="alert">

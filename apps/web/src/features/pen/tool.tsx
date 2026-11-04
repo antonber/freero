@@ -21,6 +21,7 @@ import { recognise, type Recognition } from './lib/recognise';
 import { applyRecognition } from './lib/smart';
 import { buildStroke, capturePressure, constrainAngle, simplify, straightStroke, strokePath } from './lib/stroke';
 
+import { t } from './messages';
 /** Minimum screen distance between captured points. */
 const MIN_STEP_PX = 1.5;
 /** Point spacing of a Shift-constrained straight stroke, in screen px. */
@@ -161,17 +162,17 @@ function PenOptions({ editor }: { editor: Editor }) {
   const set = (patch: PenToolOptions) => editor.setToolOptions(TOOL_ID, patch as Record<string, unknown>);
   return (
     <div className="fr-pen-options">
-      <div className="fr-pen-options__modes" role="group" aria-label="Drawing mode">
-        <IconButton icon={PenLine} label="Pen" size={32} active={!o.highlighter} onClick={() => set({ mode: 'pen' })} />
+      <div className="fr-pen-options__modes" role="group" aria-label={t('drawingMode')}>
+        <IconButton icon={PenLine} label={t('pen')} size={32} active={!o.highlighter} onClick={() => set({ mode: 'pen' })} />
         <IconButton
           icon={Highlighter}
-          label="Highlighter"
+          label={t('highlighter')}
           size={32}
           active={o.highlighter}
           onClick={() => set({ mode: 'highlighter' })}
         />
-        <IconButton icon={Eraser} label="Eraser" shortcut="E" size={32} onClick={() => editor.setTool(ERASER_TOOL)} />
-        <IconButton icon={LassoSelect} label="Lasso" size={32} onClick={() => editor.setTool(LASSO_TOOL)} />
+        <IconButton icon={Eraser} label={t('eraser')} shortcut="E" size={32} onClick={() => editor.setTool(ERASER_TOOL)} />
+        <IconButton icon={LassoSelect} label={t('lasso')} size={32} onClick={() => editor.setTool(LASSO_TOOL)} />
       </div>
       <ColorSwatches
         colors={o.highlighter ? HIGHLIGHTER_COLORS : PEN_COLORS}
@@ -180,9 +181,9 @@ function PenOptions({ editor }: { editor: Editor }) {
         onChange={(c) => set(o.highlighter ? { highlighterColor: c } : { penColor: c })}
         columns={4}
         size={24}
-        aria-label={o.highlighter ? 'Highlighter color' : 'Pen color'}
+        aria-label={o.highlighter ? t('highlighterColor') : t('penColor')}
       />
-      <div className="fr-pen-options__sizes" role="group" aria-label="Stroke width">
+      <div className="fr-pen-options__sizes" role="group" aria-label={t('strokeWidth')}>
         {widths.map((w, i) => {
           const dot = o.highlighter ? 6 + i * 4 : 3 + i * 3;
           return (
@@ -201,8 +202,8 @@ function PenOptions({ editor }: { editor: Editor }) {
         })}
       </div>
       {!o.highlighter && (
-        <div className="fr-pen-options__smart" title="Rough rectangles, circles, triangles, diamonds, lines and arrows become clean ones. Rest the pen at the end of a stroke to straighten it; scribble over items to erase them.">
-          <Toggle size="sm" label="Smart drawing" checked={o.smart} onChange={(smart) => set({ smart })} />
+        <div className="fr-pen-options__smart" title={t('roughRectanglesCirclesTrianglesDiamonds')}>
+          <Toggle size="sm" label={t('smartDrawing')} checked={o.smart} onChange={(smart) => set({ smart })} />
         </div>
       )}
     </div>
@@ -211,7 +212,7 @@ function PenOptions({ editor }: { editor: Editor }) {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Pen',
+  label: t('pen'),
   icon: PenLine,
   shortcut: 'p',
   order: 50,

@@ -11,6 +11,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { collectDiagnostics } from './diagnostics';
 import { captureScreen } from './capture';
+import { t } from '../messages';
 import './problems.css';
 
 /** Ctrl+Alt+P (⌘⌥P on a Mac): the same everywhere; on boards the board's command answers it. */
@@ -102,7 +103,7 @@ export function ProblemReportProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const errorText = (e: unknown) => (e instanceof ApiError && e.status < 500 ? e.message : 'Your report couldn’t be sent. Check your connection and try again.');
+const errorText = (e: unknown) => (e instanceof ApiError && e.status < 500 ? e.message : t('yourReportCouldnTBe'));
 
 function ProblemDialog({ pending, onClose }: { pending: Pending; onClose: () => void }) {
   const navigate = useNavigate();
@@ -142,7 +143,7 @@ function ProblemDialog({ pending, onClose }: { pending: Pending; onClose: () => 
       <Modal
         open
         onClose={onClose}
-        title="Thanks — sent"
+        title={t('thanksSent')}
         width={460}
         className="fr-problem"
         footer={
@@ -153,20 +154,14 @@ function ProblemDialog({ pending, onClose }: { pending: Pending; onClose: () => 
                 onClose();
                 navigate(MY_PROBLEMS_PATH);
               }}
-            >
-              See my reports
-            </Button>
-            <Button variant="primary" onClick={onClose} data-autofocus>
-              Done
-            </Button>
+            >{t('seeMyReports')}</Button>
+            <Button variant="primary" onClick={onClose} data-autofocus>{t('done')}</Button>
           </>
         }
       >
         <div>
-          <p className="fr-problem__p">
-            Freero’s team reads every report. You can follow this one in Account settings, and you’ll get a notification when it’s fixed.
-          </p>
-          {sent.screenshotFailed ? <p className="fr-problem__warn">The screenshot couldn’t be attached; your note and the details were sent.</p> : null}
+          <p className="fr-problem__p">{t('freeroSTeamReadsEvery')}</p>
+          {sent.screenshotFailed ? <p className="fr-problem__warn">{t('theScreenshotCouldnTBe')}</p> : null}
         </div>
       </Modal>
     );
@@ -176,30 +171,26 @@ function ProblemDialog({ pending, onClose }: { pending: Pending; onClose: () => 
       open
       onClose={onClose}
       dismissable={!note.trim()}
-      title="Report a problem"
-      description="Something broken or confusing? Tell Freero’s team what happened."
+      title={t('reportAProblem')}
+      description={t('somethingBrokenOrConfusingTell')}
       width={520}
       className="fr-problem"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={send} disabled={!note.trim()} loading={busy}>
-            Send report
-          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>{t('cancel')}</Button>
+          <Button variant="primary" onClick={send} disabled={!note.trim()} loading={busy}>{t('sendReport')}</Button>
         </>
       }
     >
       <div className="fr-problem__form">
         <TextArea
-          label="What went wrong? What did you expect?"
+          label={t('whatWentWrongWhatDid')}
           value={note}
           rows={4}
           maxLength={MAX_PROBLEM_NOTE}
           required
           data-autofocus
-          placeholder="e.g. I dragged a card into “Done” and it jumped back"
+          placeholder={t('eGIDraggedA')}
           onChange={(e) => setNote(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send();
@@ -208,7 +199,7 @@ function ProblemDialog({ pending, onClose }: { pending: Pending; onClose: () => 
         <Screenshot captured={pending.shot !== null} preview={preview} included={withShot} onToggle={setWithShot} />
         <label className="fr-problem__check">
           <input type="checkbox" checked={contactOk} onChange={(e) => setContactOk(e.target.checked)} />
-          <span>OK to contact me about this</span>
+          <span>{t('okToContactMeAbout')}</span>
         </label>
         <Diagnostics d={pending.diagnostics} />
         {error ? (
@@ -225,32 +216,28 @@ function Screenshot({ captured, preview, included, onToggle }: { captured: boole
   if (!captured)
     return (
       <div className="fr-problem__shot fr-problem__shot--none">
-        <ImageOff size={16} aria-hidden /> <span>No screenshot: this page couldn’t be captured. Your note and the details below are still sent.</span>
+        <ImageOff size={16} aria-hidden /> <span>{t('noScreenshotThisPageCouldn')}</span>
       </div>
     );
   if (!included)
     return (
       <div className="fr-problem__shot fr-problem__shot--none">
-        <ImageOff size={16} aria-hidden /> <span>No screenshot will be sent.</span>
-        <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => onToggle(true)}>
-          Add it back
-        </Button>
+        <ImageOff size={16} aria-hidden /> <span>{t('noScreenshotWillBeSent')}</span>
+        <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => onToggle(true)}>{t('addItBack')}</Button>
       </div>
     );
   return (
     <figure className="fr-problem__shot">
-      {preview ? <img className="fr-problem__img" src={preview} alt="Screenshot of what you were looking at" /> : <div className="fr-problem__img" />}
+      {preview ? <img className="fr-problem__img" src={preview} alt={t('screenshotOfWhatYouWere')} /> : <div className="fr-problem__img" />}
       <figcaption className="fr-problem__caption">
-        <span>A screenshot of your screen is attached. It may show board content; only Freero’s operators see it.</span>
-        <Button size="sm" variant="ghost" icon={Trash2} onClick={() => onToggle(false)}>
-          Remove
-        </Button>
+        <span>{t('aScreenshotOfYourScreen')}</span>
+        <Button size="sm" variant="ghost" icon={Trash2} onClick={() => onToggle(false)}>{t('remove')}</Button>
       </figcaption>
     </figure>
   );
 }
 
-const ROLE_PHRASE: Record<Role, string> = { owner: 'you own it', editor: 'you can edit', commenter: 'you can comment', viewer: 'you can view' };
+const ROLE_PHRASE: Record<Role, string> = { owner: t('youOwnIt'), editor: t('youCanEdit'), commenter: t('youCanComment'), viewer: t('youCanView') };
 
 function Diagnostics({ d }: { d: ProblemDiagnostics }) {
   const board: Array<[string, ReactNode]> = d.boardId
@@ -267,15 +254,15 @@ function Diagnostics({ d }: { d: ProblemDiagnostics }) {
   const rows: Array<[string, ReactNode]> = [
     ['Page', <code key="p">{d.path}</code>],
     ...board,
-    ['App release', 'Added by Freero’s server'],
+    [t('appRelease'), t('addedByFreeroSServer')],
     ['Browser', `${describeDevice(d.userAgent)}${d.language ? ` · ${d.language}` : ''}`],
     ['Window', `${d.viewport.width} × ${d.viewport.height} at ${d.viewport.dpr}× pixels`],
     ['Time', `${new Date(d.at).toLocaleString()}${d.timeZone ? ` (${d.timeZone})` : ''}`],
-    ['Recent errors', d.events.length ? `${d.events.length} (listed below)` : 'None'],
+    [t('recentErrors'), d.events.length ? t('lengthListedBelow', { length: d.events.length }) : 'None'],
   ];
   return (
     <details className="fr-problem__details">
-      <summary>Also sent: details that help us find it</summary>
+      <summary>{t('alsoSentDetailsThatHelp')}</summary>
       <dl className="fr-problem__dl">
         {rows.map(([k, v]) => (
           <div key={k} className="fr-problem__row">
@@ -293,7 +280,7 @@ function Diagnostics({ d }: { d: ProblemDiagnostics }) {
           ))}
         </ol>
       ) : null}
-      <p className="fr-problem__fine">Web addresses are sent without their query strings; tokens and email addresses are removed.</p>
+      <p className="fr-problem__fine">{t('webAddressesAreSentWithout')}</p>
     </details>
   );
 }

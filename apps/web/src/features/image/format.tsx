@@ -9,6 +9,7 @@ import { naturalAspectBox, replacementBox } from './lib/layout';
 import { resetCrop, shownNaturalSize } from './lib/crop';
 import { CROP_PANEL } from './lib/cropping';
 
+import { t } from './messages';
 /** Aspect differs from the (cropped) picture's by more than half a pixel over the box. */
 const offAspect = (el: ImageElement) => {
   const n = shownNaturalSize(el);
@@ -24,9 +25,9 @@ function ReplaceControl({ editor, image }: { editor: Editor; image: ImageElement
     try {
       const local = URL.createObjectURL(file);
       const size = await naturalSizeOf(local).finally(() => URL.revokeObjectURL(local));
-      if (!size) return editor.host.notify("That file isn't an image Freero can read.", 'error');
+      if (!size) return editor.host.notify(t('thatFileIsnTAn'), 'error');
       const stored = await storeImage(editor, file);
-      if ('error' in stored) return editor.host.notify("Couldn't upload that image. Try again when you're back online.", 'error');
+      if ('error' in stored) return editor.host.notify(t('couldnTUploadThatImage'), 'error');
       const cur = editor.getElement<ImageElement>(image.id);
       if (!cur) return;
       // Same footprint and center, the new picture's proportions.
@@ -41,7 +42,7 @@ function ReplaceControl({ editor, image }: { editor: Editor; image: ImageElement
       setBusy(false);
     }
   };
-  return <IconButton icon={ImageUp} label={busy ? 'Uploading…' : 'Replace image'} size={32} disabled={busy} onClick={() => void replace()} />;
+  return <IconButton icon={ImageUp} label={busy ? t('uploading') : t('replaceImage')} size={32} disabled={busy} onClick={() => void replace()} />;
 }
 
 function AltControl({ editor, image }: { editor: Editor; image: ImageElement }) {
@@ -65,7 +66,7 @@ function AltControl({ editor, image }: { editor: Editor; image: ImageElement }) 
       <IconButton
         ref={ref}
         icon={Type}
-        label="Alt text"
+        label={t('altText')}
         size={32}
         active={open || !!image.alt}
         onClick={() => {
@@ -73,7 +74,7 @@ function AltControl({ editor, image }: { editor: Editor; image: ImageElement }) 
           setOpen((o) => !o);
         }}
       />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={300} aria-label="Alt text">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={300} aria-label={t('altText')}>
         <form
           className="fr-image-alt"
           onSubmit={(e) => {
@@ -83,8 +84,8 @@ function AltControl({ editor, image }: { editor: Editor; image: ImageElement }) 
         >
           <TextArea
             ref={field}
-            label="Alt text"
-            hint="Describe the image for people using screen readers and for search."
+            label={t('altText')}
+            hint={t('describeTheImageForPeople')}
             value={value}
             rows={3}
             onChange={(e) => setValue(e.target.value)}
@@ -96,12 +97,8 @@ function AltControl({ editor, image }: { editor: Editor; image: ImageElement }) 
             }}
           />
           <div className="fr-image-alt__row">
-            <Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" variant="primary" type="submit">
-              Save
-            </Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setOpen(false)}>{t('cancel')}</Button>
+            <Button size="sm" variant="primary" type="submit">{t('save')}</Button>
           </div>
         </form>
       </Popover>
@@ -124,7 +121,7 @@ export default defineFormat({
         {images.length === 1 && (
           <IconButton
             icon={Crop}
-            label="Crop"
+            label={t('crop')}
             size={32}
             disabled={!images[0].src || !(images[0].naturalW > 0)}
             onClick={() => editor.openPanel(CROP_PANEL, { id: images[0].id })}
@@ -133,14 +130,14 @@ export default defineFormat({
         {cropped.length > 0 && (
           <IconButton
             icon={Undo2}
-            label="Reset crop"
+            label={t('resetCrop')}
             size={32}
             onClick={() => editor.updateMany(cropped.map((el) => ({ id: el.id, patch: resetCrop(el) })))}
           />
         )}
         <IconButton
           icon={Ratio}
-          label="Reset to natural aspect"
+          label={t('resetToNaturalAspect')}
           size={32}
           disabled={!skewed.length}
           onClick={() =>

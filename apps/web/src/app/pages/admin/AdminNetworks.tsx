@@ -6,6 +6,7 @@ import { IP_ALLOWLIST_EXCLUDES_YOU, type WorkspaceSummary } from '@freero/shared
 import { Button, Modal, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 const toLines = (list: string[]) => list.join('\n');
 const fromLines = (text: string) =>
@@ -41,10 +42,10 @@ export function AdminNetworks({ workspace }: { workspace: WorkspaceSummary }) {
       setSaved(settings.ipAllowlist);
       setText(toLines(settings.ipAllowlist));
       setConfirm(null);
-      notify(settings.ipAllowlist.length ? 'Saved — boards open only from these networks now' : 'Saved — boards open from anywhere again', 'success');
+      notify(settings.ipAllowlist.length ? t('savedBoardsOpenOnlyFrom') : t('savedBoardsOpenFromAnywhere'), 'success');
     } catch (e) {
       if (e instanceof ApiError && e.code === IP_ALLOWLIST_EXCLUDES_YOU) setConfirm(e.message);
-      else notify(errorText(e, 'Could not save the networks'), 'error');
+      else notify(errorText(e, t('couldNotSaveTheNetworks')), 'error');
     } finally {
       setBusy(false);
     }
@@ -54,41 +55,35 @@ export function AdminNetworks({ workspace }: { workspace: WorkspaceSummary }) {
   const dirty = toLines(fromLines(text)) !== toLines(saved);
   return (
     <div className="fr-admin-card">
-      <h2 className="fr-admin-card__title">Allowed networks</h2>
+      <h2 className="fr-admin-card__title">{t('allowedNetworks')}</h2>
       <p className="fr-admin-row__hint">
-        {org ? `Every workspace in ${workspace.name} opens its boards only from these networks (and from its own list, if it has one).` : 'Its boards — on the web, live and through the API — open only from these networks.'}{' '}
-        One IPv4 or IPv6 range per line, like 203.0.113.0/24. Empty: anywhere. The admin console, sign-in, single sign-on and provisioning stay reachable from anywhere.
-        {yourIp ? ` You are on ${yourIp}.` : ''}
+        {org ? t('everyWorkspaceInNameOpens', { name: workspace.name }) : t('itsBoardsOnTheWeb')}{t('oneIpv4OrIpv6Range')}{yourIp ? t('youAreOnYourip', { yourIp }) : ''}
       </p>
       <textarea
         className="fr-admin-networks"
-        aria-label="Allowed networks, one range per line"
+        aria-label={t('allowedNetworksOneRangePer')}
         rows={Math.min(8, Math.max(3, fromLines(text).length + 1))}
         value={text}
-        placeholder={'203.0.113.0/24\n2001:db8::/32'}
+        placeholder={t('n2030113024')}
         spellCheck={false}
         onChange={(e) => setText(e.target.value)}
       />
       <div className="fr-admin-networks__actions">
-        <Button variant="primary" size="sm" loading={busy && !confirm} disabled={!dirty} onClick={() => void save()}>
-          Save networks
-        </Button>
+        <Button variant="primary" size="sm" loading={busy && !confirm} disabled={!dirty} onClick={() => void save()}>{t('saveNetworks')}</Button>
       </div>
       <Modal
         open={confirm !== null}
         onClose={() => setConfirm(null)}
-        title="Leave out your own network?"
+        title={t('leaveOutYourOwnNetwork')}
         width={440}
         footer={
           <>
-            <Button onClick={() => setConfirm(null)}>Cancel</Button>
-            <Button variant="danger" loading={busy} onClick={() => void save(true)}>
-              Save anyway
-            </Button>
+            <Button onClick={() => setConfirm(null)}>{t('cancel')}</Button>
+            <Button variant="danger" loading={busy} onClick={() => void save(true)}>{t('saveAnyway')}</Button>
           </>
         }
       >
-        <p className="fr-admin__modal-text">{confirm} You can always come back here to change the list.</p>
+        <p className="fr-admin__modal-text">{t('confirmYouCanAlwaysCome', { confirm })}</p>
       </Modal>
     </div>
   );

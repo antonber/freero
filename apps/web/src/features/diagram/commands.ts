@@ -4,10 +4,11 @@ import { defineCommands } from '@engine';
 import { diagramOfSelection, focusDiagram, insertDiagram, relayout, selectedMembers, setLayout, unpin, wrappable, wrapSelection } from './lib/actions';
 import { LAYERS_PANEL } from './lib/ids';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'diagram.insert',
-    label: 'Insert diagram',
+    label: t('insertDiagram'),
     icon: Workflow,
     menus: ['board'],
     run: (editor) => void insertDiagram(editor),
@@ -15,21 +16,21 @@ export default defineCommands([
   {
     // The selected items (and the lines between them) as one diagram, drawn as they are.
     id: 'diagram.wrap',
-    label: 'Make a diagram',
+    label: t('makeADiagram'),
     icon: Workflow,
     menus: ['context'],
     when: (editor) => !diagramOfSelection(editor) && wrappable(editor).length > 0,
-    disabledReason: 'Select shapes and lines that aren’t in a diagram',
+    disabledReason: t('selectShapesAndLinesThat'),
     run: (editor) => void wrapSelection(editor),
   },
   {
     id: 'diagram.focus',
-    label: 'Focus on diagram',
+    label: t('focusOnDiagram'),
     icon: Focus,
     menus: ['context'],
     minRole: 'viewer',
     when: (editor) => !!diagramOfSelection(editor) && editor.getFocus() !== diagramOfSelection(editor)?.id,
-    disabledReason: 'Select a diagram or something in one',
+    disabledReason: t('selectADiagramOrSomething'),
     run(editor) {
       const d = diagramOfSelection(editor);
       if (d) focusDiagram(editor, d.id);
@@ -37,25 +38,25 @@ export default defineCommands([
   },
   {
     id: 'diagram.exitFocus',
-    label: 'Leave focus mode',
+    label: t('leaveFocusMode'),
     icon: Minimize2,
     minRole: 'viewer',
     palette: true,
     when: (editor) => !!editor.getFocus(),
-    disabledReason: 'Not focusing on a diagram',
+    disabledReason: t('notFocusingOnADiagram'),
     run: (editor) => editor.setFocus(null),
   },
   {
     // Every pin cleared, the whole diagram laid out again by its layout.
     id: 'diagram.relayout',
-    label: 'Lay out again',
+    label: t('layOutAgain'),
     icon: Wand2,
     menus: ['context'],
     when: (editor) => {
       const d = diagramOfSelection(editor);
       return !!d && d.layout !== 'manual';
     },
-    disabledReason: 'Select a diagram with a layout (not manual)',
+    disabledReason: t('selectADiagramWithA'),
     run(editor) {
       const d = diagramOfSelection(editor);
       if (d) relayout(editor, d.id);
@@ -63,14 +64,14 @@ export default defineCommands([
   },
   {
     id: 'diagram.unpin',
-    label: 'Let the layout place it',
+    label: t('letTheLayoutPlaceIt'),
     icon: PinOff,
     menus: ['context'],
     when: (editor) => {
       const d = diagramOfSelection(editor);
       return !!d && d.layout !== 'manual' && selectedMembers(editor, d).some((el) => el.diagramPinned);
     },
-    disabledReason: 'Select steps of a diagram that were moved by hand',
+    disabledReason: t('selectStepsOfADiagram'),
     run(editor) {
       const d = diagramOfSelection(editor);
       if (d) unpin(editor, d, editor.getSelection());
@@ -78,18 +79,18 @@ export default defineCommands([
   },
   {
     id: 'diagram.layers',
-    label: 'Diagram layers…',
+    label: t('diagramLayers'),
     icon: Layers,
     menus: ['context'],
     minRole: 'viewer',
     when: (editor) => !!diagramOfSelection(editor),
-    disabledReason: 'Select a diagram or something in one',
+    disabledReason: t('selectADiagramOrSomething'),
     run: (editor) => editor.openDock(LAYERS_PANEL),
   },
   {
     // How other features (and the format bar) switch a diagram's layout: { id, layout }.
     id: 'diagram.setLayout',
-    label: 'Set diagram layout',
+    label: t('setDiagramLayout'),
     run(editor, args) {
       const id = typeof args?.id === 'string' ? args.id : diagramOfSelection(editor)?.id;
       const layout = args?.layout as DiagramLayout;

@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "Geteilte Elemente",
+  "couldNotCreateABoard": "Das Board konnte nicht erstellt werden",
+  "addToABoard": "Zu einem Board hinzufügen",
+  "nothingArrivedThatFreeroCan": "Es ist nichts angekommen, das Freero platzieren kann: Teilen Sie Bilder, einen Link oder Text.",
+  "shared": "Geteilt",
+  "failedFilesWerenTImages": "{failed, plural, one {Eine Datei war kein Bild, das Freero speichern konnte (oder Ihr Upload-Kontingent ist voll).} other {{failed} Dateien waren keine Bilder, die Freero speichern konnte (oder Ihr Upload-Kontingent ist voll).}}",
+  "newBoard": "Neues Board",
+  "orABoardYouCan": "Oder ein Board, das Sie bearbeiten können",
+  "untitledBoard": "Unbenanntes Board",
+  "noBoardsYouCanEdit": "Noch keine Boards, die Sie bearbeiten können."
+}

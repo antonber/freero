@@ -12,10 +12,11 @@ import { insertOutline } from './actions';
 import { EXPAND_DIALOG, FROM_STICKIES_DIALOG } from './constants';
 import { mapFromStickies, stickiesOf } from './fromStickies';
 
+import { t as tr } from '../messages';
 const KINDS: Array<{ value: AiExpandKind; label: string }> = [
-  { value: 'ideas', label: 'Ideas' },
-  { value: 'questions', label: 'Questions' },
-  { value: 'subtopics', label: 'Sub-topics' },
+  { value: 'ideas', label: tr('ideas') },
+  { value: 'questions', label: tr('questions') },
+  { value: 'subtopics', label: tr('subTopics') },
 ];
 
 const plain = (html: string) => richTextToPlain(html).replace(/\s+/g, ' ').trim();
@@ -41,7 +42,7 @@ export function ExpandDialog({ editor, props }: PanelProps) {
       setItems(res.children ?? []);
       setOff(new Set());
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : 'The AI request failed. Try again.');
+      setError(e instanceof Error && e.message ? e.message : tr('theAiRequestFailedTry'));
     } finally {
       setBusy(false);
     }
@@ -51,12 +52,12 @@ export function ExpandDialog({ editor, props }: PanelProps) {
   const add = () => {
     const cur = editor.getElement<MindmapElement>(id);
     if (!cur || cur.type !== 'mindmap' || cur.locked) {
-      editor.host.notify('That topic is gone or locked.', 'error');
+      editor.host.notify(tr('thatTopicIsGoneOr'), 'error');
       return;
     }
     insertOutline(editor, picked.map((text) => ({ text })), { x: cur.x, y: cur.y }, id);
     close();
-    editor.host.notify(`Added ${picked.length} under “${plain(cur.text) || 'the topic'}”. Undo takes them back.`, 'success');
+    editor.host.notify(tr('addedLengthUnderValueUndo', { length: picked.length, value: plain(cur.text) || tr('theTopic') }), 'success');
   };
 
   if (!ai) return null;
@@ -66,38 +67,28 @@ export function ExpandDialog({ editor, props }: PanelProps) {
       onClose={close}
       title={
         <span className="fr-mm-dialog__title">
-          <Sparkles size={18} aria-hidden /> Expand “{node ? plain(node.text) || 'Topic' : 'Topic'}”
+          <Sparkles size={18} aria-hidden />{' '}{tr('expand')}{node ? plain(node.text) || tr('topic') : tr('topic')}”
         </span>
       }
       width={480}
       footer={
         items ? (
           <>
-            <Button variant="ghost" onClick={() => setItems(null)} disabled={busy}>
-              Back
-            </Button>
-            <Button variant="secondary" onClick={() => void run()} loading={busy}>
-              Try again
-            </Button>
-            <Button variant="primary" onClick={add} disabled={busy || !picked.length} data-autofocus>
-              Add {picked.length}
-            </Button>
+            <Button variant="ghost" onClick={() => setItems(null)} disabled={busy}>{tr('back')}</Button>
+            <Button variant="secondary" onClick={() => void run()} loading={busy}>{tr('tryAgain')}</Button>
+            <Button variant="primary" onClick={add} disabled={busy || !picked.length} data-autofocus>{tr('addLength', { length: picked.length })}</Button>
           </>
         ) : (
           <>
-            <Button variant="ghost" onClick={close} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={() => void run()} disabled={!node} loading={busy}>
-              Suggest
-            </Button>
+            <Button variant="ghost" onClick={close} disabled={busy}>{tr('cancel')}</Button>
+            <Button variant="primary" onClick={() => void run()} disabled={!node} loading={busy}>{tr('suggest')}</Button>
           </>
         )
       }
     >
       {items ? (
         <div className="fr-mm-dialog">
-          <ul className="fr-mm-dialog__list" aria-label="Suggested children">
+          <ul className="fr-mm-dialog__list" aria-label={tr('suggestedChildren')}>
             {items.map((t, i) => (
               <li key={i}>
                 <label>
@@ -107,20 +98,18 @@ export function ExpandDialog({ editor, props }: PanelProps) {
               </li>
             ))}
           </ul>
-          <p className="fr-mm-dialog__fine">Nothing is on the board yet. Add puts the ticked ones under the topic, as one step you can undo. AI can be wrong: check them first.</p>
+          <p className="fr-mm-dialog__fine">{tr('nothingIsOnTheBoard')}</p>
         </div>
       ) : (
         <div className="fr-mm-dialog">
-          <SegmentedControl<AiExpandKind> aria-label="What to add" options={KINDS} value={kind} onChange={setKind} />
-          <TextArea label="Focus (optional)" rows={2} value={prompt} placeholder="e.g. for a small team on a budget" onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+          <SegmentedControl<AiExpandKind> aria-label={tr('whatToAdd')} options={KINDS} value={kind} onChange={setKind} />
+          <TextArea label={tr('focusOptional')} rows={2} value={prompt} placeholder={tr('eGForASmall')} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
           {error && (
             <p className="fr-mm-dialog__error" role="alert">
               {error}
             </p>
           )}
-          <p className="fr-mm-dialog__fine">
-            The topic, the path to it and what is under it already are sent to {ai.provider}, set up by{' '}
-            {ai.source === 'workspace' ? 'your workspace’s admins' : 'this Freero server’s operator'}. Board text is passed as data, never as instructions.
+          <p className="fr-mm-dialog__fine">{tr('theTopicThePathTo', { provider: ai.provider })}{ai.source === 'workspace' ? tr('yourWorkspaceSAdmins') : tr('thisFreeroServerSOperator')}. Board text is passed as data, never as instructions.
           </p>
         </div>
       )}
@@ -136,8 +125,8 @@ export function FromStickiesDialog({ editor, props }: PanelProps) {
   const make = () => {
     const made = mapFromStickies(editor, root, notes.map((n) => n.id));
     close();
-    if (made.length) editor.host.notify(`Made a mind map of ${notes.length} notes. Undo puts the notes back.`, 'success');
-    else editor.host.notify('These notes can’t become a mind map right now.', 'error');
+    if (made.length) editor.host.notify(tr('madeAMindMapOf', { length: notes.length }), 'success');
+    else editor.host.notify(tr('theseNotesCanTBecome'), 'error');
   };
   return (
     <Modal
@@ -145,28 +134,23 @@ export function FromStickiesDialog({ editor, props }: PanelProps) {
       onClose={close}
       title={
         <span className="fr-mm-dialog__title">
-          <Network size={18} aria-hidden /> Make a mind map
-        </span>
+          <Network size={18} aria-hidden />{' '}{tr('makeAMindMap2')}</span>
       }
-      description="The note you pick becomes the central topic; the others become its ideas. One undo puts the notes back."
+      description={tr('theNoteYouPickBecomes')}
       width={460}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={make} disabled={notes.length < 2 || !root} data-autofocus>
-            Make mind map
-          </Button>
+          <Button variant="ghost" onClick={close}>{tr('cancel')}</Button>
+          <Button variant="primary" onClick={make} disabled={notes.length < 2 || !root} data-autofocus>{tr('makeMindMap')}</Button>
         </>
       }
     >
       <fieldset className="fr-mm-dialog__list fr-mm-dialog__roots">
-        <legend>Central topic</legend>
+        <legend>{tr('centralTopic')}</legend>
         {notes.map((n) => (
           <label key={n.id}>
             <input type="radio" name="fr-mm-root" checked={root === n.id} onChange={() => setRoot(n.id)} />
-            {plain(n.text) || '(empty note)'}
+            {plain(n.text) || tr('emptyNote')}
           </label>
         ))}
       </fieldset>

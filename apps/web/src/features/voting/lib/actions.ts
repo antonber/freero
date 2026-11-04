@@ -26,6 +26,7 @@ import {
 } from './voting';
 import { RESULTS_PANEL_ID } from './state';
 
+import { t } from '../messages';
 const COLLECTION = 'voting';
 const store = (editor: Editor) => editor.collection<VotingValue>(COLLECTION);
 /** This user's sealed ballots (hidden results): the server shows them to nobody until revealed. */
@@ -58,13 +59,13 @@ export function vote(editor: Editor, elementId: string): void {
   const session = getSession(s);
   const now = editor.host.serverNow();
   if (!session?.active || !mayVote(editor)) return;
-  if (!isOpen(session, now)) return editor.host.notify("Time's up: this vote takes no more votes.", 'info');
+  if (!isOpen(session, now)) return editor.host.notify(t('timeSUpThisVote'), 'info');
   const ballots = ballotsFor(editor, session.anonymous);
   if (castVote(s, actor(editor), elementId, existsFor(editor), ballots, now)) return afterSealedChange(editor);
   const current = countedVotes(ballots.get(ballotKey(session.id, editor.user.id)) as Ballot | undefined, session, existsFor(editor));
   if (whyNoVote(session, current, elementId) === 'item')
-    editor.host.notify(`At most ${session.maxPerItem} of your votes can go to one item.`, 'info');
-  else editor.host.notify(`You've used all ${session.votesPerUser} of your votes. Remove one to vote again.`, 'info');
+    editor.host.notify(t('atMostMaxperitemOfYour', { maxPerItem: session.maxPerItem }), 'info');
+  else editor.host.notify(t('youVeUsedAllVotesperuser', { votesPerUser: session.votesPerUser }), 'info');
 }
 
 export function unvote(editor: Editor, elementId: string): void {

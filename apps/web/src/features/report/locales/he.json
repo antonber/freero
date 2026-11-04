@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "דיווח על הלוח…",
+  "report": "דיווח…",
+  "report2": "דיווח",
+  "thanksForYourReportFreero": "תודה על הדיווח. המנהלים של Freero יבדקו אותו.",
+  "yourReportCouldNotBe": "לא ניתן היה לשלוח את הדיווח. כדאי לנסות שוב.",
+  "reportTargetNoun": "דיווח על {target_noun}",
+  "tellFreeroSModeratorsWhat": "ספרו למנהלים של Freero מה הבעיה. בעלי הלוח לא יידעו מי דיווח.",
+  "cancel": "ביטול",
+  "sendReport": "שליחת דיווח",
+  "whatSTheProblem": "מה הבעיה?",
+  "detailsOptional": "פרטים (אופציונלי)",
+  "anythingThatHelpsUsUnderstand": "כל מה שיעזור לנו להבין, למשל איפה זה נמצא בלוח",
+  "yourEmailOptional": "כתובת הדוא״ל שלך (אופציונלי)",
+  "toHearWhatWeDecided": "כדי לשמוע מה החלטנו"
+}

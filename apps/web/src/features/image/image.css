@@ -63,7 +63,7 @@
 
 .fr-image-pending {
   inset: auto;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   border-radius: 2px;
   pointer-events: none;
@@ -185,14 +185,14 @@
   border-radius: 4px;
 }
 
-.fr-image-crop__handle--nw { left: 0; top: 0; cursor: nwse-resize; }
+.fr-image-crop__handle--nw { inset-inline-start: 0; top: 0; cursor: nwse-resize; }
 .fr-image-crop__handle--n { left: 50%; top: 0; cursor: ns-resize; }
-.fr-image-crop__handle--ne { left: 100%; top: 0; cursor: nesw-resize; }
-.fr-image-crop__handle--e { left: 100%; top: 50%; cursor: ew-resize; }
-.fr-image-crop__handle--se { left: 100%; top: 100%; cursor: nwse-resize; }
+.fr-image-crop__handle--ne { inset-inline-start: 100%; top: 0; cursor: nesw-resize; }
+.fr-image-crop__handle--e { inset-inline-start: 100%; top: 50%; cursor: ew-resize; }
+.fr-image-crop__handle--se { inset-inline-start: 100%; top: 100%; cursor: nwse-resize; }
 .fr-image-crop__handle--s { left: 50%; top: 100%; cursor: ns-resize; }
-.fr-image-crop__handle--sw { left: 0; top: 100%; cursor: nesw-resize; }
-.fr-image-crop__handle--w { left: 0; top: 50%; cursor: ew-resize; }
+.fr-image-crop__handle--sw { inset-inline-start: 0; top: 100%; cursor: nesw-resize; }
+.fr-image-crop__handle--w { inset-inline-start: 0; top: 50%; cursor: ew-resize; }
 
 .fr-image-crop__bar {
   position: absolute;

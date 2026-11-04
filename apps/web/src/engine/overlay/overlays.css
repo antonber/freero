@@ -9,7 +9,7 @@
 .fr-ov-selection,
 .fr-ov-outline {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   transform-origin: center center;
 }
@@ -37,7 +37,7 @@
 /* Every item of a multiple selection: one path in world units (Overlays.tsx MemberOutlines). */
 .fr-ov-members {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   overflow: visible;
   pointer-events: none;
@@ -72,7 +72,7 @@
 
 .fr-ov-peer-tag {
   position: absolute;
-  left: -2px;
+  inset-inline-start: -2px;
   bottom: calc(100% + 2px);
   color: #fff;
   font-size: 11px;
@@ -117,14 +117,14 @@
   border-radius: 3px;
 }
 
-.fr-ov-handle--nw { left: 0; top: 0; transform: translate(-50%, -50%); }
-.fr-ov-handle--ne { left: 100%; top: 0; transform: translate(-50%, -50%); }
-.fr-ov-handle--se { left: 100%; top: 100%; transform: translate(-50%, -50%); }
-.fr-ov-handle--sw { left: 0; top: 100%; transform: translate(-50%, -50%); }
+.fr-ov-handle--nw { inset-inline-start: 0; top: 0; transform: translate(-50%, -50%); }
+.fr-ov-handle--ne { inset-inline-start: 100%; top: 0; transform: translate(-50%, -50%); }
+.fr-ov-handle--se { inset-inline-start: 100%; top: 100%; transform: translate(-50%, -50%); }
+.fr-ov-handle--sw { inset-inline-start: 0; top: 100%; transform: translate(-50%, -50%); }
 .fr-ov-handle--n { left: 50%; top: 0; transform: translate(-50%, -50%); }
 .fr-ov-handle--s { left: 50%; top: 100%; transform: translate(-50%, -50%); }
-.fr-ov-handle--e { left: 100%; top: 50%; transform: translate(-50%, -50%); }
-.fr-ov-handle--w { left: 0; top: 50%; transform: translate(-50%, -50%); }
+.fr-ov-handle--e { inset-inline-start: 100%; top: 50%; transform: translate(-50%, -50%); }
+.fr-ov-handle--w { inset-inline-start: 0; top: 50%; transform: translate(-50%, -50%); }
 
 .fr-ov-rotate {
   position: absolute;
@@ -132,7 +132,7 @@
   top: calc(100% + 18px);
   width: 22px;
   height: 22px;
-  margin-left: -11px;
+  margin-inline-start: -11px;
   border-radius: 50%;
   background: var(--fr-surface);
   color: var(--fr-select);
@@ -150,7 +150,7 @@
 
 .fr-ov-lock {
   position: absolute;
-  right: -9px;
+  inset-inline-end: -9px;
   top: -9px;
   width: 18px;
   height: 18px;
@@ -176,7 +176,7 @@
 /* A lasso loop being drawn (#111). */
 .fr-ov-lasso {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 1px;
   height: 1px;
@@ -195,7 +195,7 @@
 
 .fr-ov-hint {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   background: var(--fr-ink);
   color: var(--fr-surface);
@@ -209,7 +209,7 @@
 
 .fr-ov-cursor {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   transition: transform 90ms linear;
   will-change: transform;
@@ -222,7 +222,7 @@
 
 .fr-ov-cursor-name {
   position: absolute;
-  left: 14px;
+  inset-inline-start: 14px;
   top: 16px;
   color: #fff;
   font-size: 11px;
@@ -245,7 +245,7 @@
 }
 .fr-ov-gap--v {
   width: 0;
-  border-left: 1px solid var(--fr-snap);
+  border-inline-start: 1px solid var(--fr-snap);
 }
 .fr-ov-gap::before,
 .fr-ov-gap::after {
@@ -259,11 +259,11 @@
   width: 1px;
   height: 9px;
 }
-.fr-ov-gap--h::before { left: 0; }
-.fr-ov-gap--h::after { right: 0; }
+.fr-ov-gap--h::before { inset-inline-start: 0; }
+.fr-ov-gap--h::after { inset-inline-end: 0; }
 .fr-ov-gap--v::before,
 .fr-ov-gap--v::after {
-  left: -5px;
+  inset-inline-start: -5px;
   height: 1px;
   width: 9px;
 }
@@ -323,7 +323,7 @@
   .fr-ov-rotate {
     width: 32px;
     height: 32px;
-    margin-left: -16px;
+    margin-inline-start: -16px;
     top: calc(100% + 22px);
   }
 }

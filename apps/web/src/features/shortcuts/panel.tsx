@@ -5,6 +5,7 @@ import { IconButton, Input, Kbd, Menu, Modal } from '@ui';
 import { SHEET_PANEL, buildSheet } from './lib/sheet';
 import { PALETTE_PANEL } from './lib/palette';
 import { Palette } from './lib/PaletteDialog';
+import { t } from './messages';
 import './shortcuts.css';
 
 function Sheet({ editor }: PanelProps) {
@@ -15,17 +16,17 @@ function Sheet({ editor }: PanelProps) {
   const sections = buildSheet(entries, query);
   const close = () => editor.closePanel(SHEET_PANEL);
   return (
-    <Modal open onClose={close} title="Keyboard shortcuts" width={760} className="fr-shortcuts">
+    <Modal open onClose={close} title={t('keyboardShortcuts')} width={760} className="fr-shortcuts">
       <Input
         data-autofocus=""
         icon={Search}
-        placeholder="Search shortcuts"
-        aria-label="Search shortcuts"
+        placeholder={t('searchShortcuts')}
+        aria-label={t('searchShortcuts')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
       {sections.length === 0 ? (
-        <p className="fr-shortcuts__empty">No shortcuts match “{query.trim()}”.</p>
+        <p className="fr-shortcuts__empty">{t('noShortcutsMatchQuery', { query: query.trim() })}</p>
       ) : (
         <div className="fr-shortcuts__grid">
           {sections.map((s) => (
@@ -38,7 +39,7 @@ function Sheet({ editor }: PanelProps) {
                     <dd>
                       {r.keys.map((k, i) => (
                         <span key={k} className="fr-shortcuts__alt">
-                          {i > 0 && r.alternatives && <span className="fr-shortcuts__or">or</span>}
+                          {i > 0 && r.alternatives && <span className="fr-shortcuts__or">{t('or')}</span>}
                           <Kbd>{k}</Kbd>
                         </span>
                       ))}
@@ -68,7 +69,7 @@ function HelpButton({ editor }: { editor: Editor }) {
       <IconButton
         ref={ref}
         icon={CircleHelp}
-        label={canReport ? 'Help' : 'Keyboard shortcuts'}
+        label={canReport ? t('help') : t('keyboardShortcuts')}
         shortcut={canReport ? undefined : '?'}
         size={32}
         tooltipSide="top"
@@ -81,10 +82,10 @@ function HelpButton({ editor }: { editor: Editor }) {
         anchor={ref.current}
         side="top"
         align="end"
-        aria-label="Help"
+        aria-label={t('help')}
         items={[
-          { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, shortcut: '?', onSelect: () => editor.openPanel(SHEET_PANEL) },
-          { id: 'problem', label: 'Report a problem…', icon: MessageSquareWarning, shortcut: 'mod+alt+p', onSelect: () => editor.runCommand('problem-report.open') },
+          { id: 'shortcuts', label: t('keyboardShortcuts'), icon: Keyboard, shortcut: '?', onSelect: () => editor.openPanel(SHEET_PANEL) },
+          { id: 'problem', label: t('reportAProblem'), icon: MessageSquareWarning, shortcut: 'mod+alt+p', onSelect: () => editor.runCommand('problem-report.open') },
         ]}
       />
     </>

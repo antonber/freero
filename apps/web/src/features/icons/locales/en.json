@@ -1,0 +1,20 @@
+{
+  "openTheIconLibrary": "Open the icon library",
+  "icon": "Icon",
+  "icons": "Icons",
+  "iconColorAndWeight": "Icon color and weight",
+  "color": "Color",
+  "iconStyle": "Icon style",
+  "iconColor": "Icon color",
+  "lineWeight": "Line weight",
+  "clickToAddOrDrag": "Click to add, or drag onto the board. Recolour and resize them like any item.",
+  "searchIcons": "Search icons",
+  "youCanViewThisBoard": "You can view this board but not add items.",
+  "theIconLibraryCouldnT": "The icon library couldn’t load. Check your connection and reopen it.",
+  "noIconsMatchQuery": "No icons match “{query}”.",
+  "lengthMatches": "{length, plural, one {{length} match} other {{length} matches}}",
+  "lengthIcons": "{length} icons",
+  "addReplaceIcon": "Add {replace} icon",
+  "showMore": "Show more (",
+  "left": "left)"
+}

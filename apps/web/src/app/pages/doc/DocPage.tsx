@@ -18,6 +18,7 @@ import { NotificationBell } from '../../notifications/NotificationBell';
 import { docsFrom } from '../../hostServices';
 import { DocComments } from './DocComments';
 import { DocHistory } from './DocHistory';
+import { t as tr } from './messages';
 import '../../board/BoardPage.css';
 import './doc.css';
 
@@ -57,7 +58,7 @@ export default function DocPage() {
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} kind="doc" />;
   if (state.status === 'error') return <DocError code={state.code} message={state.message} />;
-  if (state.status === 'loading') return <FullPageSpinner label="Opening doc" />;
+  if (state.status === 'loading') return <FullPageSpinner label={tr('openingDoc')} />;
   return <DocView key={state.doc.id} initial={state.doc} />;
 }
 
@@ -65,10 +66,10 @@ function DocError({ code, message }: { code: number; message: string }) {
   const navigate = useNavigate();
   const copy =
     code === 451
-      ? { title: 'This doc was removed for review', body: 'Freero’s moderators took it down after a report.' }
+      ? { title: tr('thisDocWasRemovedFor'), body: tr('freeroSModeratorsTookIt') }
       : code === 404
-        ? { title: 'This doc does not exist', body: 'It may have been deleted, or the link is mistyped.' }
-        : { title: "We couldn't open this doc", body: message || 'Check your connection and try again.' };
+        ? { title: tr('thisDocDoesNotExist'), body: tr('itMayHaveBeenDeleted') }
+        : { title: tr('weCouldnTOpenThis'), body: message || tr('checkYourConnectionAndTry') };
   return (
     <div className="fr-boarderror">
       <div className="fr-boarderror__card">
@@ -76,9 +77,7 @@ function DocError({ code, message }: { code: number; message: string }) {
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
         <div className="fr-boarderror__actions">
-          <Button variant="primary" size="lg" onClick={() => navigate('/app')}>
-            Back to dashboard
-          </Button>
+          <Button variant="primary" size="lg" onClick={() => navigate('/app')}>{tr('backToDashboard')}</Button>
         </div>
       </div>
     </div>
@@ -135,7 +134,7 @@ function DocView({ initial }: { initial: BoardSummary }) {
       const { board } = await api.updateBoard(doc.id, { title: t });
       setDoc(board);
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not rename the doc', 'error');
+      notify(err instanceof Error ? err.message : tr('couldNotRenameTheDoc'), 'error');
     }
   };
 
@@ -149,16 +148,16 @@ function DocView({ initial }: { initial: BoardSummary }) {
     e.target.value = '';
     if (!file || !handle) return;
     const text = await file.text();
-    if (text.length > DOC_MAX_IMPORT_CHARS) return notify('That file is too large to import.', 'error');
+    if (text.length > DOC_MAX_IMPORT_CHARS) return notify(tr('thatFileIsTooLarge'), 'error');
     handle.insertMarkdown(text);
-    notify(`Imported ${file.name}`, 'success');
+    notify(tr('importedName', { name: file.name }), 'success');
   };
 
   const exportMarkdown = async () => {
     try {
       await docs.exportMarkdown(doc.id);
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not export the doc', 'error');
+      notify(err instanceof Error ? err.message : tr('couldNotExportTheDoc'), 'error');
     }
   };
 
@@ -176,11 +175,11 @@ function DocView({ initial }: { initial: BoardSummary }) {
   const activeBlock = activeThread ? (live.threads.find((t) => t.id === activeThread)?.blockId ?? null) : null;
   const openThreads = live.threads.filter((t) => !t.resolved).length;
 
-  if (!user) return <FullPageSpinner label="Opening doc" />;
+  if (!user) return <FullPageSpinner label={tr('openingDoc')} />;
   return (
     <div className="fr-docpage">
       <header className="fr-docpage-top">
-        <IconButton icon={ArrowLeft} label="Back to dashboard" onClick={() => navigate('/app')} />
+        <IconButton icon={ArrowLeft} label={tr('backToDashboard')} onClick={() => navigate('/app')} />
         <span className="fr-docpage-wide">
           <Logo size={24} />
         </span>
@@ -188,7 +187,7 @@ function DocView({ initial }: { initial: BoardSummary }) {
           key={doc.title}
           className="fr-docpage-title"
           defaultValue={doc.title}
-          aria-label="Doc title"
+          aria-label={tr('docTitle')}
           readOnly={!canEdit}
           onBlur={(e) => void rename(e.target.value)}
           onKeyDown={(e) => {
@@ -196,31 +195,31 @@ function DocView({ initial }: { initial: BoardSummary }) {
           }}
         />
         <span className="fr-docpage-status" aria-live="polite">
-          {live.status === 'denied' ? 'No access' : live.status === 'removed' ? 'Removed for review' : live.status === 'connected' ? (canEdit ? '' : role === 'commenter' ? 'Can comment' : 'View only') : 'Connecting…'}
+          {live.status === 'denied' ? tr('noAccess') : live.status === 'removed' ? tr('removedForReview') : live.status === 'connected' ? (canEdit ? '' : role === 'commenter' ? tr('canComment') : tr('viewOnly')) : tr('connecting')}
         </span>
         <div className="fr-docpage-spacer" />
         {peers.length > 0 && <AvatarStack className="fr-docpage-wide" users={peers} max={5} size={28} />}
-        {canComment && <IconButton icon={MessageSquarePlus} label="Comment on this block" onClick={startComment} />}
-        <IconButton icon={MessageSquare} label="Comments" active={panel === 'comments'} onClick={() => setPanel((p) => (p === 'comments' ? null : 'comments'))}>
+        {canComment && <IconButton icon={MessageSquarePlus} label={tr('commentOnThisBlock')} onClick={startComment} />}
+        <IconButton icon={MessageSquare} label={tr('comments')} active={panel === 'comments'} onClick={() => setPanel((p) => (p === 'comments' ? null : 'comments'))}>
           {openThreads > 0 && <span className="fr-docpage-badge">{openThreads}</span>}
         </IconButton>
-        {canEdit && <IconButton className="fr-docpage-wide" icon={History} label="Version history" active={panel === 'history'} onClick={() => setPanel((p) => (p === 'history' ? null : 'history'))} />}
-        <IconButton icon={MoreHorizontal} label="More" onClick={(e) => setMenuAnchor(e.currentTarget)} />
+        {canEdit && <IconButton className="fr-docpage-wide" icon={History} label={tr('versionHistory')} active={panel === 'history'} onClick={() => setPanel((p) => (p === 'history' ? null : 'history'))} />}
+        <IconButton icon={MoreHorizontal} label={tr('more')} onClick={(e) => setMenuAnchor(e.currentTarget)} />
         <Menu
           open={!!menuAnchor}
           anchor={menuAnchor}
           onClose={() => setMenuAnchor(null)}
           items={[
-            { id: 'export', label: 'Export as Markdown', icon: Download, onSelect: () => void exportMarkdown(), disabled: doc.permissions.canExport === false, disabledReason: 'This workspace doesn’t allow exports' },
-            { id: 'import', label: 'Import Markdown…', icon: FileUp, onSelect: () => fileRef.current?.click(), disabled: !canEdit, disabledReason: 'Only editors can import' },
+            { id: 'export', label: tr('exportAsMarkdown'), icon: Download, onSelect: () => void exportMarkdown(), disabled: doc.permissions.canExport === false, disabledReason: tr('thisWorkspaceDoesnTAllow') },
+            { id: 'import', label: tr('importMarkdown'), icon: FileUp, onSelect: () => fileRef.current?.click(), disabled: !canEdit, disabledReason: tr('onlyEditorsCanImport') },
           ]}
         />
         <input ref={fileRef} type="file" accept=".md,.markdown,text/markdown,text/plain" hidden onChange={(e) => void importMarkdown(e)} />
         <span className="fr-docpage-wide">
           <NotificationBell size={40} />
         </span>
-        <Button variant="primary" icon={Share2} onClick={() => setShareOpen(true)} aria-label="Share">
-          <span className="fr-docpage-wide">Share</span>
+        <Button variant="primary" icon={Share2} onClick={() => setShareOpen(true)} aria-label={tr('share')}>
+          <span className="fr-docpage-wide">{tr('share')}</span>
         </Button>
       </header>
       <div className="fr-docpage-body">
@@ -294,26 +293,24 @@ function BoardEmbedPicker({ open, onDone }: { open: boolean; onDone: (uri: strin
     const ref = parseObjectUri(value, [window.location.origin]);
     if (ref?.type === 'board') return onDone(`freero://board/${ref.id}`);
     if (ref?.type === 'element') return onDone(`freero://board/${ref.boardId}#${ref.id}`);
-    setError('Paste the link of a board, or of a frame on it (Copy link to item).');
+    setError(tr('pasteTheLinkOfA'));
   };
   return (
     <Modal
       open={open}
       onClose={() => onDone(null)}
-      title="Embed a live board"
-      description="It stays up to date. Each reader sees it only if they can open the board."
+      title={tr('embedALiveBoard')}
+      description={tr('itStaysUpToDate')}
       footer={
         <>
-          <Button onClick={() => onDone(null)}>Cancel</Button>
-          <Button variant="primary" onClick={submit}>
-            Embed
-          </Button>
+          <Button onClick={() => onDone(null)}>{tr('cancel')}</Button>
+          <Button variant="primary" onClick={submit}>{tr('embed')}</Button>
         </>
       }
     >
       <Input
         autoFocus
-        aria-label="Board or frame link"
+        aria-label={tr('boardOrFrameLink')}
         placeholder="https://…/board/…?item=…"
         value={value}
         onChange={(e) => setValue(e.target.value)}

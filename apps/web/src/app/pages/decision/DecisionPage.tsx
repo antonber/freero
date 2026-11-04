@@ -14,6 +14,7 @@ import { FullPageSpinner } from '../../components/FullPageSpinner';
 import { features } from '../../board/features';
 import { createDecisionHost, toastNotify } from '../../board/host';
 import { NotFoundPage } from '../NotFoundPage';
+import { t } from './messages';
 import './decision.css';
 
 const when = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -34,12 +35,12 @@ function Items({ title, items, total, tone }: { title: string; items: DecisionCh
                 <del>{i.before || '(empty)'}</del> <ins>{i.text || '(empty)'}</ins>
               </span>
             ) : (
-              <span className="fr-decision-changes__text">{i.text || '(no text)'}</span>
+              <span className="fr-decision-changes__text">{i.text || t('noText')}</span>
             )}
-            {i.frame && <span className="fr-decision-changes__frame">in {i.frame}</span>}
+            {i.frame && <span className="fr-decision-changes__frame">{t('inFrame', { frame: i.frame })}</span>}
           </li>
         ))}
-        {total > items.length && <li className="fr-decision-changes__more">and {total - items.length} more</li>}
+        {total > items.length && <li className="fr-decision-changes__more">{t('and')}{' '}{total - items.length}{' '}{t('more')}</li>}
       </ul>
     </section>
   );
@@ -49,34 +50,32 @@ function ChangesDrawer({ id, info, onClose }: { id: string; info: DecisionRespon
   const [changes, setChanges] = useState<DecisionChanges | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.decisionChanges(id).then(setChanges, (e: unknown) => setError(e instanceof Error ? e.message : 'Could not compare'));
+    api.decisionChanges(id).then(setChanges, (e: unknown) => setError(e instanceof Error ? e.message : t('couldNotCompare')));
   }, [id]);
   const d = info.decision;
   const nothing = changes && !changes.counts.added && !changes.counts.removed && !changes.counts.changed;
   return (
-    <aside className="fr-decision-changes" aria-label="What changed since this decision">
+    <aside className="fr-decision-changes" aria-label={t('whatChangedSinceThisDecision')}>
       <header className="fr-decision-changes__head">
-        <h2>What changed since</h2>
-        <IconButton icon={X} label="Close" onClick={onClose} />
+        <h2>{t('whatChangedSince')}</h2>
+        <IconButton icon={X} label={t('close')} onClick={onClose} />
       </header>
       <div className="fr-decision-changes__body">
         <p className="fr-decision-changes__about">
           <strong>{d.title}</strong>
-          <br />
-          Frozen {when.format(d.createdAt)}
-          {d.createdBy ? ` by ${d.createdBy.name}` : ''}
-          {d.frameId ? ` · frame “${d.frameTitle || 'Untitled'}”` : ''}
+          <br />{t('frozenValue', { value: when.format(d.createdAt) })}{d.createdBy ? t('byName', { name: d.createdBy.name }) : ''}
+          {d.frameId ? t('frameValue', { value: d.frameTitle || t('untitled') }) : ''}
         </p>
         {d.note && <blockquote className="fr-decision-changes__note">{d.note}</blockquote>}
         {error && <p role="alert">{error}</p>}
         {!changes && !error && <Spinner size={18} />}
-        {changes?.frameGone && <p className="fr-decision-changes__empty">That frame isn’t on the board for everyone any more (deleted or hidden).</p>}
-        {nothing && !changes?.frameGone && <p className="fr-decision-changes__empty">Nothing changed: the board still says what was decided.</p>}
+        {changes?.frameGone && <p className="fr-decision-changes__empty">{t('thatFrameIsnTOn')}</p>}
+        {nothing && !changes?.frameGone && <p className="fr-decision-changes__empty">{t('nothingChangedTheBoardStill')}</p>}
         {changes && (
           <>
-            <Items title="Added" items={changes.added} total={changes.counts.added} tone="added" />
-            <Items title="Changed" items={changes.changed} total={changes.counts.changed} tone="changed" />
-            <Items title="Removed" items={changes.removed} total={changes.counts.removed} tone="removed" />
+            <Items title={t('added')} items={changes.added} total={changes.counts.added} tone="added" />
+            <Items title={t('changed')} items={changes.changed} total={changes.counts.changed} tone="changed" />
+            <Items title={t('removed')} items={changes.removed} total={changes.counts.removed} tone="removed" />
           </>
         )}
       </div>
@@ -119,13 +118,9 @@ export default function DecisionPage() {
       info ? (
         <span className="fr-decision-badge">
           <span className="fr-decision-badge__what" title={info.decision.note || undefined}>
-            <Stamp size={14} aria-hidden /> Frozen {when.format(info.decision.createdAt)}
-          </span>
-          <Button size="sm" variant={showChanges ? 'primary' : 'secondary'} icon={GitCompareArrows} onClick={() => setShowChanges((s) => !s)}>
-            What changed
-          </Button>
-          <Link to={`/board/${encodeURIComponent(info.board.id)}`} className="fr-decision-badge__live">
-            Open live board <ArrowUpRight size={14} aria-hidden />
+            <Stamp size={14} aria-hidden />{' '}{t('frozenValue', { value: when.format(info.decision.createdAt) })}</span>
+          <Button size="sm" variant={showChanges ? 'primary' : 'secondary'} icon={GitCompareArrows} onClick={() => setShowChanges((s) => !s)}>{t('whatChanged')}</Button>
+          <Link to={`/board/${encodeURIComponent(info.board.id)}`} className="fr-decision-badge__live">{t('openLiveBoard')}{' '}<ArrowUpRight size={14} aria-hidden />
           </Link>
         </span>
       ) : null,
@@ -134,9 +129,9 @@ export default function DecisionPage() {
 
   if (state && 'error' in state) {
     if (state.error === 404) return <NotFoundPage />;
-    return <FullPageSpinner label={state.error === 403 ? 'This decision is on a board you can’t open' : 'Could not load the decision'} />;
+    return <FullPageSpinner label={state.error === 403 ? t('thisDecisionIsOnA') : t('couldNotLoadTheDecision')} />;
   }
-  if (!info || !host || !state || !('bytes' in state)) return <FullPageSpinner label="Opening the decision" />;
+  if (!info || !host || !state || !('bytes' in state)) return <FullPageSpinner label={t('openingTheDecision')} />;
   return (
     <>
       <BoardEngine host={host} features={features} initialState={state.bytes} topbarAccessory={badge} location={location} />

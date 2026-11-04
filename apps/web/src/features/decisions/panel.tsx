@@ -6,10 +6,11 @@ import { MAX_DECISION_NOTE, MAX_DECISION_TITLE, type Decision, type FrameElement
 import { DockHeader, definePanel, type Editor, type PanelProps } from '@engine';
 import { Button, IconButton, Input, Modal, Spinner, TextArea } from '@ui';
 import { CREATE_ID, LIST_ID } from './lib/ids';
+import { t } from './messages';
 import './decisions.css';
 
 const day = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong');
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : t('somethingWentWrong'));
 const decisionUrl = (id: string) => `${window.location.origin}/decision/${encodeURIComponent(id)}`;
 
 // The list is read again after this tab freezes or deletes one (decisions don't live in the board doc).
@@ -45,7 +46,7 @@ function useDecisions(editor: Editor): { list: Decision[] | null; error: string 
 function CreateDialog({ editor, props }: PanelProps) {
   const frameId = typeof props?.frameId === 'string' ? props.frameId : null;
   const frame = frameId ? (editor.getElement(frameId) as FrameElement | undefined) : undefined;
-  const subject = frame ? frame.title || 'Untitled frame' : editor.host.board.title || 'Board';
+  const subject = frame ? frame.title || t('untitledFrame') : editor.host.board.title || 'Board';
   const [title, setTitle] = useState(`${subject} decision, ${new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(Date.now())}`.slice(0, MAX_DECISION_TITLE));
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -57,7 +58,7 @@ function CreateDialog({ editor, props }: PanelProps) {
       const d = await editor.host.decisions.create({ title: title.trim(), note: note.trim(), ...(frameId ? { frameId } : {}) });
       changed();
       close();
-      editor.host.notify(`Frozen “${d.title}”`, 'success', { action: { label: 'Open', run: () => editor.host.navigate(`/decision/${d.id}`) } });
+      editor.host.notify(t('frozenTitle', { title: d.title }), 'success', { action: { label: t('open'), run: () => editor.host.navigate(`/decision/${d.id}`) } });
     } catch (e) {
       editor.host.notify(message(e), 'error');
     } finally {
@@ -68,22 +69,18 @@ function CreateDialog({ editor, props }: PanelProps) {
     <Modal
       open
       onClose={close}
-      title={frame ? `Freeze “${subject}” for a decision` : 'Freeze the board for a decision'}
-      description="A read-only copy of exactly what’s here now, with its own link to cite in tickets and docs. Later edits never change it. Everyone who can open this board can see it; hidden frames and private drafts are never included."
+      title={frame ? t('freezeSubjectForADecision', { subject }) : t('freezeTheBoardForA')}
+      description={t('aReadOnlyCopyOf')}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={Stamp} loading={busy} disabled={!title.trim()} onClick={() => void freeze()}>
-            Freeze
-          </Button>
+          <Button variant="ghost" onClick={close}>{t('cancel')}</Button>
+          <Button variant="primary" icon={Stamp} loading={busy} disabled={!title.trim()} onClick={() => void freeze()}>{t('freeze')}</Button>
         </>
       }
     >
       <div className="fr-decisions-create">
-        <Input label="Decision" value={title} maxLength={MAX_DECISION_TITLE} onChange={(e) => setTitle(e.target.value)} autoFocus />
-        <TextArea label="Note (optional)" rows={3} value={note} maxLength={MAX_DECISION_NOTE} placeholder="What was decided, and by whom" onChange={(e) => setNote(e.target.value)} />
+        <Input label={t('decision')} value={title} maxLength={MAX_DECISION_TITLE} onChange={(e) => setTitle(e.target.value)} autoFocus />
+        <TextArea label={t('noteOptional')} rows={3} value={note} maxLength={MAX_DECISION_NOTE} placeholder={t('whatWasDecidedAndBy')} onChange={(e) => setNote(e.target.value)} />
       </div>
     </Modal>
   );
@@ -96,7 +93,7 @@ function ListPanel({ editor }: PanelProps) {
     async (d: Decision) => {
       try {
         await navigator.clipboard.writeText(decisionUrl(d.id));
-        editor.host.notify('Link copied', 'success');
+        editor.host.notify(t('linkCopied'), 'success');
       } catch {
         editor.host.notify(decisionUrl(d.id), 'info');
       }
@@ -110,7 +107,7 @@ function ListPanel({ editor }: PanelProps) {
     try {
       await editor.host.decisions?.remove(d.id);
       changed();
-      editor.host.notify(`Deleted “${d.title}”. Its version stays in the version history.`, 'success');
+      editor.host.notify(t('deletedTitleItsVersionStays', { title: d.title }), 'success');
     } catch (e) {
       editor.host.notify(message(e), 'error');
     }
@@ -118,12 +115,10 @@ function ListPanel({ editor }: PanelProps) {
   return (
     <div className="fr-decisions">
       <DockHeader className="fr-decisions__head">
-        <h2 className="fr-decisions__title">Decisions</h2>
+        <h2 className="fr-decisions__title">{t('decisions')}</h2>
       </DockHeader>
       {editor.can('editor') && (
-        <Button variant="primary" icon={Stamp} onClick={() => editor.openPanel(CREATE_ID, {})}>
-          Freeze the board for a decision
-        </Button>
+        <Button variant="primary" icon={Stamp} onClick={() => editor.openPanel(CREATE_ID, {})}>{t('freezeTheBoardForA')}</Button>
       )}
       {error && (
         <p className="fr-decisions__empty" role="alert">
@@ -131,41 +126,35 @@ function ListPanel({ editor }: PanelProps) {
         </p>
       )}
       {!list && !error && <Spinner size={18} />}
-      {list && !list.length && <p className="fr-decisions__empty">No decisions yet. Freeze the board, or a frame (right-click it), when the group agrees on something.</p>}
+      {list && !list.length && <p className="fr-decisions__empty">{t('noDecisionsYetFreezeThe')}</p>}
       <ul className="fr-decisions__items">
         {list?.map((d) => (
           <li key={d.id} className="fr-decisions__item">
-            <button type="button" className="fr-decisions__open" onClick={() => editor.host.navigate(`/decision/${d.id}`)} aria-label={`Open ${d.title}`}>
+            <button type="button" className="fr-decisions__open" onClick={() => editor.host.navigate(`/decision/${d.id}`)} aria-label={t('openTitle', { title: d.title })}>
               <Stamp size={18} aria-hidden />
               <span className="fr-decisions__text">
                 <span className="fr-decisions__name">{d.title}</span>
-                <span className="fr-decisions__meta">
-                  Frozen {day.format(d.createdAt)}
-                  {d.createdBy ? ` by ${d.createdBy.name}` : ''}
-                  {d.frameId ? ` · frame “${d.frameTitle || 'Untitled'}”` : ''}
+                <span className="fr-decisions__meta">{t('frozenValue', { value: day.format(d.createdAt) })}{d.createdBy ? t('byName', { name: d.createdBy.name }) : ''}
+                  {d.frameId ? t('frameValue', { value: d.frameTitle || t('untitled') }) : ''}
                 </span>
                 {d.note && <span className="fr-decisions__note">{d.note}</span>}
               </span>
               <ExternalLink size={14} aria-hidden className="fr-decisions__go" />
             </button>
-            <IconButton icon={Link2} size={32} label="Copy link" onClick={() => void copy(d)} />
-            {editor.can('editor') && <IconButton icon={Trash2} size={32} label="Delete decision" onClick={() => setDeleting(d)} />}
+            <IconButton icon={Link2} size={32} label={t('copyLink')} onClick={() => void copy(d)} />
+            {editor.can('editor') && <IconButton icon={Trash2} size={32} label={t('deleteDecision')} onClick={() => setDeleting(d)} />}
           </li>
         ))}
       </ul>
       <Modal
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete this decision?"
-        description="Its link stops working for everyone. The board as it was stays in the version history."
+        title={t('deleteThisDecision')}
+        description={t('itsLinkStopsWorkingFor')}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setDeleting(null)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={() => void remove()}>
-              Delete
-            </Button>
+            <Button variant="ghost" onClick={() => setDeleting(null)}>{t('cancel')}</Button>
+            <Button variant="danger" onClick={() => void remove()}>{t('delete')}</Button>
           </>
         }
       />

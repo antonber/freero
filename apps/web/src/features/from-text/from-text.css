@@ -85,7 +85,7 @@
 }
 
 .fr-from-text__keep {
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 
 [data-fr-layout='phone'] .fr-from-text,

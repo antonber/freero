@@ -22,6 +22,7 @@ import { Menu, Popover, type MenuItem } from '@ui';
 import { COLUMN_TYPES, displayValue, isValid, optionOf, typeOf, valueFor, type PeopleLookup } from './columns';
 import { addOption, BOARD, moveRowToGroup, patchOption, peopleLookup, removeOption, setColumnType, setFilter, sortByColumn } from './actions';
 
+import { t as tr } from '../messages';
 const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
 
 export const TYPE_ICONS: Record<TableColumnType, typeof Type> = {
@@ -55,7 +56,7 @@ export function TypedValue({
           className={`fr-table__check${raw === 'true' ? ' is-on' : ''}`}
           role="checkbox"
           aria-checked={raw === 'true'}
-          aria-label="Done"
+          aria-label={tr('done')}
           disabled={!onToggle}
           {...(onToggle ? { 'data-fr-interactive': '' } : {})}
           onPointerDown={onToggle ? stop : undefined}
@@ -69,7 +70,7 @@ export function TypedValue({
       </div>
     );
   if (!raw) return null;
-  if (!isValid(col, raw)) return <div className={`fr-table__typed is-${type} is-invalid`} title={`Not a ${type}`}>{displayValue(undefined, raw)}</div>;
+  if (!isValid(col, raw)) return <div className={`fr-table__typed is-${type} is-invalid`} title={tr('notAType', { type })}>{displayValue(undefined, raw)}</div>;
   if (type === 'select') {
     const opt = optionOf(col, raw);
     return (
@@ -87,7 +88,7 @@ export function TypedValue({
         <span className="fr-table__avatar" aria-hidden>
           {(name ?? '?').trim().charAt(0).toUpperCase()}
         </span>
-        <span className="fr-table__person">{name ?? 'Unknown person'}</span>
+        <span className="fr-table__person">{name ?? tr('unknownPerson')}</span>
       </div>
     );
   }
@@ -148,7 +149,7 @@ function FieldEditor({ type, col, raw, onCommit, onCancel }: { type: 'number' | 
       data-fr-interactive=""
       type={type === 'date' ? 'date' : 'text'}
       inputMode={type === 'number' ? 'decimal' : undefined}
-      aria-label={type === 'date' ? 'Date' : 'Number'}
+      aria-label={type === 'date' ? tr('date') : tr('number')}
       value={value}
       onPointerDown={stop}
       onChange={(e) => {
@@ -184,7 +185,7 @@ function CheckboxEditor({ raw, onCommit, onCancel }: { raw: string; onCommit: Co
         className={`fr-table__check${raw === 'true' ? ' is-on' : ''}`}
         role="checkbox"
         aria-checked={raw === 'true'}
-        aria-label="Done"
+        aria-label={tr('done')}
         data-fr-interactive=""
         onPointerDown={stop}
         onClick={() => onCommit(raw === 'true' ? '' : 'true')}
@@ -257,12 +258,12 @@ function ListEditor({
             checked: optionOf(col, raw)?.id === o.id,
             onSelect: () => pick(valueFor(col, o.label)),
           })),
-          ...(col.options?.length ? [] : [{ heading: 'No options yet: add them from the column menu' }]),
+          ...(col.options?.length ? [] : [{ heading: tr('noOptionsYetAddThem') }]),
         ]
       : members === null
-        ? [{ heading: 'Loading people…' }]
+        ? [{ heading: tr('loadingPeople') }]
         : members.map((m) => ({ id: m.id, label: m.name, checked: raw === m.id, onSelect: () => pick(m.id) }));
-  if (raw) items.push({ divider: true }, { id: 'clear', label: 'Clear', icon: X, onSelect: () => pick('') });
+  if (raw) items.push({ divider: true }, { id: 'clear', label: tr('clear'), icon: X, onSelect: () => pick('') });
   return (
     <Menu
       open={!!anchor}
@@ -271,7 +272,7 @@ function ListEditor({
       side="bottom"
       align="start"
       minWidth={Math.max(160, Math.min(260, table.cols.find((c) => c.id === col.id)?.w ?? 160))}
-      aria-label={type === 'select' ? 'Choose an option' : 'Choose a person'}
+      aria-label={type === 'select' ? tr('chooseAnOption') : tr('chooseAPerson')}
       onClose={() => {
         if (!chosen.current) onCancel();
       }}
@@ -293,20 +294,20 @@ export function ColumnMenu({ editor, table, col }: { editor: Editor; table: Tabl
   const items: MenuItem[] = [
     {
       id: 'type',
-      label: `Type: ${COLUMN_TYPES.find((t) => t.value === type)?.label}`,
+      label: tr('typeLabel', { label: COLUMN_TYPES.find((t) => t.value === type)?.label }),
       icon: TYPE_ICONS[type],
       onSelect: () => undefined,
       submenu: COLUMN_TYPES.map((t) => ({ id: t.value, label: t.label, icon: TYPE_ICONS[t.value], checked: t.value === type, onSelect: () => void setColumnType(editor, table.id, col.id, t.value) })),
     },
-    ...(type === 'select' ? [{ id: 'options', label: 'Edit options…', icon: ListChecks, onSelect: () => setOptions(true) }] : []),
+    ...(type === 'select' ? [{ id: 'options', label: tr('editOptions'), icon: ListChecks, onSelect: () => setOptions(true) }] : []),
     { divider: true },
-    { id: 'asc', label: type === 'number' || type === 'date' ? 'Sort ascending' : 'Sort A → Z', icon: ArrowDownAZ, onSelect: () => sort('asc') },
-    { id: 'desc', label: type === 'number' || type === 'date' ? 'Sort descending' : 'Sort Z → A', icon: ArrowUpAZ, onSelect: () => sort('desc') },
+    { id: 'asc', label: type === 'number' || type === 'date' ? tr('sortAscending') : tr('sortAZ'), icon: ArrowDownAZ, onSelect: () => sort('asc') },
+    { id: 'desc', label: type === 'number' || type === 'date' ? tr('sortDescending') : tr('sortZA'), icon: ArrowUpAZ, onSelect: () => sort('desc') },
     table.filter?.colId === col.id
-      ? { id: 'unfilter', label: 'Clear filter', icon: X, onSelect: () => setFilter(editor, table.id, null) }
+      ? { id: 'unfilter', label: tr('clearFilter'), icon: X, onSelect: () => setFilter(editor, table.id, null) }
       : {
           id: 'filter',
-          label: type === 'checkbox' ? 'Show only checked' : 'Show only non-empty',
+          label: type === 'checkbox' ? tr('showOnlyChecked') : tr('showOnlyNonEmpty'),
           icon: Filter,
           onSelect: () => setFilter(editor, table.id, { colId: col.id, op: type === 'checkbox' ? 'checked' : 'notEmpty' }),
         },
@@ -319,10 +320,10 @@ export function ColumnMenu({ editor, table, col }: { editor: Editor; table: Tabl
         type="button"
         className={`fr-table__colmenu${open || options ? ' is-open' : ''}`}
         data-fr-interactive=""
-        aria-label="Column options"
+        aria-label={tr('columnOptions')}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Column type, sort and filter"
+        title={tr('columnTypeSortAndFilter')}
         onPointerDown={stop}
         onClick={(e) => {
           e.stopPropagation();
@@ -332,7 +333,7 @@ export function ColumnMenu({ editor, table, col }: { editor: Editor; table: Tabl
         {type !== 'text' && <Icon size={11} aria-hidden />}
         <ChevronDown size={12} aria-hidden />
       </button>
-      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label="Column options" />
+      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label={tr('columnOptions')} />
       {options && <OptionsEditor editor={editor} tableId={table.id} col={col} anchor={ref.current} onClose={() => setOptions(false)} />}
     </>
   );
@@ -344,20 +345,20 @@ function OptionsEditor({ editor, tableId, col, anchor, onClose }: { editor: Edit
     if (addOption(editor, tableId, col.id, draft)) setDraft('');
   };
   return (
-    <Popover open onClose={onClose} anchor={anchor} side="bottom" offset={8} aria-label="Options">
+    <Popover open onClose={onClose} anchor={anchor} side="bottom" offset={8} aria-label={tr('options')}>
       <div className="fr-table-options">
-        <div className="fr-table-options__title">Options</div>
+        <div className="fr-table-options__title">{tr('options')}</div>
         {(col.options ?? []).map((o) => (
           <div key={o.id} className="fr-table-options__row">
             <span className="fr-table-options__swatch" style={{ background: o.color }} />
             <input
               className="fr-table-options__input"
               defaultValue={o.label}
-              aria-label="Option name"
+              aria-label={tr('optionName')}
               onBlur={(e) => e.target.value.trim() !== o.label && patchOption(editor, tableId, col.id, o.id, { label: e.target.value })}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
-            <button type="button" className="fr-table-options__remove" aria-label={`Remove ${o.label}`} onClick={() => removeOption(editor, tableId, col.id, o.id)}>
+            <button type="button" className="fr-table-options__remove" aria-label={tr('removeLabel', { label: o.label })} onClick={() => removeOption(editor, tableId, col.id, o.id)}>
               <X size={14} aria-hidden />
             </button>
           </div>
@@ -365,8 +366,8 @@ function OptionsEditor({ editor, tableId, col, anchor, onClose }: { editor: Edit
         <div className="fr-table-options__row">
           <input
             className="fr-table-options__input"
-            placeholder="Add an option"
-            aria-label="New option"
+            placeholder={tr('addAnOption')}
+            aria-label={tr('newOption')}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -404,13 +405,13 @@ export function BoardView({
 }) {
   const group = table.cols.find((c) => c.id === table.groupBy && typeOf(c) === 'select');
   const [drag, setDrag] = useState<{ rowId: string; dx: number; dy: number; over: string | null } | null>(null);
-  if (!group) return <div className="fr-table-board__empty">Add a select column to group the rows by.</div>;
+  if (!group) return <div className="fr-table-board__empty">{tr('addASelectColumnTo')}</div>;
   const headerRow = table.header ? table.rows[0] : null;
   const body = rows.filter((r) => r !== headerRow);
   const titleCol = table.cols.find((c) => typeOf(c) === 'text' && c.id !== group.id) ?? table.cols[0];
   const fields = table.cols.filter((c) => c.id !== group.id && c.id !== titleCol.id);
   const name = (c: TableColumn) => (headerRow ? displayValue(undefined, get(headerRow.id, c.id)) : '');
-  const lanes = [...(group.options ?? []).map((o) => ({ key: o.label, label: o.label, color: o.color })), { key: '', label: 'No value', color: '#F1F0F5' }];
+  const lanes = [...(group.options ?? []).map((o) => ({ key: o.label, label: o.label, color: o.color })), { key: '', label: tr('noValue'), color: '#F1F0F5' }];
   const laneOf = (rowId: string) => optionOf(group, get(rowId, group.id))?.label ?? '';
 
   const startDrag = (e: ReactPointerEvent, rowId: string) => {
@@ -471,7 +472,7 @@ export function BoardView({
                   {...(interactive ? { 'data-fr-interactive': '' } : {})}
                   onPointerDown={(e) => startDrag(e, r.id)}
                 >
-                  <div className="fr-table-board__title">{displayValue(titleCol, get(r.id, titleCol.id), people) || 'Untitled'}</div>
+                  <div className="fr-table-board__title">{displayValue(titleCol, get(r.id, titleCol.id), people) || tr('untitled')}</div>
                   {shown.map((c) => (
                     <div key={c.id} className="fr-table-board__field">
                       {name(c) && <span className="fr-table-board__label">{name(c)}</span>}

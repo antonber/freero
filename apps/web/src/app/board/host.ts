@@ -48,6 +48,7 @@ import { takeShare } from '../lib/pendingShare';
 import { serverNow, syncServerClock } from './serverClock';
 import { getThemePreference, setThemePreference } from '../lib/theme';
 
+import { t } from '../messages';
 /** The theme for people without an account here: kept in this browser only. */
 const browserTheme: NonNullable<Host['colorTheme']> = { get: getThemePreference, set: setThemePreference };
 
@@ -216,7 +217,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
     // AI exists on this server but not for this person here: actions may show greyed out with why.
-    ...(deps.ai && !deps.ai.available ? { aiUnavailable: deps.ai.reason ?? 'AI isn’t available on this board.' } : {}),
+    ...(deps.ai && !deps.ai.available ? { aiUnavailable: deps.ai.reason ?? t('aiIsnTAvailableOn') } : {}),
     // Tracker entry points exist only when the server listed a connection this user may use here.
     ...(deps.trackers?.length
       ? {
@@ -249,8 +250,8 @@ export function createGuestHost(
   syncServerClock();
   const needsAccount = (what: string) => () => Promise.reject(new Error(`${what} needs a free Freero account.`));
   const signUp = () =>
-    deps.notify('Sign up free to share boards, save templates and keep your work.', 'info', {
-      action: { label: 'Sign up', run: () => deps.navigate(deps.signUpPath) },
+    deps.notify(t('signUpFreeToShare'), 'info', {
+      action: { label: t('signUp'), run: () => deps.navigate(deps.signUpPath) },
     });
   return {
     user: deps.user,
@@ -271,13 +272,13 @@ export function createGuestHost(
     report: async ({ target, reason, note, contactEmail }) => {
       await api.report({ boardId: board.id, target, reason, ...(note ? { note } : {}), ...(contactEmail ? { contactEmail } : {}) });
     },
-    uploadImage: needsAccount('Uploading images'),
-    uploadFile: needsAccount('Uploading files'),
-    uploadAttachment: needsAccount('Uploading files'),
+    uploadImage: needsAccount(t('uploadingImages')),
+    uploadFile: needsAccount(t('uploadingFiles')),
+    uploadAttachment: needsAccount(t('uploadingFiles')),
     // Visitors may download what the board's workspace lets them (the server decides).
     downloadFile: downloadBoardFile(board.id),
     commentFile: commentFilesOf(board.id),
-    renameBoard: needsAccount('Renaming boards'),
+    renameBoard: needsAccount(t('renamingBoards')),
     saveThumbnail: async () => undefined,
     colorTheme: browserTheme,
     openShareDialog: signUp,
@@ -287,23 +288,23 @@ export function createGuestHost(
     // Guests never see the member directory (nor anyone's email); presence and comments name people.
     listMembers: async () => [],
     lookupUsers: (ids) => lookupUsers(board.id, ids),
-    inviteMember: needsAccount('Inviting people'),
-    unfurl: needsAccount('Link previews'),
+    inviteMember: needsAccount(t('invitingPeople')),
+    unfurl: needsAccount(t('linkPreviews')),
     // Smart links resolve for guests too: they learn only what their one board lets them see.
     resolveObjects,
     listTemplates: async () => [],
-    loadTemplate: needsAccount('Saved templates'),
-    saveTemplate: needsAccount('Saving templates'),
-    shareTemplate: needsAccount('Sharing templates'),
-    deleteTemplate: needsAccount('Saved templates'),
-    versions: unavailableVersionHistory('Version history needs a free Freero account.'),
+    loadTemplate: needsAccount(t('savedTemplates')),
+    saveTemplate: needsAccount(t('savingTemplates')),
+    shareTemplate: needsAccount(t('sharingTemplates')),
+    deleteTemplate: needsAccount(t('savedTemplates')),
+    versions: unavailableVersionHistory(t('versionHistoryNeedsAFree')),
     activity: { list: (before) => api.boardActivity(board.id, before) },
-    importImage: needsAccount('Copying images'),
-    fetchImage: needsAccount('Copying images'),
+    importImage: needsAccount(t('copyingImages')),
+    fetchImage: needsAccount(t('copyingImages')),
     // Guests answer live activities when the activity lets visitors in (the server checks).
     engage: engageOf(board.id),
     presentation: presentationOf(board.id),
-    call: { get: () => api.boardCall(board.id), set: needsAccount('Setting the call link') },
+    call: { get: () => api.boardCall(board.id), set: needsAccount(t('settingTheCallLink')) },
     // Visitors watch walkthroughs and open decisions; recording and commenting need an account.
     walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: false }),
     decisions: decisionsOf(board.id),
@@ -319,7 +320,7 @@ export function createGuestHost(
 export function createEmbedHost(view: EmbedRedeemResponse, deps: { notify: Host['notify'] }): Host {
   const board = view.board;
   const inFreero = (what: string) => () => Promise.reject(new Error(`${what}: open the board in Freero.`));
-  const openInFreero = () => deps.notify('Use “Open in Freero” above for the full app.', 'info');
+  const openInFreero = () => deps.notify(t('useOpenInFreeroAbove'), 'info');
   return {
     user: view.user,
     board: {
@@ -333,27 +334,27 @@ export function createEmbedHost(view: EmbedRedeemResponse, deps: { notify: Host[
     },
     syncUrl: `${wsBase()}/ws/embed/boards`,
     syncProtocols: [EMBED_WS_PROTOCOL, view.token],
-    uploadImage: inFreero('Adding images'),
-    uploadFile: inFreero('Adding files'),
-    uploadAttachment: inFreero('Adding files'),
-    renameBoard: inFreero('Renaming the board'),
+    uploadImage: inFreero(t('addingImages')),
+    uploadFile: inFreero(t('addingFiles')),
+    uploadAttachment: inFreero(t('addingFiles')),
+    renameBoard: inFreero(t('renamingTheBoard')),
     saveThumbnail: async () => undefined,
-    openShareDialog: () => deps.notify('Use “Share with team” above.', 'info'),
+    openShareDialog: () => deps.notify(t('useShareWithTeamAbove'), 'info'),
     navigate: openInFreero,
     notify: deps.notify,
     serverNow: () => Date.now(),
     listMembers: async () => [view.user],
     lookupUsers: async (ids) => (ids.includes(view.user.id) ? [view.user] : []),
-    inviteMember: inFreero('Inviting people'),
-    unfurl: inFreero('Link previews'),
+    inviteMember: inFreero(t('invitingPeople')),
+    unfurl: inFreero(t('linkPreviews')),
     listTemplates: async () => [],
-    loadTemplate: inFreero('Saved templates'),
-    saveTemplate: inFreero('Saving templates'),
-    shareTemplate: inFreero('Sharing templates'),
-    deleteTemplate: inFreero('Saved templates'),
-    versions: unavailableVersionHistory('Version history is in Freero itself.'),
-    importImage: inFreero('Copying images'),
-    fetchImage: inFreero('Copying images'),
+    loadTemplate: inFreero(t('savedTemplates')),
+    saveTemplate: inFreero(t('savingTemplates')),
+    shareTemplate: inFreero(t('sharingTemplates')),
+    deleteTemplate: inFreero(t('savedTemplates')),
+    versions: unavailableVersionHistory(t('versionHistoryIsInFreero')),
+    importImage: inFreero(t('copyingImages')),
+    fetchImage: inFreero(t('copyingImages')),
     report: inFreero('Reporting'),
   };
 }
@@ -393,10 +394,10 @@ export function createPublicEmbedHost(view: PublicEmbedView, deps: { notify: Hos
     syncUrl: `${wsBase()}/ws/embed/b`,
     syncProtocols: [PUBLIC_EMBED_WS_PROTOCOL, ...(view.token ? [view.token] : []), ...(view.viewOnly ? [PUBLIC_EMBED_VIEW_ONLY] : [])],
     onConnectionEnded: deps.onConnectionEnded,
-    uploadImage: inFreero('Adding images'),
-    uploadFile: inFreero('Adding files'),
-    uploadAttachment: inFreero('Adding files'),
-    renameBoard: inFreero('Renaming the board'),
+    uploadImage: inFreero(t('addingImages')),
+    uploadFile: inFreero(t('addingFiles')),
+    uploadAttachment: inFreero(t('addingFiles')),
+    renameBoard: inFreero(t('renamingTheBoard')),
     saveThumbnail: async () => undefined,
     openShareDialog: () => open(view.boardUrl),
     navigate: (path) => open(path),
@@ -404,16 +405,16 @@ export function createPublicEmbedHost(view: PublicEmbedView, deps: { notify: Hos
     serverNow: () => Date.now(),
     listMembers: async () => [view.user],
     lookupUsers: async (ids) => (ids.includes(view.user.id) ? [view.user] : []),
-    inviteMember: inFreero('Inviting people'),
-    unfurl: inFreero('Link previews'),
+    inviteMember: inFreero(t('invitingPeople')),
+    unfurl: inFreero(t('linkPreviews')),
     listTemplates: async () => [],
-    loadTemplate: inFreero('Saved templates'),
-    saveTemplate: inFreero('Saving templates'),
-    shareTemplate: inFreero('Sharing templates'),
-    deleteTemplate: inFreero('Saved templates'),
-    versions: unavailableVersionHistory('Version history is in Freero itself.'),
-    importImage: inFreero('Copying images'),
-    fetchImage: inFreero('Copying images'),
+    loadTemplate: inFreero(t('savedTemplates')),
+    saveTemplate: inFreero(t('savingTemplates')),
+    shareTemplate: inFreero(t('sharingTemplates')),
+    deleteTemplate: inFreero(t('savedTemplates')),
+    versions: unavailableVersionHistory(t('versionHistoryIsInFreero')),
+    importImage: inFreero(t('copyingImages')),
+    fetchImage: inFreero(t('copyingImages')),
     report: inFreero('Reporting'),
   };
 }
@@ -440,22 +441,22 @@ export function createPreviewHost(board: { id: string; title: string }, deps: Pi
     uploadFile: no('Uploading'),
     renameBoard: no('Renaming'),
     saveThumbnail: async () => undefined,
-    openShareDialog: () => deps.notify('This is a read-only snapshot for moderation.', 'info'),
+    openShareDialog: () => deps.notify(t('thisIsAReadOnly'), 'info'),
     navigate: deps.navigate,
     notify: deps.notify,
     serverNow: () => Date.now(),
     listMembers: async () => [],
     lookupUsers: async () => [],
     inviteMember: no('Inviting'),
-    unfurl: no('Link previews'),
+    unfurl: no(t('linkPreviews')),
     listTemplates: async () => [],
     loadTemplate: no('Templates'),
     saveTemplate: no('Templates'),
     deleteTemplate: no('Templates'),
     shareTemplate: no('Templates'),
-    versions: unavailableVersionHistory('Version history isn’t available in a moderation preview.'),
-    importImage: no('Copying images'),
-    fetchImage: no('Fetching images'),
+    versions: unavailableVersionHistory(t('versionHistoryIsnTAvailable')),
+    importImage: no(t('copyingImages')),
+    fetchImage: no(t('fetchingImages')),
     report: no('Reporting'),
   };
 }
@@ -473,8 +474,8 @@ export function createDecisionHost(decision: { id: string; title: string }, deps
     board: { ...frozen.board, id: `decision-${decision.id}` },
     uploadImage: no('Uploading'),
     uploadFile: no('Uploading'),
-    openShareDialog: () => deps.notify('This is a frozen decision: copy its link to share it with people who can open the board.', 'info'),
-    versions: unavailableVersionHistory('A frozen decision has no version history of its own.'),
+    openShareDialog: () => deps.notify(t('thisIsAFrozenDecision'), 'info'),
+    versions: unavailableVersionHistory(t('aFrozenDecisionHasNo')),
     resolveObjects,
   };
 }
@@ -501,16 +502,16 @@ export function createBoardInDocHost(deps: Pick<HostDeps, 'user' | 'navigate' | 
     listMembers: async () => [],
     lookupUsers: async () => [],
     inviteMember: no('Inviting'),
-    unfurl: no('Link previews'),
+    unfurl: no(t('linkPreviews')),
     resolveObjects,
     listTemplates: async () => [],
     loadTemplate: no('Templates'),
     saveTemplate: no('Templates'),
     deleteTemplate: no('Templates'),
     shareTemplate: no('Templates'),
-    versions: unavailableVersionHistory('Open the board to see its versions.'),
-    importImage: no('Copying images'),
-    fetchImage: no('Fetching images'),
+    versions: unavailableVersionHistory(t('openTheBoardToSee')),
+    importImage: no(t('copyingImages')),
+    fetchImage: no(t('fetchingImages')),
     report: no('Reporting'),
   };
 }
@@ -539,7 +540,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     },
     saveThumbnail: async () => undefined,
     colorTheme: browserTheme,
-    openShareDialog: () => deps.notify('Sharing needs a real board — the local sandbox is offline.', 'info'),
+    openShareDialog: () => deps.notify(t('sharingNeedsARealBoard'), 'info'),
     navigate: deps.navigate,
     notify: deps.notify,
     serverNow: () => Date.now(),
@@ -554,7 +555,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     saveTemplate: async () => Promise.reject(new Error('Saving templates needs a real board — the local sandbox is offline.')),
     deleteTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
     shareTemplate: async () => Promise.reject(new Error('Sharing templates needs a real board.')),
-    versions: unavailableVersionHistory('Version history needs a real board — the local sandbox keeps no versions.'),
+    versions: unavailableVersionHistory(t('versionHistoryNeedsAReal')),
     // No server to fetch through: images placed by URL stay linked (CORS hosts still export,
     // others are reported as missing by the export).
     importImage: async () => Promise.reject(new Error('Copying images needs a real board.')),

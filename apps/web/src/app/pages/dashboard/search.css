@@ -13,7 +13,7 @@
 }
 
 .fr-dash-search__tab-count {
-  margin-left: 6px;
+  margin-inline-start: 6px;
   padding: 0 6px;
   border-radius: 999px;
   background: var(--fr-surface-3);
@@ -40,7 +40,7 @@
   background: var(--fr-surface-2);
   color: var(--fr-ink);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -91,7 +91,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 

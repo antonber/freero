@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "ללא תגית",
+  "selectTwoOrMoreUnlocked": "יש לבחור שני פריטים לא נעולים או יותר",
+  "selectThreeOrMoreUnlocked": "יש לבחור שלושה פריטים לא נעולים או יותר",
+  "autoLayout": "פריסה אוטומטית",
+  "selectTwoOrMoreUnlocked2": "יש לבחור שני פריטים לא נעולים או יותר שמחוברים במחברים",
+  "alignAndDistribute": "יישור ופיזור",
+  "clusterStickies": "קיבוץ פתקים דביקים"
+}

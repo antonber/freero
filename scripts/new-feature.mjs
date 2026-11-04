@@ -181,7 +181,16 @@ export default defineImporter({
 `;
 }
 
-fs.mkdirSync(dir, { recursive: true });
+// Interface text lives in the feature's own catalogue (docs/design/i18n.md): add English to
+// locales/en.json and show it with t('key') from ./messages. check:i18n refuses hard-coded text.
+files['messages.ts'] = `import { defineMessages } from '@ui';
+import en from './locales/en.json';
+
+export const t = defineMessages('features/${name}', en);
+`;
+files['locales/en.json'] = '{}\n';
+
+fs.mkdirSync(path.join(dir, 'locales'), { recursive: true });
 for (const [f, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), content);
 console.log(`Created features/${name}/: ${Object.keys(files).join(', ')}`);
 console.log('It is discovered automatically — no registry to edit. Run `npm run check` when done.');

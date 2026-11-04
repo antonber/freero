@@ -1,4 +1,5 @@
 // Curated emoji set for pickers (the emoji tool, reactions). Each entry: "<emoji> <search words…>".
+import { t as tr } from './messages';
 export interface EmojiEntry {
   emoji: string;
   words: string;
@@ -26,7 +27,7 @@ const parse = (lines: string): EmojiEntry[] =>
 export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     id: 'smileys',
-    label: 'Smileys',
+    label: tr('smileys'),
     icon: '😀',
     items: parse(`
       😀 grin happy smile
@@ -85,7 +86,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'people',
-    label: 'Gestures',
+    label: tr('gestures'),
     icon: '👍',
     items: parse(`
       👍 thumbs up yes like approve +1
@@ -132,7 +133,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'nature',
-    label: 'Nature',
+    label: tr('nature'),
     icon: '🌿',
     items: parse(`
       🐶 dog puppy
@@ -179,7 +180,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'food',
-    label: 'Food',
+    label: tr('food'),
     icon: '🍕',
     items: parse(`
       🍎 apple
@@ -218,7 +219,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'activity',
-    label: 'Activity',
+    label: tr('activity'),
     icon: '🎉',
     items: parse(`
       🎉 party tada celebrate
@@ -253,7 +254,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'travel',
-    label: 'Travel',
+    label: tr('travel'),
     icon: '🚀',
     items: parse(`
       🚀 rocket launch ship
@@ -286,7 +287,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'objects',
-    label: 'Objects',
+    label: tr('objects'),
     icon: '💡',
     items: parse(`
       💡 idea bulb light
@@ -337,7 +338,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'symbols',
-    label: 'Symbols',
+    label: tr('symbols'),
     icon: '❤️',
     items: parse(`
       ❤️ red heart love

@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "selectOneItemToCopy",
+    "copyStyle",
+    "styleCopiedPasteItWith",
+    "pasteStyle",
+    "stopPaintingFormat",
+    "formatPainterClickOtherItems",
+    "formatPainter",
+    "selectOneItemThenPick",
+    "unlockThisItemToChange"
+  ],
+  "selectOneItemToCopy": "选择一个对象以复制其样式。",
+  "copyStyle": "复制样式",
+  "styleCopiedPasteItWith": "样式已复制。按 Alt+Mod+V 粘贴。",
+  "pasteStyle": "粘贴样式",
+  "stopPaintingFormat": "停止格式刷",
+  "formatPainterClickOtherItems": "格式刷：点击其他对象以应用此样式",
+  "formatPainter": "格式刷",
+  "selectOneItemThenPick": "选择一个对象，然后使用格式刷复制其样式。",
+  "unlockThisItemToChange": "解锁此对象以更改其样式。"
+}

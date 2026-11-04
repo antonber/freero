@@ -4,6 +4,7 @@ import { nodeSize } from './lib/measure';
 import { TOOL_ID } from './lib/constants';
 import { newRoot } from './lib/actions';
 
+import { t } from './messages';
 function start(editor: Editor, at: Point) {
   const id = editor.create(newRoot(at), { select: true });
   editor.setTool('select');
@@ -12,7 +13,7 @@ function start(editor: Editor, at: Point) {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Mind map',
+  label: t('mindMap'),
   icon: Network,
   shortcut: 'm',
   order: 45,
@@ -40,9 +41,7 @@ export default defineTool({
     const p = useToolGhost({ w, h });
     if (!p) return null;
     return (
-      <div className="fr-mm-ghost" style={{ width: w, height: h, transform: `translate(${p.x}px, ${p.y}px)` }}>
-        Central topic
-      </div>
+      <div className="fr-mm-ghost" style={{ width: w, height: h, transform: `translate(${p.x}px, ${p.y}px)` }}>{t('centralTopic')}</div>
     );
   },
 });

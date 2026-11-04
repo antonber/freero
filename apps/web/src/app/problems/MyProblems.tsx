@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { relativeTime } from '../lib/time';
 import { useProblemReport } from './ProblemReport';
 
+import { t } from '../messages';
 export function MyProblems() {
   const { open } = useProblemReport();
   const [problems, setProblems] = useState<OwnProblemReport[] | null>(null);
@@ -24,11 +25,11 @@ export function MyProblems() {
   return (
     <div className="fr-problems-mine">
       {failed ? (
-        <p className="fr-acct__p">Your reports couldn’t be loaded. Try again later.</p>
+        <p className="fr-acct__p">{t('yourReportsCouldnTBe')}</p>
       ) : problems === null ? (
-        <Spinner size={18} label="Loading your reports" />
+        <Spinner size={18} label={t('loadingYourReports')} />
       ) : problems.length === 0 ? (
-        <p className="fr-acct__p">You haven’t reported anything yet.</p>
+        <p className="fr-acct__p">{t('youHavenTReportedAnything')}</p>
       ) : (
         <ul className="fr-problems-mine__list">
           {problems.map((p) => (
@@ -43,9 +44,7 @@ export function MyProblems() {
         </ul>
       )}
       <div className="fr-acct-form__row">
-        <Button variant="secondary" icon={MessageSquareWarning} onClick={() => open()}>
-          Report a problem…
-        </Button>
+        <Button variant="secondary" icon={MessageSquareWarning} onClick={() => open()}>{t('reportAProblem2')}</Button>
       </div>
     </div>
   );

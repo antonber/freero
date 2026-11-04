@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "הלוח כרשימה",
+  "everyItemInReadingOrder": "כל פריט לפי סדר הקריאה, ופריטי מסגרת מתחתיה. מקשי החצים מזיזים, חץ ימינה ושמאלה פותחים וסוגרים מסגרת, ו־Enter מציג את הפריט בלוח.",
+  "thisBoardIsEmpty": "הלוח הזה ריק.",
+  "boardItems": "פריטי הלוח",
+  "connections": "מחברים"
+}

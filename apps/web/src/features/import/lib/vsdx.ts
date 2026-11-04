@@ -37,6 +37,7 @@ import {
 import { ZipPackage } from './zip';
 import { base64, kids, OpcPackage, relAttr as relId, sniffImage } from './opc';
 
+import { t as tr } from '../messages';
 /** Board units per inch. */
 const IN = 96;
 /** Parts a package may hold, pictures one may carry, and how long reading may take. */
@@ -309,7 +310,7 @@ export async function parseVsdx(bytes: Uint8Array, newId: () => string, opts: { 
   const pages: PageInfo[] = [];
   for (const p of [...pagesXml.documentElement.children].filter((c) => c.localName === 'Page')) {
     if (p.getAttribute('Background') === '1') {
-      skips.add('Background pages (left out)');
+      skips.add(tr('backgroundPagesLeftOut'));
       continue;
     }
     const rel = kids(p, 'Rel')[0];
@@ -766,11 +767,11 @@ export async function parseVsdx(bytes: Uint8Array, newId: () => string, opts: { 
     const picture = async (f: NonNullable<Sheet['foreign']>): Promise<string | null> => {
       const rel = f.rel ? pageRels.get(f.rel) : undefined;
       if (rel?.external) {
-        skips.add('Linked pictures (left out)');
+        skips.add(tr('linkedPicturesLeftOut'));
         return null;
       }
       if (f.type !== 'Bitmap' || !rel) {
-        skips.add(f.type === 'Object' ? 'Embedded objects (left out)' : 'Pictures in formats Freero doesn’t show (left out)');
+        skips.add(f.type === 'Object' ? tr('embeddedObjectsLeftOut') : tr('picturesInFormatsFreeroDoesn'));
         return null;
       }
       const b = await zip.read(rel.target, VSDX_LIMITS.imageBytes).catch((e: unknown) => {
@@ -779,7 +780,7 @@ export async function parseVsdx(bytes: Uint8Array, newId: () => string, opts: { 
       });
       const mime = b ? sniffImage(b) : null;
       if (!b || !mime) {
-        skips.add('Pictures in formats Freero doesn’t show (left out)');
+        skips.add(tr('picturesInFormatsFreeroDoesn'));
         return null;
       }
       return `data:${mime};base64,${base64(b)}`;
@@ -859,7 +860,7 @@ export async function parseVsdx(bytes: Uint8Array, newId: () => string, opts: { 
         waypoints: [],
       } as ElementDraft);
     }
-    if (oddEnds) skips.add('Line ends drawn as the nearest Freero end', oddEnds);
+    if (oddEnds) skips.add(tr('lineEndsDrawnAsThe'), oddEnds);
 
     // Members of containers: what is drawn inside one (the smallest that holds it).
     const holder = (r: Rect, self?: string) => {

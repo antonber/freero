@@ -3,6 +3,7 @@
 import { suggestedElement, type BoardElement } from '@freero/shared';
 import { describeElementType, richTextToPlain, type Editor, type Rect, type Suggestion } from '@engine';
 
+import { t } from '../messages';
 export const PANEL_ID = 'suggestions.panel';
 
 export interface SuggestionGroup {
@@ -75,11 +76,11 @@ export function actionLabel(editor: Editor, s: Suggestion): string {
   if (s.op === 'create') return `Add ${type}`;
   if (s.op === 'delete') return `Delete ${type}`;
   const fields = [...new Set(Object.keys(s.patch ?? {}).map((k) => FIELD_NAMES[k] ?? k))];
-  return `Change ${fields.slice(0, 3).join(', ')}${fields.length > 3 ? '…' : ''} of ${type}`;
+  return t('changeJoinValueOfType', { join: fields.slice(0, 3).join(', '), value: fields.length > 3 ? '…' : '', type });
 }
 
 export const staleLabel = (s: Suggestion) =>
-  s.state === 'changed' ? 'Changed since it was suggested' : s.state === 'gone' ? (s.op === 'create' ? 'An item it connects to is gone' : 'The item is gone') : '';
+  s.state === 'changed' ? t('changedSinceItWasSuggested') : s.state === 'gone' ? (s.op === 'create' ? t('anItemItConnectsTo') : t('theItemIsGone')) : '';
 
 /** Bounds of the item a suggestion shows (unrotated box; enough to place a badge or zoom to it). */
 export function boundsOf(editor: Editor, s: Suggestion): Rect | null {
@@ -110,9 +111,9 @@ export function accept(editor: Editor, ids: string[]): void {
   if (r.stale.length) {
     const n = r.stale.length;
     editor.host.notify(
-      n === 1 ? 'This suggestion is out of date: the item changed or is gone since.' : `${n} of these suggestions are out of date: their items changed or are gone since.`,
+      t('nOfTheseSuggestionsAre', { n }),
       'info',
-      { action: { label: 'Apply anyway', run: () => editor.acceptSuggestions(ids, { force: true }) } },
+      { action: { label: t('applyAnyway'), run: () => editor.acceptSuggestions(ids, { force: true }) } },
     );
   }
 }

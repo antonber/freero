@@ -10,6 +10,7 @@ import { LIST_ID, START_ID } from './ids';
 import { openWalkthrough } from './playback';
 import { canRecord, useRecorder } from './recorder';
 
+import { t } from '../messages';
 const day = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 
 /** Live summaries, newest first (also those the board doc hasn't heard of, from the server list). */
@@ -39,7 +40,7 @@ export function ListPanel({ editor }: PanelProps) {
   const copy = async (w: WalkthroughSummary) => {
     try {
       await navigator.clipboard.writeText(walkthroughLink(editor, w.id));
-      editor.host.notify('Link copied. People who can open this board can watch it.', 'success');
+      editor.host.notify(t('linkCopiedPeopleWhoCan'), 'success');
     } catch {
       editor.host.notify(formatObjectUri({ type: 'walkthrough', id: w.id }), 'info');
     }
@@ -50,26 +51,22 @@ export function ListPanel({ editor }: PanelProps) {
     if (!w) return;
     try {
       await editor.host.walkthroughs?.remove(w.id);
-      editor.host.notify(`Deleted “${w.title}”`, 'success');
+      editor.host.notify(t('deletedTitle', { title: w.title }), 'success');
     } catch (e) {
-      editor.host.notify(e instanceof Error ? e.message : 'Couldn’t delete it', 'error');
+      editor.host.notify(e instanceof Error ? e.message : t('couldnTDeleteIt'), 'error');
     }
   };
 
   return (
     <div className="fr-walkthrough-list">
       <DockHeader className="fr-walkthrough-list__head">
-        <h2 className="fr-walkthrough-list__title">Walkthroughs</h2>
+        <h2 className="fr-walkthrough-list__title">{t('walkthroughs')}</h2>
       </DockHeader>
       {mayRecord && (
-        <Button variant="primary" icon={Mic} disabled={rec.phase !== 'idle' || !canRecord()} onClick={() => editor.openPanel(START_ID)}>
-          Record a walkthrough
-        </Button>
+        <Button variant="primary" icon={Mic} disabled={rec.phase !== 'idle' || !canRecord()} onClick={() => editor.openPanel(START_ID)}>{t('recordAWalkthrough2')}</Button>
       )}
       {!list.length && (
-        <p className="fr-walkthrough-list__empty">
-          No walkthroughs yet. Record one to talk people through this board: they watch it on the live board, whenever suits them.
-        </p>
+        <p className="fr-walkthrough-list__empty">{t('noWalkthroughsYetRecordOne')}</p>
       )}
       <ul className="fr-walkthrough-list__items">
         {list.map((w) => {
@@ -77,23 +74,21 @@ export function ListPanel({ editor }: PanelProps) {
           const manage = w.authorId === editor.user.id || editor.can('editor');
           return (
             <li key={w.id} className="fr-walkthrough-list__item">
-              <button type="button" className="fr-walkthrough-list__play" onClick={() => void openWalkthrough(editor, w.id)} aria-label={`Watch ${w.title}`}>
+              <button type="button" className="fr-walkthrough-list__play" onClick={() => void openWalkthrough(editor, w.id)} aria-label={t('watchTitle', { title: w.title })}>
                 <CirclePlay size={28} aria-hidden />
                 <span className="fr-walkthrough-list__text">
                   <span className="fr-walkthrough-list__name">
-                    {w.media === 'video' && <Video size={13} aria-label="with camera" />} {w.title}
+                    {w.media === 'video' && <Video size={13} aria-label={t('withCamera')} />} {w.title}
                   </span>
                   <span className="fr-walkthrough-list__meta">
-                    {author?.name ?? 'Someone'} · {formatWalkthroughTime(w.durationMs)} · {day.format(w.createdAt)}
+                    {author?.name ?? t('someone')} · {formatWalkthroughTime(w.durationMs)} · {day.format(w.createdAt)}
                   </span>
-                  <span className="fr-walkthrough-list__meta">
-                    {w.views} view{w.views === 1 ? '' : 's'} · {w.comments} comment{w.comments === 1 ? '' : 's'}
-                    {w.captions ? ' · captions' : ''}
+                  <span className="fr-walkthrough-list__meta">{t('nViewsNComments', { views: w.views, comments: w.comments })}{w.captions ? t('captions2') : ''}
                   </span>
                 </span>
               </button>
-              <IconButton icon={Link2} size={32} label="Copy link" onClick={() => void copy(w)} />
-              {manage && <IconButton icon={Trash2} size={32} label="Delete walkthrough" onClick={() => setDeleting(w)} />}
+              <IconButton icon={Link2} size={32} label={t('copyLink')} onClick={() => void copy(w)} />
+              {manage && <IconButton icon={Trash2} size={32} label={t('deleteWalkthrough')} onClick={() => setDeleting(w)} />}
             </li>
           );
         })}
@@ -101,16 +96,12 @@ export function ListPanel({ editor }: PanelProps) {
       <Modal
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete this walkthrough?"
-        description="Its recording, captions and comments go for everyone. This can’t be undone."
+        title={t('deleteThisWalkthrough')}
+        description={t('itsRecordingCaptionsAndComments')}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setDeleting(null)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={() => void remove()}>
-              Delete
-            </Button>
+            <Button variant="ghost" onClick={() => setDeleting(null)}>{t('cancel')}</Button>
+            <Button variant="danger" onClick={() => void remove()}>{t('delete')}</Button>
           </>
         }
       />
@@ -124,7 +115,7 @@ export function TopbarButton({ editor }: PanelProps) {
   const dock = useDock();
   if (!list.length || !editor.host.walkthroughs) return null;
   return (
-    <IconButton icon={CirclePlay} label={`Walkthroughs (${list.length})`} active={dock === LIST_ID} onClick={() => editor.openDock(dock === LIST_ID ? null : LIST_ID)}>
+    <IconButton icon={CirclePlay} label={t('walkthroughsLength', { length: list.length })} active={dock === LIST_ID} onClick={() => editor.openDock(dock === LIST_ID ? null : LIST_ID)}>
       <span className="fr-walkthrough-topbar__count">{list.length}</span>
     </IconButton>
   );

@@ -44,14 +44,14 @@
 }
 
 .fr-private-bar__count {
-  padding-left: 14px;
-  border-left: 1px solid var(--fr-line);
+  padding-inline-start: 14px;
+  border-inline-start: 1px solid var(--fr-line);
   font-size: 12px;
   color: var(--fr-ink-2);
 }
 
 .fr-private-bar__count:last-child {
-  padding-right: 8px;
+  padding-inline-end: 8px;
 }
 
 @media (max-width: 720px) {

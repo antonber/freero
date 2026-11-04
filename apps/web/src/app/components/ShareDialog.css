@@ -215,7 +215,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -249,7 +249,7 @@
 
 .fr-share__protect-text {
   font-size: 13px;
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 
 .fr-share__protect-form {

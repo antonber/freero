@@ -40,6 +40,7 @@ import { FocusDialog } from './lib/Focus';
 import { ViewPanel } from './lib/ViewPanel';
 import { addField, addOption, fieldsTarget, moveField, moveOption, patchOption, removeField, removeOption, renameField, FIELD_TYPE_LABELS } from './lib/schema';
 
+import { t as tr } from './messages';
 const TYPE_ICONS: Record<FieldType, LucideIcon> = {
   select: CircleChevronDown,
   multiselect: Tags,
@@ -116,17 +117,17 @@ function OptionColor({ option, disabled, onChange }: { option: FieldOption; disa
         className="fr-kanban-fields__swatch"
         style={{ background: option.color }}
         disabled={disabled}
-        aria-label={`Colour of ${option.label || 'Untitled'}: ${COLUMN_COLOR_NAMES[option.color] ?? option.color}`}
+        aria-label={tr('colourOfValueValue2', { value: option.label || tr('untitled'), value2: COLUMN_COLOR_NAMES[option.color] ?? option.color })}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="start" aria-label="Option colour">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="start" aria-label={tr('optionColour')}>
         <ColorSwatches
           colors={COLUMN_PALETTE}
           names={COLUMN_COLOR_NAMES}
           value={option.color}
           columns={6}
-          aria-label="Option colour"
+          aria-label={tr('optionColour')}
           onChange={(c) => {
             onChange(c);
             setOpen(false);
@@ -138,8 +139,8 @@ function OptionColor({ option, disabled, onChange }: { option: FieldOption; disa
 }
 
 const STATUS_CHOICES: Array<{ value: CardStatus | ''; label: string }> = [
-  ...STATUS_OPTIONS.map((o) => ({ value: o.id as CardStatus, label: `Sets ${o.label}` })),
-  { value: '', label: 'Keeps status' },
+  ...STATUS_OPTIONS.map((o) => ({ value: o.id as CardStatus, label: tr('setsLabel', { label: o.label }) })),
+  { value: '', label: tr('keepsStatus') },
 ];
 
 function Options({ editor, k, field, canEdit }: { editor: Editor; k: KanbanElement; field: FieldDef; canEdit: boolean }) {
@@ -150,13 +151,13 @@ function Options({ editor, k, field, canEdit }: { editor: Editor; k: KanbanEleme
   return (
     <div className="fr-kanban-fields__options">
       {options.length ? (
-        <ul className="fr-kanban-fields__option-list" aria-label={`Options of ${field.name}`}>
+        <ul className="fr-kanban-fields__option-list" aria-label={tr('optionsOfName', { name: field.name })}>
           {options.map((o, i) => (
             <li key={o.id} className="fr-kanban-fields__option">
               <OptionColor option={o} disabled={!canEdit} onChange={(color) => patchOption(editor, k.id, field.id, o.id, { color })} />
               <CommitInput
                 value={o.label}
-                label={`${isColumn ? 'Column' : 'Option'} name`}
+                label={tr('valueName', { value: isColumn ? tr('column') : tr('option') })}
                 disabled={!canEdit}
                 autoFocus={fresh === o.id}
                 onCommit={(label) => patchOption(editor, k.id, field.id, o.id, { label: label.trim() })}
@@ -165,7 +166,7 @@ function Options({ editor, k, field, canEdit }: { editor: Editor; k: KanbanEleme
                 <Select<CardStatus | ''>
                   size="sm"
                   variant="ghost"
-                  aria-label={`Card status in ${o.label || 'Untitled'}`}
+                  aria-label={tr('cardStatusInValue', { value: o.label || tr('untitled') })}
                   disabled={!canEdit}
                   value={o.status ?? ''}
                   options={STATUS_CHOICES}
@@ -174,18 +175,18 @@ function Options({ editor, k, field, canEdit }: { editor: Editor; k: KanbanEleme
               )}
               {canEdit && (
                 <RowMenu
-                  label={`${isColumn ? 'Column' : 'Option'} options: ${o.label || 'Untitled'}`}
+                  label={tr('valueOptionsValue2', { value: isColumn ? tr('column') : tr('option'), value2: o.label || tr('untitled') })}
                   items={[
-                    { id: 'up', label: isColumn ? 'Move left' : 'Move up', icon: ChevronUp, disabled: i === 0, onSelect: () => moveOption(editor, k.id, field.id, o.id, -1) },
-                    { id: 'down', label: isColumn ? 'Move right' : 'Move down', icon: ChevronDown, disabled: i === options.length - 1, onSelect: () => moveOption(editor, k.id, field.id, o.id, 1) },
+                    { id: 'up', label: isColumn ? tr('moveLeft') : tr('moveUp'), icon: ChevronUp, disabled: i === 0, onSelect: () => moveOption(editor, k.id, field.id, o.id, -1) },
+                    { id: 'down', label: isColumn ? tr('moveRight') : tr('moveDown'), icon: ChevronDown, disabled: i === options.length - 1, onSelect: () => moveOption(editor, k.id, field.id, o.id, 1) },
                     { divider: true },
                     {
                       id: 'delete',
-                      label: `Delete ${noun}`,
+                      label: tr('deleteNoun', { noun }),
                       icon: Trash2,
                       danger: true,
                       disabled: isColumn && options.length < 2,
-                      disabledReason: isColumn && options.length < 2 ? 'A kanban keeps at least one column' : undefined,
+                      disabledReason: isColumn && options.length < 2 ? tr('aKanbanKeepsAtLeast') : undefined,
                       onSelect: () => removeOption(editor, k.id, field.id, o.id),
                     },
                   ]}
@@ -195,11 +196,11 @@ function Options({ editor, k, field, canEdit }: { editor: Editor; k: KanbanEleme
           ))}
         </ul>
       ) : (
-        <p className="fr-kanban-fields__hint">No options yet.</p>
+        <p className="fr-kanban-fields__hint">{tr('noOptionsYet')}</p>
       )}
       {canEdit && (
         <Button size="sm" variant="ghost" icon={Plus} onClick={() => setFresh(addOption(editor, k.id, field.id))}>
-          {isColumn ? 'Add column' : 'Add option'}
+          {isColumn ? tr('addColumn') : tr('addOption')}
         </Button>
       )}
     </div>
@@ -217,22 +218,22 @@ function FieldRow(props: { editor: Editor; k: KanbanElement; field: FieldDef; in
         <span className="fr-kanban-fields__type" title={FIELD_TYPE_LABELS[field.type]}>
           <TypeIcon size={16} aria-hidden />
         </span>
-        <CommitInput value={field.name} label="Field name" disabled={!canEdit} autoFocus={props.autoFocus} onCommit={(name) => renameField(editor, k.id, field.id, name)} />
-        <span className="fr-kanban-fields__type-name">{isColumn ? `${FIELD_TYPE_LABELS[field.type]} · columns` : FIELD_TYPE_LABELS[field.type]}</span>
+        <CommitInput value={field.name} label={tr('fieldName')} disabled={!canEdit} autoFocus={props.autoFocus} onCommit={(name) => renameField(editor, k.id, field.id, name)} />
+        <span className="fr-kanban-fields__type-name">{isColumn ? tr('fieldTypeLabelsColumns', { field_type_labels: FIELD_TYPE_LABELS[field.type] }) : FIELD_TYPE_LABELS[field.type]}</span>
         {canEdit && (
           <RowMenu
-            label={`Field options: ${field.name}`}
+            label={tr('fieldOptionsName', { name: field.name })}
             items={[
-              { id: 'up', label: 'Move up', icon: ChevronUp, disabled: index === 0, onSelect: () => moveField(editor, k.id, field.id, -1) },
-              { id: 'down', label: 'Move down', icon: ChevronDown, disabled: index === count - 1, onSelect: () => moveField(editor, k.id, field.id, 1) },
+              { id: 'up', label: tr('moveUp'), icon: ChevronUp, disabled: index === 0, onSelect: () => moveField(editor, k.id, field.id, -1) },
+              { id: 'down', label: tr('moveDown'), icon: ChevronDown, disabled: index === count - 1, onSelect: () => moveField(editor, k.id, field.id, 1) },
               { divider: true },
               {
                 id: 'delete',
-                label: 'Delete field',
+                label: tr('deleteField'),
                 icon: Trash2,
                 danger: true,
                 disabled: undeletable,
-                disabledReason: isColumn ? 'This field makes the columns' : undeletable ? 'Stage can be renamed, not deleted' : undefined,
+                disabledReason: isColumn ? tr('thisFieldMakesTheColumns') : undeletable ? tr('stageCanBeRenamedNot') : undefined,
                 onSelect: () => removeField(editor, k.id, field.id),
               },
             ]}
@@ -241,7 +242,7 @@ function FieldRow(props: { editor: Editor; k: KanbanElement; field: FieldDef; in
       </div>
       {isColumn && (
         <p className="fr-kanban-fields__hint">
-          {field.type === 'select' ? 'Its options are the board’s columns: a card’s value is the column it is in.' : 'The board is grouped by it: a card’s value is the column it is in.'}
+          {field.type === 'select' ? tr('itsOptionsAreTheBoard') : tr('theBoardIsGroupedBy')}
         </p>
       )}
       {field.options && <Options editor={editor} k={k} field={field} canEdit={canEdit} />}
@@ -254,14 +255,12 @@ function AddField({ editor, k, onAdded }: { editor: Editor; k: KanbanElement; on
   const ref = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <Button ref={ref} size="sm" variant="secondary" icon={Plus} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        Add field
-      </Button>
+      <Button ref={ref} size="sm" variant="secondary" icon={Plus} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{tr('addField')}</Button>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
         anchor={ref.current}
-        aria-label="Field type"
+        aria-label={tr('fieldType')}
         items={FIELD_TYPES.map((t) => ({ id: t, label: FIELD_TYPE_LABELS[t], icon: TYPE_ICONS[t], onSelect: () => onAdded(addField(editor, k.id, t)) }))}
       />
     </>
@@ -284,19 +283,19 @@ function FieldsPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-kanban-fields">
       <DockHeader className="fr-kanban-fields__head">
-        <h2 className="fr-kanban-fields__title">Fields</h2>
-        {k && <span className="fr-kanban-fields__of">{richTextToPlain(k.title) || 'Kanban'}</span>}
+        <h2 className="fr-kanban-fields__title">{tr('fields')}</h2>
+        {k && <span className="fr-kanban-fields__of">{richTextToPlain(k.title) || tr('kanban')}</span>}
       </DockHeader>
       {!k ? (
         <div className="fr-kanban-fields__empty">
           <ListChecks size={28} strokeWidth={1.5} aria-hidden />
-          <strong>Select a kanban board</strong>
-          <span>Its fields show here: what every card on it can hold, like a priority, an owner or points.</span>
+          <strong>{tr('selectAKanbanBoard')}</strong>
+          <span>{tr('itsFieldsShowHereWhat')}</span>
         </div>
       ) : (
         <>
-          {k.locked && <p className="fr-kanban-fields__hint">This kanban is locked: unlock it to change its fields.</p>}
-          <ol className="fr-kanban-fields__list" aria-label="Fields">
+          {k.locked && <p className="fr-kanban-fields__hint">{tr('thisKanbanIsLockedUnlock')}</p>}
+          <ol className="fr-kanban-fields__list" aria-label={tr('fields')}>
             {schema.map((f, i) => (
               <FieldRow key={f.id} editor={editor} k={k} field={f} index={i} count={schema.length} canEdit={editable} autoFocus={fresh === f.id} />
             ))}

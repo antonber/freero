@@ -9,17 +9,18 @@
 //   Windsurf        docs.devin.ai/desktop/cascade/mcp (Windsurf is Devin Desktop since 2026-06)
 //   mcp-remote      github.com/geelen/mcp-remote
 // Client names are plain text: no third-party logos (Freero's own brand only).
+import { t } from './messages';
 
 export type ClientId = 'claude' | 'chatgpt' | 'claude-code' | 'cursor' | 'vscode' | 'other' | 'http';
 
 export const CLIENTS: Array<{ id: ClientId; label: string; intro: string | null }> = [
-  { id: 'claude', label: 'Claude', intro: 'Claude on the web and Claude Desktop, as a custom connector. Connectors you add on the web work in Claude Desktop too.' },
-  { id: 'chatgpt', label: 'ChatGPT', intro: 'ChatGPT on the web, as a custom MCP server (a plugin). OpenAI decides which plans can add one, and in a workspace an admin may have to allow it first.' },
-  { id: 'claude-code', label: 'Claude Code', intro: null },
-  { id: 'cursor', label: 'Cursor', intro: null },
-  { id: 'vscode', label: 'VS Code', intro: 'VS Code with GitHub Copilot’s agent mode.' },
-  { id: 'other', label: 'Other clients', intro: 'Codex, Windsurf and any client that speaks MCP over Streamable HTTP. Each signs in with your Freero account (OAuth) the first time it calls.' },
-  { id: 'http', label: 'Any HTTP client', intro: null },
+  { id: 'claude', label: 'Claude', intro: t('claudeOnTheWebAnd') },
+  { id: 'chatgpt', label: 'ChatGPT', intro: t('chatgptOnTheWebAs') },
+  { id: 'claude-code', label: t('claudeCode'), intro: null },
+  { id: 'cursor', label: t('cursor'), intro: null },
+  { id: 'vscode', label: t('vsCode'), intro: t('vsCodeWithGithubCopilot') },
+  { id: 'other', label: t('otherClients'), intro: t('codexWindsurfAndAnyClient') },
+  { id: 'http', label: t('anyHttpClient'), intro: null },
 ];
 
 /** The tab a link opens (`/settings/connect#cursor`); Claude when it names none we know. */
@@ -59,47 +60,47 @@ export function clientSetup(id: Exclude<ClientId, 'http'>, mcpUrl: string): Setu
   switch (id) {
     case 'claude':
       return [
-        { text: 'In Claude, open Customize → Connectors (Settings → Connectors in some versions), select + Add, then Add custom connector.' },
-        { text: 'Name it Freero, paste this URL, then select Continue and Add.', copy: { label: 'Connector URL', value: mcpUrl } },
-        { text: 'Select Connect. Freero’s consent screen opens: sign in, tick what Claude may do (reading and suggesting are on; changing boards and commenting are yours to add) and select Allow.' },
-        { text: 'In a chat, turn Freero on in the tools menu, then ask about a board by name or paste a board link.' },
-        { text: 'On Team and Enterprise plans, an owner adds the connector first (Organization settings → Connectors → Add → Custom → Web, with the same URL); then each member selects Connect under Customize → Connectors.' },
+        { text: t('inClaudeOpenCustomizeConnectors') },
+        { text: t('nameItFreeroPasteThis'), copy: { label: t('connectorUrl'), value: mcpUrl } },
+        { text: t('selectConnectFreeroSConsent') },
+        { text: t('inAChatTurnFreero') },
+        { text: t('onTeamAndEnterprisePlans') },
       ];
     case 'chatgpt':
       return [
-        { text: 'In ChatGPT on the web, open Plugins, select the plus button, then Add custom MCP server.', link: { label: 'Open ChatGPT plugins', href: 'https://chatgpt.com/plugins' } },
-        { text: 'Name it Freero. Under Connection, for a public endpoint, paste this URL.', copy: { label: 'MCP server URL', value: mcpUrl } },
-        { text: 'Set authentication to OAuth, review the risk warning, select I understand and want to continue, then Create as a plugin.' },
-        { text: 'Freero’s consent screen opens: sign in, tick what ChatGPT may do and select Allow.' },
-        { text: 'In a new chat, type @ and pick Freero, then ask about a board.' },
+        { text: t('inChatgptOnTheWeb'), link: { label: t('openChatgptPlugins'), href: 'https://chatgpt.com/plugins' } },
+        { text: t('nameItFreeroUnderConnection'), copy: { label: t('mcpServerUrl'), value: mcpUrl } },
+        { text: t('setAuthenticationToOauthReview') },
+        { text: t('freeroSConsentScreenOpens') },
+        { text: t('inANewChatType') },
       ];
     case 'claude-code':
       return [
-        { text: 'In a terminal, add Freero to Claude Code (add --scope user to have it in every project):', copy: { label: 'Command', value: claudeCodeCommand(mcpUrl) } },
-        { text: 'Start Claude Code, run /mcp, pick freero and choose Authenticate. Your browser opens Freero’s consent screen: tick what it may do and select Allow.' },
-        { text: 'Ask it about a board, or use Freero’s prompts as slash commands: /mcp__freero__run_retro, /mcp__freero__summarize_board, /mcp__freero__control_room.' },
-        { text: 'On a server or in CI, where no browser can open, make a token under Any HTTP client and add it as a header instead:', copy: { label: 'Command with a token', value: claudeCodeCommand(mcpUrl, 'frp_…') } },
+        { text: t('inATerminalAddFreero'), copy: { label: t('command'), value: claudeCodeCommand(mcpUrl) } },
+        { text: t('startClaudeCodeRunMcp') },
+        { text: t('askItAboutABoard') },
+        { text: t('onAServerOrIn'), copy: { label: t('commandWithAToken'), value: claudeCodeCommand(mcpUrl, 'frp_…') } },
       ];
     case 'cursor':
       return [
-        { text: 'Install Freero in Cursor with one click (Cursor opens and asks you to confirm):', link: { label: 'Add Freero to Cursor', href: cursorInstallLink(mcpUrl) } },
-        { text: 'Or add it by hand to ~/.cursor/mcp.json (every project) or .cursor/mcp.json (one project):', copy: { label: 'mcp.json', value: json({ mcpServers: { [SERVER]: { url: mcpUrl } } }) } },
-        { text: 'Cursor then asks you to sign in to Freero: approve it on Freero’s consent screen. Freero’s tools appear in Cursor’s agent.' },
+        { text: t('installFreeroInCursorWith'), link: { label: t('addFreeroToCursor'), href: cursorInstallLink(mcpUrl) } },
+        { text: t('orAddItByHand'), copy: { label: 'mcp.json', value: json({ mcpServers: { [SERVER]: { url: mcpUrl } } }) } },
+        { text: t('cursorThenAsksYouTo') },
       ];
     case 'vscode':
       return [
-        { text: 'Install Freero in VS Code with one click (VS Code opens and asks you to confirm):', link: { label: 'Add Freero to VS Code', href: vscodeInstallLink(mcpUrl) } },
-        { text: 'Using VS Code Insiders?', link: { label: 'Add Freero to VS Code Insiders', href: vscodeInstallLink(mcpUrl, true) } },
-        { text: 'Or from a terminal:', copy: { label: 'Command', value: `code --add-mcp '${JSON.stringify({ name: SERVER, type: 'http', url: mcpUrl })}'` } },
-        { text: 'Or in .vscode/mcp.json:', copy: { label: 'mcp.json', value: json({ servers: { [SERVER]: { type: 'http', url: mcpUrl } } }) } },
-        { text: 'The first time Copilot uses it, VS Code opens your browser to sign in to Freero: approve it on the consent screen.' },
+        { text: t('installFreeroInVsCode'), link: { label: t('addFreeroToVsCode'), href: vscodeInstallLink(mcpUrl) } },
+        { text: t('usingVsCodeInsiders'), link: { label: t('addFreeroToVsCode2'), href: vscodeInstallLink(mcpUrl, true) } },
+        { text: t('orFromATerminal'), copy: { label: t('command'), value: `code --add-mcp '${JSON.stringify({ name: SERVER, type: 'http', url: mcpUrl })}'` } },
+        { text: t('orInVscodeMcpJson'), copy: { label: 'mcp.json', value: json({ servers: { [SERVER]: { type: 'http', url: mcpUrl } } }) } },
+        { text: t('theFirstTimeCopilotUses') },
       ];
     case 'other':
       return [
-        { text: 'Codex (CLI, IDE extension, desktop): add this to ~/.codex/config.toml, then run codex mcp login freero to sign in.', copy: { label: 'config.toml', value: `[mcp_servers.${SERVER}]\nurl = "${mcpUrl}"` } },
-        { text: 'Windsurf (Devin Desktop): in Cascade’s MCP settings, open the raw config and add:', copy: { label: 'mcp_config.json', value: json({ mcpServers: { [SERVER]: { serverUrl: mcpUrl } } }) } },
-        { text: 'Most other clients take a remote server as a URL, often in this shape:', copy: { label: 'MCP config', value: json({ mcpServers: { [SERVER]: { url: mcpUrl } } }) } },
-        { text: 'A client that only runs local (stdio) servers can reach Freero through the mcp-remote bridge (it needs Node.js and signs in in your browser):', copy: { label: 'Bridge config', value: json({ mcpServers: { [SERVER]: { command: 'npx', args: ['mcp-remote', mcpUrl] } } }) } },
+        { text: t('codexCliIdeExtensionDesktop'), copy: { label: 'config.toml', value: `[mcp_servers.${SERVER}]\nurl = "${mcpUrl}"` } },
+        { text: t('windsurfDevinDesktopInCascade'), copy: { label: 'mcp_config.json', value: json({ mcpServers: { [SERVER]: { serverUrl: mcpUrl } } }) } },
+        { text: t('mostOtherClientsTakeA'), copy: { label: t('mcpConfig'), value: json({ mcpServers: { [SERVER]: { url: mcpUrl } } }) } },
+        { text: t('aClientThatOnlyRuns'), copy: { label: t('bridgeConfig'), value: json({ mcpServers: { [SERVER]: { command: 'npx', args: ['mcp-remote', mcpUrl] } } }) } },
       ];
   }
 }
@@ -107,8 +108,8 @@ export function clientSetup(id: Exclude<ClientId, 'http'>, mcpUrl: string): Setu
 /** The first calls a script makes with a personal token. */
 export function curlExamples(apiUrl: string, token: string): Array<{ label: string; value: string }> {
   return [
-    { label: 'Who am I', value: `curl ${apiUrl}/me \\\n  -H "Authorization: Bearer ${token}"` },
-    { label: 'My boards', value: `curl ${apiUrl}/boards \\\n  -H "Authorization: Bearer ${token}"` },
+    { label: t('whoAmI'), value: `curl ${apiUrl}/me \\\n  -H "Authorization: Bearer ${token}"` },
+    { label: t('myBoards'), value: `curl ${apiUrl}/boards \\\n  -H "Authorization: Bearer ${token}"` },
   ];
 }
 

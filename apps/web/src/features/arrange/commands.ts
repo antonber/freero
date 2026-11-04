@@ -20,6 +20,7 @@ import { applyMoves, movableCount, planAlign, planDistribute, planTidy, selected
 import { clusterSelection, selectedStickies } from './lib/cluster';
 import { autoLayout, hasDiagram, type AutoLayoutMode } from './lib/autoLayout';
 
+import { t } from './messages';
 // Never while typing: Alt+letter shortcuts are dispatched during text edits too.
 const idle = (editor: Editor) => !editor.getEditingId();
 
@@ -31,7 +32,7 @@ const align = (edge: AlignEdge, label: string, shortcut: string, icon: CommandDe
   menus: ['context'],
   group: 'Align',
   when: (editor) => idle(editor) && selectedUnits(editor).length >= 2 && movableCount(editor) >= 1,
-  disabledReason: 'Select two or more unlocked items',
+  disabledReason: t('selectTwoOrMoreUnlocked'),
   run: (editor) => applyMoves(editor, planAlign(selectedUnits(editor), edge)),
 });
 
@@ -43,7 +44,7 @@ const distribute = (axis: DistributeAxis, label: string, shortcut: string, icon:
   menus: ['context'],
   group: 'Align',
   when: (editor) => idle(editor) && movableCount(editor) >= 3,
-  disabledReason: 'Select three or more unlocked items',
+  disabledReason: t('selectThreeOrMoreUnlocked'),
   run: (editor) => applyMoves(editor, planDistribute(selectedUnits(editor), axis)),
 });
 
@@ -98,9 +99,9 @@ const layout = (mode: AutoLayoutMode, label: string, icon: CommandDefinition['ic
   label,
   icon,
   menus: ['context'],
-  group: 'Auto-layout',
+  group: t('autoLayout'),
   when: (editor) => idle(editor) && hasDiagram(editor),
-  disabledReason: 'Select two or more unlocked items joined by connectors',
+  disabledReason: t('selectTwoOrMoreUnlocked2'),
   run: (editor) => autoLayout(editor, mode),
 });
 

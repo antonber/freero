@@ -3,12 +3,13 @@ import { defineCommands } from '@engine';
 import { convertStickiesToCards, selectedStickies } from './lib/actions';
 import { setValues } from './lib/values';
 
+import { t } from './messages';
 export default defineCommands([
   {
     // Planning poker (features/estimation) writes the agreed value through this: card fields have
     // one writer. Args { id, value } (value null clears it). One undo step.
     id: 'card.setEstimate',
-    label: 'Set estimate',
+    label: t('setEstimate'),
     run(editor, args) {
       const id = typeof args?.id === 'string' ? args.id : null;
       const value = typeof args?.value === 'string' ? args.value.trim().slice(0, 12) : null;
@@ -22,7 +23,7 @@ export default defineCommands([
     // writer. Args { id, startDate?, dueDate? } — ISO dates 'YYYY-MM-DD' or null; keys left out
     // stay as they are. A start after the due date is dropped.
     id: 'card.setDates',
-    label: 'Set dates',
+    label: t('setDates'),
     run(editor, args) {
       const id = typeof args?.id === 'string' ? args.id : null;
       const el = id ? editor.getElement(id) : undefined;
@@ -46,7 +47,7 @@ export default defineCommands([
     // — the kanban's own field ids, or built-in ids ($status, $assignee, $due, …); null clears.
     // Values that don't fit their field are ignored. One undo step.
     id: 'card.setValues',
-    label: 'Set field values',
+    label: t('setFieldValues'),
     run(editor, args) {
       const id = typeof args?.id === 'string' ? args.id : null;
       const values = args?.values && typeof args.values === 'object' ? (args.values as Record<string, unknown>) : null;
@@ -56,7 +57,7 @@ export default defineCommands([
   {
     id: 'card.fromSticky',
     icon: ListTodo,
-    label: 'Convert to card',
+    label: t('convertToCard'),
     menus: ['context'],
     when: (editor) => selectedStickies(editor).length > 0,
     run: convertStickiesToCards,

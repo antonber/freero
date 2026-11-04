@@ -4,6 +4,7 @@ import { defineFormat, type Editor } from '@engine';
 import { ColorSwatches, Popover, SegmentedControl } from '@ui';
 import { DEFAULT_COLOR } from './lib/insert';
 
+import { t } from './messages';
 const COLORS = [DEFAULT_COLOR, '#6B6880', '#5B3FF0', '#2F80ED', '#14A3A3', '#1FA463', '#F5A524', '#E5484D', '#FF3D8B', '#FFFFFF'];
 const NAMES: Record<string, string> = {
   [DEFAULT_COLOR]: 'Ink',
@@ -39,20 +40,20 @@ function StyleControl({ editor, icons }: { editor: Editor; icons: IconElement[] 
         ref={ref}
         type="button"
         className="fr-icons-format__btn"
-        aria-label="Icon color and weight"
+        aria-label={t('iconColorAndWeight')}
         aria-expanded={open}
-        title="Color"
+        title={t('color')}
         onClick={() => setOpen((o) => !o)}
       >
         <span className="fr-icons-swatch" style={{ background: mixed ? 'conic-gradient(#E5484D, #F5A524, #1FA463, #2F80ED, #5B3FF0, #E5484D)' : color }} />
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Icon style">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('iconStyle')}>
         <div className="fr-icons-pop">
-          <ColorSwatches colors={COLORS} names={NAMES} value={mixed ? null : color} columns={6} size={26} allowCustom onChange={(c) => set({ color: c })} aria-label="Icon color" />
-          <span className="fr-icons-pop__label">Line weight</span>
+          <ColorSwatches colors={COLORS} names={NAMES} value={mixed ? null : color} columns={6} size={26} allowCustom onChange={(c) => set({ color: c })} aria-label={t('iconColor')} />
+          <span className="fr-icons-pop__label">{t('lineWeight')}</span>
           <SegmentedControl
             size="sm"
-            aria-label="Line weight"
+            aria-label={t('lineWeight')}
             options={WEIGHTS}
             value={nearestWeight(icons[0].strokeWidth)}
             onChange={(v) => set({ strokeWidth: Number(v) })}

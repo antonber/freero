@@ -6,15 +6,16 @@
 import { plainToRichText, richTextToPlain, type BoardElement, type SlideLayoutRole } from '@freero/shared';
 import type { NewElement, Rect } from '@engine';
 
+import { t } from '../messages';
 export type SlideLayoutId = 'title' | 'title-body' | 'two-columns' | 'image-text' | 'big-number' | 'quote';
 
 export const SLIDE_LAYOUTS: Array<{ id: SlideLayoutId; label: string; hint: string }> = [
-  { id: 'title', label: 'Title', hint: 'A big title and a subtitle' },
-  { id: 'title-body', label: 'Title and body', hint: 'A heading over a list of points' },
-  { id: 'two-columns', label: 'Two columns', hint: 'A heading over two side-by-side texts' },
-  { id: 'image-text', label: 'Image and text', hint: 'An image area beside a text' },
-  { id: 'big-number', label: 'Big number', hint: 'One figure, large, with what it means' },
-  { id: 'quote', label: 'Quote', hint: 'A quotation and who said it' },
+  { id: 'title', label: t('title'), hint: t('aBigTitleAndA') },
+  { id: 'title-body', label: t('titleAndBody'), hint: t('aHeadingOverAList') },
+  { id: 'two-columns', label: t('twoColumns'), hint: t('aHeadingOverTwoSide') },
+  { id: 'image-text', label: t('imageAndText'), hint: t('anImageAreaBesideA') },
+  { id: 'big-number', label: t('bigNumber'), hint: t('oneFigureLargeWithWhat') },
+  { id: 'quote', label: t('quote'), hint: t('aQuotationAndWhoSaid') },
 ];
 
 const INK = '#17162B';
@@ -24,14 +25,14 @@ export type LayoutDraft = (NewElement<'text'> | NewElement<'shape'>) & { layoutR
 
 /** What each part says until someone writes in it. */
 const PLACEHOLDER = {
-  title: 'Slide title',
-  deckTitle: 'Presentation title',
-  subtitle: 'Subtitle or presenter name',
-  body: 'First point\nSecond point\nThird point',
-  image: 'Image: paste or drop one here',
+  title: t('slideTitle'),
+  deckTitle: t('presentationTitle'),
+  subtitle: t('subtitleOrPresenterName'),
+  body: t('firstPointSecondPointThird'),
+  image: t('imagePasteOrDropOne'),
   number: '42%',
-  caption: 'What this number means',
-  quote: '“A sentence worth remembering.”',
+  caption: t('whatThisNumberMeans'),
+  quote: t('aSentenceWorthRemembering'),
   attribution: '— Who said it',
 };
 

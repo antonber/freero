@@ -1,6 +1,7 @@
 import { useRef, type KeyboardEvent } from 'react';
 import { Check, Plus } from 'lucide-react';
 import { readableTextColor } from './color';
+import { t } from './messages';
 import './ColorSwatches.css';
 
 export interface ColorSwatchesProps {
@@ -52,7 +53,7 @@ export function ColorSwatches({
     <div
       ref={groupRef}
       role="radiogroup"
-      aria-label={aria['aria-label'] ?? 'Colors'}
+      aria-label={aria['aria-label'] ?? t('colors')}
       className={`fr-swatches${className ? ` ${className}` : ''}`}
       style={{
         ['--fr-swatch' as string]: `${size}px`,
@@ -84,9 +85,9 @@ export function ColorSwatches({
         );
       })}
       {allowCustom ? (
-        <label className="fr-swatch fr-swatch--custom" title="Custom color" tabIndex={-1}>
+        <label className="fr-swatch fr-swatch--custom" title={t('customColor')} tabIndex={-1}>
           <Plus size={Math.round(size * 0.6)} aria-hidden />
-          <span className="fr-sr-only">Custom color</span>
+          <span className="fr-sr-only">{t('customColor')}</span>
           <input
             ref={customRef}
             type="color"

@@ -1,5 +1,6 @@
 import type { CardElement, StickyColor } from '@freero/shared';
 
+import { t } from '../messages';
 export const TOOL_ID = 'card';
 export const DEFAULT_ACCENT = '#5B3FF0';
 
@@ -65,9 +66,9 @@ export const BACK_PART = 'back';
 
 export type CardStatus =NonNullable<CardElement['status']>;
 export const STATUSES: Array<{ value: CardStatus; label: string }> = [
-  { value: 'todo', label: 'To do' },
-  { value: 'doing', label: 'Doing' },
-  { value: 'done', label: 'Done' },
+  { value: 'todo', label: t('toDo') },
+  { value: 'doing', label: t('doing') },
+  { value: 'done', label: t('done') },
 ];
 
 export interface CardToolOptions {

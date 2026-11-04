@@ -5,6 +5,7 @@ import type { Tag } from '@freero/shared';
 import { defineFormat, useCollection, type Editor } from '@engine';
 import { Button, ColorSwatches, IconButton, Input, Popover, Tooltip } from '@ui';
 import { TAG_COLORS, isTaggable, nextColor, normName, search, stripPatches, tagState, togglePatches, type Taggable } from './lib/tags';
+import { t as tr } from './messages';
 import './tags.css';
 
 function Picker({ editor, els, tags, onManage }: { editor: Editor; els: Taggable[]; tags: Tag[]; onManage(): void }) {
@@ -46,12 +47,12 @@ function Picker({ editor, els, tags, onManage }: { editor: Editor; els: Taggable
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder={tags.length ? 'Search or create a tag' : 'Name your first tag'}
-        aria-label="Search or create a tag"
+        placeholder={tags.length ? tr('searchOrCreateATag') : tr('nameYourFirstTag')}
+        aria-label={tr('searchOrCreateATag')}
         maxLength={40}
       />
       {list.length > 0 && (
-        <ul className="fr-tags-list" role="group" aria-label="Tags">
+        <ul className="fr-tags-list" role="group" aria-label={tr('tags')}>
           {list.map((t) => {
             const state = tagState(els, t.id);
             return (
@@ -69,19 +70,15 @@ function Picker({ editor, els, tags, onManage }: { editor: Editor; els: Taggable
           })}
         </ul>
       )}
-      {!list.length && !name && <div className="fr-tags-empty">Tags group stickies and cards by topic, owner or priority.</div>}
+      {!list.length && !name && <div className="fr-tags-empty">{tr('tagsGroupStickiesAndCards')}</div>}
       {name && !exact && (
         <div className="fr-tags-create">
-          <Button size="sm" variant="secondary" icon={Plus} onClick={create}>
-            Create “{name}”
-          </Button>
-          <ColorSwatches colors={TAG_COLORS} value={newColor} onChange={setColor} size={18} aria-label="New tag color" />
+          <Button size="sm" variant="secondary" icon={Plus} onClick={create}>{tr('createName', { name })}</Button>
+          <ColorSwatches colors={TAG_COLORS} value={newColor} onChange={setColor} size={18} aria-label={tr('newTagColor')} />
         </div>
       )}
       <div className="fr-tags-footer">
-        <Button size="sm" variant="ghost" icon={Settings2} onClick={onManage} disabled={!tags.length}>
-          Manage tags
-        </Button>
+        <Button size="sm" variant="ghost" icon={Settings2} onClick={onManage} disabled={!tags.length}>{tr('manageTags')}</Button>
       </div>
     </div>
   );
@@ -112,7 +109,7 @@ function ManageRow({ editor, tag, uses }: { editor: Editor; tag: Tag; uses: numb
           type="button"
           className="fr-tags-dot"
           style={{ background: tag.color }}
-          aria-label={`Color of ${tag.name}`}
+          aria-label={tr('colorOfName', { name: tag.name })}
           aria-expanded={recolor}
           onClick={() => setRecolor((r) => !r)}
         />
@@ -120,7 +117,7 @@ function ManageRow({ editor, tag, uses }: { editor: Editor; tag: Tag; uses: numb
           size="sm"
           value={name}
           maxLength={40}
-          aria-label={`Rename ${tag.name}`}
+          aria-label={tr('renameName', { name: tag.name })}
           onChange={(e) => setName(e.target.value)}
           onBlur={rename}
           onKeyDown={(e) => {
@@ -132,11 +129,9 @@ function ManageRow({ editor, tag, uses }: { editor: Editor; tag: Tag; uses: numb
           }}
         />
         {confirm ? (
-          <Button size="sm" variant="danger" onClick={remove} onBlur={() => setConfirm(false)} autoFocus>
-            Delete ({uses})
-          </Button>
+          <Button size="sm" variant="danger" onClick={remove} onBlur={() => setConfirm(false)} autoFocus>{tr('deleteUses', { uses })}</Button>
         ) : (
-          <IconButton icon={Trash2} label={uses ? `Delete tag (used on ${uses})` : 'Delete tag'} size={32} onClick={remove} />
+          <IconButton icon={Trash2} label={uses ? tr('deleteTagUsedOnUses', { uses }) : tr('deleteTag')} size={32} onClick={remove} />
         )}
       </div>
       {recolor && (
@@ -149,7 +144,7 @@ function ManageRow({ editor, tag, uses }: { editor: Editor; tag: Tag; uses: numb
             coll.set(tag.id, { ...tag, color: c });
             setRecolor(false);
           }}
-          aria-label={`Color of ${tag.name}`}
+          aria-label={tr('colorOfName', { name: tag.name })}
         />
       )}
     </li>
@@ -162,8 +157,8 @@ function Manager({ editor, tags, onBack }: { editor: Editor; tags: Tag[]; onBack
   return (
     <div className="fr-tags-pop">
       <div className="fr-tags-manage__head">
-        <IconButton icon={ArrowLeft} label="Back to tags" size={32} onClick={onBack} />
-        <span>Manage tags</span>
+        <IconButton icon={ArrowLeft} label={tr('backToTags')} size={32} onClick={onBack} />
+        <span>{tr('manageTags')}</span>
       </div>
       <ul className="fr-tags-manage">
         {search(tags, '').map((t) => (
@@ -183,12 +178,12 @@ function TagsControl({ editor, els }: { editor: Editor; els: Taggable[] }) {
   const count = new Set(els.flatMap((el) => (el.tags ?? []).filter((t) => known.has(t)))).size;
   return (
     <>
-      <Tooltip content="Tags" side="bottom">
+      <Tooltip content={tr('tags')} side="bottom">
         <button
           ref={ref}
           type="button"
           className="fr-tags-btn"
-          aria-label="Tags"
+          aria-label={tr('tags')}
           aria-expanded={open}
           onClick={() => {
             setManage(false);
@@ -199,7 +194,7 @@ function TagsControl({ editor, els }: { editor: Editor; els: Taggable[] }) {
           {count > 0 && <span className="fr-tags-btn__count">{count}</span>}
         </button>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={300} aria-label="Tags">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={300} aria-label={tr('tags')}>
         {manage ? (
           <Manager editor={editor} tags={tags} onBack={() => setManage(false)} />
         ) : (

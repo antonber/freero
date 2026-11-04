@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "Elemente nach Namen taggen",
+  "searchOrCreateATag": "Tag suchen oder erstellen",
+  "nameYourFirstTag": "Benennen Sie Ihren ersten Tag",
+  "tags": "Tags",
+  "tagsGroupStickiesAndCards": "Tags gruppieren Haftnotizen und Karten nach Thema, Verantwortlichem oder Priorität.",
+  "createName": "„{name}“ erstellen",
+  "newTagColor": "Farbe des neuen Tags",
+  "manageTags": "Tags verwalten",
+  "colorOfName": "Farbe von {name}",
+  "renameName": "{name} umbenennen",
+  "deleteUses": "Löschen ({uses})",
+  "deleteTagUsedOnUses": "Tag löschen (verwendet bei {uses})",
+  "deleteTag": "Tag löschen",
+  "backToTags": "Zurück zu den Tags"
+}

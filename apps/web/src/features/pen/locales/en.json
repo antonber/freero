@@ -1,0 +1,18 @@
+{
+  "drawing": "Drawing",
+  "drawings": "Drawings",
+  "color": "Color",
+  "strokeColor": "Stroke color",
+  "strokeWidth": "Stroke width",
+  "scratchedOutLengthItems": "{length, plural, one {Scratched out 1 item} other {Scratched out {length} items}}",
+  "undo": "Undo",
+  "drawingMode": "Drawing mode",
+  "pen": "Pen",
+  "highlighter": "Highlighter",
+  "eraser": "Eraser",
+  "lasso": "Lasso",
+  "highlighterColor": "Highlighter color",
+  "penColor": "Pen color",
+  "smartDrawing": "Smart drawing",
+  "roughRectanglesCirclesTrianglesDiamonds": "Rough rectangles, circles, triangles, diamonds, lines and arrows become clean ones. Rest the pen at the end of a stroke to straighten it; scribble over items to erase them."
+}

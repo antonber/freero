@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "举报白板…",
+  "report": "举报…",
+  "report2": "举报",
+  "thanksForYourReportFreero": "感谢你的举报。Freero 的审核人员会进行审核。",
+  "yourReportCouldNotBe": "无法发送你的举报。请重试。",
+  "reportTargetNoun": "举报{target_noun}",
+  "tellFreeroSModeratorsWhat": "告诉 Freero 的审核人员哪里有问题。白板所有者不会知道是谁举报的。",
+  "cancel": "取消",
+  "sendReport": "发送举报",
+  "whatSTheProblem": "出了什么问题？",
+  "detailsOptional": "详细信息（可选）",
+  "anythingThatHelpsUsUnderstand": "任何有助于我们了解情况的信息，例如它在白板上的位置",
+  "yourEmailOptional": "你的电子邮件（可选）",
+  "toHearWhatWeDecided": "以便获知我们的处理结果"
+}

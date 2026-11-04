@@ -3,6 +3,7 @@ import { CircleAlert, Unplug } from 'lucide-react';
 import { TRACKER_COLLECTION, type BoardElement, type TrackerIssueRecord } from '@freero/shared';
 import { defineDecoration, useCollection, useIsExporting } from '@engine';
 import { openIssue, recordOf } from './lib/links';
+import { t } from './messages';
 import './trackers.css';
 
 /** Below this zoom the badge is an unreadable speck. */
@@ -38,7 +39,7 @@ const IssueBadge = memo(function IssueBadge({ element, zoom }: { element: BoardE
         data-fr-interactive
         data-category={r.statusCategory ?? 'none'}
         title={exporting ? undefined : label}
-        aria-label={`Issue ${label}. Open in ${r.connection}`}
+        aria-label={t('issueLabelOpenInConnection', { label, connection: r.connection })}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();

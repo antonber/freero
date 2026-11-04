@@ -4,6 +4,7 @@
 import type { Host } from '@engine';
 import { mediaTypeOf, probeMedia, type Probed } from './probe';
 
+import { t } from '../messages';
 export type Uploads = Pick<Host, 'uploadFile' | 'uploadImage' | 'uploadAttachment'>;
 
 export type Stored =
@@ -17,7 +18,7 @@ const messageOf = (e: unknown, fallback: string) =>
   e instanceof Error && e.message && e.message !== 'Upload failed' && e.message !== 'Failed to fetch' ? e.message : fallback;
 
 export async function storeFile(host: Uploads, file: File, probe: (f: Blob) => Promise<Probed | null> = probeMedia): Promise<Stored> {
-  const failed = (e: unknown): Stored => ({ kind: 'error', file, message: messageOf(e, `Couldn't upload “${file.name}”. Try again later.`) });
+  const failed = (e: unknown): Stored => ({ kind: 'error', file, message: messageOf(e, t('couldnTUploadNameTry', { name: file.name })) });
   const type = mediaTypeOf(file);
   const probed = type ? await probe(file) : null;
   if (type && probed) {
@@ -39,7 +40,7 @@ export async function storeFile(host: Uploads, file: File, probe: (f: Blob) => P
       if (statusOf(e) !== 415) return failed(e);
     }
   }
-  if (!host.uploadAttachment) return { kind: 'error', file, message: 'Files can’t be added to this board.' };
+  if (!host.uploadAttachment) return { kind: 'error', file, message: t('filesCanTBeAdded') };
   try {
     return { kind: 'file', file, src: (await host.uploadAttachment(file)).url };
   } catch (e) {

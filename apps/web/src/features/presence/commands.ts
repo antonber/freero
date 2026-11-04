@@ -3,11 +3,12 @@ import { defineCommands } from '@engine';
 import { bringEveryone, presenceStore } from './lib/state';
 import { newTally } from './lib/model';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'presence.bringEveryone',
     icon: Megaphone,
-    label: 'Bring everyone to me',
+    label: t('bringEveryoneToMe'),
     menus: ['board'],
     minRole: 'viewer',
     when: (editor) => editor.getPeers().some((p) => p.user?.id !== editor.user.id),
@@ -17,7 +18,7 @@ export default defineCommands([
     // Presentation mode (features/present) asks for reaction counts while it runs: args { on }.
     // Turning it off (with no facilitation session of yours running) clears the counts.
     id: 'presence.countReactions',
-    label: 'Count reactions',
+    label: t('countReactions'),
     minRole: 'viewer',
     run(editor, args) {
       const on = args?.on === true;
@@ -29,7 +30,7 @@ export default defineCommands([
   {
     id: 'presence.stopFollowing',
     icon: EyeOff,
-    label: 'Stop following',
+    label: t('stopFollowing'),
     minRole: 'viewer',
     when: (editor) => !!editor.getFollowing() && !editor.getFollowing()?.locked,
     run: (editor) => editor.follow(null),

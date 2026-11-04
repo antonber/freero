@@ -20,6 +20,7 @@ import { Menu, readableTextColor, type MenuItem } from '@ui';
 import { axisTicks, dayOf, formatRange, localDay, weekday } from './lib/dates';
 import { BAR_H, HEAD_H, HORIZON_LABELS, HORIZON_W, LABEL_W, ROW_H, barSpan, dayX, gridOf, horizonsOf, isMemberType, laneAt, planTimeline, type Grid, type Member, type MemberInput } from './lib/layout';
 import { BAR_COLORS, LANE_COLORS, addBar, addLane, lanePart, moveLane, parseLanePart, patchLane, removeLane, renameLane } from './lib/actions';
+import { t as tr } from './messages';
 import './timeline.css';
 
 /** Below this zoom labels are unreadable: draw only the lanes and the grid. */
@@ -34,27 +35,27 @@ function LaneMenu({ editor, t, lane, index }: { editor: Editor; t: TimelineEleme
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const items: MenuItem[] = [
-    { id: 'rename', label: 'Rename', icon: Pencil, onSelect: () => renameLane(editor, t.id, lane.id) },
+    { id: 'rename', label: tr('rename'), icon: Pencil, onSelect: () => renameLane(editor, t.id, lane.id) },
     {
       id: 'color',
-      label: 'Colour',
+      label: tr('colour'),
       icon: Palette,
       onSelect: () => undefined,
       submenu: LANE_COLORS.map((c, i) => ({ id: c, label: COLOR_NAMES[i], checked: lane.color === c, onSelect: () => patchLane(editor, t.id, lane.id, { color: c }) })),
     },
     { divider: true },
-    { id: 'up', label: 'Move up', icon: ArrowUp, disabled: index === 0, onSelect: () => moveLane(editor, t.id, lane.id, -1) },
-    { id: 'down', label: 'Move down', icon: ArrowDown, disabled: index === t.lanes.length - 1, onSelect: () => moveLane(editor, t.id, lane.id, 1) },
-    { id: 'add', label: 'Add lane below', icon: Plus, onSelect: () => addLane(editor, t.id, index + 1) },
-    { id: 'bar', label: 'Add bar in this lane', icon: ChartGantt, onSelect: () => addBar(editor, t.id, { at: laneStartPoint(t, index) }) },
+    { id: 'up', label: tr('moveUp'), icon: ArrowUp, disabled: index === 0, onSelect: () => moveLane(editor, t.id, lane.id, -1) },
+    { id: 'down', label: tr('moveDown'), icon: ArrowDown, disabled: index === t.lanes.length - 1, onSelect: () => moveLane(editor, t.id, lane.id, 1) },
+    { id: 'add', label: tr('addLaneBelow'), icon: Plus, onSelect: () => addLane(editor, t.id, index + 1) },
+    { id: 'bar', label: tr('addBarInThisLane'), icon: ChartGantt, onSelect: () => addBar(editor, t.id, { at: laneStartPoint(t, index) }) },
     { divider: true },
     {
       id: 'delete',
-      label: 'Delete lane',
+      label: tr('deleteLane'),
       icon: Trash2,
       danger: true,
       disabled: t.lanes.length < 2,
-      disabledReason: 'A timeline keeps at least one lane',
+      disabledReason: tr('aTimelineKeepsAtLeast'),
       onSelect: () => removeLane(editor, t.id, lane.id),
     },
   ];
@@ -65,7 +66,7 @@ function LaneMenu({ editor, t, lane, index }: { editor: Editor; t: TimelineEleme
         type="button"
         className={`fr-timeline__menu${open ? ' is-open' : ''}`}
         data-fr-interactive=""
-        aria-label={`Lane options: ${richTextToPlain(lane.title) || 'Untitled'}`}
+        aria-label={tr('laneOptionsValue', { value: richTextToPlain(lane.title) || tr('untitled') })}
         aria-haspopup="menu"
         aria-expanded={open}
         onPointerDown={(e) => e.stopPropagation()}
@@ -73,7 +74,7 @@ function LaneMenu({ editor, t, lane, index }: { editor: Editor; t: TimelineEleme
       >
         <MoreHorizontal size={14} aria-hidden />
       </button>
-      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label="Lane options" />
+      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label={tr('laneOptions')} />
     </>
   );
 }
@@ -167,7 +168,7 @@ const TimelineView = memo(function TimelineView({ element: t, selected, zoom }: 
             color="var(--fr-ink)"
             padding={{ top: 0, right: 10, bottom: 0, left: 14 }}
             style={{ fontWeight: 650 }}
-            placeholder="Timeline"
+            placeholder={tr('timeline')}
           />
         )}
       </div>
@@ -188,7 +189,7 @@ const TimelineView = memo(function TimelineView({ element: t, selected, zoom }: 
                 color="var(--fr-ink)"
                 padding={{ top: 10, right: 28, bottom: 8, left: 14 }}
                 style={{ fontWeight: 600 }}
-                placeholder="Lane"
+                placeholder={tr('lane')}
               />
             )}
             {controls && <LaneMenu editor={editor} t={t} lane={lane} index={i} />}
@@ -197,12 +198,10 @@ const TimelineView = memo(function TimelineView({ element: t, selected, zoom }: 
       ))}
       {t.view === 'horizons' ? <Horizons t={t} g={g} lod={lod} today={today} /> : <Axis t={t} g={g} lod={lod} />}
       {showToday && t.view !== 'horizons' && (
-        <div className="fr-timeline__today" style={{ left: dayX(g, today) + g.ppd / 2, height: g.h - HEAD_H, top: HEAD_H }} aria-label="Today" />
+        <div className="fr-timeline__today" style={{ left: dayX(g, today) + g.ppd / 2, height: g.h - HEAD_H, top: HEAD_H }} aria-label={tr('today')} />
       )}
       {empty && !lod && !exporting && canEdit && (
-        <div className="fr-timeline__hint" style={{ left: LABEL_W + 16, top: g.laneTops[0] + 14 }}>
-          Double-click a lane to add a bar, or drop task cards here
-        </div>
+        <div className="fr-timeline__hint" style={{ left: LABEL_W + 16, top: g.laneTops[0] + 14 }}>{tr('doubleClickALaneTo')}</div>
       )}
     </div>
   );
@@ -222,7 +221,7 @@ const BarView = memo(function BarView({ element: b, zoom }: ElementRenderProps<T
         <div className="fr-tlbar__diamond" style={{ background: color }} />
         {!lod && (
           <div className="fr-tlbar__label" style={{ left: BAR_H + 6 }}>
-            <ElementText element={b} field="title" fontSize={13} fontFamily="sans" align="left" vAlign="middle" color="var(--fr-ink)" padding={0} style={{ fontWeight: 600, whiteSpace: 'nowrap' }} placeholder="Milestone" />
+            <ElementText element={b} field="title" fontSize={13} fontFamily="sans" align="left" vAlign="middle" color="var(--fr-ink)" padding={0} style={{ fontWeight: 600, whiteSpace: 'nowrap' }} placeholder={tr('milestone')} />
           </div>
         )}
       </div>
@@ -244,7 +243,7 @@ const BarView = memo(function BarView({ element: b, zoom }: ElementRenderProps<T
             color={outside ? 'var(--fr-ink)' : ink}
             padding={outside ? 0 : { top: 0, right: 8, bottom: 0, left: 10 }}
             style={{ fontWeight: 600, whiteSpace: 'nowrap' }}
-            placeholder="Bar"
+            placeholder={tr('bar')}
           />
         </div>
       )}
@@ -254,7 +253,7 @@ const BarView = memo(function BarView({ element: b, zoom }: ElementRenderProps<T
 
 const timeline = defineElement({
   type: 'timeline',
-  label: { one: 'Timeline', many: 'Timelines' },
+  label: { one: tr('timeline'), many: tr('timelines') },
   icon: ChartGantt,
   // Side handles move the range's first / last day; the height follows the lanes.
   resize: 'free',
@@ -262,7 +261,7 @@ const timeline = defineElement({
   container: true,
   minSize: { w: LABEL_W + 60, h: HEAD_H + 40 },
   defaults: (): Omit<NewElement<'timeline'>, 'x' | 'y'> => {
-    const fields = { title: 'Timeline', start: '2026-01-05', end: '2026-03-01', scale: 'week' as const, lanes: [{ id: 'lane', title: 'Lane', color: LANE_COLORS[0], rows: 2 }] };
+    const fields = { title: tr('timeline'), start: '2026-01-05', end: '2026-03-01', scale: 'week' as const, lanes: [{ id: 'lane', title: tr('lane'), color: LANE_COLORS[0], rows: 2 }] };
     const { w, h } = gridOf(fields);
     return { type: 'timeline', ...fields, w, h };
   },
@@ -307,7 +306,7 @@ const timeline = defineElement({
 
 const bar = defineElement({
   type: 'timelinebar',
-  label: { one: 'Timeline bar', many: 'Timeline bars' },
+  label: { one: tr('timelineBar'), many: tr('timelineBars') },
   icon: Diamond,
   // Side handles change the dates; the height is the timeline's.
   resize: 'width-only',

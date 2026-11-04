@@ -11,18 +11,17 @@ import { notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
-import { getUser, getUsers, markEmailVerified } from '../auth/index';
+import { getUser, getUsers, localeOfEmail, localesOf, markEmailVerified } from '../auth/index';
 import { getBoardAccess, getBoardTitle } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
 import { inviteAccepted } from './events';
+import { t } from './messages';
 import * as repo from './repo';
 import type { MemberRole } from './roles';
 
 export const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
-
-const ROLE_PHRASE: Record<MemberRole, string> = { editor: 'edit', commenter: 'comment on', viewer: 'view' };
 
 export function toPending(i: repo.InviteRow, inviterName: string): PendingInvite {
   return { id: i.id, email: i.email, role: i.role, invitedById: i.invitedBy, invitedByName: inviterName, createdAt: i.createdAt, expiresAt: i.expiresAt };
@@ -36,14 +35,18 @@ export async function listPending(boardId: string): Promise<PendingInvite[]> {
 
 async function sendInviteMail(req: Request | null, to: string, token: string, boardTitle: string, inviter: User, role: MemberRole): Promise<void> {
   try {
+    // The invitee's language if the address has an account, else the inviter's (#5).
+    const locale = (await localeOfEmail(to)) ?? (await localesOf([inviter.id])).get(inviter.id) ?? null;
+    const vars = { inviter: inviter.name, board: boardTitle, email: inviter.email, role };
     await sendMail({
       to,
       ...renderMail({
-        subject: `${inviter.name} invited you to “${boardTitle}” on Freero`,
-        title: `${inviter.name} invited you to a board`,
-        paragraphs: [`You can ${ROLE_PHRASE[role]} “${boardTitle}”. Freero is a free online whiteboard; you'll need a free account to open it.`],
-        action: { label: 'Open the board', url: appUrl(req, `/invite/${token}`) },
-        outro: `${inviter.name} (${inviter.email}) sent this invite. The link works once and expires in 14 days.`,
+        locale,
+        subject: t(locale, 'invite.subject', vars),
+        title: t(locale, 'invite.title', vars),
+        paragraphs: [t(locale, 'invite.body', vars)],
+        action: { label: t(locale, 'invite.action'), url: appUrl(req, `/invite/${token}`) },
+        outro: t(locale, 'invite.outro', vars),
       }),
     });
   } catch (e) {

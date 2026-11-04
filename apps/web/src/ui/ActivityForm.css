@@ -39,7 +39,7 @@
   background: var(--fr-surface, #fff);
   color: var(--fr-ink);
   font: 500 15px/1.3 var(--fr-font);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -223,7 +223,7 @@
 
 .fr-actform__pin span {
   position: absolute;
-  left: 14px;
+  inset-inline-start: 14px;
   top: -4px;
   white-space: nowrap;
   font: 600 12px var(--fr-font);
@@ -267,7 +267,7 @@
 }
 
 .fr-actform__tag {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 12px;
   font-weight: 700;
   color: #137a43;

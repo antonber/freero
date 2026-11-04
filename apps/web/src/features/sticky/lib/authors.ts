@@ -4,9 +4,10 @@
 import { actingFor, ANONYMOUS_NAME, isAnonymousAuthor, type BoardElement, type PrivateModeSession } from '@freero/shared';
 import type { Editor, ElementLayer, HostUser } from '@engine';
 
+import { t } from '../messages';
 export const COLLECTION = 'stickyLabels';
 const KEY = 'authors';
-export const DELETED_USER = 'Deleted user';
+export const DELETED_USER = t('deletedUser');
 
 export interface AuthorLabels {
   on: boolean;

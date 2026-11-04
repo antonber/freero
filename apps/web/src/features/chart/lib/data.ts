@@ -19,6 +19,7 @@ import {
 import type { Collection, Editor, NewElement, Point } from '@engine';
 import { nanoid } from 'nanoid';
 
+import { t } from '../messages';
 export const CELLS = CHART_CELLS;
 export const newId = () => nanoid(10);
 
@@ -109,13 +110,13 @@ export function pasteRows(editor: Editor, chart: ChartElement, text: string): bo
     replaceData(editor, chart, chartGridFromRows(rows));
   } catch (e) {
     if (!(e instanceof ChartDataError)) throw e;
-    editor.host.notify(`Nothing pasted: ${e.message}.`, 'error');
+    editor.host.notify(t('nothingPastedMessage', { message: e.message }), 'error');
   }
   return true;
 }
 
 export function addRow(editor: Editor, el: ChartElement): void {
-  if (el.rows.length >= CHART_LIMITS.rows) return editor.host.notify(`A chart can show at most ${CHART_LIMITS.rows} rows`, 'info');
+  if (el.rows.length >= CHART_LIMITS.rows) return editor.host.notify(t('aChartCanShowAt', { rows: CHART_LIMITS.rows }), 'info');
   editor.update<ChartElement>(el.id, { rows: [...el.rows, { id: newId() }] });
 }
 
@@ -129,7 +130,7 @@ export function removeRow(editor: Editor, el: ChartElement, rowId: string): void
 }
 
 export function addSeries(editor: Editor, el: ChartElement): void {
-  if (el.series.length >= CHART_LIMITS.series) return editor.host.notify(`A chart can show at most ${CHART_LIMITS.series} series`, 'info');
+  if (el.series.length >= CHART_LIMITS.series) return editor.host.notify(t('aChartCanShowAt2', { series: CHART_LIMITS.series }), 'info');
   editor.update<ChartElement>(el.id, { series: [...el.series, { id: newId() }] });
 }
 
@@ -146,7 +147,7 @@ export function removeSeries(editor: Editor, el: ChartElement, seriesId: string)
 export const isValue = (text: string) => !text.trim() || parseChartNumber(text) !== null;
 
 const SAMPLE: string[][] = [
-  ['', 'This year', 'Last year'],
+  ['', t('thisYear'), t('lastYear')],
   ['Q1', '12', '9'],
   ['Q2', '18', '14'],
   ['Q3', '15', '16'],

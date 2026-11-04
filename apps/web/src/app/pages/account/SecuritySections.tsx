@@ -10,6 +10,7 @@ import { relativeTime } from '../../lib/time';
 import { ProviderMark, providerErrorText } from '../auth/ProviderButtons';
 import { Section } from './Section';
 
+import { t } from './messages';
 export const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
 export const isReauthRequired = (err: unknown) => err instanceof ApiError && err.code === REAUTH_REQUIRED;
 
@@ -23,11 +24,10 @@ export function ReauthPrompt({ security, children }: { security: SecurityInfo; c
   const identity = security.identities.find((i) => security.providers.some((p) => p.id === i.provider));
   return (
     <div className="fr-acct-reauth" role="status">
-      <span>{children ?? 'For your security, confirm it’s you before changing this.'}</span>
+      <span>{children ?? t('forYourSecurityConfirmIt')}</span>
       {identity ? (
         <a className="fr-acct-reauth__btn" href={providerUrl(identity.provider, 'reauth', '/settings')}>
-          <ProviderMark label={identity.providerLabel} /> Confirm with {identity.providerLabel}
-        </a>
+          <ProviderMark label={identity.providerLabel} />{' '}{t('confirmWithProviderlabel', { providerLabel: identity.providerLabel })}</a>
       ) : null}
     </div>
   );
@@ -50,7 +50,7 @@ export function SignInMethodsSection({
     const connected = params.get('connected');
     const err = params.get('error');
     if (!connected && !err) return;
-    if (connected) notify('Connected. You can now log in with it.', 'success');
+    if (connected) notify(t('connectedYouCanNowLog'), 'success');
     if (err) setError(providerErrorText(err));
     const rest = new URLSearchParams(params);
     rest.delete('connected');
@@ -65,9 +65,9 @@ export function SignInMethodsSection({
     setError(null);
     try {
       onChange(await api.disconnectIdentity(id));
-      notify(`${label} disconnected`, 'info');
+      notify(t('labelDisconnected', { label }), 'info');
     } catch (err) {
-      setError(errorText(err, `Could not disconnect ${label}`));
+      setError(errorText(err, t('couldNotDisconnectLabel', { label })));
     }
   };
 
@@ -80,15 +80,15 @@ export function SignInMethodsSection({
   ];
 
   return (
-    <Section id="sign-in" title="Sign-in methods" description="Ways you can log in to this account.">
+    <Section id="sign-in" title={t('signInMethods')} description={t('waysYouCanLogIn')}>
       <ul className="fr-acct-methods">
         <li className="fr-acct-method">
           <span className="fr-acct-method__icon" aria-hidden>
             <KeyRound size={16} />
           </span>
           <span className="fr-acct-method__who">
-            <span className="fr-acct-method__name">Password</span>
-            <span className="fr-acct-method__meta">{security.hasPassword ? 'Set' : 'Not set — you log in with a provider'}</span>
+            <span className="fr-acct-method__name">{t('password')}</span>
+            <span className="fr-acct-method__meta">{security.hasPassword ? t('set') : t('notSetYouLogIn')}</span>
           </span>
         </li>
         {rows.map(({ provider, label, identity }) => (
@@ -98,8 +98,8 @@ export function SignInMethodsSection({
               <span className="fr-acct-method__name">{label}</span>
               <span className="fr-acct-method__meta">
                 {identity
-                  ? [identity.email ? `Connected as ${identity.email}` : 'Connected', `last used ${relativeTime(identity.lastUsedAt)}`].join(' · ')
-                  : 'Not connected'}
+                  ? [identity.email ? t('connectedAsEmail', { email: identity.email }) : 'Connected', `last used ${relativeTime(identity.lastUsedAt)}`].join(' · ')
+                  : t('notConnected')}
               </span>
             </span>
             {identity ? (
@@ -110,21 +110,16 @@ export function SignInMethodsSection({
                 disabled={onlyWayIn(identity.id)}
                 aria-describedby={onlyWayIn(identity.id) ? 'fr-acct-only-way' : undefined}
                 onClick={() => disconnect(identity.id, label)}
-              >
-                Disconnect
-              </Button>
+              >{t('disconnect')}</Button>
             ) : (
               <a className="fr-acct-method__connect" href={providerUrl(provider, 'link', '/settings')}>
-                <Link2 size={14} aria-hidden /> Connect
-              </a>
+                <Link2 size={14} aria-hidden />{' '}{t('connect')}</a>
             )}
           </li>
         ))}
       </ul>
       {!security.hasPassword && security.identities.length === 1 ? (
-        <p className="fr-acct__hint" id="fr-acct-only-way">
-          To disconnect {security.identities[0].providerLabel}, set a password below or connect another provider first.
-        </p>
+        <p className="fr-acct__hint" id="fr-acct-only-way">{t('toDisconnectProviderlabelSetA', { providerLabel: security.identities[0].providerLabel })}</p>
       ) : null}
       {error ? (
         <p className="fr-acct__error" role="alert">
@@ -146,13 +141,13 @@ type Step =
 
 function RecoveryCodes({ codes }: { codes: string[] }) {
   const notify = useToast();
-  const text = `Freero recovery codes\n\nEach code signs you in once if you can't use your authenticator app.\n\n${codes.join('\n')}\n`;
+  const text = t('freeroRecoveryCodesEachCode', { codes: codes.join('\n') });
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      notify('Recovery codes copied', 'success');
+      notify(t('recoveryCodesCopied'), 'success');
     } catch {
-      notify('Could not copy. Select the codes and copy them by hand.', 'error');
+      notify(t('couldNotCopySelectThe'), 'error');
     }
   };
   const download = () => {
@@ -165,18 +160,14 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
   };
   return (
     <>
-      <ol className="fr-acct-codes" aria-label="Recovery codes">
+      <ol className="fr-acct-codes" aria-label={t('recoveryCodes')}>
         {codes.map((c) => (
           <li key={c}>{c}</li>
         ))}
       </ol>
       <div className="fr-acct-form__row">
-        <Button size="sm" icon={Copy} onClick={copy}>
-          Copy
-        </Button>
-        <Button size="sm" icon={Download} onClick={download}>
-          Download
-        </Button>
+        <Button size="sm" icon={Copy} onClick={copy}>{t('copy')}</Button>
+        <Button size="sm" icon={Download} onClick={download}>{t('download')}</Button>
       </div>
     </>
   );
@@ -230,7 +221,7 @@ export function TwoFactorSection({
       const setup = await api.setupTwoFactor(pw);
       reset({ kind: 'scan', setup });
     } catch (err) {
-      fail(err, 'Could not start the setup');
+      fail(err, t('couldNotStartTheSetup'));
     }
   };
 
@@ -249,9 +240,9 @@ export function TwoFactorSection({
     try {
       const { recoveryCodes } = await api.enableTwoFactor(code.trim());
       reset({ kind: 'codes', codes: recoveryCodes, fresh: true });
-      notify('Two-step verification is on. Other devices were signed out.', 'success');
+      notify(t('twoStepVerificationIsOn'), 'success');
     } catch (err) {
-      fail(err, 'Could not turn it on');
+      fail(err, t('couldNotTurnItOn'));
     }
   };
 
@@ -264,14 +255,14 @@ export function TwoFactorSection({
       if (step.purpose === 'disable') {
         await api.disableTwoFactor(code.trim(), askPassword ? password : undefined);
         reset({ kind: 'closed' });
-        notify('Two-step verification is off', 'info');
+        notify(t('twoStepVerificationIsOff'), 'info');
         onChanged();
       } else {
         const { recoveryCodes } = await api.regenerateRecoveryCodes(code.trim(), askPassword ? password : undefined);
         reset({ kind: 'codes', codes: recoveryCodes, fresh: false });
       }
     } catch (err) {
-      fail(err, 'That didn’t work. Please try again.');
+      fail(err, t('thatDidnTWorkPlease'));
     }
   };
 
@@ -279,10 +270,10 @@ export function TwoFactorSection({
     setBusy(true);
     try {
       await api.cancelTwoFactorRecovery();
-      notify('Recovery cancelled. Two-step verification stays on.', 'success');
+      notify(t('recoveryCancelledTwoStepVerification'), 'success');
       onChanged();
     } catch (err) {
-      notify(errorText(err, 'Could not cancel the recovery'), 'error');
+      notify(errorText(err, t('couldNotCancelTheRecovery')), 'error');
     } finally {
       setBusy(false);
     }
@@ -296,7 +287,7 @@ export function TwoFactorSection({
 
   const passwordField = (
     <Input
-      label="Your password"
+      label={t('yourPassword')}
       type="password"
       autoComplete="current-password"
       value={password}
@@ -324,17 +315,17 @@ export function TwoFactorSection({
   return (
     <Section
       id="two-factor"
-      title="Two-step verification"
-      description="When you log in, Freero also asks for a code from an authenticator app on your phone."
+      title={t('twoStepVerification')}
+      description={t('whenYouLogInFreero')}
     >
       <div className="fr-acct-email">
         {tf.enabled ? <ShieldCheck size={18} aria-hidden /> : <ShieldOff size={18} aria-hidden />}
-        <span className="fr-acct-email__addr">{tf.enabled ? 'Authenticator app' : 'Off'}</span>
+        <span className="fr-acct-email__addr">{tf.enabled ? t('authenticatorApp') : t('off')}</span>
         {tf.enabled ? (
           <>
-            <span className="fr-acct-badge fr-acct-badge--ok">On</span>
+            <span className="fr-acct-badge fr-acct-badge--ok">{t('on')}</span>
             <span className={tf.recoveryCodesLeft <= 3 ? 'fr-acct-badge fr-acct-badge--warn' : 'fr-acct__hint'}>
-              {tf.recoveryCodesLeft === 1 ? '1 recovery code left' : `${tf.recoveryCodesLeft} recovery codes left`}
+              {t('recoverycodesleftRecoveryCodesLeft', { recoveryCodesLeft: tf.recoveryCodesLeft })}
             </span>
           </>
         ) : null}
@@ -342,15 +333,9 @@ export function TwoFactorSection({
       {tf.requiredBy ? <p className="fr-acct__hint">{tf.requiredBy}.</p> : null}
       {tf.recovery ? (
         <div className="fr-acct-form">
-          <p className="fr-acct__error" role="alert">
-            Someone started an account recovery that removes two-step verification on{' '}
-            {new Date(tf.recovery.readyAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}. If it wasn’t you, cancel
-            it and change your password.
-          </p>
+          <p className="fr-acct__error" role="alert">{t('someoneStartedAnAccountRecovery', { value: new Date(tf.recovery.readyAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) })}</p>
           <div className="fr-acct-form__row">
-            <Button variant="danger" loading={busy && step.kind === 'closed'} onClick={cancelRecovery}>
-              Cancel the recovery
-            </Button>
+            <Button variant="danger" loading={busy && step.kind === 'closed'} onClick={cancelRecovery}>{t('cancelTheRecovery')}</Button>
           </div>
         </div>
       ) : null}
@@ -358,38 +343,32 @@ export function TwoFactorSection({
       <div className="fr-acct-form__row">
         {tf.enabled ? (
           <>
-            <Button onClick={() => openVerify('regenerate')}>New recovery codes</Button>
+            <Button onClick={() => openVerify('regenerate')}>{t('newRecoveryCodes')}</Button>
             <Button
               variant="ghost"
               disabled={!!tf.requiredBy}
               onClick={() => openVerify('disable')}
-            >
-              Turn off
-            </Button>
+            >{t('turnOff')}</Button>
           </>
         ) : (
-          <Button variant="primary" icon={ShieldCheck} loading={busy && step.kind === 'closed'} onClick={start}>
-            Turn on
-          </Button>
+          <Button variant="primary" icon={ShieldCheck} loading={busy && step.kind === 'closed'} onClick={start}>{t('turnOn')}</Button>
         )}
       </div>
 
       <Modal
         open={step.kind === 'confirm'}
         onClose={close}
-        title="Turn on two-step verification"
+        title={t('turnOnTwoStepVerification')}
         width={440}
         footer={
           <>
-            <Button onClick={close}>Cancel</Button>
-            <Button variant="primary" loading={busy} disabled={!password} onClick={() => begin(password)}>
-              Continue
-            </Button>
+            <Button onClick={close}>{t('cancel')}</Button>
+            <Button variant="primary" loading={busy} disabled={!password} onClick={() => begin(password)}>{t('continue')}</Button>
           </>
         }
       >
         <form className="fr-acct-form" onSubmit={(e) => (e.preventDefault(), void begin(password))} noValidate>
-          <p className="fr-acct__p">First, confirm it’s you.</p>
+          <p className="fr-acct__p">{t('firstConfirmItSYou')}</p>
           {passwordField}
           {errorLine}
           <button type="submit" hidden />
@@ -399,31 +378,26 @@ export function TwoFactorSection({
       <Modal
         open={step.kind === 'scan'}
         onClose={close}
-        title="Scan with your authenticator app"
+        title={t('scanWithYourAuthenticatorApp')}
         width={460}
         footer={
           <>
-            <Button onClick={close}>Cancel</Button>
-            <Button variant="primary" loading={busy} disabled={code.trim().length < 6} onClick={enable}>
-              Turn on
-            </Button>
+            <Button onClick={close}>{t('cancel')}</Button>
+            <Button variant="primary" loading={busy} disabled={code.trim().length < 6} onClick={enable}>{t('turnOn')}</Button>
           </>
         }
       >
         {step.kind === 'scan' ? (
           <form className="fr-acct-form" onSubmit={enable} noValidate>
-            <p className="fr-acct__p">
-              Scan this code with an authenticator app (for example the one built into your password manager), then enter the
-              6-digit code it shows.
-            </p>
+            <p className="fr-acct__p">{t('scanThisCodeWithAn')}</p>
             <div className="fr-acct-qr">
-              <img src={step.setup.qr} alt="QR code for your authenticator app" width={176} height={176} />
+              <img src={step.setup.qr} alt={t('qrCodeForYourAuthenticator')} width={176} height={176} />
               <div className="fr-acct-qr__manual">
-                <span className="fr-acct__hint">Can’t scan it? Enter this key:</span>
+                <span className="fr-acct__hint">{t('canTScanItEnter')}</span>
                 <code data-testid="totp-secret">{step.setup.secret.replace(/(.{4})/g, '$1 ').trim()}</code>
               </div>
             </div>
-            {codeField('Code from the app')}
+            {codeField(t('codeFromTheApp'))}
             {errorLine}
             <button type="submit" hidden />
           </form>
@@ -433,20 +407,16 @@ export function TwoFactorSection({
       <Modal
         open={step.kind === 'codes'}
         onClose={close}
-        title="Save your recovery codes"
+        title={t('saveYourRecoveryCodes')}
         width={460}
         dismissable={false}
         footer={
-          <Button variant="primary" onClick={close}>
-            I’ve saved them
-          </Button>
+          <Button variant="primary" onClick={close}>{t('iVeSavedThem')}</Button>
         }
       >
         {step.kind === 'codes' ? (
           <div className="fr-acct-form">
-            <p className="fr-acct__p">
-              If you lose your phone, each of these codes lets you log in once. Keep them somewhere safe — they won’t be shown
-              again.{step.fresh ? '' : ' Your previous codes no longer work.'}
+            <p className="fr-acct__p">{t('ifYouLoseYourPhone')}{step.fresh ? '' : t('yourPreviousCodesNoLonger')}
             </p>
             <RecoveryCodes codes={step.codes} />
           </div>
@@ -456,30 +426,30 @@ export function TwoFactorSection({
       <Modal
         open={step.kind === 'verify'}
         onClose={close}
-        title={step.kind === 'verify' && step.purpose === 'disable' ? 'Turn off two-step verification?' : 'Get new recovery codes'}
+        title={step.kind === 'verify' && step.purpose === 'disable' ? t('turnOffTwoStepVerification') : t('getNewRecoveryCodes')}
         width={440}
         footer={
           <>
-            <Button onClick={close}>Cancel</Button>
+            <Button onClick={close}>{t('cancel')}</Button>
             <Button
               variant={step.kind === 'verify' && step.purpose === 'disable' ? 'danger' : 'primary'}
               loading={busy}
               disabled={!code.trim() || (askPassword && !password)}
               onClick={verify}
             >
-              {step.kind === 'verify' && step.purpose === 'disable' ? 'Turn off' : 'Get new codes'}
+              {step.kind === 'verify' && step.purpose === 'disable' ? t('turnOff') : t('getNewCodes')}
             </Button>
           </>
         }
       >
         <form className="fr-acct-form" onSubmit={verify} noValidate>
           {step.kind === 'verify' && step.purpose === 'disable' ? (
-            <p className="fr-acct__p">Your account will be protected by your {askPassword ? 'password' : 'sign-in provider'} alone.</p>
+            <p className="fr-acct__p">{t('yourAccountWillBeProtected')}{' '}{askPassword ? 'password' : t('signInProvider')}{' '}{t('alone')}</p>
           ) : (
-            <p className="fr-acct__p">Your current recovery codes will stop working.</p>
+            <p className="fr-acct__p">{t('yourCurrentRecoveryCodesWill')}</p>
           )}
           {askPassword ? passwordField : null}
-          {codeField('Code from your authenticator app', 'Or one of your recovery codes')}
+          {codeField(t('codeFromYourAuthenticatorApp'), t('orOneOfYourRecovery'))}
           {errorLine}
           <button type="submit" hidden />
         </form>

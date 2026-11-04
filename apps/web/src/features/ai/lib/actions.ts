@@ -3,6 +3,7 @@
 import { layoutStructure, richTextToPlain, type AiActionResponse, type AiTask, type BoardElement } from '@freero/shared';
 import type { Editor } from '@engine';
 
+import { t } from '../messages';
 export const AI_DIALOG = 'ai.dialog';
 export const CATCH_UP_DIALOG = 'ai.catch-up';
 
@@ -21,7 +22,7 @@ export const aiOfferedHere = (editor: Editor): boolean => aiAvailable(editor) ||
 /** Tells the person why AI can't run here; true when it can. */
 export function aiOrExplain(editor: Editor): boolean {
   if (aiAvailable(editor)) return true;
-  editor.host.notify(editor.host.aiUnavailable ?? 'AI actions add to the board, so they need edit access.', 'info');
+  editor.host.notify(editor.host.aiUnavailable ?? t('aiActionsAddToThe'), 'info');
   return false;
 }
 
@@ -100,7 +101,7 @@ export function fillNote(editor: Editor, res: AiActionResponse, noteId: string, 
   // What the note said, without its "Summary" title; the AI's note without its own title.
   const had = lines(note.text).slice(1).join('\n').trim();
   const said = lines(made.text).slice(1).join('\n').trim();
-  const laid = layoutStructure({ kind: 'note', title: 'Summary', text: [had, said].filter(Boolean).join('\n\n') }, { newId: () => noteId });
+  const laid = layoutStructure({ kind: 'note', title: t('summary'), text: [had, said].filter(Boolean).join('\n\n') }, { newId: () => noteId });
   const next = laid.elements[0] as unknown as { text: string; h: number };
   const grow = Math.max(0, Math.round(next.h - note.h));
   const bottom = note.y + note.h;

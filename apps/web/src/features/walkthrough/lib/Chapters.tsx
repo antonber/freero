@@ -11,7 +11,8 @@ import { CHAPTERS_ID } from './ids';
 import { updateWalkthrough, usePlayer } from './playback';
 import { chapterAt, parseChapterLines } from './timeline';
 
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong');
+import { t as tr } from '../messages';
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : tr('somethingWentWrong'));
 const asLines = (chapters: WalkthroughChapter[] | undefined) => (chapters ?? []).map((c) => `${formatWalkthroughTime(c.atMs)} ${c.title}`).join('\n');
 
 /** The list viewers jump from (beside the open dock, like the comments). */
@@ -21,15 +22,15 @@ export function ChaptersList({ editor, w, t, onSeek, onClose, onEdit }: { editor
   const right = Math.max(16, editor.getViewportSize().width - (safe.x + safe.w) + 12);
   const current = chapterAt(w.chapters, t);
   return (
-    <section className="fr-walkthrough-comments fr-walkthrough-chapters" style={{ right }} aria-label="Chapters of this walkthrough" data-fr-interactive="">
+    <section className="fr-walkthrough-comments fr-walkthrough-chapters" style={{ right }} aria-label={tr('chaptersOfThisWalkthrough')} data-fr-interactive="">
       <header className="fr-walkthrough-comments__head">
-        <h2>Chapters</h2>
-        {onEdit && <IconButton icon={PenLine} label={w.chapters?.length || w.summary ? 'Edit summary and chapters' : 'Add summary and chapters'} onClick={onEdit} />}
-        <IconButton icon={X} label="Close chapters" onClick={onClose} />
+        <h2>{tr('chapters')}</h2>
+        {onEdit && <IconButton icon={PenLine} label={w.chapters?.length || w.summary ? tr('editSummaryAndChapters') : tr('addSummaryAndChapters')} onClick={onEdit} />}
+        <IconButton icon={X} label={tr('closeChapters')} onClick={onClose} />
       </header>
       {w.summary && <p className="fr-walkthrough-chapters__summary">{w.summary}</p>}
       <ol className="fr-walkthrough-comments__list" data-fr-scrollable="">
-        {!w.chapters?.length && <li className="fr-walkthrough-comments__empty">{onEdit ? 'No chapters yet. Add them with the pencil, by hand or with AI from the captions.' : 'No chapters yet.'}</li>}
+        {!w.chapters?.length && <li className="fr-walkthrough-comments__empty">{onEdit ? tr('noChaptersYetAddThem') : tr('noChaptersYet')}</li>}
         {w.chapters?.map((c) => (
           <li key={c.atMs}>
             <button type="button" className={`fr-walkthrough-chapters__item${current?.atMs === c.atMs ? ' is-current' : ''}`} onClick={() => onSeek(c.atMs)} aria-current={current?.atMs === c.atMs || undefined}>
@@ -70,7 +71,7 @@ export function ChaptersDialog({ editor, props }: PanelProps) {
     try {
       const x = await host.setChapters(w.id, { summary: summary.trim(), chapters: parseChapterLines(lines, w.durationMs) });
       updateWalkthrough(x);
-      editor.host.notify(x.chapters?.length || x.summary ? 'Summary and chapters saved' : 'Summary and chapters removed', 'success');
+      editor.host.notify(x.chapters?.length || x.summary ? tr('summaryAndChaptersSaved') : tr('summaryAndChaptersRemoved'), 'success');
       close();
     } catch (e) {
       editor.host.notify(message(e), 'error');
@@ -94,7 +95,7 @@ export function ChaptersDialog({ editor, props }: PanelProps) {
   };
 
   // Why there is no AI draft here, if there isn't (nothing at all when this server has no AI).
-  const aiWhy = !w?.transcript?.length ? 'Add captions first: AI drafts the summary and chapters from them.' : !editor.host.ai ? (editor.host.aiUnavailable ?? null) : null;
+  const aiWhy = !w?.transcript?.length ? tr('addCaptionsFirstAiDrafts') : !editor.host.ai ? (editor.host.aiUnavailable ?? null) : null;
   const aiShown = !!editor.host.ai || !!editor.host.aiUnavailable;
 
   return (
@@ -102,16 +103,12 @@ export function ChaptersDialog({ editor, props }: PanelProps) {
       open
       onClose={close}
       width={540}
-      title="Summary and chapters"
-      description="Viewers see the summary and jump to a chapter from the list or the timeline."
+      title={tr('summaryAndChapters')}
+      description={tr('viewersSeeTheSummaryAnd')}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" loading={busy === 'save'} disabled={!w || busy !== null} onClick={() => void save()}>
-            Save
-          </Button>
+          <Button variant="ghost" onClick={close}>{tr('cancel')}</Button>
+          <Button variant="primary" loading={busy === 'save'} disabled={!w || busy !== null} onClick={() => void save()}>{tr('save')}</Button>
         </>
       }
     >
@@ -122,23 +119,23 @@ export function ChaptersDialog({ editor, props }: PanelProps) {
           {aiShown && (
             <section className="fr-walkthrough-captions__ai">
               {aiWhy ? (
-                <span>AI draft isn’t available: {aiWhy}</span>
+                <span>{tr('aiDraftIsnTAvailable', { aiWhy })}</span>
               ) : (
                 <>
                   <Button size="sm" icon={Sparkles} loading={busy === 'ai'} disabled={busy !== null} onClick={() => void draft()}>
-                    {drafted ? 'Draft again with AI' : 'Draft with AI'}
+                    {drafted ? tr('draftAgainWithAi') : tr('draftWithAi')}
                   </Button>
-                  <span>{drafted ? 'A draft from the captions: edit it, then save.' : 'The captions are sent to this board’s AI provider to draft them. Nothing is saved until you do.'}</span>
+                  <span>{drafted ? tr('aDraftFromTheCaptions') : tr('theCaptionsAreSentTo')}</span>
                 </>
               )}
             </section>
           )}
-          <TextArea label="Summary" rows={3} value={summary} maxLength={MAX_WALKTHROUGH_SUMMARY} placeholder="What this walkthrough covers, in a few sentences" onChange={(e) => setSummary(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+          <TextArea label={tr('summary')} rows={3} value={summary} maxLength={MAX_WALKTHROUGH_SUMMARY} placeholder={tr('whatThisWalkthroughCoversIn')} onChange={(e) => setSummary(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
           <TextArea
-            label="Chapters, one per line, starting with when it starts"
+            label={tr('chaptersOnePerLineStarting')}
             rows={6}
             value={lines}
-            placeholder={'0:00 Where we are\n1:20 What changed\n3:05 Next steps'}
+            placeholder={tr('n000WhereWeAre')}
             onChange={(e) => setLines(e.target.value)}
             onKeyDown={(e) => e.stopPropagation()}
           />

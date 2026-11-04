@@ -12,13 +12,14 @@ import { FOCUS_PANEL } from './constants';
 import { addTab, deleteTab, renameTab, switchTab, tabsEditable } from './tabs';
 import { addLinkedView } from './linked';
 
+import { t as tr } from '../messages';
 /** Each layout's icon (its tabs, "+ View", focus mode). */
 export const LAYOUT_ICONS: Record<ViewLayout, LucideIcon> = { board: BoardIcon, table: Table2, list: List, calendar: CalendarDays, timeline: GanttChart };
 const LAYOUT_HINTS: Record<ProjectionLayout, string> = {
-  table: 'Every card as a row, a column per field',
-  list: 'A line per card, grouped',
-  calendar: 'Cards on the days of their dates',
-  timeline: 'Cards as bars from start to due date',
+  table: tr('everyCardAsARow'),
+  list: tr('aLinePerCardGrouped'),
+  calendar: tr('cardsOnTheDaysOf'),
+  timeline: tr('cardsAsBarsFromStart'),
 };
 
 const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
@@ -38,7 +39,7 @@ function RenameBox({ editor, k, tab, onDone }: { editor: Editor; k: KanbanElemen
     <input
       className={`fr-kanban__tab-input${problem ? ' is-invalid' : ''}`}
       data-fr-interactive=""
-      aria-label="Tab name"
+      aria-label={tr('tabName')}
       aria-invalid={!!problem}
       title={problem ?? undefined}
       autoFocus
@@ -84,23 +85,23 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
         ? [
             {
               id: 'linked',
-              label: 'Add linked view',
+              label: tr('addLinkedView'),
               icon: Link2,
               onSelect: () => undefined,
               submenu: PROJECTION_LAYOUTS.map((layout) => ({ id: `linked-${layout}`, label: LAYOUT_NAMES[layout], icon: LAYOUT_ICONS[layout], onSelect: () => void addLinkedView(editor, k.id, layout) })),
             },
           ]
-        : [{ id: 'linked', label: 'Add as linked view', icon: Link2, onSelect: () => void addLinkedView(editor, k.id, tab.layout as ProjectionLayout, { from: tab.id }) }];
+        : [{ id: 'linked', label: tr('addAsLinkedView'), icon: Link2, onSelect: () => void addLinkedView(editor, k.id, tab.layout as ProjectionLayout, { from: tab.id }) }];
   const items = (tab: ViewTab): MenuItem[] => [
-    ...(canEdit && tabsEditable(editor, k, tab) ? [{ id: 'rename', label: 'Rename tab', icon: Pencil, onSelect: () => setRenaming(tab.id) }] : []),
-    { id: 'focus', label: 'Open in focus mode', icon: Maximize2, onSelect: () => editor.openPanel(FOCUS_PANEL, { id: k.id }) },
+    ...(canEdit && tabsEditable(editor, k, tab) ? [{ id: 'rename', label: tr('renameTab'), icon: Pencil, onSelect: () => setRenaming(tab.id) }] : []),
+    { id: 'focus', label: tr('openInFocusMode'), icon: Maximize2, onSelect: () => editor.openPanel(FOCUS_PANEL, { id: k.id }) },
     ...linked(tab),
     ...(tab.layout !== 'board' && canEdit && tabsEditable(editor, k, tab)
-      ? [{ divider: true as const }, { id: 'delete', label: 'Delete tab', icon: Trash2, danger: true, onSelect: () => deleteTab(editor, k.id, tab.id) }]
+      ? [{ divider: true as const }, { id: 'delete', label: tr('deleteTab'), icon: Trash2, danger: true, onSelect: () => deleteTab(editor, k.id, tab.id) }]
       : []),
   ];
   return (
-    <div className="fr-kanban__tabs" role="tablist" aria-label="Views of this kanban">
+    <div className="fr-kanban__tabs" role="tablist" aria-label={tr('viewsOfThisKanban')}>
       {tabs.map((tab) => {
         const on = tab.id === shownId;
         const Icon = LAYOUT_ICONS[tab.layout];
@@ -113,7 +114,7 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
               aria-selected={on}
               className="fr-kanban__tab-btn"
               data-fr-interactive=""
-              title={tab.id === saved ? `${tab.name} (everyone starts here)` : tab.name}
+              title={tab.id === saved ? tr('nameEveryoneStartsHere', { name: tab.name }) : tab.name}
               onPointerDown={stop}
               onClick={() => switchTab(editor, k.id, tab.id)}
               onDoubleClick={() => canEdit && tabsEditable(editor, k, tab) && setRenaming(tab.id)}
@@ -126,7 +127,7 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
                 type="button"
                 className="fr-kanban__tab-menu"
                 data-fr-interactive=""
-                aria-label={`Tab options: ${tab.name}`}
+                aria-label={tr('tabOptionsName', { name: tab.name })}
                 aria-haspopup="menu"
                 aria-expanded={menu?.id === tab.id}
                 onPointerDown={stop}
@@ -143,21 +144,19 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
           type="button"
           className="fr-kanban__tab-add"
           data-fr-interactive=""
-          title="Add a view of these cards: a table, list, calendar or timeline (for everyone)"
+          title={tr('addAViewOfThese')}
           aria-haspopup="menu"
           aria-expanded={!!adding}
           onPointerDown={stop}
           onClick={(e) => setAdding(adding ? null : e.currentTarget)}
         >
-          <Plus size={13} aria-hidden />
-          View
-        </button>
+          <Plus size={13} aria-hidden />{tr('view')}</button>
       )}
       {adding && (
         <Menu
           open
           anchor={adding}
-          aria-label="Add a view"
+          aria-label={tr('addAView')}
           onClose={() => setAdding(null)}
           items={PROJECTION_LAYOUTS.map((layout) => ({
             id: layout,
@@ -173,7 +172,7 @@ export function TabStrip({ editor, k, shownId, selected, canEdit }: { editor: Ed
         />
       )}
       {menu && (
-        <Menu open anchor={menu.el} items={items(tabs.find((t) => t.id === menu.id) ?? tabs[0])} aria-label="Tab options" onClose={() => setMenu(null)} />
+        <Menu open anchor={menu.el} items={items(tabs.find((t) => t.id === menu.id) ?? tabs[0])} aria-label={tr('tabOptions')} onClose={() => setMenu(null)} />
       )}
     </div>
   );

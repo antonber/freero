@@ -3,6 +3,7 @@ import type { Editor, NewElement, Point } from '@engine';
 import { AUTO } from './languages';
 import { DEFAULT_W, heightOf, widthFor } from './layout';
 
+import { t } from '../messages';
 /** A new block centered on `at`; a pasted block is as wide as its longest line. */
 export function codeAt(at: Point, fields: Partial<Pick<CodeElement, 'code' | 'language' | 'lineNumbers' | 'theme'>> = {}): NewElement<'code'> {
   const base = { code: '', language: AUTO, lineNumbers: true, theme: 'light' as const, ...fields };
@@ -15,10 +16,10 @@ export function codeAt(at: Point, fields: Partial<Pick<CodeElement, 'code' | 'la
 export async function copyCode(editor: Editor, code: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(code);
-    editor.host.notify('Code copied', 'success');
+    editor.host.notify(t('codeCopied'), 'success');
     return true;
   } catch {
-    editor.host.notify('Couldn’t copy: the browser blocked the clipboard', 'error');
+    editor.host.notify(t('couldnTCopyTheBrowser'), 'error');
     return false;
   }
 }

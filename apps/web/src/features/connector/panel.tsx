@@ -38,6 +38,7 @@ import { nextToSide, occupiedRects, QUICK_GAP, quickSpotTaken } from './lib/quic
 import { liveObstacles } from './lib/obstacles';
 import { labelBoxes, partAt } from './lib/labels';
 
+import { t as tr } from './messages';
 const PLUS_OFFSET = 26;
 /** The engine's rotate handle sits under the bottom edge: keep the bottom "+" clear of it. */
 const PLUS_OFFSET_BELOW_ROTATE = 58;
@@ -238,8 +239,8 @@ function QuickConnect({ editor, el, root, inert }: { editor: Editor; el: BoardEl
           <div
             key={side}
             role="button"
-            aria-label={`Connect from ${side} (drag), or add a connected copy (click)`}
-            title="Drag to connect · Click to add a connected copy"
+            aria-label={tr('connectFromSideDragOr', { side })}
+            title={tr('dragToConnectClickTo')}
             className={`fr-cx-ov__plus${dots ? ' fr-cx-ov__plus--dot' : ''}${inert ? ' is-inert' : ''}`}
             data-fr-interactive=""
             data-fr-keep-clear={top ? '' : undefined}
@@ -306,7 +307,7 @@ function ConnectorHandles({ editor, c, root }: { editor: Editor; c: ConnectorEle
         <div
           className="fr-cx-ov__mid"
           data-fr-interactive=""
-          title={wp ? 'Drag to bend · Double-click to straighten' : 'Drag to bend · Double-click to add a label'}
+          title={wp ? tr('dragToBendDoubleClick') : tr('dragToBendDoubleClick2')}
           style={{ transform: `${at(editor.worldToScreen(mid)).transform} rotate(45deg)` }}
           onPointerDown={dragMid}
           onDoubleClick={() => {
@@ -323,7 +324,7 @@ function ConnectorHandles({ editor, c, root }: { editor: Editor; c: ConnectorEle
           key={which}
           className={`fr-cx-ov__end${attached ? ' is-attached' : ''}`}
           data-fr-interactive=""
-          title={attached ? 'Drag to re-attach or detach' : 'Drag onto an item to attach'}
+          title={attached ? tr('dragToReAttachOr') : tr('dragOntoAnItemTo')}
           style={at(editor.worldToScreen(p))}
           onPointerDown={dragEnd(which)}
         />

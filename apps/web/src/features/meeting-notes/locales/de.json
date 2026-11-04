@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "summarise",
+    "importMeetingNotes",
+    "youNeedEditAccessTo",
+    "couldNotImportThatTranscript",
+    "couldNotImportTheseNotes",
+    "importMeetingNotes2",
+    "aSummaryMarkdownOrText",
+    "cancel",
+    "importText",
+    "importing",
+    "chooseAFileMdTxt",
+    "orPasteTheNotes",
+    "forTranscriptsAddWhoSpoke",
+    "droppingAVttOrSrt"
+  ],
+  "summarise": "Zusammenfassen",
+  "importMeetingNotes": "Besprechungsnotizen importieren …",
+  "youNeedEditAccessTo": "Zum Importieren benötigen Sie Bearbeitungszugriff",
+  "couldNotImportThatTranscript": "Dieses Transkript konnte nicht importiert werden",
+  "couldNotImportTheseNotes": "Diese Notizen konnten nicht importiert werden",
+  "importMeetingNotes2": "Besprechungsnotizen importieren",
+  "aSummaryMarkdownOrText": "Eine Zusammenfassung (Markdown oder Text) oder ein Transkript (.vtt, .srt) aus Ihrer Notizen-App wird zu einem Rahmen: Entscheidungen, Aufgaben mit verantwortlicher Person und Fälligkeitsdatum sowie die übrigen Punkte. Ein einziges Rückgängig nimmt alles zurück.",
+  "cancel": "Abbrechen",
+  "importText": "Text importieren",
+  "importing": "Wird importiert …",
+  "chooseAFileMdTxt": "Datei wählen (.md, .txt, .vtt, .srt)",
+  "orPasteTheNotes": "Oder fügen Sie die Notizen ein",
+  "forTranscriptsAddWhoSpoke": "Bei Transkripten hinzufügen, wer wie lange gesprochen hat",
+  "droppingAVttOrSrt": "Wenn Sie eine .vtt- oder .srt-Datei auf das Board ziehen, wird sie ebenfalls importiert."
+}

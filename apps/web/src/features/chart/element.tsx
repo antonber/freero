@@ -5,6 +5,7 @@ import { canvasInk, defineElement, useCollection, type ElementRenderProps, type 
 import { CELLS, gridRows, readContent, writeContent } from './lib/data';
 import { ChartView } from './lib/ChartView';
 import { DATA_PANEL } from './lib/constants';
+import { t } from './messages';
 import './chart.css';
 
 const ChartItem = memo(function ChartItem({ element }: ElementRenderProps<ChartElement>) {
@@ -36,7 +37,7 @@ function paintChart(el: ChartElement, p: LowDetailPaint) {
 
 export default defineElement({
   type: 'chart',
-  label: { one: 'Chart', many: 'Charts' },
+  label: { one: t('chart'), many: t('charts') },
   icon: BarChart3,
   resize: 'free',
   minSize: { w: 160, h: 120 },

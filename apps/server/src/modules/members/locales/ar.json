@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "دعاك {inviter} إلى «{board}» على Freero",
+  "invite.title": "دعاك {inviter} إلى لوحة",
+  "invite.body": "{role, select, editor {يمكنك تعديل «{board}».} commenter {يمكنك التعليق على «{board}».} other {يمكنك عرض «{board}».}} ‏Freero سبورة بيضاء مجانية على الإنترنت؛ ستحتاج إلى حساب مجاني لفتحها.",
+  "invite.action": "فتح اللوحة",
+  "invite.outro": "أرسل {inviter} ‏({email}) هذه الدعوة. يعمل الرابط مرة واحدة وتنتهي صلاحيته خلال 14 يومًا."
+}

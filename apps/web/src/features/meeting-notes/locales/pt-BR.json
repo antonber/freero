@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "summarise",
+    "importMeetingNotes",
+    "youNeedEditAccessTo",
+    "couldNotImportThatTranscript",
+    "couldNotImportTheseNotes",
+    "importMeetingNotes2",
+    "aSummaryMarkdownOrText",
+    "cancel",
+    "importText",
+    "importing",
+    "chooseAFileMdTxt",
+    "orPasteTheNotes",
+    "forTranscriptsAddWhoSpoke",
+    "droppingAVttOrSrt"
+  ],
+  "summarise": "Resumir",
+  "importMeetingNotes": "Importar notas de reunião…",
+  "youNeedEditAccessTo": "Você precisa de acesso de edição para importar",
+  "couldNotImportThatTranscript": "Não foi possível importar essa transcrição",
+  "couldNotImportTheseNotes": "Não foi possível importar estas notas",
+  "importMeetingNotes2": "Importar notas de reunião",
+  "aSummaryMarkdownOrText": "Um resumo (Markdown ou texto) ou uma transcrição (.vtt, .srt) do seu app de notas vira uma moldura: decisões, itens de ação com responsável e prazo, e os demais pontos. Um único desfazer remove tudo.",
+  "cancel": "Cancelar",
+  "importText": "Importar texto",
+  "importing": "Importando…",
+  "chooseAFileMdTxt": "Escolha um arquivo (.md, .txt, .vtt, .srt)",
+  "orPasteTheNotes": "Ou cole as notas",
+  "forTranscriptsAddWhoSpoke": "Em transcrições, adicionar quem falou e por quanto tempo",
+  "droppingAVttOrSrt": "Soltar um arquivo .vtt ou .srt no quadro também o importa."
+}

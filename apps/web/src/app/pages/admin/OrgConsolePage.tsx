@@ -17,6 +17,7 @@ import { AdminSiem, siemOffered } from './AdminSiem';
 import { AdminTemplates } from './AdminTemplates';
 import { AdminLabels } from './AdminLabels';
 import { scopesOf } from './AdminConsolePage';
+import { t as tr } from './messages';
 import './admin.css';
 
 // `scopes` (#151): the admin scopes that use the tab; none: every admin.
@@ -77,8 +78,7 @@ export function OrgConsolePage() {
     <div className="fr-admin">
       <header className="fr-admin__top">
         <Link to="/app" className="fr-admin__back">
-          <ArrowLeft size={16} aria-hidden /> Back to boards
-        </Link>
+          <ArrowLeft size={16} aria-hidden />{' '}{tr('backToBoards')}</Link>
         <Logo size={26} withWordmark />
       </header>
       {org === undefined ? (
@@ -87,15 +87,15 @@ export function OrgConsolePage() {
         </div>
       ) : !org || !manager || !asWorkspace ? (
         <div className="fr-admin__center">
-          <h1 className="fr-admin__title">Organisation</h1>
-          <p className="fr-admin__muted">Only owners and admins of an organisation can open its console.</p>
+          <h1 className="fr-admin__title">{tr('organisation')}</h1>
+          <p className="fr-admin__muted">{tr('onlyOwnersAndAdminsOf2')}</p>
         </div>
       ) : (
         <div className="fr-admin__body">
-          <nav className="fr-admin__tabs" aria-label="Organisation console">
+          <nav className="fr-admin__tabs" aria-label={tr('organisationConsole')}>
             <div className="fr-admin__ws">
               <span className="fr-admin__ws-name">{org.name}</span>
-              <span className="fr-admin__muted">Organisation · you’re {org.role === 'owner' ? 'an owner' : 'an admin'}</span>
+              <span className="fr-admin__muted">{tr('organisationYouRe')}{' '}{org.role === 'owner' ? tr('anOwner') : tr('anAdmin')}</span>
             </div>
             {shown.map((t) => (
               <button

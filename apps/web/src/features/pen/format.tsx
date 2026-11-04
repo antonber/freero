@@ -15,6 +15,7 @@ import {
 } from './lib/constants';
 import { rebakeWidth } from './lib/stroke';
 
+import { t } from './messages';
 function ColorControl({ editor, strokes }: { editor: Editor; strokes: PenElement[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -24,19 +25,19 @@ function ColorControl({ editor, strokes }: { editor: Editor; strokes: PenElement
   const colors = allHighlighter ? HIGHLIGHTER_COLORS : PEN_COLORS;
   return (
     <>
-      <Tooltip content="Color" side="bottom">
+      <Tooltip content={t('color')} side="bottom">
         <button
           ref={ref}
           type="button"
           className="fr-pen-format-swatch"
-          aria-label="Stroke color"
+          aria-label={t('strokeColor')}
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
           <span style={{ background: mixed ? 'conic-gradient(#E5484D, #F5A524, #1FA463, #2F80ED, #5B3FF0, #E5484D)' : current }} />
         </button>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Stroke color">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('strokeColor')}>
         <ColorSwatches
           colors={colors}
           names={allHighlighter ? HIGHLIGHTER_COLOR_NAMES : PEN_COLOR_NAMES}
@@ -47,7 +48,7 @@ function ColorControl({ editor, strokes }: { editor: Editor; strokes: PenElement
             const patch: Partial<PenElement> = { stroke: c };
             editor.updateMany(strokes.map((s) => ({ id: s.id, patch })));
           }}
-          aria-label="Stroke color"
+          aria-label={t('strokeColor')}
         />
       </Popover>
     </>
@@ -62,7 +63,7 @@ function WidthControl({ editor, strokes }: { editor: Editor; strokes: PenElement
       strokes.map((s) => ({ id: s.id, patch: rebakeWidth(s, (s.highlighter ? HIGHLIGHTER_WIDTHS : PEN_WIDTHS)[i]) })),
     );
   return (
-    <div className="fr-pen-format-sizes" role="group" aria-label="Stroke width">
+    <div className="fr-pen-format-sizes" role="group" aria-label={t('strokeWidth')}>
       {SIZE_LABELS.map((label, i) => (
         <Tooltip key={label} content={label} side="bottom">
           <button

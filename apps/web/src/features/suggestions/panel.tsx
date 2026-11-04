@@ -34,6 +34,7 @@ import {
   unionOf,
   type SuggestionGroup,
 } from './lib/model';
+import { t } from './messages';
 import './suggestions.css';
 
 const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
@@ -63,10 +64,10 @@ const Ghost = memo(function Ghost({ editor, s, zoom, controls }: { editor: Edito
                 <AlertTriangle size={13} aria-hidden />
               </span>
             )}
-            <button type="button" className="fr-sg-item__btn fr-sg-item__btn--ok" aria-label={`Accept: ${actionLabel(editor, s)}`} title="Accept" onClick={() => accept(editor, [s.id])}>
+            <button type="button" className="fr-sg-item__btn fr-sg-item__btn--ok" aria-label={t('acceptActionlabel', { actionLabel: actionLabel(editor, s) })} title={t('accept')} onClick={() => accept(editor, [s.id])}>
               <Check size={14} strokeWidth={2.6} />
             </button>
-            <button type="button" className="fr-sg-item__btn" aria-label={`Reject: ${actionLabel(editor, s)}`} title="Reject" onClick={() => reject(editor, [s.id])}>
+            <button type="button" className="fr-sg-item__btn" aria-label={t('rejectActionlabel', { actionLabel: actionLabel(editor, s) })} title={t('reject')} onClick={() => reject(editor, [s.id])}>
               <X size={14} strokeWidth={2.6} />
             </button>
           </div>
@@ -83,19 +84,18 @@ function GroupBadge({ editor, group, zoom, canEdit }: { editor: Editor; group: S
   return (
     <div className="fr-sg-anchor" style={{ transform: `translate(${r.x}px, ${r.y}px) scale(${1 / zoom})` }}>
       <div className="fr-sg-badge" data-fr-interactive="" data-fr-keep-clear="" onPointerDown={stop}>
-        <button type="button" className="fr-sg-badge__who" onClick={() => editor.openDock(PANEL_ID)} title={group.description || 'Review in Suggestions'}>
+        <button type="button" className="fr-sg-badge__who" onClick={() => editor.openDock(PANEL_ID)} title={group.description || t('reviewInSuggestions')}>
           <Lightbulb size={14} aria-hidden />
           <span>
-            <strong>{group.by}</strong> suggests {n === 1 ? '1 change' : `${n} changes`}
-          </span>
+            <strong>{group.by}</strong>{' '}{t('suggestsNChanges', { n })}</span>
         </button>
         {canEdit && (
           <>
             <button type="button" className="fr-sg-badge__btn fr-sg-badge__btn--ok" onClick={() => accept(editor, group.items.map((s) => s.id))}>
               <Check size={14} strokeWidth={2.6} aria-hidden />
-              {n === 1 ? 'Accept' : 'Accept all'}
+              {t('acceptAll', { n })}
             </button>
-            <button type="button" className="fr-sg-badge__btn" aria-label={n === 1 ? 'Reject' : 'Reject all'} title={n === 1 ? 'Reject' : 'Reject all'} onClick={() => reject(editor, group.items.map((s) => s.id))}>
+            <button type="button" className="fr-sg-badge__btn" aria-label={t('rejectAll', { n })} title={t('rejectAll', { n })} onClick={() => reject(editor, group.items.map((s) => s.id))}>
               <X size={14} strokeWidth={2.6} aria-hidden />
             </button>
           </>
@@ -154,13 +154,11 @@ function Row({ editor, s, canEdit }: { editor: Editor; s: Suggestion; canEdit: b
       {canEdit && (
         <span className="fr-sg-row__actions">
           {stale ? (
-            <Button size="sm" variant="secondary" disabled={s.state === 'gone' && s.op !== 'create'} onClick={() => editor.acceptSuggestions([s.id], { force: true })}>
-              Apply anyway
-            </Button>
+            <Button size="sm" variant="secondary" disabled={s.state === 'gone' && s.op !== 'create'} onClick={() => editor.acceptSuggestions([s.id], { force: true })}>{t('applyAnyway')}</Button>
           ) : (
-            <IconButton icon={Check} size={32} label="Accept" onClick={() => accept(editor, [s.id])} />
+            <IconButton icon={Check} size={32} label={t('accept')} onClick={() => accept(editor, [s.id])} />
           )}
-          <IconButton icon={stale ? Trash2 : X} size={32} label={stale ? 'Drop' : 'Reject'} onClick={() => reject(editor, [s.id])} />
+          <IconButton icon={stale ? Trash2 : X} size={32} label={stale ? t('drop') : t('reject')} onClick={() => reject(editor, [s.id])} />
         </span>
       )}
     </li>
@@ -170,7 +168,7 @@ function Row({ editor, s, canEdit }: { editor: Editor; s: Suggestion; canEdit: b
 function Group({ editor, group, canEdit }: { editor: Editor; group: SuggestionGroup; canEdit: boolean }) {
   const ids = group.items.map((s) => s.id);
   return (
-    <section className="fr-sg-group" aria-label={`Suggestions by ${group.by}`}>
+    <section className="fr-sg-group" aria-label={t('suggestionsByBy', { by: group.by })}>
       <header className="fr-sg-group__head">
         <span className="fr-sg-group__icon">
           <Lightbulb size={15} aria-hidden />
@@ -178,20 +176,16 @@ function Group({ editor, group, canEdit }: { editor: Editor; group: SuggestionGr
         <button type="button" className="fr-sg-group__who" onClick={() => focus(editor, group.items)}>
           <strong>{group.by}</strong>
           <span>
-            {group.items.length === 1 ? '1 change' : `${group.items.length} changes`}
-            {group.stale ? ` · ${group.stale} out of date` : ''}
+            {t('lengthChanges', { length: group.items.length })}
+            {group.stale ? t('staleOutOfDate', { stale: group.stale }) : ''}
           </span>
         </button>
       </header>
       {group.description && <p className="fr-sg-group__desc">{group.description}</p>}
       {canEdit && (
         <div className="fr-sg-group__actions">
-          <Button size="sm" variant="primary" icon={Check} onClick={() => accept(editor, ids)}>
-            Accept all
-          </Button>
-          <Button size="sm" variant="ghost" icon={X} onClick={() => reject(editor, ids)}>
-            Reject all
-          </Button>
+          <Button size="sm" variant="primary" icon={Check} onClick={() => accept(editor, ids)}>{t('acceptAll2')}</Button>
+          <Button size="sm" variant="ghost" icon={X} onClick={() => reject(editor, ids)}>{t('rejectAll2')}</Button>
         </div>
       )}
       <ul className="fr-sg-group__list">
@@ -210,13 +204,13 @@ function SuggestionsDock({ editor }: PanelProps) {
   return (
     <div className="fr-sg-dock">
       <DockHeader className="fr-sg-dock__head">
-        <h2>Suggestions</h2>
+        <h2>{t('suggestions')}</h2>
       </DockHeader>
       {groups.length ? (
         <>
           {/* Someone who may review them, here without edit rights: a live view in an AI assistant
               whose connection may only read (#89). Deciding is an edit, so it happens in Freero. */}
-          {!canEdit && <p className="fr-sg-dock__readonly">You can review these here, but accepting or rejecting them needs edit access. Open the board in Freero to decide.</p>}
+          {!canEdit && <p className="fr-sg-dock__readonly">{t('youCanReviewTheseHere')}</p>}
           {groups.map((g) => (
             <Group key={g.id} editor={editor} group={g} canEdit={canEdit} />
           ))}
@@ -224,7 +218,7 @@ function SuggestionsDock({ editor }: PanelProps) {
       ) : (
         <div className="fr-sg-dock__empty">
           <Lightbulb size={22} aria-hidden />
-          <p>No suggestions waiting. When an app or an AI action proposes changes instead of making them, they show up here for you to accept or reject.</p>
+          <p>{t('noSuggestionsWaitingWhenAn')}</p>
         </div>
       )}
     </div>
@@ -244,7 +238,7 @@ function SuggestionsButton({ editor }: PanelProps) {
       variant="ghost"
       icon={Lightbulb}
       className={`fr-sg-topbar${dock === PANEL_ID ? ' is-open' : ''}`}
-      aria-label={`${n} suggestion${n === 1 ? '' : 's'} to review`}
+      aria-label={t('nSuggestionsToReview', { n })}
       onClick={() => editor.openDock(dock === PANEL_ID ? null : PANEL_ID)}
     >
       {n}

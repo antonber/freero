@@ -2,8 +2,8 @@
 .fr-trackers-badge-wrap {
   position: absolute;
   top: 6px;
-  right: 6px;
-  left: 6px;
+  inset-inline-end: 6px;
+  inset-inline-start: 6px;
   display: flex;
   justify-content: flex-end;
   pointer-events: none;
@@ -207,7 +207,7 @@
 
 .fr-trackers-preview__unmapped {
   margin: 6px 0 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   color: var(--fr-ink-2);
   font-size: 12px;
 }

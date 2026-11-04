@@ -7,14 +7,15 @@ import type { WorkspaceKeyStatus, WorkspaceSummary } from '@freero/shared';
 import { Button, Input, Modal, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 const when = (ms: number) => new Date(ms).toLocaleString();
 
 const STATE: Record<NonNullable<WorkspaceKeyStatus['key']>['state'], { label: string; tone: 'ok' | 'warn' | 'off' }> = {
-  active: { label: 'Active', tone: 'ok' },
-  suspended: { label: 'Suspended', tone: 'off' },
-  unavailable: { label: 'Unavailable', tone: 'warn' },
-  destroyed: { label: 'Destroyed', tone: 'off' },
+  active: { label: t('active'), tone: 'ok' },
+  suspended: { label: t('suspended'), tone: 'off' },
+  unavailable: { label: t('unavailable'), tone: 'warn' },
+  destroyed: { label: t('destroyed'), tone: 'off' },
 };
 
 export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary }) {
@@ -37,7 +38,7 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
       setTyped('');
       notify(done, 'success');
     } catch (e) {
-      notify(errorText(e, 'Something went wrong with the key'), 'error');
+      notify(errorText(e, t('somethingWentWrongWithThe')), 'error');
     } finally {
       setBusy(null);
     }
@@ -51,37 +52,31 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
 
   return (
     <div className="fr-admin-card">
-      <h2 className="fr-admin-card__title">Encryption key</h2>
-      <p className="fr-admin-row__hint">
-        Board content of this workspace — boards, their history and private drafts — is stored encrypted with a key only this workspace’s key opens.
-        Suspending or revoking the key closes every board here until it is available again. Titles, members and the audit log are not encrypted
-        with it.
-      </p>
+      <h2 className="fr-admin-card__title">{t('encryptionKey')}</h2>
+      <p className="fr-admin-row__hint">{t('boardContentOfThisWorkspace')}</p>
       {!key ? (
         <div className="fr-admin-key">
           {kms ? (
             <Input
-              label="Your AWS KMS key (optional)"
+              label={t('yourAwsKmsKeyOptional')}
               value={arn}
               onChange={(e) => setArn(e.target.value)}
-              placeholder="arn:aws:kms:eu-west-1:111122223333:key/…"
+              placeholder={t('arnAwsKmsEuWest')}
               spellCheck={false}
             />
           ) : null}
           <p className="fr-admin-row__hint">
             {kms
-              ? 'Leave it empty to use a key this server manages. With your own key, its key policy must let this server encrypt and decrypt with it; you can revoke that at any time.'
-              : 'The key is managed by this server.'}
+              ? t('leaveItEmptyToUse')
+              : t('theKeyIsManagedBy')}
           </p>
           <div className="fr-admin-networks__actions">
             <Button
               variant="primary"
               size="sm"
               loading={busy === 'create'}
-              onClick={() => void run('create', () => api.createWorkspaceKey(workspace.id, arn.trim() ? { kmsKeyId: arn.trim() } : {}), 'Encryption key on — existing boards are being encrypted')}
-            >
-              Turn on encryption key
-            </Button>
+              onClick={() => void run('create', () => api.createWorkspaceKey(workspace.id, arn.trim() ? { kmsKeyId: arn.trim() } : {}), t('encryptionKeyOnExistingBoards'))}
+            >{t('turnOnEncryptionKey')}</Button>
           </div>
         </div>
       ) : (
@@ -89,19 +84,17 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
           <div className="fr-admin-row">
             <div className="fr-admin-row__text">
               <span className="fr-admin-row__label">
-                {key.provider === 'aws-kms' ? 'Your AWS KMS key' : 'Managed by this server'}{' '}
+                {key.provider === 'aws-kms' ? t('yourAwsKmsKey') : t('managedByThisServer')}{' '}
                 <span className={`fr-admin-pill fr-admin-pill--${STATE[key.state].tone}`}>{STATE[key.state].label}</span>
               </span>
               <span className="fr-admin-row__hint">
                 {key.kmsKeyId ? <code>{key.kmsKeyId}</code> : null}
-                {key.kmsKeyId ? ' · ' : ''}
-                Data key version {key.dataKeyVersion} · on since {when(key.createdAt)}
-                {key.kekRotatedAt ? ` · rotated ${when(key.kekRotatedAt)}` : ''}
-                {key.pendingBoards ? ` · ${key.pendingBoards} board${key.pendingBoards === 1 ? '' : 's'} still being encrypted` : ''}
+                {key.kmsKeyId ? ' · ' : ''}{t('dataKeyVersionDatakeyversionOn', { dataKeyVersion: key.dataKeyVersion, when: when(key.createdAt) })}{key.kekRotatedAt ? t('rotatedWhen', { when: when(key.kekRotatedAt) }) : ''}
+                {key.pendingBoards ? t('pendingboardsBoardsStillBeingEncrypted', { pendingBoards: key.pendingBoards }) : ''}
               </span>
-              {key.state === 'unavailable' && key.reason ? <span className="fr-admin-row__hint">The key service said: {key.reason}</span> : null}
+              {key.state === 'unavailable' && key.reason ? <span className="fr-admin-row__hint">{t('theKeyServiceSaidReason', { reason: key.reason })}</span> : null}
               {key.state === 'destroyed' ? (
-                <span className="fr-admin-row__hint">The data keys were destroyed {when(key.stateChangedAt)}. This workspace’s encrypted content can never be read again.</span>
+                <span className="fr-admin-row__hint">{t('theDataKeysWereDestroyed', { when: when(key.stateChangedAt) })}</span>
               ) : null}
             </div>
           </div>
@@ -109,28 +102,18 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
             <div className="fr-admin-networks__actions">
               {key.state === 'active' ? (
                 <>
-                  <Button size="sm" loading={busy === 'rotate'} onClick={() => void run('rotate', () => api.rotateWorkspaceKey(workspace.id, {}), 'Key rotated — new content uses a new data key')}>
-                    Rotate key
-                  </Button>
-                  <Button size="sm" onClick={() => setConfirm('suspend')}>
-                    Suspend
-                  </Button>
+                  <Button size="sm" loading={busy === 'rotate'} onClick={() => void run('rotate', () => api.rotateWorkspaceKey(workspace.id, {}), t('keyRotatedNewContentUses'))}>{t('rotateKey')}</Button>
+                  <Button size="sm" onClick={() => setConfirm('suspend')}>{t('suspend')}</Button>
                 </>
               ) : null}
               {key.state === 'suspended' ? (
-                <Button variant="primary" size="sm" loading={busy === 'resume'} onClick={() => void run('resume', () => api.resumeWorkspaceKey(workspace.id), 'Key resumed — boards open again')}>
-                  Resume
-                </Button>
+                <Button variant="primary" size="sm" loading={busy === 'resume'} onClick={() => void run('resume', () => api.resumeWorkspaceKey(workspace.id), t('keyResumedBoardsOpenAgain'))}>{t('resume')}</Button>
               ) : null}
               {key.state === 'unavailable' ? (
-                <Button size="sm" onClick={() => setConfirm('suspend')}>
-                  Suspend
-                </Button>
+                <Button size="sm" onClick={() => setConfirm('suspend')}>{t('suspend')}</Button>
               ) : null}
               {owner ? (
-                <Button variant="danger" size="sm" onClick={() => setConfirm('destroy')}>
-                  Destroy key
-                </Button>
+                <Button variant="danger" size="sm" onClick={() => setConfirm('destroy')}>{t('destroyKey')}</Button>
               ) : null}
             </div>
           ) : null}
@@ -139,38 +122,31 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
       <Modal
         open={confirm !== null}
         onClose={() => setConfirm(null)}
-        title={confirm === 'destroy' ? 'Destroy the encryption key?' : 'Suspend the encryption key?'}
+        title={confirm === 'destroy' ? t('destroyTheEncryptionKey') : t('suspendTheEncryptionKey')}
         width={460}
         footer={
           <>
-            <Button onClick={() => setConfirm(null)}>Cancel</Button>
+            <Button onClick={() => setConfirm(null)}>{t('cancel')}</Button>
             {confirm === 'destroy' ? (
               <Button
                 variant="danger"
                 loading={busy === 'destroy'}
                 disabled={typed !== workspace.name}
-                onClick={() => void run('destroy', () => api.destroyWorkspaceKey(workspace.id, typed), 'Key destroyed')}
-              >
-                Destroy for good
-              </Button>
+                onClick={() => void run('destroy', () => api.destroyWorkspaceKey(workspace.id, typed), t('keyDestroyed'))}
+              >{t('destroyForGood')}</Button>
             ) : (
-              <Button variant="danger" loading={busy === 'suspend'} onClick={() => void run('suspend', () => api.suspendWorkspaceKey(workspace.id), 'Key suspended — boards are closed')}>
-                Suspend
-              </Button>
+              <Button variant="danger" loading={busy === 'suspend'} onClick={() => void run('suspend', () => api.suspendWorkspaceKey(workspace.id), t('keySuspendedBoardsAreClosed'))}>{t('suspend')}</Button>
             )}
           </>
         }
       >
         {confirm === 'destroy' ? (
           <>
-            <p className="fr-admin__modal-text">
-              Every board of {workspace.name}, its history and drafts become unreadable forever — no one, including this server’s operators, can
-              bring them back. Type the workspace’s name to confirm.
-            </p>
-            <Input label="Workspace name" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={workspace.name} />
+            <p className="fr-admin__modal-text">{t('everyBoardOfNameIts', { name: workspace.name })}</p>
+            <Input label={t('workspaceName')} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={workspace.name} />
           </>
         ) : (
-          <p className="fr-admin__modal-text">Every board of {workspace.name} closes for everyone, right away, until an admin resumes the key here.</p>
+          <p className="fr-admin__modal-text">{t('everyBoardOfNameCloses', { name: workspace.name })}</p>
         )}
       </Modal>
     </div>

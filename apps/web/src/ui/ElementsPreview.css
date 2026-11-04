@@ -25,7 +25,7 @@
 .fr-elements-preview__text--left {
   align-items: flex-start;
   justify-content: flex-start;
-  text-align: left;
+  text-align: start;
 }
 
 .fr-elements-preview__label {

@@ -8,6 +8,7 @@ import type { DirectoryGroup, WorkspaceGroup, WorkspaceMember, WorkspaceSummary 
 import { Avatar, Button, IconButton, Input, Select, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
 export function AdminGroups({ workspace }: { workspace: WorkspaceSummary }) {
@@ -24,7 +25,7 @@ export function AdminGroups({ workspace }: { workspace: WorkspaceSummary }) {
         setGroups(r.groups);
         setDirectory(r.directory);
       },
-      (e) => notify(errorText(e, 'Could not load the groups'), 'error'),
+      (e) => notify(errorText(e, t('couldNotLoadTheGroups')), 'error'),
     );
   }, [workspace.id, notify]);
   useEffect(load, [load]);
@@ -39,7 +40,7 @@ export function AdminGroups({ workspace }: { workspace: WorkspaceSummary }) {
       setOpen(group.id);
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not make the group'), 'error');
+      notify(errorText(err, t('couldNotMakeTheGroup')), 'error');
     } finally {
       setBusy(false);
     }
@@ -48,10 +49,10 @@ export function AdminGroups({ workspace }: { workspace: WorkspaceSummary }) {
   const remove = async (g: WorkspaceGroup) => {
     try {
       await api.deleteGroup(g.id);
-      notify(`Deleted “${g.name}”: what was shared with it no longer reaches its members`, 'success');
+      notify(t('deletedNameWhatWasShared', { name: g.name }), 'success');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not delete the group'), 'error');
+      notify(errorText(err, t('couldNotDeleteTheGroup')), 'error');
     }
   };
 
@@ -59,16 +60,12 @@ export function AdminGroups({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <section aria-labelledby="admin-groups-title">
       <div className="fr-admin__head">
-        <h1 id="admin-groups-title" className="fr-admin__title">
-          Groups
-        </h1>
-        <span className="fr-admin__muted">Share a board or project with a group instead of each person. Joining or leaving a group changes what someone opens right away.</span>
+        <h1 id="admin-groups-title" className="fr-admin__title">{t('groups')}</h1>
+        <span className="fr-admin__muted">{t('shareABoardOrProject')}</span>
       </div>
       <form className="fr-admin-org__add" onSubmit={create}>
-        <Input aria-label="New group name" placeholder="Design, Contractors…" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
-        <Button type="submit" loading={busy} disabled={!name.trim()}>
-          Make group
-        </Button>
+        <Input aria-label={t('newGroupName')} placeholder={t('designContractors')} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+        <Button type="submit" loading={busy} disabled={!name.trim()}>{t('makeGroup')}</Button>
       </form>
       <ul className="fr-admin-groups">
         {groups.map((g) => (
@@ -79,26 +76,24 @@ export function AdminGroups({ workspace }: { workspace: WorkspaceSummary }) {
               </button>
               <span className="fr-admin__muted">
                 {g.memberCount} {g.memberCount === 1 ? 'person' : 'people'}
-                {g.guestCount ? ` · ${g.guestCount} guest${g.guestCount === 1 ? '' : 's'}` : ''}
+                {g.guestCount ? t('guestcountGuests', { guestCount: g.guestCount }) : ''}
               </span>
-              <IconButton size={32} icon={Trash2} label={`Delete ${g.name}`} tooltipSide="top" onClick={() => void remove(g)} />
+              <IconButton size={32} icon={Trash2} label={t('deleteName2', { name: g.name })} tooltipSide="top" onClick={() => void remove(g)} />
             </div>
             {open === g.id ? <GroupMembers workspace={workspace} group={g} onChanged={load} /> : null}
           </li>
         ))}
-        {groups.length === 0 ? <li className="fr-admin__muted">No groups yet.</li> : null}
+        {groups.length === 0 ? <li className="fr-admin__muted">{t('noGroupsYet')}</li> : null}
       </ul>
       {directory.length ? (
         <>
-          <h2 className="fr-admin__subtitle">From your directory</h2>
-          <p className="fr-admin__muted">Your identity provider keeps these in step (Provisioning). Their members change there.</p>
+          <h2 className="fr-admin__subtitle">{t('fromYourDirectory')}</h2>
+          <p className="fr-admin__muted">{t('yourIdentityProviderKeepsThese')}</p>
           <ul className="fr-admin-groups">
             {directory.map((d) => (
               <li key={d.id} className="fr-admin-card fr-admin-groups__head">
                 <span className="fr-admin-groups__name">{d.name}</span>
-                <span className="fr-admin__muted">
-                  {d.memberCount} {d.memberCount === 1 ? 'person' : 'people'} · read-only
-                </span>
+                <span className="fr-admin__muted">{t('membercountPeopleReadOnly', { memberCount: d.memberCount })}</span>
               </li>
             ))}
           </ul>
@@ -126,7 +121,7 @@ function GroupMembers({ workspace, group, onChanged }: { workspace: WorkspaceSum
       load();
       onChanged();
     } catch (err) {
-      notify(errorText(err, member ? 'Could not add them' : 'Could not take them out'), 'error');
+      notify(errorText(err, member ? t('couldNotAddThem') : t('couldNotTakeThemOut')), 'error');
     }
   };
 
@@ -140,9 +135,9 @@ function GroupMembers({ workspace, group, onChanged }: { workspace: WorkspaceSum
             <Avatar name={m.name} color={m.color} src={m.avatarUrl} size={24} />
             <span>
               {m.name}
-              {m.role === 'guest' ? <span className="fr-admin-pill">Guest</span> : null}
+              {m.role === 'guest' ? <span className="fr-admin-pill">{t('guest')}</span> : null}
             </span>
-            <IconButton size={32} icon={X} label={`Take ${m.name} out of ${group.name}`} tooltipSide="top" onClick={() => void set(m.userId, false)} />
+            <IconButton size={32} icon={X} label={t('takeNameOutOfName2', { name: m.name, name2: group.name })} tooltipSide="top" onClick={() => void set(m.userId, false)} />
           </li>
         ))}
       </ul>
@@ -150,8 +145,8 @@ function GroupMembers({ workspace, group, onChanged }: { workspace: WorkspaceSum
         <div className="fr-admin-groups__add">
           <UserPlus size={16} aria-hidden />
           <Select<string>
-            aria-label={`Add someone to ${group.name}`}
-            options={[{ value: '', label: 'Add someone…', disabled: true }, ...candidates.map((m) => ({ value: m.userId, label: `${m.name}${m.role === 'guest' ? ' (guest)' : ''}` }))]}
+            aria-label={t('addSomeoneToName', { name: group.name })}
+            options={[{ value: '', label: t('addSomeone'), disabled: true }, ...candidates.map((m) => ({ value: m.userId, label: `${m.name}${m.role === 'guest' ? ' (guest)' : ''}` }))]}
             value=""
             onChange={(v) => v && void set(v, true)}
             width={280}

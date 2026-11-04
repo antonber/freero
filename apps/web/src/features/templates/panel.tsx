@@ -9,9 +9,30 @@ import { LazyTemplatePreview } from './lib/Preview';
 import { SaveTemplateDialog } from './lib/SaveDialog';
 import { SAVE_DIALOG_ID, deleteSavedTemplate, filterSaved, insertSavedTemplate, onSavedTemplatesChanged, setTemplatePublished, setTemplateShared } from './lib/saved';
 import { CATEGORIES, type TemplateCategory, type TemplateDef } from './lib/types';
+import { t as tr } from './messages';
 import './templates.css';
 
-const CATEGORY_LABELS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label])) as Record<TemplateCategory, string>;
+// The categories in the interface's language (#5). lib/types.ts keeps the English: the marketing site reads it at build time.
+const CATEGORY_LABELS: Record<TemplateCategory, string> = {
+  brainstorm: tr('brainstorm'),
+  icebreakers: tr('teamBuilding'),
+  meetings: tr('meetings'),
+  agile: tr('agile'),
+  product: tr('product'),
+  design: tr('design'),
+  research: tr('researchUx'),
+  strategy: tr('strategy'),
+  consulting: tr('consulting'),
+  sales: tr('salesMarketing'),
+  people: tr('hrPeople'),
+  operations: tr('operations'),
+  planning: tr('planning'),
+  personal: tr('personal'),
+  diagramming: tr('diagramming'),
+  engineering: tr('engineering'),
+  ai: tr('aiAgents'),
+  education: tr('education'),
+};
 
 /** A built-in category, or the user's own saved templates. */
 type Filter = TemplateCategory | 'saved' | null;
@@ -63,29 +84,29 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
     try {
       await setTemplateShared(editor, t.id, shared);
       editor.host.notify(
-        shared ? `Shared “${t.name}” with ${team?.name}.` : mine ? `“${t.name}” is personal again.` : `“${t.name}” is no longer shared with the team.`,
+        shared ? tr('sharedNameWithName2', { name: t.name, name2: team?.name }) : mine ? tr('nameIsPersonalAgain', { name: t.name }) : tr('nameIsNoLongerShared', { name: t.name }),
         'success',
       );
     } catch (err) {
-      editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not change sharing.', 'error');
+      editor.host.notify(err instanceof Error && err.message ? err.message : tr('couldNotChangeSharing'), 'error');
     }
   };
   const company = team?.company ?? null;
   const publish = async (published: boolean) => {
     try {
       await setTemplatePublished(editor, t.id, published);
-      editor.host.notify(published ? `Published “${t.name}” to ${company}: every team there can use it.` : `“${t.name}” is no longer a ${company} template.`, 'success');
+      editor.host.notify(published ? tr('publishedNameToCompanyEvery', { name: t.name, company }) : tr('nameIsNoLongerA', { name: t.name, company }), 'success');
     } catch (err) {
-      editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not change it.', 'error');
+      editor.host.notify(err instanceof Error && err.message ? err.message : tr('couldNotChangeIt'), 'error');
     }
   };
   const remove = async () => {
     try {
       await deleteSavedTemplate(editor, t.id);
-      editor.host.notify(`Deleted “${t.name}”.`, 'info');
+      editor.host.notify(tr('deletedName', { name: t.name }), 'info');
     } catch (err) {
       setConfirming(false);
-      editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not delete the template.', 'error');
+      editor.host.notify(err instanceof Error && err.message ? err.message : tr('couldNotDeleteTheTemplate'), 'error');
     }
   };
   return (
@@ -98,28 +119,26 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
             <LayoutTemplate size={28} className="fr-tpl-saved__icon" aria-hidden />
           )}
           <span className="fr-tpl-card__add" aria-hidden>
-            <Plus size={14} strokeWidth={2.4} /> Add
-          </span>
+            <Plus size={14} strokeWidth={2.4} />{' '}{tr('add')}</span>
         </span>
         <span className="fr-tpl-card__name">{t.name}</span>
         <span className="fr-tpl-card__desc">{t.description || `${t.elementCount} ${t.elementCount === 1 ? 'item' : 'items'}`}</span>
-        {t.shared && !mine && t.ownerName ? <span className="fr-tpl-card__by">Shared by {t.ownerName}</span> : null}
+        {t.shared && !mine && t.ownerName ? <span className="fr-tpl-card__by">{tr('sharedByOwnername', { ownerName: t.ownerName })}</span> : null}
       </button>
       {t.company ? (
-        <span className="fr-tpl-saved__team" title={t.locked ? `${t.company} template, locked by its admins` : `${t.company} template`}>
+        <span className="fr-tpl-saved__team" title={t.locked ? tr('companyTemplateLockedByIts', { company: t.company }) : tr('companyTemplate', { company: t.company })}>
           {t.locked ? <Lock size={12} aria-hidden /> : <Building2 size={12} aria-hidden />} {t.company}
         </span>
       ) : t.shared ? (
-        <span className="fr-tpl-saved__team" title={mine ? 'Shared with your team' : 'Shared by your team'}>
-          <Users size={12} aria-hidden /> Team
-        </span>
+        <span className="fr-tpl-saved__team" title={mine ? tr('sharedWithYourTeam') : tr('sharedByYourTeam')}>
+          <Users size={12} aria-hidden />{' '}{tr('team')}</span>
       ) : null}
       {mine && company && editor.host.publishTemplate && !t.locked ? (
         <button
           type="button"
           className="fr-tpl-saved__share fr-tpl-saved__publish"
-          aria-label={t.company ? `Withdraw ${t.name} from ${company}` : `Publish ${t.name} to ${company}`}
-          title={t.company ? `Withdraw from ${company}` : `Publish to ${company}`}
+          aria-label={t.company ? tr('withdrawNameFromCompany', { name: t.name, company }) : tr('publishNameToCompany', { name: t.name, company })}
+          title={t.company ? tr('withdrawFromCompany', { company }) : tr('publishToCompany', { company })}
           onClick={() => void publish(!t.company)}
         >
           <Building2 size={14} />
@@ -129,8 +148,8 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
         <button
           type="button"
           className="fr-tpl-saved__share"
-          aria-label={t.shared ? `Stop sharing ${t.name} with ${team.name}` : `Share ${t.name} with ${team.name}`}
-          title={t.shared ? `Stop sharing with ${team.name}` : `Share with ${team.name}`}
+          aria-label={t.shared ? tr('stopSharingNameWithName2', { name: t.name, name2: team.name }) : tr('shareNameWithName2', { name: t.name, name2: team.name })}
+          title={t.shared ? tr('stopSharingWithName', { name: team.name }) : tr('shareWithName', { name: team.name })}
           onClick={() => void share(!t.shared)}
         >
           <Users size={14} />
@@ -140,28 +159,24 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
         <button
           type="button"
           className="fr-tpl-saved__share fr-tpl-saved__share--alone"
-          aria-label={`Stop sharing ${t.name} with the team`}
-          title="Stop sharing with the team (it stays with its owner)"
+          aria-label={tr('stopSharingNameWithThe', { name: t.name })}
+          title={tr('stopSharingWithTheTeam')}
           onClick={() => void share(false)}
         >
           <Users size={14} />
         </button>
       ) : null}
       {mine && !t.locked ? (
-        <button type="button" className="fr-tpl-saved__delete" aria-label={`Delete template ${t.name}`} title="Delete template" onClick={() => setConfirming(true)}>
+        <button type="button" className="fr-tpl-saved__delete" aria-label={tr('deleteTemplateName', { name: t.name })} title={tr('deleteTemplate')} onClick={() => setConfirming(true)}>
           <Trash2 size={14} />
         </button>
       ) : null}
       {confirming ? (
-        <div className="fr-tpl-saved__confirm" role="alertdialog" aria-label={`Delete ${t.name}?`}>
-          <span>Delete this template?</span>
+        <div className="fr-tpl-saved__confirm" role="alertdialog" aria-label={tr('deleteName', { name: t.name })}>
+          <span>{tr('deleteThisTemplate')}</span>
           <div>
-            <Button size="sm" variant="danger" onClick={() => void remove()} autoFocus>
-              Delete
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
+            <Button size="sm" variant="danger" onClick={() => void remove()} autoFocus>{tr('delete')}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>{tr('cancel')}</Button>
           </div>
         </div>
       ) : null}
@@ -186,7 +201,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
   const groups = useMemo(
     () =>
       filter === null && !query.trim()
-        ? CATEGORIES.map((c) => ({ id: c.id, label: c.label, items: builtIns.filter((t) => t.categories[0] === c.id) })).filter((g) => g.items.length)
+        ? CATEGORIES.map((c) => ({ id: c.id, label: CATEGORY_LABELS[c.id], items: builtIns.filter((t) => t.categories[0] === c.id) })).filter((g) => g.items.length)
         : [{ id: 'results', label: '', items: builtIns }],
     [builtIns, filter, query],
   );
@@ -197,7 +212,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
     (name: string) => {
       // Close the dock so the zoom-to-fit isn't partly hidden behind it.
       editor.openDock(null);
-      editor.host.notify(`Added “${name}”. Press ${formatShortcut('mod+z')} to undo.`, 'success');
+      editor.host.notify(tr('addedNamePressValueTo', { name, value: formatShortcut('mod+z') }), 'success');
     },
     [editor],
   );
@@ -206,7 +221,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
     try {
       if ((await addTemplate(editor, def)).length) added(def.name);
     } catch {
-      editor.host.notify(`Could not load “${def.name}”. Check your connection and try again.`, 'error');
+      editor.host.notify(tr('couldNotLoadNameCheck', { name: def.name }), 'error');
     }
   };
 
@@ -214,7 +229,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
     try {
       if ((await insertSavedTemplate(editor, t.id)).length) added(t.name);
     } catch (err) {
-      editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not add the template.', 'error');
+      editor.host.notify(err instanceof Error && err.message ? err.message : tr('couldNotAddTheTemplate'), 'error');
     }
   };
 
@@ -223,16 +238,16 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-tpl">
       <DockHeader className="fr-tpl__head">
-        <h2 className="fr-tpl__title">Templates</h2>
-        <p className="fr-tpl__sub">Start from a ready-made layout, or one you saved. Everything stays editable.</p>
+        <h2 className="fr-tpl__title">{tr('templates2')}</h2>
+        <p className="fr-tpl__sub">{tr('startFromAReadyMade')}</p>
       </DockHeader>
       <Button size="sm" icon={BookmarkPlus} onClick={saveOpen} className="fr-tpl__save">
-        {hasSelection ? 'Save selection as template' : 'Save board as template'}
+        {hasSelection ? tr('saveSelectionAsTemplate') : tr('saveBoardAsTemplate2')}
       </Button>
       <Input
         icon={Search}
-        placeholder="Search templates"
-        aria-label="Search templates"
+        placeholder={tr('searchTemplates')}
+        aria-label={tr('searchTemplates')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
@@ -246,13 +261,9 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
           }
         }}
       />
-      <div className="fr-tpl__chips" role="group" aria-label="Categories">
-        <button type="button" className="fr-tpl-chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>
-          All
-        </button>
-        <button type="button" className="fr-tpl-chip" aria-pressed={filter === 'saved'} onClick={() => setFilter(filter === 'saved' ? null : 'saved')}>
-          Saved
-        </button>
+      <div className="fr-tpl__chips" role="group" aria-label={tr('categories')}>
+        <button type="button" className="fr-tpl-chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>{tr('all')}</button>
+        <button type="button" className="fr-tpl-chip" aria-pressed={filter === 'saved'} onClick={() => setFilter(filter === 'saved' ? null : 'saved')}>{tr('saved')}</button>
         {CATEGORIES.map((c) => (
           <button
             key={c.id}
@@ -261,11 +272,11 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
             aria-pressed={filter === c.id}
             onClick={() => setFilter(filter === c.id ? null : c.id)}
           >
-            {c.label}
+            {CATEGORY_LABELS[c.id]}
           </button>
         ))}
       </div>
-      {!canEdit && <p className="fr-tpl__note">You can browse templates, but adding them needs edit access.</p>}
+      {!canEdit && <p className="fr-tpl__note">{tr('youCanBrowseTemplatesBut')}</p>}
 
       {filter === null || filter === 'saved' ? (
         saved === null ? (
@@ -273,8 +284,8 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
             <Spinner size={18} />
           </div>
         ) : mine.length ? (
-          <section aria-label="Saved templates">
-            {filter === null ? <h3 className="fr-tpl__section">Saved templates</h3> : null}
+          <section aria-label={tr('savedTemplates')}>
+            {filter === null ? <h3 className="fr-tpl__section">{tr('savedTemplates')}</h3> : null}
             <div className="fr-tpl__grid">
               {mine.map((t) => (
                 <SavedCard key={t.id} editor={editor} t={t} canEdit={canEdit} onInsert={(x) => void insertSaved(x)} />
@@ -283,10 +294,8 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
           </section>
         ) : filter === 'saved' && !query ? (
           <div className="fr-tpl__empty">
-            <p>You haven’t saved any templates yet. Save this board, or a selection, to reuse it on any board.</p>
-            <button type="button" className="fr-tpl__reset" onClick={saveOpen}>
-              Save as template
-            </button>
+            <p>{tr('youHavenTSavedAny')}</p>
+            <button type="button" className="fr-tpl__reset" onClick={saveOpen}>{tr('saveAsTemplate2')}</button>
           </div>
         ) : null
       ) : null}
@@ -297,31 +306,28 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
         </div>
       ) : filter !== 'saved' && catalog.list === 'failed' ? (
         <div className="fr-tpl__empty">
-          <p>Couldn’t load Freero’s templates. Check your connection.</p>
-          <button type="button" className="fr-tpl__reset" onClick={catalog.retry}>
-            Try again
-          </button>
+          <p>{tr('couldnTLoadFreeroS')}</p>
+          <button type="button" className="fr-tpl__reset" onClick={catalog.retry}>{tr('tryAgain')}</button>
         </div>
       ) : null}
 
       {groups.map((g) =>
         g.items.length ? (
-          <section key={g.id} aria-label={g.label || 'Freero templates'}>
+          <section key={g.id} aria-label={g.label || tr('freeroTemplates')}>
             {g.label ? (
               <h3 className="fr-tpl__section">
                 {g.label} <span className="fr-tpl__count">{g.items.length}</span>
               </h3>
             ) : filter === null && mine.length ? (
-              <h3 className="fr-tpl__section">Freero templates</h3>
+              <h3 className="fr-tpl__section">{tr('freeroTemplates')}</h3>
             ) : null}
             <div className="fr-tpl__grid">
               {g.items.map((t) => (
                 <button key={t.id} type="button" className="fr-tpl-card" disabled={!canEdit} title={t.description} onClick={() => void insert(t)}>
                   <span className="fr-tpl-card__preview">
-                    <LazyTemplatePreview def={t} />
+                    <LazyTemplatePreview def={t} label={tr('namePreview', { name: t.name })} />
                     <span className="fr-tpl-card__add" aria-hidden>
-                      <Plus size={14} strokeWidth={2.4} /> Add
-                    </span>
+                      <Plus size={14} strokeWidth={2.4} />{' '}{tr('add')}</span>
                   </span>
                   <span className="fr-tpl-card__name">{t.name}</span>
                   <span className="fr-tpl-card__desc">{t.description}</span>
@@ -334,7 +340,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
 
       {shownCount === 0 && query && (all || filter === 'saved') ? (
         <div className="fr-tpl__empty">
-          <p>No templates match “{query}”.</p>
+          <p>{tr('noTemplatesMatchQuery', { query })}</p>
           <button
             type="button"
             className="fr-tpl__reset"
@@ -342,9 +348,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
               setQuery('');
               setFilter(null);
             }}
-          >
-            Show all templates
-          </button>
+          >{tr('showAllTemplates')}</button>
         </div>
       ) : null}
     </div>

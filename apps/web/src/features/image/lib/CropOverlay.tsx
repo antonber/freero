@@ -8,6 +8,7 @@ import { Button } from '@ui';
 import { applyDraft, panPicture, resizeWindow, startDraft, type CropDraft, type CropHandle } from './crop';
 import { CROP_PANEL, setCropping } from './cropping';
 
+import { t } from '../messages';
 const HANDLES: CropHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 /** Smallest crop window, in screen px. */
 const MIN_PX = 16;
@@ -130,7 +131,7 @@ export function CropOverlay({ editor, props }: PanelProps) {
   const barY = below + 44 < vp.height ? below : Math.max(8, Math.min(...corners.map((p) => p.y)) - 58);
 
   return (
-    <div ref={root} className="fr-image-crop" role="dialog" aria-label="Crop image" tabIndex={-1}>
+    <div ref={root} className="fr-image-crop" role="dialog" aria-label={t('cropImage')} tabIndex={-1}>
       <div
         className="fr-image-crop__frame"
         style={{ left: origin.x, top: origin.y, width: snap.w * z, height: snap.h * z, transform: rotation ? `rotate(${rotation}deg)` : undefined }}
@@ -155,15 +156,9 @@ export function CropOverlay({ editor, props }: PanelProps) {
         </div>
       </div>
       <div className="fr-image-crop__bar" style={{ left: barX, top: barY }}>
-        <Button size="sm" variant="ghost" onClick={() => setDraft((d) => (d ? { full: d.full, window: { ...d.full } } : d))}>
-          Show whole image
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => finish.current(false)}>
-          Cancel
-        </Button>
-        <Button size="sm" variant="primary" onClick={() => finish.current(true)}>
-          Done
-        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setDraft((d) => (d ? { full: d.full, window: { ...d.full } } : d))}>{t('showWholeImage')}</Button>
+        <Button size="sm" variant="secondary" onClick={() => finish.current(false)}>{t('cancel')}</Button>
+        <Button size="sm" variant="primary" onClick={() => finish.current(true)}>{t('done')}</Button>
       </div>
     </div>
   );
