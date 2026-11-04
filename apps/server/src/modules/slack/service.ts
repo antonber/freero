@@ -15,7 +15,7 @@ import { checkRateLimit } from '../../platform/rateLimit';
 import { boardSummaryFor, publicLinkPreview } from '../boards/index';
 import { isUploadRemoved } from '../uploads/index';
 import { callSlack, mrkdwn, oneLine } from './api';
-import { botTokenFor, linkedUserOf } from './links';
+import { actingAsSlackFor, botTokenFor, linkedUserOf, slackReach } from './links';
 
 const outcomes = counter('freero_slack_unfurls_total', 'Slack link_shared events by outcome', ['outcome'] as const);
 
@@ -53,10 +53,14 @@ const GENERIC = {
   ],
 };
 
-/** What the poster may see of a board or doc they can open (#105), or null. */
-async function previewFor(target: { kind: 'board' | 'doc'; id: string }, userId: string) {
+/**
+ * What the poster may see of a board or doc they can open (#105), or null — also when its workspace
+ * keeps apps out (API access off, the app blocked, an IP allowlist without an exemption for it).
+ */
+async function previewFor(target: { kind: 'board' | 'doc'; id: string }, userId: string, reach: (workspaceId: string) => Promise<boolean>) {
   try {
-    const b = await boardSummaryFor(target.id, userId, target.kind);
+    const b = await actingAsSlackFor(userId, () => boardSummaryFor(target.id, userId, target.kind));
+    if (!(await reach(b.workspaceId))) return null;
     return { title: b.title, description: target.kind === 'board' ? b.description : '', thumbnail: target.kind === 'board' ? b.thumbnail : null };
   } catch {
     return null; // no such board, no access, taken down: the generic card
@@ -67,11 +71,11 @@ async function previewFor(target: { kind: 'board' | 'doc'; id: string }, userId:
  * The unfurl for one link (blocks), or null when it isn't a Freero board or doc link. `posterId`:
  * the Freero account of the Slack user who posted it, when they connected Slack.
  */
-export async function unfurlFor(url: string, posterId: string | null = null): Promise<{ blocks: unknown[] } | null> {
+export async function unfurlFor(url: string, posterId: string | null = null, reach = posterId ? slackReach(posterId) : null): Promise<{ blocks: unknown[] } | null> {
   const target = linkTarget(url);
   if (!target) return null;
   const pub = target.kind === 'board' ? await publicLinkPreview(target.id) : null;
-  const preview = pub ?? (posterId ? await previewFor(target, posterId) : null);
+  const preview = pub ?? (posterId && reach ? await previewFor(target, posterId, reach) : null);
   if (!preview) return GENERIC;
   const what = target.kind === 'doc' ? 'doc' : 'board';
   const title = oneLine(preview.title || `Untitled ${what}`, 150);
@@ -110,9 +114,10 @@ export async function answerLinkShared(teamId: string, eventId: string | undefin
     if (!firstTime(eventId, now)) return done('duplicate');
     const unfurls: Record<string, unknown> = {};
     const posterId = await linkedUserOf(teamId, event.user);
+    const reach = posterId ? slackReach(posterId) : null;
     for (const l of (event.links ?? []).slice(0, 10)) {
       if (typeof l?.url !== 'string') continue;
-      const u = await unfurlFor(l.url, posterId);
+      const u = await unfurlFor(l.url, posterId, reach);
       if (u) unfurls[l.url] = u;
     }
     if (!Object.keys(unfurls).length) return done('no_links');

@@ -13,7 +13,7 @@ import { checkRateLimit } from '../../platform/rateLimit';
 import { createBoardFor, listBoardsIn } from '../boards/index';
 import { workspaceRolesOf } from '../workspaces/index';
 import { mrkdwn, oneLine } from './api';
-import { linkedUserOf, slackConnectOffered } from './links';
+import { actingAsSlackFor, linkedUserOf, slackConnectOffered, slackReach } from './links';
 
 const commands = counter('freero_slack_commands_total', '/freero commands by outcome', ['outcome'] as const);
 
@@ -45,6 +45,10 @@ export async function answerSlashCommand(form: URLSearchParams): Promise<Command
     );
   const text = unescapeSlack(form.get('text') ?? '').trim();
   if (!text || /^help$/i.test(text)) return done('help', reply(HELP));
+  return actingAsSlackFor(userId, () => run(userId, text, done));
+}
+
+async function run(userId: string, text: string, done: (outcome: string, r: CommandReply) => CommandReply): Promise<CommandReply> {
   try {
     const create = /^new(?:\s+([\s\S]*))?$/i.exec(text);
     if (create) {
@@ -55,7 +59,10 @@ export async function answerSlashCommand(form: URLSearchParams): Promise<Command
     if (!(await checkRateLimit('search', `user:${userId}`)).allowed) return done('rate_limited', reply('That’s a lot of searches. Try again in a minute.'));
     const q = text.slice(0, 200);
     const found = new Map<string, BoardSummary>();
-    for (const ws of (await workspaceRolesOf(userId)).keys()) for (const b of await listBoardsIn(userId, ws, q, undefined, 'board')) found.set(b.id, b);
+    // Only workspaces whose policies let an app reach their boards (API access, blocks, IP allowlist).
+    const reach = slackReach(userId);
+    for (const ws of (await workspaceRolesOf(userId)).keys())
+      for (const b of await listBoardsIn(userId, ws, q, undefined, 'board')) if (await reach(b.workspaceId)) found.set(b.id, b);
     const boards = [...found.values()].sort((a, b) => b.updatedAt - a.updatedAt);
     if (!boards.length) return done('searched', reply(`No board of yours has “${mrkdwn(oneLine(q, 80))}” in its title. Create one with */freero new* _title_.`));
     const lines = boards.slice(0, MAX_RESULTS).map((b) => `• ${boardLink(b)}`);

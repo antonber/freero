@@ -2561,7 +2561,13 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   `new` → boards' `createBoardFor` (personal workspace), words → `listBoardsIn` over their
   workspaces. Unfurls: a link posted by a linked Slack user (`link_shared.user`) to a board they
   can open (`boardSummaryFor`) shows its title / description / thumbnail; for everyone else
-  `publicLinkPreview`'s rule stands. Untrusted text is mrkdwn-escaped everywhere.
+  `publicLinkPreview`'s rule stands. Untrusted text is mrkdwn-escaped everywhere. Team workspace
+  policies: search results and private previews only from workspaces where apiauth's
+  `integrationMayReach` says yes — the Slack app counts as an app the person connected
+  ('slack:<userId>' in the workspace's API list: API switch, the organisation's as a floor, block,
+  and an IP allowlist only with that credential exempted, since Slack's servers ask); the work runs
+  in a request context carrying that credential id, so board access applies the same exemptions.
+  DMs are notifications (email's rules), not app access.
 - **Meeting notes** are a structure kind, `meeting` (`@freero/shared` `layout/meeting.ts`: a pure
   reader of Markdown / text / WebVTT / SRT — headings, bullets, check boxes, owner and due phrases,
   speaker labels, cue times; no AI — and its one-frame layout). So the web (`features/meeting-notes`:

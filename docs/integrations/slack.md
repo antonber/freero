@@ -124,6 +124,22 @@ it (see the table above).
 
 A Slack user who didn't connect gets a pointer to the settings page and nothing about any board.
 
+**Team workspace policies.** For a team workspace, the Slack app is treated like an app the
+person connected. Its admin console's API page lists it under **Tokens and apps used here** as
+"Slack (Freero’s Slack app)", once per person who used it there, and:
+
+- with **Allow API access to this workspace’s boards** off for the workspace (or for its organisation), `/freero` never lists its
+  boards and a link to one of them gets the generic card, whoever posts it;
+- **Block here** on the app for a person does the same for that person;
+- with an **IP allowlist**, its boards are left out too, because the requests come from Slack's
+  servers, not from the person's network, so the allowlist can't tell where they are. Ticking
+  **Any network** on the app for a person there (as for any token or app) lets it in for them.
+
+`/freero new` only creates boards in the person's personal workspace, which has no such policies.
+Direct messages are notifications, like the notification emails: they follow the person's settings,
+not these policies. There is no workspace allow-list of OAuth apps yet (#23); when there is, it
+applies here too (`apiauth` `integrationMayReach`).
+
 **Disconnecting.** **Disconnect Slack** in Settings removes the link at once: no more messages,
 previews of private boards or commands for that person. Freero holds no token of the person's — the
 app's bot writes to them — so there is none of theirs to revoke. When nobody in that Slack workspace

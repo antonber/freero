@@ -11,10 +11,12 @@ import { fileURLToPath } from 'node:url';
 import type { Request, Response } from 'express';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { apiNotFound, createApp, errorHandler } from '../../platform/http';
+import { runWithRequestContext } from '../../platform/requestContext';
 import { closeTestDb, openTestDb } from '../../platform/testing';
+import { ipExemptionsOf, setCredentialIpExempt, setWorkspaceApiAccess } from '../apiauth/index';
 import { createUser } from '../auth/index';
 import { createBoard, listBoardsIn } from '../boards/index';
-import { ensurePersonalWorkspace } from '../workspaces/index';
+import { createTeamWorkspace, ensurePersonalWorkspace, setIpExemptionReader, updateWorkspaceSettings } from '../workspaces/index';
 import { sendSlackDm } from './dm';
 import { unlinkSlack } from './links';
 import { SLACK_BOT_SCOPES, slackAppManifest } from './manifest';
@@ -90,6 +92,7 @@ beforeAll(async () => {
   await new Promise<void>((r) => freero.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(freero.address() as AddressInfo).port}/api/integrations/slack`;
   events = `${base}/events`;
+  setIpExemptionReader(ipExemptionsOf); // as apiauth's init does at startup
   ownerId = (await createUser({ name: 'Ines', email: 'ines@slack.test.freero.app', password: 'password-123' }, { emailVerified: true })).id;
 });
 afterAll(async () => {
@@ -345,5 +348,33 @@ it('Slack telling Freero the app was uninstalled from a workspace (signed) disco
   await post({ type: 'event_callback', team_id: 'TRAY', event_id: `Ev${++n}`, event: { type: 'app_uninstalled' } });
   await vi.waitFor(async () => expect(await repo.linkOf(ray)).toBeNull());
   expect(await repo.teamToken('TRAY')).toBeNull();
+  calls.length = 0;
+});
+
+it('a board in a team workspace that keeps apps out — API access off, or an IP allowlist that doesn’t exempt the Slack app — never shows in /freero or as a private preview', async () => {
+  const kai = await linked('Kai', 'TKAI', 'UKAI');
+  const team = await createTeamWorkspace(kai, 'Corp dev');
+  const board = await createBoard(kai, 'Merger plan', '', 'none', { workspaceId: team.id, projectId: null });
+  const url = `https://freero.test/board/${board.id}`;
+  const search = async () => (await (await command({ team_id: 'TKAI', user_id: 'UKAI', text: 'merger' })).json()).text as string;
+  const preview = async () => {
+    const before = callsTo('chat.unfurl').length;
+    await post(linkShared([url], { user: 'UKAI' }, 'TKAI'));
+    await vi.waitFor(() => expect(callsTo('chat.unfurl')).toHaveLength(before + 1));
+    return JSON.stringify(callsTo('chat.unfurl').at(-1)!.body.unfurls[url]);
+  };
+  expect(await search()).toContain('Merger plan');
+
+  await setWorkspaceApiAccess(team.id, kai, false);
+  expect(await search()).not.toContain('Merger plan');
+  expect(await preview()).not.toContain('Merger plan');
+  await setWorkspaceApiAccess(team.id, kai, true);
+
+  // Slack's servers ask, not Kai's office network: hidden until the workspace exempts the app.
+  await runWithRequestContext({ reqId: 'office', userId: null, ip: '10.0.0.5', userAgent: null }, () => updateWorkspaceSettings(team.id, kai, { ipAllowlist: ['10.0.0.0/8'] }));
+  expect(await search()).not.toContain('Merger plan');
+  await setCredentialIpExempt(team.id, kai, `slack:${kai}`, true);
+  expect(await search()).toContain('Merger plan');
+  expect(await preview()).toContain('Merger plan');
   calls.length = 0;
 });
