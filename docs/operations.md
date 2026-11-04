@@ -197,7 +197,11 @@ Single instance:
 3. Shortly after startup the re-sealing job logs
    `auth: every readable two-step verification secret is sealed under the current SESSION_SECRET …`
    (anyone signing in in the meantime is re-sealed on the spot). It repeats hourly while
-   `SESSION_SECRET_PREVIOUS` is set.
+   `SESSION_SECRET_PREVIOUS` is set. Workspace encryption keys on the instance's key (#159) work the
+   same way: their data keys open under the previous secret, are wrapped again on use and by the
+   `keys:rewrap-instance` job, which logs `keys: every readable workspace data key is wrapped under
+   the current SESSION_SECRET …` (and an error naming how many open with no configured secret —
+   then put the missing secret back before going on: those workspaces' content depends on it).
 4. Remove `SESSION_SECRET_PREVIOUS` and restart. Signed links made before step 2 (in emails sent
    earlier) stop working from then on, so keep the previous secret for a few days if that matters;
    keeping it longer costs nothing.
@@ -277,7 +281,7 @@ instance's (derived from `SESSION_SECRET`) or the workspace's own AWS KMS key (`
 - **Rolling out.** Turn the feature on only once every instance runs a release that has it: an
   older instance can't open sealed rows (it fails on them — the stored form starts with bytes no
   Yjs decoder accepts, so it never mistakes them for content), so boards of a keyed workspace
-  wouldn't open there. `WORKSPACE_KEYS=false` during the rollout, then true.
+  wouldn't open there. `WORKSPACE_KEYS` is off by default: leave it off through the rollout, then set it to `true`.
 - **A customer's own key.** They create a symmetric KMS key and allow your `KMS_AWS_*` principal
   `kms:Encrypt` and `kms:Decrypt` on it, conditioned on `kms:EncryptionContext:freero_workspace`
   = their workspace id; then paste its ARN. Freero checks the key both ways before it seals anything.

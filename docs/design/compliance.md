@@ -113,7 +113,7 @@ exportable) for the record.
 ### Built / left
 
 Built as designed: `modules/ediscovery` (cases, scope changes, release, the export job and its
-archive), boards' hold rows and trigger (migration `202611301000_board_legal_holds.sql`), the purge
+archive), boards' hold rows and trigger (migration `202611301005_board_legal_holds.sql`), the purge
 paths in the table, the realtime and audit retention holds, and the admin console's Legal holds
 tab. One path was added to the table while building: destroying a workspace's encryption key
 (#159) is crypto-shredding, so it is refused (409 `legal_hold`) while anything there is held.
@@ -212,7 +212,8 @@ rotating it never takes the workspace down.
 KEK  key-encryption key   per workspace; never leaves its provider
        provider 'instance': platform/secrets seal (HKDF of SESSION_SECRET, purpose
                             'workspace-kek-v1'), the workspace id sealed in with the DEK;
-                            rotates with SESSION_SECRET (re-wrapped on first use)
+                            rotates with SESSION_SECRET (re-wrapped on use and by the
+                            keys:rewrap-instance job while SESSION_SECRET_PREVIOUS is set)
        provider 'aws-kms':  the workspace's CMK (ARN); Encrypt/Decrypt with encryption context
                             { freero_workspace: <id> }; credentials = the operator's AWS principal
                             (KMS_AWS_*), which the customer's key policy grants (cross-account)
@@ -253,7 +254,9 @@ data                     each sealed row names its DEK (`sealed_with` = '<worksp
   key until the `keys:seal` job or the next move reseals it.
 - **Rolling deploys**: `SEALED_PREFIX` is nine 0xFF bytes, a Yjs varint no decoder accepts, so an
   older release reading a sealed row fails at once instead of applying ciphertext as content (and
-  compacting it away). Turn the feature on after every instance runs it (`WORKSPACE_KEYS`).
+  compacting it away). `WORKSPACE_KEYS` is off by default — off, nothing is sealed and, while no
+  workspace ever had a key, board reads, writes and access checks do no key lookups (`keysInUse`);
+  turn it on after every instance runs the release.
 
 ### Rotation and revocation
 
@@ -261,7 +264,9 @@ data                     each sealed row names its DEK (`sealed_with` = '<worksp
   instance's key and a KMS key): every DEK version is unwrapped and wrapped again under the new KEK
   and a new DEK version is added for new writes, in one transaction — no content touched, no
   downtime. `SESSION_SECRET` rotation rotates the instance KEK: a DEK unwrapped under a previous
-  secret is wrapped again on the spot.
+  secret is wrapped again on the spot, and the `keys:rewrap-instance` job (hourly while
+  `SESSION_SECRET_PREVIOUS` is set) wraps every one again, so workspaces nobody opens during the
+  rotation never depend on the previous secret once it is removed.
 - **DEK rotation**: part of every rotation. Old blobs keep opening with their version; the
   `keys:seal` job (every minute, a few boards per round) seals them again under the newest one —
   also content stored before the key was turned on.

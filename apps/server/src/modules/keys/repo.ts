@@ -48,6 +48,11 @@ export async function getKey(workspaceId: string): Promise<KeyRow | null> {
   return r ? toKey(r) : null;
 }
 
+/** Whether any workspace ever had a key (destroyed ones count: their content stays closed). */
+export async function anyKeyInUse(): Promise<boolean> {
+  return (await one(`SELECT 1 FROM workspace_keys LIMIT 1`)) !== null;
+}
+
 /** States of the keys among these workspaces (workspaces without a key are absent). */
 export async function statesOf(workspaceIds: string[]): Promise<Map<string, WorkspaceKeyState>> {
   if (!workspaceIds.length) return new Map();
@@ -103,6 +108,17 @@ export async function dataKeys(workspaceId: string): Promise<DataKeyRow[]> {
 }
 
 /** Replaces one wrapped data key, only if it is still the one read (a concurrent rewrap wins). */
+/** Every data key wrapped by the instance's key (SESSION_SECRET rotation re-wraps them), any state but destroyed. */
+export async function instanceWrappedDataKeys(): Promise<Array<DataKeyRow & { workspaceId: string }>> {
+  return (
+    await query<{ workspace_id: string; version: number; wrapped: string; kek_ref: string }>(
+      `SELECT d.workspace_id, d.version, d.wrapped, d.kek_ref FROM workspace_data_keys d
+       JOIN workspace_keys k ON k.workspace_id = d.workspace_id
+       WHERE k.provider = 'instance' AND k.state <> 'destroyed' ORDER BY d.workspace_id, d.version`,
+    )
+  ).map((r) => ({ workspaceId: r.workspace_id, version: r.version, wrapped: r.wrapped, kekRef: r.kek_ref }));
+}
+
 export async function rewrap(workspaceId: string, version: number, from: string, to: string, kekRef: string): Promise<boolean> {
   const r = await one(
     `UPDATE workspace_data_keys SET wrapped = $4, kek_ref = $5 WHERE workspace_id = $1 AND version = $2 AND wrapped = $3 RETURNING 1`,

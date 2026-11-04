@@ -1018,7 +1018,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
     },
     workspaceKeys: {
-      enabled: bool('WORKSPACE_KEYS', true),
+      enabled: bool('WORKSPACE_KEYS', false),
       cacheMs: int('WORKSPACE_KEY_CACHE_SECONDS', 300, 5, 3600) * 1000,
       awsKms: awsKms(),
     },

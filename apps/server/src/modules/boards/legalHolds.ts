@@ -3,7 +3,7 @@
 // case id). While any hold names a board (or its owner in its workspace, a custodian), nothing
 // deletes it: the trash purge and retention rules skip it, "delete forever" only discards it
 // (hidden, kept), the account purge and workspace deletion wait or refuse — and the database
-// refuses the delete on any path (migration 202611301000_board_legal_holds.sql).
+// refuses the delete on any path (migration 202611301005_board_legal_holds.sql).
 import * as repo from './repo';
 
 export interface LegalHoldScope {

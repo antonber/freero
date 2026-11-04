@@ -20,7 +20,7 @@ import * as repo from './repo';
 const MAX_SUBJECTS = 500;
 const MAX_EXPORT_ATTEMPTS = 3;
 const STALE_MS = 30 * 60_000;
-export const CASE_EXPORT_LOCK_KEY = 7_202_611_301; // arbitrary, constant across releases
+export const CASE_EXPORT_LOCK_KEY = 7_202_611_311; // arbitrary, constant across releases
 
 export interface Place {
   id: string;

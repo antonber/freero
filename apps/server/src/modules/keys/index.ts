@@ -9,6 +9,7 @@ export {
   openSealed,
   sealerFor,
   unusableKeysAmong,
+  keysInUse,
   type BlobSealer,
 } from './service';
 // The console's actions (routes.ts) and the jobs (init.ts), for the operator CLI and other modules' tests.

@@ -11,7 +11,7 @@ import * as repo from './repo';
 import { createBoard, moveToWorkspace } from './service';
 
 beforeAll(async () => {
-  await openTestDb();
+  await openTestDb({ WORKSPACE_KEYS: 'true' });
 });
 afterAll(closeTestDb);
 

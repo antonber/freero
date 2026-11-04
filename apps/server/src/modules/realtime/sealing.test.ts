@@ -14,7 +14,7 @@ import { storedBoardView } from './stored';
 import { boardUploadReferences } from './uploadRefs';
 
 beforeAll(async () => {
-  await openTestDb();
+  await openTestDb({ WORKSPACE_KEYS: 'true' });
 });
 afterAll(closeTestDb);
 

@@ -587,7 +587,7 @@ export async function discardHeldExpired(before: number, byWorkspace: Array<{ wo
 
 // ---- legal holds (#157): the only writer of board_legal_holds and board_owner_legal_holds ----
 
-/** Postgres error code of the trigger that refuses to delete a held board (migration 202611301000). */
+/** Postgres error code of the trigger that refuses to delete a held board (migration 202611301005). */
 export const LEGAL_HOLD_ERROR = 'FH001';
 export const isLegalHoldViolation = (e: unknown): boolean => (e as { code?: unknown } | null)?.code === LEGAL_HOLD_ERROR;
 

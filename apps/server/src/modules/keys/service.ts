@@ -45,6 +45,22 @@ const deks = new Map<string, { dek: Buffer; until: number }>();
 const keyRows = new Map<string, { key: repo.KeyRow | null; until: number }>();
 const cacheMs = () => getConfig().workspaceKeys.cacheMs;
 
+/**
+ * Whether board content may need sealing or opening at all. With WORKSPACE_KEYS on: always (look
+ * each workspace up). Off (the default): no workspace can turn a key on, so "no workspace ever had
+ * a key" — a server that never turned the feature on — stays true: board reads, writes and access
+ * checks then skip every key lookup, and nothing is sealed. Keys turned on earlier, while it was on,
+ * keep working (destroyed ones keep their content closed).
+ */
+let inUse: { value: boolean; until: number } | null = null;
+export async function keysInUse(): Promise<boolean> {
+  if (getConfig().workspaceKeys.enabled) return true;
+  if (inUse && inUse.until > Date.now()) return inUse.value;
+  const value = await repo.anyKeyInUse();
+  inUse = { value, until: Date.now() + cacheMs() };
+  return value;
+}
+
 /** Forgets this workspace's key row here; `dropKeys`: its unwrapped data keys too. */
 function forgetLocally(workspaceId: string, dropKeys: boolean): void {
   keyRows.delete(workspaceId);
@@ -77,9 +93,11 @@ export function listenForKeyChanges(): () => void {
 export function forgetAllCachedKeys(): void {
   deks.clear();
   keyRows.clear();
+  inUse = null;
 }
 
 async function keyOf(workspaceId: string): Promise<repo.KeyRow | null> {
+  if (!(await keysInUse())) return null;
   const hit = keyRows.get(workspaceId);
   if (hit && hit.until > Date.now()) return hit.key;
   const key = await repo.getKey(workspaceId);
@@ -112,6 +130,31 @@ async function dataKeyOf(key: repo.KeyRow, version: number): Promise<Buffer> {
   }
   deks.set(id, { dek, until: Date.now() + cacheMs() });
   return dek;
+}
+
+/**
+ * SESSION_SECRET rotation (docs/operations.md): every data key wrapped by the instance's key under a
+ * secret listed in SESSION_SECRET_PREVIOUS is wrapped again under the current one — whether or not
+ * its workspace is used meanwhile — so removing the previous secret never leaves one unreadable.
+ * `unreadable`: wrapped under a secret no longer configured (lost unless that secret comes back).
+ * Idempotent; a row changed meanwhile (a rotation, another instance) is left to the next run.
+ */
+export async function rewrapInstanceKeys(): Promise<{ rewrapped: number; unreadable: number }> {
+  let rewrapped = 0;
+  let unreadable = 0;
+  for (const row of await repo.instanceWrappedDataKeys()) {
+    let out: { dek: Buffer; stale: boolean };
+    try {
+      out = await unwrapDataKey({ provider: 'instance', kmsKeyId: null }, row.workspaceId, row.wrapped);
+    } catch {
+      unreadable++;
+      continue;
+    }
+    if (!out.stale) continue;
+    const again = await wrapDataKey({ provider: 'instance', kmsKeyId: null }, row.workspaceId, out.dek);
+    if (await repo.rewrap(row.workspaceId, row.version, row.wrapped, again, row.kekRef)) rewrapped++;
+  }
+  return { rewrapped, unreadable };
 }
 
 // ---- what realtime uses ----
@@ -163,6 +206,7 @@ export async function currentSealRef(workspaceId: string): Promise<string | null
 
 /** The workspaces among these whose key exists but can't be used (the `key_unavailable` block). Always from the database. */
 export async function unusableKeysAmong(workspaceIds: string[]): Promise<Set<string>> {
+  if (!(await keysInUse())) return new Set();
   const states = await repo.statesOf(workspaceIds);
   return new Set([...states].filter(([, s]) => s !== 'active').map(([id]) => id));
 }

@@ -39,6 +39,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   await openTestDb({
+    WORKSPACE_KEYS: 'true',
     KMS_AWS_ACCESS_KEY_ID: 'AKIATEST',
     KMS_AWS_SECRET_ACCESS_KEY: 'secret',
     KMS_AWS_ENDPOINT: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`,

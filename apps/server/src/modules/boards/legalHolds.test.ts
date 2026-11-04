@@ -15,7 +15,7 @@ import { boardRecords } from './index';
 import * as repo from './repo';
 import { createBoard, deleteForever, listBoards, moveToTrash, purgeExpiredTrashLocked, transferBoard } from './service';
 
-beforeAll(() => openTestDb());
+beforeAll(() => openTestDb({ WORKSPACE_KEYS: 'true' }));
 afterAll(() => closeTestDb());
 
 const DAY = 86_400_000;

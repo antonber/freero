@@ -5,7 +5,7 @@
 // data binds a blob to its workspace, board, table and layer: a blob copied into another board,
 // another table or another person's private layer never opens.
 import { boardWorkspaceId } from '../boards/index';
-import { KeyUnavailableError, openSealed, sealerFor as keySealerFor } from '../keys/index';
+import { KeyUnavailableError, keysInUse, openSealed, sealerFor as keySealerFor } from '../keys/index';
 import { uploadNamesIn } from '../uploads/index';
 
 export type BlobTable = 'doc' | 'update' | 'snapshot' | 'layer' | 'layer_update';
@@ -42,7 +42,8 @@ export const SEALED_PREFIX = Buffer.alloc(9, 0xff);
  * KeyUnavailableError when the workspace has a key that can't be used.
  */
 export async function sealerFor(boardId: string, workspaceId?: string | null): Promise<BoardSealer> {
-  const ws = workspaceId ?? (await boardWorkspaceId(boardId));
+  // No workspace ever had a key (WORKSPACE_KEYS off, the default): stored as is, no lookups.
+  const ws = (await keysInUse()) ? (workspaceId ?? (await boardWorkspaceId(boardId))) : null;
   const sealer = ws ? await keySealerFor(ws) : null;
   const refs = new Set<string>();
   if (!sealer || !ws) return { ref: null, refs, seal: (_t, plain) => ({ data: toBuffer(plain), sealedWith: null }) };

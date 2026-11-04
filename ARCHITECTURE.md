@@ -3066,6 +3066,12 @@ docs/design/compliance.md §3; operating it: docs/operations.md "Workspace encry
   (AES-256-GCM, additional data = workspace, board, table, layer). Single writer of both tables:
   keys' repo, through the console's routes (`/workspaces/:id/admin/key…`, security scope;
   destroy: owners with the workspace's name) and its jobs.
+- **Off by default** (`WORKSPACE_KEYS=false`): no workspace can turn a key on, and while no workspace
+  ever had one, keys' `keysInUse` lets board reads, writes and access checks skip every key lookup —
+  a deploy changes nothing. Keys turned on while it was on keep working.
+- **SESSION_SECRET rotation**: an instance-wrapped DEK opens under `SESSION_SECRET_PREVIOUS`, is
+  wrapped again on use, and the `keys:rewrap-instance` job (hourly while a previous secret is set)
+  wraps every one again, logging when all are done and how many open with no configured secret.
 - **One boundary for content**: `realtime/repo.ts` seals every blob it writes for a board whose
   workspace has a key (`realtime/sealing.ts` `sealerFor` → keys' `sealerFor`; throws — nothing is
   written — when that key can't be used, never a plaintext fallback) and opens every sealed blob it
