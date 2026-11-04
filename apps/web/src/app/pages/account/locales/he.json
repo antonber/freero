@@ -250,7 +250,13 @@
     "slackLabel",
     "delete",
     "newCommentsOnYourBoards",
-    "tellMeWhenSomeoneStarts"
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "לא ניתן להתחבר ל-Freero. נא לנסות שוב.",
   "restoreAccount": "שחזור החשבון",
@@ -502,5 +508,11 @@
   "slackLabel": "Slack: {label}",
   "delete": "מחיקה",
   "newCommentsOnYourBoards": "תגובות חדשות בלוחות שלך",
-  "tellMeWhenSomeoneStarts": "ליידע אותי כשמישהו פותח שרשור תגובות בלוח שבבעלותי או שסימנתי בכוכב: בפעמון, ואז בדוא״ל או ב-Slack כפי שנבחר למטה."
+  "tellMeWhenSomeoneStarts": "ליידע אותי כשמישהו פותח שרשור תגובות בלוח שבבעלותי או שסימנתי בכוכב: בפעמון, ואז בדוא״ל או ב-Slack כפי שנבחר למטה.",
+  "notificationsOnThisComputer": "התראות במחשב הזה",
+  "notificationsInThisBrowser": "התראות בדפדפן הזה",
+  "popUpsForNewActivity": "התראות של המערכת על פעילות חדשה בתיבת הדואר שלכם, כש-Freero אינו החלון שבחזית. מוגדר למכשיר הזה בלבד.",
+  "showNotificationsOnThisDevice": "הצגת התראות במכשיר הזה",
+  "notificationsAreBlockedForFreero": "ההתראות חסומות עבור Freero. אפשרו אותן בהגדרות המערכת או הדפדפן ונסו שוב.",
+  "showMeNotificationsAbout": "הצגת התראות על"
 }

@@ -67,10 +67,28 @@ function BottomDock() {
   );
 }
 
+/** The browser's own word on the network (DevTools' offline switch, airplane mode). */
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  return online;
+}
+
 function ConnectionBanner() {
   const core = useCore();
   const status = useStore(core.ui, (s) => s.connection);
   const synced = useStore(core.ui, (s) => s.synced);
+  const restored = useStore(core.ui, (s) => s.restored);
+  const online = useOnline();
   // [QA collab] After a drop the provider reports "connecting" + unsynced again: that is a
   // reconnect (edits are kept), not the first connect.
   const wasSynced = useRef(false);
@@ -85,6 +103,12 @@ function ConnectionBanner() {
     return (
       <div className="fr-connection fr-connection--error" role="status">
         <WifiOff size={14} />{' '}{t('youNoLongerHaveAccess')}</div>
+    );
+  // #178: offline. With a copy on this device, edits survive a reload; without one, only this tab holds them.
+  if (!online || (restored && !wasSynced.current && status === 'disconnected'))
+    return (
+      <div className="fr-connection fr-connection--warn fr-connection--offline" role="status">
+        <WifiOff size={14} />{' '}{core.hostRef.current.offline ? t('youReOfflineChangesAreKeptOnDevice') : t('youReOfflineKeepThisTabOpen')}</div>
     );
   if (status === 'connecting' && !synced && !wasSynced.current)
     return (

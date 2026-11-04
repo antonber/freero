@@ -165,7 +165,7 @@ import type {
 import { serverErrorText } from '../i18n/errors';
 import type { ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
-import { BACKUP_MEDIA_TYPE } from '@freero/shared';
+import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
 import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
@@ -335,6 +335,8 @@ export const api = {
       return r;
     }),
   getBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/boards/${id}`),
+  /** #178: which boards kept on this device may stay (the rest are deleted from it). */
+  offlineCheck: (ids: string[]) => request<OfflineCheckResponse>('POST', '/api/boards/offline-check', { ids } satisfies OfflineCheckRequest),
   // docs (KAI-162): containers like boards — /api/boards/:id serves their summary, sharing, versions
   createDoc: (body: CreateDocRequest = {}) => request<CreateDocResponse>('POST', '/api/docs', body),
   /** The doc as Markdown (downloads policy; recorded as an export). */

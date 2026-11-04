@@ -113,6 +113,24 @@ export interface Camera { x: number; y: number; zoom: number } // world point at
 // ---------------------------------------------------------------------------
 export interface HostUser { id: string; name: string; color: string; avatarUrl: string | null }
 
+/**
+ * [additive, #178] A board's state as kept on this device: the shared doc and this person's layers
+ * (Yjs state updates). `editors` only for someone who reads the board as an owner / editor.
+ */
+export interface OfflineCopy {
+  shared: Uint8Array;
+  private?: Uint8Array;
+  editors?: Uint8Array;
+}
+/** [additive, #178] Where the device copy of a board is kept (see `Host.offline`). */
+export interface HostOffline {
+  /** The copy kept on this device, or null. */
+  load(): Promise<OfflineCopy | null>;
+  save(copy: OfflineCopy): Promise<void>;
+  /** Access ended for good (or the board was removed): delete the copy. */
+  forget(): Promise<void>;
+}
+
 /** [additive] A person's own view settings on one board (see `Host.personalViews`). */
 export interface HostPersonalViews {
   list(): Promise<Array<{ itemId: string; viewId: string; settings: Record<string, unknown> }>>;
@@ -244,6 +262,15 @@ export interface Host {
    * more (an embed: sign in again, open in Freero) does it here. Called once per board load.
    */
   onConnectionEnded?(end: { code: number; reason: string }): void;
+  /**
+   * [additive, #178] A copy of this board kept on this device, so it opens and can be edited
+   * offline and syncs on reconnect. Absent: nothing is kept (guests, embeds, a workspace whose
+   * policy forbids offline copies). The engine reads it before connecting, saves after the first
+   * sync and after changes, keeps the editors layer only while this person reads it as an
+   * owner / editor, and forgets the copy when the server ends access for good. Bytes are opaque to
+   * the host (it encrypts them at rest).
+   */
+  offline?: HostOffline;
   uploadImage(file: Blob): Promise<{ url: string }>;
   /**
    * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota

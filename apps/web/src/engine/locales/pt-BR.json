@@ -191,7 +191,9 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen"
   ],
   "dots": "Pontos",
   "lines": "Linhas",
@@ -375,6 +377,8 @@
   "youNoLongerHaveAccess": "Você não tem mais acesso a este quadro.",
   "connecting": "Conectando…",
   "reconnectingYourChangesAreKept": "Reconectando… suas alterações estão guardadas e serão sincronizadas.",
+  "youReOfflineChangesAreKeptOnDevice": "Você está offline. As alterações ficam guardadas neste dispositivo e são sincronizadas quando você voltar a ficar online.",
+  "youReOfflineKeepThisTabOpen": "Você está offline. Mantenha esta aba aberta: suas alterações são sincronizadas quando você voltar a ficar online.",
   "groupOfLengthItemsSelected": "Grupo de {length} itens selecionado.",
   "thisBoardCouldnTStart": "Não foi possível iniciar este quadro",
   "liveBoard": "Quadro ao vivo",

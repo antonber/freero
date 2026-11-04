@@ -191,7 +191,9 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen"
   ],
   "dots": "נקודות",
   "lines": "קווים",
@@ -375,6 +377,8 @@
   "youNoLongerHaveAccess": "כבר אין לך גישה ללוח הזה.",
   "connecting": "מתחבר…",
   "reconnectingYourChangesAreKept": "מתחבר מחדש… השינויים שלך נשמרים ויסונכרנו.",
+  "youReOfflineChangesAreKeptOnDevice": "אתם במצב לא מקוון. השינויים נשמרים במכשיר הזה ויסונכרנו כשתחזרו לרשת.",
+  "youReOfflineKeepThisTabOpen": "אתם במצב לא מקוון. השאירו את הכרטיסייה הזו פתוחה: השינויים שלכם יסונכרנו כשתחזרו לרשת.",
   "groupOfLengthItemsSelected": "נבחרה קבוצה של {length} פריטים.",
   "thisBoardCouldnTStart": "לא ניתן היה להפעיל את הלוח הזה",
   "liveBoard": "לוח חי",

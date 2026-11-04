@@ -144,6 +144,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A diagram (#117, #118; `DiagramElement`, type `diagram`: title, layout, layers, `laidOut`, its box) and its members' layout — positions, `diagramPinned`, `diagramLayer` on join, layer locks (`locked` + `layerLocked`), stacking, lines between members joining it — read through `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `memberLayerId`, `hiddenByLayer`, `diagramSignature`) | `features/diagram`: its element's `arrange` (`planDiagram`, the one writer of members' positions: it reflows only when `laidOut`, the structure's signature, changes; a member moved by hand is pinned) and its commands (layout, Lay out again, unpin, layers); server `modules/structure` / `modules/api` through `withDiagramLayout` in the same change; `layoutStructure` wraps graph-like structures in one (`wrapInDiagram`) | `runCommand('diagram.setLayout' / 'diagram.relayout' / 'diagram.unpin' / 'diagram.wrap' / 'diagram.focus')`. Features that write member positions of a diagram (from-text's source edits) leave them to it. Focus is engine UI state (`Editor.setFocus`); the layer a person adds to is a personal view (`_layer`). See docs/design/diagrams.md |
+| A board's copy on a device (#178: IndexedDB `freero-offline` — the board's Yjs state, its summary, the account card, the key that seals them) | the engine's `BoardStore` writes a copy's content through `Host.offline`; `app/offline/copies.ts` decides which boards are kept and deletes them (sign-out, session gone, another person, access lost, policy); only `app/offline/vault.ts` touches the database | the server's `BoardPermissions.offline` and `POST /boards/offline-check`; see "Offline copies" |
 | A person's interface language (`users.locale`, `Account.locale`, #5) and the page's `<html lang dir>` | server `modules/auth` (`PATCH /api/auth/me` `{ locale }`, sign-up's `locale`); in the browser `app/i18n/locale.ts` is the only writer of `lang` / `dir` and of the language this browser remembers — decided once before the app loads (`?lang=` for the tab > the account's > this browser's > `navigator.languages` > English), a change saves and reloads | `LanguagePicker` (`app/components`): account settings → Language, under the sign-in card |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
@@ -1159,11 +1160,14 @@ to `dist/sw.js` by the `freero-sw` plugin in `vite.config.ts` (version = hash of
 files; it precaches them plus the shell files). Rules, all in `strategyFor` / `respond` (tested):
 - `/api`, `/ws`, `/uploads`, non-GET and other origins are never answered or stored by the worker.
 - Navigations always go to the network (never cached, so sign-in pages and a deploy's new
-  `index.html` are never stale); `offline.html` (no scripts: CSP) when the network fails.
+  `index.html` are never stale); when the network fails, a board (`/board/:id`) gets this build's
+  precached `index.html` (`APP_SHELL`, #178: it may be kept on the device), every other page
+  `offline.html` (no scripts: CSP).
 - Hashed `/assets/*` and the shell files are cache-first; old versions' caches go on activation.
 - `app/pwa/AppUpdates.tsx` registers it (production only), offers "Reload" when a new version
-  waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. Offline editing is out of scope;
-  anything that must work offline is a new decision, not a new cache rule.
+  waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. The worker never holds board
+  data: boards kept offline live in IndexedDB, written by the app (below). Anything else that must
+  work offline is a new decision, not a new cache rule.
 - File handler (KAI-218): the manifest's `file_handlers` opens `.freero` files with `/app?restore=1`;
   the dashboard reads the file from `launchQueue` (`app/lib/pendingBackup.ts`) into the restore
   dialog. Share target: `share_target` POSTs a multipart form to `/api/share-target` (server
@@ -1872,7 +1876,10 @@ members with roles owner / admin / member / guest (separate from board roles).
   (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
   embed page's framing header, its sockets and oEmbed all ask), `linkPassword` / `linkMaxDays`
   (#39: what a board's link needs before it is turned on or changed; see "Co-owners, board
-  sharing settings and moving boards"). All other
+  sharing settings and moving boards"), `offlineCopies` (#178: may its boards be kept on devices
+  for offline work — 'all', 'unkeyed' (default: not while the workspace has its own encryption
+  key), 'off'; told to devices by `BoardPermissions.offline` and `POST /boards/offline-check`, a
+  label may cap it; see "Offline copies"). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
@@ -3125,6 +3132,76 @@ Server, #6), Asana (#120), monday.com (#121), ClickUp (#180) or Trello (#181), a
   OAuth, webhooks naming their secret) and `mock-trello.mjs` (lists, hidden addresses, HEAD check,
   signed webhooks), which implement the subset of each public API used,
   webhooks included.
+
+### Desktop app (`apps/desktop`, #176; docs/desktop.md)
+
+A Tauri 2 shell (Rust, `apps/desktop/src-tauri`) whose one window shows a Freero instance's web
+app as the server serves it — the operator's by default (`FREERO_INSTANCE_URL` at build time), any
+https server the person chooses (Freero › Change server…, the shell's own page `apps/desktop/ui`).
+Not an npm workspace: the Tauri CLI is fetched at a pinned version (`npm run desktop:dev` /
+`desktop:build`, `apps/desktop/build.mjs`), `Cargo.lock` is committed, and CI
+(`.github/workflows/desktop.yml`) tests it on Linux and builds unsigned Windows / macOS installers
+(signing, notarisation and the update key are the owner's secrets; docs/desktop.md).
+- `freero://board/<id>`, `doc/<id>`, `app`, `open?url=` and the chosen server's own https pages
+  open in the window; anything else never does (`src/links.rs`, tested). A second launch hands its
+  link to the running app (single instance).
+- The page may call only the notification plugin, and only from the chosen server's origin (a
+  capability added at start); changing the server is a command only the shell's own page may call.
+- Notifications: the web app's `app/notifications/device.ts` turns new inbox items into the
+  system's notifications (the shell's plugin, or the browser's Notification API) for the types
+  left on in Settings › "Notifications on this computer / in this browser" — a per-device choice
+  kept in this browser's storage, written only there — and only while Freero isn't in front.
+- Updates: tauri-plugin-updater against a signed manifest (default: the latest GitHub release's
+  `latest.json`); without the owner's public key baked in, the app never updates itself.
+
+### Offline copies (#178; `app/offline/`, `engine/store/BoardStore` persistence)
+
+A board someone opened on a device is kept there, so it opens — and can be edited — without a
+network, also after a reload, and syncs when the network is back.
+
+- **What is kept**: the board's Yjs state as the engine holds it — the shared doc, this person's
+  private layer (their drafts and sealed ballots) and, only while they read the board as an owner /
+  editor, the editors layer (hidden frames' contents, suggestions). Nothing the server never sent
+  them can be in it: layers reach a socket only when it may read them ("Board layers"). Plus the
+  `BoardSummary` and team the page needs to open it, and the account card (to start offline).
+  At most `MAX_OFFLINE_BOARDS` (20) boards; opening another drops the one opened longest ago.
+- **Who decides**: the server, per person and board: `BoardPermissions.offline` (boards'
+  `mayKeepOffline`: the workspace's `offlineCopies` policy, raised by its organisation's floor or a
+  label's cap; 'unkeyed' — the default — says no for a workspace under its own encryption key,
+  #159, because a key on a device can't promise what the workspace's key does). Absent (an older
+  server) or false: `offlineHostFor` gives the engine no `Host.offline` and deletes any copy.
+  Guests, embeds, live views and previews never get one.
+- **Writers**: the engine's `BoardStore` is the only writer of a copy's content (through
+  `Host.offline`: read before the socket connects — `restored` lets the initial view and the
+  "offline" banner work without a sync — saved after the first sync, then at most every 800 ms
+  while changes come, and at once when the page is hidden or the board closes); `app/offline/
+  copies.ts` alone decides which boards are kept and deletes them; `app/offline/vault.ts` is the
+  only code that touches the IndexedDB database `freero-offline`.
+- **At rest**: every part is sealed with AES-256-GCM (additional data: user, board, part) under a
+  non-extractable WebCrypto key made when the first copy is written after a sign-in and kept beside
+  the records. It is deleted — with everything — on sign-out, when the session check finds no
+  session (signed out elsewhere, expired, revoked), and when another person signs in on the
+  device; the key goes first, so a record an interrupted delete leaves behind can't be read. It
+  does not protect against someone who can read the browser profile while the person is signed
+  in: that is why keyed workspaces keep no copies unless their policy says 'all'.
+- **When copies go**: sign-out / session gone / another person (above); a board whose socket the
+  server ends for good (4401 / 4403 / taken down: `BoardStore` stops saving and calls `forget`);
+  `GET /boards/:id` answering 403 / 404 / 451; and on every online start the app asks
+  `POST /api/boards/offline-check { ids }` → `{ keep }` (the boards this person can still open
+  and may keep, never counted as opening them) and deletes the rest — so a person removed while
+  offline, a policy turned off, or a board deleted, leaves nothing on the device once it is online.
+- **Sync**: Yjs. Offline edits are ordinary local updates; on reconnect y-websocket's step 1/2
+  exchange (and the layers' own) sends exactly what the server lacks. The server applies its rules
+  to them as to any update — a person made a viewer while offline has their offline edits refused,
+  layer writes they may no longer make are dropped, private-mode and hidden-frame placement are
+  checked as usual. Tested with real sockets (`realtime/offline.test.ts`).
+- **Opening offline**: the service worker answers `/board/:id` with this build's `index.html`
+  when the network fails (only boards; the app's chunks are cache-first once loaded). The auth
+  context falls back to the account card in the vault when the session check can't reach the
+  server; `BoardPage` opens the kept summary when `GET /boards/:id` can't. Services that need the
+  server (uploads, history, templates, sharing) fail as they do on a dropped connection.
+- **Mixed versions**: an older server sends no `permissions.offline`, so a new client keeps
+  nothing; an older client ignores it. The migration adds a nullable column (NULL = default).
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 

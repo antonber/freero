@@ -191,7 +191,9 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen"
   ],
   "dots": "ドット",
   "lines": "線",
@@ -375,6 +377,8 @@
   "youNoLongerHaveAccess": "このボードへのアクセス権がなくなりました。",
   "connecting": "接続中…",
   "reconnectingYourChangesAreKept": "再接続中… 変更は保持され、同期されます。",
+  "youReOfflineChangesAreKeptOnDevice": "オフラインです。変更はこのデバイスに保存され、オンラインに戻ると同期されます。",
+  "youReOfflineKeepThisTabOpen": "オフラインです。このタブを開いたままにしてください。オンラインに戻ると変更が同期されます。",
   "groupOfLengthItemsSelected": "{length} 個の項目のグループを選択しました。",
   "thisBoardCouldnTStart": "このボードを開始できませんでした",
   "liveBoard": "ライブボード",

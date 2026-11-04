@@ -1,0 +1,112 @@
+name: desktop
+
+# Freero's desktop app (#176, apps/desktop, docs/desktop.md): unsigned installers for Windows and
+# macOS on every change to it, and a draft GitHub release (with the update manifest) for a
+# `desktop-v*` tag. Signing and notarisation switch on when the owner adds the secrets listed in
+# docs/desktop.md; without them everything still builds, unsigned.
+
+on:
+  push:
+    tags: ['desktop-v*']
+  pull_request:
+    paths: ['apps/desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+    inputs:
+      instance:
+        description: Server the app opens by default (self-hosters build their own)
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  TAURI_CLI: '@tauri-apps/cli@2.12.4'
+  # Baked into the build (lib.rs); empty values fall back to the defaults there.
+  FREERO_INSTANCE_URL: ${{ inputs.instance || vars.FREERO_INSTANCE_URL }}
+  FREERO_UPDATER_ENDPOINT: ${{ vars.FREERO_UPDATER_ENDPOINT }}
+  FREERO_UPDATER_PUBKEY: ${{ vars.FREERO_UPDATER_PUBKEY }}
+
+jobs:
+  # The shell's own logic (which links open where, which servers are accepted), on Linux.
+  test:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - run: cargo test --locked
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      # Update artifacts (.sig files, latest.json) only when the owner's updater key is there.
+      - name: Updater artifacts
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then
+            echo 'EXTRA_ARGS=--config {"bundle":{"createUpdaterArtifacts":true}}' >> "$GITHUB_ENV"
+          else
+            echo 'EXTRA_ARGS=' >> "$GITHUB_ENV"
+          fi
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updates (docs/desktop.md "Updates"): minisign key made with `tauri signer generate`.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS: Developer ID signing and notarisation (docs/desktop.md "macOS"). Unset: unsigned.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: apps/desktop/src-tauri
+          tauriScript: npx --yes ${{ env.TAURI_CLI }}
+          args: --target ${{ matrix.target }} ${{ env.EXTRA_ARGS }}
+          # A desktop-v* tag makes a draft release (the owner checks and publishes it).
+          tagName: ${{ startsWith(github.ref, 'refs/tags/desktop-v') && github.ref_name || '' }}
+          releaseName: Freero desktop __VERSION__
+          releaseDraft: true
+          includeUpdaterJson: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freero-desktop-${{ matrix.target }}
+          path: |
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+          if-no-files-found: error

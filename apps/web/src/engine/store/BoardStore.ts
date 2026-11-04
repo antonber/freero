@@ -39,7 +39,7 @@ import {
   type RoleMessage,
   type SessionLimits,
 } from '@freero/shared';
-import type { ElementLayer } from '../api';
+import type { ElementLayer, OfflineCopy } from '../api';
 import { compareRenderOrder } from '../geometry/spatial';
 import { UndoHistory } from './undo';
 
@@ -73,7 +73,25 @@ export interface BoardStoreOptions {
   /** Local-only boards: start from this full state (a read-only version preview). */
   initialState?: Uint8Array;
   captureTimeout?: number;
+  /**
+   * [#178] The copy of this board kept on this device (Host.offline): read before connecting, so the
+   * board opens offline; saved after the first sync and after changes; forgotten when the server
+   * ends access for good.
+   */
+  persist?: StorePersistence;
 }
+
+/** [#178] The device copy as the store uses it (core.ts builds it from Host.offline). */
+export interface StorePersistence {
+  load(): Promise<OfflineCopy | null>;
+  save(copy: OfflineCopy): Promise<void>;
+  forget(): Promise<void>;
+  /** May this layer be kept on the device now? The editors layer only while read as an owner / editor. */
+  keeps(layer: BoardLayer): boolean;
+}
+
+/** At most one device-copy save per this many ms while changes keep coming. */
+const PERSIST_EVERY_MS = 800;
 
 type Listener = () => void;
 
@@ -120,8 +138,12 @@ export class BoardStore {
   serverLimits: SessionLimits | null = null;
   /** This commenter may take part: own ballot, pick and private-mode drafts (RoleMessage.participant). */
   serverParticipant = false;
+  /** [#178] The board was opened from the copy kept on this device (before or without a server sync). */
+  restored = false;
 
   private history: UndoHistory;
+  private persist: StorePersistence | null = null;
+  private persistSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private placement: Placement = (_el, current) => current ?? 'shared';
   private pendingOps: LayerOp[] = [];
   private elementListeners = new Map<string, Set<Listener>>();
@@ -176,10 +198,27 @@ export class BoardStore {
       // closing one mid-handshake (a console warning on every board load in dev).
       const provider = new WebsocketProvider(opts.syncUrl, opts.boardId, this.doc, { connect: false, protocols: opts.syncProtocols ?? [] });
       (this as { provider: WebsocketProvider | null }).provider = provider;
-      this.connectTimer = setTimeout(() => {
-        this.connectTimer = null;
-        if (!this.destroyed) provider.connect();
-      }, 0);
+      const connectSoon = () => {
+        this.connectTimer = setTimeout(() => {
+          this.connectTimer = null;
+          if (!this.destroyed) provider.connect();
+        }, 0);
+      };
+      // [#178] The device copy first: the board shows (and can be edited) before, or without, the
+      // server; the first sync then sends what was changed offline and receives what others did.
+      if (opts.persist) {
+        const persist = opts.persist;
+        void persist
+          .load()
+          .catch(() => null)
+          .then((copy) => {
+            if (this.destroyed) return;
+            if (copy) this.restore(copy, persist);
+            this.persist = persist;
+            this.doc.on('update', () => this.schedulePersist());
+            connectSoon();
+          });
+      } else connectSoon();
       this.awareness = provider.awareness;
       provider.messageHandlers[WS_MESSAGE_ROLE] = (_encoder, decoder) => {
         try {
@@ -219,12 +258,14 @@ export class BoardStore {
       provider.on('sync', (isSynced: boolean) => {
         this.synced = isSynced;
         if (isSynced) this.flushLayerOps();
+        if (isSynced) this.schedulePersist(); // a board opened online is kept from now on
         this.emit(this.statusListeners);
       });
       provider.on('connection-close', (event: CloseEvent | null) => {
         if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || event.code === WS_CLOSE_EMBED_FULL)) {
           this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : 'denied';
           this.ended = { code: event.code, reason: event.reason };
+          this.dropPersisted();
           provider.shouldConnect = false;
           provider.disconnect();
           this.emit(this.statusListeners);
@@ -269,6 +310,7 @@ export class BoardStore {
     };
     doc.on('afterTransaction', onAny);
     const onUpdate = (update: Uint8Array, origin: unknown) => {
+      this.schedulePersist();
       if (origin === LAYER_REMOTE_ORIGIN) return;
       this.sendLayer(name, (e) => syncProtocol.writeUpdate(e, update));
     };
@@ -324,6 +366,58 @@ export class BoardStore {
     this.emit(this.anyListeners);
     this.emit(this.layerCollectionListeners);
     for (const set of this.contentListeners.values()) this.emit(set);
+    this.schedulePersist(); // the device copy forgets it too
+  }
+
+  // ---------------------------------------------------------------- device copy (#178)
+  private restore(copy: OfflineCopy, persist: StorePersistence): void {
+    const apply = (doc: Y.Doc, bytes: Uint8Array | undefined) => {
+      if (!bytes) return;
+      try {
+        Y.applyUpdate(doc, bytes, 'load');
+      } catch {
+        // a damaged copy: the server's state is all there is
+      }
+    };
+    apply(this.doc, copy.shared);
+    apply(this.layers.private.doc, copy.private);
+    // Kept only for an owner / editor, and read back only while this person still is one.
+    if (persist.keeps('editors')) apply(this.layers.editors.doc, copy.editors);
+    this.restored = true;
+    this.emit(this.statusListeners);
+  }
+
+  private schedulePersist(): void {
+    if (!this.persist || this.destroyed || this.persistSaveTimer) return;
+    this.persistSaveTimer = setTimeout(() => {
+      this.persistSaveTimer = null;
+      this.savePersisted();
+    }, PERSIST_EVERY_MS);
+  }
+
+  private savePersisted(): void {
+    const p = this.persist;
+    if (!p) return;
+    const copy: OfflineCopy = { shared: Y.encodeStateAsUpdate(this.doc), private: Y.encodeStateAsUpdate(this.layers.private.doc) };
+    if (p.keeps('editors')) copy.editors = Y.encodeStateAsUpdate(this.layers.editors.doc);
+    void p.save(copy).catch(() => undefined);
+  }
+
+  /** Saves the device copy now if a save is pending (the page is being hidden or closed). */
+  flushPersisted(): void {
+    if (!this.persistSaveTimer) return;
+    clearTimeout(this.persistSaveTimer);
+    this.persistSaveTimer = null;
+    this.savePersisted();
+  }
+
+  /** Access ended for good: nothing more is kept, and the copy goes. */
+  private dropPersisted(): void {
+    const p = this.persist;
+    this.persist = null;
+    if (this.persistSaveTimer) clearTimeout(this.persistSaveTimer);
+    this.persistSaveTimer = null;
+    if (p) void p.forget().catch(() => undefined);
   }
 
   /** Runs a reveal/discard on the server (in order with this socket's updates); offline: queued. */
@@ -1012,6 +1106,8 @@ export class BoardStore {
       this.persistTimer = null;
       this.saveLocal();
     }
+    this.flushPersisted();
+    this.persist = null;
     try {
       this.awareness.setLocalState(null);
     } catch {

@@ -250,7 +250,13 @@
     "slackLabel",
     "delete",
     "newCommentsOnYourBoards",
-    "tellMeWhenSomeoneStarts"
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "无法连接到 Freero，请重试。",
   "restoreAccount": "恢复账户",
@@ -502,5 +508,11 @@
   "slackLabel": "Slack：{label}",
   "delete": "删除",
   "newCommentsOnYourBoards": "你的白板上的新评论",
-  "tellMeWhenSomeoneStarts": "有人在我拥有或加星标的白板上发起评论时通知我：显示在铃铛中，然后按下方的选择通过邮件或 Slack 发送。"
+  "tellMeWhenSomeoneStarts": "有人在我拥有或加星标的白板上发起评论时通知我：显示在铃铛中，然后按下方的选择通过邮件或 Slack 发送。",
+  "notificationsOnThisComputer": "此电脑上的通知",
+  "notificationsInThisBrowser": "此浏览器中的通知",
+  "popUpsForNewActivity": "当 Freero 不是前台窗口时，用系统通知提醒你收件箱中的新动态。仅对此设备生效。",
+  "showNotificationsOnThisDevice": "在此设备上显示通知",
+  "notificationsAreBlockedForFreero": "Freero 的通知已被阻止。请在系统或浏览器设置中允许后重试。",
+  "showMeNotificationsAbout": "通知我以下内容"
 }

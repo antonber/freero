@@ -180,7 +180,27 @@ export interface BoardPermissions {
    * changed: a password, and/or an expiry at most `maxDays` days ahead. Absent: nothing.
    */
   linkPolicy?: { passwordRequired: boolean; maxDays: number | null };
+  /**
+   * [additive, #178] You may keep a copy of this board on your devices to open and edit it offline:
+   * the workspace's `offlineCopies` policy allows it (a workspace under its own encryption key only
+   * with 'all'). Absent or false: nothing is kept on the device, and a copy already there is deleted.
+   */
+  offline?: boolean;
 }
+
+/**
+ * [#178] Which boards kept on a device may stay there (the app asks each time it starts online).
+ * POST /api/boards/offline-check  body OfflineCheckRequest -> OfflineCheckResponse: `keep` lists
+ * the ids this person can still open AND may keep offline; the device deletes the others.
+ */
+export interface OfflineCheckRequest {
+  ids: string[];
+}
+export interface OfflineCheckResponse {
+  keep: string[];
+}
+/** At most this many ids per offline check (a device keeps at most 20 boards). */
+export const OFFLINE_CHECK_MAX = 50;
 
 // ---- Board call (KAI-134) ----
 // No audio/video in Freero: a board has a call link people open in their meeting tool. Either a
@@ -427,6 +447,13 @@ export interface WorkspacePolicies {
    * publish company templates (and a floor for its workspaces): any member, or owners and content admins.
    */
   templatePublishing: 'members' | 'admins';
+  /**
+   * [additive, #178] May people keep copies of its boards on their devices to work offline? 'all':
+   * yes, also while the workspace keeps its boards under its own encryption key (#159); 'unkeyed'
+   * (default): yes, unless it does; 'off': no (copies already on devices are deleted the next time
+   * the app is online there).
+   */
+  offlineCopies: 'all' | 'unkeyed' | 'off';
 }
 /** The longest a workspace may let board links live without changing them (#39 `linkMaxDays`). */
 export const LINK_MAX_DAYS_LIMIT = 365;
@@ -489,6 +516,7 @@ export const POLICY_STRICTNESS: { [K in OrderedPolicyKey]: ReadonlyArray<Workspa
   boardEmbeds: ['on', 'off'],
   linkPassword: ['optional', 'required'],
   templatePublishing: ['members', 'admins'],
+  offlineCopies: ['all', 'unkeyed', 'off'],
 };
 /** The floored policies whose values are an ordered choice (all but the numeric `linkMaxDays`). */
 export type OrderedPolicyKey = Exclude<OrganisationPolicyKey, 'linkMaxDays'>;

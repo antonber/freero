@@ -250,7 +250,13 @@
     "slackLabel",
     "delete",
     "newCommentsOnYourBoards",
-    "tellMeWhenSomeoneStarts"
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "Freero ist nicht erreichbar. Bitte versuchen Sie es erneut.",
   "restoreAccount": "Konto wiederherstellen",
@@ -502,5 +508,11 @@
   "slackLabel": "Slack: {label}",
   "delete": "Löschen",
   "newCommentsOnYourBoards": "Neue Kommentare auf Ihren Boards",
-  "tellMeWhenSomeoneStarts": "Benachrichtigen, wenn jemand einen Kommentar-Thread auf einem Board beginnt, das mir gehört oder das ich markiert habe: unter der Glocke, dann per E-Mail oder Slack wie unten gewählt."
+  "tellMeWhenSomeoneStarts": "Benachrichtigen, wenn jemand einen Kommentar-Thread auf einem Board beginnt, das mir gehört oder das ich markiert habe: unter der Glocke, dann per E-Mail oder Slack wie unten gewählt.",
+  "notificationsOnThisComputer": "Benachrichtigungen auf diesem Computer",
+  "notificationsInThisBrowser": "Benachrichtigungen in diesem Browser",
+  "popUpsForNewActivity": "Systembenachrichtigungen zu neuen Aktivitäten in Ihrem Posteingang, solange Freero nicht das Fenster im Vordergrund ist. Gilt nur für dieses Gerät.",
+  "showNotificationsOnThisDevice": "Benachrichtigungen auf diesem Gerät anzeigen",
+  "notificationsAreBlockedForFreero": "Benachrichtigungen sind für Freero blockiert. Erlauben Sie sie in den System- oder Browsereinstellungen und versuchen Sie es erneut.",
+  "showMeNotificationsAbout": "Benachrichtigungen anzeigen zu"
 }

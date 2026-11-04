@@ -250,7 +250,13 @@
     "slackLabel",
     "delete",
     "newCommentsOnYourBoards",
-    "tellMeWhenSomeoneStarts"
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "Freero に接続できませんでした。もう一度お試しください。",
   "restoreAccount": "アカウントを復元",
@@ -502,5 +508,11 @@
   "slackLabel": "Slack: {label}",
   "delete": "削除",
   "newCommentsOnYourBoards": "自分のボードへの新しいコメント",
-  "tellMeWhenSomeoneStarts": "自分が所有またはスターを付けたボードで誰かがコメントスレッドを始めたら通知：ベルに表示し、下で選んだとおりメールまたは Slack でも。"
+  "tellMeWhenSomeoneStarts": "自分が所有またはスターを付けたボードで誰かがコメントスレッドを始めたら通知：ベルに表示し、下で選んだとおりメールまたは Slack でも。",
+  "notificationsOnThisComputer": "このコンピューターの通知",
+  "notificationsInThisBrowser": "このブラウザーの通知",
+  "popUpsForNewActivity": "Freero が前面のウィンドウでないとき、受信トレイの新しいアクティビティをシステムの通知でお知らせします。このデバイスだけの設定です。",
+  "showNotificationsOnThisDevice": "このデバイスに通知を表示",
+  "notificationsAreBlockedForFreero": "Freero の通知がブロックされています。システムまたはブラウザーの設定で許可してから、もう一度お試しください。",
+  "showMeNotificationsAbout": "通知する内容"
 }

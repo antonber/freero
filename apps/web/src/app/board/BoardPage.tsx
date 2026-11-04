@@ -15,6 +15,7 @@ import { useChooseTheme } from '../components/ThemeSwitch';
 import { getThemePreference } from '../lib/theme';
 import { features } from './features';
 import { createGuestHost, createLocalHost, createServerHost, toastNotify } from './host';
+import { forgetOfflineBoard, offlineBoard, offlineHostFor } from '../offline/copies';
 import { LinkPassword } from './LinkPassword';
 import { RequestAccess } from './RequestAccess';
 import { t as tr } from '../messages';
@@ -129,6 +130,7 @@ function ServerBoard({ id }: { id: string }) {
   const bell = useMemo(() => <NotificationBell />, []);
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((a) => a + 1), []);
+  const userId = user?.id;
 
   useEffect(() => {
     if (new URLSearchParams(location.search).has('share')) setShareOpen(true);
@@ -153,12 +155,19 @@ function ServerBoard({ id }: { id: string }) {
         const w = workspaces.find((x) => x.id === board.workspaceId && x.kind === 'team' && x.role !== 'guest');
         setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name, company: w.organisation ? { id: w.organisation.id, name: w.organisation.name } : null } : null, ai, trackers: connections });
       })
-      .catch((err) => {
+      .catch(async (err) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 401) {
           navigate(loginPath(`/board/${id}`), { replace: true });
           return;
         }
+        // #178: no network (or no server): the copy kept on this device, if there is one.
+        const unreachable = !(err instanceof ApiError) || err.status >= 502;
+        const kept = unreachable && userId ? await offlineBoard(userId, id) : null;
+        if (cancelled) return;
+        if (kept) return setState({ status: 'ready', board: kept.board, team: kept.team, ai: null, trackers: [] });
+        // Gone, or no longer yours to open: nothing of it stays on the device.
+        if (err instanceof ApiError && (err.status === 403 || err.status === 404 || err.status === 451)) void forgetOfflineBoard(id);
         setState({
           status: 'error',
           code: err instanceof ApiError ? err.status : 0,
@@ -169,7 +178,7 @@ function ServerBoard({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate, attempt]);
+  }, [id, navigate, attempt, userId]);
 
   const board = state.status === 'ready' ? state.board : null;
   const team = state.status === 'ready' ? (state.team ?? null) : null;
@@ -208,6 +217,8 @@ function ServerBoard({ id }: { id: string }) {
       reportProblem,
       onAccessLost,
       colorTheme,
+      // #178: kept on this device when the server lets this person (else any copy goes).
+      offline: offlineHostFor(user, { board, team }),
     });
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
   }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem, onAccessLost, colorTheme]);

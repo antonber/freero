@@ -49,6 +49,8 @@ export interface UiState {
   transforming: TransformKind;
   connection: ConnectionStatus;
   synced: boolean;
+  /** [#178] The board shows the copy kept on this device (read before, or without, a server sync). */
+  restored: boolean;
   role: Role;
   contextMenu: ContextMenuState | null;
   spaceHeld: boolean;
@@ -148,6 +150,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     transforming: null,
     connection: 'connecting',
     synced: false,
+    restored: false,
     role: init.role,
     contextMenu: null,
     spaceHeld: false,
