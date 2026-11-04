@@ -9,6 +9,7 @@ import { Button, ElementsPreview, Modal, SegmentedControl, Select, TextArea } fr
 import { AI_DIALOG, applyPreview, ASSISTANT_DOCK, CATCH_UP_DIALOG, clusterable, fillNote, suggestedTask } from './lib/actions';
 import { AssistantButton, AssistantDock } from './lib/Assistant';
 import { CatchUpDialog } from './lib/CatchUp';
+import { WORKFLOWS_DIALOG, WorkflowsDialog } from './lib/Workflows';
 import { t as tr } from './messages';
 import './ai.css';
 
@@ -218,5 +219,7 @@ export default [
   // The board assistant (#1): viewers may ask too (it reads the board as they see it).
   definePanel({ id: ASSISTANT_DOCK, slot: 'dock-right', order: 54, minRole: 'viewer', Component: AssistantDock }),
   definePanel({ id: 'ai.assistant.button', slot: 'topbar-right', order: 20, minRole: 'viewer', Component: AssistantButton }),
+  // Saved workflows (#1): run from the board menu; results are pending suggestions.
+  definePanel({ id: WORKFLOWS_DIALOG, slot: 'dialog', order: 62, minRole: 'editor', Component: WorkflowsDialog }),
 ];
 

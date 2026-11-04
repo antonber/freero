@@ -25,6 +25,10 @@ import type {
   AssistantAsk,
   AssistantMessage,
   AssistantTurn,
+  AiWorkflow,
+  AiWorkflowInput,
+  AiWorkflowList,
+  AiWorkflowResult,
   BoardElement,
   BoardOutline,
   BoardLayer,
@@ -699,6 +703,22 @@ export interface HostAssistant {
   ask(request: AssistantAsk): Promise<AssistantTurn>;
   /** Forgets their conversation on this board. */
   clear(): Promise<void>;
+  /** [additive, #1] Saved workflows: absent from older apps' hosts. */
+  workflows?: HostAiWorkflows;
+}
+
+/**
+ * [additive, #1] Saved AI workflows (wire: @freero/shared "Saved AI workflows"): the person's own and
+ * those shared with the board's workspace. `run` is an assistant turn with the workflow's
+ * instruction, for people who can edit; what it changes arrives ONLY as pending suggestions.
+ */
+export interface HostAiWorkflows {
+  list(): Promise<AiWorkflowList>;
+  create(input: AiWorkflowInput): Promise<AiWorkflow>;
+  update(id: string, patch: Partial<AiWorkflowInput>): Promise<AiWorkflow>;
+  remove(id: string): Promise<void>;
+  /** `ids`: the items selected (used by workflows that run on the selection). */
+  run(id: string, ids: string[]): Promise<AiWorkflowResult>;
 }
 
 /** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */

@@ -1,6 +1,7 @@
-import { ClipboardList, FileText, History, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
+import { ClipboardList, FileText, History, Lightbulb, ListChecks, Shapes, Sparkles, Workflow } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { AI_DIALOG, aiAvailable, aiOfferedHere, aiOrExplain, ASSISTANT_DOCK, CATCH_UP_DIALOG, clusterable, openAi, selectedElements } from './lib/actions';
+import { WORKFLOWS_DIALOG, workflowsHere } from './lib/Workflows';
 
 import { t } from './messages';
 // Every entry point hides itself unless the server offered AI on this board for this person (and
@@ -20,6 +21,18 @@ export default defineCommands([
     minRole: 'viewer',
     when: (editor) => !!editor.host.assistant,
     run: (editor) => editor.openDock(editor.getDock() === ASSISTANT_DOCK ? null : ASSISTANT_DOCK),
+  },
+  {
+    // #1: saved workflows — named instructions for the assistant, run again on this board. Their
+    // results are pending suggestions, so only people who can edit (and accept them) run them.
+    id: 'ai.workflows',
+    label: t('aiWorkflowsMenu'),
+    icon: ListChecks,
+    group: 'AI',
+    menus: ['board'],
+    palette: false,
+    when: workflowsHere,
+    run: (editor) => editor.openPanel(WORKFLOWS_DIALOG),
   },
   {
     id: 'ai.ideas',

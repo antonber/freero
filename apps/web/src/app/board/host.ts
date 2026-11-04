@@ -244,6 +244,13 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
             conversation: async () => (await api.assistant(board.id)).messages,
             ask: (body) => api.askAssistant(board.id, body),
             clear: async () => void (await api.clearAssistant(board.id)),
+            workflows: {
+              list: () => api.aiWorkflows(board.id),
+              create: async (input) => (await api.createAiWorkflow(board.id, input)).workflow,
+              update: async (id, patch) => (await api.updateAiWorkflow(board.id, id, patch)).workflow,
+              remove: async (id) => void (await api.deleteAiWorkflow(board.id, id)),
+              run: (id, ids) => api.runAiWorkflow(board.id, id, ids),
+            },
           },
         }
       : {}),

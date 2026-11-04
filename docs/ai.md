@@ -103,6 +103,26 @@ duplicates"). Selected items are what "these" means.
   (`ai.request`, task `assistant`; never the question or the answer), and the downloads policy
   applies.
 
+### Saved workflows (#1)
+
+An instruction you give the assistant often ("turn this retro into action cards", "sort these ideas
+into Now / Next / Later") can be saved as a **workflow**: a name, the instruction, and what it runs
+on — the whole board, or the items selected when it runs. The board menu's **AI ▸ Saved AI
+workflows…** lists yours and those shared with the board's workspace, and runs one.
+
+- **A run is one assistant turn** with the saved instruction, under every rule the assistant has
+  (who may use AI here, rate limits, budgets, the downloads policy; audited as task `workflow` with
+  the workflow's id, never its text), without your conversation and kept out of it.
+- **Its result is always pending suggestions** — one group from "AI for <you>" named after the
+  workflow. A run can't write the board, so only people who can edit (and so accept them) run
+  workflows; a selection workflow with nothing selected is refused before anything reaches the model.
+- **Sharing**: the owner may share a workflow with the team workspace of the board they are on (as
+  a full member). It then shows on that workspace's boards to its members; only the owner changes or
+  deletes it, the workspace's owners and admins may stop sharing it, and it stops being shared when
+  its owner leaves the workspace or becomes a guest there. Workflows are in their owner's data
+  export, and those shared with a workspace in its export. Routes: `@freero/shared` api.ts "Saved AI
+  workflows" (`ai/workflows.ts`, table `ai_workflows`).
+
 ## Setting it up
 
 **Operator (the whole server)** — see [configuration.md](configuration.md#ai):

@@ -1445,7 +1445,7 @@ and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed
 SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
 admin console of team workspaces; see "Audit log, admin console and workspace
 policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
-(ai_workspace_settings, ai_usage, ai_assistant_messages: AI board actions and the board assistant
+(ai_workspace_settings, ai_usage, ai_assistant_messages, ai_workflows: AI board actions, the board assistant and its saved workflows
 with a provider the operator or a workspace configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
@@ -2368,6 +2368,14 @@ board and builds `Host.ai` only when it says yes.
   conversation is the asker's alone (`ai_assistant_messages`, single writer `ai/repo.ts`, newest
   `ASSISTANT_LIMITS.kept`; the body sealed with the workspace key when it has one, #159; cascades
   with the board and the account; DELETE clears it; in the personal data export).
+- **Saved workflows** (#1; `ai/workflows.ts`, table `ai_workflows`, single writer `ai/repo.ts`): a named
+  assistant instruction with a scope (`board` | `selection`), its owner's, optionally shared with the
+  team workspace of the board it is saved on (full members; unshared by an outbox consumer when the
+  owner leaves or becomes a guest, or by that workspace's owners / admins). Running one
+  (`POST /boards/:id/ai/workflows/:wid/run`) is `assistantTurn` with the instruction, no history and
+  `ai_workflow_edit_only` for anyone who can't edit: the same checks, budgets and audit (task
+  `workflow`), and its result is ALWAYS one group of pending suggestions, never a write. In both data
+  exports. Web: `features/ai` board menu "Saved AI workflows…" (`Host.assistant.workflows`).
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited

@@ -1,5 +1,5 @@
-// The only writer of `ai_workspace_settings`, `ai_usage` and `ai_assistant_messages` [S4].
-import type { AiAccess, AiProviderKind } from '@freero/shared';
+// The only writer of `ai_workspace_settings`, `ai_usage`, `ai_assistant_messages` and `ai_workflows` [S4].
+import type { AiAccess, AiProviderKind, AiWorkflowScope } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
 
 /** Runs fn in one transaction (a change and its audit record commit together). */
@@ -229,4 +229,102 @@ export async function deleteAssistantConversation(boardId: string, userId: strin
 export async function assistantMessagesOfUser(userId: string): Promise<StoredAssistantMessage[]> {
   const rows = await query<AssistantRow>('SELECT * FROM ai_assistant_messages WHERE user_id = $1 ORDER BY board_id, n', [userId]);
   return rows.map(toMessage);
+}
+
+// ---- saved workflows (#1) ----
+
+export interface StoredWorkflow {
+  id: string;
+  ownerId: string;
+  workspaceId: string | null;
+  name: string;
+  prompt: string;
+  scope: AiWorkflowScope;
+  createdAt: number;
+  updatedAt: number;
+}
+interface WorkflowRow {
+  id: string;
+  owner_id: string;
+  workspace_id: string | null;
+  name: string;
+  prompt: string;
+  scope: AiWorkflowScope;
+  created_at: Date;
+  updated_at: Date;
+}
+const toWorkflow = (r: WorkflowRow): StoredWorkflow => ({
+  id: r.id,
+  ownerId: r.owner_id,
+  workspaceId: r.workspace_id,
+  name: r.name,
+  prompt: r.prompt,
+  scope: r.scope,
+  createdAt: r.created_at.getTime(),
+  updatedAt: r.updated_at.getTime(),
+});
+
+/** A person's own workflows and those shared with `workspaceId` (when given), newest first. */
+export async function workflowsFor(userId: string, workspaceId: string | null): Promise<StoredWorkflow[]> {
+  const rows = await query<WorkflowRow>(
+    'SELECT * FROM ai_workflows WHERE owner_id = $1 OR ($2::text IS NOT NULL AND workspace_id = $2) ORDER BY updated_at DESC, id',
+    [userId, workspaceId],
+  );
+  return rows.map(toWorkflow);
+}
+
+export async function workflowsOwnedBy(userId: string): Promise<StoredWorkflow[]> {
+  return (await query<WorkflowRow>('SELECT * FROM ai_workflows WHERE owner_id = $1 ORDER BY created_at, id', [userId])).map(toWorkflow);
+}
+
+export async function workflowsSharedWith(workspaceId: string): Promise<StoredWorkflow[]> {
+  return (await query<WorkflowRow>('SELECT * FROM ai_workflows WHERE workspace_id = $1 ORDER BY created_at, id', [workspaceId])).map(toWorkflow);
+}
+
+export async function getWorkflow(id: string): Promise<StoredWorkflow | null> {
+  const r = await one<WorkflowRow>('SELECT * FROM ai_workflows WHERE id = $1', [id]);
+  return r ? toWorkflow(r) : null;
+}
+
+/** Serialises a person's workflow creation (the per-person cap holds under concurrent saves). */
+export async function lockWorkflowOwner(userId: string): Promise<void> {
+  await query(`SELECT pg_advisory_xact_lock(hashtext('ai.workflows'), hashtext($1))`, [userId]);
+}
+
+export async function countWorkflowsOf(userId: string): Promise<number> {
+  const r = await one<{ n: string | number }>('SELECT count(*) AS n FROM ai_workflows WHERE owner_id = $1', [userId]);
+  return Number(r?.n ?? 0);
+}
+
+export async function insertWorkflow(w: StoredWorkflow): Promise<void> {
+  await query('INSERT INTO ai_workflows (id, owner_id, workspace_id, name, prompt, scope, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [
+    w.id,
+    w.ownerId,
+    w.workspaceId,
+    w.name,
+    w.prompt,
+    w.scope,
+    new Date(w.createdAt),
+    new Date(w.updatedAt),
+  ]);
+}
+
+export async function updateWorkflow(w: StoredWorkflow): Promise<void> {
+  await query('UPDATE ai_workflows SET name = $2, prompt = $3, scope = $4, workspace_id = $5, updated_at = $6 WHERE id = $1', [
+    w.id,
+    w.name,
+    w.prompt,
+    w.scope,
+    w.workspaceId,
+    new Date(w.updatedAt),
+  ]);
+}
+
+export async function deleteWorkflow(id: string): Promise<void> {
+  await query('DELETE FROM ai_workflows WHERE id = $1', [id]);
+}
+
+/** Someone left a workspace (or became a guest): what they shared with it is theirs alone again. */
+export async function unshareWorkflowsOf(userId: string, workspaceId: string, now: number): Promise<void> {
+  await query('UPDATE ai_workflows SET workspace_id = NULL, updated_at = $3 WHERE owner_id = $1 AND workspace_id = $2', [userId, workspaceId, new Date(now)]);
 }

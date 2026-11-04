@@ -9,7 +9,7 @@
 // workspace: README.txt, workspace.json, templates/…, shape-packs/<name>-<id>.json,
 //   stickers/index.json + stickers/<file> (#4, #138), boards/… (the same board layout).
 import { strToU8, zipSync, type Zippable } from 'fflate';
-import { aiAssistantExportOf, aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
+import { aiAssistantExportOf, aiUsageExportOf, aiWorkflowsExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { apiDataOf } from '../apiauth/index';
 import { exportAccountData, getUser } from '../auth/index';
 import { decisionsExportOf } from '../decisions/index';
@@ -95,7 +95,8 @@ const README_USER = (name: string, at: string) => `Freero data export for ${name
 account.json        your profile, sign-in methods and signed-in devices (no passwords or secrets)
 api.json            your API tokens, the apps you authorised and the apps you registered (no secrets)
 memberships.json    workspaces, projects and boards you are a member of; what workspaces' directories (SSO/SCIM) hold about you
-activity.json       boards you starred and when you last opened boards; your AI usage (counts only)
+activity.json       boards you starred and when you last opened boards; your AI usage (counts only),
+                    your board assistant conversations and the AI workflows you saved
 comments.json       every comment you wrote, by board, with the thread and item it is attached to
 notifications.json  your notifications, email and Slack settings
 slack.json          the Slack account you connected (workspace and user ids, names; never a token)
@@ -122,7 +123,8 @@ const README_WORKSPACE = (name: string, at: string) => `Freero export of the wor
 
 workspace.json  the workspace, its sharing policies, members (with email addresses), invitations,
                 projects, single sign-on settings (no secrets), provisioned directory data and
-                AI settings (no key) with AI usage per person and month, and the issue-tracker
+                AI settings (no key) with AI usage per person and month, the AI workflows shared
+                with it, and the issue-tracker
                 connections (tracker, name, address, account, field map; never tokens or secrets)
 templates/      templates shared with the workspace
 shape-packs/    the workspace's shape packs: each icon's name and drawing (the sanitised SVG shapes
@@ -159,6 +161,8 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
     aiUsage: await aiUsageExportOf(userId),
     // Their own conversations with the board assistant (#1), as kept.
     aiAssistant: await aiAssistantExportOf(userId),
+    // The AI workflows they saved (#1): name, instruction, scope, where shared.
+    aiWorkflows: await aiWorkflowsExportOf({ ownerId: userId }),
   });
 
   // Comments: on every board they could have written on (owned, invited, opened, their teams').
@@ -210,6 +214,8 @@ export async function buildWorkspaceArchive(workspaceId: string, appOrigin: stri
     singleSignOn: await ssoExportOf(workspaceId),
     provisioning: await scimExportOf(workspaceId),
     ai: await aiWorkspaceExportOf(workspaceId),
+    // AI workflows members shared with the workspace (#1).
+    aiWorkflows: await aiWorkflowsExportOf({ workspaceId }),
     trackers: await trackersWorkspaceExportOf(workspaceId),
     // What each webhook sends where (#48): shortened URL, events, format, scope — never its secret.
     webhooks: await webhooksWorkspaceExportOf(workspaceId),

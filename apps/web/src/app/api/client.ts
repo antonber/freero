@@ -56,6 +56,10 @@ import type {
   AssistantAsk,
   AssistantConversation,
   AssistantTurn,
+  AiWorkflow,
+  AiWorkflowInput,
+  AiWorkflowList,
+  AiWorkflowResult,
   BoardAiStatus,
   WorkspaceAiAdmin,
   WorkspaceAiPatch,
@@ -648,6 +652,14 @@ export const api = {
   assistant: (boardId: string) => request<AssistantConversation>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
   askAssistant: (boardId: string, body: AssistantAsk) => request<AssistantTurn>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`, body),
   clearAssistant: (boardId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
+  // saved AI workflows (#1): yours and the board's workspace's; a run's result is pending suggestions
+  aiWorkflows: (boardId: string) => request<AiWorkflowList>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows`),
+  createAiWorkflow: (boardId: string, body: AiWorkflowInput) => request<{ workflow: AiWorkflow }>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows`, body),
+  updateAiWorkflow: (boardId: string, id: string, body: Partial<AiWorkflowInput>) =>
+    request<{ workflow: AiWorkflow }>('PATCH', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows/${encodeURIComponent(id)}`, body),
+  deleteAiWorkflow: (boardId: string, id: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows/${encodeURIComponent(id)}`),
+  runAiWorkflow: (boardId: string, id: string, ids: string[]) =>
+    request<AiWorkflowResult>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows/${encodeURIComponent(id)}/run`, { ids }),
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
   testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),

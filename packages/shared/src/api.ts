@@ -2375,6 +2375,74 @@ export const ASSISTANT_LIMITS = {
   changes: 100,
 } as const;
 
+// ---- Saved AI workflows (#1; server modules/ai workflows.ts; docs/ai.md "Saved workflows") ----
+// A named instruction for the board assistant, run again from any board's menu — on the whole
+// board, or on the items selected when it runs (`scope`). Its owner may share it with the team
+// workspace a board is in (they must be a full member; it stops being shared when they leave). A
+// run is the assistant's turn with that instruction under every rule the assistant has (who may
+// use AI here, budgets, rate limits, the downloads policy, the audit) and only for people who can
+// edit the board: its result is ALWAYS pending suggestions ("AI for <person>"), never a write.
+// GET    /api/boards/:id/ai/workflows             -> AiWorkflowList  (yours, and those shared with
+//                                                    the board's workspace)
+// POST   /api/boards/:id/ai/workflows  body AiWorkflowInput -> { workflow: AiWorkflow }  (yours;
+//                                                    `shared` shares it with the board's workspace)
+// PATCH  /api/boards/:id/ai/workflows/:wid  body Partial<AiWorkflowInput> -> { workflow }  (its
+//                                                    owner; `shared: true` shares it with the
+//                                                    board's workspace; the owners / admins of
+//                                                    the workspace it is shared with may only
+//                                                    unshare it: { shared: false })
+// DELETE /api/boards/:id/ai/workflows/:wid         -> { ok: true }  (its owner)
+// POST   /api/boards/:id/ai/workflows/:wid/run  body AiWorkflowRun -> AiWorkflowResult  (editors;
+//                                                    rate limited, budgeted, audited as `workflow`)
+export type AiWorkflowScope = 'board' | 'selection';
+export interface AiWorkflow {
+  id: string;
+  name: string;
+  /** What the assistant is asked to do (plain text). */
+  prompt: string;
+  scope: AiWorkflowScope;
+  /** Shared with the team workspace of this id (null: its owner's alone). */
+  workspaceId: string | null;
+  /** Who made it, by their current name. */
+  ownerName: string;
+  /** You made it: you may change or delete it. */
+  mine: boolean;
+  /** You may stop it being shared (its owner, or an owner / admin of the workspace it is shared with). */
+  canUnshare: boolean;
+  updatedAt: number;
+}
+export interface AiWorkflowList {
+  workflows: AiWorkflow[];
+  /** The team workspace a workflow saved on this board can be shared with (null: none — a personal board, or you're not a full member). */
+  shareWith: { id: string; name: string } | null;
+}
+export interface AiWorkflowInput {
+  name: string;
+  prompt: string;
+  scope: AiWorkflowScope;
+  /** Share it with the board's workspace (`shareWith`), or stop sharing it (false). */
+  shared?: boolean;
+}
+export interface AiWorkflowRun {
+  /** The items selected (scope 'selection': required; ids you can't see are ignored). */
+  ids?: string[];
+}
+export interface AiWorkflowResult {
+  /** What the assistant said (plain text). */
+  answer: string;
+  /** What it proposed, as one group of suggestions — the only thing a run can do to the board. */
+  proposal?: AssistantProposal;
+  /** It was asked for a change but could not propose it (why, in words). */
+  proposalError?: string;
+  usage: { inputTokens: number; outputTokens: number };
+}
+export const AI_WORKFLOW_LIMITS = {
+  name: 80,
+  prompt: 2000,
+  /** Workflows one person may keep. */
+  perUser: 50,
+} as const;
+
 export interface AiActionRequest {
   task: AiTask;
   /** The person's instruction (required for ideas and diagram; optional focus for the others). */
