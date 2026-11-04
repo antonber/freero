@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "שכבות",
+  "unlock": "ביטול נעילה",
+  "lock": "נעילה",
+  "hiddenWithItsFrameOr": "מוסתר יחד עם המסגרת שלו או הפריט שהוא מחובר אליו",
+  "showHiddenForYouOnly": "הצגה (מוסתר רק בשבילך)",
+  "hideForMeOthersStill": "הסתרה בשבילי (אחרים עדיין רואים)",
+  "collapse": "כיווץ",
+  "expand": "הרחבה",
+  "untitledFrame": "מסגרת ללא שם",
+  "notInAFrame": "לא בתוך מסגרת",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} מוסתרים רק בשבילך",
+  "showAll": "הצגת הכול",
+  "nothingOnTheBoardYet": "עדיין אין כלום בלוח.",
+  "dragToRestackTheTop": "גרירה משנה את הסדר: הראשון בכל רשימה נמצא מלפנים."
+}

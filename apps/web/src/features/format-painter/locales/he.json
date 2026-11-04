@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "selectOneItemToCopy",
+    "copyStyle",
+    "styleCopiedPasteItWith",
+    "pasteStyle",
+    "stopPaintingFormat",
+    "formatPainterClickOtherItems",
+    "formatPainter",
+    "selectOneItemThenPick",
+    "unlockThisItemToChange"
+  ],
+  "selectOneItemToCopy": "יש לבחור פריט אחד כדי להעתיק את הסגנון שלו.",
+  "copyStyle": "העתקת סגנון",
+  "styleCopiedPasteItWith": "הסגנון הועתק. אפשר להדביק אותו עם Alt+Mod+V.",
+  "pasteStyle": "הדבקת סגנון",
+  "stopPaintingFormat": "הפסקת העתקת העיצוב",
+  "formatPainterClickOtherItems": "מברשת עיצוב: לחיצה על פריטים אחרים מעתיקה אליהם את הסגנון הזה",
+  "formatPainter": "מברשת עיצוב",
+  "selectOneItemThenPick": "יש לבחור פריט אחד, ואז את מברשת העיצוב כדי להעתיק את הסגנון שלו.",
+  "unlockThisItemToChange": "יש לבטל את נעילת הפריט כדי לשנות את הסגנון שלו."
+}

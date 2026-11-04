@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} הזמין/ה אותך לסביבת העבודה ”{workspace}“ ב־Freero",
+  "invite.title": "הצטרפות אל ”{workspace}“ ב־Freero",
+  "invite.body": "{role, select, admin {{inviter} הזמין/ה אותך להצטרף לסביבת העבודה של הצוות כמנהל/ת.} member {{inviter} הזמין/ה אותך להצטרף לסביבת העבודה של הצוות כחבר/ה.} other {{inviter} הזמין/ה אותך להצטרף לסביבת העבודה של הצוות כאורח/ת (יוצגו לך הלוחות ששותפו איתך).}} Freero הוא לוח לבן מקוון וחינמי; צריך חשבון חינמי.",
+  "invite.action": "הצטרפות לסביבת העבודה",
+  "invite.outro": "{inviter} ({email}) שלח/ה את ההזמנה הזו. הקישור פועל פעם אחת ותוקפו יפוג בעוד 14 ימים."
+}

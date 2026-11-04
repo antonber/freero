@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "פריטים ששותפו",
+  "couldNotCreateABoard": "לא ניתן היה ליצור לוח",
+  "addToABoard": "הוספה ללוח",
+  "nothingArrivedThatFreeroCan": "לא התקבל שום דבר ש־Freero יכול למקם: אפשר לשתף תמונות, קישור או טקסט.",
+  "shared": "שותף",
+  "failedFilesWerenTImages": "{failed, plural, one {קובץ אחד לא היה תמונה ש־Freero יכול לאחסן (או שמכסת ההעלאה שלך מלאה).} two {שני קבצים לא היו תמונות ש־Freero יכול לאחסן (או שמכסת ההעלאה שלך מלאה).} other {{failed} קבצים לא היו תמונות ש־Freero יכול לאחסן (או שמכסת ההעלאה שלך מלאה).}}",
+  "newBoard": "לוח חדש",
+  "orABoardYouCan": "או לוח שיש לך הרשאה לערוך",
+  "untitledBoard": "לוח ללא שם",
+  "noBoardsYouCanEdit": "עדיין אין לוחות שיש לך הרשאה לערוך."
+}

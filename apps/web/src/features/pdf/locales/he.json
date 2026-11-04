@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "nameIsnTAPdf",
+    "couldnTUploadNameTry",
+    "couldnTOpenThisPdf",
+    "placingTheFirstNOf",
+    "placingNPages",
+    "couldnTPlaceThePages",
+    "placeAllPages",
+    "namePagePage",
+    "couldnTOpenThisPdf2",
+    "document",
+    "previousPage",
+    "nextPage",
+    "pdfs",
+    "nextPreviousPageOfA"
+  ],
+  "nameIsnTAPdf": "”{name}“ אינו PDF ש־Freero יכול לפתוח.",
+  "couldnTUploadNameTry": "לא ניתן להעלות את ”{name}“. אפשר לנסות שוב מאוחר יותר.",
+  "couldnTOpenThisPdf": "לא ניתן לפתוח את ה־PDF הזה.",
+  "placingTheFirstNOf": "ממקם את {n} העמודים הראשונים מתוך {numPages}.",
+  "placingNPages": "{n, plural, one {ממקם עמוד אחד…} two {ממקם {n} עמודים…} other {ממקם {n} עמודים…}}",
+  "couldnTPlaceThePages": "לא ניתן למקם את העמודים. אפשר לנסות שוב מאוחר יותר.",
+  "placeAllPages": "מיקום כל העמודים",
+  "namePagePage": "{name}, עמוד {page}",
+  "couldnTOpenThisPdf2": "לא ניתן לפתוח את ה־PDF הזה",
+  "document": "מסמך",
+  "previousPage": "העמוד הקודם",
+  "nextPage": "העמוד הבא",
+  "pdfs": "קובצי PDF",
+  "nextPreviousPageOfA": "העמוד הבא / הקודם במסמך"
+}

@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} הזמין/ה אותך אל ”{board}“ ב־Freero",
+  "invite.title": "{inviter} הזמין/ה אותך ללוח",
+  "invite.body": "{role, select, editor {אפשר לערוך את ”{board}“.} commenter {אפשר להגיב על ”{board}“.} other {אפשר לצפות ב־”{board}“.}} Freero הוא לוח לבן מקוון וחינמי; כדי לפתוח אותו צריך חשבון חינמי.",
+  "invite.action": "פתיחת הלוח",
+  "invite.outro": "{inviter} ({email}) שלח/ה את ההזמנה הזו. הקישור פועל פעם אחת ותוקפו יפוג בעוד 14 ימים."
+}
