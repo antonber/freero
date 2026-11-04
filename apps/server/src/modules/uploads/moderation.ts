@@ -116,6 +116,9 @@ export async function restoreUpload(name: string): Promise<boolean> {
 /**
  * Account purge (KAI-178): the user's removed files outlive the account — tombstone (410) and kept
  * copy alike, with no owner — until an operator restores or purges them, or their retention ends.
+ * So do the rows of their files sealed under a workspace key (#159): without the row, the sweep's
+ * adoption would give the name one that doesn't say it is sealed. Ownerless, the sweep treats them
+ * like any file.
  */
 export function keepRemovedUploadsOf(userId: string): Promise<number> {
   return repo.detachRemovedOf(userId);

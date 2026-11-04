@@ -373,7 +373,7 @@ function kekFromBody(body: Record<string, unknown>): KekRef {
       'kmsKeyId must be an AWS KMS key ARN, a Google Cloud KMS key name (projects/…/cryptoKeys/…), an Azure Key Vault key URL or a Vault Transit key path (<mount>/keys/<name>)',
       'kms_key_id_invalid',
     );
-  if (!offered().includes(parsed.provider.id)) throw new HttpError(400, `This server is not set up to use ${parsed.provider.name} keys`, 'kms_provider_unavailable');
+  if (!offered().includes(parsed.provider.id)) throw new HttpError(400, `This server is not set up to use ${parsed.provider.name} keys`, 'kms_provider_unavailable', { provider: parsed.provider.name });
   return { provider: parsed.provider.id, kmsKeyId: parsed.keyId };
 }
 
