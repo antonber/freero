@@ -36,6 +36,7 @@ import {
   uploadImage,
   versionHistory,
   downloadBoardFile,
+  commentFilesOf,
   downloadBackupOf,
   docsFrom,
   saveAs,
@@ -165,6 +166,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     uploadFile,
     uploadAttachment,
     downloadFile: downloadBoardFile(board.id),
+    commentFile: commentFilesOf(board.id),
     downloadBackup: downloadBackupOf(board.id),
     openBackup(file) {
       holdBackup(file);
@@ -274,6 +276,7 @@ export function createGuestHost(
     uploadAttachment: needsAccount('Uploading files'),
     // Visitors may download what the board's workspace lets them (the server decides).
     downloadFile: downloadBoardFile(board.id),
+    commentFile: commentFilesOf(board.id),
     renameBoard: needsAccount('Renaming boards'),
     saveThumbnail: async () => undefined,
     colorTheme: browserTheme,

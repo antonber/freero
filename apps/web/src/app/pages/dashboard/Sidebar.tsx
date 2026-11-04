@@ -8,12 +8,16 @@ import {
   Ellipsis,
   Folder,
   FolderLock,
+  FolderPlus,
   House,
+  LayoutTemplate,
   LogOut,
   MessageSquareWarning,
   Monitor,
   Moon,
   Sun,
+  Pin,
+  PinOff,
   Plus,
   Settings,
   ShieldAlert,
@@ -24,7 +28,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react';
-import type { ProjectSummary, WorkspaceSummary } from '@freero/shared';
+import { PROJECT_MAX_DEPTH, type ProjectSummary, type WorkspaceSummary } from '@freero/shared';
 import { Avatar, IconButton, Logo, Menu, Tooltip } from '@ui';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -33,6 +37,7 @@ import { useThemePreference } from '../../lib/theme';
 import { useMediaQuery } from '../../lib/hooks';
 import { personColor } from '../../lib/placeholder';
 import { workspaceLabel } from './useWorkspaces';
+import { projectTree } from './projectTree';
 import { PROBLEM_SHORTCUT, useProblemReport } from '../../problems/ProblemReport';
 
 export type BoardView = 'home' | 'recent' | 'starred' | 'shared' | 'mine' | 'trash' | 'archived';
@@ -65,6 +70,14 @@ export interface SidebarProps {
   onCreateProject: () => void;
   onManageProject: (p: ProjectSummary) => void;
   onDeleteProject: (p: ProjectSummary) => void;
+  /** #129: a new project inside this one. */
+  onCreateSubProject: (parent: ProjectSummary) => void;
+  /** #161: a new project from a blueprint (inside `parent`, or at the top). */
+  onUseBlueprint: (parent: ProjectSummary | null) => void;
+  /** #161: save the project's boards and docs as a blueprint. */
+  onSaveBlueprint: (p: ProjectSummary) => void;
+  /** #129: pin / unpin a project at the top of your sidebar. */
+  onPinProject: (p: ProjectSummary, pinned: boolean) => void;
   /** A board card was dropped on a project (null: the workspace root). */
   onDropBoard: (boardId: string, projectId: string | null) => void;
 }
@@ -111,6 +124,25 @@ export function Sidebar(props: SidebarProps) {
     };
   }, [user?.id, user?.emailVerified]);
   if (!user) return null;
+  const tree = projectTree(projects);
+  const pinned = projects.filter((p) => p.pinned);
+  const item = (p: ProjectSummary, depth: number, inPins: boolean) => (
+    <ProjectItem
+      key={`${inPins ? 'pin' : 'tree'}-${p.id}`}
+      project={p}
+      depth={depth}
+      active={view === 'project' && projectId === p.id && !inPins}
+      compact={compact}
+      mayNest={!guest && !current?.blocked && depth + 1 < PROJECT_MAX_DEPTH}
+      onOpen={() => props.onProject(p.id)}
+      onManage={() => props.onManageProject(p)}
+      onDelete={() => props.onDeleteProject(p)}
+      onSubProject={() => props.onCreateSubProject(p)}
+      onSaveBlueprint={guest || current?.blocked ? undefined : () => props.onSaveBlueprint(p)}
+      onPin={(on) => props.onPinProject(p, on)}
+      onDropBoard={props.onDropBoard}
+    />
+  );
   const team = current?.kind === 'team';
   const guest = current?.role === 'guest';
   const manager = current?.role === 'owner' || current?.role === 'admin';
@@ -193,25 +225,24 @@ export function Sidebar(props: SidebarProps) {
           <div className="fr-dash-proj__head">
             <span className="fr-dash-proj__title">Projects</span>
             {/* Guests can't create projects, nor can anyone the workspace closed its boards to (KAI-193). */}
-            {!guest && !current.blocked ? <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} /> : null}
+            {!guest && !current.blocked ? (
+              <span className="fr-dash-proj__actions">
+                <IconButton size={32} icon={LayoutTemplate} label="New project from a blueprint" tooltipSide="right" onClick={() => props.onUseBlueprint(null)} />
+                <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} />
+              </span>
+            ) : null}
           </div>
           {projects.length === 0 ? (
             <p className="fr-dash-proj__empty">{guest ? 'No projects shared with you' : 'Group boards into projects'}</p>
           ) : (
-            <ul className="fr-dash-proj__list">
-              {projects.map((p) => (
-                <ProjectItem
-                  key={p.id}
-                  project={p}
-                  active={view === 'project' && projectId === p.id}
-                  compact={compact}
-                  onOpen={() => props.onProject(p.id)}
-                  onManage={() => props.onManageProject(p)}
-                  onDelete={() => props.onDeleteProject(p)}
-                  onDropBoard={props.onDropBoard}
-                />
-              ))}
-            </ul>
+            <>
+              {pinned.length > 0 ? (
+                <ul className="fr-dash-proj__list fr-dash-proj__list--pinned" aria-label="Pinned projects">
+                  {pinned.map((p) => item(p, 0, true))}
+                </ul>
+              ) : null}
+              <ul className="fr-dash-proj__list">{tree.map(({ project: p, depth }) => item(p, depth, false))}</ul>
+            </>
           )}
         </section>
       ) : null}
@@ -337,26 +368,41 @@ function dropTarget(enabled: boolean, getDrop: () => SidebarProps['onDropBoard']
 
 function ProjectItem({
   project: p,
+  depth,
   active,
   compact,
+  mayNest,
   onOpen,
   onManage,
   onDelete,
+  onSubProject,
+  onSaveBlueprint,
+  onPin,
   onDropBoard,
 }: {
   project: ProjectSummary;
+  depth: number;
   active: boolean;
   compact: boolean;
+  /** You may make a sub-project here (not a guest, and room below it). */
+  mayNest: boolean;
   onOpen: () => void;
   onManage: () => void;
   onDelete: () => void;
+  onSubProject: () => void;
+  onSaveBlueprint?: () => void;
+  onPin: (pinned: boolean) => void;
   onDropBoard: SidebarProps['onDropBoard'];
 }) {
   const moreRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const Icon = p.access === 'private' ? FolderLock : Folder;
   return (
-    <li className={`fr-dash-proj__item${active ? ' fr-dash-proj__item--active' : ''}`} {...dropTarget(true, () => onDropBoard, p.id)}>
+    <li
+      className={`fr-dash-proj__item${active ? ' fr-dash-proj__item--active' : ''}`}
+      style={depth ? { paddingLeft: depth * 14 } : undefined}
+      {...dropTarget(true, () => onDropBoard, p.id)}
+    >
       <Tooltip content={p.name} side="right" disabled={!compact}>
         <button type="button" className="fr-dash-proj__open" aria-current={active ? 'page' : undefined} onClick={onOpen}>
           <Icon size={17} aria-hidden />
@@ -364,33 +410,38 @@ function ProjectItem({
           {p.access === 'private' ? <span className="fr-dash-proj__private">Private</span> : null}
         </button>
       </Tooltip>
-      {p.canManage ? (
-        <>
-          <IconButton
-            ref={moreRef}
-            size={32}
-            icon={Ellipsis}
-            label={`Project actions for ${p.name}`}
-            tooltip={false}
-            className="fr-dash-proj__more"
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onClick={() => setOpen((o) => !o)}
-          />
-          <Menu
-            open={open}
-            onClose={() => setOpen(false)}
-            anchor={moreRef.current}
-            align="start"
-            aria-label={`Actions for ${p.name}`}
-            items={[
-              { id: 'manage', label: 'Rename, access and people…', icon: SlidersHorizontal, onSelect: onManage },
-              { divider: true },
-              { id: 'delete', label: 'Delete project', icon: Trash2, danger: true, onSelect: onDelete },
-            ]}
-          />
-        </>
-      ) : null}
+      <IconButton
+        ref={moreRef}
+        size={32}
+        icon={Ellipsis}
+        label={`Project actions for ${p.name}`}
+        tooltip={false}
+        className="fr-dash-proj__more"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      />
+      <Menu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchor={moreRef.current}
+        align="start"
+        aria-label={`Actions for ${p.name}`}
+        items={[
+          p.pinned
+            ? { id: 'unpin', label: 'Unpin from the top', icon: PinOff, onSelect: () => onPin(false) }
+            : { id: 'pin', label: 'Pin to the top', icon: Pin, onSelect: () => onPin(true) },
+          ...(mayNest ? [{ id: 'sub', label: 'New sub-project…', icon: FolderPlus, onSelect: onSubProject }] : []),
+          ...(onSaveBlueprint ? [{ id: 'blueprint', label: 'Save as blueprint…', icon: LayoutTemplate, onSelect: onSaveBlueprint }] : []),
+          ...(p.canManage
+            ? [
+                { id: 'manage', label: 'Settings, access and people…', icon: SlidersHorizontal, onSelect: onManage },
+                { divider: true as const },
+                { id: 'delete', label: 'Delete project…', icon: Trash2, danger: true, onSelect: onDelete },
+              ]
+            : []),
+        ]}
+      />
     </li>
   );
 }

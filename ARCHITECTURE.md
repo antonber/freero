@@ -139,6 +139,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
+| Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
@@ -1370,7 +1371,7 @@ workspace_invites, projects, project_members; organisations are directory-only `
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
-templates; content is opaque engine JSON), `stickers` (sticker_sets, stickers: a workspace's own
+templates; content is opaque engine JSON), `blueprints` (blueprints, blueprint_items: a project's boards and docs saved for reuse, #161; see "Blueprints"), `stickers` (sticker_sets, stickers: a workspace's own
 sticker sets, #138), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -1591,6 +1592,22 @@ reports" below).
   Size caps are per kind (`MAX_UPLOAD_MB` images / PDF, `MAX_MEDIA_UPLOAD_MB`,
   `MAX_ATTACHMENT_UPLOAD_MB`), refused before the body is read when `Content-Length` says so; every
   kind counts toward the one per-account quota. Moderation removal answers 410 on both paths.
+- Files on comments (#143; `uploads/commentFiles.ts`, `GET /api/boards/:id/comment-files/:threadId/:messageId/:index`):
+  a comment message's `attachments` (`@freero/shared` `CommentAttachment`, at most
+  `COMMENT_MAX_ATTACHMENTS`) are ATTACHMENT uploads of the message's author, so nothing serves them
+  at `/uploads/`. The route reads the message in the board AS THAT PERSON SEES IT (a thread in a
+  hidden frame or someone's draft isn't theirs; tombstoned threads / messages are gone), requires
+  a `.bin` that is its author's OWN upload (a message can't point at another person's file and
+  launder it out of the board it belongs to), and then: `?inline=1` shows a picture to anyone who
+  can open the board, only when its first bytes are PNG / JPEG / GIF / WebP (`Content-Disposition:
+  inline`, the sandbox CSP, `nosniff`); otherwise it is a download — the downloads policy applies
+  and it is audited (`board.file_downloaded`), like a file card. The uploads sweep keeps them
+  through the board-doc scan (the `/uploads/` URL is in the comments collection). On the web,
+  `Host.commentFile` (`imageUrl`, `download`) is the only way the comments feature reaches them.
+  Thread AREAS (#143, `CommentThreadRecord.area`): a drag with the comment tool stores the world
+  rectangle and pins the thread at its top-right corner (x, y), which is all older clients read —
+  they show it as a point thread there. The comments list filters by author too, combined with
+  Open / Unread / @Me / Resolved / Mine.
 
 ### Moderation (`modules/moderation`, KAI-142)
 
@@ -1718,7 +1735,7 @@ first in the app.
 ### Workspaces (`modules/workspaces`)
 
 Every board belongs to a workspace (`boards.workspace_id`) and optionally a project in it
-(`boards.project_id`). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
+(`boards.project_id`; projects nest, #129). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
 first use by `ensurePersonalWorkspace`, so signup — or any future sign-in path — needs no hook;
 deleted with the account row) that only ever holds its owner's boards. TEAM workspaces have
 members with roles owner / admin / member / guest (separate from board roles).
@@ -1746,6 +1763,32 @@ members with roles owner / admin / member / guest (separate from board roles).
   transfers) re-resolves the live sockets of the affected boards on every instance through
   realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
   that workspace and hands boards they owned there to the remover.
+- **Nested projects** (#129; `projects.parent_id`, `description`, `pinned_boards`, `project_pins`;
+  `workspaces/projects.ts`, `roles.ts` `projectChain` / `passesProject` / `teamAccessOf`): a project
+  may sit in another, `PROJECT_MAX_DEPTH` (3) levels at most. **Access only narrows on the way down**:
+  a project — and every board in it — reaches only someone who gets through EVERY project from it up
+  to the top (a private one: its members and groups; an open one: every full member; a guest: only
+  projects they were added to; owners / content admins: all). So a private sub-project narrows an
+  open parent, an "open" sub-project of a private parent is open only to the parent's people, and the
+  team access level is the strictest set on the way up (a lone project still overrides the
+  workspace's, as before). One resolver serves it all: `boardAccessLoader`, `teamMembers`,
+  `openToWholeTeam`, `boardGatekeepers`, the object registry and the project list walk the chain; a
+  broken chain (a parent that isn't there) fails closed. Adding someone to a sub-project whom its
+  parent shuts out is refused with the reason. **Moving** a project (`PATCH /projects/:id
+  { parentId }`) needs its manager, who also manages the project it LEAVES (or a content admin) —
+  leaving can open it wider — and who sees the one it enters; never into itself or below itself,
+  never deeper than the limit counting what it carries; both rows locked (moved: update, target:
+  share; creating a sub-project shares the parent's lock), so cycles can't race in. **Deleting**
+  refuses while it holds sub-projects (no `ON DELETE` action on `parent_id`: nothing may lift a
+  child to the top); its boards — without `?boards=` still 409 — move to the parent (`parent`; the
+  trash's boards too, so a restore never lands wider than the project was) or go to the trash
+  (`trash`: only boards the caller owns, unless a content admin). Every change re-resolves the boards
+  of the whole subtree (`boardIdsUnderProject`, also for groups and directory mappings). Pins are
+  per person (`PUT/DELETE /projects/:id/pin`, anyone who sees it); the project page (dashboard
+  `ProjectOverview`: path, description, sub-projects, the boards its managers pinned — ids, read
+  against the list the reader already gets — and `GET /workspaces/:id/activity?project=`). Public
+  API: `GET /api/v1/workspaces/:workspaceId/projects` (nested, `parentId`). Older clients list
+  sub-projects flat and keep working; the access rule is the server's.
 - **User groups** (#63; `workspaces/groups.ts`, tables `workspace_groups`, `workspace_group_members`,
   `project_groups`; members' `board_group_grants`): members admins make groups of the workspace's
   members (leaving the workspace leaves its groups, in `repo.removeMember`); directory (SCIM) groups
@@ -1778,6 +1821,24 @@ members with roles owner / admin / member / guest (separate from board roles).
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
   role change) makes everything someone shared with a workspace personal again when they leave it
   or become a guest there (`templates/init.ts`).
+- **Blueprints** (#161; `modules/blueprints`, tables `blueprints`, `blueprint_items`; dashboard
+  `BlueprintDialogs`): a project's boards and docs saved as a reusable setup with a description and
+  steps (`POST /projects/:id/blueprints`). What is saved is what the saver may take out: the boards
+  and docs of the project they can open, each through the downloads policy (`requireBoardDownload`
+  'template'), only the SHARED content (no layers: hidden frames, drafts, ballots), with comments and
+  session collections emptied (realtime `blueprintState`; `Y_LEFT_OUT_OF_BACKUPS`), at most
+  `BLUEPRINT_MAX_ITEMS`. Shared like a team template: personal, or with one team workspace its full
+  members see (the workspace's `templatePublishing` decides who may share), unshared by its owner or
+  that team's owners / content admins, made personal again when its owner leaves or becomes a guest
+  (`blueprints/init.ts`, the membership outbox topic). **Using one** (`POST /blueprints/:id/use`,
+  the public API's `POST /workspaces/:id/projects { blueprintId }`) is ONE transaction:
+  `createProject` (its page carries the description and the steps; a `parentId` must be a project
+  they can see) and, per item, boards' `createBoardWithState` (createBoard's checks and quota) —
+  first every copy (so every new id is known), then each copy's content with links among the items
+  rewritten to the copies (realtime `rewriteObjectLinks`: `/board/`, `/doc/`, `freero://` addresses
+  in collections and a doc's fragment; links elsewhere stay). If any copy can't be made, nothing is
+  left; lifecycle events follow the commit. A blueprint outlives its boards, so the uploads sweep
+  scans its items (`blueprintUploadReferences`). Audited: `blueprint.shared`, `blueprint.used`.
 - Company templates (#155; `templates.organisation_id`, `locked`, `retired_at`): its owner
   publishes a template to the organisation of one of their workspaces (`PATCH /templates/:id
   { organisationId }`); it then reaches the full members of every attached workspace (the one

@@ -312,6 +312,11 @@ export async function idsInProject(projectId: string): Promise<string[]> {
   return (await query<{ id: string }>(`SELECT id FROM boards WHERE project_id = $1`, [projectId])).map((r) => r.id);
 }
 
+/** Every board of the project (trash included) moves to `to` (#129); returns their ids. */
+export async function moveAllInProject(projectId: string, to: string | null): Promise<string[]> {
+  return (await query<{ id: string }>(`UPDATE boards SET project_id = $2 WHERE project_id = $1 RETURNING id`, [projectId, to])).map((r) => r.id);
+}
+
 export async function countLiveInProject(projectId: string): Promise<number> {
   const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM boards WHERE project_id = $1 AND deleted_at IS NULL`, [projectId]);
   return r?.n ?? 0;

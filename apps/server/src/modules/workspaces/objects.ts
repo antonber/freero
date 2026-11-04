@@ -41,10 +41,13 @@ export const projectObjects: ObjectTypeHandler = {
     const ids = refs.filter((r): r is Extract<ObjectRef, { type: 'project' }> => r.type === 'project').map((r) => r.id);
     const projects = (await repo.getProjects(ids)).filter((p) => roles.has(p.workspaceId));
     if (!projects.length) return out;
-    const mine = await repo.projectIdsOf(actor.userId, [...new Set(projects.map((p) => p.workspaceId))]);
+    const wsIds = [...new Set(projects.map((p) => p.workspaceId))];
+    // The projects above them too: a sub-project is seen only through every project above it (#129).
+    const [mine, all] = await Promise.all([repo.projectIdsOf(actor.userId, wsIds), repo.projectsIn(wsIds)]);
+    const byId = new Map(all.map((p) => [p.id, p]));
     for (const p of projects) {
       const role = roles.get(p.workspaceId) ?? null;
-      if (!canSee(p, role, mine.has(p.id))) continue;
+      if (!canSee(p, role, mine, byId)) continue;
       const access: ObjectAction = canManage(p, role, actor.userId) ? 'manage' : 'view';
       out.set(objectKey({ type: 'project', id: p.id }), { access, summary: { type: 'project', title: p.name, path: null, access } });
     }

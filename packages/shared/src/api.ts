@@ -348,7 +348,15 @@ export const LINK_PASSWORD_MAX = 128;
 // GET    /api/workspaces/:id/projects          -> { projects: ProjectSummary[] }  (the ones you can see)
 // POST   /api/workspaces/:id/projects  body { name, access? } -> { project }   (members, not guests)
 // PATCH  /api/projects/:id   body { name?, access?, teamAccess?: TeamAccess | null } -> { project }   (its creator or workspace owner/admin)
-// DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
+//        [additive, #129] also { description?, pinnedBoardIds?: string[] (its own boards, ≤ 12, in order),
+//        parentId?: string | null } — moving it needs its manager, who also manages the project it
+//        leaves (or a content admin) and sees the one it enters; 400 past PROJECT_MAX_DEPTH or into itself
+// DELETE /api/projects/:id?boards=parent|trash -> { ok: true }   (same; 409 while it holds sub-projects,
+//        and — without `boards` — while it still holds boards. `parent`: its boards move to the parent
+//        project (the workspace root at the top); `trash`: they go to the trash, when the caller owns
+//        each of them or is a content admin)
+// PUT    /api/projects/:id/pin  DELETE … -> { ok: true }   [#129] pin it to the top of your sidebar (anyone who sees it)
+// GET    /api/workspaces/:id/activity?project=<id> -> ActivityResponse   [#129] the project page's recent activity
 // GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
 // PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
 /**
@@ -599,7 +607,54 @@ export interface ProjectSummary {
   /** You may rename it, change its access, manage its members and delete it. */
   canManage: boolean;
   createdAt: number;
+  /**
+   * [additive, #129] The project it sits in (null: the top of the workspace). Access is inherited:
+   * its boards reach only people who get through every project above it too, so a sub-project can
+   * narrow its parent's audience but never widen it; its own team access level can only be stricter.
+   */
+  parentId?: string | null;
+  /** [additive, #129] What the project is for (its landing page; plain text). */
+  description?: string;
+  /** [additive, #129] Boards its managers pinned on its page, in order (some may since have moved away). */
+  pinnedBoardIds?: string[];
+  /** [additive, #129] You pinned it to the top of your sidebar. */
+  pinned?: boolean;
 }
+
+// Blueprints (#161): a project's boards and docs saved as a reusable setup.
+// GET    /api/blueprints -> { blueprints: BlueprintSummary[] }  (yours and those shared with your teams)
+// POST   /api/projects/:id/blueprints body { name, description?, steps?: string[], workspaceId?: string | null }
+//        -> { blueprint }  (its boards and docs as you may read and copy them: downloads policy; ≤ BLUEPRINT_MAX_ITEMS)
+// PATCH  /api/blueprints/:id body { name?, description?, steps?, workspaceId? } -> { blueprint }
+//        (its owner; owners / content admins of the team it is shared with may unshare it: workspaceId null)
+// DELETE /api/blueprints/:id -> { ok: true }  (its owner)
+// POST   /api/blueprints/:id/use body { workspaceId, name?, parentId? } -> { project: ProjectSummary, boards: { id, kind, title }[] }
+//        one transaction: the project and a copy of every item, links between them pointing at the copies
+export interface BlueprintSummary {
+  id: string;
+  name: string;
+  description: string;
+  steps: string[];
+  /** Its boards and docs, in order. */
+  items: Array<{ kind: ObjectKind; title: string }>;
+  ownerId: string;
+  ownerName: string;
+  /** The team workspace it is shared with, null: its owner's alone. */
+  workspaceId: string | null;
+  /** You may change and delete it (its owner). */
+  mine: boolean;
+  /** You may stop sharing it (its owner, or an owner / content admin of the team it is shared with). */
+  canUnshare: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+/** Boards and docs a blueprint holds at most (#161). */
+export const BLUEPRINT_MAX_ITEMS = 20;
+
+/** How deep projects nest: a project, its sub-projects and theirs (#129). */
+export const PROJECT_MAX_DEPTH = 3;
+/** Boards a project page pins at most (#129). */
+export const PROJECT_MAX_PINNED_BOARDS = 12;
 
 /** Days a deleted board stays in its owner's trash (restorable) before it is deleted for good. */
 export const TRASH_RETENTION_DAYS = 30;
@@ -2395,6 +2450,8 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'blueprint.shared': 'Shared a blueprint with the team',
+  'blueprint.used': 'Made a project from a blueprint',
   'stickers.set_removed': 'Removed a team sticker set',
   'template.published': 'Published a company template',
   'template.unpublished': 'Withdrew a company template',

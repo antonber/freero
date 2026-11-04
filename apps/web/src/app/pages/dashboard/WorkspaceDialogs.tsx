@@ -3,8 +3,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 import type { BoardSummary, ProjectAccess, ProjectSummary, TeamAccess, WorkspaceGroup, WorkspaceSummary } from '@freero/shared';
-import { Avatar, Button, IconButton, Input, Modal, Select, useToast, type SelectOption } from '@ui';
+import { Avatar, Button, IconButton, Input, Modal, Select, TextArea, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
+import { placesFor, projectPath } from './projectTree';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
 
@@ -85,12 +86,18 @@ export function ProjectDialog({
   open,
   workspace,
   project,
+  projects = [],
+  parentId = null,
   onClose,
   onSaved,
 }: {
   open: boolean;
   workspace: WorkspaceSummary;
   project: ProjectSummary | null;
+  /** The workspace's projects you see (#129: where it can sit). */
+  projects?: ProjectSummary[];
+  /** A new project's parent (a sub-project), null for the top. */
+  parentId?: string | null;
   onClose: () => void;
   onSaved: (p: ProjectSummary) => void;
 }) {
@@ -98,6 +105,9 @@ export function ProjectDialog({
   const [name, setName] = useState('');
   const [access, setAccess] = useState<ProjectAccess>('workspace');
   const [level, setLevel] = useState<TeamAccess | ''>('');
+  // #129: the project it sits in ('' = the top of the workspace) and what it is for.
+  const [parent, setParent] = useState('');
+  const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -112,6 +122,8 @@ export function ProjectDialog({
     setName(project?.name ?? '');
     setAccess(project?.access ?? 'workspace');
     setLevel(project?.teamAccess ?? '');
+    setParent((project ? project.parentId : parentId) ?? '');
+    setDescription(project?.description ?? '');
     setError(null);
     setAdding('');
     setPeople([]);
@@ -121,17 +133,25 @@ export function ProjectDialog({
       api.listProjectGroups(project.id).then((r) => setGroups(r.groups), () => setGroups([]));
       api.listGroups(workspace.id).then((r) => setAllGroups(r.groups), () => setAllGroups([]));
     }
-  }, [open, project, workspace]);
+  }, [open, project, workspace, parentId]);
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     if (!name.trim()) return setError('Give the project a name');
     setBusy(true);
     try {
+      const moved = project && (project.parentId ?? '') !== parent;
       const { project: saved } = project
-        ? await api.updateProject(project.id, { name: name.trim(), access, teamAccess: level || null })
-        : await api.createProject(workspace.id, name.trim(), access, level || null);
-      onSaved(saved);
+        ? await api.updateProject(project.id, {
+            name: name.trim(),
+            access,
+            teamAccess: level || null,
+            description,
+            ...(moved ? { parentId: parent || null } : {}),
+          })
+        : await api.createProject(workspace.id, name.trim(), access, level || null, parent || null);
+      if (!project && description.trim()) onSaved((await api.updateProject(saved.id, { description })).project);
+      else onSaved(saved);
     } catch (err) {
       setError(errorText(err, 'Could not save the project'));
     } finally {
@@ -173,6 +193,11 @@ export function ProjectDialog({
   const candidates = everyone.filter((m) => !people.some((p) => p.userId === m.userId));
   const groupCandidates = allGroups.filter((g) => !groups.some((x) => x.id === g.id));
   const team = workspace.kind === 'team';
+  const places = placesFor(project, projects);
+  const placeOptions: SelectOption<string>[] = [
+    { value: '', label: 'Top of the workspace' },
+    ...places.map((p) => ({ value: p.id, label: projectPath(p.id, projects).map((x) => x.name).join(' / ') })),
+  ];
 
   return (
     <Modal
@@ -202,7 +227,22 @@ export function ProjectDialog({
           }}
           error={error ?? undefined}
         />
+        <TextArea
+          aria-label="What this project is for"
+          placeholder="What this project is for (shown on its page)"
+          value={description}
+          maxLength={2000}
+          rows={3}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        {places.length > 0 || parent ? (
+          <label className="fr-dash-projdlg__level">
+            <span className="fr-dash-settings__label">Inside</span>
+            <Select<string> aria-label="The project it sits in" options={placeOptions} value={parent} onChange={setParent} width={240} />
+          </label>
+        ) : null}
         {team ? <Select<ProjectAccess> aria-label="Who can see it" options={ACCESS_OPTIONS} value={access} onChange={setAccess} /> : null}
+        {team && parent ? <p className="fr-dash-projdlg__hint">Only people who can see the project it is in can see this one: a sub-project never opens its boards wider.</p> : null}
         {team ? (
           <label className="fr-dash-projdlg__level">
             <span className="fr-dash-settings__label">{access === 'private' ? 'People in the project' : 'Members'} on its boards</span>
@@ -345,3 +385,86 @@ export function TransferBoardDialog({
     </Modal>
   );
 }
+
+/**
+ * Deleting a project (#129): its sub-projects must go first; boards still in it move to the
+ * project it sits in (the top of the workspace for a top-level one) or to the trash.
+ */
+export function DeleteProjectDialog({
+  project,
+  projects,
+  onClose,
+  onDeleted,
+}: {
+  project: ProjectSummary;
+  projects: ProjectSummary[];
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const notify = useToast();
+  const [count, setCount] = useState<number | null>(null);
+  const [mode, setMode] = useState<'parent' | 'trash'>('parent');
+  const [busy, setBusy] = useState(false);
+  const parent = project.parentId ? projects.find((p) => p.id === project.parentId) : undefined;
+  const subs = projects.filter((p) => p.parentId === project.id).length;
+  useEffect(() => {
+    let live = true;
+    api.listBoards('all', '', { workspace: project.workspaceId, project: project.id }).then(
+      (r) => live && setCount(r.boards.filter((b) => b.projectId === project.id).length),
+      () => live && setCount(0),
+    );
+    return () => {
+      live = false;
+    };
+  }, [project]);
+  const where = parent ? `“${parent.name}”` : 'the top of the workspace';
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.deleteProject(project.id, count ? mode : undefined);
+      onDeleted();
+    } catch (e) {
+      notify(errorText(e, 'Could not delete the project'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Delete the project “${project.name}”?`}
+      width={440}
+      footer={
+        <>
+          <Button onClick={onClose} data-autofocus>
+            Cancel
+          </Button>
+          <Button variant="danger" loading={busy} disabled={subs > 0 || count === null} onClick={() => void remove()}>
+            Delete project
+          </Button>
+        </>
+      }
+    >
+      {subs > 0 ? (
+        <p className="fr-dash-projdlg__hint">It has {subs === 1 ? 'a sub-project' : `${subs} sub-projects`}. Move or delete {subs === 1 ? 'it' : 'them'} first.</p>
+      ) : count === null ? null : count === 0 ? (
+        <p className="fr-dash-projdlg__hint">It holds no boards.</p>
+      ) : (
+        <fieldset className="fr-dash-projdlg__choice">
+          <legend>
+            Its {count === 1 ? 'board' : `${count} boards`}:
+          </legend>
+          <label>
+            <input type="radio" name="boards" checked={mode === 'parent'} onChange={() => setMode('parent')} /> Move to {where}
+            {parent ? null : <span className="fr-dash-projdlg__hint"> — everyone in the workspace who can see the top level will see {count === 1 ? 'it' : 'them'}</span>}
+          </label>
+          <label>
+            <input type="radio" name="boards" checked={mode === 'trash'} onChange={() => setMode('trash')} /> Move to the trash (their owners can restore them)
+          </label>
+        </fieldset>
+      )}
+    </Modal>
+  );
+}
+

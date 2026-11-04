@@ -11,6 +11,8 @@ import type {
   CommentStatusRecord,
   CommentThread,
   CommentThreadRecord,
+  CommentArea,
+  CommentAttachment,
 } from '@freero/shared';
 import type { Point } from '@engine';
 
@@ -103,6 +105,7 @@ export function assembleThreads(entries: Array<[string, unknown]>): CommentThrea
           authorName: m.authorName,
           authorColor: m.authorColor,
           text: m.text,
+          ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments.filter(isAttachment) } : {}),
           createdAt: m.createdAt,
           editedAt: m.editedAt,
           reactions: byEmoji,
@@ -116,6 +119,7 @@ export function assembleThreads(entries: Array<[string, unknown]>): CommentThrea
       elementId: meta.elementId ?? null,
       corner: meta.corner ?? null,
       origin: meta.origin,
+      area: meta.elementId ? null : cleanArea(meta.area),
       resolved: status.get(meta.id)?.resolved ?? false,
       messages: msgs,
       createdAt: meta.createdAt,
@@ -123,6 +127,32 @@ export function assembleThreads(entries: Array<[string, unknown]>): CommentThrea
     });
   }
   return out.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+}
+
+const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+
+/** A thread's area as stored (board content is untrusted): a usable rectangle, or null. */
+export function cleanArea(a: unknown): CommentArea | null {
+  const r = a as Partial<CommentArea> | null | undefined;
+  return r && finite(r.x) && finite(r.y) && finite(r.w) && finite(r.h) && r.w > 0 && r.h > 0 ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
+}
+
+const isAttachment = (a: unknown): a is CommentAttachment => {
+  const v = a as Partial<CommentAttachment> | null;
+  return !!v && typeof v.src === 'string' && typeof v.name === 'string';
+};
+
+/** World units a drag must cover (on screen: AREA_MIN_PX at zoom 1) to make an area thread, not a point. */
+export const AREA_MIN_PX = 12;
+
+/**
+ * The thread a drag makes (#143): an area, pinned at its top-right corner — where clients that
+ * don't know areas show it, as a point — or null for a click (too small a drag).
+ */
+export function areaFromDrag(a: Point, b: Point, zoom: number): { x: number; y: number; area: CommentArea } | null {
+  const area = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+  if (Math.max(area.w, area.h) * zoom < AREA_MIN_PX) return null;
+  return { x: area.x + area.w, y: area.y, area };
 }
 
 /**
@@ -217,9 +247,25 @@ export function mentionsMe(t: CommentThread, myId: string): boolean {
   return t.messages.some((m) => m.authorId !== myId && mentionedUserIds(m.text).includes(myId));
 }
 
-/** `seen`: when you last looked at each thread (the 'unread' filter: open threads with news, like the badge). */
-export function listThreads(threads: CommentThread[], filter: ThreadFilter, myId: string, seen: Record<string, number> = {}): CommentThread[] {
+/** Everyone who wrote in the threads, most active first (the author filter's choices). */
+export function authorsOf(threads: CommentThread[]): Array<{ id: string; name: string; count: number }> {
+  const by = new Map<string, { id: string; name: string; count: number }>();
+  for (const t of threads)
+    for (const m of t.messages) {
+      const a = by.get(m.authorId) ?? { id: m.authorId, name: m.authorName, count: 0 };
+      a.count++;
+      by.set(m.authorId, a);
+    }
+  return [...by.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/**
+ * `seen`: when you last looked at each thread (the 'unread' filter: open threads with news, like the
+ * badge). `author` (#143): only threads that person wrote in — combined with any filter.
+ */
+export function listThreads(threads: CommentThread[], filter: ThreadFilter, myId: string, seen: Record<string, number> = {}, author: string | null = null): CommentThread[] {
   const keep = threads.filter((t) => {
+    if (author && !t.messages.some((m) => m.authorId === author)) return false;
     if (filter === 'open') return !t.resolved;
     if (filter === 'unread') return !t.resolved && isUnread(t, seen[t.id], myId);
     if (filter === 'mentions') return mentionsMe(t, myId);

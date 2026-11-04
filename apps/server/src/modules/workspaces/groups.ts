@@ -9,7 +9,7 @@ import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { recordAudit } from '../audit/index';
 import { getUser, getUsers } from '../auth/index';
-import { boardIdsInProject } from '../boards/index';
+import { boardIdsUnderProject } from './projects';
 import { boardIdsGrantedTo } from '../members/index';
 import { refreshBoardAccess } from '../realtime/index';
 import * as repo from './repo';
@@ -76,7 +76,8 @@ export async function renameGroup(groupId: string, userId: string, body: { name?
 /** Every board the group reaches: shared with it directly, or in a project shared with it. */
 async function boardsOfGroup(groupId: string): Promise<string[]> {
   const [direct, projects] = await Promise.all([boardIdsGrantedTo(groupId), repo.projectIdsOfGroup(groupId)]);
-  const inProjects = (await Promise.all(projects.map((p) => boardIdsInProject(p)))).flat();
+  // A project's sub-projects too (#129): their boards are reached through it.
+  const inProjects = (await Promise.all(projects.map((p) => boardIdsUnderProject(p)))).flat();
   return [...new Set([...direct, ...inProjects])];
 }
 

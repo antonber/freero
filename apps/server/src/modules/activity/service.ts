@@ -421,9 +421,10 @@ export async function boardActivity(boardId: string, actorId: string, opts: { be
 export async function workspaceActivity(
   workspaceId: string,
   userId: string,
-  opts: { before?: number | null; limit?: number } = {},
+  opts: { before?: number | null; limit?: number; projectId?: string } = {},
 ): Promise<ActivityResponse> {
-  const boards = await boardsOpenableIn(userId, workspaceId);
+  // A project page (#129): only that project's boards (still only the ones the reader can open).
+  const boards = await boardsOpenableIn(userId, workspaceId, opts.projectId);
   const { before, limit } = pageOf(opts);
   const rows = await repo.recent(
     boards.map((b) => b.id),

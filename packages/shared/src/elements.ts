@@ -1285,9 +1285,41 @@ export interface CommentThreadRecord {
   corner?: 'top-right' | null;
   /** Absolute fallback point if the pinned element disappears while nobody is online. */
   origin?: { x: number; y: number };
+  /**
+   * [additive, #143] The thread is about an AREA of the board: this world rectangle, outlined while
+   * the thread is open. (x, y) is its top-right corner, so clients that don't know areas show the
+   * pin there, as a point thread. Never set together with `elementId`.
+   */
+  area?: CommentArea | null;
   createdAt: number;
   createdBy: string;
 }
+
+/** A rectangle of the board a comment thread is about (#143), world coordinates. */
+export interface CommentArea {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * [#143] A file or image carried by a comment message: an ATTACHMENT upload of the message's
+ * author (opaque bytes the server never serves at /uploads/), fetched only from its board through
+ * the board's comment-file route, by someone who can read that message there.
+ */
+export interface CommentAttachment {
+  /** "/uploads/<name>.bin". */
+  src: string;
+  /** The file name it shows and downloads under. */
+  name: string;
+  size: number;
+  /** An image the thread shows inline (the server serves it inline only when its bytes are PNG, JPEG, GIF or WebP). */
+  image?: boolean;
+}
+
+/** Files a comment message carries at most (#143). */
+export const COMMENT_MAX_ATTACHMENTS = 4;
 
 export interface CommentStatusRecord {
   kind: 'status';
@@ -1306,6 +1338,8 @@ export interface CommentMessageRecord {
   /** Author's cursor color at write time (avatars render after the author leaves). */
   authorColor?: string;
   text: string;
+  /** [additive, #143] Files and images the message carries. */
+  attachments?: CommentAttachment[];
   createdAt: number;
   editedAt?: number;
 }
@@ -1341,6 +1375,7 @@ export interface CommentMessage {
   authorName: string;
   authorColor?: string;
   text: string;
+  attachments?: CommentAttachment[];
   createdAt: number;
   editedAt?: number;
   /** emoji -> userIds */
@@ -1355,6 +1390,8 @@ export interface CommentThread {
   elementId: string | null;
   corner: 'top-right' | null;
   origin?: { x: number; y: number };
+  /** [#143] The area it is about (see CommentThreadRecord.area). */
+  area?: CommentArea | null;
   resolved: boolean;
   messages: CommentMessage[];
   createdAt: number;
