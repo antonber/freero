@@ -7755,6 +7755,15 @@ async function trackerChecks() {
       assert((await az.webhook(hookUrl, 'not-the-secret', key.slice(1))) === 401, 'a hook with another secret was accepted');
       assert((await az.webhook(hookUrl, made.json.webhookSecret, key.slice(1))) === 202, 'service hook refused');
       await waitFor(() => E.get('az3').status === 'doing', 10_000, 'Active on the card');
+      // Someone resolves it in Azure DevOps the moment Freero's write of Closed lands, before Freero
+      // reads it back: their state still reaches the card (Freero agrees on what it wrote, so the
+      // service hook's sync sees Resolved as a change in Azure DevOps).
+      az.editAfterNextPatch(key.slice(1), { state: 'Resolved' });
+      E.set('az3', { ...E.get('az3'), status: 'done' });
+      await waitFor(() => az.pendingAfterEdits() === 0 && az.item(key).state === 'Resolved', 15_000, 'Closed written, then Resolved in Azure DevOps');
+      await waitFor(() => E.get('az3').status === 'done', 5000, 'the card still done after the write');
+      assert((await az.webhook(hookUrl, made.json.webhookSecret, key.slice(1))) === 202, 'service hook refused');
+      await waitFor(() => E.get('az3').status === 'doing', 10_000, 'Resolved (in progress) on the card');
       // The revision race: someone renames the work item between Freero's read and its write.
       az.editBeforeNextPatch(key.slice(1), { title: 'Audit log export (renamed in Azure)' });
       E.set('az3', { ...E.get('az3'), title: '<p>Audit log export, renamed on the board</p>' });

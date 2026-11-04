@@ -282,7 +282,7 @@ async function operations(conn: ProviderConnection, values: IssueValues, ctx: { 
 /** Sends a patch against revision `rev` (when given): a newer revision is a conflict, never overwritten. */
 async function patchItem(conn: ProviderConnection, id: string, rev: string | null | undefined, ops: Array<Record<string, unknown>>, what: string): Promise<WorkItem> {
   const body = [...(rev ? [{ op: 'test', path: '/rev', value: Number(rev) }] : []), ...ops];
-  const res = await conn.call({ method: 'PATCH', path: `/_apis/wit/workitems/${seg(id)}?${q(conn)}`, headers: PATCH, body });
+  const res = await conn.call({ method: 'PATCH', path: `/_apis/wit/workitems/${seg(id)}?$expand=relations&${q(conn)}`, headers: PATCH, body });
   if (!ok(res)) throw refused(res, what);
   return res.json as WorkItem;
 }
@@ -409,8 +409,11 @@ export const azure: TrackerProvider = {
     const ops = await operations(conn, patch, { project, type, issue }, notes);
     // Against the revision this sync READ (not the one just fetched for its type): anything
     // written in between is a conflict, merged by the next pass instead of overwritten.
-    if (ops.length) await patchItem(conn, issue.id, issue.version, ops, `change ${issue.key}`);
-    return notes;
+    if (!ops.length) return notes;
+    // Azure DevOps answers with the work item as this write left it (its new revision): what the
+    // sync agrees on, rather than a read that may already hold the next person's edit.
+    const written = await patchItem(conn, issue.id, issue.version, ops, `change ${issue.key}`);
+    return { notes, issue: await toRemote(conn, written) };
   },
 
   async priorities() {

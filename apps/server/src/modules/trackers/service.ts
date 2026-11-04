@@ -384,13 +384,23 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
     if (pushed.length) {
       let patch: IssueValues = {};
       for (const f of pushed) patch = withIssueField(patch, f, issueFieldValue(board, f));
+      let written: RemoteIssue | null = null;
       try {
-        notes.push(...(await provider.updateIssue(pc, issue, patch)));
+        const out = await provider.updateIssue(pc, issue, patch);
+        if (Array.isArray(out)) notes.push(...out);
+        else {
+          notes.push(...out.notes);
+          written = out.issue;
+        }
       } catch (e) {
         if (e instanceof TrackerError && e.kind === 'conflict') throw new RevisionConflict(e);
         throw e;
       }
-      issue = (await provider.getIssue(pc, link.externalId)) ?? issue;
+      // The issue as the write left it: the tracker's own answer to the write where it gives one,
+      // else read back. A read-back can already hold someone's change made just after the write
+      // (a state set in Azure DevOps a moment later): agreed as Freero's own, it would never reach
+      // the board.
+      issue = written ?? (await provider.getIssue(pc, link.externalId)) ?? issue;
     }
 
     // Links back to the items: added for new items, removed for items that left.

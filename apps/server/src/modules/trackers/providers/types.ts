@@ -125,8 +125,13 @@ export interface TrackerProvider {
   getIssue(conn: ProviderConnection, id: string): Promise<RemoteIssue | null>;
   /** Creates an issue; `notes`: what couldn't be set, in Freero's words ("No Jira user for …"). */
   createIssue(conn: ProviderConnection, input: CreateIssueInput): Promise<{ issue: RemoteIssue; notes: string[] }>;
-  /** Writes these fields (only the ones present); returns notes for what couldn't be written. */
-  updateIssue(conn: ProviderConnection, issue: RemoteIssue, patch: IssueValues): Promise<string[]>;
+  /**
+   * Writes these fields (only the ones present); returns notes for what couldn't be written — and,
+   * where the tracker answers a write with the issue as it left it (Azure DevOps), that issue: the
+   * sync agrees on it instead of reading the issue again, so a change someone makes right after
+   * Freero's write is not taken as what Freero wrote (it is pulled by the next sync).
+   */
+  updateIssue(conn: ProviderConnection, issue: RemoteIssue, patch: IssueValues): Promise<string[] | { notes: string[]; issue: RemoteIssue }>;
   /**
    * The tracker's priority levels by name, most pressing first (Jira: the site's; Linear: its fixed
    * scale), for a kanban's Priority options; null / absent when it can't say (or has none: GitHub).
