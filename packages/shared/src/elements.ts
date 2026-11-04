@@ -653,9 +653,23 @@ export interface TableElement extends BaseElement {
    * others keep their place in `rows` and their cells; they are drawn collapsed.
    */
   filter?: TableFilter | null;
-  /** 'board': the same rows drawn as cards in columns by `groupBy` (a select column). Default grid. */
-  view?: 'grid' | 'board';
+  /**
+   * 'board': the same rows drawn as cards in columns by `groupBy` (a select column). [#51]
+   * 'timeline': the rows as bars between two date columns (`timeline`). Default grid.
+   */
+  view?: 'grid' | 'board' | 'timeline';
   groupBy?: string | null;
+  /** [additive, #51] The grid's rows grouped under a band per option of this select column (option order, then "No value"). */
+  groupRows?: string | null;
+  /** [additive, #51] Timeline view: the date columns a bar runs from and to (one of them alone: a one-day bar). */
+  timeline?: { start: string; end: string } | null;
+  /**
+   * [additive, #51] Derived, written by the table feature with every change of cells, filter or
+   * grouping: the rows the filter hides and the number of group bands, so the element's height is
+   * that of what it shows (a filter reclaims the space) without reading cells. Never edited by hand.
+   */
+  hiddenRows?: string[] | null;
+  bands?: number | null;
 }
 
 /**
