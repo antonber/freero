@@ -47,7 +47,12 @@
     "everyoneInThisWorkspace",
     "onlyMe",
     "onlyYouSeeThisPack",
-    "myPackNameCount"
+    "myPackNameCount",
+    "cloudArchitectureIcons",
+    "cloudNoticeAws",
+    "cloudNoticeAzure",
+    "cloudNoticeKubernetes",
+    "cloudTerms"
   ],
   "openTheIconLibrary": "פתיחת ספריית הסמלים",
   "icon": "סמל",
@@ -96,5 +101,10 @@
   "everyoneInThisWorkspace": "כל מי שבסביבת העבודה הזו",
   "onlyMe": "רק אני",
   "onlyYouSeeThisPack": "החבילה שלך: רק אתה רואה אותה",
-  "myPackNameCount": "{name} · שלך ({count, number})"
+  "myPackNameCount": "{name} · שלך ({count, number})",
+  "cloudArchitectureIcons": "סמלי ארכיטקטורת ענן",
+  "cloudNoticeAws": "סמלי AWS Architecture Icons הרשמיים של Amazon Web Services, ללא שינוי, לשרטוט דיאגרמות ארכיטקטורה. AWS ושמות השירותים והסמלים שלה הם סימנים מסחריים של Amazon.com, Inc. או של החברות הקשורות אליה; Freero אינה קשורה ל-AWS ואינה מאושרת על ידה.",
+  "cloudNoticeAzure": "סמלי הארכיטקטורה הרשמיים של Azure מ-Microsoft, לדיאגרמות ארכיטקטורה, לחומרי הדרכה ולתיעוד. אין לחתוך, להפוך, לסובב או לשנות את צורתם, ויש לציין ליד כל סמל את השם המלא של השירות שלו. Freero מציירת את המעברים שלהם בצבע אחיד. Microsoft ו-Azure הם סימנים מסחריים של קבוצת החברות Microsoft; Freero אינה קשורה ל-Microsoft.",
+  "cloudNoticeKubernetes": "Kubernetes Icons Set מאת Kubernetes Authors, ברישיון CC BY 4.0, הומר לפורמט הציור של Freero ללא תוויות הטקסט שלו. Kubernetes הוא סימן מסחרי רשום של The Linux Foundation.",
+  "cloudTerms": "התנאים של {name}"
 }

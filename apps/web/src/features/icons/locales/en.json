@@ -46,5 +46,10 @@
   "everyoneInThisWorkspace": "Everyone in this workspace",
   "onlyMe": "Only me",
   "onlyYouSeeThisPack": "Your own pack: only you see it",
-  "myPackNameCount": "{name} · yours ({count, number})"
+  "myPackNameCount": "{name} · yours ({count, number})",
+  "cloudArchitectureIcons": "Cloud architecture icons",
+  "cloudNoticeAws": "The official AWS Architecture Icons from Amazon Web Services, unchanged, for architecture diagrams. AWS and its service names and icons are trademarks of Amazon.com, Inc. or its affiliates; Freero isn’t affiliated with or endorsed by AWS.",
+  "cloudNoticeAzure": "The official Azure architecture icons from Microsoft, for architecture diagrams, training materials and documentation. Don’t crop, flip, rotate or reshape them, and label each with its service’s full name. Freero draws their gradients as flat colour. Microsoft and Azure are trademarks of the Microsoft group of companies; Freero isn’t affiliated with Microsoft.",
+  "cloudNoticeKubernetes": "The Kubernetes Icons Set by the Kubernetes Authors, licensed under CC BY 4.0, converted to Freero’s drawing format with its text labels removed. Kubernetes is a registered trademark of The Linux Foundation.",
+  "cloudTerms": "{name}’s terms"
 }

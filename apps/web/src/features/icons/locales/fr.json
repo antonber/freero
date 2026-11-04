@@ -47,7 +47,12 @@
     "everyoneInThisWorkspace",
     "onlyMe",
     "onlyYouSeeThisPack",
-    "myPackNameCount"
+    "myPackNameCount",
+    "cloudArchitectureIcons",
+    "cloudNoticeAws",
+    "cloudNoticeAzure",
+    "cloudNoticeKubernetes",
+    "cloudTerms"
   ],
   "openTheIconLibrary": "Ouvrir la bibliothèque d’icônes",
   "icon": "Icône",
@@ -96,5 +101,10 @@
   "everyoneInThisWorkspace": "Tout l’espace de travail",
   "onlyMe": "Moi seul",
   "onlyYouSeeThisPack": "Votre propre pack : vous seul le voyez",
-  "myPackNameCount": "{name} · le vôtre ({count, number})"
+  "myPackNameCount": "{name} · le vôtre ({count, number})",
+  "cloudArchitectureIcons": "Icônes d’architecture cloud",
+  "cloudNoticeAws": "Les AWS Architecture Icons officielles d’Amazon Web Services, telles quelles, pour les schémas d’architecture. AWS ainsi que les noms et icônes de ses services sont des marques d’Amazon.com, Inc. ou de ses sociétés affiliées ; Freero n’est ni affilié à AWS ni soutenu par AWS.",
+  "cloudNoticeAzure": "Les icônes d’architecture Azure officielles de Microsoft, pour les schémas d’architecture, les supports de formation et la documentation. Ne les recadrez pas, ne les retournez pas, ne les faites pas pivoter et n’en modifiez pas la forme, et indiquez à côté de chacune le nom complet de son service. Freero dessine leurs dégradés en couleur unie. Microsoft et Azure sont des marques du groupe Microsoft ; Freero n’est pas affilié à Microsoft.",
+  "cloudNoticeKubernetes": "Le Kubernetes Icons Set des Kubernetes Authors, sous licence CC BY 4.0, converti au format de dessin de Freero sans ses libellés texte. Kubernetes est une marque déposée de The Linux Foundation.",
+  "cloudTerms": "Conditions de {name}"
 }

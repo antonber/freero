@@ -1,0 +1,43 @@
+{
+  "sets": [
+    {
+      "id": "aws",
+      "name": "AWS",
+      "licence": "LicenseRef-AWS-Architecture-Icons",
+      "terms": "https://aws.amazon.com/architecture/icons/",
+      "source": {
+        "url": "https://d1.awsstatic.com/onedam/marketing-channels/website/public/shared/architecture-icon-release/Icon-package_07312026.5846e92413caa21490223536cc97f1269e44fa92.zip",
+        "version": "07312026",
+        "sha256": "d2d166c453526471749d520e0db022c459abef759d2946cf2dd1d1c992dc6526",
+        "retrieved": "2026-11-04"
+      },
+      "icons": 806
+    },
+    {
+      "id": "azure",
+      "name": "Azure",
+      "licence": "LicenseRef-Azure-Architecture-Icons",
+      "terms": "https://learn.microsoft.com/en-us/azure/architecture/icons/",
+      "source": {
+        "url": "https://arch-center.azureedge.net/icons/Azure_Public_Service_Icons_V24.zip",
+        "version": "V24",
+        "sha256": "921594ccd1bf3d9c0a1bd7b6d924e050551a59342f2b353bb74bdcf761c35141",
+        "retrieved": "2026-11-04"
+      },
+      "icons": 636
+    },
+    {
+      "id": "kubernetes",
+      "name": "Kubernetes",
+      "licence": "CC-BY-4.0",
+      "terms": "https://github.com/kubernetes/community/tree/master/icons",
+      "source": {
+        "url": "https://codeload.github.com/kubernetes/community/zip/812ca4f10971819ffc35fb17a9eb32a04dbe72e0",
+        "version": "812ca4f10971819ffc35fb17a9eb32a04dbe72e0",
+        "sha256": "edf9f59322831df16aecebcf38e71f130e065561ddb05926d0d960535b05417c",
+        "retrieved": "2026-11-04"
+      },
+      "icons": 39
+    }
+  ]
+}
