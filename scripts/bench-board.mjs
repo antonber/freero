@@ -298,6 +298,13 @@ await scenario('select all', async () => {
   return { ms: t.ms, longTasksMs: t.longTasks, detail: `${sel} selected`, ...(sel < seeded.elements.length * 0.9 ? { note: `only ${sel} selected` } : {}) };
 });
 await scenario('pan at fit, everything selected', () => frames({ kind: 'pan', n: 60, dx: -6, dy: -2 }));
+// #182: selected items mount like the rest, so zooming in with everything selected mounts what is near the view.
+await scenario('zoom in to 100%, everything selected', async () => {
+  await page.evaluate((p) => window.__bench.centerOn(p), seeded.denseSpot);
+  const r = await frames({ kind: 'zoom', to: 1, at: seeded.denseSpot, step: 1.06 });
+  const n = await page.evaluate(() => window.__bench.drawnItems());
+  return { ...r, detail: `${n.dom} items mounted at the end` };
+});
 await page.keyboard.press('Escape');
 await sleep(300);
 

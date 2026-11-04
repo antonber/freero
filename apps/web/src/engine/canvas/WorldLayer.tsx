@@ -35,7 +35,7 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
     let prev: string[] = [];
     let disposed = false;
     const compute = (forceList: boolean) => {
-      const { camera, viewport, selection, editingId } = ui.getState();
+      const { camera, viewport, editingId } = ui.getState();
       const view = viewportRect(camera, viewport);
       let moved = false;
       if (
@@ -49,11 +49,12 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
         moved = true;
       }
       if (!moved && !forceList) return;
-      const keep = new Set(selection);
-      if (editingId) keep.add(editingId);
+      // Only the item being edited is kept drawn wherever it is (its text editor holds the focus).
+      // Selected items mount like any other (#182): their outlines, the keyboard and the toolbar
+      // work from the doc, so selecting everything and zooming in mounts only what is near the view.
       const next: string[] = [];
       for (const el of core.editor.getVisibleElements()) {
-        if (keep.has(el.id) || rectsIntersect(elementAABB(el), cullRect)) next.push(el.id);
+        if (el.id === editingId || rectsIntersect(elementAABB(el), cullRect)) next.push(el.id);
       }
       const changed = !sameIds(next, prev);
       if (changed) prev = next;
@@ -76,7 +77,7 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
     const offMine = core.emitter.on('personal-views', schedule);
     const offUi = ui.subscribe((s, p) => {
       // `dragging`: items folded into a container stay drawn while dragged, and fold when dropped.
-      if (s.selection !== p.selection || s.editingId !== p.editingId || s.viewHidden !== p.viewHidden || s.dragging !== p.dragging) compute(true);
+      if (s.editingId !== p.editingId || s.viewHidden !== p.viewHidden || s.dragging !== p.dragging) compute(true);
 
       else if (s.camera !== p.camera || s.viewport !== p.viewport) compute(false);
     });
