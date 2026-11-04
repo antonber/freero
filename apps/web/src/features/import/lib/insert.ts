@@ -10,6 +10,7 @@ import { isVsdxName, parseVsdx } from './vsdx';
 import { isPptxName, parsePptx } from './pptx';
 import { looksLikeMural, parseMural } from './mural';
 import { looksLikeLucid, parseLucid } from './lucid';
+import { parseMiro } from './miro';
 import { nanoid } from 'nanoid';
 
 import { t as tr } from '../messages';
@@ -148,6 +149,17 @@ export async function importFile(editor: Editor, file: File, at?: Point): Promis
   const kind = kindOfFile(file.name, text.slice(0, 2000));
   if (!kind || kind === 'vsdx' || kind === 'pptx') throw new ImportError(tr('freeroImportsTheseFiles'));
   return placeImport(editor, await parseImport(kind, text), at);
+}
+
+/**
+ * [#62] Reads a Miro board with the person's own token (through the server, which keeps nothing)
+ * and places it like a file. The host's errors carry a message for the person.
+ */
+export async function importMiro(editor: Editor, board: string, token: string, at?: Point): Promise<ImportReport> {
+  const host = editor.host.boardImport;
+  if (!host) throw new ImportError(tr('miroImportNotOffered'));
+  const answer = await host.miro(board, token);
+  return placeImport(editor, parseMiro(answer, nanoid), at);
 }
 
 /** One line for a toast. */

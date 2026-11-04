@@ -551,7 +551,14 @@
     "errors.sensitive_kinds_needed",
     "errors.label_unavailable",
     "errors.kms_key_id_invalid",
-    "errors.kms_provider_unavailable"
+    "errors.kms_provider_unavailable",
+    "errors.miro_bad_link",
+    "errors.miro_token_refused",
+    "errors.miro_no_access",
+    "errors.miro_not_found",
+    "errors.miro_rate_limited",
+    "errors.miro_unreachable",
+    "errors.miro_import_off"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -1104,5 +1111,12 @@
   "errors.sensitive_kinds_needed": "בחרו לפחות סוג מידע אחד לחיפוש",
   "errors.label_unavailable": "התווית הזו אינה זמינה בסביבת העבודה הזו",
   "errors.kms_key_id_invalid": "השרת הזה אינו מזהה את המפתח: השתמשו ב-ARN של מפתח AWS KMS, בשם מפתח של Google Cloud KMS, בכתובת URL של מפתח Azure Key Vault או בנתיב מפתח של Vault Transit.",
-  "errors.kms_provider_unavailable": "השרת הזה אינו מוגדר לשימוש במפתחות {provider}"
+  "errors.kms_provider_unavailable": "השרת הזה אינו מוגדר לשימוש במפתחות {provider}",
+  "errors.miro_bad_link": "הדביקו קישור ללוח Miro ‏(miro.com/app/board/…).",
+  "errors.miro_token_refused": "Miro לא קיבל את האסימון הזה. בדקו אותו ונסו שוב.",
+  "errors.miro_no_access": "האסימון הזה לא יכול לקרוא את הלוח הזה.",
+  "errors.miro_not_found": "אין ב-Miro לוח כזה, או שהצוות של האסימון לא רואה אותו.",
+  "errors.miro_rate_limited": "Miro מבקש מ-Freero להאט. נסו שוב בעוד דקה.",
+  "errors.miro_unreachable": "Miro לא ענה. נסו שוב בעוד רגע.",
+  "errors.miro_import_off": "השרת הזה לא מציע ייבוא מ-Miro."
 }

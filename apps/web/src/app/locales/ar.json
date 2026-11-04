@@ -551,7 +551,14 @@
     "errors.sensitive_kinds_needed",
     "errors.label_unavailable",
     "errors.kms_key_id_invalid",
-    "errors.kms_provider_unavailable"
+    "errors.kms_provider_unavailable",
+    "errors.miro_bad_link",
+    "errors.miro_token_refused",
+    "errors.miro_no_access",
+    "errors.miro_not_found",
+    "errors.miro_rate_limited",
+    "errors.miro_unreachable",
+    "errors.miro_import_off"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -1104,5 +1111,12 @@
   "errors.sensitive_kinds_needed": "اختر نوعًا واحدًا على الأقل من البيانات للبحث عنه",
   "errors.label_unavailable": "هذا التصنيف غير متاح في مساحة العمل هذه",
   "errors.kms_key_id_invalid": "لا يتعرف هذا الخادم على هذا المفتاح: استخدم ARN لمفتاح AWS KMS أو اسم مفتاح Google Cloud KMS أو عنوان URL لمفتاح Azure Key Vault أو مسار مفتاح Vault Transit.",
-  "errors.kms_provider_unavailable": "هذا الخادم غير مُعد لاستخدام مفاتيح {provider}"
+  "errors.kms_provider_unavailable": "هذا الخادم غير مُعد لاستخدام مفاتيح {provider}",
+  "errors.miro_bad_link": "الصق رابط لوحة Miro ‏(miro.com/app/board/…).",
+  "errors.miro_token_refused": "لم يقبل Miro هذا الرمز. تحقّق منه وحاول مجددًا.",
+  "errors.miro_no_access": "لا يستطيع هذا الرمز قراءة هذه اللوحة.",
+  "errors.miro_not_found": "لا توجد لوحة كهذه في Miro، أو لا يراها فريق الرمز.",
+  "errors.miro_rate_limited": "يطلب Miro من Freero التمهّل. حاول مجددًا بعد دقيقة.",
+  "errors.miro_unreachable": "لم يستجب Miro. حاول مجددًا بعد قليل.",
+  "errors.miro_import_off": "لا يتيح هذا الخادم الاستيراد من Miro."
 }

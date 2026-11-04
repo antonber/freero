@@ -551,7 +551,14 @@
     "errors.sensitive_kinds_needed",
     "errors.label_unavailable",
     "errors.kms_key_id_invalid",
-    "errors.kms_provider_unavailable"
+    "errors.kms_provider_unavailable",
+    "errors.miro_bad_link",
+    "errors.miro_token_refused",
+    "errors.miro_no_access",
+    "errors.miro_not_found",
+    "errors.miro_rate_limited",
+    "errors.miro_unreachable",
+    "errors.miro_import_off"
   ],
   "untitledFrame": "Cadre sans titre",
   "couldNotChangeEmbedding": "Impossible de modifier l’intégration",
@@ -1104,5 +1111,12 @@
   "errors.sensitive_kinds_needed": "Choisissez au moins un type de données à rechercher",
   "errors.label_unavailable": "Cette étiquette n’est pas disponible dans cet espace de travail",
   "errors.kms_key_id_invalid": "Ce serveur ne reconnaît pas cette clé : utilisez l’ARN d’une clé AWS KMS, le nom d’une clé Google Cloud KMS, l’URL d’une clé Azure Key Vault ou le chemin d’une clé Vault Transit.",
-  "errors.kms_provider_unavailable": "Ce serveur n’est pas configuré pour utiliser des clés {provider}"
+  "errors.kms_provider_unavailable": "Ce serveur n’est pas configuré pour utiliser des clés {provider}",
+  "errors.miro_bad_link": "Collez le lien d’un tableau Miro (miro.com/app/board/…).",
+  "errors.miro_token_refused": "Miro n’a pas accepté ce jeton. Vérifiez-le et réessayez.",
+  "errors.miro_no_access": "Ce jeton ne permet pas de lire ce tableau.",
+  "errors.miro_not_found": "Miro n’a pas ce tableau, ou l’équipe du jeton ne le voit pas.",
+  "errors.miro_rate_limited": "Miro demande à Freero de ralentir. Réessayez dans une minute.",
+  "errors.miro_unreachable": "Miro n’a pas répondu. Réessayez dans un instant.",
+  "errors.miro_import_off": "Ce serveur ne propose pas l’importation depuis Miro."
 }

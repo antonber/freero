@@ -924,7 +924,33 @@ first; one that can't be is left out and reported). Everything lands in ONE `tra
 DOCTYPE / ENTITY (no external entities, no entity expansion), compressed pages that inflate past
 30 MB (streamed `DecompressionStream`, counted) and more than 2000 items are refused before
 anything is added; labels become plain text (HTML labels reduced to their text). A dropped `.freero`
-goes to `Host.openBackup` (importer `backup`). Miro import (the person's own token) is KAI-261.
+goes to `Host.openBackup` (importer `backup`).
+
+Other whiteboards (#62, #163, #165; which vendor's terms allow what: docs/design/importers.md),
+same report, same one-transaction placement (`placeImport`; tags by name through
+`tags.applyNames` in that transaction):
+- **Miro** through its REST API with the person's OWN token (`Host.boardImport.miro`, present where
+  `BoardPermissions.miroImport`): the dialog's "Miro" tab sends the board link and the token to
+  `POST /api/boards/:id/import/miro` (server `modules/importers`, no table). The server reads the
+  board, items and connectors (cursor-paged, 50 a page, at most `MIRO_MAX_ITEMS` each; `truncated`
+  says there were more) and tags, type-checks every field into `@freero/shared` `MiroItem` /
+  `MiroConnector` / `MiroTag` (strings capped, HTML left as text), and copies up to
+  `MIRO_MAX_IMAGES` pictures into the caller's uploads (`saveUpload`, the board's workspace key):
+  Miro's image link is asked for with the token, only at the configured API origin, redirects never
+  followed; the download it names is fetched WITHOUT the token, through unfurl's SSRF-safe fetch
+  (https) unless it is at that origin (a stand-in). The token is a local of the request — never
+  stored, logged, echoed in an error or sent elsewhere (`importers.test.ts` spies on every log
+  level). `lib/miro.ts` maps the answer in the browser: centres to top-lefts (a frame's children
+  from its top left), frames holding their children, stickies (Miro's colour names → papers),
+  shapes, text, cards, app cards and embeds as cards, images, connectors attached at their spots.
+  `MIRO_IMPORT=off` turns it off; `scripts/lib/mock-miro.mjs` is the stand-in (`MIRO_API_URL`).
+- **Mural** and **Lucid** through their own CSV exports, recognised by their header when a `.csv`
+  is dropped or chosen (any other CSV stays the CSV import's, `features/csv`): `lib/mural.ts`
+  (stickies at Mural's positions, spread by the sticky-size ratio, areas as frames around their
+  stickies, tags, links; editors' names never read) and `lib/lucid.ts` ("CSV of Shape Data":
+  containers as frames, lines as attached connectors, no positions in the file, so laid out with
+  `@freero/shared` `layered` left to right and a grid; comments counted, not posted under the
+  importer's name). `lib/csvRows.ts` reads the rows.
 
 Visio (`.vsdx` / `.vsdm`, also Lucidchart's and draw.io's Visio exports; #116), same importer, same
 one-transaction placement: `lib/vsdx.ts` reads the package from the published VSDX format
@@ -1438,7 +1464,9 @@ the operator's provider (`GIF_PROVIDER`, `GIF_API_KEY`) is asked for results no 
 the workspace's `gifs` policy; previews come through `GET /gifs/media` and a placed GIF is copied
 into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provider links the
 server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `figma`
-(figma_accounts, figma_oauth_flows, figma_recent_files: "Place from Figma", #171; figma_plugin_codes: the Figma plugin's sign-in, #172 — see "Figma" below), `mobile` (push_devices: push notifications to the phone and tablet apps, and the
+(figma_accounts, figma_oauth_flows, figma_recent_files: "Place from Figma", #171; figma_plugin_codes: the Figma plugin's sign-in, #172 — see "Figma" below), `importers` (no table:
+a Miro board read with the person's own token for the import dialog, nothing of it kept, #62 —
+see "Other whiteboards" under the web's import feature), `mobile` (push_devices: push notifications to the phone and tablet apps, and the
 /.well-known files that let https links open them, #177 — see "Phone and tablet apps" below), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
 packs and each person's own library of them, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,

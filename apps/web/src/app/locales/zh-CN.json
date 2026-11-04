@@ -551,7 +551,14 @@
     "errors.sensitive_kinds_needed",
     "errors.label_unavailable",
     "errors.kms_key_id_invalid",
-    "errors.kms_provider_unavailable"
+    "errors.kms_provider_unavailable",
+    "errors.miro_bad_link",
+    "errors.miro_token_refused",
+    "errors.miro_no_access",
+    "errors.miro_not_found",
+    "errors.miro_rate_limited",
+    "errors.miro_unreachable",
+    "errors.miro_import_off"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -1104,5 +1111,12 @@
   "errors.sensitive_kinds_needed": "请至少选择一种要查找的数据",
   "errors.label_unavailable": "该标签在此工作区不可用",
   "errors.kms_key_id_invalid": "此服务器无法识别该密钥：请使用 AWS KMS 密钥 ARN、Google Cloud KMS 密钥名称、Azure Key Vault 密钥 URL 或 Vault Transit 密钥路径。",
-  "errors.kms_provider_unavailable": "此服务器未设置为使用 {provider} 密钥"
+  "errors.kms_provider_unavailable": "此服务器未设置为使用 {provider} 密钥",
+  "errors.miro_bad_link": "请粘贴 Miro 白板的链接（miro.com/app/board/…）。",
+  "errors.miro_token_refused": "Miro 不接受该令牌。请检查后重试。",
+  "errors.miro_no_access": "该令牌无法读取此白板。",
+  "errors.miro_not_found": "Miro 上没有这个白板，或令牌所属团队看不到它。",
+  "errors.miro_rate_limited": "Miro 要求 Freero 放慢速度。请一分钟后重试。",
+  "errors.miro_unreachable": "Miro 没有响应。请稍后重试。",
+  "errors.miro_import_off": "此服务器不提供从 Miro 导入。"
 }
