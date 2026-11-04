@@ -221,7 +221,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   only the part a change touched (drag, a collaborator's edit) and all of it on selection, focus,
   theme or zoom changes. Paint only: the doc, hit-testing, selection overlays, exports and
   thumbnails (`ElementFrame` in export mode) and the live regions / Board as list (they read the
-  doc) never see it; canvases are `aria-hidden`.
+  doc) never see it; canvases are `aria-hidden`. Containers paint too (#185): a kanban's paper and
+  column blocks, a diagram's body, a frame's fill — a type may paint only below its own on-screen
+  size (`lowDetailMaxPx`: a frame once its title, which you drag it by, can't show; 0 for a hidden
+  frame). Entering low detail is immediate (#183: deferring it drew the zoomed-out view in full
+  first — on load, the whole board's fit); leaving it is gradual (#184): the canvases keep painting,
+  at the resolution they were left at, what hasn't mounted yet, and items mount nearest the pointer
+  first in batches sized by the last frame (`useLeavingLowDetail`).
+- Only items near the view are mounted — the selection too (#182); the item being edited is the
+  one kept mounted wherever it is.
 - Items are placed with `left` / `top` (a transform only when rotated) and are each a stacking
   context (`z-index: 0`). Each item's selected / edited / drag-preview state comes from one ui
   subscription per editor (`ItemStates` in `WorldLayer.tsx`) that notifies only the items whose

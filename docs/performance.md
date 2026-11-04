@@ -34,12 +34,14 @@ showed), and a scenario that takes seconds a frame stops after a minute and says
 
 | Scenario | What happens |
 |---|---|
-| initial load | navigation → every item drawn (the count stops changing) |
+| initial load | navigation → every item drawn (the count stops changing) and the page done with it (its last long task); starts once the server has digested the seed and the app's files were read once |
 | pan at zoom to fit | 150 frames of panning, the whole board in view |
 | zoom in from fit to 100% / zoom out | about a frame of interest, 6 % a frame |
 | pan at 100% | 180 frames across a frame of stickies (items mount as they come into view) |
 | select all | Ctrl+A → the frame that shows it |
 | pan at fit, everything selected | 60 frames with 10,000 items selected |
+| zoom in to 100%, everything selected | the zoom in, still with everything selected (#182) |
+| leave low detail | 0.17 → 0.26 in one step about the frame of interest, then 60 frames while items mount (#184) |
 | drag 500 items | a marquee over 540 stickies, then dragging them 60 steps; "settled" is the mouse up → calm frames |
 | a collaborator's edit appears | the collaborator moves a sticky and changes its text → the frame that shows it (localhost round trip included), median of 9 |
 | a collaborator drags 50 items | 60 updates 16 ms apart, frame times meanwhile |
@@ -120,20 +122,43 @@ see the canvas. At fit the page went from 53,000 DOM nodes to about 300 and from
 - Dragging 500 items: every connector's `follow` asked each changed item where it went (2,100
   lines × 500 items per pointer move); the changed items are now indexed once per change.
 
+## The follow-ups (#182–#185)
+
+Same machine, 2026-11-03, while other work ran on it (so single runs vary by ±30 % on the frame
+rows; the rows below are one run each, the leave and load rows checked over 2–3 runs). **Before**
+is main at 2d2a7fa9 measured with the updated script (`--dist`), **after** is #182–#185.
+
+| Scenario | before (2d2a7fa9) | after |
+|---|---|---|
+| initial load | 3.3–4.6 s (first items at ~0.9 s, then the full-detail fit swapped for canvases) | **0.55–0.6 s**; 252 DOM nodes (9,999 items on canvases) |
+| memory after load | 22 MB JS heap, 360 DOM nodes | 17 MB, 300 DOM nodes |
+| zoom in to 100%, everything selected | 26 / 104 / **798**, 8,683 items mounted | 21 / 53 / 63, 109 items mounted |
+| leave low detail (762 items mount) | worst 70–158 ms | worst 33–87 ms (spread over ~10 frames) |
+| select all (after zooming about) | 6,844 ms | 96 ms |
+| pan / zoom at fit, drag, collaborators | unchanged within the noise | unchanged within the noise |
+
+- **#183 — initial load.** The trace showed the load wasn't decoding: the doc arrived and applied in
+  ~0.3 s, then React mounted the whole board in full detail (1.6 s) and the browser laid it out
+  and layered it (2.3 s) before the canvases took over. Entering low detail was deferred
+  (`useDeferredValue`), so the first render at the fit's zoom still drew everything as DOM. Low
+  detail now switches on at once; the board appears as soon as the doc is applied. (The old
+  script also stopped its clock when the item count settled, before that swap, and timed the
+  server still digesting the seed and cold reads of a fresh build; it now waits for both and
+  counts until the last long task.) A partial Yjs sync (visible region first) isn't possible with
+  y-protocols' state exchange and isn't needed at this size.
+- **#182** — selected items mount like the rest; the selection outlines, keyboard and toolbar
+  already worked from the doc.
+- **#184** — leaving low detail keeps the canvases (at their old resolution) for what hasn't
+  mounted yet and mounts items nearest the pointer first, in batches sized by the last frame; a
+  canvas whose items mount repaints only their part.
+- **#185** — kanbans, diagrams and frames (once a frame's title can't show; hidden frames never)
+  paint in low detail; at fit the benchmark board is 252 DOM nodes instead of 307, and a board of
+  many kanbans no longer keeps one DOM tree per kanban.
+
 ## Still open
 
-Found by the benchmark and not fixed here (to file as their own issues):
-
-- **Selected items are always mounted, wherever they are.** The world layer keeps the selection
-  and the edited item drawn even outside the view (`useVisibleIds`), so with everything selected,
-  zooming in to 100% mounts all 10,000 items in full detail. Keep only what is near the view; the
-  selection overlays don't need the DOM.
-- **Initial load is 2.8 s for 10,000 items** — the board's Yjs state arriving, decoding and the
-  first render; nothing streams. Most of it is outside the drawing this change touched.
-- **Leaving low detail mounts every item in view at once** (≈1,500 at zoom 0.22 on this board):
-  now rendered as a transition (in slices), the worst zoom-in frame is 48 ms; a canvas that fades
-  to DOM item by item, or a higher threshold for dense boards, would smooth it further.
-- **Kanbans, frames, diagrams and icebreakers stay DOM when zoomed out** (their titles still read,
-  and a board has few of them); their cards, members and contents paint in low detail.
+- **Each half-octave zoom step in low detail repaints every canvas** (36–47 ms frames at fit on
+  this board): the p95 of zooming at fit. Painting at the old resolution until the zoom settles
+  (as leaving low detail does now) would remove them.
 - The headless numbers are software-rendered; a GPU raster changes the paint side of every row,
-  not the layering and React work this change removed.
+  not the layering and React work.
