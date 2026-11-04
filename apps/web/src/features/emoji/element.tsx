@@ -4,14 +4,15 @@ import type { EmojiElement } from '@freero/shared';
 import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { Glyph } from './lib/Glyph';
 import { DEFAULT_CHOICE, PLACE_SIZE } from './lib/constants';
-import { stampOf } from './lib/stamps';
+import { stampOf } from './lib/packs';
+import { isCustom } from './lib/custom';
 import { stampTargetAt } from './lib/reactions';
 import './emoji.css';
 
 const EmojiView = memo(function EmojiView({ element }: ElementRenderProps<EmojiElement>) {
   return (
-    <div className={`fr-emoji${stampOf(element.emoji) ? ' fr-emoji--stamp' : ''}`}>
-      <Glyph value={element.emoji} />
+    <div className={`fr-emoji${stampOf(element.emoji) || isCustom(element.emoji) ? ' fr-emoji--stamp' : ''}`}>
+      <Glyph value={element.emoji} label={element.name} />
     </div>
   );
 });
@@ -37,5 +38,5 @@ export default defineElement({
     const on = stampTargetAt(editor, { x: el.x + el.w / 2, y: el.y + el.h / 2 }, el.id);
     return (on?.id ?? null) !== (el.attachedTo ?? null) ? { attachedTo: on?.id ?? null } : null;
   },
-  toPlainText: (el) => stampOf(el.emoji)?.label ?? el.emoji,
+  toPlainText: (el) => stampOf(el.emoji)?.label ?? (isCustom(el.emoji) ? el.name || 'Sticker' : el.emoji),
 });

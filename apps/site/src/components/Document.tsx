@@ -157,11 +157,11 @@ function SiteFooter() {
                     <a href={href}>{label}</a>
                   </li>
                 ))}
-                {/* Shown by the analytics runtime only where Google Analytics is on (GA_MEASUREMENT_ID): reopens the consent choice. */}
+                {/* Shown by the analytics runtime only where Google Analytics is on (GA_MEASUREMENT_ID): this browser's opt-out, labelled with its state. */}
                 {c.title === 'Legal' ? (
                   <li hidden>
-                    <button type="button" className="footer__button" data-freero-cookie-settings="">
-                      Cookie settings
+                    <button type="button" className="footer__button" data-freero-analytics-toggle="">
+                      Turn off analytics
                     </button>
                   </li>
                 ) : null}

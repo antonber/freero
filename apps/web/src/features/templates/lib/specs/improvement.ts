@@ -1,24 +1,8 @@
 // Operations and process improvement templates (specs: see ../spec/types.ts; after editing run `npm run templates:index`).
+// (The value stream map is drawn by hand with the value-stream shapes since #133: catalog/flows.ts.)
 import type { TemplateSpec } from '../spec/types';
 
 const specs: TemplateSpec[] = [
-  {
-    id: 'value-stream-map',
-    name: 'Value stream map',
-    description: 'Follow one request through every step to delivery, with work time and wait time at each, to see where time really goes.',
-    categories: ['operations', 'engineering', 'diagramming'],
-    keywords: ['value stream mapping', 'lean', 'waste', 'lead time', 'process improvement', 'flow', 'waiting time'],
-    hint: 'Walk a real, recent request through the process. Write work time and wait time separately; the waiting is usually where the gain is.',
-    archetype: 'flow',
-    notesLabel: 'Work time · wait time · who',
-    steps: [
-      { title: 'Request in', kind: 'start', tone: 'gray', notes: ['Customer emails a quote request'] },
-      { title: 'Triage', tone: 'sky', notes: ['Work 5 min · wait 1 day', 'Sales inbox'] },
-      { title: 'Price it', tone: 'amber', notes: ['Work 40 min · wait 3 days', 'Needs engineer input'] },
-      { title: 'Approve', tone: 'coral', notes: ['Work 5 min · wait 2 days', 'Manager over €10k'] },
-      { title: 'Quote sent', kind: 'end', tone: 'mint', notes: ['Total: 50 min work, 6 days wait'] },
-    ],
-  },
   {
     id: 'improvement-event-plan',
     name: 'Improvement event plan',

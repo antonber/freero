@@ -1,4 +1,5 @@
 export * from './elements';
+export * from './charts';
 export * from './fields';
 export * from './views';
 export * from './tabs';

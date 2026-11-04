@@ -21,6 +21,7 @@ import { estimation, fourLs, quarterPlanning, sprintPlanning, standup, startStop
 import { customerJourney, prioritization, roadmap, swot } from './strategy';
 import { decisionMatrix, dotVoting, howMightWe, raci, reverseBrainstorm, starbursting } from './workshops';
 import { flowchart, meetingNotes, weeklyPlanner } from './work';
+import { dataFlowDiagram, threatModel, valueStreamMap } from './flows';
 
 export const TEMPLATES: TemplateDef[] = [
   // Brainstorm
@@ -89,10 +90,13 @@ export const TEMPLATES: TemplateDef[] = [
   sitemap,
   swimlane,
   venn,
+  valueStreamMap,
   // Engineering
   sequenceDiagram,
   dataModel,
   systemArchitecture,
+  dataFlowDiagram,
+  threatModel,
   cicdPipeline,
   incidentTimeline,
   postmortem,

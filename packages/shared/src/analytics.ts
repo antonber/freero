@@ -9,8 +9,6 @@ import { integrationById } from './integrations';
 /** What `GET /api/analytics` answers: whether this server measures with Google Analytics. */
 export interface AnalyticsSettings {
   enabled: boolean;
-  /** The privacy policy's address, for the consent banner (null: this server serves no legal pages). */
-  privacyUrl: string | null;
 }
 
 /** A GA4 web stream's measurement id (`G-` and letters / digits). Universal Analytics ids (`UA-…`) stopped working in 2023. */

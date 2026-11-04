@@ -30,6 +30,21 @@ describe('shape outlines', () => {
   });
 });
 
+describe('shape text areas', () => {
+  it('every library shape keeps its text inside its own box, at any size (no label spilling onto its neighbours)', () => {
+    for (const kind of LIBRARY_KINDS)
+      for (const [w, h] of [[W, H], [60, 40], [400, 90]]) {
+        const t = textBox(kind, w, h);
+        expect(t.w, kind).toBeGreaterThan(0);
+        expect(t.h, kind).toBeGreaterThan(0);
+        expect(t.x, kind).toBeGreaterThanOrEqual(0);
+        expect(t.y, kind).toBeGreaterThanOrEqual(0);
+        expect(t.x + t.w, `${kind} ${w}×${h}`).toBeLessThanOrEqual(w + 0.01);
+        expect(t.y + t.h, `${kind} ${w}×${h}`).toBeLessThanOrEqual(h + 0.01);
+      }
+  });
+});
+
 describe('wireframe kit', () => {
   it('a stretched control keeps its corner radius and marks (a wide button is not a pill, a tall phone keeps its corners)', () => {
     const corner = (kind: ShapeKind, w: number, h: number) => outlinePolygons(kind, w, h)[0][0];

@@ -18,7 +18,7 @@ export default function analyticsRoutes({ config }: ServerContext): Router {
   const on = !!config.googleAnalyticsId;
 
   r.get('/api/analytics', (_req, res) => {
-    const body: AnalyticsSettings = { enabled: on, privacyUrl: on && config.site.enabled ? '/privacy' : null };
+    const body: AnalyticsSettings = { enabled: on };
     res.setHeader('Cache-Control', 'no-cache');
     res.json(body);
   });

@@ -8,9 +8,11 @@ import {
   kanbanBoardWidth,
   kanbanColumnAt,
   rectsOverlap,
+  readChart,
   rotatedBounds,
   tableCellKey,
   type BoardElement,
+  type ChartElement,
   type ConnectorElement,
   type ElementDraft,
   type FrameElement,
@@ -207,6 +209,28 @@ it('writes a table with its cells, beside the item it was placed near', async ()
   const cells = view.collection('tableCells');
   const grid = table.rows.map((r) => table.cols.map((c) => cells.get(tableCellKey('t', table.id, r.id, c.id)) ?? ''));
   expect(grid).toEqual([['Name', 'Owner'], ['Login', 'Ann'], ['Search', '']]);
+});
+
+it('a chart (MCP add_diagram) lands with its numbers where the board and the outline read them; a word where a number goes writes nothing', async () => {
+  const boardId = await boardWith([]);
+  const rows = [['', '2025', '2026'], ['Q1', '12', '18'], ['Q2', '1,500', '']];
+  const res = await insert(boardId, { structure: { kind: 'chart', rows, type: 'line', title: 'Signups' } });
+  const view = await readBoardView(boardId, { userId, role: 'owner' });
+  const chart = view.elements.find((e) => e.el.id === res.created[0])!.el as ChartElement;
+  expect(chart).toMatchObject({ type: 'chart', kind: 'line', title: 'Signups' });
+  const cells = view.collection('chartCells');
+  expect(readChart(chart, (k) => cells.get(k) as string | undefined)).toMatchObject({
+    labels: ['Q1', 'Q2'],
+    series: [
+      { name: '2025', values: [12, 1500] },
+      { name: '2026', values: [18, null] },
+    ],
+  });
+  const outline = await outlineOfView({ id: boardId, title: 'Structure' }, view);
+  expect(outline.items.find((i) => i.id === chart.id)).toMatchObject({ kind: 'chart', variant: 'line', rows });
+
+  await expect(insert(boardId, { structure: { kind: 'chart', rows: [['', 'Sales'], ['Q1', 'lots']] } })).rejects.toThrow(/“lots” where a number goes/);
+  expect((await elementsOf(boardId)).map((e) => e.id)).toEqual([chart.id]);
 });
 
 it('clusters stickies already on the board: they leave their frame, bring their reaction stamps, and land clear of everything', async () => {

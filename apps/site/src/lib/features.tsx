@@ -36,8 +36,8 @@ export const FEATURES: Feature[] = [
   {
     slug: 'flowchart-maker',
     name: 'Flowcharts and diagrams',
-    summary: 'Flowchart, UML, BPMN, ERD and network shapes with attached connectors, auto-layout and Mermaid import.',
-    templates: ['flowchart', 'process-map', 'user-flow', 'org-chart', 'sequence-diagram', 'data-model-erd', 'system-architecture'],
+    summary: 'Flowchart, UML, BPMN, ERD, network, value-stream and data-flow shapes with attached connectors, auto-layout and Mermaid import.',
+    templates: ['flowchart', 'process-map', 'user-flow', 'org-chart', 'sequence-diagram', 'data-model-erd', 'system-architecture', 'data-flow-diagram', 'value-stream-map'],
   },
 ];
 

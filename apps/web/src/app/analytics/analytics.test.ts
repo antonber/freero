@@ -2,11 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { analyticsEventParams, analyticsPage } from '@freero/shared';
 import { reportPage, resetAppAnalytics, startAppAnalytics, track } from './bridge';
-import { closeConsentBanner, CONSENT_KEY, saveChoice, startSite } from './runtime';
+import { setOptedOut, startSite } from './runtime';
 
 const googleScripts = () => [...document.querySelectorAll('script')].filter((s) => s.src.includes('googletagmanager.com'));
-const banner = () => document.querySelector<HTMLElement>('.fr-consent');
-const button = (label: string) => [...(banner()?.querySelectorAll('button') ?? [])].find((b) => b.textContent === label)!;
+const dataLayer = () => ((window as { dataLayer?: IArguments[] }).dataLayer ?? []).map((a) => [...a]);
 const setPrivacySignal = (on: boolean) => Object.defineProperty(navigator, 'globalPrivacyControl', { value: on, configurable: true });
 
 beforeEach(() => {
@@ -16,8 +15,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   resetAppAnalytics();
-  closeConsentBanner(false);
   for (const s of googleScripts()) s.remove();
+  document.body.innerHTML = '';
   delete (window as { gtag?: unknown }).gtag;
   delete (window as { dataLayer?: unknown }).dataLayer;
   for (const c of document.cookie.split(';')) document.cookie = `${c.split('=')[0].trim()}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
@@ -25,62 +24,62 @@ afterEach(() => {
 });
 
 describe('marketing pages (the runtime as /analytics.js)', () => {
-  it('loads nothing from Google until the visitor accepts — not on arrival, not after Decline — and then only analytics, ads denied', () => {
+  it('measures on the first visit with no banner, analytics storage only — the ad types stay denied and Google signals off', () => {
     startSite('G-TEST123');
-    expect(banner()).not.toBeNull();
-    expect(googleScripts()).toHaveLength(0);
-    expect((window as { dataLayer?: unknown[] }).dataLayer).toBeUndefined();
-
-    button('Decline').click();
-    expect(banner()).toBeNull();
-    expect(googleScripts()).toHaveLength(0);
-
-    saveChoice('granted');
-    const [script] = googleScripts();
-    expect(script?.src).toBe('https://www.googletagmanager.com/gtag/js?id=G-TEST123');
-    const consent = ((window as { dataLayer?: IArguments[] }).dataLayer ?? []).map((a) => [...a]).filter((a) => a[0] === 'consent');
-    expect(consent).toEqual([
-      ['consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' }],
-      ['consent', 'update', { analytics_storage: 'granted' }],
+    expect(document.querySelector('.fr-consent, [role="dialog"]')).toBeNull();
+    expect(googleScripts().map((s) => s.src)).toEqual(['https://www.googletagmanager.com/gtag/js?id=G-TEST123']);
+    expect(dataLayer().filter((a) => a[0] === 'consent')).toEqual([
+      ['consent', 'default', { analytics_storage: 'granted', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' }],
     ]);
+    expect(dataLayer().find((a) => a[0] === 'config')?.[2]).toMatchObject({ allow_google_signals: false, allow_ad_personalization_signals: false });
   });
 
-  it('treats Global Privacy Control as Decline, even over an earlier Accept: no banner asking, no script', () => {
-    localStorage.setItem(CONSENT_KEY, JSON.stringify({ choice: 'granted', at: Date.now() }));
-    setPrivacySignal(true);
+  it('loads nothing for a browser that opted out (remembered) or sends Global Privacy Control, whose control can’t turn it back on', () => {
+    setOptedOut(true);
     startSite('G-TEST123');
-    expect(banner()).toBeNull();
+    expect(googleScripts()).toHaveLength(0);
+
+    localStorage.clear();
+    setPrivacySignal(true);
+    document.body.innerHTML = '<footer><ul><li hidden><button data-freero-analytics-toggle>Turn off analytics</button></li></ul></footer>';
+    startSite('G-TEST123');
+    const control = document.querySelector<HTMLButtonElement>('[data-freero-analytics-toggle]')!;
+    expect(control.textContent).toBe('Analytics off (browser privacy signal)');
+    control.click();
     expect(googleScripts()).toHaveLength(0);
   });
 
-  it('declining after accepting deletes Google’s cookies and keeps the app’s own', () => {
+  it('turning analytics off from the footer stops measuring, deletes Google’s cookies (not the app’s) and offers to turn it back on', () => {
+    document.body.innerHTML = '<footer><ul><li hidden><button data-freero-analytics-toggle>Turn off analytics</button></li></ul></footer>';
+    startSite('G-TEST123');
     document.cookie = '_ga=GA1.1.123.456; path=/';
     document.cookie = '_ga_TEST123=GS1.1.789; path=/';
     document.cookie = 'freero_device=keep; path=/';
-    saveChoice('denied');
+    const control = document.querySelector<HTMLButtonElement>('[data-freero-analytics-toggle]')!;
+    expect(control.closest('li')!.hidden).toBe(false);
+
+    control.click();
     expect(document.cookie).toBe('freero_device=keep');
+    expect(dataLayer().at(-1)).toEqual(['consent', 'update', { analytics_storage: 'denied' }]);
+    expect(control.textContent).toBe('Turn on analytics');
   });
 });
 
 describe('the app (the bridge to the analytics frame)', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: true, privacyUrl: '/privacy' }), { status: 200 })));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: true }), { status: 200 })));
   });
   const settle = () => new Promise((r) => setTimeout(r, 0));
   const frame = () => document.querySelector<HTMLIFrameElement>('iframe[src="/analytics-frame"]');
 
-  it('reports a board only as /board with a generic title, keeps its id, query and the earlier page out, and only once the visitor accepts', async () => {
+  it('reports a board only as /board with a generic title, never its id, query or the earlier page', async () => {
     startAppAnalytics();
     reportPage('/board/b0ardIdSecret', '?token=s3cret&utm_source=newsletter');
-    track({ name: 'board_created' });
     await settle();
-    expect(frame()).toBeNull(); // asked, not measured
-
-    button('Accept').click();
     const f = frame()!;
     const post = vi.spyOn(f.contentWindow!, 'postMessage');
     f.dispatchEvent(new Event('load'));
-    const sent = post.mock.calls.map(([m]) => m as { kind: string; fields: Record<string, string> });
+    const sent = post.mock.calls.map(([m]) => m);
     expect(sent).toEqual([
       {
         freeroAnalytics: 1,
@@ -91,19 +90,22 @@ describe('the app (the bridge to the analytics frame)', () => {
     expect(JSON.stringify(sent)).not.toMatch(/b0ardIdSecret|s3cret/);
   });
 
-  it('never measures nor asks in an embedded board (an assistant’s live view, another site’s embed and its sign-in pages), the operators’ console or the OAuth consent screen', async () => {
+  it('measures nothing for a browser that opted out', async () => {
+    setOptedOut(true);
     startAppAnalytics();
-    for (const p of ['/embed/board/abc', '/embed/b/abc', '/embed/connect/abc', '/embed/signed-in']) {
-      reportPage(p, '');
-      await settle();
-      expect(banner(), p).toBeNull(); // no choice yet, and still not asked there
-    }
+    reportPage('/app', '');
+    track({ name: 'board_created' });
+    await settle();
+    expect(frame()).toBeNull();
+  });
 
-    localStorage.setItem(CONSENT_KEY, JSON.stringify({ choice: 'granted', at: Date.now() }));
-    for (const p of ['/embed/b/abc', '/embed/connect/abc', '/operator', '/operator/boards/abc/preview', '/oauth/authorize']) {
+  it('never measures an embedded board (an assistant’s live view, another site’s or Teams’ embed and their sign-in pages), the operators’ console or the OAuth consent screen', async () => {
+    startAppAnalytics();
+    for (const p of ['/embed/board/abc', '/embed/b/abc', '/embed/connect/abc', '/embed/signed-in', '/teams/tab', '/operator', '/operator/boards/abc/preview', '/oauth/authorize']) {
       reportPage(p, '');
       track({ name: 'board_created' });
     }
+    await settle();
     expect(frame()).toBeNull();
   });
 });

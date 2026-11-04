@@ -137,6 +137,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A diagram (#117, #118; `DiagramElement`, type `diagram`: title, layout, layers, `laidOut`, its box) and its members' layout — positions, `diagramPinned`, `diagramLayer` on join, layer locks (`locked` + `layerLocked`), stacking, lines between members joining it — read through `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `memberLayerId`, `hiddenByLayer`, `diagramSignature`) | `features/diagram`: its element's `arrange` (`planDiagram`, the one writer of members' positions: it reflows only when `laidOut`, the structure's signature, changes; a member moved by hand is pinned) and its commands (layout, Lay out again, unpin, layers); server `modules/structure` / `modules/api` through `withDiagramLayout` in the same change; `layoutStructure` wraps graph-like structures in one (`wrapInDiagram`) | `runCommand('diagram.setLayout' / 'diagram.relayout' / 'diagram.unpin' / 'diagram.wrap' / 'diagram.focus')`. Features that write member positions of a diagram (from-text's source edits) leave them to it. Focus is engine UI state (`Editor.setFocus`); the layer a person adds to is a personal view (`_layer`). See docs/design/diagrams.md |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
+| A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
+| A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
@@ -195,6 +197,27 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   editors or selection.
 - The world layer ignores pointer events: hit-testing is geometric (`hitTest`, rotation-aware).
   Mark a node inside an element with `data-fr-interactive` to receive native pointer events.
+- **Low detail** (#131, `engine/canvas/detail.ts`, `LowDetailLayer.tsx`): below zoom 0.18 (back
+  above 0.22: hysteresis, so a zoom resting near it never flickers; `UiState.lowDetail`, derived
+  from the camera in `runtime/core.ts`), items whose type has `lowDetail(el, paint)` and that are
+  small on screen (< 160 px), not edited, not making room for a drag and not in my private layer
+  are painted onto canvases in the world instead of mounting their components — sticky paper with
+  faint lines, a shape's fill and outline, a text's bars, a connector's straight run, a picture's
+  average colour (`canvas/pictureColor.ts`). Consecutive such items share one canvas, items drawn
+  in full sit between canvases, so render order holds. A canvas moves with the world (a pan
+  repaints nothing), covers its items within the cull rect at the zoom's resolution, repaints
+  only the part a change touched (drag, a collaborator's edit) and all of it on selection, focus,
+  theme or zoom changes. Paint only: the doc, hit-testing, selection overlays, exports and
+  thumbnails (`ElementFrame` in export mode) and the live regions / Board as list (they read the
+  doc) never see it; canvases are `aria-hidden`.
+- Items are placed with `left` / `top` (a transform only when rotated) and are each a stacking
+  context (`z-index: 0`). Each item's selected / edited / drag-preview state comes from one ui
+  subscription per editor (`ItemStates` in `WorldLayer.tsx`) that notifies only the items whose
+  state changed; zoom and focus come through `WorldViewProvider` context. A camera move costs the
+  items nothing, and selecting everything is one pass. The selection overlay draws a multiple
+  selection's member outlines as one world-space SVG path (`MemberOutlines`), and the format
+  toolbar keeps its selection-wide work (sections, mixed style, bounds, its controls) out of the
+  per-frame repositioning. Measured: `npm run bench:board`, docs/performance.md.
 
 ### Gestures and undo
 
@@ -645,6 +668,16 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   too small on the picture to show detail (and all but the 150 biggest) as boxes of it, so a
   2,000-card board's thumbnail costs milliseconds; null leaves it out (lines). Default: fill /
   color / stroke (`engine/editor/paintPlan.ts`).
+- `lowDetail(el, paint: LowDetailPaint)` (#131): how the live canvas paints the type zoomed out to
+  low detail ("Rendering"), in the item's own units: `box({ fill, stroke, strokeWidth, radius,
+  round, alpha })`, `rect`, `polygon` (fractions of the box), `line`, `picture(src, fallback)`;
+  `paint.selected` / `selectionColor` for what has no box of its own, `paint.presentation` (the
+  container's `presentChild`, as the component gets it: a kanban's colour-by). Colours may be
+  `canvasInk(…)` values (resolved for the theme, like the full drawing's CSS). Sticky, sticky pad,
+  shape, text, connector, image, card (the side that shows) and chart have one; types without it
+  (frames, kanbans, diagrams, icebreakers…) always draw `Component`. Tests:
+  `TestBoard.world(user)` renders a replica's world layer (culling and low detail as on screen),
+  `TestBoard.exported(user, id)` an item as exports draw it.
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
   feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
   where the format toolbar is (never query the chrome's DOM).
@@ -1239,30 +1272,29 @@ Off unless the operator sets `GA_MEASUREMENT_ID` (the hosted service does; self-
 nothing: no script tag, no frame, `/analytics.js` and `/analytics-frame` answer 404, the CSP is
 byte-for-byte what it was). When on:
 
-- **Consent first (Consent Mode v2, basic).** `app/analytics/runtime.ts` is the one place that
-  decides: nothing from Google loads until the visitor chooses Accept in the banner (Accept and
-  Decline look the same; GPC / Do Not Track count as Decline; the choice lives in local storage
-  under `freero:analytics-consent` for 6 months). Google's tag then starts with all four consent
-  types denied and only `analytics_storage` granted; ad storage, ad user data, ad personalisation
-  and Google signals stay off. Decline (or withdrawing later through "Cookie settings": the site
-  footer, the app's Help menu, the privacy policy) deletes the `_ga*` cookies. The runtime has no
-  imports: `vite.config.ts` (`freero-analytics`) builds it alone into `dist/analytics.js`, and the
-  app imports the same functions.
+- **On by default, with an opt-out (the operator's decision; no banner).** `app/analytics/runtime.ts`
+  is the one place that decides: Google's tag runs unless this browser opted out ("Turn off
+  analytics": the site footer, the app's Help menu, the privacy policy; `freero:analytics-off` in
+  local storage, kept until turned back on) or sends GPC / Do Not Track (off, and the controls
+  can't override it). Consent Mode v2 defaults: `analytics_storage` granted; ad storage, ad user
+  data, ad personalisation and Google signals always off. Opting out deletes the `_ga*` cookies.
+  The runtime has no imports: `vite.config.ts` (`freero-analytics`) builds it alone into
+  `dist/analytics.js`, and the app imports the same functions.
 - **Marketing pages** (`modules/site`) get `<script src="/analytics.js" data-freero-ga=…>`; the
   runtime runs Google's tag in the page itself (public content), reporting the path with the query
   reduced to UTM tags and the referrer reduced to its origin.
 - **The app never runs Google's tag in its own document**, which holds board titles, content,
   names and links that GA's automatic measurements (outbound clicks, file downloads, the tab title,
   history changes) would read. The bridge (`app/analytics/bridge.ts`, mounted by `AppAnalytics`)
-  creates a hidden same-origin frame, `/analytics-frame` (only this origin may frame it), after
-  consent and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
+  creates a hidden same-origin frame, `/analytics-frame` (only this origin may frame it), on the
+  first page reported and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
   token removed (`/board/<id>` → `/board`, unknown routes → `/not-found`), a generic title — and
   events from the closed list `AnalyticsEvent` (`sign_up` / `login` with the method, `board_created`,
   `template_used` with a built-in template's public id), validated by `analyticsEventParams`.
-  `/embed/*` (the assistants' live view, boards embedded on other sites, their sign-in popup),
-  `/operator*` and `/oauth/*` are never reported and never show the banner. Features
+  `/embed/*` and `/teams/*` (the assistants' live view, boards embedded on other sites or in
+  Teams, their sign-in pages), `/operator*` and `/oauth/*` are never reported. Features
   count events through `Host.track` (optional; the templates feature is the only user).
-- **Single writers:** the consent choice — `runtime.ts` `saveChoice` (banner buttons); page views —
+- **Single writers:** the opt-out — `runtime.ts` `setOptedOut` (the controls); page views —
   `AppAnalytics` → `reportPage`; events — `track` (AuthContext, `api.createBoard`, `Host.track`).
 - **CSP** (`platform/security.ts`, only with the id; never on a page another site may frame —
   `allowFraming`, `frameFromAnySite` — nor on `/embed/*`): `script-src` +
@@ -1338,7 +1370,8 @@ workspace_invites, projects, project_members; organisations are directory-only `
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
-templates; content is opaque engine JSON), `outline` (no table: the semantic board read model,
+templates; content is opaque engine JSON), `stickers` (sticker_sets, stickers: a workspace's own
+sticker sets, #138), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
@@ -1531,7 +1564,7 @@ reports" below).
   templates, pasted copies, avatars), so nobody deletes an upload when one user of it goes away.
   Each module that stores `/uploads/<name>` URLs exposes `…UploadReferences(among?)` from its
   index (realtime: stored doc bases + log + version history, trashed boards included, and the live
-  docs of this instance; templates; avatars; board thumbnails), searching its own tables in SQL
+  docs of this instance; templates; avatars; board thumbnails; team stickers), searching its own tables in SQL
   with `UPLOAD_REF_PATTERN`. Files an operator removed are tombstones the sweep never touches
   (see "Moderation"). A round adopts stored files without a row (owner NULL), marks what is
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
@@ -3461,7 +3494,7 @@ only to connections that may read them:
   clients' sweep drops a stale editors-layer copy of the same ids), a frame hidden then comes back
   hidden with whatever its editors layer holds NOW (hidden contents are not versioned).
 - **Element content follows its element** (KAI-230, KAI-234): what an element keeps outside the
-  `elements` map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS` (`tableCells`,
+  `elements` map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS` (`tableCells`, `chartCells`,
   `presenterNotes`, `engageResults`, `comments`, `trackers`) — lives in the SAME doc as that
   element, so a table in a hidden frame or a private draft never sends its cell text, nor the
   discussion about it, to a socket that may not read the table. One declaration in
@@ -3507,6 +3540,7 @@ only to connections that may read them:
 | Collection | Holds | Withheld with hidden / private items? |
 |---|---|---|
 | `tableCells` | cell text and fill, per table | yes: element content |
+| `chartCells` | a chart's labels, series names and values, per cell (#137) | yes: element content |
 | `presenterNotes` | notes per frame | yes: element content (a frame inside a hidden frame or a draft). A visible frame's notes stay readable by everyone with access, by design (the panel says so) — that includes a hidden frame's OWN notes, since the frame itself is visible |
 | `engageResults` | live activity results | yes: element content, moved by the server |
 | `diagramSources` | a diagram's Mermaid / outline source and the ids it laid out | not element content (one record, many elements): from-text keeps a source only while the WHOLE diagram is shared content, offers editing only then, and refuses to write a source for a diagram that became hidden meanwhile. A diagram hidden after it was shared keeps the source everyone had already seen (hiding is not retroactive) |
@@ -3616,6 +3650,13 @@ the board, deletions. A suggestion is not board content until someone who can ed
   "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
   depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
+- Performance: `npm run bench:board` (#130) opens a seeded 10,000-item board in the real app
+  (headless Chromium, real server, a real collaborator socket) and measures load, frame times
+  (pan and zoom at fit and 100%, select all, dragging 500, a collaborator's edits) and memory;
+  JSON per run under `bench-results/` (gitignored), `--compare` for a column per run, `--profile`
+  / `--trace` for what is hot. Results and how to read them: docs/performance.md. Engine-session
+  benches: `bench:kanban`, `bench:line-jumps`. Benches are scripts, not tests: they check only
+  that each scenario did what it says.
 
 ### What a test is for
 

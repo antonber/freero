@@ -132,7 +132,7 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
       );
     }
     case 'table': {
-      const t = el as BoardElement & { rows: Array<{ id: string; h: number }>; cols: Array<{ id: string; w: number }> };
+      const t = el as unknown as { rows: Array<{ id: string; h: number }>; cols: Array<{ id: string; w: number }> };
       let cy = y;
       let cx = x;
       return (
