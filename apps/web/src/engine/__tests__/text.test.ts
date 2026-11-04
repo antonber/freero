@@ -8,11 +8,14 @@ import { parseFontSize } from '../ui/TextStyleControls';
 describe('sanitizeRichText', () => {
   it('removes scripts, handlers and unsafe links but keeps the allowed subset', () => {
     const out = sanitizeRichText(
-      '<b onclick="x()">hi</b><script>alert(1)</script><img src=x onerror=alert(1)><a href="javascript:alert(1)">bad</a><a href="https://ok.dev" target="_blank">ok</a>',
+      '<b onclick="x()">hi</b><script>alert(1)</script><img src=x onerror=alert(1)><a href="javascript:alert(1)">bad</a><a href="https://ok.dev" target="_blank">ok</a>' +
+        '<pre onmouseover="x()" style="background:url(javascript:alert(1))">a<script>alert(2)</script></pre><code onclick="x()"><a href=" java\tscript:alert(3)">c</a></code>',
     );
-    expect(out).not.toMatch(/script|onclick|onerror|img|javascript|target/);
+    expect(out).not.toMatch(/script|onclick|onerror|onmouseover|style|img|javascript|target/);
     expect(out).toContain('<b>hi</b>');
     expect(out).toContain('<a href="https://ok.dev">ok</a>');
+    // Code blocks and inline code (card descriptions from Markdown) stay, bare.
+    expect(out).toContain('<pre>a</pre><code><a>c</a></code>');
   });
 
   it('normalizes what contenteditable produces into the stored subset', () => {

@@ -24,6 +24,7 @@ import {
   frameDraft,
   isAnonymousAuthor,
   measureText,
+  markdownToRichText,
   plainToRichText,
   richTextToPlain,
   rotatedBounds,
@@ -274,7 +275,7 @@ export function planCreate(inputs: Input[], view: BoardView, newId: () => string
           h: r.h,
           rotation: 0,
           title: plainToRichText(str(it.title, 'title', i, 500) ?? text),
-          description: plainToRichText(str(it.description, 'description', i) ?? ''),
+          description: markdownToRichText(str(it.description, 'description', i) ?? ''),
           color: color(it.color, 'color', i) ?? CARD_ACCENT,
           status: oneOf(it.status, 'status', CARD_STATUS, i) ?? 'todo',
           dueDate: it.dueDate === undefined ? null : (str(it.dueDate, 'dueDate', i, 10) ?? null),
@@ -389,7 +390,7 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
     patch[f.key] = f.rich ? plainToRichText(t) : t;
   }
   if (only('title', ['card', 'frame'])) patch.title = el.type === 'card' ? plainToRichText(str(it.title, 'title', null, 500) ?? '') : (str(it.title, 'title', null, 200) ?? '');
-  if (only('description', ['card'])) patch.description = plainToRichText(str(it.description, 'description', null) ?? '');
+  if (only('description', ['card'])) patch.description = markdownToRichText(str(it.description, 'description', null) ?? '');
   if (only('status', ['card'])) patch.status = oneOf(it.status, 'status', CARD_STATUS, null);
   if (only('dueDate', ['card'])) {
     const d = it.dueDate === null ? null : str(it.dueDate, 'dueDate', null, 10);

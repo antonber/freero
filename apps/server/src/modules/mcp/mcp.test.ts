@@ -291,6 +291,40 @@ it('update_items sets a card’s kanban fields by name and option label; an opti
   await client.close();
 });
 
+it('a card description an agent writes as Markdown arrives formatted — numbered steps with links, nesting, bold, code — and reads back in the outline as numbered lines; HTML in it stays text and a javascript: link loses its link', async () => {
+  const boardId = await boardWith('Runbook', []);
+  const client = await connect(['boards:read', 'boards:write']);
+  const description = [
+    'Set up the demo:',
+    '',
+    '1. Open the [runbook](https://example.com/runbook)',
+    '2. Run `npm test`, **all** green',
+    '   - CI: https://example.com/ci.',
+    '3. <script>alert(1)</script> <img src=x onerror=alert(2)> [ask](javascript:alert(3))',
+  ].join('\n');
+  const added = (await client.callTool({ name: 'add_cards', arguments: { boardId, cards: [{ title: 'Demo', description }] } })) as CallToolResult;
+  expect(added.isError, textOf(added)).toBeFalsy();
+  const [id] = (added.structuredContent as { ids: string[] }).ids;
+  const descriptionOf = async () => ((await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.find((e) => e.el.id === id)!.el as BoardElement & { description: string }).description;
+
+  const html = await descriptionOf();
+  expect(html).toBe(
+    '<p>Set up the demo:</p><ol>' +
+      '<li>Open the <a href="https://example.com/runbook">runbook</a></li>' +
+      '<li>Run <code>npm test</code>, <b>all</b> green<ul><li>CI: <a href="https://example.com/ci">https://example.com/ci</a>.</li></ul></li>' +
+      // The link's address ends at its first ")" (the docs' Markdown reader): the rest is text.
+      '<li>&lt;script&gt;alert(1)&lt;/script&gt; &lt;img src=x onerror=alert(2)&gt; ask)</li></ol>',
+  );
+  const md = textOf(await client.callTool({ name: 'get_board_outline', arguments: { boardId } }));
+  expect(md).toContain('Demo — Set up the demo: ⏎ 1. Open the runbook (https://example.com/runbook) ⏎ 2. Run npm test, all green ⏎    - CI: https://example.com/ci. ⏎ 3. <script>');
+
+  // update_items takes Markdown too.
+  const changed = (await client.callTool({ name: 'update_items', arguments: { boardId, items: [{ id, description: '- Ship it\n- Tell *Dana*' }] } })) as CallToolResult;
+  expect(changed.isError, textOf(changed)).toBeFalsy();
+  expect(await descriptionOf()).toBe('<ul><li>Ship it</li><li>Tell <i>Dana</i></li></ul>');
+  await client.close();
+});
+
 it('import_meeting_notes from a connection that may only suggest proposes the meeting and leaves the board as it was; with write it lands one frame and names the cards’ ids', async () => {
   const boardId = await boardWith('Weekly', [sticky('a', 'Keep me', 0)]);
   const before = await idsOn(boardId);

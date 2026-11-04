@@ -2333,7 +2333,7 @@
         },
         "description": {
           "type": "string",
-          "description": "card.",
+          "description": "card: its notes in Markdown — paragraphs, numbered (1.) and bulleted (-) lists nested by indenting, **bold**, *italic*, code, code blocks, [links](https://…) and bare https:// addresses — stored as rich text (data.description, sanitised HTML). HTML in it is text; a link is kept only to http(s), mailto:, tel:, #<item> or a same-site path. The outline reads it back as plain text with 1. / - list lines.",
           "x-ms-summary": "Description"
         },
         "x": {

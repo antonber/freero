@@ -1,7 +1,7 @@
 // How task cards read in the board outline: title, description and their task fields, and on a
 // kanban the values of its fields, by field name (select labels, names, ISO dates, numbers), and
 // `filtered` when the kanban's filter leaves it out (folded away on the board, still its card).
-import { boardView, cardPasses, cardValue, collectionSchema, defineOutline, valueText } from '@freero/shared';
+import { boardView, cardPasses, cardValue, collectionSchema, defineOutline, richTextToReadable, valueText } from '@freero/shared';
 
 export default defineOutline({
   kinds: {
@@ -27,7 +27,8 @@ export default defineOutline({
           fields[f.name] = typeof v === 'number' || v === true ? v : valueText(f, v, ctx.personName);
         }
       }
-      return { title: el.title, text: ctx.plain(el.description), fields };
+      // The description as it reads (lists keep their 1. / - markers), mentions as @Name.
+      return { title: el.title, text: ctx.mentions(richTextToReadable(el.description)), fields };
     },
   },
 });

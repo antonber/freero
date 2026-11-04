@@ -132,10 +132,13 @@ const stickySize = z
   .describe('s, m (default) or l.');
 /** A new sticky: its text, or { text, link?, color?, shape?, size? }. */
 const stickyItem = z.union([text, z.object({ text, link, color, shape: stickyShape, size: stickySize }).strict()]);
+/** How a card's description is read (markdownToRichText): said on add_cards and update_items alike. */
+const CARD_DESCRIPTION =
+  'The card’s notes, in Markdown: paragraphs (a blank line between), numbered (1.) and bulleted (-) lists, nested by indenting, **bold**, *italic*, `code`, ``` code blocks, [links](https://…) and bare https:// addresses. People see it formatted in the card’s details; HTML is shown as text. Write long instructions as numbered steps.';
 const cardItem = z
   .object({
     title: text.describe('The card title.'),
-    description: z.string().max(LAYOUT_LIMITS.text).optional(),
+    description: z.string().max(LAYOUT_LIMITS.text).optional().describe(CARD_DESCRIPTION),
     status: z.enum(['todo', 'doing', 'done']).optional().describe('Task status (default: the column’s, else todo).'),
     dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD'),
     link,
@@ -682,7 +685,7 @@ export const TOOLS: McpTool[] = [
     name: 'add_cards',
     title: 'Add task cards',
     description:
-      'Adds task cards (title, description, status, due date, link) to a board, placed by Freero: give `cards` for cards in free space or — with placement — into a kanban column, a frame or a cluster that is there (or a new frame / new kanban); or give `columns` for a NEW kanban with these columns and their cards (e.g. a retro’s Went well / To improve / Actions, a roadmap’s Now / Next / Later). In a column with a status (To do, Doing, Done …) a card takes that status. Returns the cards’ ids in your order. To send cards to an issue tracker afterwards use sync_to_tracker. Needs permission to change boards.',
+      'Adds task cards (title, a description in Markdown, status, due date, link) to a board, placed by Freero: give `cards` for cards in free space or — with placement — into a kanban column, a frame or a cluster that is there (or a new frame / new kanban); or give `columns` for a NEW kanban with these columns and their cards (e.g. a retro’s Went well / To improve / Actions, a roadmap’s Now / Next / Later). In a column with a status (To do, Doing, Done …) a card takes that status. Returns the cards’ ids in your order. To send cards to an issue tracker afterwards use sync_to_tracker. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: ADD,
     input: {
@@ -1030,7 +1033,7 @@ export const TOOLS: McpTool[] = [
     name: 'update_items',
     title: 'Change items',
     description:
-      'Changes items on a board in one step (all or nothing): their text, a card’s title/description/status/due date and its kanban fields (Priority, Points …), colors, a frame’s title or hidden state, locking, links, or where they are. To move items give `into` — a frame, a kanban column ("move this card to Done": into the kanban’s id, column "Done") or a cluster — and Freero finds the spot, no coordinates needed (x / y / w / h set them exactly; moving a frame takes its contents along). Use item ids from get_board_outline or what the add tools returned. Needs permission to change boards.',
+      'Changes items on a board in one step (all or nothing): their text, a card’s title/description (Markdown)/status/due date and its kanban fields (Priority, Points …), colors, a frame’s title or hidden state, locking, links, or where they are. To move items give `into` — a frame, a kanban column ("move this card to Done": into the kanban’s id, column "Done") or a cluster — and Freero finds the spot, no coordinates needed (x / y / w / h set them exactly; moving a frame takes its contents along). Use item ids from get_board_outline or what the add tools returned. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     input: {
@@ -1042,7 +1045,7 @@ export const TOOLS: McpTool[] = [
               id: z.string().min(1).max(200),
               text: z.string().max(10_000).optional(),
               title: z.string().max(500).optional(),
-              description: z.string().max(10_000).optional(),
+              description: z.string().max(10_000).optional().describe(CARD_DESCRIPTION),
               status: z.enum(['todo', 'doing', 'done']).optional(),
               dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
               startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('A card’s start (where its bar starts on a timeline); not after its due date.'),

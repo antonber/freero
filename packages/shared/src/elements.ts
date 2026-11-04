@@ -163,8 +163,9 @@ export type FontFamily =
 
 /**
  * Rich text is stored as a small sanitized HTML subset:
- * <b> <i> <u> <s> <a href> <br> <ul> <ol> <li> <p> <span style="color|background-color">.
- * Use sanitizeRichText() on the web side before rendering/storing.
+ * <b> <i> <u> <s> <code> <a href> <br> <ul> <ol> <li> <p> <pre> <span style="color|background-color">.
+ * Use sanitizeRichText() on the web side before rendering/storing. Markdown becomes rich text with
+ * markdownToRichText (card descriptions from the API and MCP).
  */
 export type RichText = string;
 

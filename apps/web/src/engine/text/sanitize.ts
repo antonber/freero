@@ -1,24 +1,15 @@
 // RichText = a small sanitized HTML subset (see @freero/shared RichText):
-// <b> <i> <u> <s> <a href> <br> <ul> <ol> <li> <p> <span style="color|background-color">.
+// <b> <i> <u> <s> <code> <a href> <br> <ul> <ol> <li> <p> <pre> <span style="color|background-color">.
 import DOMPurify from 'dompurify';
-// The DOM-free readers live in @freero/shared (the server reads board text the same way).
-import { decodeEntities, escapeHtml, plainToRichText, richTextToPlain } from '@freero/shared';
+// The DOM-free readers live in @freero/shared (the server reads board text the same way), and so
+// does the one safe-href rule (the server's Markdown conversion links with it too).
+import { decodeEntities, escapeHtml, isSafeHref, plainToRichText, richTextToPlain } from '@freero/shared';
 
-export { richTextToPlain, plainToRichText };
+export { richTextToPlain, plainToRichText, isSafeHref };
 
-const PURIFY_TAGS = ['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'a', 'br', 'ul', 'ol', 'li', 'p', 'div', 'span', 'font'];
+// `code` and `pre` (inline code, code blocks): what card descriptions written as Markdown keep.
+const PURIFY_TAGS = ['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'code', 'a', 'br', 'ul', 'ol', 'li', 'p', 'div', 'pre', 'span', 'font'];
 const PURIFY_ATTR = ['href', 'style', 'color'];
-const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
-
-/**
- * [additive] The one safe-href rule (links in rich text, item links): http(s), mailto, tel,
- * in-board `#…` and same-site `/…` paths. Anything else (javascript:, data:, vbscript:…) is refused.
- */
-export function isSafeHref(href: string): boolean {
-  const h = href.trim();
-  // Browsers drop tabs/newlines inside a scheme ("java\tscript:"); refuse them outright.
-  return !/[\u0000-\u001f]/.test(h) && SAFE_HREF.test(h);
-}
 
 const RENAME: Record<string, string> = { STRONG: 'b', EM: 'i', STRIKE: 's', DEL: 's', DIV: 'p' };
 
@@ -48,6 +39,13 @@ function normalize(node: Node) {
   for (const child of Array.from(node.childNodes)) {
     if (child.nodeType !== 1) continue;
     let el = child as HTMLElement;
+    // A <div> or <p> around a list or another block (a list started on a new line in
+    // contenteditable) is no paragraph: a <p> can't hold one. Its contents take its place.
+    if ((el.tagName === 'DIV' || el.tagName === 'P') && el.querySelector('ul, ol, p, div, pre')) {
+      normalize(el);
+      unwrap(el);
+      continue;
+    }
     const renamed = RENAME[el.tagName];
     if (renamed) el = rename(el, renamed) as HTMLElement;
     if (el.tagName === 'FONT') {
@@ -104,9 +102,9 @@ export function sanitizeRichText(html: string): string {
 
 
 /** Tags that start a new line in richTextToPlain: an occurrence never spans one. */
-const LINE_TAG = /^<\/?(br|p|div|li|ul|ol)[\s/>]/i;
+const LINE_TAG = /^<\/?(br|p|div|li|ul|ol|pre)[\s/>]/i;
 /** Inline formatting left with nothing inside after a replacement. */
-const EMPTY_INLINE = /<(b|i|u|s|span|a)(\s[^>]*)?><\/\1>/gi;
+const EMPTY_INLINE = /<(b|i|u|s|code|span|a)(\s[^>]*)?><\/\1>/gi;
 
 /**
  * [additive] Replaces `find` in the TEXT of rich text, keeping every tag (bold, links, colors) as

@@ -52,6 +52,10 @@ export interface StickyInput {
 /** [additive] A new task card: its title (`text`) and optional fields. */
 export interface CardInput {
   text: string;
+  /**
+   * Markdown (markdownToRichText): paragraphs, numbered / bulleted lists, **bold**, *italic*,
+   * `code`, code blocks, [links](https://…) and bare URLs. Plain text reads as itself.
+   */
   description?: string;
   status?: CardStatus | null;
   /** YYYY-MM-DD */

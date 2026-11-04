@@ -3884,7 +3884,7 @@
           "type": { "type": "string", "enum": ["sticky", "shape", "text", "card", "frame", "connector", "image", "embed"] },
           "text": { "type": "string", "maxLength": 10000 },
           "title": { "type": "string", "description": "card, frame" },
-          "description": { "type": "string", "description": "card" },
+          "description": { "type": "string", "description": "card: its notes in Markdown — paragraphs, numbered (1.) and bulleted (-) lists nested by indenting, **bold**, *italic*, `code`, code blocks, [links](https://…) and bare https:// addresses — stored as rich text (`data.description`, sanitised HTML). HTML in it is text; a link is kept only to http(s), mailto:, tel:, #<item> or a same-site path. The outline reads it back as plain text with 1. / - list lines." },
           "x": { "type": "number" },
           "y": { "type": "number" },
           "w": { "type": "number", "minimum": 8, "maximum": 20000 },
@@ -3917,7 +3917,7 @@
         "properties": {
           "text": { "type": "string" },
           "title": { "type": "string" },
-          "description": { "type": "string" },
+          "description": { "type": "string", "description": "card: its notes in Markdown (as in ItemInput)" },
           "x": { "type": "number" },
           "y": { "type": "number" },
           "w": { "type": "number" },
