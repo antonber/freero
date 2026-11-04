@@ -101,9 +101,7 @@ export function ListPanel({ editor }: PanelProps) {
         footer={
           <>
             <Button variant="ghost" onClick={() => setDeleting(null)}>{t('cancel')}</Button>
-            <Button variant="danger" onClick={() => void remove()}>
-              Delete
-            </Button>
+            <Button variant="danger" onClick={() => void remove()}>{t('delete')}</Button>
           </>
         }
       />

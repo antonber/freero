@@ -494,7 +494,8 @@ function processFile(sf, checker, unit) {
         last.text = last.text.trimEnd();
       }
       const textOnly = pieces.filter((x) => x.text !== undefined).map((x) => x.text).join(' ');
-      const built = codeish(textOnly) && !pieces.some((x) => x.plural) ? null : build(pieces);
+      const keyWord = /^\s*(Delete|Enter|Escape|Tab|Backspace)\s*$/.test(textOnly); // a button's label, not a key name
+      const built = codeish(textOnly) && !keyWord && !pieces.some((x) => x.plural) ? null : build(pieces);
       if (built) {
         const start = run[0].getStart(sf, false) ?? run[0].pos;
         edits.push([run[0].pos, run[run.length - 1].end, `${lead}{${call(built)}}${trail}`]);

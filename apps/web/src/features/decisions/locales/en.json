@@ -26,5 +26,6 @@
   "deleteDecision": "Delete decision",
   "deleteThisDecision": "Delete this decision?",
   "itsLinkStopsWorkingFor": "Its link stops working for everyone. The board as it was stays in the version history.",
-  "aReadOnlyCopyOf": "A read-only copy of exactly what’s here now, with its own link to cite in tickets and docs. Later edits never change it. Everyone who can open this board can see it; hidden frames and private drafts are never included."
+  "aReadOnlyCopyOf": "A read-only copy of exactly what’s here now, with its own link to cite in tickets and docs. Later edits never change it. Everyone who can open this board can see it; hidden frames and private drafts are never included.",
+  "delete": "Delete"
 }

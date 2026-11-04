@@ -175,9 +175,7 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
         <div className="fr-tpl-saved__confirm" role="alertdialog" aria-label={tr('deleteName', { name: t.name })}>
           <span>{tr('deleteThisTemplate')}</span>
           <div>
-            <Button size="sm" variant="danger" onClick={() => void remove()} autoFocus>
-              Delete
-            </Button>
+            <Button size="sm" variant="danger" onClick={() => void remove()} autoFocus>{tr('delete')}</Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>{tr('cancel')}</Button>
           </div>
         </div>

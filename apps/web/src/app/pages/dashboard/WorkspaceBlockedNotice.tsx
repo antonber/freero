@@ -24,10 +24,7 @@ export function WorkspaceBlockedNotice({ workspace }: { workspace: WorkspaceSumm
     return (
       <div className="fr-dash-blocked" role="status">
         <KeyRound size={18} aria-hidden />
-        <span>
-          {workspace.name} encrypts its boards with its own key, and that key can’t be used right now (its admins suspended it, or its key service refused or
-          didn’t answer). Its boards stay closed until the key is available again.
-        </span>
+        <span>{t('nameEncryptsItsBoardsWith', { name: workspace.name })}</span>
       </div>
     );
   if (workspace.blocked === 'deactivated')

@@ -93,5 +93,6 @@
   "tryAgain": "Try again",
   "freeroTemplates": "Freero templates",
   "noTemplatesMatchQuery": "No templates match “{query}”.",
-  "showAllTemplates": "Show all templates"
+  "showAllTemplates": "Show all templates",
+  "delete": "Delete"
 }

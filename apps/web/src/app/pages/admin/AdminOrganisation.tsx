@@ -257,9 +257,7 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
                   if (ok) window.location.assign('/app');
                 })
               }
-            >
-              Delete
-            </Button>
+            >{t('delete')}</Button>
           </>
         }
       >

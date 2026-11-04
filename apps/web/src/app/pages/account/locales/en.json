@@ -246,5 +246,6 @@
   "notifyMeAbout": "Notify me about",
   "email": "Email",
   "emailLabel": "Email: {label}",
-  "slackLabel": "Slack: {label}"
+  "slackLabel": "Slack: {label}",
+  "delete": "Delete"
 }

@@ -1,7 +1,5 @@
 {
-  "apps/web/src/app/pages/account/ApiSections.tsx": 1,
   "apps/web/src/app/pages/admin/AdminIdentity.tsx": 1,
-  "apps/web/src/app/pages/admin/AdminOrganisation.tsx": 1,
   "apps/web/src/app/pages/admin/AdminSiem.tsx": 3,
   "apps/web/src/app/pages/admin/AdminWebhooks.tsx": 2,
   "apps/web/src/app/pages/dashboard/RestoreBackupDialog.tsx": 1,
@@ -9,9 +7,6 @@
   "apps/web/src/app/pages/operator/ProblemsView.tsx": 2,
   "apps/web/src/engine/ui/FormatToolbar.tsx": 1,
   "apps/web/src/features/comments/lib/views.tsx": 1,
-  "apps/web/src/features/decisions/panel.tsx": 1,
   "apps/web/src/features/shortcuts/lib/PaletteDialog.tsx": 2,
-  "apps/web/src/features/templates/panel.tsx": 1,
-  "apps/web/src/features/walkthrough/lib/List.tsx": 1,
   "apps/web/src/ui/ActivityForm.tsx": 2
 }

@@ -830,10 +830,10 @@ function EmptyState({
       ? blocked === 'two_factor_required'
         ? { title: tr('turnOnTwoStepVerification'), body: tr('thisWorkspaceRequiresItOnce') }
         : blocked === 'ip_not_allowed'
-          ? { title: 'Not from this network', body: 'This workspace opens its boards only from its own networks. Connect from the office or the company VPN.' }
+          ? { title: tr('notFromThisNetwork'), body: tr('thisWorkspaceOpensItsBoards') }
           : blocked === 'key_unavailable'
-            ? { title: 'This workspace’s key isn’t available', body: 'Its boards are encrypted with the workspace’s own key, which can’t be used right now. They open again once its admins restore it.' }
-            : { title: 'Your access here is paused', body: 'An admin of this workspace deactivated you. Ask them to reactivate you to open and create its boards.' }
+            ? { title: tr('thisWorkspaceSKeyIsn'), body: tr('itsBoardsAreEncryptedWith') }
+            : { title: tr('yourAccessHereIsPaused'), body: tr('anAdminOfThisWorkspace') }
     : filtered
       ? { title: tr('noBoardsHere'), body: tr('nothingMatchesThisOwnerFilter') }
       : guest && (view === 'home' || view === 'project')

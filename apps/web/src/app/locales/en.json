@@ -486,5 +486,15 @@
   "analyticsIsOnAgainIn": "Analytics is on again in this browser.",
   "analytics.turnOff": "Turn off analytics",
   "analytics.turnOn": "Turn on analytics",
-  "analytics.signal": "Analytics off (browser privacy signal)"
+  "analytics.signal": "Analytics off (browser privacy signal)",
+  "turnedOffByItsLabel": "Turned off by its label, {name}",
+  "labelledName": "Labelled {name}",
+  "labelRemoved": "Label removed",
+  "couldNotChangeTheLabel": "Could not change the label",
+  "classification": "Classification",
+  "classificationLabel": "Classification label",
+  "noLabel": "No label",
+  "thisLabelLimitsTheBoard": "This label limits the board: {limits}.",
+  "thisBoardSWorkspaceKey": "This board’s workspace key isn’t available",
+  "itsWorkspaceEncryptsItsBoards": "Its workspace encrypts its boards with its own key, and that key can’t be used right now: its admins suspended it, or its key service refused or didn’t answer. The board opens again once the key is available."
 }

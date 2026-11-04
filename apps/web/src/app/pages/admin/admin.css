@@ -809,7 +809,7 @@ td > .fr-admin-pill:first-child {
   font-weight: 600;
   color: var(--fr-primary);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 .fr-admin-link:hover {
   text-decoration: underline;

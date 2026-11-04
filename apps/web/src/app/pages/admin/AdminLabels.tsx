@@ -8,22 +8,23 @@ import { Button, ColorSwatches, Input, Modal, Select, Spinner, TextArea, Toggle,
 import { api, ApiError } from '../../api/client';
 import { capsText, LabelBadge } from '../../components/BoardLabelPicker';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 const COLORS = ['#2f9e44', '#1c7ed6', '#f08c00', '#e03131', '#7048e8', '#495057'];
 const ANY = '';
 
 type Choice<K extends keyof LabelCaps> = { key: K; label: string; options: Array<{ value: string; label: string }> };
 const CHOICES: Array<Choice<keyof LabelCaps>> = [
-  { key: 'linkSharing', label: 'Link sharing', options: [{ value: 'none', label: 'Off' }, { value: 'viewer', label: 'At most “can view”' }, { value: 'commenter', label: 'At most “can comment”' }] },
-  { key: 'externalSharing', label: 'People outside the workspace', options: [{ value: 'none', label: 'Nobody' }, { value: 'admins', label: 'Only admins share' }] },
-  { key: 'downloads', label: 'Export, copy, download', options: [{ value: 'admins', label: 'Owners and admins only' }, { value: 'members', label: 'Members, not guests' }] },
+  { key: 'linkSharing', label: t('linkSharing'), options: [{ value: 'none', label: t('off') }, { value: 'viewer', label: t('atMostCanView') }, { value: 'commenter', label: t('atMostCanComment') }] },
+  { key: 'externalSharing', label: t('peopleOutsideTheWorkspace'), options: [{ value: 'none', label: t('nobody') }, { value: 'admins', label: t('onlyAdminsShare') }] },
+  { key: 'downloads', label: t('exportCopyDownload'), options: [{ value: 'admins', label: t('ownersAndAdminsOnly') }, { value: 'members', label: t('membersNotGuests2') }] },
 ];
 const SWITCHES: Array<{ key: keyof LabelCaps; on: string; label: string }> = [
-  { key: 'publicLinks', on: 'signedIn', label: 'No visitors without an account' },
-  { key: 'viewerExports', on: 'off', label: 'Viewers and commenters never export or copy' },
-  { key: 'boardEmbeds', on: 'off', label: 'No embedding on other sites' },
-  { key: 'liveEmbeds', on: 'off', label: 'No live embeds of other sites' },
-  { key: 'linkPassword', on: 'required', label: 'Links need a password' },
+  { key: 'publicLinks', on: 'signedIn', label: t('noVisitorsWithoutAnAccount') },
+  { key: 'viewerExports', on: 'off', label: t('viewersAndCommentersNeverExport') },
+  { key: 'boardEmbeds', on: 'off', label: t('noEmbeddingOnOtherSites') },
+  { key: 'liveEmbeds', on: 'off', label: t('noLiveEmbedsOfOther') },
+  { key: 'linkPassword', on: 'required', label: t('linksNeedAPassword') },
 ];
 
 export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
@@ -33,7 +34,7 @@ export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    api.boardLabels(workspace.id).then(setState, (e) => notify(errorText(e, 'Could not load the labels'), 'error'));
+    api.boardLabels(workspace.id).then(setState, (e) => notify(errorText(e, t('couldNotLoadTheLabels')), 'error'));
   }, [workspace.id, notify]);
   useEffect(load, [load]);
 
@@ -43,7 +44,7 @@ export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
       await api.setLabelPolicy(workspace.id, patch);
       load();
     } catch (e) {
-      notify(errorText(e, 'Could not change it'), 'error');
+      notify(errorText(e, t('couldNotChangeIt')), 'error');
     } finally {
       setBusy(null);
     }
@@ -52,10 +53,10 @@ export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
     setBusy(l.id);
     try {
       await api.deleteBoardLabel(workspace.id, l.id);
-      notify(`Deleted ${l.name}`, 'success');
+      notify(t('deletedName', { name: l.name }), 'success');
       load();
     } catch (e) {
-      notify(errorText(e, 'Could not delete it'), 'error');
+      notify(errorText(e, t('couldNotDeleteIt')), 'error');
     } finally {
       setBusy(null);
     }
@@ -66,48 +67,42 @@ export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <section aria-labelledby="admin-labels-title">
       <div className="fr-admin__head">
-        <h1 id="admin-labels-title" className="fr-admin__title">
-          Classification
-        </h1>
-        <span className="fr-admin__muted">
-          Labels say how sensitive a board is. Each one can limit sharing and exports beyond what the workspace allows — on links, the API, apps and embeds alike.
-        </span>
+        <h1 id="admin-labels-title" className="fr-admin__title">{t('classification')}</h1>
+        <span className="fr-admin__muted">{t('labelsSayHowSensitiveA')}</span>
         <div className="fr-admin__head-actions">
-          <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>
-            New label
-          </Button>
+          <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('newLabel')}</Button>
         </div>
       </div>
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">Labels on new boards</h2>
+        <h2 className="fr-admin-card__title">{t('labelsOnNewBoards')}</h2>
         <div className="fr-admin-labels__policy">
           <Select
             size="sm"
-            aria-label="Label new boards get"
+            aria-label={t('labelNewBoardsGet')}
             value={state.defaultLabelId ?? ANY}
             disabled={busy === 'policy'}
             onChange={(v) => void policy({ defaultLabelId: v || null })}
-            options={[{ value: ANY, label: 'No label' }, ...state.labels.map((l) => ({ value: l.id, label: l.name }))]}
+            options={[{ value: ANY, label: t('noLabel') }, ...state.labels.map((l) => ({ value: l.id, label: l.name }))]}
           />
           <Toggle
             size="sm"
-            label="Every board must carry a label"
+            label={t('everyBoardMustCarryA')}
             checked={state.required}
             disabled={busy === 'policy'}
             onChange={(on) => void policy({ required: on })}
           />
         </div>
-        <p className="fr-admin-card__note">New boards get the default label; with a label required, nobody can take a board’s label off, only change it.</p>
+        <p className="fr-admin-card__note">{t('newBoardsGetTheDefault')}</p>
       </div>
       <div className="fr-admin-table-wrap">
         <table className="fr-admin-table">
           <thead>
             <tr>
-              <th scope="col">Label</th>
-              <th scope="col">Limits</th>
-              <th scope="col">Boards</th>
+              <th scope="col">{t('label')}</th>
+              <th scope="col">{t('limits')}</th>
+              <th scope="col">{t('boards')}</th>
               <th scope="col">
-                <span className="fr-admin__sr">Actions</span>
+                <span className="fr-admin__sr">{t('actions')}</span>
               </th>
             </tr>
           </thead>
@@ -116,19 +111,17 @@ export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
               <tr key={l.id}>
                 <td>
                   <LabelBadge label={l} />
-                  {l.inherited ? <span className="fr-admin__muted"> · from the organisation</span> : null}
+                  {l.inherited ? <span className="fr-admin__muted">{' '}{t('fromTheOrganisation')}</span> : null}
                   {l.description ? <div className="fr-admin__muted">{l.description}</div> : null}
                 </td>
-                <td className="fr-admin__muted">{capsText(l.caps).join('; ') || 'Nothing beyond the workspace’s policies'}</td>
+                <td className="fr-admin__muted">{capsText(l.caps).join('; ') || t('nothingBeyondTheWorkspaceS')}</td>
                 <td>{l.boards ?? 0}</td>
                 <td className="fr-admin-table__actions">
                   {!l.inherited ? (
                     <>
-                      <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(l)}>
-                        Edit
-                      </Button>
+                      <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(l)}>{t('edit')}</Button>
                       <Button size="sm" variant="ghost" icon={Trash2} loading={busy === l.id} onClick={() => void remove(l)}>
-                        Delete
+                        {t('delete')}
                       </Button>
                     </>
                   ) : null}
@@ -137,9 +130,7 @@ export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
             ))}
             {state.labels.length === 0 ? (
               <tr>
-                <td colSpan={4} className="fr-admin__muted">
-                  No labels yet. A common set: Public, Internal, Confidential.
-                </td>
+                <td colSpan={4} className="fr-admin__muted">{t('noLabelsYetACommon')}</td>
               </tr>
             ) : null}
           </tbody>
@@ -181,10 +172,10 @@ function LabelEditor({ workspace, label, taken, onClose, onSaved }: { workspace:
     try {
       if (label) await api.updateBoardLabel(workspace.id, label.id, input);
       else await api.createBoardLabel(workspace.id, input);
-      notify(label ? `Saved ${name}` : `Created ${name}`, 'success');
+      notify(label ? t('savedName', { name }) : t('createdName', { name }), 'success');
       onSaved();
     } catch (e) {
-      notify(errorText(e, 'Could not save the label'), 'error');
+      notify(errorText(e, t('couldNotSaveTheLabel')), 'error');
     } finally {
       setBusy(false);
     }
@@ -195,21 +186,21 @@ function LabelEditor({ workspace, label, taken, onClose, onSaved }: { workspace:
       open
       onClose={onClose}
       width={520}
-      title={label ? `Edit ${label.name}` : 'New label'}
-      description="What a board with this label may never do, whatever its workspace or owner allows."
+      title={label ? t('editName', { name: label.name }) : t('newLabel')}
+      description={t('whatABoardWithThis')}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('cancel')}</Button>
           <Button variant="primary" loading={busy} disabled={!name.trim() || duplicate} onClick={() => void save()}>
-            {label ? 'Save' : 'Create'}
+            {label ? t('save') : t('create')}
           </Button>
         </>
       }
     >
       <div className="fr-admin-holds__form">
-        <Input label="Name" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} error={duplicate ? 'There is already a label with that name' : undefined} autoFocus />
+        <Input label={t('name')} value={name} maxLength={40} onChange={(e) => setName(e.target.value)} error={duplicate ? t('thereIsAlreadyALabel') : undefined} autoFocus />
         <ColorSwatches colors={COLORS} value={color} onChange={setColor} />
-        <TextArea label="Description (optional)" value={description} maxLength={300} rows={2} onChange={(e) => setDescription(e.target.value)} />
+        <TextArea label={t('descriptionOptional')} value={description} maxLength={300} rows={2} onChange={(e) => setDescription(e.target.value)} />
         {CHOICES.map((c) => (
           <label key={c.key} className="fr-admin-labels__choice">
             <span>{c.label}</span>
@@ -218,7 +209,7 @@ function LabelEditor({ workspace, label, taken, onClose, onSaved }: { workspace:
               aria-label={c.label}
               value={(caps[c.key] as string | undefined) ?? ANY}
               onChange={(v) => set(c.key, v)}
-              options={[{ value: ANY, label: 'As the workspace allows' }, ...c.options]}
+              options={[{ value: ANY, label: t('asTheWorkspaceAllows') }, ...c.options]}
             />
           </label>
         ))}
@@ -226,7 +217,7 @@ function LabelEditor({ workspace, label, taken, onClose, onSaved }: { workspace:
           <Toggle key={s.key} size="sm" label={s.label} checked={caps[s.key] === s.on} onChange={(on) => set(s.key, on ? s.on : undefined)} />
         ))}
         <label className="fr-admin-labels__choice">
-          <span>Links expire within (days)</span>
+          <span>{t('linksExpireWithinDays')}</span>
           <Input
             size="sm"
             type="number"
@@ -234,7 +225,7 @@ function LabelEditor({ workspace, label, taken, onClose, onSaved }: { workspace:
             max={365}
             value={caps.linkMaxDays ?? ''}
             onChange={(e) => set('linkMaxDays', e.target.value ? Math.max(1, Math.min(365, Number(e.target.value))) : undefined)}
-            aria-label="Links expire within (days)"
+            aria-label={t('linksExpireWithinDays')}
           />
         </label>
       </div>

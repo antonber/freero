@@ -191,10 +191,10 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
           <span className="fr-admin-row__hint">{tr('giveYourIdentityProviderThese')}</span>
           {protocol === 'saml' ? (
             <>
-              <CopyField label="Entity ID / metadata" value={s.serviceProvider.entityId} />
-              <CopyField label="ACS (reply) URL" value={s.serviceProvider.acsUrl} />
-              <CopyField label="Sign-in URL (app tile)" value={s.serviceProvider.startUrl} />
-              {s.serviceProvider.sloUrl ? <CopyField label="Single logout URL" value={s.serviceProvider.sloUrl} /> : null}
+              <CopyField label={tr('entityIdMetadata')} value={s.serviceProvider.entityId} />
+              <CopyField label={tr('acsReplyUrl')} value={s.serviceProvider.acsUrl} />
+              <CopyField label={tr('signInUrlAppTile')} value={s.serviceProvider.startUrl} />
+              {s.serviceProvider.sloUrl ? <CopyField label={tr('singleLogoutUrl')} value={s.serviceProvider.sloUrl} /> : null}
             </>
           ) : (
             <CopyField label={tr('redirectUri')} value={s.serviceProvider.oidcRedirectUri} />
@@ -362,72 +362,60 @@ function SamlKeysCard({
   const base = { protocol: c.protocol, enabled: c.enabled, defaultRole: c.defaultRole };
   return (
     <div className="fr-admin-card">
-      <h2 className="fr-admin-card__title">Signing, encryption and single logout</h2>
+      <h2 className="fr-admin-card__title">{tr('signingEncryptionAndSingleLogout')}</h2>
       <div className="fr-admin-sso__stack">
-        <span className="fr-admin-row__hint">
-          Freero’s own key pair for this {workspace.kind === 'organisation' ? 'organisation' : 'workspace'}: your identity provider encrypts assertions to its certificate and checks Freero’s signed
-          requests with it. The certificate is in Freero’s metadata; the private key never leaves the server. To rotate, add a second key, give its certificate to your identity provider, make it
-          current, then remove the old one. Both keys decrypt until then.
-        </span>
+        <span className="fr-admin-row__hint">{tr('freeroSOwnKeyPair')}{' '}{workspace.kind === 'organisation' ? 'organisation' : 'workspace'}{tr('yourIdentityProviderEncryptsAssertions')}</span>
         {keys.map((k) => (
           <div key={k.id} className="fr-admin-sso__domain">
             <div className="fr-admin-sso__domain-head">
               <KeyRound size={14} aria-hidden />
               <code title={k.fingerprint}>{k.fingerprint.slice(0, 23)}…</code>
-              <span className={`fr-admin-pill ${k.current ? 'fr-admin-pill--ok' : 'fr-admin-pill--warn'}`}>{k.current ? 'Current' : 'Next'}</span>
-              <span className="fr-admin-row__hint">valid until {new Date(k.validTo).toLocaleDateString()}</span>
+              <span className={`fr-admin-pill ${k.current ? 'fr-admin-pill--ok' : 'fr-admin-pill--warn'}`}>{k.current ? tr('current') : tr('next2')}</span>
+              <span className="fr-admin-row__hint">{tr('validUntilTolocaledatestring', { toLocaleDateString: new Date(k.validTo).toLocaleDateString() })}</span>
               <span className="fr-admin-sso__spacer" />
-              <Button size="sm" variant="ghost" icon={Download} onClick={() => downloadCertificate(k.certificate, k.fingerprint)}>
-                Certificate
-              </Button>
+              <Button size="sm" variant="ghost" icon={Download} onClick={() => downloadCertificate(k.certificate, k.fingerprint)}>{tr('certificate')}</Button>
               {!k.current ? (
-                <Button size="sm" icon={RotateCw} loading={busy === `promote-${k.id}`} onClick={() => void run(`promote-${k.id}`, () => api.promoteSsoSpKey(workspace.id, k.id), 'This key now signs requests')}>
-                  Make current
-                </Button>
+                <Button size="sm" icon={RotateCw} loading={busy === `promote-${k.id}`} onClick={() => void run(`promote-${k.id}`, () => api.promoteSsoSpKey(workspace.id, k.id), tr('thisKeyNowSignsRequests'))}>{tr('makeCurrent')}</Button>
               ) : null}
-              <Button size="sm" variant="ghost" icon={Trash2} loading={busy === `rmkey-${k.id}`} onClick={() => void run(`rmkey-${k.id}`, () => api.removeSsoSpKey(workspace.id, k.id), 'Key removed')}>
-                Remove
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} loading={busy === `rmkey-${k.id}`} onClick={() => void run(`rmkey-${k.id}`, () => api.removeSsoSpKey(workspace.id, k.id), tr('keyRemoved'))}>{tr('remove')}</Button>
             </div>
           </div>
         ))}
         {keys.length < 2 ? (
           <div>
-            <Button icon={KeyRound} loading={busy === 'newkey'} onClick={() => void run('newkey', () => api.createSsoSpKey(workspace.id), keys.length ? 'Next key added: give its certificate to your identity provider' : 'Key created')}>
-              {keys.length ? 'Add the next key' : 'Create a key'}
+            <Button icon={KeyRound} loading={busy === 'newkey'} onClick={() => void run('newkey', () => api.createSsoSpKey(workspace.id), keys.length ? tr('nextKeyAddedGiveIts') : tr('keyCreated'))}>
+              {keys.length ? tr('addTheNextKey') : tr('createAKey')}
             </Button>
           </div>
         ) : null}
       </div>
-      <Row label="Require encrypted assertions" hint="Sign-ins whose assertion isn’t encrypted to one of these keys are refused. Turn on once your identity provider encrypts.">
+      <Row label={tr('requireEncryptedAssertions')} hint={tr('signInsWhoseAssertionIsn')}>
         <Toggle
-          aria-label="Require encrypted assertions"
+          aria-label={tr('requireEncryptedAssertions')}
           checked={!!saml.requireEncryptedAssertions}
           disabled={!keys.length}
           onChange={(on) => void run('encrypt', () => api.saveSsoConnection(workspace.id, { ...base, requireEncryptedAssertions: on }))}
         />
       </Row>
-      <Row label="Sign requests" hint="Sign-in and logout requests are signed with the current key (for identity providers that want signed requests).">
-        <Toggle aria-label="Sign requests" checked={!!saml.signRequests} disabled={!keys.length} onChange={(on) => void run('sign', () => api.saveSsoConnection(workspace.id, { ...base, signRequests: on }))} />
+      <Row label={tr('signRequests')} hint={tr('signInAndLogoutRequests')}>
+        <Toggle aria-label={tr('signRequests')} checked={!!saml.signRequests} disabled={!keys.length} onChange={(on) => void run('sign', () => api.saveSsoConnection(workspace.id, { ...base, signRequests: on }))} />
       </Row>
       <form
         className="fr-admin-sso__form"
         onSubmit={(e) => {
           e.preventDefault();
-          void run('slo', () => api.saveSsoConnection(workspace.id, { ...base, samlSloUrl: slo.trim() }), slo.trim() ? 'Single logout is on' : 'Single logout is off');
+          void run('slo', () => api.saveSsoConnection(workspace.id, { ...base, samlSloUrl: slo.trim() }), slo.trim() ? tr('singleLogoutIsOn') : tr('singleLogoutIsOff'));
         }}
       >
         <Input
-          label="Identity provider’s single logout URL"
+          label={tr('identityProviderSSingleLogout')}
           value={slo}
           onChange={(e) => setSlo(e.target.value)}
-          placeholder="Read from its metadata, or https://…"
-          hint="When set, signing out of Freero also signs out at your identity provider, and its logout signs people out of Freero."
+          placeholder={tr('readFromItsMetadataOr')}
+          hint={tr('whenSetSigningOutOf')}
         />
         <div>
-          <Button type="submit" loading={busy === 'slo'} disabled={slo.trim() === (saml.sloUrl ?? '')}>
-            Save single logout
-          </Button>
+          <Button type="submit" loading={busy === 'slo'} disabled={slo.trim() === (saml.sloUrl ?? '')}>{tr('saveSingleLogout')}</Button>
         </div>
       </form>
     </div>

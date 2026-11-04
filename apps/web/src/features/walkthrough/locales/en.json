@@ -127,5 +127,6 @@
   "stopAndSave": "Stop and save",
   "discard": "Discard",
   "savingTheWalkthrough": "Saving the walkthrough…",
-  "minutesStopAnyTime": "minutes; stop any time."
+  "minutesStopAnyTime": "minutes; stop any time.",
+  "delete": "Delete"
 }

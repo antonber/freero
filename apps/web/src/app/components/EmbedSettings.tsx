@@ -77,8 +77,8 @@ export function EmbedSettings({ board, onChange }: { board: BoardSummary; onChan
           <Code2 size={17} aria-hidden />
         </span>
         <div className="fr-share__who">
-          <span className="fr-share__name">Embed on other sites</span>
-          <span className="fr-share__email-text">{!allowed && !on ? (board.label?.caps.boardEmbeds === 'off' ? `Turned off by its label, ${board.label.name}` : 'Turned off in this workspace') : on ? who : 'Show the live board in wikis, docs and websites'}</span>
+          <span className="fr-share__name">{t('embedOnOtherSites')}</span>
+          <span className="fr-share__email-text">{!allowed && !on ? (board.label?.caps.boardEmbeds === 'off' ? t('turnedOffByItsLabel', { name: board.label.name }) : t('turnedOffInThisWorkspace')) : on ? who : t('showTheLiveBoardIn')}</span>
         </div>
         {isOwner ? (
           <Toggle aria-label={t('allowEmbeddingOnOtherSites')} checked={on} disabled={busy || (!allowed && !on)} onChange={(v) => void toggle(v)} />

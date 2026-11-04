@@ -323,9 +323,7 @@ export function DeveloperAppsSection() {
                 <span className="fr-acct-session__meta">{tr('clientId')}{' '}<code>{c.clientId}</code>{' '}{tr('usersPeopleConnected', { users: c.users })}</span>
                 <span className="fr-acct-session__meta">{c.redirectUris.join(' · ')}</span>
               </span>
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => remove(c)}>
-                Delete
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => remove(c)}>{tr('delete')}</Button>
             </li>
           ))}
         </ul>

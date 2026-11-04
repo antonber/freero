@@ -299,8 +299,8 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
         }
       : code === 423
       ? {
-          title: 'This board’s workspace key isn’t available',
-          body: 'Its workspace encrypts its boards with its own key, and that key can’t be used right now: its admins suspended it, or its key service refused or didn’t answer. The board opens again once the key is available.',
+          title: tr('thisBoardSWorkspaceKey'),
+          body: tr('itsWorkspaceEncryptsItsBoards'),
         }
       : code === 403
       ? { title: tr('youDonTHaveAccess'), body: tr('askTheBoardOwnerTo') }
