@@ -10,7 +10,7 @@ import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { getAccount, getGuests, getUsers } from '../auth/index';
-import { boardWorkspaceId, getBoardAccess, getBoardTitle } from '../boards/index';
+import { boardFollowerIds, boardWorkspaceId, getBoardAccess, getBoardTitle } from '../boards/index';
 import {
   accessRequestOutcomes,
   invitedEmails,
@@ -129,8 +129,10 @@ const shorten = (s: string, max = EXCERPT_MAX) => {
 
 /**
  * A comment message was written or edited (realtime, attributed to the author's socket). New
- * @mentions notify the mentioned people; a new message also notifies everyone else in the thread.
- * One notification per person per message: a mention wins over a reply.
+ * @mentions notify the mentioned people; a new message also notifies everyone else in the thread;
+ * a new thread also notifies the board's followers (owner, people who starred it) who turned on
+ * "New comments on your boards" (#104). One notification per person per message: a mention wins
+ * over a reply, and either over the new-thread alert.
  */
 export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
   // A thread on someone's private draft: nobody else can read it (KAI-234).
@@ -148,7 +150,8 @@ export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
   // Addresses of people invited to the board who have no account yet: notified once they join.
   const hadEmails = new Set(e.previousText === null ? [] : emailsIn(e.previousText));
   const invited = guest || editorsOnly ? [] : await invitedEmails(e.boardId, emailsIn(e.text).filter((m) => !hadEmails.has(m)));
-  if (!newMentions.length && !replyTo.length && !invited.length) return;
+  const followers = e.newThread && e.previousText === null ? await followersToAlert(e.boardId, [e.authorId, ...mentioned, ...replyTo]) : [];
+  if (!newMentions.length && !replyTo.length && !invited.length && !followers.length) return;
   const [boardTitle, names, guests] = await Promise.all([getBoardTitle(e.boardId), getUsers(mentionedUserIds(e.text)), guest ? getGuests([e.authorId]) : null]);
   if (boardTitle === null) return;
   const data: NotificationData = {
@@ -164,8 +167,21 @@ export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
     await notify({ userId, type: 'comment.mention', actorId, boardId: e.boardId, data, dedupeKey: `mention:${key}`, editorsOnly });
   for (const userId of replyTo)
     await notify({ userId, type: 'comment.reply', actorId, boardId: e.boardId, data, dedupeKey: `reply:${key}`, editorsOnly });
+  // `notify` checks each one can still open the board (and, in a hidden frame, is an owner or editor).
+  for (const userId of followers)
+    await notify({ userId, type: 'comment.thread', actorId, boardId: e.boardId, data, dedupeKey: `thread:${e.boardId}:${e.threadId}`, editorsOnly });
   for (const email of invited)
     await repo.addPendingMention({ id: newId(16), boardId: e.boardId, email, actorId: e.authorId, data, dedupeKey: `mention:${key}`, createdAt: Date.now() });
+}
+
+/** The preference key of "New comments on your boards" (#104; off unless set). */
+const BOARD_COMMENTS = 'board-comments';
+
+/** The board's followers who turned on new-comment alerts, except `skip` (the author, people the message already notifies). */
+async function followersToAlert(boardId: string, skip: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const id of await boardFollowerIds(boardId)) if (!skip.includes(id) && (await repo.prefs(id)).get(BOARD_COMMENTS) === true) out.push(id);
+  return out;
 }
 
 const EMAIL_IN_TEXT = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
@@ -286,6 +302,7 @@ export async function prefsFor(userId: string): Promise<NotificationPrefs> {
       slack: slack.get(type) ?? NOTIFICATION_TYPES[type].slackByDefault === true,
     })),
     boardChanges: (await repo.boardChangeDigestOf(userId))?.frequency ?? 'off',
+    boardComments: p.get(BOARD_COMMENTS) === true,
     slack: slackConnectOffered() ? { linked: await slackLinked(userId) } : null,
   };
 }
@@ -297,9 +314,11 @@ export async function updatePrefs(
     email?: Partial<Record<NotificationType, boolean>>;
     slack?: Partial<Record<NotificationType, boolean>>;
     boardChanges?: BoardChangesFrequency;
+    boardComments?: boolean;
   },
 ): Promise<NotificationPrefs> {
   if (typeof patch.emailAll === 'boolean') await repo.setPref(userId, ALL, patch.emailAll);
+  if (typeof patch.boardComments === 'boolean') await repo.setPref(userId, BOARD_COMMENTS, patch.boardComments);
   if (patch.boardChanges) await setBoardChangesFrequency(userId, patch.boardChanges);
   for (const [type, on] of Object.entries(patch.email ?? {})) if (isNotificationType(type) && typeof on === 'boolean') await repo.setPref(userId, type, on);
   for (const [type, on] of Object.entries(patch.slack ?? {}))

@@ -246,6 +246,20 @@ export async function boardsOwnedOrStarredBy(userId: string): Promise<Array<{ id
   return out;
 }
 
+/** Stars a board for the user (the dashboard's star: they follow it, #104). Access is the caller's to check. */
+export function starBoard(boardId: string, userId: string, now = Date.now()): Promise<void> {
+  return repo.star(boardId, userId, now);
+}
+
+/**
+ * Who follows a live board (#104: "new comments on your boards"): its owner and everyone who
+ * starred it. Not filtered by access — the notification checks that for each person.
+ */
+export async function boardFollowerIds(boardId: string): Promise<string[]> {
+  const b = await repo.getBoard(boardId);
+  return b ? [...new Set([b.ownerId, ...(await repo.starrerIds(boardId))])] : [];
+}
+
 /** Where a (live) board is and who owns it, or null if there is no such board. */
 export async function boardPlace(
   boardId: string,

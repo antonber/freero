@@ -441,6 +441,7 @@ export const api = {
     email?: Partial<Record<NotificationType, boolean>>;
     slack?: Partial<Record<NotificationType, boolean>>;
     boardChanges?: BoardChangesFrequency;
+    boardComments?: boolean;
   }) => request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
   /** Personal Slack (#105): whether the server offers it and the person's connected account. Connecting is a page visit to /api/integrations/slack/oauth/start. */
   slackAccount: () => request<SlackAccountInfo>('GET', '/api/integrations/slack/me'),

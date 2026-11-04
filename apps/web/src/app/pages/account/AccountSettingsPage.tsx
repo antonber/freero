@@ -356,6 +356,18 @@ function NotificationsSection({ version }: { version: number }) {
                 aria-label="Email a summary of changes on your boards"
               />
             </div>
+            <Toggle
+              label={
+                <span className="fr-acct-prefs__type">
+                  <span className="fr-acct-prefs__label">New comments on your boards</span>
+                  <span className="fr-acct__hint">
+                    Tell me when someone starts a comment thread on a board I own or starred: under the bell, then by email or Slack as chosen below.
+                  </span>
+                </span>
+              }
+              checked={prefs.boardComments === true}
+              onChange={(on) => save({ boardComments: on }, { ...prefs, boardComments: on })}
+            />
             {slack ? (
               <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label="Notify me about">
                 <li className="fr-acct-prefs__channels-head" aria-hidden>

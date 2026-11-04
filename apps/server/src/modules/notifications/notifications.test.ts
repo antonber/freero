@@ -3,8 +3,8 @@ import { mentionToken, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { closeTestDb, openTestDb, outboxMails } from '../../platform/testing';
 import { createUser, getAccount, markEmailVerified } from '../auth/index';
-import { createBoard } from '../boards/index';
-import { decideAccessRequest, onAccessDecided, onAccessRequested, requestAccess } from '../members/index';
+import { createBoard, starBoard } from '../boards/index';
+import { decideAccessRequest, inviteBoardMember, onAccessDecided, onAccessRequested, requestAccess } from '../members/index';
 import * as service from './service';
 import type { CommentMessageEvent } from '../realtime/index';
 import { createTeamWorkspace, inviteToWorkspace, removeWorkspaceMember } from '../workspaces/index';
@@ -78,6 +78,25 @@ it('a reply notifies everyone else in the thread; someone it also mentions gets 
   expect((await inbox(ann)).map((x) => x.type)).toEqual(['comment.reply']);
   expect((await inbox(bob)).map((x) => x.type)).toEqual(['comment.mention']);
   expect(await inbox(cy)).toHaveLength(0);
+});
+
+it('a new comment thread alerts the board’s followers who turned it on — never its author, never a follower who can’t see the hidden frame it is in, and a reply is not a new thread (#104)', async () => {
+  const [ann, bob, cy, eve] = [await person('Ann'), await person('Bob'), await person('Cy'), await person('Eve')];
+  const board = await createBoard(ann.id, 'Planning', '', 'commenter'); // Cy and Eve: commenters by the link
+  await inviteBoardMember(null, board.id, await getAccount(ann.id), { email: bob.email, role: 'editor' });
+  for (const u of [bob, cy, eve]) await starBoard(board.id, u.id);
+  for (const u of [ann, bob, cy]) await updatePrefs(u.id, { boardComments: true }); // Eve leaves it off
+  const alerts = async (u: User) => (await inbox(u)).filter((x) => x.type === 'comment.thread').map((x) => x.link);
+  const thread = (id: string) => `/board/${board.id}?thread=${id}`;
+
+  await onCommentMessage(message(board.id, ann.id, 'Kickoff notes', { threadId: 'ta', newThread: true }));
+  await onCommentMessage(message(board.id, cy.id, 'Agreed', { threadId: 'ta', participantIds: [ann.id] }));
+  await onCommentMessage(message(board.id, bob.id, 'Budget for the reorg', { threadId: 'tb', newThread: true, layer: 'editors' }));
+
+  expect(await alerts(ann)).toEqual([thread('tb')]); // not her own thread
+  expect(await alerts(bob)).toEqual([thread('ta')]);
+  expect(await alerts(cy)).toEqual([thread('ta')]); // a commenter: the hidden frame's thread is not for her
+  expect(await alerts(eve)).toEqual([]);
 });
 
 it('the email digest batches everything unread past the delay into one message, skips what was read or opted out, and its unsubscribe link turns emails off', async () => {

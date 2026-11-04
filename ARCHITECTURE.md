@@ -145,6 +145,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
+| "New comments on your boards" (#104: `notification_prefs` key `board-comments`, off unless set) | server `modules/notifications` (`updatePrefs`) | `PUT /notifications/prefs` `boardComments` (account settings) |
 | The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
 | Who presents a board (`presentation` key `session`, #146) | server `modules/presentations` (realtime `updateServerEntry`: start, hand off, end; a socket's write is undone) | `Host.presentation` (`features/present`) |
 | Icebreaker results (`icebreakerResults`, #150) and a quiz's answer key (`engage_keys`, #147) | server `modules/icebreakers` (`writeServerCollection`) and `modules/engage` | `Host.icebreakers.roll`; `Host.engage.setKey` / `runQuiz` |
@@ -1474,6 +1475,14 @@ reports" below).
   `/board/<id>?changes=1` (`activity.showChanges`). Claim-then-send in the same digest job. Its
   unsubscribe token is signed over the list name (`list=board-changes`): it stops only this email,
   and an all-emails token can't be bent into it; the master switch stops it too.
+  "New comments on your boards" (#104): opt-in per person (`notification_prefs` key
+  `board-comments`, `PUT /notifications/prefs` `boardComments`). Realtime marks a message that is
+  the first of its thread (`CommentMessageEvent.newThread`: no other message record in it, deleted
+  ones included), and `onCommentMessage` sends `comment.thread` to the board's followers — its
+  owner and everyone who starred it (boards' `boardFollowerIds`) — except the author and people the
+  message already mentions; `notify` drops anyone who can no longer open the board and, for a
+  thread in a hidden frame (`editorsOnly`), anyone not an owner or editor. From there it is an
+  ordinary notification: the bell, then Slack or the digest by the type's switches.
   Times in emails (security notices, export expiry, this digest) read in the recipient's time zone
   (`platform/time.ts` `formatWhen`); calendar dates (due dates) stay dates.
 

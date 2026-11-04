@@ -635,6 +635,11 @@ export async function starredBoardIds(userId: string): Promise<Set<string>> {
   );
 }
 
+/** Everyone who starred the board. */
+export async function starrerIds(boardId: string): Promise<string[]> {
+  return (await query<{ user_id: string }>(`SELECT user_id FROM board_stars WHERE board_id = $1`, [boardId])).map((r) => r.user_id);
+}
+
 export async function isStarred(boardId: string, userId: string): Promise<boolean> {
   return (await one(`SELECT 1 FROM board_stars WHERE board_id = $1 AND user_id = $2`, [boardId, userId])) !== null;
 }

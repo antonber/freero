@@ -135,6 +135,15 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: 'Open the thread',
     slackByDefault: true,
   },
+  // #104: sent only to people who turned on "New comments on your boards" (prefs `boardComments`).
+  'comment.thread': {
+    label: 'New comments on your boards',
+    description: 'Someone starts a comment thread on a board you own or starred (once you turn these on).',
+    title: (actor, d) => `${actor} commented on ${board(d)}`,
+    link: threadPath,
+    linkLabel: 'Open the comment',
+    slackByDefault: true,
+  },
   'board.invite': {
     label: 'Boards shared with you',
     description: 'Someone invites you to a board.',
