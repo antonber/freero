@@ -18,7 +18,7 @@ export function Logo({ size = 28, withWordmark, className }: LogoProps) {
       </svg>
       {withWordmark ? (
         <span className="fr-logo__word" style={{ fontSize: Math.round(size * 0.72) }}>
-          freero
+          {'freero'}
         </span>
       ) : null}
     </span>

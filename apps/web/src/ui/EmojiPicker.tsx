@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Input } from './fields';
 import { EMOJI_CATEGORIES, searchEmojis, type EmojiEntry } from './emojis';
+import { t } from './messages';
 import './EmojiPicker.css';
 
 export interface EmojiPickerProps {
@@ -34,8 +35,8 @@ export function EmojiPicker({ onPick, recent = [], autoFocus }: EmojiPickerProps
       <Input
         size="sm"
         icon={Search}
-        placeholder="Search emoji"
-        aria-label="Search emoji"
+        placeholder={t('searchEmoji')}
+        aria-label={t('searchEmoji')}
         value={query}
         autoFocus={autoFocus}
         onChange={(e) => setQuery(e.target.value)}
@@ -45,14 +46,14 @@ export function EmojiPicker({ onPick, recent = [], autoFocus }: EmojiPickerProps
       />
       {hits ? (
         hits.length ? (
-          <Grid items={hits} onPick={onPick} label="Search results" />
+          <Grid items={hits} onPick={onPick} label={t('searchResults')} />
         ) : (
-          <div className="fr-emojipick__empty">Nothing matches “{query.trim()}”</div>
+          <div className="fr-emojipick__empty">{t('nothingMatchesQuery', { query: query.trim() })}</div>
         )
       ) : (
         <>
-          {recent.length > 0 && <Grid items={recent.map((emoji) => ({ emoji, words: emoji }))} onPick={onPick} label="Recent" />}
-          <div className="fr-emojipick__tabs" role="tablist" aria-label="Emoji categories">
+          {recent.length > 0 && <Grid items={recent.map((emoji) => ({ emoji, words: emoji }))} onPick={onPick} label={t('recent')} />}
+          <div className="fr-emojipick__tabs" role="tablist" aria-label={t('emojiCategories')}>
             {EMOJI_CATEGORIES.map((c) => (
               <button
                 key={c.id}
