@@ -176,7 +176,7 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { MobilePushDevice, MobilePushStatus, FigmaFilesResponse, FigmaFramesResponse, FigmaPlaceResponse, FigmaStatus, GifPlaceResponse, GifSearchResponse, ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
+import type { MobilePushDevice, MobilePushStatus, FigmaFilesResponse, FigmaFramesResponse, FigmaPlaceResponse, FigmaStatus, MiroImportRequest, MiroImportResponse, GifPlaceResponse, GifSearchResponse, ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
 import type { BoardSensitiveData, SensitiveDataSettingsInput, SensitiveDataStatus } from '@freero/shared';
@@ -950,6 +950,9 @@ export const api = {
   figmaFrames: (fileKey: string) => request<FigmaFramesResponse>('GET', `/api/integrations/figma/files/${encodeURIComponent(fileKey)}/frames`),
   placeFigmaFrame: (boardId: string, fileKey: string, nodeId: string) =>
     request<FigmaPlaceResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/figma/place`, { fileKey, nodeId }),
+  // Import from Miro with the person's own token (#62): the server reads the board and keeps neither.
+  importFromMiro: (boardId: string, board: string, token: string) =>
+    request<MiroImportResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/import/miro`, { board, token } satisfies MiroImportRequest),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });

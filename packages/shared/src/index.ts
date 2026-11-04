@@ -33,3 +33,4 @@ export * from './i18n';
 export * from './compliance';
 export * from './icons';
 export * from './figma';
+export * from './boardImport';

@@ -365,6 +365,20 @@ Owner steps: [integrations/figma.md](integrations/figma.md).
 | `FIGMA_OAUTH_URL` | `https://www.figma.com/oauth` | Figma's consent page; only to test against a stand-in. |
 | `RATE_LIMIT_FIGMA` | `60/10m` | Per person: Figma files read and frames rendered (each calls Figma's API). |
 
+## Import from Miro
+
+"Import ▸ Miro" in the import dialog (#62): a person reads one of their own Miro boards with their
+own Miro access token (from a Miro app they create for their own team, `boards:read` only), typed
+into the dialog and never stored. The operator registers nothing with Miro. On by default; why it
+is allowed, and why there is no Mural, FigJam, Lucid or Whimsical API importer:
+[design/importers.md](design/importers.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `MIRO_IMPORT` | `on` | `off` hides the Miro tab and refuses the route. |
+| `MIRO_API_URL` | `https://api.miro.com` | Only to test against a stand-in (`scripts/lib/mock-miro.mjs`). |
+| `RATE_LIMIT_BOARD_IMPORT` | `20/1h` | Per person: boards read from Miro (each reads up to 2,000 items and copies up to 100 pictures). |
+
 ## Marketing site
 
 The public pages at `/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`, `/support`, the legal pages,

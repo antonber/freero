@@ -551,7 +551,14 @@
     "errors.sensitive_kinds_needed",
     "errors.label_unavailable",
     "errors.kms_key_id_invalid",
-    "errors.kms_provider_unavailable"
+    "errors.kms_provider_unavailable",
+    "errors.miro_bad_link",
+    "errors.miro_token_refused",
+    "errors.miro_no_access",
+    "errors.miro_not_found",
+    "errors.miro_rate_limited",
+    "errors.miro_unreachable",
+    "errors.miro_import_off"
   ],
   "untitledFrame": "無題のフレーム",
   "couldNotChangeEmbedding": "埋め込み設定を変更できませんでした",
@@ -1104,5 +1111,12 @@
   "errors.sensitive_kinds_needed": "検出するデータの種類を 1 つ以上選んでください",
   "errors.label_unavailable": "そのラベルはこのワークスペースでは使えません",
   "errors.kms_key_id_invalid": "このサーバーはそのキーを認識できません。AWS KMS キーの ARN、Google Cloud KMS キー名、Azure Key Vault キーの URL、または Vault Transit キーのパスを使ってください。",
-  "errors.kms_provider_unavailable": "このサーバーは {provider} のキーを使うよう設定されていません"
+  "errors.kms_provider_unavailable": "このサーバーは {provider} のキーを使うよう設定されていません",
+  "errors.miro_bad_link": "Miro ボードのリンクを貼り付けてください（miro.com/app/board/…）。",
+  "errors.miro_token_refused": "Miro がそのトークンを受け付けませんでした。確認してもう一度お試しください。",
+  "errors.miro_no_access": "そのトークンではこのボードを読み取れません。",
+  "errors.miro_not_found": "Miro にそのボードがないか、トークンのチームからは見えません。",
+  "errors.miro_rate_limited": "Miro から Freero へ速度を落とすよう求められています。1 分後にもう一度お試しください。",
+  "errors.miro_unreachable": "Miro から応答がありませんでした。少し待ってからもう一度お試しください。",
+  "errors.miro_import_off": "このサーバーでは Miro からのインポートは利用できません。"
 }

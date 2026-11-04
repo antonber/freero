@@ -551,7 +551,14 @@
     "errors.sensitive_kinds_needed",
     "errors.label_unavailable",
     "errors.kms_key_id_invalid",
-    "errors.kms_provider_unavailable"
+    "errors.kms_provider_unavailable",
+    "errors.miro_bad_link",
+    "errors.miro_token_refused",
+    "errors.miro_no_access",
+    "errors.miro_not_found",
+    "errors.miro_rate_limited",
+    "errors.miro_unreachable",
+    "errors.miro_import_off"
   ],
   "untitledFrame": "Unbenannter Rahmen",
   "couldNotChangeEmbedding": "Einbettung konnte nicht geändert werden",
@@ -1104,5 +1111,12 @@
   "errors.sensitive_kinds_needed": "Wählen Sie mindestens eine Art von Daten, nach der gesucht wird",
   "errors.label_unavailable": "Dieses Label ist in diesem Workspace nicht verfügbar",
   "errors.kms_key_id_invalid": "Diesen Schlüssel erkennt dieser Server nicht: Verwenden Sie eine AWS-KMS-Schlüssel-ARN, einen Google-Cloud-KMS-Schlüsselnamen, eine Azure-Key-Vault-Schlüssel-URL oder einen Vault-Transit-Schlüsselpfad.",
-  "errors.kms_provider_unavailable": "Dieser Server ist nicht für {provider}-Schlüssel eingerichtet"
+  "errors.kms_provider_unavailable": "Dieser Server ist nicht für {provider}-Schlüssel eingerichtet",
+  "errors.miro_bad_link": "Fügen Sie den Link eines Miro-Boards ein (miro.com/app/board/…).",
+  "errors.miro_token_refused": "Miro hat dieses Token nicht akzeptiert. Prüfen Sie es und versuchen Sie es erneut.",
+  "errors.miro_no_access": "Mit diesem Token lässt sich dieses Board nicht lesen.",
+  "errors.miro_not_found": "Miro hat kein solches Board, oder das Team des Tokens sieht es nicht.",
+  "errors.miro_rate_limited": "Miro bittet Freero, langsamer zu machen. Versuchen Sie es in einer Minute erneut.",
+  "errors.miro_unreachable": "Miro hat nicht geantwortet. Versuchen Sie es gleich noch einmal.",
+  "errors.miro_import_off": "Dieser Server bietet keinen Import aus Miro an."
 }

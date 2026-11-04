@@ -191,6 +191,11 @@ export interface BoardPermissions {
    */
   figma?: boolean;
   /**
+   * [additive, #62] A Miro board can be imported here with the person's own Miro token (the
+   * operator didn't turn it off, MIRO_IMPORT). Absent: the import dialog offers files only.
+   */
+  miroImport?: boolean;
+  /**
    * [additive, #178] You may keep a copy of this board on your devices to open and edit it offline:
    * the workspace's `offlineCopies` policy allows it (a workspace under its own encryption key only
    * with 'all'). Absent or false: nothing is kept on the device, and a copy already there is deleted.
@@ -1411,6 +1416,89 @@ export interface FigmaPlaceResponse {
   /** Back to the frame in Figma (figmaFrameLink): the image's item link. */
   link: string;
   name: string;
+}
+
+// ---- Board import from Miro (#62; modules/importers; docs/design/importers.md) ----
+// The person reads one of their own Miro boards through Miro's REST API with THEIR OWN token (from a
+// Miro app they made for their own team, scope boards:read), typed into the import dialog. The
+// token is used for this one request only: never stored, logged or sent anywhere but Miro's API.
+// The server answers a bounded, type-checked subset of the board (pictures already copied into the
+// caller's uploads, through the upload checks); the browser turns it into items in one undo step.
+// POST /api/boards/:id/import/miro  body MiroImportRequest  -> 200 MiroImportResponse (editors)
+//   400 miro_bad_link, 400 miro_token_refused (not 401: the Freero session is fine), 403 miro_no_access, 404 miro_not_found,
+//   429 miro_rate_limited, 502 miro_unreachable; 404 miro_import_off where the operator turned it off
+export interface MiroImportRequest {
+  /** A board link (https://miro.com/app/board/<id>/) or its id (`miroBoardId`). */
+  board: string;
+  token: string;
+}
+/** One Miro item as Freero reads it. Strings are Miro's (content may be HTML): untrusted, capped. */
+export interface MiroItem {
+  id: string;
+  /** Miro's item type: sticky_note, shape, text, card, app_card, frame, image, embed, document, … */
+  type: string;
+  /** Centre of the item: on the board (`parentId` null) or from its parent frame's top left. */
+  x: number;
+  y: number;
+  /** Size, when Miro gave one (text items may have only a width). */
+  w: number | null;
+  h: number | null;
+  rotation: number;
+  parentId: string | null;
+  /** Text: a sticky's, shape's or text's content (HTML), a card's or frame's title. */
+  content: string;
+  /** A card's description (HTML). */
+  description?: string;
+  /** shape: Miro's shape name; sticky_note: 'square' | 'rectangle'. */
+  shape?: string;
+  /** A hex colour, or (stickies, card themes) one of Miro's colour names. */
+  fill?: string;
+  color?: string;
+  border?: string;
+  borderWidth?: number;
+  borderStyle?: string;
+  fontSize?: number;
+  textAlign?: string;
+  /** card / app_card: YYYY-MM-DD */
+  dueDate?: string;
+  tagIds?: string[];
+  /** image: the copy stored with the caller's uploads (null: it couldn't be copied). */
+  image?: { url: string; w: number; h: number } | null;
+  /** embed / preview / document: the page it shows (http(s)). */
+  link?: string;
+}
+export interface MiroConnector {
+  id: string;
+  /** Attached item ids (null: a loose end). */
+  from: string | null;
+  to: string | null;
+  /** Where on the item, as fractions of its box (Miro writes "50%"). */
+  fromAt?: { u: number; v: number };
+  toAt?: { u: number; v: number };
+  /** straight | elbowed | curved */
+  shape: string;
+  caption: string;
+  color?: string;
+  width?: number;
+  /** normal | dashed | dotted */
+  style?: string;
+  startCap?: string;
+  endCap?: string;
+}
+export interface MiroTag {
+  id: string;
+  title: string;
+  color: string;
+}
+export interface MiroImportResponse {
+  board: { name: string };
+  items: MiroItem[];
+  connectors: MiroConnector[];
+  tags: MiroTag[];
+  /** The board has more items or connectors than one import reads (MIRO_MAX_ITEMS): the first ones came. */
+  truncated: boolean;
+  /** Pictures over the cap of one import (MIRO_MAX_IMAGES), left out. */
+  imagesOverCap: number;
 }
 
 // ---- Shape packs (#4; server modules/shapepacks) ----

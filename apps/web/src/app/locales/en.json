@@ -550,5 +550,12 @@
   "errors.sensitive_kinds_needed": "Choose at least one kind of data to look for",
   "errors.label_unavailable": "That label isn’t available in this workspace",
   "errors.kms_key_id_invalid": "That isn’t a key this server recognises: use an AWS KMS key ARN, a Google Cloud KMS key name, an Azure Key Vault key URL or a Vault Transit key path.",
-  "errors.kms_provider_unavailable": "This server is not set up to use {provider} keys"
+  "errors.kms_provider_unavailable": "This server is not set up to use {provider} keys",
+  "errors.miro_bad_link": "Paste the link of a Miro board (miro.com/app/board/…).",
+  "errors.miro_token_refused": "Miro didn’t accept that token. Check it and try again.",
+  "errors.miro_no_access": "That token can’t read this board.",
+  "errors.miro_not_found": "Miro has no such board, or the token’s team can’t see it.",
+  "errors.miro_rate_limited": "Miro is asking Freero to slow down. Try again in a minute.",
+  "errors.miro_unreachable": "Miro didn’t answer. Try again in a moment.",
+  "errors.miro_import_off": "This server doesn’t offer import from Miro."
 }

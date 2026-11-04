@@ -551,7 +551,14 @@
     "errors.sensitive_kinds_needed",
     "errors.label_unavailable",
     "errors.kms_key_id_invalid",
-    "errors.kms_provider_unavailable"
+    "errors.kms_provider_unavailable",
+    "errors.miro_bad_link",
+    "errors.miro_token_refused",
+    "errors.miro_no_access",
+    "errors.miro_not_found",
+    "errors.miro_rate_limited",
+    "errors.miro_unreachable",
+    "errors.miro_import_off"
   ],
   "untitledFrame": "Marco sin título",
   "couldNotChangeEmbedding": "No se pudo cambiar la inserción",
@@ -1104,5 +1111,12 @@
   "errors.sensitive_kinds_needed": "Elige al menos un tipo de dato que buscar",
   "errors.label_unavailable": "Esa etiqueta no está disponible en este espacio de trabajo",
   "errors.kms_key_id_invalid": "Este servidor no reconoce esa clave: usa el ARN de una clave de AWS KMS, el nombre de una clave de Google Cloud KMS, la URL de una clave de Azure Key Vault o la ruta de una clave de Vault Transit.",
-  "errors.kms_provider_unavailable": "Este servidor no está configurado para usar claves de {provider}"
+  "errors.kms_provider_unavailable": "Este servidor no está configurado para usar claves de {provider}",
+  "errors.miro_bad_link": "Pega el enlace de un tablero de Miro (miro.com/app/board/…).",
+  "errors.miro_token_refused": "Miro no aceptó ese token. Revísalo e inténtalo de nuevo.",
+  "errors.miro_no_access": "Ese token no puede leer este tablero.",
+  "errors.miro_not_found": "Miro no tiene ese tablero, o el equipo del token no puede verlo.",
+  "errors.miro_rate_limited": "Miro pide a Freero que vaya más despacio. Inténtalo de nuevo en un minuto.",
+  "errors.miro_unreachable": "Miro no respondió. Inténtalo de nuevo en un momento.",
+  "errors.miro_import_off": "Este servidor no ofrece la importación desde Miro."
 }

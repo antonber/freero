@@ -54,6 +54,7 @@ import type {
   FigmaFilesResponse,
   FigmaFramesResponse,
   FigmaPlaceResponse,
+  MiroImportResponse,
   FigmaStatus,
   GifSearchResponse,
   ShapePack,
@@ -181,6 +182,16 @@ export interface HostFigma {
   place(fileKey: string, nodeId: string): Promise<FigmaPlaceResponse>;
 }
 
+/** [additive, #62] See `Host.boardImport` (wire: @freero/shared "Board import from Miro"). */
+export interface HostBoardImport {
+  /**
+   * Reads a Miro board (its link or id) with the person's own Miro token, through the server, which
+   * keeps neither: pictures come back already copied into their uploads. Rejects with a showable
+   * message (token refused, no such board, Miro slowing down).
+   */
+  miro(board: string, token: string): Promise<MiroImportResponse>;
+}
+
 /** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
 export interface HostShapePacks {
   /** The workspace's packs (for its members), then the person's own library (`personal`). */
@@ -305,6 +316,11 @@ export interface Host {
    * in the sandbox, embeds and for guests: no Figma picker.
    */
   figma?: HostFigma;
+  /**
+   * [additive, #62] Import a board from another whiteboard's API with the person's own token (Miro).
+   * Absent where the operator turned it off, in the sandbox, embeds and for guests: files only.
+   */
+  boardImport?: HostBoardImport;
   /**
    * [additive, #4] The board's workspace's own shape packs (server modules/shapepacks): uploaded
    * SVG icon sets, placed as icon elements that hold their drawing. Absent (offline sandbox, guests

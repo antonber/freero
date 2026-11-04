@@ -73,6 +73,31 @@
   border-top: 1px solid var(--fr-line);
 }
 
+.fr-import__miro {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-import__report .fr-import__notes {
+  margin-block: 12px 0;
+  padding-inline-start: 18px;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+  list-style: disc;
+  border: none;
+}
+
+.fr-import__report .fr-import__notes li {
+  display: list-item;
+  padding: 0;
+}
+
+.fr-import__report .fr-import__notes li + li {
+  margin-block-start: 4px;
+  border: none;
+}
+
 .fr-import__count {
   flex: none;
   color: var(--fr-ink-3);

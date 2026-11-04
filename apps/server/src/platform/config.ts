@@ -57,7 +57,8 @@ export type RateLimitName =
   | 'problemReport'
   | 'boardRender'
   | 'gifSearch'
-  | 'figma';
+  | 'figma'
+  | 'boardImport';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -487,6 +488,13 @@ export interface Config {
    */
   figma: { clientId: string; clientSecret: string; apiUrl: string; oauthUrl: string } | null;
   /**
+   * Import from Miro (modules/importers, #62; docs/design/importers.md): a person reads one of their
+   * own Miro boards with their own Miro token (typed in the import dialog, never kept) into a
+   * board. Freero has no Miro app or credential of its own. On unless MIRO_IMPORT=off; `apiUrl`
+   * (api.miro.com) is overridden only to test against a stand-in (MIRO_API_URL).
+   */
+  miroImport: { apiUrl: string } | null;
+  /**
    * Push notifications to Freero's phone and tablet apps (modules/mobile, #177; docs/mobile.md).
    * `apns`: the operator's APNs auth key (iOS / iPadOS) — off (null) unless PUSH_APNS_KEY,
    * _KEY_ID and _TEAM_ID are set. `fcm`: a Firebase service account (Android) — off unless
@@ -590,6 +598,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   boardRender: '30/10m', // per person: boards drawn as PNG / SVG / PDF on the server (the API, MCP export_board; #33)
   gifSearch: '60/1m', // per person: GIF searches (each one calls the operator's GIF provider, #139)
   figma: '60/10m', // per person: Figma files read and frames rendered through the operator's Figma app (#171; Figma limits each app per person too)
+  boardImport: '20/1h', // per person: boards read from another whiteboard's API with the person's own token (#62; each reads up to 2,000 items and copies up to 100 pictures)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -642,6 +651,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   boardRender: 'RATE_LIMIT_BOARD_RENDER',
   gifSearch: 'RATE_LIMIT_GIF_SEARCH',
   figma: 'RATE_LIMIT_FIGMA',
+  boardImport: 'RATE_LIMIT_BOARD_IMPORT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -1106,6 +1116,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     const oauthUrl = url('FIGMA_OAUTH_URL', ['https:', 'http:']) ?? 'https://www.figma.com/oauth';
     return oauth ? { ...oauth, apiUrl, oauthUrl } : null;
   };
+  const miroImport = (): Config['miroImport'] => {
+    const apiUrl = (url('MIRO_API_URL', ['https:', 'http:']) ?? 'https://api.miro.com').replace(/\/+$/, '');
+    return bool('MIRO_IMPORT', true) ? { apiUrl } : null;
+  };
   // Multi-line secrets arrive as one environment line: a PEM with \n escapes, or base64 of it.
   const pem = (name: string): string | null => {
     const v = str(name);
@@ -1274,6 +1288,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     zoom: zoomApp(),
     meet: meetAddOn(),
     figma: figmaApp(),
+    miroImport: miroImport(),
     push: pushConfig(),
     mobileApps: mobileApps(),
     embedExtraOrigins,
