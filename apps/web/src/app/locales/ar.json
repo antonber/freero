@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "أدخل مفتاح Trello API الذي أُنشئ له الرمز (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "اكتب مشروع GitHub بصيغة المالك/الرقم (acme/3)",
   "errors.tracker_planning_project_github_only": "مشروع التخطيط متاح لاتصالات GitHub فقط",
-  "errors.tracker_group_by_invalid": "المسارات حسب: لا شيء أو الفريق أو الملحمة أو التسمية أو الربع"
+  "errors.tracker_group_by_invalid": "المسارات حسب: لا شيء أو الفريق أو الملحمة أو التسمية أو الربع",
+  "syncDependenciesAsBlocksLinks": "مزامنة الاعتمادات كروابط حجب",
+  "syncDependenciesHint": "— يصبح الموصل ذو السهم الواحد بين بطاقتين مرتبطتين رابط «يحجب» في المتتبع، والعكس. تشغيله يرسل الأسهم الموجودة.",
+  "couldNotChangeDependencySync": "تعذّر تغيير مزامنة الاعتمادات",
+  "errors.tracker_dependencies_unsupported": "لا توجد في هذا المتتبع روابط حجب يزامنها Freero"
 }

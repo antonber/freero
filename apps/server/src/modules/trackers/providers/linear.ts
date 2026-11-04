@@ -357,9 +357,11 @@ export const linear: TrackerProvider = {
     const notes: string[] = [];
     const current = await gql<{ issue: LinearIssue }>(conn, `query($id: String!) { issue(id: $id) { team { id } } }`, { id: issue.id }, 'read the issue');
     const input = await inputFor(conn, current.issue.team!.id, patch, notes);
-    if (Object.keys(input).length)
-      await gql(conn, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`, { id: issue.id, input }, `change ${issue.key}`);
-    return notes;
+    if (!Object.keys(input).length) return notes;
+    // Linear answers with the issue as this update left it: what the sync agrees on, rather than a
+    // read that may already hold the next person's edit.
+    const d = await gql<{ issueUpdate?: { issue?: LinearIssue | null } }>(conn, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { ${ISSUE} } } }`, { id: issue.id, input }, `change ${issue.key}`);
+    return d.issueUpdate?.issue ? { notes, issue: toRemote(d.issueUpdate.issue) } : notes;
   },
 
   async priorities() {

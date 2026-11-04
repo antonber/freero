@@ -512,5 +512,9 @@
   "errors.tracker_trello_key_required": "Give the Trello API key the token was made for (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "Name the GitHub Project as owner/number (acme/3)",
   "errors.tracker_planning_project_github_only": "Only GitHub connections have a planning Project",
-  "errors.tracker_group_by_invalid": "Lanes go by none, team, epic, label or quarter"
+  "errors.tracker_group_by_invalid": "Lanes go by none, team, epic, label or quarter",
+  "syncDependenciesAsBlocksLinks": "Sync dependencies as blocks links",
+  "syncDependenciesHint": "— a connector with one arrow between two linked cards becomes the tracker’s “blocks” link, and back. Turning it on sends the arrows already there.",
+  "couldNotChangeDependencySync": "Could not change dependency sync",
+  "errors.tracker_dependencies_unsupported": "This tracker has no blocking links Freero syncs"
 }

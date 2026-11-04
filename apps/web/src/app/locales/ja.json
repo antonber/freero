@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "無題のフレーム",
   "couldNotChangeEmbedding": "埋め込み設定を変更できませんでした",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "トークンを作成した Trello の API キーを入力してください (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "GitHub Project は 所有者/番号 の形で指定してください (acme/3)",
   "errors.tracker_planning_project_github_only": "計画用プロジェクトを持てるのは GitHub の接続だけです",
-  "errors.tracker_group_by_invalid": "レーンは なし・チーム・エピック・ラベル・四半期 のいずれかです"
+  "errors.tracker_group_by_invalid": "レーンは なし・チーム・エピック・ラベル・四半期 のいずれかです",
+  "syncDependenciesAsBlocksLinks": "依存関係をブロックリンクとして同期",
+  "syncDependenciesHint": "— リンク済みの 2 枚のカードを片矢印のコネクタでつなぐと、トラッカーの「ブロック」リンクになり、その逆も同期します。オンにすると既存の矢印も送信されます。",
+  "couldNotChangeDependencySync": "依存関係の同期を変更できませんでした",
+  "errors.tracker_dependencies_unsupported": "このトラッカーには Freero が同期するブロックリンクがありません"
 }

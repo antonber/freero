@@ -449,7 +449,7 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
     // Dependencies (#50): a "blocks" link made or removed on one side since the last agreement goes
     // to the other — the tracker's writes here, the board's connectors in the change below.
     let relations: (Awaited<ReturnType<typeof relationState>> & { plan: RelationPlan }) | null = null;
-    if (provider.dependencies && issue.relations) {
+    if (provider.dependencies && conn.settings.dependencies && issue.relations) {
       const st = await relationState(link, view, issue);
       const plan = planRelations(new Set(st.onBoard.keys()), st.inTracker, st.agreed);
       const ext = (id: string) => st.byId.get(id)?.externalId ?? '';
@@ -598,7 +598,7 @@ async function boardSideChanged(link: StoredLink, conn: StoredConnection, view: 
     const now = canonical(f, board);
     return now !== undefined && link.base.board[f] !== undefined && now !== link.base.board[f];
   });
-  if (changed || !provider.dependencies) return changed;
+  if (changed || !provider.dependencies || !conn.settings.dependencies) return changed;
   // A dependency connector drawn or removed between this link's cards and another's (#50).
   const st = await relationState(link, view, null);
   return st.onBoard.size !== st.agreed.size || [...st.onBoard.keys()].some((p) => !st.agreed.has(p));

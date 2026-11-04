@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "Unbenannter Rahmen",
   "couldNotChangeEmbedding": "Einbettung konnte nicht geändert werden",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "Gib den Trello-API-Schlüssel an, für den das Token erstellt wurde (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "Gib das GitHub-Projekt als Eigentümer/Nummer an (acme/3)",
   "errors.tracker_planning_project_github_only": "Nur GitHub-Verbindungen haben ein Planungsprojekt",
-  "errors.tracker_group_by_invalid": "Bahnen gibt es nach keinem, Team, Epic, Label oder Quartal"
+  "errors.tracker_group_by_invalid": "Bahnen gibt es nach keinem, Team, Epic, Label oder Quartal",
+  "syncDependenciesAsBlocksLinks": "Abhängigkeiten als Blockiert-Verknüpfungen synchronisieren",
+  "syncDependenciesHint": "— ein Verbinder mit einem Pfeil zwischen zwei verknüpften Karten wird zur „blockiert“-Verknüpfung im Tracker und umgekehrt. Beim Einschalten werden vorhandene Pfeile gesendet.",
+  "couldNotChangeDependencySync": "Abhängigkeits-Synchronisierung konnte nicht geändert werden",
+  "errors.tracker_dependencies_unsupported": "Dieser Tracker hat keine Blockiert-Verknüpfungen, die Freero synchronisiert"
 }

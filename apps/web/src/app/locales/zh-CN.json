@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "请提供生成该令牌所用的 Trello API 密钥 (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "请以 所有者/编号 的形式填写 GitHub 项目 (acme/3)",
   "errors.tracker_planning_project_github_only": "只有 GitHub 连接才有规划项目",
-  "errors.tracker_group_by_invalid": "泳道可按 无、团队、史诗、标签或季度 划分"
+  "errors.tracker_group_by_invalid": "泳道可按 无、团队、史诗、标签或季度 划分",
+  "syncDependenciesAsBlocksLinks": "将依赖关系同步为阻塞链接",
+  "syncDependenciesHint": "——两张已关联卡片之间的单箭头连接线会成为跟踪器中的“阻塞”链接，反之亦然。开启后会发送已有的箭头。",
+  "couldNotChangeDependencySync": "无法更改依赖关系同步",
+  "errors.tracker_dependencies_unsupported": "此跟踪器没有 Freero 可同步的阻塞链接"
 }

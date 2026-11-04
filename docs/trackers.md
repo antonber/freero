@@ -217,6 +217,13 @@ comes back by itself, and a change on either side while a sync runs waits for th
 Connectors without exactly one arrowhead, or touching notes, shapes or unlinked cards, mean nothing
 to the tracker. Not on Asana, monday.com, Trello or Azure DevOps yet.
 
+It is a per-connection switch, **Sync dependencies as blocks links** (Settings → Your issue
+trackers, or the admin console; REST `PATCH /api/trackers/connections/:id` `{ "syncDependencies":
+true }`): on for connections made from this release, **off for connections that existed before**,
+so an upgrade never writes a link to anyone's tracker for arrows boards already had — nor draws
+the tracker's. Turning it on sends the arrows already between that connection's linked cards and
+draws the tracker's links from the next sync of each issue.
+
 ## Sprints (#119)
 
 *Import issues…* → **A sprint** (Cycle on Linear, Iteration on Azure DevOps) picks the project and

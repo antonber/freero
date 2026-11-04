@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "Moldura sem título",
   "couldNotChangeEmbedding": "Não foi possível alterar a incorporação",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "Informe a chave de API do Trello para a qual o token foi criado (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "Informe o projeto do GitHub como dono/número (acme/3)",
   "errors.tracker_planning_project_github_only": "Só conexões do GitHub têm um projeto de planejamento",
-  "errors.tracker_group_by_invalid": "As raias são por nenhum, equipe, épico, rótulo ou trimestre"
+  "errors.tracker_group_by_invalid": "As raias são por nenhum, equipe, épico, rótulo ou trimestre",
+  "syncDependenciesAsBlocksLinks": "Sincronizar dependências como vínculos de bloqueio",
+  "syncDependenciesHint": "— um conector com uma seta entre dois cartões vinculados vira o vínculo “bloqueia” do rastreador, e vice-versa. Ativar envia as setas que já existem.",
+  "couldNotChangeDependencySync": "Não foi possível alterar a sincronização de dependências",
+  "errors.tracker_dependencies_unsupported": "Este rastreador não tem vínculos de bloqueio que o Freero sincronize"
 }

@@ -269,6 +269,7 @@ export function info(c: StoredConnection, links: number, req: Request | null, ma
           fieldMap: fieldMapSettingsOf(c),
         }
       : {}),
+    ...(providerOf(c.provider).dependencies ? { syncDependencies: c.settings.dependencies === true } : {}),
     links,
     createdAt: c.createdAt,
   };
@@ -460,7 +461,8 @@ export async function createConnection(userId: string, body: unknown, req: Reque
     }),
     webhookSecretSealed: seal(WEBHOOK_PURPOSE, webhookSecret),
     inbound,
-    settings: defaultsOf(b.defaults),
+    // #50: new connections sync dependencies; older ones only once a manager turns it on.
+    settings: { ...defaultsOf(b.defaults), ...(providerOf(provider).dependencies ? { dependencies: true as const } : {}) },
     status: 'active',
     lastError: null,
     cooldownUntil: null,
@@ -535,7 +537,7 @@ export async function createOAuthConnection(
     updatedAt: Date.now(),
   };
   const me = await providerOf(p.provider).whoAmI(openConnection(stored));
-  stored.settings = { ...me.settings, account: me.account };
+  stored.settings = { ...me.settings, account: me.account, ...(providerOf(p.provider).dependencies ? { dependencies: true as const } : {}) };
   await repo.transaction(async () => {
     await repo.insertConnection(stored);
     await recordAudit({
@@ -573,6 +575,13 @@ export async function updateConnection(id: string, userId: string, body: unknown
       ...Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined)),
     };
     changed.push('defaults');
+  }
+  if (b.syncDependencies !== undefined) {
+    if (typeof b.syncDependencies !== 'boolean') throw badRequest('syncDependencies must be true or false');
+    if (!providerOf(c.provider).dependencies) throw badRequest(`${TRACKER_PROVIDERS[c.provider]} has no blocking links Freero syncs`, 'tracker_dependencies_unsupported');
+    const { dependencies: _d, ...rest } = patch.settings ?? c.settings;
+    patch.settings = { ...rest, ...(b.syncDependencies ? { dependencies: true as const } : {}) };
+    changed.push('dependencies');
   }
   if (b.fieldMap !== undefined) {
     patch.settings = { ...(patch.settings ?? c.settings), ...fieldMapPatch(c, b.fieldMap) };

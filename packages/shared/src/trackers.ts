@@ -534,6 +534,12 @@ export interface TrackerConnectionInfo {
   fieldMap?: TrackerFieldMapSettings;
   /** Where the tracker sends webhooks (managers only). */
   webhookUrl?: string;
+  /**
+   * [additive, #50] Dependency connectors between linked cards sync as the tracker's "blocks"
+   * links (both ways); absent where the tracker has none Freero syncs. Off for connections made
+   * before #50, on for new ones; managers change it with PATCH `syncDependencies`.
+   */
+  syncDependencies?: boolean;
   links: number;
   createdAt: number;
 }
@@ -576,6 +582,8 @@ export interface TrackerConnectionInput {
   defaults?: { project?: string | null; issueType?: string | null };
   /** [additive] PATCH only (managers). */
   fieldMap?: Partial<TrackerFieldMapSettings>;
+  /** [additive, #50] PATCH only (managers): sync dependency connectors as "blocks" links. */
+  syncDependencies?: boolean;
 }
 
 export interface TrackerProject {

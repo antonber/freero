@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "הזינו את מפתח ה-API של Trello שעבורו נוצר האסימון (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "כתבו את פרויקט GitHub בצורה בעלים/מספר (acme/3)",
   "errors.tracker_planning_project_github_only": "רק לחיבורי GitHub יש פרויקט תכנון",
-  "errors.tracker_group_by_invalid": "מסלולים לפי: ללא, צוות, אפיק, תווית או רבעון"
+  "errors.tracker_group_by_invalid": "מסלולים לפי: ללא, צוות, אפיק, תווית או רבעון",
+  "syncDependenciesAsBlocksLinks": "סנכרון תלויות כקישורי חסימה",
+  "syncDependenciesHint": "— מחבר עם חץ אחד בין שני כרטיסים מקושרים הופך לקישור „חוסם” בכלי המעקב, ולהפך. הפעלה שולחת את החצים שכבר קיימים.",
+  "couldNotChangeDependencySync": "לא ניתן לשנות את סנכרון התלויות",
+  "errors.tracker_dependencies_unsupported": "בכלי מעקב זה אין קישורי חסימה ש-Freero מסנכרן"
 }

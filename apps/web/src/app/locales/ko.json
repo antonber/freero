@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "제목 없는 프레임",
   "couldNotChangeEmbedding": "임베드 설정을 바꾸지 못했어요",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "토큰을 만든 Trello API 키를 입력하세요 (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "GitHub 프로젝트를 소유자/번호 형식으로 입력하세요 (acme/3)",
   "errors.tracker_planning_project_github_only": "계획 프로젝트는 GitHub 연결에만 있습니다",
-  "errors.tracker_group_by_invalid": "레인은 없음, 팀, 에픽, 레이블, 분기 중 하나입니다"
+  "errors.tracker_group_by_invalid": "레인은 없음, 팀, 에픽, 레이블, 분기 중 하나입니다",
+  "syncDependenciesAsBlocksLinks": "의존 관계를 차단 링크로 동기화",
+  "syncDependenciesHint": "— 연결된 두 카드 사이의 한쪽 화살표 커넥터가 트래커의 “차단” 링크가 되고, 반대로도 동기화됩니다. 켜면 이미 있는 화살표도 보냅니다.",
+  "couldNotChangeDependencySync": "의존 관계 동기화를 변경하지 못했습니다",
+  "errors.tracker_dependencies_unsupported": "이 트래커에는 Freero가 동기화하는 차단 링크가 없습니다"
 }

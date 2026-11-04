@@ -40,6 +40,7 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
   const issues = [];
   /** "blocks" relations (#50): issue `from` blocks issue `to`. */
   const relations = [];
+  const afterEdits = [];
   const counters = new Map();
   let url = '';
 
@@ -113,7 +114,11 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
       const i = find(v.id);
       if (!i) return { errors: [{ message: 'Entity not found: Issue' }] };
       apply(i, v.input);
-      return { data: { issueUpdate: { success: true } } };
+      const answer = view(i);
+      // Someone edits it the moment this update lands, before anyone reads it again.
+      const after = afterEdits.findIndex((p) => p.id === i.id);
+      if (after >= 0) Object.assign(i, afterEdits.splice(after, 1)[0].changes(i)), touch(i);
+      return { data: { issueUpdate: { success: true, issue: answer } } };
     }
     if (/issueLabelCreate/.test(query)) {
       const l = { id: randomUUID(), name: v.name, teamId: v.teamId };
@@ -210,6 +215,12 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
 
       touch(i);
     },
+    /** Right after the next update of `key` lands, someone sets its state (by type) in Linear. */
+    editAfterNextUpdate(key, { stateType }) {
+      const i = find(key);
+      afterEdits.push({ id: i.id, changes: (x) => ({ stateId: states.find((s) => s.teamId === x.teamId && s.type === stateType).id }) });
+    },
+    pendingAfterEdits: () => afterEdits.length,
     /** People in Linear (#50): `blocker` blocks `blocked` (keys); `unblock` removes it. */
     block(blocker, blocked) {
       const a = find(blocker);

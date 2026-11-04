@@ -3026,7 +3026,11 @@ Server, #6), Asana (#120), monday.com (#121), ClickUp (#180) or Trello (#181), a
   reads them into `RemoteIssue.relations`. `syncLink` merges the pairs involving its link against
   the agreed rows (`planRelations`: one-sided changes flow across), writes the tracker, draws or
   removes connectors in the same board change, then stores the pairs as agreed;
-  `boardSideChanged` also notices a dependency connector drawn or removed.
+  `boardSideChanged` also notices a dependency connector drawn or removed. Only for connections
+  whose `settings.dependencies` is on (PATCH `syncDependencies`): new connections get it, those
+  from before #50 have no key and stay off, so an upgrade writes nothing to a tracker.
+  Writes that answer with the issue as written (Azure DevOps' PATCH, Linear's issueUpdate) are
+  what a sync agrees on, instead of a read-back that may already hold the next edit.
 - **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, ClickUp, Trello, where
   nobody can paste an address): one per connection and project, registered after a send or import
   into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,

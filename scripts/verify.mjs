@@ -7551,6 +7551,9 @@ async function trackerChecks() {
     });
 
     await check('trackers (#50): a dependency connector between two roadmap bars becomes a Jira “blocks” link, one made in Jira draws a connector, and one removed on either side is removed on the other', async () => {
+      // New connections sync dependencies (made after #50); the switch is the managers'.
+      const listed = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.connections.find((x) => x.id === cloudConn.id);
+      assert(listed?.syncDependencies === true, `a new connection doesn't sync dependencies: ${JSON.stringify(listed?.syncDependencies)}`);
       const make = (n) => cloud.create('WEB', { summary: `Dependency ${n}`, labels: ['deps'], customfield_10015: `2026-11-${String(2 + n * 4).padStart(2, '0')}`, duedate: `2026-11-${String(5 + n * 4).padStart(2, '0')}`, description: { type: 'doc', version: 1, content: [] } });
       const [a, b, d] = [make(1), make(2), make(3)];
       const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = deps', timeline: { id: 'tl', groupBy: 'none' } });
@@ -7581,6 +7584,52 @@ async function trackerChecks() {
       assert((await cloud.webhook(webhookUrl, secret, d.key)) === 202, 'webhook');
       await waitFor(() => between(b.key, d.key).length === 0, 15_000, 'the connector gone from the board');
       assert(cloud.blocks(b.key).length === 0 && cloud.blocks(a.key).length === 0, 'a removed link came back');
+    });
+
+    await check('trackers (#50): a connection from before dependency sync (the switch off, as an upgrade leaves it) writes no blocks link for arrows already between its linked cards, nor draws Jira’s; turned on, it does', async () => {
+      // Off removes the setting: the state an upgrade leaves connections made before #50 in.
+      const off = await O.req('PATCH', `/api/trackers/connections/${cloudConn.id}`, { syncDependencies: false });
+      assert(off.status === 200 && off.json.connection.syncDependencies === false, `switch off: ${off.status} ${off.text}`);
+      const make = (n) => cloud.create('WEB', { summary: `Upgrade ${n}`, labels: ['upgrade'], customfield_10015: `2026-12-0${n}`, duedate: `2026-12-0${n + 2}`, description: { type: 'doc', version: 1, content: [] } });
+      const [p, q, s] = [make(1), make(2), make(3)];
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = upgrade', timeline: { id: 'tl', groupBy: 'none' } });
+      assert(r.status === 201 && r.json.cards.length === 3, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      const cardOf = (key) => E.get(r.json.cards.find((x) => x.key === key).id);
+      await waitFor(() => [p, q, s].every((i) => cloud.issue(i.key).remotelinks.length === 1), 10_000, 'the first syncs');
+      const cp = cardOf(p.key);
+      const cq = cardOf(q.key);
+      E.set('dep-up', { ...base, id: 'dep-up', type: 'connector', x: cp.x, y: cp.y, w: 10, h: 10, start: { elementId: cp.id, anchor: 'right', x: cp.x + cp.w, y: cp.y }, end: { elementId: cq.id, anchor: 'left', x: cq.x, y: cq.y }, routing: 'elbow', stroke: '#1F1A33', strokeWidth: 2, strokeStyle: 'dashed', startCap: 'none', endCap: 'arrow', label: '' });
+      cloud.block(q.key, s.key);
+      // A sync of each issue (a title changed on the board, a webhook from Jira).
+      E.set(cp.id, { ...E.get(cp.id), title: '<p>Upgrade 1, renamed</p>' });
+      await waitFor(() => cloud.issue(p.key).fields.summary === 'Upgrade 1, renamed', 10_000, 'the rename in Jira');
+      assert((await cloud.webhook(webhookUrl, secret, q.key)) === 202, 'webhook');
+      await settled(c);
+      await new Promise((ok) => setTimeout(ok, 2000));
+      assert(cloud.blocks(p.key).length === 0, `an arrow from before was written to Jira: ${cloud.blocks(p.key)}`);
+      const between = (from, to) => [...E.values()].filter((x) => x?.type === 'connector' && x.start.elementId === cardOf(from).id && x.end.elementId === cardOf(to).id);
+      assert(between(q.key, s.key).length === 0, 'a Jira link was drawn with the switch off');
+      // Turned on by a manager: both ways from the next sync.
+      const on = await O.req('PATCH', `/api/trackers/connections/${cloudConn.id}`, { syncDependencies: true });
+      assert(on.status === 200 && on.json.connection.syncDependencies === true, `switch on: ${on.status}`);
+      assert((await cloud.webhook(webhookUrl, secret, p.key)) === 202 && (await cloud.webhook(webhookUrl, secret, q.key)) === 202, 'webhooks');
+      await waitFor(() => JSON.stringify(cloud.blocks(p.key)) === JSON.stringify([q.key]), 15_000, 'the arrow sent once the switch is on');
+      await waitFor(() => between(q.key, s.key).length === 1, 15_000, 'the Jira link drawn once the switch is on');
+    });
+
+    await check('trackers: a status set in Linear the moment Freero’s update lands is pulled by the next sync, not taken as Freero’s own', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear race', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
+      assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
+      E.set('lr1', { ...base, id: 'lr1', type: 'card', x: 500, y: 2600, w: 260, h: 120, title: '<p>Race in Linear</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: null, dueDate: null });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: made.json.connection.id, project: 'ENG', itemIds: ['lr1'] });
+      assert(sent.status === 201, `send: ${sent.status} ${sent.text}`);
+      const key = sent.json.issues[0].key;
+      await waitFor(() => lin.issueByKey(key).attachments.length === 1, 10_000, 'the first sync');
+      lin.editAfterNextUpdate(key, { stateType: 'started' });
+      E.set('lr1', { ...E.get('lr1'), status: 'done' });
+      await waitFor(() => lin.pendingAfterEdits() === 0 && lin.issueByKey(key).state.type === 'started', 15_000, 'done written, then started in Linear');
+      assert((await lin.webhook(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${made.json.connection.id}`, made.json.webhookSecret, key)) === 202, 'webhook');
+      await waitFor(() => E.get('lr1').status === 'doing', 10_000, 'In Progress from Linear on the card');
     });
 
     await check('trackers: MCP sync_to_tracker sends items as one issue for the agent’s person', async () => {

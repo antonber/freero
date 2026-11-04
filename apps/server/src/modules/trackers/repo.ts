@@ -35,6 +35,12 @@ export interface ConnectionSettings {
   login?: string | null;
   /** GitHub (#42): the Project (v2) whose Status, estimate, iteration and dates sync ("owner/number"). */
   planningProject?: string | null;
+  /**
+   * #50: dependency connectors sync as the tracker's "blocks" links. Present (true) only when on:
+   * connections made before #50 have no such key, so an upgrade writes no link to anyone's tracker
+   * until a manager turns it on; new connections start with it on.
+   */
+  dependencies?: true;
 }
 
 export interface StoredConnection {

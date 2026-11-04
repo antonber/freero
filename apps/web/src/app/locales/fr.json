@@ -513,7 +513,11 @@
     "errors.tracker_trello_key_required",
     "errors.tracker_planning_project_invalid",
     "errors.tracker_planning_project_github_only",
-    "errors.tracker_group_by_invalid"
+    "errors.tracker_group_by_invalid",
+    "syncDependenciesAsBlocksLinks",
+    "syncDependenciesHint",
+    "couldNotChangeDependencySync",
+    "errors.tracker_dependencies_unsupported"
   ],
   "untitledFrame": "Cadre sans titre",
   "couldNotChangeEmbedding": "Impossible de modifier l’intégration",
@@ -1028,5 +1032,9 @@
   "errors.tracker_trello_key_required": "Indiquez la clé d’API Trello pour laquelle le jeton a été créé (trello.com/power-ups/admin)",
   "errors.tracker_planning_project_invalid": "Indiquez le projet GitHub sous la forme propriétaire/numéro (acme/3)",
   "errors.tracker_planning_project_github_only": "Seules les connexions GitHub ont un projet de planification",
-  "errors.tracker_group_by_invalid": "Les couloirs se font par aucun, équipe, epic, étiquette ou trimestre"
+  "errors.tracker_group_by_invalid": "Les couloirs se font par aucun, équipe, epic, étiquette ou trimestre",
+  "syncDependenciesAsBlocksLinks": "Synchroniser les dépendances comme liens « bloque »",
+  "syncDependenciesHint": "— un connecteur à une flèche entre deux cartes liées devient le lien « bloque » du tracker, et inversement. L’activer envoie les flèches déjà présentes.",
+  "couldNotChangeDependencySync": "Impossible de modifier la synchronisation des dépendances",
+  "errors.tracker_dependencies_unsupported": "Ce tracker n’a pas de liens « bloque » que Freero synchronise"
 }

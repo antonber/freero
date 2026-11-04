@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Copy, KeyRound, ListTree, Plug, RefreshCw, Trash2 } from 'lucide-react';
 import { TRACKER_PROVIDERS, type TrackerConnectionInfo, type TrackerConnectionInput, type TrackerProviderKind } from '@freero/shared';
-import { Button, Input, Select, Spinner, useToast } from '@ui';
+import { Button, Input, Select, Spinner, Toggle, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 import { relativeTime } from '../lib/time';
 import { TrackerFieldMap } from './TrackerFieldMap';
@@ -269,6 +269,15 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
       notify(errorText(e, t('couldNotMakeANew')), 'error');
     }
   };
+  // #50: dependency connectors as the tracker's "blocks" links (off for connections made before).
+  const setDependencies = async (c: TrackerConnectionInfo, on: boolean) => {
+    try {
+      const r = await api.updateTrackerConnection(c.id, { syncDependencies: on });
+      setList((l) => l?.map((x) => (x.id === c.id ? r.connection : x)) ?? null);
+    } catch (e) {
+      notify(errorText(e, t('couldNotChangeDependencySync')), 'error');
+    }
+  };
   const remove = async (c: TrackerConnectionInfo) => {
     if (!window.confirm(t('removeNameItsLinksLinked', { links: c.links, name: c.name }))) return;
     try {
@@ -318,6 +327,17 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
               <code>{c.webhookUrl}</code>
               <Button size="sm" variant="ghost" onClick={() => void rotate(c)}>{t('newSecret')}</Button>
             </div>
+          )}
+          {c.syncDependencies !== undefined && (
+            <Toggle
+              label={
+                <span>
+                  {t('syncDependenciesAsBlocksLinks')} <span className="fr-trackerconn__fine">{t('syncDependenciesHint')}</span>
+                </span>
+              }
+              checked={c.syncDependencies}
+              onChange={(on) => void setDependencies(c, on)}
+            />
           )}
           {c.provider === 'azure' && (
             <p className="fr-trackerconn__fine">{t('inAzureDevopsProjectSettings')}</p>
