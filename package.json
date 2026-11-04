@@ -22,6 +22,7 @@
     "templates:index": "node --import tsx scripts/templates-index.mjs",
     "check": "npm run check:dune && npm run check:licenses && npm run check:i18n && npm run typecheck && npm run test",
     "verify": "node scripts/verify.mjs",
+    "a11y": "node scripts/a11y.mjs",
     "bench:kanban": "node scripts/bench-kanban.mjs",
     "bench:board": "node --import tsx scripts/bench-board.mjs",
     "bench:line-jumps": "npm exec -w @freero/web -- vite-node ../../scripts/bench/line-jumps-web.ts",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
+    "axe-core": "4.14.0",
     "concurrently": "^10.0.6",
     "jose": "6.2.13",
     "playwright": "^1.64.1",

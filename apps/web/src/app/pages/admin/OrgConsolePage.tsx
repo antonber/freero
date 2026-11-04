@@ -7,6 +7,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, KeyRound, LayoutTemplate, Lock, ScrollText, Tag, UserCog, Users } from 'lucide-react';
 import type { AdminScope, OrganisationSummary, WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
+import { HelpMenu } from '../../problems/HelpMenu';
 import { api } from '../../api/client';
 import { AdminAudit } from './AdminAudit';
 import { AdminProvisioning, AdminSso } from './AdminIdentity';
@@ -80,6 +81,8 @@ export function OrgConsolePage() {
         <Link to="/app" className="fr-admin__back">
           <ArrowLeft size={16} aria-hidden />{' '}{tr('backToBoards')}</Link>
         <Logo size={26} withWordmark />
+        {/* Help in the same place as on the dashboard and in account settings (WCAG 3.2.6). */}
+        <HelpMenu size={32} />
       </header>
       {org === undefined ? (
         <div className="fr-admin__center">

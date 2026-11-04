@@ -121,7 +121,6 @@
   "share": "Share",
   "hideMinimap": "Hide minimap",
   "showMinimap": "Show minimap",
-  "zoomPresets": "Zoom presets",
   "fitToScreen": "Fit to screen",
   "boardOverview": "Board overview",
   "view": "View",
@@ -190,5 +189,6 @@
   "noVersionHistoryInTests": "No version history in tests",
   "frame": "Frame",
   "tabAndShiftTabMove": "Tab and Shift+Tab move through the items in reading order, a frame’s items right after it; Alt+arrow keys jump to the nearest item in that direction. Enter edits the selected item, arrow keys move it and Alt+Shift+arrow keys resize it. Shift+F10 opens its menu, Alt+F10 the format toolbar, F6 moves between the canvas and the toolbars. With a creation tool picked, Enter places a new item next to the selection. Alt+Shift+L lists the board as text.",
-  "xAndYMoveThe": "X and Y move the whole selection; size and rotation apply to each item."
+  "xAndYMoveThe": "X and Y move the whole selection; size and rotation apply to each item.",
+  "zoomPercentPresets": "{pct}% zoom: presets"
 }

@@ -12,7 +12,6 @@
     "member",
     "guest",
     "freeroHome",
-    "workspaceWorkspacelabelSwitchWorkspace",
     "justYou",
     "workspaces",
     "newTeamWorkspace",
@@ -355,7 +354,8 @@
     "couldNotPinTheProject",
     "nameEncryptsItsBoardsWith",
     "thisWorkspaceSKeyIsn",
-    "itsBoardsAreEncryptedWith"
+    "itsBoardsAreEncryptedWith",
+    "switchWorkspaceFrom"
   ],
   "home": "Startseite",
   "recent": "Zuletzt verwendet",
@@ -369,7 +369,6 @@
   "member": "Mitglied",
   "guest": "Gast",
   "freeroHome": "Freero-Startseite",
-  "workspaceWorkspacelabelSwitchWorkspace": "Arbeitsbereich: {workspaceLabel}. Arbeitsbereich wechseln",
   "justYou": "Nur Sie",
   "workspaces": "Arbeitsbereiche",
   "newTeamWorkspace": "Neuer Team-Arbeitsbereich…",
@@ -712,5 +711,6 @@
   "couldNotPinTheProject": "Das Projekt konnte nicht angeheftet werden",
   "nameEncryptsItsBoardsWith": "{name} verschlüsselt seine Boards mit einem eigenen Schlüssel, und dieser kann gerade nicht verwendet werden (die Admins haben ihn ausgesetzt, oder sein Schlüsseldienst hat abgelehnt oder nicht geantwortet). Seine Boards bleiben geschlossen, bis der Schlüssel wieder verfügbar ist.",
   "thisWorkspaceSKeyIsn": "Der Schlüssel dieses Arbeitsbereichs ist nicht verfügbar",
-  "itsBoardsAreEncryptedWith": "Seine Boards sind mit dem eigenen Schlüssel des Arbeitsbereichs verschlüsselt, der gerade nicht verwendet werden kann. Sie öffnen sich wieder, sobald die Admins ihn wiederherstellen."
+  "itsBoardsAreEncryptedWith": "Seine Boards sind mit dem eigenen Schlüssel des Arbeitsbereichs verschlüsselt, der gerade nicht verwendet werden kann. Sie öffnen sich wieder, sobald die Admins ihn wiederherstellen.",
+  "switchWorkspaceFrom": "Arbeitsbereich wechseln, aktuell:"
 }

@@ -178,7 +178,8 @@
 /* ---- Create row ---- */
 .fr-create {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 280px));
+  /* Never wider than the column at 320 px (WCAG 1.4.10). */
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 280px));
   gap: 16px;
   margin-bottom: 32px;
 }
@@ -738,10 +739,20 @@
     padding: 0;
   }
 
-  .fr-nav__label,
-  .fr-account__text,
   .fr-account__chev {
     display: none;
+  }
+
+  /* Out of sight, still the buttons' names for screen readers and speech input (WCAG 4.1.2). */
+  .fr-nav__label,
+  .fr-account__text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 
   .fr-account {

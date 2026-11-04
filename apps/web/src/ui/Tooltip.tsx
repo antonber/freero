@@ -41,6 +41,9 @@ function setRef<T>(ref: Ref<T> | undefined, value: T) {
 
 type Handler = ((e: SyntheticEvent) => void) | undefined;
 
+/** How long a tooltip waits for the pointer to cross from its trigger onto it. */
+const HOVER_GRACE_MS = 300;
+
 export function Tooltip({ content, shortcut, side = 'top', align = 'center', delay = 450, disabled, children }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -66,7 +69,23 @@ export function Tooltip({ content, shortcut, side = 'top', align = 'center', del
     [delay],
   );
 
+  // WCAG 1.4.13: the pointer may move from the trigger onto the tooltip (a short grace to cross the
+  // gap) without it vanishing, and Escape dismisses it without moving the pointer or focus.
+  const leave = useCallback(() => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(hide, HOVER_GRACE_MS);
+  }, [hide]);
+  const stay = useCallback(() => window.clearTimeout(timer.current), []);
+
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') hide();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open, hide]);
   useEffect(() => {
     if (disabled) hide();
   }, [disabled, hide]);
@@ -99,7 +118,7 @@ export function Tooltip({ content, shortcut, side = 'top', align = 'center', del
     onMouseEnter: chain('onMouseEnter', (e) => {
       if (!disabled && content) show(e.currentTarget as HTMLElement);
     }),
-    onMouseLeave: chain('onMouseLeave', hide),
+    onMouseLeave: chain('onMouseLeave', leave),
     onPointerDown: chain('onPointerDown', hide),
     onFocus: chain('onFocus', (e) => {
       const el = e.currentTarget as HTMLElement;
@@ -124,6 +143,8 @@ export function Tooltip({ content, shortcut, side = 'top', align = 'center', del
               role="tooltip"
               className={`fr-tooltip fr-anim fr-tooltip--${placed}`}
               style={{ ...style, zIndex: 'var(--fr-z-tooltip)' as unknown as number }}
+              onMouseEnter={stay}
+              onMouseLeave={hide}
             >
               <span className="fr-tooltip__text">{content}</span>
               {shortcut ? <Kbd className="fr-tooltip__kbd">{shortcut}</Kbd> : null}

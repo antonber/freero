@@ -11,7 +11,8 @@
   background: var(--fr-inverse);
   border-radius: 8px;
   box-shadow: var(--fr-shadow);
-  pointer-events: none;
+  /* Hoverable (WCAG 1.4.13): the pointer can rest on it to read it. */
+  pointer-events: auto;
   animation: fr-fade-in 0.12s var(--fr-ease);
   white-space: normal;
 }

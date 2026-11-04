@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "幻灯片",
   "classicSlides": "经典幻灯片",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "框架可将白板上的区域变成幻灯片，并按此顺序演示。",
   "addFrame": "添加框架",
   "eachFrameIsASlide": "每个框架都是一张幻灯片。添加一个带布局的框架即可开始制作幻灯片组；演示和 PDF 导出都遵循此顺序。",
-  "viewersAndCommentersSeeThis": "查看者和评论者看到的此框架是空的；其内容永远不会发送给他们"
+  "viewersAndCommentersSeeThis": "查看者和评论者看到的此框架是空的；其内容永远不会发送给他们",
+  "moveSlideEarlier": "将幻灯片前移",
+  "moveSlideLater": "将幻灯片后移"
 }

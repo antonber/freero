@@ -867,6 +867,8 @@ td > .fr-admin-pill:first-child {
   justify-content: space-between;
   gap: 12px;
   font-size: 13.5px;
+}
+
 /* Workspace encryption key (#159) */
 .fr-admin-key {
   display: flex;

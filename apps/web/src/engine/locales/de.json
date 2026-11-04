@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -191,7 +190,8 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "zoomPercentPresets"
   ],
   "dots": "Punkte",
   "lines": "Linien",
@@ -315,7 +315,6 @@
   "share": "Teilen",
   "hideMinimap": "Minikarte ausblenden",
   "showMinimap": "Minikarte anzeigen",
-  "zoomPresets": "Zoomstufen",
   "fitToScreen": "An Bildschirm anpassen",
   "boardOverview": "Board-Übersicht",
   "view": "Ansicht",
@@ -384,5 +383,6 @@
   "noVersionHistoryInTests": "Kein Versionsverlauf in Tests",
   "frame": "Rahmen",
   "tabAndShiftTabMove": "Tab und Shift+Tab wechseln in Lesereihenfolge durch die Elemente, die Elemente eines Rahmens direkt nach ihm; Alt+Pfeiltasten springen zum nächstgelegenen Element in dieser Richtung. Enter bearbeitet das ausgewählte Element, die Pfeiltasten verschieben es und Alt+Shift+Pfeiltasten ändern seine Größe. Shift+F10 öffnet sein Menü, Alt+F10 die Formatleiste, F6 wechselt zwischen Arbeitsfläche und Werkzeugleisten. Ist ein Erstellungswerkzeug gewählt, platziert Enter ein neues Element neben der Auswahl. Alt+Shift+L gibt das Board als Text aus.",
-  "xAndYMoveThe": "X und Y verschieben die gesamte Auswahl; Größe und Drehung gelten für jedes Element."
+  "xAndYMoveThe": "X und Y verschieben die gesamte Auswahl; Größe und Drehung gelten für jedes Element.",
+  "zoomPercentPresets": "{pct}% Zoom: Voreinstellungen"
 }

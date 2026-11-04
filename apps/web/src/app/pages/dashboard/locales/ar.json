@@ -12,7 +12,6 @@
     "member",
     "guest",
     "freeroHome",
-    "workspaceWorkspacelabelSwitchWorkspace",
     "justYou",
     "workspaces",
     "newTeamWorkspace",
@@ -355,7 +354,8 @@
     "couldNotPinTheProject",
     "nameEncryptsItsBoardsWith",
     "thisWorkspaceSKeyIsn",
-    "itsBoardsAreEncryptedWith"
+    "itsBoardsAreEncryptedWith",
+    "switchWorkspaceFrom"
   ],
   "home": "الرئيسية",
   "recent": "الأحدث",
@@ -369,7 +369,6 @@
   "member": "عضو",
   "guest": "ضيف",
   "freeroHome": "صفحة Freero الرئيسية",
-  "workspaceWorkspacelabelSwitchWorkspace": "مساحة العمل: {workspaceLabel}. تبديل مساحة العمل",
   "justYou": "أنت فقط",
   "workspaces": "مساحات العمل",
   "newTeamWorkspace": "مساحة عمل جديدة للفريق…",
@@ -712,5 +711,6 @@
   "couldNotPinTheProject": "تعذّر تثبيت المشروع",
   "nameEncryptsItsBoardsWith": "تشفّر {name} لوحاتها بمفتاحها الخاص، ولا يمكن استخدام هذا المفتاح الآن (علّقه مسؤولوها، أو رفضت خدمة المفاتيح أو لم تستجب). تبقى لوحاتها مغلقة حتى يتوفر المفتاح مجددًا.",
   "thisWorkspaceSKeyIsn": "مفتاح مساحة العمل هذه غير متاح",
-  "itsBoardsAreEncryptedWith": "لوحاتها مشفّرة بالمفتاح الخاص لمساحة العمل، ولا يمكن استخدامه الآن. ستُفتح مجددًا بمجرد أن يستعيده مسؤولوها."
+  "itsBoardsAreEncryptedWith": "لوحاتها مشفّرة بالمفتاح الخاص لمساحة العمل، ولا يمكن استخدامه الآن. ستُفتح مجددًا بمجرد أن يستعيده مسؤولوها.",
+  "switchWorkspaceFrom": "تبديل مساحة العمل، الحالية:"
 }

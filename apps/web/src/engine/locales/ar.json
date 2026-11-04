@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -191,7 +190,8 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "zoomPercentPresets"
   ],
   "dots": "نقاط",
   "lines": "خطوط",
@@ -315,7 +315,6 @@
   "share": "مشاركة",
   "hideMinimap": "إخفاء الخريطة المصغّرة",
   "showMinimap": "إظهار الخريطة المصغّرة",
-  "zoomPresets": "إعدادات التكبير المسبقة",
   "fitToScreen": "ملاءمة للشاشة",
   "boardOverview": "نظرة عامة على اللوحة",
   "view": "عرض",
@@ -384,5 +383,6 @@
   "noVersionHistoryInTests": "لا يوجد سجل إصدارات في الاختبارات",
   "frame": "إطار",
   "tabAndShiftTabMove": "ينقلك Tab وShift+Tab بين العناصر بترتيب القراءة، وتأتي عناصر الإطار بعده مباشرة؛ وتنتقل Alt+مفاتيح الأسهم إلى أقرب عنصر في ذلك الاتجاه. يعدّل Enter العنصر المحدد، وتنقله مفاتيح الأسهم، وتغيّر Alt+Shift+مفاتيح الأسهم حجمه. يفتح Shift+F10 قائمته، وAlt+F10 شريط أدوات التنسيق، وينقلك F6 بين اللوحة القماشية وأشرطة الأدوات. عند اختيار أداة إنشاء، يضع Enter عنصرًا جديدًا بجوار التحديد. يعرض Alt+Shift+L اللوحة كنص.",
-  "xAndYMoveThe": "تنقل X وY التحديد بالكامل؛ ويُطبَّق الحجم والتدوير على كل عنصر."
+  "xAndYMoveThe": "تنقل X وY التحديد بالكامل؛ ويُطبَّق الحجم والتدوير على كل عنصر.",
+  "zoomPercentPresets": "تكبير {pct}%: إعدادات مسبقة"
 }

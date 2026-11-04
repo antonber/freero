@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "Diapositivas",
   "classicSlides": "Diapositivas clásicas",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "Los marcos convierten zonas del tablero en diapositivas que puedes presentar, en este orden.",
   "addFrame": "Añadir marco",
   "eachFrameIsASlide": "Cada marco es una diapositiva. Añade uno con un diseño para empezar una presentación; presentar y exportar a PDF siguen este orden.",
-  "viewersAndCommentersSeeThis": "Los lectores y comentaristas ven este marco vacío; su contenido nunca les llega"
+  "viewersAndCommentersSeeThis": "Los lectores y comentaristas ven este marco vacío; su contenido nunca les llega",
+  "moveSlideEarlier": "Mover la diapositiva antes",
+  "moveSlideLater": "Mover la diapositiva después"
 }

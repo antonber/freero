@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "Slides",
   "classicSlides": "Slides clássicos",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "As molduras transformam áreas do quadro em slides que você pode apresentar, nesta ordem.",
   "addFrame": "Adicionar moldura",
   "eachFrameIsASlide": "Cada moldura é um slide. Adicione uma com um layout para começar uma apresentação; a apresentação e a exportação em PDF seguem esta ordem.",
-  "viewersAndCommentersSeeThis": "Leitores e comentaristas veem esta moldura vazia; o conteúdo dela nunca chega até eles"
+  "viewersAndCommentersSeeThis": "Leitores e comentaristas veem esta moldura vazia; o conteúdo dela nunca chega até eles",
+  "moveSlideEarlier": "Mover slide para antes",
+  "moveSlideLater": "Mover slide para depois"
 }

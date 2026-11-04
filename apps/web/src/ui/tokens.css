@@ -87,6 +87,8 @@ button {
   --fr-danger-soft: #fdecec;
   --fr-success-soft: #e3f6ec;
   --fr-warning-soft: #fef3e0;
+  /* Text on --fr-warning-soft: 5.8:1 light, 6.5:1 dark (#141). */
+  --fr-warning-ink: #8a5300;
   --fr-overlay: rgba(23, 22, 43, 0.36);
   /* Dark surfaces with white text on any page (toasts, tooltips). */
   --fr-inverse: #17162b;
@@ -108,8 +110,8 @@ button {
    content does not (`.fr-paper` above). */
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --fr-primary: #8f7bff;
-  --fr-primary-hover: #a291ff;
+  --fr-primary: #9a88ff; /* 4.9:1 on --fr-primary-soft, so primary text on soft fills passes AA (#141) */
+  --fr-primary-hover: #ab9cff;
   --fr-primary-soft: #2b2650;
   --fr-primary-ink: #111022;
   --fr-primary-press: #7a64f5;
@@ -120,6 +122,7 @@ button {
   --fr-success: #3ccf86;
   --fr-success-soft: #153a2a;
   --fr-warning-soft: #3b2e14;
+  --fr-warning-ink: #f5a524;
 
   --fr-ink: #ecebf5;
   --fr-ink-2: #c3c1d6;

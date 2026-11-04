@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "スライド",
   "classicSlides": "標準スライド",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "フレームを使うと、ボードの領域をこの順序で発表できるスライドにできます。",
   "addFrame": "フレームを追加",
   "eachFrameIsASlide": "各フレームが1枚のスライドになります。レイアウトを選んで追加するとスライド資料を始められます。発表と PDF エクスポートはこの順序に従います。",
-  "viewersAndCommentersSeeThis": "閲覧者とコメント者にはこのフレームが空に見え、内容は一切届きません"
+  "viewersAndCommentersSeeThis": "閲覧者とコメント者にはこのフレームが空に見え、内容は一切届きません",
+  "moveSlideEarlier": "スライドを前に移動",
+  "moveSlideLater": "スライドを後ろに移動"
 }

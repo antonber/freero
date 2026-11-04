@@ -132,6 +132,7 @@ function SiteFooter() {
         ['/security', 'Security overview'],
         ['/subprocessors', 'Subprocessors'],
         ['/dpa', 'Data processing addendum'],
+        ['/accessibility', 'Accessibility'],
       ],
     },
   ];

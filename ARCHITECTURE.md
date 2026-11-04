@@ -3893,6 +3893,12 @@ the board, deletions. A suggestion is not board content until someone who can ed
   "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
   depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
+- Accessibility: `npm run a11y` (#141) runs axe-core (WCAG 2.0 / 2.1 / 2.2 A and AA, a dev
+  dependency) against a production build on a real server in headless Chromium, in 17 states (the
+  dashboard, settings, admin console, a board and its dialogs and menus, presenting, the dark theme,
+  phone width) plus a few keyboard checks; it fails on serious or critical violations. Not in
+  `npm run check` (it builds the app and starts a browser). What it can't see, and the manual
+  passes, are in docs/accessibility.md; the conformance report is the site's `/accessibility`.
 - Performance: `npm run bench:board` (#130) opens a seeded 10,000-item board in the real app
   (headless Chromium, real server, a real collaborator socket) and measures load, frame times
   (pan and zoom at fit and 100%, select all, dragging 500, a collaborator's edits) and memory;

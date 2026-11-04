@@ -8,6 +8,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChartColumn, Gavel, Hourglass, LayoutGrid, LayoutTemplate, UsersRound, KeyRound, Lock, Plug, ScrollText, Sparkles, Tag, Ticket, Trash2, UserCog, Users, Webhook } from 'lucide-react';
 import { ADMIN_SCOPES, type AdminScope, type WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
+import { HelpMenu } from '../../problems/HelpMenu';
 import { api } from '../../api/client';
 import { AdminAi, aiOffered } from './AdminAi';
 import { AdminApi } from './AdminApi';
@@ -107,6 +108,8 @@ export function AdminConsolePage() {
         <Link to={back} className="fr-admin__back">
           <ArrowLeft size={16} aria-hidden />{' '}{tr('backToBoards')}</Link>
         <Logo size={26} withWordmark />
+        {/* Help in the same place as on the dashboard and in account settings (WCAG 3.2.6). */}
+        <HelpMenu size={32} />
       </header>
       {workspace === undefined ? (
         <div className="fr-admin__center">

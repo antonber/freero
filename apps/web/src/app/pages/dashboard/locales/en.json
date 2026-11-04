@@ -11,7 +11,6 @@
   "member": "Member",
   "guest": "Guest",
   "freeroHome": "Freero home",
-  "workspaceWorkspacelabelSwitchWorkspace": "Workspace: {workspaceLabel}. Switch workspace",
   "justYou": "Just you",
   "workspaces": "Workspaces",
   "newTeamWorkspace": "New team workspace…",
@@ -354,5 +353,6 @@
   "couldNotPinTheProject": "Could not pin the project",
   "nameEncryptsItsBoardsWith": "{name} encrypts its boards with its own key, and that key can’t be used right now (its admins suspended it, or its key service refused or didn’t answer). Its boards stay closed until the key is available again.",
   "thisWorkspaceSKeyIsn": "This workspace’s key isn’t available",
-  "itsBoardsAreEncryptedWith": "Its boards are encrypted with the workspace’s own key, which can’t be used right now. They open again once its admins restore it."
+  "itsBoardsAreEncryptedWith": "Its boards are encrypted with the workspace’s own key, which can’t be used right now. They open again once its admins restore it.",
+  "switchWorkspaceFrom": "Switch workspace, now:"
 }

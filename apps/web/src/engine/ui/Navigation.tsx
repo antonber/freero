@@ -30,7 +30,7 @@ function ZoomControls() {
       />
       <div className="fr-zoom__sep" />
       <IconButton icon={Minus} label={t('zoomOut')} shortcut="Mod+-" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomOut')} />
-      <button ref={pctRef} type="button" className="fr-zoom__pct" aria-label={t('zoomPresets')} onClick={() => setMenuOpen((o) => !o)}>
+      <button ref={pctRef} type="button" className="fr-zoom__pct" aria-label={t('zoomPercentPresets', { pct: Math.round(zoom * 100) })} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
         {Math.round(zoom * 100)}%
       </button>
       <IconButton icon={Plus} label={t('zoomIn')} shortcut="Mod++" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomIn')} />

@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "Diapositives",
   "classicSlides": "Diapositives classiques",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "Les cadres transforment des zones du tableau en diapositives que vous pouvez présenter, dans cet ordre.",
   "addFrame": "Ajouter un cadre",
   "eachFrameIsASlide": "Chaque cadre est une diapositive. Ajoutez-en un avec une disposition pour commencer une présentation ; la présentation et l’export PDF suivent cet ordre.",
-  "viewersAndCommentersSeeThis": "Les lecteurs et les commentateurs voient ce cadre vide ; son contenu ne leur parvient jamais"
+  "viewersAndCommentersSeeThis": "Les lecteurs et les commentateurs voient ce cadre vide ; son contenu ne leur parvient jamais",
+  "moveSlideEarlier": "Avancer la diapositive",
+  "moveSlideLater": "Reculer la diapositive"
 }

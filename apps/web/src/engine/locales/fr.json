@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -191,7 +190,8 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "zoomPercentPresets"
   ],
   "dots": "Points",
   "lines": "Lignes",
@@ -315,7 +315,6 @@
   "share": "Partager",
   "hideMinimap": "Masquer la mini-carte",
   "showMinimap": "Afficher la mini-carte",
-  "zoomPresets": "Niveaux de zoom",
   "fitToScreen": "Ajuster à l’écran",
   "boardOverview": "Vue d’ensemble du tableau",
   "view": "Affichage",
@@ -384,5 +383,6 @@
   "noVersionHistoryInTests": "Pas d’historique des versions dans les tests",
   "frame": "Cadre",
   "tabAndShiftTabMove": "Tab et Shift+Tab parcourent les éléments dans l’ordre de lecture, les éléments d’un cadre juste après lui ; Alt+flèches saute à l’élément le plus proche dans cette direction. Entrée modifie l’élément sélectionné, les flèches le déplacent et Alt+Shift+flèches le redimensionnent. Shift+F10 ouvre son menu, Alt+F10 la barre de mise en forme, F6 passe du canevas aux barres d’outils. Avec un outil de création choisi, Entrée place un nouvel élément à côté de la sélection. Alt+Shift+L liste le tableau sous forme de texte.",
-  "xAndYMoveThe": "X et Y déplacent toute la sélection ; la taille et la rotation s’appliquent à chaque élément."
+  "xAndYMoveThe": "X et Y déplacent toute la sélection ; la taille et la rotation s’appliquent à chaque élément.",
+  "zoomPercentPresets": "Zoom {pct} % : préréglages"
 }

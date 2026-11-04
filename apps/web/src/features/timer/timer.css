@@ -37,7 +37,7 @@
 
 .fr-timer-pill.is-ending {
   background: var(--fr-warning-soft);
-  color: #a66500;
+  color: var(--fr-warning-ink);
 }
 
 .fr-timer-pill.is-done {
