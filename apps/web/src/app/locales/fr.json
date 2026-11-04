@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "Cadre sans titre",
   "couldNotChangeEmbedding": "Impossible de modifier l’intégration",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "Freero teste le jeton immédiatement et le conserve chiffré ; il ne sera plus jamais affiché. Les tickets sont créés au nom de ce compte.",
   "removeNameItsLinksLinked": "{links, plural, one {Supprimer {name} ? Son ticket lié ({links}) cessera d’être synchronisé ; les éléments du tableau et les tickets restent tels quels.} other {Supprimer {name} ? Ses {links} tickets liés cesseront d’être synchronisés ; les éléments du tableau et les tickets restent tels quels.}}",
   "aNewTabOpensCome": " Un nouvel onglet s’ouvre ; revenez ici une fois connecté.",
-  "everyoneHereSeesTheBoard": "Chacun ici voit le tableau tel que Freero le partage avec lui : les personnes avec qui il est partagé se connectent une fois pour modifier ou commenter ; les autres ne le voient que si toute personne disposant du lien peut le consulter."
+  "everyoneHereSeesTheBoard": "Chacun ici voit le tableau tel que Freero le partage avec lui : les personnes avec qui il est partagé se connectent une fois pour modifier ou commenter ; les autres ne le voient que si toute personne disposant du lien peut le consulter.",
+  "yourBrowserSendsGlobalPrivacy": "Votre navigateur envoie Global Privacy Control ou Do Not Track : les statistiques d’usage restent donc désactivées.",
+  "analyticsIsOffInThis": "Les statistiques d’usage sont désactivées dans ce navigateur.",
+  "analyticsIsOnAgainIn": "Les statistiques d’usage sont de nouveau activées dans ce navigateur.",
+  "analytics.turnOff": "Désactiver les statistiques d’usage",
+  "analytics.turnOn": "Activer les statistiques d’usage",
+  "analytics.signal": "Statistiques d’usage désactivées (signal de confidentialité du navigateur)"
 }

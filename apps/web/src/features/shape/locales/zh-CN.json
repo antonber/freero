@@ -59,7 +59,12 @@
     "iconsForYourScreens",
     "noShapesMatchQuery",
     "noShapeLibrariesAreOn",
-    "moreShapes"
+    "moreShapes",
+    "trustBoundary",
+    "valueStream",
+    "leanValueStreamMappingProcesses",
+    "dataFlow",
+    "processesDataStoresExternalEntities"
   ],
   "rectangle": "矩形",
   "roundedRectangle": "圆角矩形",
@@ -120,5 +125,10 @@
   "iconsForYourScreens": "用于界面的图标",
   "noShapesMatchQuery": "没有与「{query}」匹配的形状。",
   "noShapeLibrariesAreOn": "此白板未启用任何形状库。",
-  "moreShapes": "更多形状"
+  "moreShapes": "更多形状",
+  "trustBoundary": "信任边界",
+  "valueStream": "价值流",
+  "leanValueStreamMappingProcesses": "精益价值流图：流程、库存、流动、改善爆炸点",
+  "dataFlow": "数据流",
+  "processesDataStoresExternalEntities": "处理过程、数据存储、外部实体和信任边界"
 }

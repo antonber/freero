@@ -59,7 +59,12 @@
     "iconsForYourScreens",
     "noShapesMatchQuery",
     "noShapeLibrariesAreOn",
-    "moreShapes"
+    "moreShapes",
+    "trustBoundary",
+    "valueStream",
+    "leanValueStreamMappingProcesses",
+    "dataFlow",
+    "processesDataStoresExternalEntities"
   ],
   "rectangle": "מלבן",
   "roundedRectangle": "מלבן מעוגל",
@@ -120,5 +125,10 @@
   "iconsForYourScreens": "סמלים למסכים שלך",
   "noShapesMatchQuery": "אין צורות שתואמות ל־”{query}“.",
   "noShapeLibrariesAreOn": "אין ספריות צורות פעילות בלוח הזה.",
-  "moreShapes": "צורות נוספות"
+  "moreShapes": "צורות נוספות",
+  "trustBoundary": "גבול אמון",
+  "valueStream": "זרם ערך",
+  "leanValueStreamMappingProcesses": "מיפוי זרם ערך רזה: תהליכים, מלאי, זרימות, פרצי קייזן",
+  "dataFlow": "זרימת נתונים",
+  "processesDataStoresExternalEntities": "תהליכים, מאגרי נתונים, ישויות חיצוניות וגבולות אמון"
 }

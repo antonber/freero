@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "Freero 会立即测试令牌并加密保存；它不会再次显示。问题将以该账号的身份创建。",
   "removeNameItsLinksLinked": "{links, plural, other {要移除 {name} 吗？其 {links} 个关联问题将停止同步；白板项目和问题会保持原样。}}",
   "aNewTabOpensCome": " 将打开一个新标签页；登录后请返回此处。",
-  "everyoneHereSeesTheBoard": "这里的每个人看到的白板都遵循 Freero 对他们的分享设置：被分享的人登录一次即可编辑或评论；其他人只有在“任何拥有链接的人都可查看”时才能看到。"
+  "everyoneHereSeesTheBoard": "这里的每个人看到的白板都遵循 Freero 对他们的分享设置：被分享的人登录一次即可编辑或评论；其他人只有在“任何拥有链接的人都可查看”时才能看到。",
+  "yourBrowserSendsGlobalPrivacy": "你的浏览器发送了 Global Privacy Control 或 Do Not Track 信号，因此分析功能保持关闭。",
+  "analyticsIsOffInThis": "此浏览器中的分析功能已关闭。",
+  "analyticsIsOnAgainIn": "此浏览器中的分析功能已重新开启。",
+  "analytics.turnOff": "关闭分析",
+  "analytics.turnOn": "开启分析",
+  "analytics.signal": "分析已关闭（浏览器隐私信号）"
 }

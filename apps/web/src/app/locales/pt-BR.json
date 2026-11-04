@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "Moldura sem título",
   "couldNotChangeEmbedding": "Não foi possível alterar a incorporação",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "O Freero testa o token na hora e o guarda criptografado; ele nunca é mostrado de novo. As issues são criadas como essa conta.",
   "removeNameItsLinksLinked": "{links, plural, one {Remover {name}? A {links} issue vinculada deixa de sincronizar; os itens do quadro e as issues continuam como estão.} other {Remover {name}? As {links} issues vinculadas deixam de sincronizar; os itens do quadro e as issues continuam como estão.}}",
   "aNewTabOpensCome": " Uma nova aba se abre; volte aqui depois de entrar.",
-  "everyoneHereSeesTheBoard": "Todos aqui veem o quadro conforme o Freero o compartilha com eles: as pessoas com quem ele é compartilhado entram uma vez para editar ou comentar; os outros só o veem se qualquer pessoa com o link puder ver."
+  "everyoneHereSeesTheBoard": "Todos aqui veem o quadro conforme o Freero o compartilha com eles: as pessoas com quem ele é compartilhado entram uma vez para editar ou comentar; os outros só o veem se qualquer pessoa com o link puder ver.",
+  "yourBrowserSendsGlobalPrivacy": "Seu navegador envia Global Privacy Control ou Do Not Track, então a análise de uso continua desativada.",
+  "analyticsIsOffInThis": "A análise de uso está desativada neste navegador.",
+  "analyticsIsOnAgainIn": "A análise de uso está ativada de novo neste navegador.",
+  "analytics.turnOff": "Desativar a análise de uso",
+  "analytics.turnOn": "Ativar a análise de uso",
+  "analytics.signal": "Análise de uso desativada (sinal de privacidade do navegador)"
 }

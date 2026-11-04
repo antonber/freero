@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "Marco sin título",
   "couldNotChangeEmbedding": "No se pudo cambiar la inserción",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "Freero prueba el token al momento y lo guarda cifrado; no se vuelve a mostrar nunca. Las incidencias se crean con esa cuenta.",
   "removeNameItsLinksLinked": "{links, plural, one {¿Quitar {name}? Su {links} incidencia vinculada dejará de sincronizarse; los elementos del tablero y las incidencias se quedan como están.} other {¿Quitar {name}? Sus {links} incidencias vinculadas dejarán de sincronizarse; los elementos del tablero y las incidencias se quedan como están.}}",
   "aNewTabOpensCome": " Se abre una pestaña nueva; vuelve aquí cuando hayas iniciado sesión.",
-  "everyoneHereSeesTheBoard": "Todos aquí ven el tablero tal como Freero se lo comparte: las personas con quienes está compartido inician sesión una vez para editar o comentar; los demás solo lo ven si cualquiera con el enlace puede verlo."
+  "everyoneHereSeesTheBoard": "Todos aquí ven el tablero tal como Freero se lo comparte: las personas con quienes está compartido inician sesión una vez para editar o comentar; los demás solo lo ven si cualquiera con el enlace puede verlo.",
+  "yourBrowserSendsGlobalPrivacy": "Tu navegador envía Global Privacy Control o Do Not Track, así que la analítica sigue desactivada.",
+  "analyticsIsOffInThis": "La analítica está desactivada en este navegador.",
+  "analyticsIsOnAgainIn": "La analítica vuelve a estar activada en este navegador.",
+  "analytics.turnOff": "Desactivar la analítica",
+  "analytics.turnOn": "Activar la analítica",
+  "analytics.signal": "Analítica desactivada (señal de privacidad del navegador)"
 }

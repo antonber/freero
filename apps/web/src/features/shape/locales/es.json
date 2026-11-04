@@ -59,7 +59,12 @@
     "iconsForYourScreens",
     "noShapesMatchQuery",
     "noShapeLibrariesAreOn",
-    "moreShapes"
+    "moreShapes",
+    "trustBoundary",
+    "valueStream",
+    "leanValueStreamMappingProcesses",
+    "dataFlow",
+    "processesDataStoresExternalEntities"
   ],
   "rectangle": "Rectángulo",
   "roundedRectangle": "Rectángulo redondeado",
@@ -120,5 +125,10 @@
   "iconsForYourScreens": "Iconos para tus pantallas",
   "noShapesMatchQuery": "Ninguna forma coincide con “{query}”.",
   "noShapeLibrariesAreOn": "No hay bibliotecas de formas activadas para este tablero.",
-  "moreShapes": "Más formas"
+  "moreShapes": "Más formas",
+  "trustBoundary": "Límite de confianza",
+  "valueStream": "Flujo de valor",
+  "leanValueStreamMappingProcesses": "Mapa de flujo de valor lean: procesos, inventario, flujos, eventos kaizen",
+  "dataFlow": "Flujo de datos",
+  "processesDataStoresExternalEntities": "Procesos, almacenes de datos, entidades externas y límites de confianza"
 }

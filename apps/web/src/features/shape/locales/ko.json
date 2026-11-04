@@ -59,7 +59,12 @@
     "iconsForYourScreens",
     "noShapesMatchQuery",
     "noShapeLibrariesAreOn",
-    "moreShapes"
+    "moreShapes",
+    "trustBoundary",
+    "valueStream",
+    "leanValueStreamMappingProcesses",
+    "dataFlow",
+    "processesDataStoresExternalEntities"
   ],
   "rectangle": "직사각형",
   "roundedRectangle": "둥근 직사각형",
@@ -120,5 +125,10 @@
   "iconsForYourScreens": "화면용 아이콘",
   "noShapesMatchQuery": "“{query}”와(과) 일치하는 도형이 없어요.",
   "noShapeLibrariesAreOn": "이 보드에 켜진 도형 라이브러리가 없어요.",
-  "moreShapes": "도형 더 보기"
+  "moreShapes": "도형 더 보기",
+  "trustBoundary": "신뢰 경계",
+  "valueStream": "가치 흐름",
+  "leanValueStreamMappingProcesses": "린 가치 흐름 매핑: 프로세스, 재고, 흐름, 카이젠 버스트",
+  "dataFlow": "데이터 흐름",
+  "processesDataStoresExternalEntities": "프로세스, 데이터 저장소, 외부 엔터티 및 신뢰 경계"
 }

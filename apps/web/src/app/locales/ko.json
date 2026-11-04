@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "제목 없는 프레임",
   "couldNotChangeEmbedding": "임베드 설정을 바꾸지 못했어요",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "Freero는 토큰을 바로 테스트하고 암호화해서 보관해요. 다시 표시되지 않아요. 이슈는 그 계정으로 만들어져요.",
   "removeNameItsLinksLinked": "{links, plural, other {{name}을(를) 삭제할까요? 연결된 이슈 {links}개의 동기화가 중지돼요. 보드 항목과 이슈는 그대로 남아요.}}",
   "aNewTabOpensCome": " 새 탭이 열려요. 로그인한 후 여기로 돌아오세요.",
-  "everyoneHereSeesTheBoard": "여기 있는 모든 사람은 Freero의 공유 설정에 따라 보드를 봐요. 공유받은 사람은 한 번 로그인하면 편집하거나 댓글을 달 수 있고, 다른 사람은 링크가 있는 모든 사람이 볼 수 있을 때만 볼 수 있어요."
+  "everyoneHereSeesTheBoard": "여기 있는 모든 사람은 Freero의 공유 설정에 따라 보드를 봐요. 공유받은 사람은 한 번 로그인하면 편집하거나 댓글을 달 수 있고, 다른 사람은 링크가 있는 모든 사람이 볼 수 있을 때만 볼 수 있어요.",
+  "yourBrowserSendsGlobalPrivacy": "브라우저가 Global Privacy Control 또는 Do Not Track 신호를 보내고 있어 분석이 꺼진 상태로 유지돼요.",
+  "analyticsIsOffInThis": "이 브라우저에서 분석이 꺼져 있어요.",
+  "analyticsIsOnAgainIn": "이 브라우저에서 분석이 다시 켜졌어요.",
+  "analytics.turnOff": "분석 끄기",
+  "analytics.turnOn": "분석 켜기",
+  "analytics.signal": "분석 꺼짐(브라우저 개인정보 보호 신호)"
 }

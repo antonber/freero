@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "Unbenannter Rahmen",
   "couldNotChangeEmbedding": "Einbettung konnte nicht geändert werden",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "Freero testet das Token sofort und speichert es verschlüsselt; es wird nie wieder angezeigt. Issues werden unter diesem Konto erstellt.",
   "removeNameItsLinksLinked": "{links, plural, one {{name} entfernen? {links} verknüpftes Issue wird dann nicht mehr synchronisiert; Board-Elemente und Issues bleiben, wie sie sind.} other {{name} entfernen? {links} verknüpfte Issues werden dann nicht mehr synchronisiert; Board-Elemente und Issues bleiben, wie sie sind.}}",
   "aNewTabOpensCome": " Ein neuer Tab wird geöffnet; kehren Sie hierher zurück, wenn Sie angemeldet sind.",
-  "everyoneHereSeesTheBoard": "Alle hier sehen das Board so, wie Freero es mit ihnen teilt: Personen, mit denen es geteilt ist, melden sich einmal an, um zu bearbeiten oder zu kommentieren; andere sehen es nur, wenn alle mit dem Link es ansehen dürfen."
+  "everyoneHereSeesTheBoard": "Alle hier sehen das Board so, wie Freero es mit ihnen teilt: Personen, mit denen es geteilt ist, melden sich einmal an, um zu bearbeiten oder zu kommentieren; andere sehen es nur, wenn alle mit dem Link es ansehen dürfen.",
+  "yourBrowserSendsGlobalPrivacy": "Ihr Browser sendet Global Privacy Control oder Do Not Track, daher bleibt die Analyse aus.",
+  "analyticsIsOffInThis": "Die Analyse ist in diesem Browser ausgeschaltet.",
+  "analyticsIsOnAgainIn": "Die Analyse ist in diesem Browser wieder eingeschaltet.",
+  "analytics.turnOff": "Analyse ausschalten",
+  "analytics.turnOn": "Analyse einschalten",
+  "analytics.signal": "Analyse aus (Datenschutzsignal des Browsers)"
 }

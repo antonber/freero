@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "Freero בודק את האסימון מיד ושומר אותו מוצפן; הוא לא יוצג שוב. פריטים נוצרים בשם החשבון הזה.",
   "removeNameItsLinksLinked": "{links, plural, one {להסיר את {name}? הפריט המקושר שלו יפסיק להסתנכרן; פריטי הלוח והפריטים בכלי המעקב יישארו כמו שהם.} two {להסיר את {name}? {links} הפריטים המקושרים שלו יפסיקו להסתנכרן; פריטי הלוח והפריטים בכלי המעקב יישארו כמו שהם.} other {להסיר את {name}? {links} הפריטים המקושרים שלו יפסיקו להסתנכרן; פריטי הלוח והפריטים בכלי המעקב יישארו כמו שהם.}}",
   "aNewTabOpensCome": " תיפתח כרטיסייה חדשה; אחרי ההתחברות אפשר לחזור לכאן.",
-  "everyoneHereSeesTheBoard": "כל מי שכאן רואה את הלוח כפי ש־Freero משתף אותו איתו: מי שהלוח שותף איתם מתחברים פעם אחת כדי לערוך או להגיב; אחרים רואים אותו רק אם כל מי שיש לו את הקישור רשאי לצפות."
+  "everyoneHereSeesTheBoard": "כל מי שכאן רואה את הלוח כפי ש־Freero משתף אותו איתו: מי שהלוח שותף איתם מתחברים פעם אחת כדי לערוך או להגיב; אחרים רואים אותו רק אם כל מי שיש לו את הקישור רשאי לצפות.",
+  "yourBrowserSendsGlobalPrivacy": "הדפדפן שלך שולח Global Privacy Control או Do Not Track, ולכן הניתוח הסטטיסטי נשאר כבוי.",
+  "analyticsIsOffInThis": "הניתוח הסטטיסטי כבוי בדפדפן הזה.",
+  "analyticsIsOnAgainIn": "הניתוח הסטטיסטי מופעל שוב בדפדפן הזה.",
+  "analytics.turnOff": "כיבוי הניתוח הסטטיסטי",
+  "analytics.turnOn": "הפעלת הניתוח הסטטיסטי",
+  "analytics.signal": "הניתוח הסטטיסטי כבוי (אות פרטיות של הדפדפן)"
 }

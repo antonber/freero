@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "يختبر Freero الرمز فورًا ويحتفظ به مشفّرًا؛ ولن يظهر مرة أخرى. تُنشأ المشكلات باسم ذلك الحساب.",
   "removeNameItsLinksLinked": "{links, plural, one {إزالة {name}؟ ستتوقف مزامنة مشكلته المرتبطة؛ وتبقى عناصر اللوحة والمشكلات كما هي.} two {إزالة {name}؟ ستتوقف مزامنة مشكلتيه المرتبطتين؛ وتبقى عناصر اللوحة والمشكلات كما هي.} few {إزالة {name}؟ ستتوقف مزامنة {links} مشكلات مرتبطة به؛ وتبقى عناصر اللوحة والمشكلات كما هي.} many {إزالة {name}؟ ستتوقف مزامنة {links} مشكلة مرتبطة به؛ وتبقى عناصر اللوحة والمشكلات كما هي.} other {إزالة {name}؟ ستتوقف مزامنة {links} مشكلة مرتبطة به؛ وتبقى عناصر اللوحة والمشكلات كما هي.}}",
   "aNewTabOpensCome": " تُفتح علامة تبويب جديدة؛ عد إلى هنا بعد تسجيل الدخول.",
-  "everyoneHereSeesTheBoard": "يرى كل من هنا اللوحة كما يشاركها Freero معه: من تمت مشاركتها معهم يسجّلون الدخول مرة واحدة للتعديل أو التعليق؛ أما الآخرون فلا يرونها إلا إذا كان بإمكان أي شخص لديه الرابط عرضها."
+  "everyoneHereSeesTheBoard": "يرى كل من هنا اللوحة كما يشاركها Freero معه: من تمت مشاركتها معهم يسجّلون الدخول مرة واحدة للتعديل أو التعليق؛ أما الآخرون فلا يرونها إلا إذا كان بإمكان أي شخص لديه الرابط عرضها.",
+  "yourBrowserSendsGlobalPrivacy": "يرسل متصفحك إشارة Global Privacy Control أو Do Not Track، لذا تبقى التحليلات متوقفة.",
+  "analyticsIsOffInThis": "التحليلات متوقفة في هذا المتصفح.",
+  "analyticsIsOnAgainIn": "عادت التحليلات للعمل في هذا المتصفح.",
+  "analytics.turnOff": "إيقاف التحليلات",
+  "analytics.turnOn": "تشغيل التحليلات",
+  "analytics.signal": "التحليلات متوقفة (إشارة الخصوصية في المتصفح)"
 }

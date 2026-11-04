@@ -59,7 +59,12 @@
     "iconsForYourScreens",
     "noShapesMatchQuery",
     "noShapeLibrariesAreOn",
-    "moreShapes"
+    "moreShapes",
+    "trustBoundary",
+    "valueStream",
+    "leanValueStreamMappingProcesses",
+    "dataFlow",
+    "processesDataStoresExternalEntities"
   ],
   "rectangle": "مستطيل",
   "roundedRectangle": "مستطيل مستدير الزوايا",
@@ -120,5 +125,10 @@
   "iconsForYourScreens": "أيقونات لشاشاتك",
   "noShapesMatchQuery": "لا توجد أشكال تطابق «{query}».",
   "noShapeLibrariesAreOn": "لا توجد مكتبات أشكال مفعّلة لهذه اللوحة.",
-  "moreShapes": "المزيد من الأشكال"
+  "moreShapes": "المزيد من الأشكال",
+  "trustBoundary": "حدود الثقة",
+  "valueStream": "تدفق القيمة",
+  "leanValueStreamMappingProcesses": "رسم خريطة تدفق القيمة الرشيقة: العمليات، المخزون، التدفقات، ومضات كايزن",
+  "dataFlow": "تدفق البيانات",
+  "processesDataStoresExternalEntities": "العمليات، مخازن البيانات، الكيانات الخارجية وحدود الثقة"
 }

@@ -481,7 +481,13 @@
     "freeroTestsTheTokenRight",
     "removeNameItsLinksLinked",
     "aNewTabOpensCome",
-    "everyoneHereSeesTheBoard"
+    "everyoneHereSeesTheBoard",
+    "yourBrowserSendsGlobalPrivacy",
+    "analyticsIsOffInThis",
+    "analyticsIsOnAgainIn",
+    "analytics.turnOff",
+    "analytics.turnOn",
+    "analytics.signal"
   ],
   "untitledFrame": "無題のフレーム",
   "couldNotChangeEmbedding": "埋め込み設定を変更できませんでした",
@@ -964,5 +970,11 @@
   "freeroTestsTheTokenRight": "Freeroはトークンをすぐにテストし、暗号化して保存します。再表示されることはありません。課題はそのアカウントとして作成されます。",
   "removeNameItsLinksLinked": "{links, plural, other {{name}を削除しますか？リンクされた{links}件の課題は同期されなくなります。ボードの項目と課題はそのまま残ります。}}",
   "aNewTabOpensCome": "新しいタブが開きます。ログインしたらここに戻ってください。",
-  "everyoneHereSeesTheBoard": "ここにいる全員には、Freeroでの共有設定どおりにボードが表示されます。共有されている人は一度ログインすれば編集やコメントができ、それ以外の人は「リンクを知っている全員」が閲覧できる場合にのみ表示されます。"
+  "everyoneHereSeesTheBoard": "ここにいる全員には、Freeroでの共有設定どおりにボードが表示されます。共有されている人は一度ログインすれば編集やコメントができ、それ以外の人は「リンクを知っている全員」が閲覧できる場合にのみ表示されます。",
+  "yourBrowserSendsGlobalPrivacy": "ブラウザーが Global Privacy Control または Do Not Track を送信しているため、アナリティクスはオフのままです。",
+  "analyticsIsOffInThis": "このブラウザーではアナリティクスがオフです。",
+  "analyticsIsOnAgainIn": "このブラウザーでアナリティクスを再びオンにしました。",
+  "analytics.turnOff": "アナリティクスをオフにする",
+  "analytics.turnOn": "アナリティクスをオンにする",
+  "analytics.signal": "アナリティクスはオフ（ブラウザーのプライバシーシグナル）"
 }
