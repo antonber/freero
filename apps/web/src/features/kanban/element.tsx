@@ -37,6 +37,7 @@ import {
   type Editor,
   type ElementDefinition,
   type ElementRenderProps,
+  type LowDetailPaint,
   type NewElement,
 } from '@engine';
 import { ColorSwatches, Menu, Popover, type MenuItem } from '@ui';
@@ -655,6 +656,28 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
   );
 }
 
+/**
+ * Zoomed out to low detail (#185): the board as its far-away drawing shows it (no text) — the
+ * paper, and its columns with their colour band, or the tab's body — on the shared canvas. Its
+ * cards paint themselves there too. The saved tab: what someone looks at for themselves is a
+ * personal view the painter can't read, and at this size a column block reads the same.
+ */
+function paintKanban(k: KanbanElement, p: LowDetailPaint) {
+  p.box({ fill: '#f4f3f9', stroke: '#17162B', strokeAlpha: 0.1, strokeWidth: 1 / p.zoom, radius: 14 });
+  const tab = viewTabs(k).find((t) => t.id === shownTabId(k, undefined));
+  const bodyH = k.h - HEADER_H - GAP;
+  if (tab && tab.layout !== 'board') {
+    p.rect(GAP, HEADER_H, k.w - 2 * GAP, bodyH, '#ffffff');
+    return;
+  }
+  k.columns.forEach((col, i) => {
+    const x = colLeft(k, i);
+    const w = colWidth(k, i);
+    p.rect(x, HEADER_H, w, bodyH, col.collapsed ? '#faf9fd' : '#ffffff');
+    if (col.color) p.rect(x, HEADER_H, w, Math.min(4, bodyH), col.color);
+  });
+}
+
 const kanban = defineElement({
   type: 'kanban',
   label: { one: 'Kanban board', many: 'Kanban boards' },
@@ -674,6 +697,7 @@ const kanban = defineElement({
     colW: DEFAULT_COL_W,
   }),
   Component: KanbanView,
+  lowDetail: paintKanban,
   toPlainText: (k) => [richTextToPlain(k.title), ...k.columns.map((c) => richTextToPlain(c.title))].filter(Boolean).join('\n'),
   normalize(k) {
     const w = k.columns.length ? boardWidth(k) : kanbanWidth(0, k.colW);
