@@ -27,7 +27,7 @@
 .fr-timer-pill__time {
   font-variant-numeric: tabular-nums;
   min-width: 5ch;
-  text-align: left;
+  text-align: start;
 }
 
 .fr-timer-pill.is-paused {

@@ -32,7 +32,7 @@
 
 .fr-world {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 0;
   height: 0;
@@ -43,7 +43,7 @@
 /* Board content inside the world (Canvas.tsx): positions as if it were the world itself. */
 .fr-world__items {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 0;
   height: 0;
@@ -71,7 +71,7 @@
 
 .fr-el {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   transform-origin: center center;
 }
@@ -112,7 +112,7 @@
 
 .fr-el-private-chip {
   position: absolute;
-  left: -4px;
+  inset-inline-start: -4px;
   bottom: calc(100% + 8px);
   transform-origin: bottom left;
   display: inline-flex;

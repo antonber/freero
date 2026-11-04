@@ -15,10 +15,10 @@
 
 .fr-timeline__corner {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   background: #f6f5fb;
-  border-right: 1px solid rgba(23, 22, 43, 0.1);
+  border-inline-end: 1px solid rgba(23, 22, 43, 0.1);
   border-bottom: 1px solid rgba(23, 22, 43, 0.12);
 }
 
@@ -41,8 +41,8 @@
 .fr-timeline__tick.is-top {
   top: 0;
   height: 28px;
-  padding-left: 8px;
-  border-left: 1px solid rgba(23, 22, 43, 0.14);
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid rgba(23, 22, 43, 0.14);
   font-weight: 650;
   color: var(--fr-ink);
 }
@@ -50,7 +50,7 @@
 .fr-timeline__tick.is-unit {
   top: 28px;
   height: 28px;
-  border-left: 1px solid rgba(23, 22, 43, 0.08);
+  border-inline-start: 1px solid rgba(23, 22, 43, 0.08);
   text-align: center;
   color: var(--fr-ink-3);
   font-variant-numeric: tabular-nums;
@@ -58,8 +58,8 @@
 
 .fr-timeline__lane {
   position: absolute;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   border-bottom: 1px solid rgba(23, 22, 43, 0.08);
   background: color-mix(in srgb, var(--lane) 22%, #fff);
 }
@@ -70,17 +70,17 @@
 
 .fr-timeline__lane-head {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   bottom: 0;
   background: var(--lane);
-  border-right: 1px solid rgba(23, 22, 43, 0.1);
+  border-inline-end: 1px solid rgba(23, 22, 43, 0.1);
 }
 
 .fr-timeline__menu {
   position: absolute;
   top: 8px;
-  right: 6px;
+  inset-inline-end: 6px;
   display: grid;
   place-items: center;
   width: 22px;
@@ -99,7 +99,7 @@
 
 .fr-timeline__col {
   position: absolute;
-  border-left: 1px solid rgba(23, 22, 43, 0.06);
+  border-inline-start: 1px solid rgba(23, 22, 43, 0.06);
   pointer-events: none;
 }
 
@@ -116,9 +116,9 @@
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  padding-left: 12px;
+  padding-inline-start: 12px;
   box-sizing: border-box;
-  border-left: 1px solid rgba(23, 22, 43, 0.14);
+  border-inline-start: 1px solid rgba(23, 22, 43, 0.14);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -139,7 +139,7 @@
 }
 
 .fr-timeline__col.is-horizon {
-  border-left-color: rgba(23, 22, 43, 0.14);
+  border-inline-start-color: rgba(23, 22, 43, 0.14);
 }
 
 .fr-timeline__col.is-horizon.is-now {
@@ -149,7 +149,7 @@
 .fr-timeline__today {
   position: absolute;
   width: 0;
-  border-left: 2px solid var(--fr-primary);
+  border-inline-start: 2px solid var(--fr-primary);
   pointer-events: none;
 }
 
@@ -157,7 +157,7 @@
   content: '';
   position: absolute;
   top: -5px;
-  left: -6px;
+  inset-inline-start: -6px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -208,22 +208,22 @@
 }
 
 .fr-tlbar.is-narrow .fr-tlbar__title {
-  right: auto;
+  inset-inline-end: auto;
 }
 
 /* Dates beyond the range: the cut edge is square and dashed (the bar continues off the axis). */
 .fr-tlbar.is-clip-start,
 .fr-tlbar.is-clip-both {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  border-left: 2px dashed rgba(255, 255, 255, 0.85);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-inline-start: 2px dashed rgba(255, 255, 255, 0.85);
 }
 
 .fr-tlbar.is-clip-end,
 .fr-tlbar.is-clip-both {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-  border-right: 2px dashed rgba(255, 255, 255, 0.85);
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  border-inline-end: 2px dashed rgba(255, 255, 255, 0.85);
 }
 
 .fr-tlbar.is-milestone {

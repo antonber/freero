@@ -37,14 +37,14 @@
 
 .fr-authpage__sticky--a {
   top: 12%;
-  left: max(4vw, calc(50% - 460px));
+  inset-inline-start: max(4vw, calc(50% - 460px));
   background: #ffe36e;
   transform: rotate(-6deg);
 }
 
 .fr-authpage__sticky--b {
   bottom: 12%;
-  right: max(4vw, calc(50% - 470px));
+  inset-inline-end: max(4vw, calc(50% - 470px));
   background: #b5a4ff;
   transform: rotate(5deg);
 }
@@ -52,7 +52,7 @@
 .fr-authpage__blob {
   position: absolute;
   top: 18%;
-  right: max(6vw, calc(50% - 420px));
+  inset-inline-end: max(6vw, calc(50% - 420px));
   width: 56px;
   height: 56px;
   border-radius: 50%;

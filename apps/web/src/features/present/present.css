@@ -166,7 +166,7 @@
 /* The presenter's own notes for the current slide (only on their screen). */
 .fr-present-mynotes {
   position: absolute;
-  left: 16px;
+  inset-inline-start: 16px;
   bottom: 80px;
   width: min(380px, calc(100% - 32px));
   max-height: 40%;

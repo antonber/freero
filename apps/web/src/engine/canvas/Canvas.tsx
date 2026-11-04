@@ -516,6 +516,9 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     <div
       ref={viewportRef}
       className="fr-viewport"
+      // The board never mirrors (#5): in a right-to-left interface only the chrome around it does,
+      // so element geometry and the inline layout inside elements stay exactly as authored.
+      dir="ltr"
       tabIndex={0}
       // The canvas takes the keyboard itself (Tab walks items, arrows move them), so screen readers
       // pass keys through; the live region (ui/LiveRegion) reads what gets selected.

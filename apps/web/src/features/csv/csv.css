@@ -89,7 +89,7 @@
   max-width: 180px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--fr-line);
-  text-align: left;
+  text-align: start;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

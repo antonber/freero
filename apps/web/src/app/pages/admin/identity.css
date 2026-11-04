@@ -164,5 +164,5 @@
 }
 
 .fr-admin-domain__actions > :first-child {
-  margin-right: auto;
+  margin-inline-end: auto;
 }

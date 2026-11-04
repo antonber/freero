@@ -9,7 +9,7 @@
   min-height: 48px;
   margin: 0 0 14px;
   padding: 7px 8px;
-  text-align: left;
+  text-align: start;
   color: var(--fr-ink);
   background: var(--fr-surface-2);
   border: 1px solid var(--fr-line);
@@ -156,7 +156,7 @@
   padding: 0 4px 0 12px;
   font-size: 13.5px;
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   color: inherit;
   background: transparent;
   border: 0;
@@ -304,7 +304,7 @@
   flex: none;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .fr-dash-members__role {
@@ -426,7 +426,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -497,8 +497,8 @@
   z-index: 2; /* above the card's open-board link */
   width: 100%;
   padding: 1px 4px;
-  margin-left: -4px;
-  text-align: left;
+  margin-inline-start: -4px;
+  text-align: start;
   background: transparent;
   border: 0;
   border-radius: 6px;

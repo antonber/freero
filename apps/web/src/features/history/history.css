@@ -21,7 +21,7 @@
 }
 
 .fr-history__title > button {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .fr-history__current {
@@ -87,7 +87,7 @@
 
 .fr-history__dayhead {
   margin: 4px 0 2px;
-  padding-left: 4px;
+  padding-inline-start: 4px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -131,7 +131,7 @@
   background: none;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -245,7 +245,7 @@
 
 .fr-history-preview__badge {
   flex: none;
-  margin-left: auto;
+  margin-inline-start: auto;
   padding: 3px 8px;
   border-radius: 999px;
   background: var(--fr-warning-soft);

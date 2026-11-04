@@ -141,6 +141,8 @@ export function createExportRenderer(core: EngineCore) {
       pointerEvents: 'none',
       fontFamily: 'var(--fr-font)',
     });
+    // Pictures of the board are laid out as the board is, whatever the interface's direction (#5).
+    host.dir = 'ltr';
     document.body.appendChild(host);
     const root = createRoot(host);
     try {

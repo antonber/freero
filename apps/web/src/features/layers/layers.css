@@ -60,14 +60,14 @@
 
 .fr-layers__head {
   position: absolute;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   height: 36px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding-right: 2px;
+  padding-inline-end: 2px;
   border-radius: var(--fr-radius-sm);
   font-size: 13px;
   font-weight: 600;
@@ -97,8 +97,8 @@
 
 .fr-layers__row {
   position: absolute;
-  left: 16px;
-  right: 0;
+  inset-inline-start: 16px;
+  inset-inline-end: 0;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -127,8 +127,8 @@
 .fr-layers__row.drop-after::after {
   content: '';
   position: absolute;
-  left: 4px;
-  right: 4px;
+  inset-inline-start: 4px;
+  inset-inline-end: 4px;
   height: 2px;
   border-radius: 1px;
   background: var(--fr-select);

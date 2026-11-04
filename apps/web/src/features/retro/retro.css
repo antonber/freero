@@ -34,7 +34,7 @@
   content: '';
   width: 14px;
   height: 1px;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   background: var(--fr-line-strong);
 }
 
@@ -132,6 +132,6 @@
   .fr-retro-steps li:not(.is-current) {
     font-size: 0;
     gap: 0;
-    padding-right: 4px;
+    padding-inline-end: 4px;
   }
 }

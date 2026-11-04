@@ -6,7 +6,7 @@
 
 .fr-shape__svg {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   overflow: visible;
 }
@@ -18,7 +18,7 @@
 /* Ghost following the cursor while the Shapes tool is armed. */
 .fr-shape-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   overflow: visible;
   pointer-events: none;

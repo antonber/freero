@@ -13,7 +13,7 @@
 /* Ghost under the cursor while the emoji tool is active. */
 .fr-emoji-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   opacity: 0.6;
   pointer-events: none;

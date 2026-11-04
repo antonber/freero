@@ -72,7 +72,7 @@
 }
 
 .fr-op-card--appeal {
-  border-left: 4px solid var(--fr-warning);
+  border-inline-start: 4px solid var(--fr-warning);
 }
 
 .fr-op-card__head {
@@ -90,7 +90,7 @@
 }
 
 .fr-op-card__when {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 12px;
   color: var(--fr-ink-3);
 }
@@ -116,7 +116,7 @@
 .fr-op-card__message {
   margin: 12px 0 0;
   padding: 8px 12px;
-  border-left: 3px solid var(--fr-line-strong);
+  border-inline-start: 3px solid var(--fr-line-strong);
   background: var(--fr-surface-2);
   border-radius: 0 var(--fr-radius-sm) var(--fr-radius-sm) 0;
   font-size: 13px;
@@ -151,7 +151,7 @@
 .fr-op-card__close {
   display: inline-flex;
   gap: 6px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .fr-op-btnlink {
@@ -279,7 +279,7 @@
 
 .fr-op-history ul {
   margin: 0 0 16px;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   font-size: 13px;
   line-height: 20px;
 }
@@ -311,7 +311,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   color: var(--fr-primary);
   text-decoration: none;
 }
@@ -372,13 +372,13 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: 8px;
+  margin-inline-start: 8px;
   color: var(--fr-primary);
 }
 
 .fr-op-problem__events {
   margin: 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
 }
 
 .fr-op-problem__events code {

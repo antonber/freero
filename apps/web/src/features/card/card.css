@@ -16,7 +16,7 @@
 .fr-card::before {
   content: '';
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   bottom: 0;
   width: 6px;
@@ -177,11 +177,11 @@
 /* Ghost card under the cursor while the card tool is active. */
 .fr-card-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   border-radius: 10px;
   background: #fff;
-  border-left: 6px solid var(--accent);
+  border-inline-start: 6px solid var(--accent);
   opacity: 0.6;
   box-shadow: 0 10px 24px -8px rgba(23, 22, 43, 0.35);
   pointer-events: none;
@@ -252,7 +252,7 @@
   background: transparent;
   font: 14px var(--fr-font);
   color: var(--fr-ink);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -572,7 +572,7 @@
 .fr-card-flip__turn {
   position: absolute;
   top: 6px;
-  right: 6px;
+  inset-inline-end: 6px;
   width: 24px;
   height: 24px;
   display: grid;

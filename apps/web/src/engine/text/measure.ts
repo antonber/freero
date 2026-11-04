@@ -49,6 +49,7 @@ function nodes(): { box: HTMLDivElement; content: HTMLDivElement } | null {
     box = document.createElement('div');
     box.setAttribute('aria-hidden', 'true');
     box.className = 'fr-text';
+    box.dir = 'ltr'; // measured as the board lays it out, also under a right-to-left interface (#5)
     content = document.createElement('div');
     content.className = 'fr-text-content';
     box.appendChild(content);

@@ -89,7 +89,7 @@
 .fr-sharein__boards button {
   width: 100%;
   padding: 10px 14px;
-  text-align: left;
+  text-align: start;
   font: inherit;
   color: var(--fr-ink);
   background: none;
