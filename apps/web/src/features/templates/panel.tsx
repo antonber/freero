@@ -12,7 +12,27 @@ import { CATEGORIES, type TemplateCategory, type TemplateDef } from './lib/types
 import { t as tr } from './messages';
 import './templates.css';
 
-const CATEGORY_LABELS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label])) as Record<TemplateCategory, string>;
+// The categories in the interface's language (#5). lib/types.ts keeps the English: the marketing site reads it at build time.
+const CATEGORY_LABELS: Record<TemplateCategory, string> = {
+  brainstorm: tr('brainstorm'),
+  icebreakers: tr('teamBuilding'),
+  meetings: tr('meetings'),
+  agile: tr('agile'),
+  product: tr('product'),
+  design: tr('design'),
+  research: tr('researchUx'),
+  strategy: tr('strategy'),
+  consulting: tr('consulting'),
+  sales: tr('salesMarketing'),
+  people: tr('hrPeople'),
+  operations: tr('operations'),
+  planning: tr('planning'),
+  personal: tr('personal'),
+  diagramming: tr('diagramming'),
+  engineering: tr('engineering'),
+  ai: tr('aiAgents'),
+  education: tr('education'),
+};
 
 /** A built-in category, or the user's own saved templates. */
 type Filter = TemplateCategory | 'saved' | null;
@@ -183,7 +203,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
   const groups = useMemo(
     () =>
       filter === null && !query.trim()
-        ? CATEGORIES.map((c) => ({ id: c.id, label: c.label, items: builtIns.filter((t) => t.categories[0] === c.id) })).filter((g) => g.items.length)
+        ? CATEGORIES.map((c) => ({ id: c.id, label: CATEGORY_LABELS[c.id], items: builtIns.filter((t) => t.categories[0] === c.id) })).filter((g) => g.items.length)
         : [{ id: 'results', label: '', items: builtIns }],
     [builtIns, filter, query],
   );
@@ -254,7 +274,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
             aria-pressed={filter === c.id}
             onClick={() => setFilter(filter === c.id ? null : c.id)}
           >
-            {c.label}
+            {CATEGORY_LABELS[c.id]}
           </button>
         ))}
       </div>
@@ -307,7 +327,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
               {g.items.map((t) => (
                 <button key={t.id} type="button" className="fr-tpl-card" disabled={!canEdit} title={t.description} onClick={() => void insert(t)}>
                   <span className="fr-tpl-card__preview">
-                    <LazyTemplatePreview def={t} />
+                    <LazyTemplatePreview def={t} label={tr('namePreview', { name: t.name })} />
                     <span className="fr-tpl-card__add" aria-hidden>
                       <Plus size={14} strokeWidth={2.4} />{' '}{tr('add')}</span>
                   </span>

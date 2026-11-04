@@ -10,7 +10,6 @@ import type { NewElement } from '@engine';
 import { boundsOf } from './place';
 import type { TemplateDef } from './types';
 
-import { t as tr } from '../messages';
 const cache = new Map<string, NewElement[]>();
 
 function elementsFor(def: TemplateDef): NewElement[] {
@@ -266,7 +265,7 @@ function draw(el: El, byId: Map<string, El>): ReactNode {
  * The preview, built only once its card scrolls near the viewport: opening the picker never
  * builds the whole catalog.
  */
-export function LazyTemplatePreview({ def }: { def: TemplateDef }) {
+export function LazyTemplatePreview({ def, label }: { def: TemplateDef; label?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [seen, setSeen] = useState(() => cache.has(def.id) || typeof IntersectionObserver === 'undefined');
   // Spec templates load their content (one chunk per file) once their card comes into view.
@@ -288,10 +287,12 @@ export function LazyTemplatePreview({ def }: { def: TemplateDef }) {
       live = false;
     };
   }, [seen, ready, def]);
-  return seen && ready ? <TemplatePreview def={def} /> : <span ref={ref} className="fr-tpl-preview fr-tpl-preview--pending" aria-hidden />;
+  return seen && ready ? <TemplatePreview def={def} label={label} /> : <span ref={ref} className="fr-tpl-preview fr-tpl-preview--pending" aria-hidden />;
 }
 
-export const TemplatePreview = memo(function TemplatePreview({ def }: { def: TemplateDef }) {
+// `label`: its accessible name in the interface's language (the app passes it; this file stays
+// free of @ui, which the site's build can't load).
+export const TemplatePreview = memo(function TemplatePreview({ def, label }: { def: TemplateDef; label?: string }) {
   const els = elementsFor(def) as El[];
   const b = boundsOf(els) ?? { x: 0, y: 0, w: 1, h: 1 };
   const byId = new Map(els.filter((e) => e.id).map((e) => [e.id!, e]));
@@ -305,7 +306,7 @@ export const TemplatePreview = memo(function TemplatePreview({ def }: { def: Tem
       viewBox={`${b.x - pad} ${b.y - pad} ${b.w + pad * 2} ${b.h + pad * 2}`}
       preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label={tr('namePreview', { name: def.name })}
+      aria-label={label ?? `${def.name} preview`}
     >
       {ordered.map((el) => draw(el, byId))}
     </svg>
