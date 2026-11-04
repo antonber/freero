@@ -88,7 +88,14 @@ export function planRelations(board: ReadonlySet<Pair>, tracker: ReadonlySet<Pai
   return out;
 }
 
-/** A dependency connector from `from` to `to` (Dependency style: dashed, an arrow at the end). */
+/**
+ * A dependency connector from `from` to `to` (Dependency style: dashed, an arrow at the end),
+ * leaving and entering by the sides that face each other (a bar before another: its end to the
+ * other's start; cards in one column: bottom to top).
+ */
 export function dependencyConnector(id: string, from: BoardElement, to: BoardElement): ElementDraft {
-  return connectorDraft(id, { id: from.id, rect: { x: from.x, y: from.y, w: from.w, h: from.h }, anchor: 'right' }, { id: to.id, rect: { x: to.x, y: to.y, w: to.w, h: to.h }, anchor: 'left' }, { strokeStyle: 'dashed', startCap: 'none', endCap: 'arrow', routing: 'elbow' });
+  type Side = 'left' | 'right' | 'top' | 'bottom';
+  const [a, b]: [Side, Side] =
+    to.x >= from.x + from.w ? ['right', 'left'] : to.x + to.w <= from.x ? ['left', 'right'] : to.y >= from.y + from.h ? ['bottom', 'top'] : ['top', 'bottom'];
+  return connectorDraft(id, { id: from.id, rect: { x: from.x, y: from.y, w: from.w, h: from.h }, anchor: a }, { id: to.id, rect: { x: to.x, y: to.y, w: to.w, h: to.h }, anchor: b }, { strokeStyle: 'dashed', startCap: 'none', endCap: 'arrow', routing: 'elbow' });
 }
