@@ -116,7 +116,7 @@ security questionnaire; the operator's steps are in [operations.md](operations.m
 
 | Data | Store | In transit | At rest |
 |---|---|---|---|
-| Accounts, boards (Yjs documents, update log, version history, layers), comments, audit log, everything else in tables | PostgreSQL | TLS between app and database (`DATABASE_URL` with `sslmode=require`) | **Storage encryption of the database**: managed Postgres (RDS, Cloud SQL, Azure, Neon…) encrypts its disks and snapshots with the provider's keys (or yours, in its KMS); self-hosted: an encrypted volume (LUKS / dm-crypt, BitLocker, an encrypted EBS / persistent disk). Freero does not encrypt board content itself — see below |
+| Accounts, boards (Yjs documents, update log, version history, layers), comments, audit log, everything else in tables | PostgreSQL | TLS between app and database (`DATABASE_URL` with `sslmode=require`) | **Storage encryption of the database**: managed Postgres (RDS, Cloud SQL, Azure, Neon…) encrypts its disks and snapshots with the provider's keys (or yours, in its KMS); self-hosted: an encrypted volume (LUKS / dm-crypt, BitLocker, an encrypted EBS / persistent disk). Freero does not encrypt board content itself, except for workspaces with their own key — see below |
 | Secrets in the database: two-step verification secrets, workspace AI keys, SSO client secrets, tracker credentials and webhook secrets, webhook URLs, board call links | PostgreSQL | as above | **Also sealed by Freero** (AES-256-GCM, key derived from `SESSION_SECRET` per purpose, rotatable): unreadable in a database copy without the app's secret |
 | Passwords, session / API / OAuth / SCIM tokens, recovery codes, emailed links | PostgreSQL | as above | **Never stored**: only a scrypt hash (passwords) or a sha256 |
 | Uploaded files (images, PDFs, video, attachments), board thumbnails, data-export archives | S3-compatible bucket (`uploads/`, `private/`) or `FREERO_DATA_DIR/uploads` | TLS to the bucket (an `https` `S3_ENDPOINT`; AWS by default) | **Server-side encryption**: `S3_SSE=AES256` (SSE-S3) or `S3_SSE=aws:kms` (+ `S3_SSE_KMS_KEY_ID`) is sent with every write; AWS S3 also encrypts every new object with SSE-S3 by default. MinIO: enable KES/KMS auto-encryption; R2 / B2 / GCS encrypt at rest by default. Local disk: an encrypted volume. Freero logs a warning at startup when the bucket reports no default encryption and `S3_SSE` is unset |
@@ -134,8 +134,17 @@ operators restore `pg_dump`s. The threat it would address — someone with a cop
 files or a snapshot — is what storage encryption covers. What a database copy must never yield is
 a working credential, so every credential is hashed or sealed (rows above), whatever the disk.
 
-**Customer-managed keys per workspace** are out of scope: an operator can use their own KMS key
-for the bucket (`S3_SSE_KMS_KEY_ID`) and for the database volume, which covers the whole service.
+**Keys per workspace** (#159): where one tenant of a shared instance needs its content under a key
+it controls, a team workspace turns on its own encryption key (admin console → Security). Its
+board documents, update logs, versions and layers are then sealed by the app (AES-256-GCM, data
+keys wrapped by the instance's key or the workspace's AWS KMS key), which answers the points above
+for that workspace: the uploads sweep reads the file names a sealed row references from a side
+list, search and backlinks index the opened content through the outbox (and drop it when the key
+is revoked), and restores work while the key does. Not under the workspace key: uploaded files
+(storage encryption, as above), titles and other metadata, the audit log. Operating it:
+[operations.md](operations.md#workspace-encryption-keys); design and failure modes:
+[design/compliance.md §3](design/compliance.md). For the whole service, an operator can still use
+their own KMS key for the bucket (`S3_SSE_KMS_KEY_ID`) and the database volume.
 
 ## Scaling
 

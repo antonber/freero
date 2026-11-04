@@ -1335,7 +1335,7 @@ board_invites: pending invites for addresses without an account; board_access_re
 resolution), `workspaces` (workspaces, workspace_members,
 workspace_invites, projects, project_members; organisations are directory-only `workspaces` rows; see
 "Workspaces" and "Organisations" below), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors; y-websocket
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors, board_sealed_refs; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
@@ -1383,7 +1383,8 @@ Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copi
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
-board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), and `problems` (problem_reports: “Report a problem”, see "Problem
+board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
+encryption keys, see "Workspace encryption keys" below), and `problems` (problem_reports: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
@@ -2986,6 +2987,50 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   (`boards.onBoardRetentionHold`, the seam for legal holds, #157; a failing check holds them all)
   and every board of a workspace with a deletion hold (`workspaceHoldOn`). Board events with no
   actor reach the event stream as `actor: { kind: 'system' }`.
+
+### Workspace encryption keys (`modules/keys`, #159)
+
+A team workspace may keep its board content under its own key (design, coverage, failure modes:
+docs/design/compliance.md §3; operating it: docs/operations.md "Workspace encryption keys").
+
+- **Envelope**: `workspace_keys` (provider 'instance' — platform/secrets `seal`, purpose
+  `workspace-kek-v1`, the workspace id sealed in — or 'aws-kms', the workspace's KMS key ARN; state
+  active / suspended / unavailable / destroyed) and versioned `workspace_data_keys` (a 256-bit DEK
+  wrapped by that KEK). `keys/kek.ts` wraps / unwraps (AWS: TrentService JSON over a hand-written
+  SigV4, `keys/sigv4.ts`, encryption context `freero_workspace`); `keys/envelope.ts` seals blobs
+  (AES-256-GCM, additional data = workspace, board, table, layer). Single writer of both tables:
+  keys' repo, through the console's routes (`/workspaces/:id/admin/key…`, security scope;
+  destroy: owners with the workspace's name) and its jobs.
+- **One boundary for content**: `realtime/repo.ts` seals every blob it writes for a board whose
+  workspace has a key (`realtime/sealing.ts` `sealerFor` → keys' `sealerFor`; throws — nothing is
+  written — when that key can't be used, never a plaintext fallback) and opens every sealed blob it
+  reads with the data key the row names (`sealed_with` = `<workspaceId>:<version>`; NULL = stored as
+  is). A sealed blob starts with `SEALED_PREFIX` (an unreadable Yjs varint), so a release without
+  this code fails on it instead of misreading it. Upload names in sealed rows go to
+  `board_sealed_refs` in the same transaction; the uploads sweep and usage read them there, so a
+  file of an encrypted board — or one whose key is unavailable — is never swept.
+- **Gate**: workspaces' one `blocked` rule answers `key_unavailable` for a workspace whose key isn't
+  active (keys' `unusableKeysAmong`, always from the database), so REST, lists, search, MCP, embeds
+  and socket admission refuse it; `requireAccess` answers 403 `workspace_key_unavailable` to whoever
+  could otherwise open the board (the board page and dashboard say why). The admin console never
+  asks it (break-glass: an admin can always resume).
+- **Derived plaintext**: realtime's stored readers (`storedBoardView`, `storedDocContent`) read a
+  board under a suspended / destroyed / refused key as empty (a merely unreachable KMS throws and is
+  retried), and every state change appends each of the workspace's boards' `board.content` event in
+  its transaction — search and references derive nothing while the key is unavailable and
+  everything again once it is back; the event deriver records nothing for such a board (an
+  unreadable board is no deletion of its items). Board thumbnails are not kept
+  for keyed workspaces.
+- **Caches**: unwrapped DEKs and key rows per instance for `WORKSPACE_KEY_CACHE_SECONDS`; a state
+  change invalidates key rows on every instance (pubsub `freero:keys`), so opening stops at once;
+  an already-cached DEK may still SEAL (an open room's last save as it closes). `keys:check` probes
+  each KMS key every half cache period (a customer's revocation → `unavailable`; an answer again →
+  `active`); `keys:seal` seals content stored before the key, under an older data key, or under
+  another workspace's key (realtime `resealBoard`, compare-and-swap per row).
+- **Moves** (#124): boards' `moveToWorkspace` reseals the board for the target (or opens it, for a
+  target without a key) before the move and again after it; refused when either key can't be used.
+- Audited: `key.created` / `rotated` / `suspended` / `resumed` / `destroyed` / `unavailable` /
+  `available` (never key material).
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 
