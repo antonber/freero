@@ -1347,7 +1347,7 @@ period, orchestrating the owning modules' exports), `notifications` (notificatio
 notification_prefs, pending_mentions, card_due_watch, board_change_digests: inbox, live delivery,
 email digests, due-date reminders, the "changes on your boards" email), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on;
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache, sso_sp_keys, sso_sessions: per-workspace single sign-on;
 sso_domain_policies, sso_domain_captures: domain control),
 `scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
@@ -1824,8 +1824,22 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   `idp_initiated` switch is on (off by default); then its `Destination` must also be this ACS, its
   RelayState counts only as a same-origin path (`unsolicitedReturnPath`), and the claims are parked
   on a new flow bound by cookie to the browser that posted, finished by the same same-site GET
-  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). Single logout and encrypted
-  assertions: #13. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). **SP keys, encryption,
+  signed requests, single logout** (#13; docs/design/compliance.md §4): a workspace's own RSA key
+  pairs (`sso/spKeys.ts`, `sso_sp_keys`: at most a current and a next one, self-signed certificate
+  DER-built there, private key sealed `sso-sp-key-v1`, never returned) are published in the SP
+  metadata we build (`saml.ts` `serviceProviderMetadata`: every key for signing and encryption, SLO
+  in both bindings); each decrypts encrypted assertions (tried in turn, rotation), the current one
+  signs AuthnRequests and logout messages with "Sign requests"; "Require encrypted assertions"
+  refuses one that arrived in the clear. Single logout (`sso/logout.ts`,
+  `/api/sso/:ws/saml/slo`, cross-site POST allowed): an IdP LogoutRequest must be signed (redirect:
+  over the query), from the IdP, addressed to this SLO URL, recent and used once (`sso_saml_cache`);
+  it ends only `sso_sessions` rows of that workspace + NameID (+ SessionIndex) through auth's
+  `endSessionsByKeys`. Those rows are written by auth's `onSessionStarted` from the opaque
+  `sessionTag` the SAML sign-in passes to `completeSignIn` (kept on `auth_challenges` across the
+  second step) and cascade with the session. Signing out here asks auth's `onSignOutRedirect`
+  (before the session row goes) and the logout answer's `redirect` sends the browser to the IdP
+  with a LogoutRequest. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
   `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
   a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
   started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity

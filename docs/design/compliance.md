@@ -281,4 +281,57 @@ and signing out of Freero signs out at the IdP.
 
 ### Built / left
 
-Filled in when the work lands.
+Built (`modules/sso`: `spKeys.ts`, `logout.ts`, `saml.ts`, `signIn.ts`; auth seams; admin console
+"Signing, encryption and single logout" card in the Single sign-on tab):
+
+- **Keys**: `sso_sp_keys` per workspace (or organisation), at most two. The first is current; a
+  second waits as "next" until promoted; only a non-current key — or the last one while neither
+  switch needs it — can be removed. The certificate (10 years, self-signed, CN "Freero SAML service
+  provider <workspace>") is DER-encoded by hand and checked with `X509Certificate.verify`. Audited
+  `sso.sp_key_created` / `sso.sp_key_rotated` / `sso.sp_key_removed`.
+- **Metadata** is built by us, not node-saml (which publishes one encryption key and one logout
+  binding): every key as `signing` and `encryption` KeyDescriptor, `AuthnRequestsSigned` = "Sign
+  requests" with a current key, `WantAssertionsSigned="true"`, SingleLogoutService for
+  HTTP-Redirect and HTTP-POST, the ACS.
+- **Encrypted assertions**: one node-saml instance per key; an encrypted assertion is tried with
+  each (the first failure is the one recorded). Nothing is consumed before decryption succeeds, so
+  a wrong key costs only the attempt. "Require encrypted assertions" is checked on the raw
+  response before validation (a top-level `Assertion` → refused); it and "Sign requests" refuse to
+  turn on without a key. With "Sign requests" on and the key unopenable (secret lost) sign-in is
+  refused rather than sent unsigned.
+- **Single logout, IdP-initiated**: besides node-saml's signature (the one-argument
+  `validateRedirectAsync`, which requires one; we check there is exactly one Signature and SigAlg
+  too) and issuer checks, we require `Destination` = this workspace's SLO URL (node-saml only warns),
+  `IssueInstant` within 10 minutes (+1 min skew), and record the request ID until it could no longer
+  be accepted (`slo:<ID>` in `sso_saml_cache`, `cacheSaveIfAbsent`). Refusals: `sso.logout_refused`
+  and `/login?error=sso_failed`. Ended: `sso.logout` per person (`initiatedBy: identity_provider`,
+  count). The LogoutResponse goes to the IdP's SLO URL over HTTP-Redirect (signed with "Sign
+  requests"); without an SLO URL the browser lands on `/login`.
+- **Single logout, SP-initiated**: `POST /api/auth/logout` answers `{ ok, redirect? }`; the web app
+  follows `redirect` after it signed out locally. The IdP's LogoutResponse is validated
+  (InResponseTo must be one we sent; signature) for the record only — the browser lands on
+  `/login` either way, since the session here is already gone.
+- **Auth seams** (auth stays the only writer of sessions): `completeSignIn(…, { sessionTag })`
+  (kept on `auth_challenges.session_tag` across the second step), `onSessionStarted` (awaited
+  before the cookie is set: if recording fails the sign-in fails, so no session SLO can't reach),
+  `endSessionsByKeys`, `onSignOutRedirect` (asked just before the session row is deleted).
+- **`sso_sessions`** stores auth's session key itself (already a sha256 of the cookie, the same
+  value `sessions.token_hash` holds) with `REFERENCES sessions ON DELETE CASCADE`, so rows go with
+  their session and need no cleanup job.
+- Tests (`sso/samlKeysAndLogout.test.ts`, real signatures and XML Encryption from
+  `scripts/lib/mock-saml.mjs`): NameID scoping (not a password session, not another workspace's
+  same NameID), SessionIndex scoping over HTTP-POST, refusals (unsigned redirect and POST, another
+  key, another issuer, another Destination, old, replayed), SP-initiated LogoutRequest signed with
+  the published certificate, signed AuthnRequest verified with the published certificate, encrypted
+  assertion with the right / wrong key and across a rotation, required encryption, private key
+  never in an answer and sealed at rest.
+
+Left:
+
+- Organisation consoles show the same card (connections keyed by the organisation id work
+  unchanged), but SLO through an organisation's connection was only covered by the shared code
+  path, not a dedicated test.
+- LogoutRequests with an encrypted NameID (`EncryptedID`) are decrypted with the current key only.
+- No SOAP back-channel binding (browser bindings only), like most SaaS service providers.
+- IdPs must be given the new SP metadata (or certificate) after a key is created; an IdP that
+  starts requiring signed requests before "Sign requests" is on refuses sign-ins until it is.
