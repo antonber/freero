@@ -8977,22 +8977,48 @@ async function siteChecks() {
 }
 
 // Integrations pack (#88): meeting notes through the REST structure operation and the MCP tool, and
-// Slack link unfurls against a stand-in Slack Web API — signed, unsigned and replayed requests.
+// Slack link unfurls against a stand-in Slack Web API — signed, unsigned and replayed requests. Then
+// personal Slack (#105) against the same stand-in: Connect Slack's OAuth round trip (its consent page
+// answers "Allow" at once), a notification as one direct message and no email, /freero, a private
+// board's preview for the person who posted it, and disconnecting.
 async function integrationsChecks() {
   const { createHmac } = await import('node:crypto');
   const http = await import('node:http');
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-integrations-'));
-  // The stand-in for slack.com/api: records every chat.unfurl it is sent.
+  // The stand-in for slack.com: records every chat.unfurl and every other Web API call it is sent;
+  // its consent page (/oauth/v2/authorize) sends the browser straight back as if "Allow" was chosen.
   const unfurls = [];
+  const slackCalls = [];
+  const SLACK_CLIENT_SECRET = `verify-client-${randomBytes(6).toString('hex')}`;
   const slackApi = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
-      if (req.url === '/api/chat.unfurl') unfurls.push({ auth: req.headers.authorization, body: JSON.parse(body) });
+      const url = new URL(req.url, 'http://slack.verify');
+      if (url.pathname === '/oauth/v2/authorize') {
+        const back = new URL(url.searchParams.get('redirect_uri'));
+        back.searchParams.set('code', 'verify-code');
+        back.searchParams.set('state', url.searchParams.get('state'));
+        res.writeHead(302, { location: back.href }).end();
+        return;
+      }
+      const method = url.pathname.replace(/^\/api\//, '');
+      const form = req.headers['content-type']?.startsWith('application/x-www-form-urlencoded');
+      const parsed = form ? Object.fromEntries(new URLSearchParams(body)) : body ? JSON.parse(body) : {};
+      if (method === 'chat.unfurl') unfurls.push({ auth: req.headers.authorization, body: parsed });
+      else slackCalls.push({ method, auth: req.headers.authorization, body: parsed });
+      const answers = {
+        'oauth.v2.access':
+          parsed.client_secret === SLACK_CLIENT_SECRET && parsed.code === 'verify-code'
+            ? { ok: true, access_token: 'xoxb-verify-TV', token_type: 'bot', scope: 'links:read,links:write,chat:write,im:write,commands,users:read', team: { id: 'TV', name: 'Verify Co' }, authed_user: { id: 'UVERIFY' } }
+            : { ok: false, error: 'invalid_code' },
+        'conversations.open': { ok: true, channel: { id: 'DVERIFY' } },
+        'users.info': { ok: true, user: { name: 'integrator', profile: { display_name: 'Integrator' } } },
+      };
       res.setHeader('content-type', 'application/json');
-      res.end('{"ok":true}');
+      res.end(JSON.stringify(answers[method] ?? { ok: true }));
     });
   });
   await new Promise((r) => slackApi.listen(0, '127.0.0.1', r));
@@ -9003,6 +9029,10 @@ async function integrationsChecks() {
     SLACK_SIGNING_SECRET: SECRET,
     SLACK_BOT_TOKEN: 'xoxb-verify',
     SLACK_API_URL: `http://127.0.0.1:${slackApi.address().port}/api`,
+    SLACK_CLIENT_ID: '1111.2222',
+    SLACK_CLIENT_SECRET,
+    NOTIFY_EMAIL_DELAY_SECONDS: '2',
+    NOTIFY_EMAIL_INTERVAL_SECONDS: '1',
     RATE_LIMIT_INVITE: '500/1h',
     RATE_LIMIT_PASSWORD: '500/15m',
   };
@@ -9105,6 +9135,93 @@ async function integrationsChecks() {
       await slackPost(barrier, sign(barrier));
       await waitFor(() => unfurls.length >= 1, 10_000, 'the barrier unfurl');
       assert(unfurls.length === 1 && Object.keys(unfurls[0].body.unfurls)[0].endsWith('/doc/barrier'), `Slack got ${JSON.stringify(unfurls.map((u) => Object.keys(u.body.unfurls)))}`);
+      unfurls.length = 0;
+    });
+
+    // ---- personal Slack (#105) ----
+    const freero = (p) => `http://127.0.0.1:${proc.port}${p}`;
+    const connect = async (u) => {
+      const start = await fetch(freero('/api/integrations/slack/oauth/start'), { redirect: 'manual', headers: { cookie: u.cookie } });
+      assert(start.status === 302, `start: ${start.status}`);
+      const browser = /^(freero_slack_oauth=[^;]*)/.exec(start.headers.getSetCookie().join('\n'))?.[1];
+      const consent = await fetch(start.headers.get('location'), { redirect: 'manual' });
+      const callback = new URL(consent.headers.get('location'));
+      const path = `${callback.pathname}${callback.search}`;
+      return { path, browser, finish: (cookie = `${u.cookie}; ${browser}`) => fetch(freero(path), { redirect: 'manual', headers: { cookie } }) };
+    };
+    const R = new User('SlackRequester', proc.port);
+    R.email = `requester-${Date.now()}@integrations.verify.freero.app`;
+    await R.signup();
+    await R.verifyEmail(dataDir);
+    const digestRuns = () => gauge(proc, 'freero_notifications_digest_runs_total');
+
+    await check('slack (#105): Connect Slack goes through Slack’s consent and back, links the Slack user Slack names, and its callback can’t be replayed or finished from another browser', async () => {
+      assert((await O.req('GET', '/api/integrations/slack/me')).json.link === null, 'linked before connecting');
+      const stolen = await connect(O);
+      const elsewhere = await stolen.finish(O.cookie); // the session, but not the browser that started it
+      assert(elsewhere.status === 400, `another browser: ${elsewhere.status}`);
+      const flow = await connect(O);
+      const done = await flow.finish();
+      assert(done.status === 302 && done.headers.get('location') === '/settings?slack=connected#slack', `callback: ${done.status} ${done.headers.get('location')}`);
+      assert((await flow.finish()).status === 400, 'the callback worked twice');
+      const me = (await O.req('GET', '/api/integrations/slack/me')).json;
+      assert(me.offered && me.link?.teamName === 'Verify Co' && me.link.slackName === 'Integrator', JSON.stringify(me));
+      const redeem = slackCalls.filter((c) => c.method === 'oauth.v2.access');
+      assert(redeem.length === 1 && redeem[0].body.redirect_uri === `https://${HOST}/api/integrations/slack/oauth/callback`, JSON.stringify(redeem));
+    });
+
+    await check('slack (#105): an access request to someone who connected Slack reaches them as one direct message, and the email digest leaves it out', async () => {
+      const board = (await O.req('POST', '/api/boards', { title: 'Slack-only roadmap' })).json.board;
+      const ask = await R.req('POST', `/api/boards/${board.id}/access-request`, { role: 'editor', message: 'Need it for <!channel> planning' });
+      assert(ask.status === 201, `request: ${ask.status} ${ask.text}`);
+      await waitFor(() => slackCalls.some((c) => c.method === 'chat.postMessage'), 10_000, 'the direct message');
+      const runs = await digestRuns();
+      await waitFor(async () => (await digestRuns()) >= runs + 4, 20_000, 'digest runs past the email delay');
+      const dms = slackCalls.filter((c) => c.method === 'chat.postMessage');
+      const text = JSON.stringify(dms);
+      assert(dms.length === 1 && dms[0].auth === 'Bearer xoxb-verify-TV' && dms[0].body.channel === 'DVERIFY', JSON.stringify(dms));
+      assert(text.includes('Slack-only roadmap') && text.includes(`/board/${board.id}?share=requests`) && !text.includes('<!channel>'), text);
+      const mailed = outbox(dataDir).filter((m) => m.to === O.email && /Slack-only roadmap/.test(`${m.subject} ${m.text}`));
+      assert(mailed.length === 0, `emailed too: ${mailed.map((m) => m.subject)}`);
+      assert((await O.req('GET', '/api/notifications')).json.notifications.some((n) => n.type === 'access.request'), 'not in the inbox');
+    });
+
+    const command = (fields, signedHeaders = true) => {
+      const raw = new URLSearchParams({ command: '/freero', team_id: 'TV', user_id: 'UVERIFY', ...fields }).toString();
+      const t = String(Math.floor(Date.now() / 1000));
+      const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+      if (signedHeaders) Object.assign(headers, { 'x-slack-request-timestamp': t, 'x-slack-signature': `v0=${createHmac('sha256', SECRET).update(`v0:${t}:${raw}`).digest('hex')}` });
+      return fetch(freero('/api/integrations/slack/commands'), { method: 'POST', headers, body: raw });
+    };
+
+    await check('slack (#105): /freero new makes a board in the linked person’s workspace and /freero finds it; an unsigned command makes nothing', async () => {
+      assert((await command({ text: 'new Forged in Slack' }, false)).status === 401, 'unsigned command answered');
+      const made = await (await command({ text: 'new Planned in Slack' })).json();
+      assert(made.response_type === 'ephemeral' && /Created <https:\/\/freero\.verify\/board\//.test(made.text), JSON.stringify(made));
+      const titles = (await O.req('GET', '/api/boards')).json.boards.map((b) => b.title);
+      assert(titles.includes('Planned in Slack') && !titles.includes('Forged in Slack'), JSON.stringify(titles));
+      const found = await (await command({ text: 'planned' })).json();
+      assert(found.text.includes('Planned in Slack'), found.text);
+      const stranger = await (await command({ user_id: 'USTRANGER', text: 'planned' })).json();
+      assert(!stranger.text.includes('Planned') && stranger.text.includes('Connect your Slack account'), stranger.text);
+    });
+
+    await check('slack (#105): a private board link posted by the person who connected unfurls with its title; disconnecting ends that and revokes the app’s token in that workspace', async () => {
+      const priv = (await O.req('POST', '/api/boards', { title: 'Private hiring plan' })).json.board.id;
+      const url = `https://${HOST}/board/${priv}`;
+      const post = (user) => {
+        const raw = JSON.stringify({ type: 'event_callback', team_id: 'TV', event_id: `EvP${++seq}`, event: { type: 'link_shared', channel: 'CV', user, message_ts: `1700000001.${seq}`, links: [{ domain: HOST, url }] } });
+        return slackPost(raw, sign(raw));
+      };
+      await post('UVERIFY');
+      await waitFor(() => unfurls.length === 1, 10_000, 'the unfurl');
+      assert(JSON.stringify(unfurls[0].body.unfurls[url]).includes('Private hiring plan') && unfurls[0].auth === 'Bearer xoxb-verify-TV', JSON.stringify(unfurls[0]));
+      assert((await O.req('DELETE', '/api/integrations/slack/me')).status === 200, 'disconnect');
+      assert(slackCalls.some((c) => c.method === 'auth.revoke' && c.auth === 'Bearer xoxb-verify-TV'), 'the token was not revoked');
+      await post('UVERIFY');
+      await waitFor(() => unfurls.length === 2, 10_000, 'the second unfurl');
+      assert(!JSON.stringify(unfurls[1].body).includes('Private hiring plan'), 'still previewed after disconnecting');
+      assert((await O.req('GET', '/api/integrations/slack/me')).json.link === null, 'still linked');
     });
   } finally {
     for (const c of clients) await c.close().catch(() => {});

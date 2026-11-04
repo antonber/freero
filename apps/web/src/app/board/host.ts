@@ -36,6 +36,7 @@ import {
   uploadImage,
   versionHistory,
   downloadBoardFile,
+  commentFilesOf,
   downloadBackupOf,
   docsFrom,
   saveAs,
@@ -116,6 +117,17 @@ export function personalViewsOf(boardId: string): NonNullable<Host['personalView
   };
 }
 
+/** The board's workspace's own sticker sets (#138). */
+export function stickersOf(boardId: string): NonNullable<Host['stickers']> {
+  return {
+    list: () => api.stickers(boardId),
+    createSet: async (name) => (await api.createStickerSet(boardId, name)).set,
+    add: (setId, file, name) => api.addSticker(setId, file, name),
+    removeSet: async (setId) => void (await api.removeStickerSet(setId)),
+    remove: async (setId, stickerId) => void (await api.removeSticker(setId, stickerId)),
+  };
+}
+
 /** Toasts with an action button stay up long enough to read and act on. */
 const ACTION_TOAST_MS = 12000;
 
@@ -150,10 +162,12 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     syncUrl: `${wsBase()}/ws/boards`,
     ...(deps.onAccessLost ? { onConnectionEnded: (end: { code: number }) => void (end.code === WS_CLOSE_NO_ACCESS && deps.onAccessLost?.()) } : {}),
     personalViews: personalViewsOf(board.id),
+    stickers: stickersOf(board.id),
     uploadImage,
     uploadFile,
     uploadAttachment,
     downloadFile: downloadBoardFile(board.id),
+    commentFile: commentFilesOf(board.id),
     downloadBackup: downloadBackupOf(board.id),
     openBackup(file) {
       holdBackup(file);
@@ -263,7 +277,8 @@ export function createGuestHost(
     uploadAttachment: needsAccount(t('uploadingFiles')),
     // Visitors may download what the board's workspace lets them (the server decides).
     downloadFile: downloadBoardFile(board.id),
-    renameBoard: needsAccount(t('renamingBoards')),
+    commentFile: commentFilesOf(board.id),
+    renameBoard: needsAccount('Renaming boards'),
     saveThumbnail: async () => undefined,
     colorTheme: browserTheme,
     openShareDialog: signUp,

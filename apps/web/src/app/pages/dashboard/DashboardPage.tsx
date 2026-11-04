@@ -19,7 +19,9 @@ import { BoardPlaceDialog } from './BoardPlaceDialog';
 import { RestoreBackupDialog } from './RestoreBackupDialog';
 import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
-import { CreateWorkspaceDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
+import { CreateWorkspaceDialog, DeleteProjectDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
+import { ProjectOverview } from './ProjectOverview';
+import { SaveBlueprintDialog, UseBlueprintDialog } from './BlueprintDialogs';
 import { WorkspaceMembers } from './WorkspaceMembers';
 import { WorkspaceSettings } from './WorkspaceSettings';
 import { WorkspaceBlockedNotice } from './WorkspaceBlockedNotice';
@@ -103,6 +105,11 @@ export function DashboardPage() {
   const [placing, setPlacing] = useState<{ mode: 'duplicate' | 'move'; board: BoardSummary } | null>(null);
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectSummary | 'new' | null>(null);
+  // #129: a new project's parent (a sub-project), null for the top.
+  const [newProjectParent, setNewProjectParent] = useState<string | null>(null);
+  // #161: saving a project as a blueprint, or starting one from a blueprint (inside `parent`).
+  const [savingBlueprint, setSavingBlueprint] = useState<ProjectSummary | null>(null);
+  const [usingBlueprint, setUsingBlueprint] = useState<{ parent: ProjectSummary | null } | null>(null);
   const [deletingProject, setDeletingProject] = useState<ProjectSummary | null>(null);
   // Restoring a .freero backup (KAI-137): from the tile, a file dropped on a board, or one the
   // installed app was opened with (KAI-218).
@@ -329,7 +336,22 @@ export function DashboardPage() {
       projects={ws.projects}
       projectId={projectId}
       onProject={(id) => go('project', { project: id })}
-      onCreateProject={() => setEditingProject('new')}
+      onCreateProject={() => {
+        setNewProjectParent(null);
+        setEditingProject('new');
+      }}
+      onCreateSubProject={(p) => {
+        setNewProjectParent(p.id);
+        setEditingProject('new');
+      }}
+      onPinProject={(p, pinned) =>
+        void api.setProjectPinned(p.id, pinned).then(
+          () => ws.reloadProjects(),
+          (e) => notify(e instanceof ApiError ? e.message : 'Could not pin the project', 'error'),
+        )
+      }
+      onUseBlueprint={(parent) => setUsingBlueprint({ parent })}
+      onSaveBlueprint={(p) => setSavingBlueprint(p)}
       onManageProject={(p) => setEditingProject(p)}
       onDeleteProject={(p) => setDeletingProject(p)}
       onDropBoard={(id, target) => void moveBoard(id, target)}
@@ -398,6 +420,17 @@ export function DashboardPage() {
             />
           ) : (
           <>
+          {view === 'project' && project && !searching ? (
+            <ProjectOverview
+              key={project.id}
+              project={project}
+              projects={ws.projects}
+              boards={boards}
+              onOpenProject={(id) => go('project', { project: id })}
+              onEdit={() => setEditingProject(project)}
+              onChanged={() => void ws.reloadProjects()}
+            />
+          ) : null}
           {showCreate && !searching ? (
             <section className="fr-create" aria-label={tr('create')}>
               <button type="button" className="fr-create__tile fr-create__tile--blank" onClick={() => create('blank')} disabled={!!creating}>
@@ -686,6 +719,8 @@ export function DashboardPage() {
           open={editingProject !== null}
           workspace={workspace}
           project={editingProject === 'new' ? null : editingProject}
+          projects={ws.projects}
+          parentId={editingProject === 'new' ? newProjectParent : null}
           onClose={() => setEditingProject(null)}
           onSaved={(p) => {
             const created = editingProject === 'new';
@@ -695,20 +730,35 @@ export function DashboardPage() {
           }}
         />
       ) : null}
-      <ConfirmModal
-        open={!!deletingProject}
-        title={tr('deleteTheProjectValue', { value: deletingProject?.name ?? '' })}
-        body={tr('onlyEmptyProjectsCanBe')}
-        confirmLabel={tr('deleteProject')}
-        onClose={() => setDeletingProject(null)}
-        onConfirm={async () => {
-          const p = deletingProject!;
-          await api.deleteProject(p.id);
-          await ws.reloadProjects();
-          if (projectId === p.id) go('home');
-          notify(tr('projectDeleted'), 'info');
-        }}
-      />
+      {savingBlueprint && workspace ? <SaveBlueprintDialog project={savingBlueprint} workspace={workspace} onClose={() => setSavingBlueprint(null)} /> : null}
+      {usingBlueprint && workspace ? (
+        <UseBlueprintDialog
+          workspace={workspace}
+          parent={usingBlueprint.parent}
+          onClose={() => setUsingBlueprint(null)}
+          onCreated={(p) => {
+            setUsingBlueprint(null);
+            void ws.reloadProjects();
+            go('project', { project: p.id });
+          }}
+        />
+      ) : null}
+      {deletingProject ? (
+        <DeleteProjectDialog
+          project={deletingProject}
+          projects={ws.projects}
+          onClose={() => setDeletingProject(null)}
+          onDeleted={() => {
+            const p = deletingProject;
+            setDeletingProject(null);
+            void ws.reloadProjects();
+            if (projectId === p.id) go(p.parentId ? 'project' : 'home', p.parentId ? { project: p.parentId } : {});
+            // Its boards may have moved into the project on screen.
+            else void load();
+            notify('Project deleted', 'info');
+          }}
+        />
+      ) : null}
       {sharing ? (
         <ShareDialog
           boardId={sharing.id}

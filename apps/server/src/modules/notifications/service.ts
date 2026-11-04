@@ -1,6 +1,7 @@
 // Notifications: created from trusted server-side events (comment messages realtime applied from
 // an authenticated socket, boards shared through the members API), listed in the app's inbox,
-// delivered live to open tabs (live.ts) and emailed as batched digests.
+// delivered live to open tabs (live.ts), sent at once as a Slack direct message to people who
+// connected Slack (#105), and emailed as batched digests — each one by Slack or by email, never both.
 import { mac, macMatches } from '../../platform/secrets';
 import type { AppNotification, BoardChangesFrequency, NotificationPrefs, NotificationsResponse, NotificationType } from '@freero/shared';
 import { guestDisplayName, isGuestId, mentionedUserIds, mentionsAsNames } from '@freero/shared';
@@ -9,7 +10,7 @@ import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { getAccount, getGuests, getUsers, localesOf } from '../auth/index';
-import { getBoardAccess, getBoardTitle } from '../boards/index';
+import { boardWorkspaceId, getBoardAccess, getBoardTitle } from '../boards/index';
 import {
   accessRequestOutcomes,
   invitedEmails,
@@ -19,8 +20,10 @@ import {
   type InviteAcceptedEvent,
 } from '../members/index';
 import type { CommentMessageEvent } from '../realtime/index';
+import { sendSlackDm, slackConnectOffered, slackLinked, slackMayReach } from '../slack/index';
 import { setBoardChangesFrequency } from './boardChanges';
 import * as live from './live';
+import { slackDeliveries } from './metrics';
 import * as repo from './repo';
 import { isNotificationType, NOTIFICATION_TYPES, type NotificationData } from './types';
 import { t } from './messages';
@@ -48,8 +51,9 @@ export async function notify(n: NewNotification): Promise<boolean> {
   if (access && (!access.role || (n.editorsOnly && access.role !== 'owner' && access.role !== 'editor'))) return false;
   // About a doc (KAI-162): its links open the doc page.
   const data = access?.kind === 'doc' ? { ...n.data, objectKind: 'doc' as const } : n.data;
+  const id = newId(16);
   const created = await repo.insert({
-    id: newId(16),
+    id,
     userId: n.userId,
     type: n.type,
     actorId: n.actorId,
@@ -58,8 +62,66 @@ export async function notify(n: NewNotification): Promise<boolean> {
     dedupeKey: n.dedupeKey ?? null,
     createdAt: Date.now(),
   });
-  if (created) live.changed(n.userId);
+  if (created) {
+    live.changed(n.userId);
+    // Once it is committed: a notification rolled back with its cause never reaches Slack.
+    repo.afterCommit(() => track(toSlack({ id, userId: n.userId, type: n.type, actorId: n.actorId, boardId: n.boardId, data })));
+  }
   return created;
+}
+
+// ---- Slack direct messages (#105) ----
+
+const slackInFlight = new Set<Promise<unknown>>();
+const track = (p: Promise<unknown>) => {
+  slackInFlight.add(p);
+  void p.finally(() => slackInFlight.delete(p));
+};
+
+/** Resolves once every Slack message started so far is done (shutdown, tests). */
+export async function slackDeliveriesSettled(): Promise<void> {
+  while (slackInFlight.size) await Promise.allSettled([...slackInFlight]);
+}
+
+/**
+ * A new notification, as a direct message to the person's Slack when they connected one and want
+ * this type there. Claimed first (repo.claimForSlack), so it is sent at most once and the email
+ * digest leaves it out; handed back to the digest if Slack refused it. Never throws.
+ */
+async function toSlack(n: { id: string; userId: string; type: NotificationType; actorId: string | null; boardId: string | null; data: NotificationData }): Promise<void> {
+  let outcome: 'sent' | 'failed' | 'skipped' = 'skipped';
+  try {
+    const def = NOTIFICATION_TYPES[n.type];
+    if (def.direct) return;
+    const on = (await repo.slackPrefs(n.userId)).get(n.type) ?? def.slackByDefault === true;
+    if (!on || !(await slackLinked(n.userId))) return;
+    // About a board, doc or workspace whose team keeps apps out (API access off, the app blocked,
+    // an IP allowlist it isn't exempt from): left to the email, like any app would be refused.
+    const boardId = n.boardId ?? n.data.requestedBoardId ?? null;
+    const workspaceId = (boardId ? await boardWorkspaceId(boardId) : null) ?? n.data.workspaceId ?? null;
+    if (workspaceId && !(await slackMayReach(n.userId, workspaceId))) return;
+    if (!(await repo.claimForSlack(n.id, Date.now()))) return;
+    const actor = n.actorId ? (await getUsers([n.actorId])).get(n.actorId)?.name : undefined;
+    // In the recipient's language (#5), like the inbox and the digest.
+    const locale = (await localesOf([n.userId])).get(n.userId) ?? null;
+    const sent = await sendSlackDm(n.userId, {
+      title: def.title(locale, actor ?? n.data.actorName ?? t(locale, 'someone'), n.data),
+      quote: n.data.excerpt,
+      url: appUrl(null, def.link(n.boardId, n.data)),
+      linkLabel: def.linkLabel(locale),
+    });
+    if (sent === 'sent') outcome = 'sent';
+    else {
+      outcome = 'failed';
+      await repo.unclaimSlack(n.id);
+    }
+  } catch (e) {
+    outcome = 'failed';
+    logError('notifications: could not send to Slack; leaving it to the email', e);
+    await repo.unclaimSlack(n.id).catch(() => undefined);
+  } finally {
+    slackDeliveries.inc({ outcome });
+  }
 }
 
 const EXCERPT_MAX = 280;
@@ -219,7 +281,7 @@ const ALL = '*';
 export const BOARD_CHANGES_LIST = 'board-changes';
 
 export async function prefsFor(userId: string): Promise<NotificationPrefs> {
-  const p = await repo.prefs(userId);
+  const [p, slack] = await Promise.all([repo.prefs(userId), repo.slackPrefs(userId)]);
   const locale = (await localesOf([userId])).get(userId) ?? null;
   return {
     emailAll: p.get(ALL) ?? true,
@@ -228,18 +290,27 @@ export async function prefsFor(userId: string): Promise<NotificationPrefs> {
       label: NOTIFICATION_TYPES[type].label(locale),
       description: NOTIFICATION_TYPES[type].description(locale),
       email: p.get(type) ?? true,
+      slack: slack.get(type) ?? NOTIFICATION_TYPES[type].slackByDefault === true,
     })),
     boardChanges: (await repo.boardChangeDigestOf(userId))?.frequency ?? 'off',
+    slack: slackConnectOffered() ? { linked: await slackLinked(userId) } : null,
   };
 }
 
 export async function updatePrefs(
   userId: string,
-  patch: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>>; boardChanges?: BoardChangesFrequency },
+  patch: {
+    emailAll?: boolean;
+    email?: Partial<Record<NotificationType, boolean>>;
+    slack?: Partial<Record<NotificationType, boolean>>;
+    boardChanges?: BoardChangesFrequency;
+  },
 ): Promise<NotificationPrefs> {
   if (typeof patch.emailAll === 'boolean') await repo.setPref(userId, ALL, patch.emailAll);
   if (patch.boardChanges) await setBoardChangesFrequency(userId, patch.boardChanges);
   for (const [type, on] of Object.entries(patch.email ?? {})) if (isNotificationType(type) && typeof on === 'boolean') await repo.setPref(userId, type, on);
+  for (const [type, on] of Object.entries(patch.slack ?? {}))
+    if (isNotificationType(type) && !NOTIFICATION_TYPES[type].direct && typeof on === 'boolean') await repo.setSlackPref(userId, type, on);
   return prefsFor(userId);
 }
 
@@ -306,9 +377,10 @@ export async function sendDigests(now = Date.now()): Promise<number> {
     const claimed = await repo.claimForEmail(userId, now);
     const prefs = await repo.prefs(userId);
     if (prefs.get(ALL) === false) continue;
-    // Direct types were emailed on their own when they were created.
+    // Direct types were emailed on their own when they were created; ones sent to Slack (#105)
+    // reached the person there.
     const due = claimed.filter(
-      (r) => r.readAt === null && isNotificationType(r.type) && !NOTIFICATION_TYPES[r.type].direct && prefs.get(r.type) !== false,
+      (r) => r.readAt === null && r.slackedAt === null && isNotificationType(r.type) && !NOTIFICATION_TYPES[r.type].direct && prefs.get(r.type) !== false,
     );
     if (!due.length) continue;
     let account;

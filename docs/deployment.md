@@ -203,5 +203,5 @@ migrations ahead of a deploy, start one instance of the new version first.
 - [ ] More than one instance: `REDIS_URL` set (realtime fan-out); any balancing policy
 - [ ] `/metrics` protected (`METRICS_TOKEN` or `METRICS_PORT`) and scraped; alerts set up
 - [ ] `ERROR_REPORTING_DSN` set (optional)
-- [ ] `GA_MEASUREMENT_ID` set only if you want Google Analytics (optional; consent banner, see docs/configuration.md), and the privacy policy reviewed for it
+- [ ] `GA_MEASUREMENT_ID` set only if you want Google Analytics (optional; on by default with an opt-out, see docs/configuration.md), and the privacy policy reviewed for it
 - [ ] Readiness/liveness probes, SIGTERM grace period configured

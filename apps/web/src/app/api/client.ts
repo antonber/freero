@@ -122,6 +122,7 @@ import type {
   LoginRequest,
   LoginResponse,
   NotificationPrefs,
+  SlackAccountInfo,
   NotificationsResponse,
   NotificationType,
   PendingInvite,
@@ -142,6 +143,7 @@ import type {
   User,
   ProjectAccess,
   ProjectSummary,
+  BlueprintSummary,
   WorkspaceInvite,
   WorkspaceInvitePreview,
   WorkspaceMember,
@@ -151,6 +153,7 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
+import type { Sticker, StickerSet, StickersResponse } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -436,8 +439,15 @@ export const api = {
     request<NotificationsResponse>('GET', `/api/notifications${before ? `?before=${before}` : ''}`),
   markNotificationsRead: (ids?: string[]) => request<{ unread: number }>('POST', '/api/notifications/read', ids ? { ids } : {}),
   notificationPrefs: () => request<NotificationPrefs>('GET', '/api/notifications/prefs'),
-  setNotificationPrefs: (body: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>>; boardChanges?: BoardChangesFrequency }) =>
-    request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
+  setNotificationPrefs: (body: {
+    emailAll?: boolean;
+    email?: Partial<Record<NotificationType, boolean>>;
+    slack?: Partial<Record<NotificationType, boolean>>;
+    boardChanges?: BoardChangesFrequency;
+  }) => request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
+  /** Personal Slack (#105): whether the server offers it and the person's connected account. Connecting is a page visit to /api/integrations/slack/oauth/start. */
+  slackAccount: () => request<SlackAccountInfo>('GET', '/api/integrations/slack/me'),
+  disconnectSlack: () => request<{ ok: true }>('DELETE', '/api/integrations/slack/me'),
   /** `list` 'board-changes': only the "changes on your boards" email (its own link). */
   unsubscribe: (token: string, list?: string) =>
     request<{ ok: true; email: string; list: string }>(
@@ -620,11 +630,29 @@ export const api = {
   // projects (folders)
   listProjects: (workspaceId: string) =>
     request<{ projects: ProjectSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`),
-  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null) =>
-    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess }),
-  updateProject: (id: string, body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null }) =>
-    request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
-  deleteProject: (id: string) => request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}`),
+  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null, parentId: string | null = null) =>
+    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess, ...(parentId ? { parentId } : {}) }),
+  updateProject: (
+    id: string,
+    body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null; description?: string; pinnedBoardIds?: string[]; parentId?: string | null },
+  ) => request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
+  /** #129: `boards` says what happens to the boards still in it (parent project / trash); without it only an empty project goes. */
+  deleteProject: (id: string, boards?: 'parent' | 'trash') =>
+    request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}${boards ? `?boards=${boards}` : ''}`),
+  // blueprints (#161): a project's boards and docs saved for reuse
+  listBlueprints: () => request<{ blueprints: BlueprintSummary[] }>('GET', '/api/blueprints'),
+  saveBlueprint: (projectId: string, body: { name: string; description?: string; steps?: string[]; workspaceId?: string | null }) =>
+    request<{ blueprint: BlueprintSummary }>('POST', `/api/projects/${encodeURIComponent(projectId)}/blueprints`, body),
+  updateBlueprint: (id: string, body: { name?: string; description?: string; steps?: string[]; workspaceId?: string | null }) =>
+    request<{ blueprint: BlueprintSummary }>('PATCH', `/api/blueprints/${encodeURIComponent(id)}`, body),
+  deleteBlueprint: (id: string) => request<{ ok: true }>('DELETE', `/api/blueprints/${encodeURIComponent(id)}`),
+  useBlueprint: (id: string, body: { workspaceId: string; name?: string; parentId?: string | null }) =>
+    request<{ project: ProjectSummary; boards: Array<{ id: string; kind: 'board' | 'doc'; title: string }> }>('POST', `/api/blueprints/${encodeURIComponent(id)}/use`, body),
+  /** #129: pin a project to the top of your own sidebar, or unpin it. */
+  setProjectPinned: (id: string, pinned: boolean) => request<{ ok: true }>(pinned ? 'PUT' : 'DELETE', `/api/projects/${encodeURIComponent(id)}/pin`),
+  /** #129: a project page's recent activity (only boards you can open). */
+  projectActivity: (workspaceId: string, projectId: string) =>
+    request<ActivityResponse>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/activity?project=${encodeURIComponent(projectId)}`),
   listProjectMembers: (id: string) =>
     request<{ members: Array<{ userId: string; name: string; color: string; avatarUrl: string | null }> }>(
       'GET',
@@ -787,6 +815,22 @@ export const api = {
   uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
   // any other file: an opaque attachment, only ever downloaded from its board
   uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+
+  // team sticker sets (#138): the board's workspace's own stickers
+  stickers: (boardId: string) => request<StickersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/stickers`),
+  createStickerSet: (boardId: string, name: string) => request<{ set: StickerSet }>('POST', `/api/boards/${encodeURIComponent(boardId)}/sticker-sets`, { name }),
+  async addSticker(setId: string, file: Blob, name: string): Promise<Sticker> {
+    const path = `/api/sticker-sets/${encodeURIComponent(setId)}/stickers?name=${encodeURIComponent(name)}`;
+    const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(res.status, body?.error || 'Upload failed');
+    }
+    return ((await res.json()) as { sticker: Sticker }).sticker;
+  },
+  removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
+  removeSticker: (setId: string, stickerId: string) =>
+    request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });
@@ -863,6 +907,16 @@ export const api = {
   /** The file of a file card / video / audio item on a board (downloads policy, audited). */
   async downloadBoardFile(boardId: string, elementId: string): Promise<Blob> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(elementId)}`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return res.blob();
+  },
+
+  /** #143: where a comment's image attachment is shown inline from (same origin; the server checks who may read it). */
+  commentFileUrl: (boardId: string, ref: { threadId: string; messageId: string; index: number }, inline = false) =>
+    `/api/boards/${encodeURIComponent(boardId)}/comment-files/${encodeURIComponent(ref.threadId)}/${encodeURIComponent(ref.messageId)}/${ref.index}${inline ? '?inline=1' : ''}`,
+  /** #143: a comment's file as a download (downloads policy, audited). */
+  async downloadCommentFile(boardId: string, ref: { threadId: string; messageId: string; index: number }): Promise<Blob> {
+    const res = await fetch(api.commentFileUrl(boardId, ref), { credentials: 'same-origin' });
     if (!res.ok) throw await failure(res);
     return res.blob();
   },

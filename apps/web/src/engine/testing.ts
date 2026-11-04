@@ -11,7 +11,7 @@ import { createElement, type ReactElement } from 'react';
 import type { Role, SuggestionRecord } from '@freero/shared';
 import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, HostUser, SavedTemplateInfo } from './api';
 import { unavailableVersionHistory } from './api';
-import { ElementView } from './canvas/WorldLayer';
+import { ElementPreview, ElementView, WorldElements, WorldViewProvider } from './canvas/WorldLayer';
 import { EngineContext } from './context';
 import { createCore, type EngineCore } from './runtime/core';
 import { serverPropose, syncStores } from './store/replicas';
@@ -54,6 +54,16 @@ export interface TestBoard {
    * Render it (react-dom) to test what an element shows and does, hooks and all.
    */
   element(user: number, id: string): ReactElement;
+  /**
+   * [additive, #131] Element `id` as replica `user`'s image exports and thumbnails draw it: its
+   * component in export mode at the canvas's current zoom, never selected or edited.
+   */
+  exported(user: number, id: string): ReactElement;
+  /**
+   * [additive, #131] Replica `user`'s world layer as its canvas draws it at its camera (viewport
+   * 1000 × 800): every visible item, culled and in low detail as on screen.
+   */
+  world(user: number): ReactElement;
   destroy(): void;
 }
 
@@ -145,7 +155,12 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
         cores.filter((c) => c.editor.can('editor')).map((c) => c.store),
       ),
     propose: (records) => serverPropose(cores.filter((c) => c.editor.can('editor')).map((c) => c.store), records),
-    element: (user, id) => createElement(EngineContext.Provider, { value: cores[user] }, createElement(ElementView, { id })),
+    element: (user, id) => createElement(EngineContext.Provider, { value: cores[user] }, createElement(WorldViewProvider, null, createElement(ElementView, { id }))),
+    exported: (user, id) => {
+      const el = cores[user].store.getElement(id);
+      return createElement(EngineContext.Provider, { value: cores[user] }, el ? createElement(ElementPreview, { element: el }) : null);
+    },
+    world: (user) => createElement(EngineContext.Provider, { value: cores[user] }, createElement(WorldElements)),
     destroy: () => cores.forEach((c) => c.destroy()),
   };
 }

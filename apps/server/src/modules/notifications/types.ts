@@ -58,6 +58,11 @@ export interface NotificationTypeDef {
    * people must get whatever their preferences, like moderation decisions.
    */
   direct?: boolean;
+  /**
+   * Sent to Slack as a direct message unless the person turned it off, once they connected Slack
+   * (#105). Types without it are offered for Slack too, off until turned on (noisier ones).
+   */
+  slackByDefault?: boolean;
 }
 
 const board = (l: L, d: NotificationData) => t(l, 'quoted', { title: d.boardTitle || (d.objectKind === 'doc' ? t(l, 'untitledDoc') : t(l, 'untitledBoard')) });
@@ -103,6 +108,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'access.request.link'),
     title: (l, actor, d) => t(l, 'access.request.title', { actor, role: role(d), board: board(l, d) }),
     link: (id, d) => `${boardPath(id, d)}?share=requests`,
+    slackByDefault: true,
   },
   'access.response': {
     label: (l) => t(l, 'access.response.label'),
@@ -110,6 +116,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'access.response.link'),
     title: (l, actor, d) => (d.approved ? t(l, 'access.response.approved', { actor, role: role(d), board: board(l, d) }) : t(l, 'access.response.declined', { actor })),
     link: (id, d) => boardPath(id ?? d.requestedBoardId ?? null, d),
+    slackByDefault: true,
   },
   'comment.mention': {
     label: (l) => t(l, 'comment.mention.label'),
@@ -117,6 +124,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'comment.mention.link'),
     title: (l, actor, d) => t(l, 'comment.mention.title', { actor, board: board(l, d) }),
     link: threadPath,
+    slackByDefault: true,
   },
   'comment.reply': {
     label: (l) => t(l, 'comment.reply.label'),
@@ -124,6 +132,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'comment.reply.link'),
     title: (l, actor, d) => t(l, 'comment.reply.title', { actor, board: board(l, d) }),
     link: threadPath,
+    slackByDefault: true,
   },
   'board.invite': {
     label: (l) => t(l, 'board.invite.label'),
@@ -131,6 +140,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'board.invite.link'),
     title: (l, actor, d) => t(l, 'board.invite.title', { actor, role: role(d), board: board(l, d) }),
     link: (id, d) => boardPath(id, d),
+    slackByDefault: true,
   },
   'workspace.invite': {
     label: (l) => t(l, 'workspace.invite.label'),
@@ -138,6 +148,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'workspace.invite.link'),
     title: (l, actor, d) => t(l, 'workspace.invite.title', { actor, workspace: d.workspaceName || t(l, 'team'), role: d.role || 'member' }),
     link: (_id, d) => (d.workspaceId ? `/app?ws=${encodeURIComponent(d.workspaceId)}` : '/app'),
+    slackByDefault: true,
   },
   'card.assigned': {
     label: (l) => t(l, 'card.assigned.label'),
@@ -148,6 +159,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
         ? t(l, 'card.assigned.titleDue', { actor, card: card(l, d), board: board(l, d), due: dueDay(d.dueDate, l) })
         : t(l, 'card.assigned.title', { actor, card: card(l, d), board: board(l, d) }),
     link: itemPath,
+    slackByDefault: true,
   },
   'card.due_changed': {
     label: (l) => t(l, 'card.due_changed.label'),
@@ -158,6 +170,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
         ? t(l, 'card.due_changed.set', { actor, card: card(l, d), board: board(l, d), due: dueDay(d.dueDate, l) })
         : t(l, 'card.due_changed.removed', { actor, card: card(l, d), board: board(l, d) }),
     link: itemPath,
+    slackByDefault: true,
   },
   'card.due_soon': {
     label: (l) => t(l, 'card.due_soon.label'),
@@ -165,6 +178,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'card.due_soon.link'),
     title: (l, _actor, d) => t(l, 'card.due_soon.title', { card: card(l, d), board: board(l, d), due: d.dueDate ? dueDay(d.dueDate, l) : t(l, 'soon') }),
     link: itemPath,
+    slackByDefault: true,
   },
   // KAI-249: from modules/api's control room. The actor is the app or token (`actorName`), acting
   // for the recipient; the excerpt is the task's note as the agent wrote it.
@@ -174,6 +188,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'agent.blocked.link'),
     title: (l, actor, d) => t(l, 'agent.blocked.title', { actor, card: card(l, d), board: board(l, d) }),
     link: itemPath,
+    slackByDefault: true,
   },
   'walkthrough.mention': {
     label: (l) => t(l, 'walkthrough.mention.label'),
@@ -181,6 +196,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     linkLabel: (l) => t(l, 'walkthrough.mention.link'),
     title: (l, actor, d) => t(l, 'walkthrough.mention.title', { actor, walkthrough: walkthrough(l, d), board: board(l, d) }),
     link: walkthroughPath,
+    slackByDefault: true,
   },
   'walkthrough.comment': {
     label: (l) => t(l, 'walkthrough.comment.label'),

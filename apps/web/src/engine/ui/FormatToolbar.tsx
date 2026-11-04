@@ -1,6 +1,6 @@
 // Contextual format toolbar floating above the selection (flips below when there's no room).
 // Feature format sections first (by order), then the engine's common controls.
-import { Fragment, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useStore } from 'zustand';
 import { Copy, Ellipsis, Group, Layers, Lock, LockOpen, Share, ShieldCheck, Trash2, Ungroup } from 'lucide-react';
 import { isProtectedLock } from '@freero/shared';
@@ -9,7 +9,9 @@ import { ScopeContext, useCore } from '../context';
 import { useCamera, useRole, useSelectedElements } from '../hooks';
 import { screenToWorld, worldToScreen } from '../camera/camera';
 import { boundsOf, elementAABB } from '../geometry/geometry';
+import type { BoardElement } from '@freero/shared';
 import type { Camera, Editor, Rect } from '../api';
+import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
 import { isMac } from '../runtime/shortcuts';
 import { contextCommandItems } from './ContextMenu';
@@ -35,9 +37,10 @@ function nearbyItemRects(
   cam: Camera,
   n: { left: number; selTop: number; selBottom: number },
   size: { w: number; h: number },
+  ids: string[],
 ): ScreenRect[] {
-  const selected = new Set(editor.getSelection());
-  const sel = editor.getBounds([...selected]);
+  const selected = new Set(ids);
+  const sel = editor.getBounds(ids);
   if (!sel) return [];
   const tl = screenToWorld(cam, { x: n.left, y: n.selTop - MAX_DETOUR - size.h - GAP });
   const br = screenToWorld(cam, { x: n.left + size.w, y: n.selBottom + MAX_DETOUR + size.h + GAP + 34 });
@@ -78,7 +81,8 @@ export function FormatToolbar() {
   const transforming = useStore(core.ui, (s) => s.transforming);
   const contextMenu = useStore(core.ui, (s) => s.contextMenu);
   const viewport = useStore(core.ui, (s) => s.viewport);
-  useStore(core.ui, (s) => s.textStateVersion);
+  // The format sections show the text editor's caret state (bold, link…): refreshed with it.
+  const textVersion = useStore(core.ui, (s) => s.textStateVersion);
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 44 });
   /** Toolbar top chosen to clear keep-clear nodes (null = the default placement is clear). */
@@ -93,9 +97,15 @@ export function FormatToolbar() {
   const phoneEditing = useStore(core.ui, (s) => s.phoneEditing);
   // Phone, view-and-comment mode: no format toolbar until the editor switches to editing.
   const visible = els.length > 0 && !transforming && !contextMenu && ROLE_RANK[role] >= ROLE_RANK.editor && (!compact || phoneEditing);
-  const sections = visible ? core.registry.formats.filter((f) => f.def.appliesTo(els)) : [];
+  // What depends on the selection only is worked out when it changes, never per camera frame: the
+  // toolbar follows every pan and zoom, and with ten thousand items selected each pass over them
+  // costs milliseconds (docs/performance.md).
+  const sections = useMemo(() => (visible ? core.registry.formats.filter((f) => f.def.appliesTo(els)) : []), [core, visible, els]);
   // Several item types selected: the style controls they share (KAI-111), before the features'.
-  const mixed = visible && hasMixedStyle(editor, els);
+  const mixed = useMemo(() => visible && hasMixedStyle(editor, els), [editor, visible, els]);
+  const ids = useMemo(() => els.map((e) => e.id), [els]);
+  // Visual bounds: clear of what elements draw outside their box (a frame's title above it).
+  const bounds = useMemo(() => (visible ? (editor.getBounds(ids, { visual: true }) ?? boundsOf(els)) : null), [editor, visible, ids, els, cam.zoom]);
 
   useLayoutEffect(() => {
     if (!ref.current) return;
@@ -124,7 +134,7 @@ export function FormatToolbar() {
     if (n) {
       const inSpan = (p: ScreenRect) => p.x < n.left + size.w + 6 && p.x + p.w > n.left - 6;
       const pins = keepClearRects(core.dom.viewport).filter(inSpan);
-      const items = nearbyItemRects(core.editor, cam, n, size).filter(inSpan);
+      const items = nearbyItemRects(core.editor, cam, n, size, ids).filter(inSpan);
       const hits = (list: ScreenRect[], top: number) => list.filter((p) => p.y < top + size.h + 6 && p.y + p.h > top - 6);
       const fits = (top: number) => top >= TOP_SAFE && top + size.h <= viewport.height - 70;
       /** Above the selection, climbing over whatever of `list` is in the way. */
@@ -156,9 +166,8 @@ export function FormatToolbar() {
     if (next !== clearTop) setClearTop(next);
   });
 
-  if (!visible) return null;
-  // Visual bounds: clear of what elements draw outside their box (a frame's title above it).
-  const b = editor.getBounds(els.map((e) => e.id), { visual: true }) ?? boundsOf(els)!;
+  if (!visible || !bounds) return null;
+  const b = bounds;
   const tl = worldToScreen(cam, b);
   const br = worldToScreen(cam, { x: b.x + b.w, y: b.y + b.h });
   const cx = (tl.x + br.x) / 2;
@@ -177,18 +186,6 @@ export function FormatToolbar() {
   natural.current = { left, top, below, selTop: tl.y, selBottom: br.y };
   if (clearTop !== null) top = clearTop;
   placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };
-  const locked = els.every((e) => e.locked);
-  const someLocked = !locked && els.some((e) => e.locked);
-  // A protected lock (BaseElement.lockProtected) only the owner lifts.
-  const held = locked && els.some(isProtectedLock) && !editor.mayProtect();
-  const ids = els.map((e) => e.id);
-  const canRun = (id: string) => {
-    const reg = core.registry.commands.get(id);
-    return !!reg && (!reg.def.when || reg.def.when(core.scoped(reg.feature)));
-  };
-  const canGroup = canRun('engine.group');
-  const canUngroup = canRun('engine.ungroup');
-
   const arrangeItems: MenuItem[] = [
     { id: 'front', label: tr('bringToFront'), shortcut: 'Mod+]', onSelect: () => editor.bringToFront(ids) },
     // On macOS the browser may take Mod+Shift+] / [ (tab switch): show the key that always works there.
@@ -213,6 +210,80 @@ export function FormatToolbar() {
         if (!t.closest('input, textarea, select')) e.preventDefault();
       }}
     >
+      <ToolbarBody
+        core={core}
+        role={role}
+        textVersion={textVersion}
+        els={els}
+        ids={ids}
+        mixed={mixed}
+        sections={sections}
+        arrangeRef={arrangeRef}
+        moreRef={moreRef}
+        arrangeOpen={arrangeOpen}
+        moreOpen={moreOpen}
+        setArrangeOpen={setArrangeOpen}
+        setMoreOpen={setMoreOpen}
+      />
+      <Menu open={arrangeOpen} onClose={() => setArrangeOpen(false)} anchor={arrangeRef.current} items={arrangeItems} side="bottom" align="center" />
+      <Menu
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        anchor={moreRef.current}
+        items={moreOpen ? contextCommandItems(core, { withZOrder: false }) : []}
+        side="bottom"
+        align="end"
+        minWidth={220}
+      />
+    </div>
+  );
+}
+
+/**
+ * The toolbar's controls: the format sections and the common buttons. Memoized apart from the
+ * floating wrapper, so a camera move (which only moves the wrapper) re-renders none of them.
+ */
+const ToolbarBody = memo(function ToolbarBody({
+  core,
+  els,
+  ids,
+  mixed,
+  sections,
+  arrangeRef,
+  moreRef,
+  arrangeOpen,
+  moreOpen,
+  setArrangeOpen,
+  setMoreOpen,
+}: {
+  core: EngineCore;
+  /** Re-render on these: what may be done, and the caret's format state. */
+  role: string;
+  textVersion: number;
+  els: BoardElement[];
+  ids: string[];
+  mixed: boolean;
+  sections: EngineCore['registry']['formats'];
+  arrangeRef: RefObject<HTMLButtonElement>;
+  moreRef: RefObject<HTMLButtonElement>;
+  arrangeOpen: boolean;
+  moreOpen: boolean;
+  setArrangeOpen: (f: (o: boolean) => boolean) => void;
+  setMoreOpen: (f: (o: boolean) => boolean) => void;
+}) {
+  const editor = core.editor;
+  const locked = els.every((e) => e.locked);
+  const someLocked = !locked && els.some((e) => e.locked);
+  // A protected lock (BaseElement.lockProtected) only the owner lifts.
+  const held = locked && els.some(isProtectedLock) && !editor.mayProtect();
+  const canRun = (id: string) => {
+    const reg = core.registry.commands.get(id);
+    return !!reg && (!reg.def.when || reg.def.when(core.scoped(reg.feature)));
+  };
+  const canGroup = canRun('engine.group');
+  const canUngroup = canRun('engine.ungroup');
+  return (
+    <>
       {!locked && mixed && (
         <>
           <div className="fr-format__section">
@@ -258,16 +329,6 @@ export function FormatToolbar() {
         {!locked && <IconButton icon={Trash2} label="Delete" shortcut="Del" size={32} onClick={() => editor.runCommand('engine.delete')} />}
         <IconButton ref={moreRef} icon={Ellipsis} label={tr('more')} size={32} active={moreOpen} onClick={() => setMoreOpen((o) => !o)} />
       </div>
-      <Menu open={arrangeOpen} onClose={() => setArrangeOpen(false)} anchor={arrangeRef.current} items={arrangeItems} side="bottom" align="center" />
-      <Menu
-        open={moreOpen}
-        onClose={() => setMoreOpen(false)}
-        anchor={moreRef.current}
-        items={contextCommandItems(core, { withZOrder: false })}
-        side="bottom"
-        align="end"
-        minWidth={220}
-      />
-    </div>
+    </>
   );
-}
+});

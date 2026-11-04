@@ -454,6 +454,55 @@
   opacity: 0.55;
 }
 
+/* With Slack connected (#105): each kind with an Email and a Slack switch, in two columns. */
+.fr-acct-prefs__types--channels li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px 52px;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-acct-prefs__types--channels li > :not(.fr-acct-prefs__type) {
+  display: flex;
+  justify-self: center;
+}
+
+.fr-acct-prefs__types--channels .is-off {
+  opacity: 0.55;
+}
+
+.fr-acct-prefs__channels-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fr-acct-prefs__channels-head > span {
+  text-align: center;
+}
+
+.fr-acct-slack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fr-acct-slack__who {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fr-ink);
+}
+
+.fr-acct-slack code {
+  font-family: var(--fr-font-mono);
+  font-size: 12.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--fr-surface-2);
+}
+
 .fr-acct-prefs__type {
   display: flex;
   flex-direction: column;

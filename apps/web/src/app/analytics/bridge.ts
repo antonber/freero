@@ -1,12 +1,13 @@
 // The app's side of Google Analytics (GA_MEASUREMENT_ID; ARCHITECTURE.md "Analytics"). Google's
 // tag never runs in the app's own document — that document holds board titles, content, names and
 // links Google's automatic measurements would read (outbound clicks, file downloads, the tab
-// title). It runs in a hidden same-origin frame (/analytics-frame) that this bridge creates once
-// the visitor accepts, and feeds with the redacted page (@freero/shared `analyticsPage`) and the
-// allowed events (`analyticsEventParams`) only.
+// title). It runs in a hidden same-origin frame (/analytics-frame) that this bridge creates on the
+// first page reported (unless this browser opted out or sends GPC / Do Not Track), and feeds with
+// the redacted page (@freero/shared `analyticsPage`) and the allowed events
+// (`analyticsEventParams`) only.
 import { useSyncExternalStore } from 'react';
 import { analyticsEventParams, analyticsPage, campaignQuery, type AnalyticsEvent, type AnalyticsSettings } from '@freero/shared';
-import { analyticsAllowed, closeConsentBanner, consentBannerMode, onConsentChange, openConsentBanner, originReferrer, privacySignal, storedChoice, type FrameMessage, type PageFields } from './runtime';
+import { analyticsAllowed, analyticsState, onAnalyticsChange, optedOut, originReferrer, privacySignal, setOptedOut, type AnalyticsState, type FrameMessage, type PageFields } from './runtime';
 
 const FRAME_PATH = '/analytics-frame';
 /** A sign-in through a provider's pages: what was started, settled when the app is back (sessionStorage). */
@@ -26,7 +27,7 @@ let queue: FrameMessage[] = [];
 let started = false;
 let unlisten: (() => void) | null = null;
 
-/** Starts the bridge once: asks the server whether this instance measures, and follows the visitor's choice. */
+/** Starts the bridge once: asks the server whether this instance measures, and follows the visitor's opt-out. */
 export function startAppAnalytics(): void {
   if (started) return;
   started = true;
@@ -34,17 +35,17 @@ export function startAppAnalytics(): void {
     .then((r) => (r.ok ? (r.json() as Promise<AnalyticsSettings>) : null))
     .catch(() => null)
     .then((s) => {
-      settings = s ?? { enabled: false, privacyUrl: null };
+      settings = s ?? { enabled: false };
       for (const l of listeners) l();
       const waiting = early;
       early = [];
       if (!settings.enabled) return;
       for (const m of waiting) send(m);
-      ask();
     });
-  unlisten = onConsentChange(() => {
+  unlisten = onAnalyticsChange(() => {
+    for (const l of listeners) l();
     if (analyticsAllowed()) {
-      // Accepted: the page they accepted on is the first one measured.
+      // Turned back on: the page they are on is measured again.
       if (current) send({ freeroAnalytics: 1, kind: 'page', fields: current });
     } else dropFrame();
   });
@@ -55,7 +56,6 @@ export function resetAppAnalytics(): void {
   unlisten?.();
   unlisten = null;
   dropFrame();
-  closeConsentBanner(false);
   settings = null;
   early = [];
   current = null;
@@ -68,8 +68,13 @@ const subscribe = (l: () => void) => {
   listeners.add(l);
   return () => void listeners.delete(l);
 };
-/** This server measures with Google Analytics (for "Cookie settings" entries). */
-export const useAnalyticsEnabled = (): boolean => useSyncExternalStore(subscribe, () => !!settings?.enabled);
+/** Analytics in this browser ('on', 'off', 'signal'), or null where this server doesn't measure (no control then). */
+export const useAnalyticsState = (): AnalyticsState | null => useSyncExternalStore(subscribe, () => (settings?.enabled ? analyticsState() : null));
+
+/** "Turn off / on analytics" (the Help menu): flips this browser's opt-out; a GPC / Do Not Track signal can't be overridden here. */
+export function toggleAnalytics(): void {
+  if (!privacySignal()) setOptedOut(!optedOut());
+}
 
 /** The router's location: reports the page (redacted), or nothing on routes analytics never covers. */
 export function reportPage(pathname: string, search: string): void {
@@ -78,14 +83,12 @@ export function reportPage(pathname: string, search: string): void {
   const page = analyticsPage(pathname);
   if (!page) {
     current = null;
-    if (consentBannerMode() === 'ask') closeConsentBanner(false);
     return;
   }
   const location = `${window.location.origin}${page.path}${campaignQuery(search)}`;
   current = { page_location: location, page_title: page.title, page_referrer: previous || originReferrer(document.referrer) };
   previous = location;
   send({ freeroAnalytics: 1, kind: 'page', fields: current });
-  ask();
 }
 
 /** A product event (Host.track, the auth flows, board creation). Values an event may not carry are dropped. */
@@ -93,11 +96,6 @@ export function track(event: AnalyticsEvent): void {
   const params = analyticsEventParams(event);
   if (!params || !current) return;
   send({ freeroAnalytics: 1, kind: 'event', fields: current, name: event.name, params });
-}
-
-/** "Cookie settings": the banner, to change the choice. */
-export function openCookieSettings(opener?: HTMLElement | null): void {
-  openConsentBanner({ mode: 'settings', privacyUrl: settings?.privacyUrl ?? null, opener });
 }
 
 /** A sign-in that leaves for a provider's pages (Google, Microsoft, SSO): counted when the app is back signed in. */
@@ -129,11 +127,6 @@ export function settleProviderSignIn(user: { createdAt: number } | null, now = D
   if (!user) return;
   const method = takeProviderSignIn();
   if (method) track({ name: now - user.createdAt < 15 * 60_000 ? 'sign_up' : 'login', method });
-}
-
-function ask(): void {
-  if (settings?.enabled && current && !privacySignal() && storedChoice() === null && !consentBannerMode())
-    openConsentBanner({ mode: 'ask', privacyUrl: settings.privacyUrl });
 }
 
 function send(m: FrameMessage): void {

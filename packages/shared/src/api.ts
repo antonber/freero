@@ -3,6 +3,7 @@
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
 import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
+import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
 import type { BoardOutline } from './outline/types';
@@ -347,7 +348,15 @@ export const LINK_PASSWORD_MAX = 128;
 // GET    /api/workspaces/:id/projects          -> { projects: ProjectSummary[] }  (the ones you can see)
 // POST   /api/workspaces/:id/projects  body { name, access? } -> { project }   (members, not guests)
 // PATCH  /api/projects/:id   body { name?, access?, teamAccess?: TeamAccess | null } -> { project }   (its creator or workspace owner/admin)
-// DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
+//        [additive, #129] also { description?, pinnedBoardIds?: string[] (its own boards, ≤ 12, in order),
+//        parentId?: string | null } — moving it needs its manager, who also manages the project it
+//        leaves (or a content admin) and sees the one it enters; 400 past PROJECT_MAX_DEPTH or into itself
+// DELETE /api/projects/:id?boards=parent|trash -> { ok: true }   (same; 409 while it holds sub-projects,
+//        and — without `boards` — while it still holds boards. `parent`: its boards move to the parent
+//        project (the workspace root at the top); `trash`: they go to the trash, when the caller owns
+//        each of them or is a content admin)
+// PUT    /api/projects/:id/pin  DELETE … -> { ok: true }   [#129] pin it to the top of your sidebar (anyone who sees it)
+// GET    /api/workspaces/:id/activity?project=<id> -> ActivityResponse   [#129] the project page's recent activity
 // GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
 // PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
 /**
@@ -598,7 +607,54 @@ export interface ProjectSummary {
   /** You may rename it, change its access, manage its members and delete it. */
   canManage: boolean;
   createdAt: number;
+  /**
+   * [additive, #129] The project it sits in (null: the top of the workspace). Access is inherited:
+   * its boards reach only people who get through every project above it too, so a sub-project can
+   * narrow its parent's audience but never widen it; its own team access level can only be stricter.
+   */
+  parentId?: string | null;
+  /** [additive, #129] What the project is for (its landing page; plain text). */
+  description?: string;
+  /** [additive, #129] Boards its managers pinned on its page, in order (some may since have moved away). */
+  pinnedBoardIds?: string[];
+  /** [additive, #129] You pinned it to the top of your sidebar. */
+  pinned?: boolean;
 }
+
+// Blueprints (#161): a project's boards and docs saved as a reusable setup.
+// GET    /api/blueprints -> { blueprints: BlueprintSummary[] }  (yours and those shared with your teams)
+// POST   /api/projects/:id/blueprints body { name, description?, steps?: string[], workspaceId?: string | null }
+//        -> { blueprint }  (its boards and docs as you may read and copy them: downloads policy; ≤ BLUEPRINT_MAX_ITEMS)
+// PATCH  /api/blueprints/:id body { name?, description?, steps?, workspaceId? } -> { blueprint }
+//        (its owner; owners / content admins of the team it is shared with may unshare it: workspaceId null)
+// DELETE /api/blueprints/:id -> { ok: true }  (its owner)
+// POST   /api/blueprints/:id/use body { workspaceId, name?, parentId? } -> { project: ProjectSummary, boards: { id, kind, title }[] }
+//        one transaction: the project and a copy of every item, links between them pointing at the copies
+export interface BlueprintSummary {
+  id: string;
+  name: string;
+  description: string;
+  steps: string[];
+  /** Its boards and docs, in order. */
+  items: Array<{ kind: ObjectKind; title: string }>;
+  ownerId: string;
+  ownerName: string;
+  /** The team workspace it is shared with, null: its owner's alone. */
+  workspaceId: string | null;
+  /** You may change and delete it (its owner). */
+  mine: boolean;
+  /** You may stop sharing it (its owner, or an owner / content admin of the team it is shared with). */
+  canUnshare: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+/** Boards and docs a blueprint holds at most (#161). */
+export const BLUEPRINT_MAX_ITEMS = 20;
+
+/** How deep projects nest: a project, its sub-projects and theirs (#129). */
+export const PROJECT_MAX_DEPTH = 3;
+/** Boards a project page pins at most (#129). */
+export const PROJECT_MAX_PINNED_BOARDS = 12;
 
 /** Days a deleted board stays in its owner's trash (restorable) before it is deleted for good. */
 export const TRASH_RETENTION_DAYS = 30;
@@ -1137,6 +1193,48 @@ export interface BoardVersion {
 }
 export const MAX_VERSION_NAME = 80;
 
+// ---- Team sticker sets (#138; server modules/stickers) ----
+// A workspace's own stickers, in named sets its members place from the emoji & stamps picker.
+// The images are uploads (same checks as any image, a smaller size cap); a placed sticker is an
+// emoji item whose `emoji` is `img:/uploads/<name>` (it keeps showing after its set is removed).
+// GET    /api/boards/:id/stickers         -> StickersResponse  (the sets of the board's workspace;
+//                                          none when you aren't in that workspace)
+// POST   /api/boards/:id/sticker-sets     body { name } -> { set: StickerSet }  (members of the
+//                                          board's workspace, not guests; 400 over MAX_STICKER_SETS)
+// POST   /api/sticker-sets/:id/stickers?name=<name>  body: the image bytes (Content-Type
+//                                          image/png, image/svg+xml, image/webp or image/gif)
+//                                          -> { sticker: Sticker }  (members; 413 over
+//                                          MAX_STICKER_BYTES or the upload quota, 415 other types,
+//                                          400 when the bytes aren't that image)
+// DELETE /api/sticker-sets/:id             -> { ok: true }  (its creator, or a workspace owner / admin)
+// DELETE /api/sticker-sets/:id/stickers/:stickerId -> { ok: true }  (the same, or who added it)
+export interface Sticker {
+  id: string;
+  name: string;
+  /** "/uploads/<name>" */
+  url: string;
+}
+export interface StickerSet {
+  id: string;
+  name: string;
+  /** Who made the set, by their current name (null: an account deleted since). */
+  createdBy: string | null;
+  /** You may add stickers to it. */
+  canAdd: boolean;
+  /** You may remove it (and any sticker in it): its creator, or a workspace owner / admin. */
+  canManage: boolean;
+  stickers: Sticker[];
+}
+export interface StickersResponse {
+  sets: StickerSet[];
+  /** You may make a new set in the board's workspace. */
+  canCreate: boolean;
+}
+export const MAX_STICKER_SETS = 30;
+export const MAX_STICKERS_PER_SET = 120;
+export const MAX_STICKER_BYTES = 512 * 1024;
+export const MAX_STICKER_NAME = 60;
+
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a
 // guest) of.
@@ -1532,8 +1630,8 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 // GET  /api/notifications?before=<ms>&limit=<n> -> NotificationsResponse  (newest first; 30 by default)
 // POST /api/notifications/read   body { ids?: string[] } -> { unread }  (no ids: mark all read)
 // GET  /api/notifications/prefs  -> NotificationPrefs
-// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, emailAll?: boolean,
-//      boardChanges?: BoardChangesFrequency } -> NotificationPrefs
+// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, slack?: { [type]: boolean },
+//      emailAll?: boolean, boardChanges?: BoardChangesFrequency } -> NotificationPrefs
 // POST /api/notifications/unsubscribe?token=<t>[&list=board-changes]  (no session needed: the signed
 //      link from a digest email, also its RFC 8058 one-click target) -> { ok: true, email, list } | 400
 //      (list 'board-changes': the "changes on your boards" email only; else every notification email)
@@ -1585,7 +1683,14 @@ export interface AppNotification {
   };
 }
 export interface NotificationsResponse { notifications: AppNotification[]; unread: number; hasMore: boolean }
-export interface NotificationTypePref { type: NotificationType; label: string; description: string; email: boolean }
+export interface NotificationTypePref {
+  type: NotificationType;
+  label: string;
+  description: string;
+  email: boolean;
+  /** [additive, #105] Sent to Slack as a direct message, while a Slack account is connected (instead of the email). */
+  slack: boolean;
+}
 export interface NotificationPrefs {
   /** Master switch for notification emails (the one-click unsubscribe turns it off). */
   emailAll: boolean;
@@ -1596,9 +1701,26 @@ export interface NotificationPrefs {
    * your time zone). Its own unsubscribe link turns only it off; `emailAll` off stops it too.
    */
   boardChanges: BoardChangesFrequency;
+  /**
+   * [additive, #105] Personal Slack: null when this server offers no "Connect Slack"; `linked`: the
+   * person connected a Slack account, so the types' `slack` switches apply.
+   */
+  slack: { linked: boolean } | null;
 }
 export type BoardChangesFrequency = 'off' | 'daily' | 'weekly';
 export type NotificationsLiveMessage = { type: 'changed'; unread: number };
+
+// ---- Personal Slack (modules/slack, #105; docs/integrations/slack.md) ----
+// GET    /api/integrations/slack/me                 -> SlackAccountInfo
+// DELETE /api/integrations/slack/me                 -> { ok: true }   disconnects (404 when not offered)
+// GET    /api/integrations/slack/oauth/start        -> 302 to Slack's consent (signed in; 404 when not offered)
+// GET    /api/integrations/slack/oauth/callback     -> 302 /settings?slack=connected#slack | ?slack_error=<message>#slack
+// POST   /api/integrations/slack/commands           Slack's slash command request URL (signed by Slack)
+export interface SlackAccountInfo {
+  /** The server's operator turned "Connect Slack" on. */
+  offered: boolean;
+  link: { teamName: string; slackName: string; linkedAt: number } | null;
+}
 
 // ---- Uploads ----
 // POST /api/uploads  raw body (image/png|jpeg|gif|webp|svg+xml), header Content-Type,
@@ -1877,7 +1999,7 @@ export interface InsertStructureResponse {
   /** Where the result landed. */
   bounds: Rect;
   /** 'preview' only: an ElementsSnapshot (elements + content by element id) and the moves. */
-  snapshot?: { elements: BoardElement[]; content: Record<string, TableCopyContent> };
+  snapshot?: { elements: BoardElement[]; content: Record<string, TableCopyContent | ChartCopyContent> };
   moves?: Array<{ id: string; x: number; y: number }>;
 }
 // ---- AI (KAI-101 foundation, KAI-102 board actions; docs/ai.md) ----
@@ -2334,6 +2456,9 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'blueprint.shared': 'Shared a blueprint with the team',
+  'blueprint.used': 'Made a project from a blueprint',
+  'stickers.set_removed': 'Removed a team sticker set',
   'template.published': 'Published a company template',
   'template.unpublished': 'Withdrew a company template',
   'template.locked': 'Locked a template',
@@ -2420,6 +2545,9 @@ export const AUDIT_ACTIONS = {
   'siem.sink_created': 'Started streaming the audit log to a SIEM',
   'siem.sink_updated': 'Changed an audit log stream',
   'siem.sink_deleted': 'Stopped streaming the audit log to a SIEM',
+  // Personal Slack (modules/slack, #105): the Slack account and workspace ids, never a token.
+  'slack.account_linked': 'Connected a Slack account',
+  'slack.account_unlinked': 'Disconnected a Slack account',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',

@@ -7,6 +7,7 @@ import {
   plainToRichText,
   richTextToPlain,
   type ElementRenderProps,
+  type LowDetailPaint,
   type NewElement,
 } from '@engine';
 import { STICKY_GAP, STICKY_SIZE, TOOL_ID, nearestColor, toolDims, type StickyToolOptions } from './lib/constants';
@@ -55,6 +56,19 @@ const StickyView = memo(function StickyView({ element, zoom, reserved }: Element
   );
 });
 
+/**
+ * Zoomed out to low detail (#131): the paper, with three faint lines where it holds text (in its
+ * ink, as the sticky's own far-away drawing has them). No shadow, no text layout.
+ */
+function paintSticky(el: StickyElement, p: LowDetailPaint) {
+  p.box({ fill: STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow, radius: 3 });
+  if (!el.text) return;
+  const ink = stickyInk(el.color);
+  const alpha = ink === STICKY_INK ? 0.2 : 0.4;
+  const h = el.h * 0.07;
+  for (const [y, w] of [[0.34, 0.64], [0.5, 0.52], [0.66, 0.36]] as const) p.rect(el.w * (1 - w) / 2, el.h * y - h / 2, el.w * w, h, ink, alpha);
+}
+
 const stickyDefinition = defineElement({
   type: 'sticky',
   label: { one: tr('stickyNote'), many: tr('stickyNotes') },
@@ -81,6 +95,7 @@ const stickyDefinition = defineElement({
     vAlign: 'middle',
   }),
   Component: StickyView,
+  lowDetail: paintSticky,
   toPlainText: (el) => richTextToPlain(el.text),
   // Lists become stickies; prose is left to the text box importer (priority 0). See lib/paste.ts.
   importPriority: 5,

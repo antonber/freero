@@ -165,7 +165,7 @@ it('a page the operator hasn’t approved stays out of search results and keeps 
   });
 });
 
-it('marketing pages load the Google Analytics runtime (consent banner first) only where GA_MEASUREMENT_ID is set', async () => {
+it('marketing pages load the Google Analytics runtime only where GA_MEASUREMENT_ID is set', async () => {
   // This suite's server has no id: no runtime, no Google host anywhere on the page or in its CSP.
   const plain = await fetch(`${base}/claude`);
   expect(await plain.text()).not.toMatch(/analytics\.js|googletagmanager|data-freero-ga/);
@@ -181,7 +181,7 @@ it('marketing pages load the Google Analytics runtime (consent banner first) onl
     const res = await fetch(`${b}/claude`);
     expect(await res.text()).toContain('<script src="/analytics.js" data-freero-ga="G-TEST123" defer></script></head>');
     expect(res.headers.get('content-security-policy')).toContain('https://www.googletagmanager.com');
-    // The site's own 404 too: its footer has "Cookie settings" like every page.
+    // The site's own 404 too: its footer has the analytics opt-out like every page.
     expect(await (await fetch(`${b}/vs/nobody`)).text()).toContain('data-freero-ga="G-TEST123"');
   } finally {
     await new Promise((r) => s.close(r));

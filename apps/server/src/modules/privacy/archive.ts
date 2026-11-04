@@ -1,6 +1,6 @@
 // Builds the ZIP of a data export from what each owning module exports (this module reads no
 // other module's tables). Layout — personal:
-//   README.txt, account.json, api.json, listings.json, memberships.json, activity.json, comments.json, notifications.json,
+//   README.txt, account.json, api.json, listings.json, memberships.json, activity.json, comments.json, notifications.json, slack.json,
 //   problems/index.json + problems/<id>.<ext> (screenshots),
 //   templates/<name>-<id>.json, uploads/index.json + uploads/<file>,
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
@@ -16,6 +16,7 @@ import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedBy
 import { listingsExportOf } from '../marketplace/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
+import { slackExportOf } from '../slack/index';
 import { personalViewsExportOf } from '../personalviews/index';
 import { problemsExportOf } from '../problems/index';
 import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
@@ -92,7 +93,8 @@ api.json            your API tokens, the apps you authorised and the apps you re
 memberships.json    workspaces, projects and boards you are a member of; what workspaces' directories (SSO/SCIM) hold about you
 activity.json       boards you starred and when you last opened boards; your AI usage (counts only)
 comments.json       every comment you wrote, by board, with the thread and item it is attached to
-notifications.json  your notifications and email settings
+notifications.json  your notifications, email and Slack settings
+slack.json          the Slack account you connected (workspace and user ids, names; never a token)
 walkthroughs.json   walkthroughs you recorded (camera path, captions; the recordings are in uploads/),
                     your comments on walkthroughs and which ones you watched
 decisions.json      decision snapshots you made (title, note, board)
@@ -163,6 +165,7 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   }
   a.addJson('comments.json', comments);
   a.addJson('notifications.json', await notificationsExportOf(userId));
+  a.addJson('slack.json', await slackExportOf(userId));
   a.addJson('personal-views.json', await personalViewsExportOf(userId));
   a.addJson('walkthroughs.json', await walkthroughsExportOf(userId));
   a.addJson('decisions.json', await decisionsExportOf(userId));

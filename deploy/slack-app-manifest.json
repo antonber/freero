@@ -5,23 +5,44 @@
   },
   "display_information": {
     "name": "Freero",
-    "description": "Previews of Freero board links: title and picture for boards anyone with the link can view.",
+    "description": "Freero board link previews, your Freero notifications as direct messages, and /freero to create or find a board.",
     "background_color": "#5b3ff0"
   },
   "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": true
+    },
     "bot_user": {
       "display_name": "freero",
       "always_online": false
     },
+    "slash_commands": [
+      {
+        "command": "/freero",
+        "url": "https://freero.example.com/api/integrations/slack/commands",
+        "description": "Create a Freero board, or find one",
+        "usage_hint": "new <title> · <words to search>",
+        "should_escape": false
+      }
+    ],
     "unfurl_domains": [
       "freero.example.com"
     ]
   },
   "oauth_config": {
+    "redirect_urls": [
+      "https://freero.example.com/api/integrations/slack/oauth/callback"
+    ],
     "scopes": {
       "bot": [
         "links:read",
-        "links:write"
+        "links:write",
+        "chat:write",
+        "im:write",
+        "commands",
+        "users:read"
       ]
     }
   },
@@ -29,7 +50,9 @@
     "event_subscriptions": {
       "request_url": "https://freero.example.com/api/integrations/slack/events",
       "bot_events": [
-        "link_shared"
+        "app_uninstalled",
+        "link_shared",
+        "tokens_revoked"
       ]
     },
     "org_deploy_enabled": false,

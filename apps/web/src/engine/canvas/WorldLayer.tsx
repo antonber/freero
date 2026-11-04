@@ -1,6 +1,6 @@
 // World layer: one transformed container; each element is a memoized view that subscribes to
 // its own element. The list itself only re-renders when the set/order of visible ids changes.
-import { memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, memo, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { EyeOff } from 'lucide-react';
 import type { BoardElement } from '@freero/shared';
@@ -9,6 +9,10 @@ import { useElement } from '../hooks';
 import { quantizeZoom, viewportRect } from '../camera/camera';
 import { elementAABB, expandRect, rectContainsRect, rectsIntersect } from '../geometry/geometry';
 import type { ChildPresentation, DecorationDefinition, Insets, Rect } from '../api';
+import type { EngineCore } from '../runtime/core';
+import type { UiState } from '../state/uiStore';
+import { drawsLowDetail } from './detail';
+import { LowDetailLayer } from './LowDetailLayer';
 import { personalViews } from '../runtime/personalViews';
 
 import { t as tr } from '../messages';
@@ -18,10 +22,13 @@ export function cameraTransform(cam: { x: number; y: number; zoom: number }): st
 
 const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((id, i) => id === b[i]);
 
-/** Computes visible ids with a padded cull rect that only moves when the view leaves it. */
-function useVisibleIds(): string[] {
+/**
+ * Computes visible ids with a padded cull rect that only moves when the view leaves it; returns
+ * them with that rect (what low detail's canvas covers at most).
+ */
+function useVisibleIds(): { ids: string[]; cull: Rect } {
   const core = useCore();
-  const [ids, setIds] = useState<string[]>([]);
+  const [state, setState] = useState<{ ids: string[]; cull: Rect }>({ ids: [], cull: { x: 0, y: 0, w: 0, h: 0 } });
   useEffect(() => {
     const { store, ui } = core;
     let cullRect: Rect | null = null;
@@ -49,10 +56,9 @@ function useVisibleIds(): string[] {
       for (const el of core.editor.getVisibleElements()) {
         if (keep.has(el.id) || rectsIntersect(elementAABB(el), cullRect)) next.push(el.id);
       }
-      if (!sameIds(next, prev)) {
-        prev = next;
-        setIds(next);
-      }
+      const changed = !sameIds(next, prev);
+      if (changed) prev = next;
+      if (changed || moved) setState({ ids: prev, cull: cullRect });
     };
     // Element changes are coalesced per task (microtask), so a just-created element mounts in
     // the same frame — e.g. its text editor can take focus before the next keystroke.
@@ -82,33 +88,168 @@ function useVisibleIds(): string[] {
       disposed = true;
     };
   }, [core]);
-  return ids;
+  return state;
 }
 
 export function WorldElements() {
-  const ids = useVisibleIds();
+  const core = useCore();
+  const { ids, cull } = useVisibleIds();
+  // Switching between low and full detail mounts or unmounts most of the view: done as a
+  // transition (React renders it in slices; the view shows the old drawing, scaled, meanwhile).
+  const lowDetail = useDeferredValue(useStore(core.ui, (s) => s.lowDetail));
+  const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
+  const editingId = useStore(core.ui, (s) => s.editingId);
+  const preview = useStore(core.ui, (s) => s.dragPreview);
+  // [additive, #131] Zoomed out: runs of items that paint in low detail go on canvases between the
+  // items drawn in full, so render order is kept (canvas/LowDetailLayer.tsx).
+  const parts = useMemo(() => (lowDetail ? lowDetailRuns(core, ids, zoom, editingId, preview?.moves ?? null) : null), [core, ids, lowDetail, zoom, editingId, preview]);
   return (
-    <>
-      {ids.map((id) => (
-        <ElementView key={id} id={id} />
-      ))}
-    </>
+    <WorldViewProvider>
+      {parts
+        ? parts.map((p) => (typeof p === 'string' ? <ElementView key={p} id={p} /> : <LowDetailLayer key={`low:${p[0]}`} ids={p} cull={cull} zoom={zoom} />))
+        : ids.map((id) => <ElementView key={id} id={id} />)}
+    </WorldViewProvider>
   );
+}
+
+/**
+ * `ids` (render order) split into items drawn in full (their id) and runs of items painted in
+ * low detail (arrays): those whose type paints itself (ElementDefinition.lowDetail), small on
+ * screen, not edited, not making room for a drag and not in my private layer (its dashed mark is
+ * the item's own DOM).
+ */
+function lowDetailRuns(core: EngineCore, ids: string[], zoom: number, editingId: string | null, moves: ReadonlyMap<string, unknown> | null): Array<string | string[]> {
+  const out: Array<string | string[]> = [];
+  let run: string[] | null = null;
+  for (const id of ids) {
+    const el = core.store.getElement(id);
+    const low =
+      !!el &&
+      !!core.registry.elements.get(el.type)?.def.lowDetail &&
+      id !== editingId &&
+      !moves?.has(id) &&
+      drawsLowDetail(true, el.w, el.h, zoom) &&
+      core.store.layerOf(id) !== 'private';
+    if (low) {
+      if (!run) out.push((run = []));
+      run.push(id);
+    } else {
+      run = null;
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * What every item of the world layer draws with: the quantized zoom and the item this viewer
+ * focuses on. Read once here instead of by each item, so a camera move
+ * costs the items nothing until one of these changes.
+ */
+interface WorldView {
+  zoom: number;
+  focusId: string | null;
+  focusHide: boolean;
+}
+const WorldViewContext = createContext<WorldView>({ zoom: 1, focusId: null, focusHide: false });
+
+export function WorldViewProvider({ children }: { children: ReactNode }) {
+  const core = useCore();
+  const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
+  const focusId = useStore(core.ui, (s) => s.focusId);
+  const focusHide = useStore(core.ui, (s) => s.focusHide);
+  const value = useMemo(() => ({ zoom, focusId, focusHide }), [zoom, focusId, focusHide]);
+  return <WorldViewContext.Provider value={value}>{children}</WorldViewContext.Provider>;
+}
+
+/**
+ * Each item's own view state (selected, edited, drawn elsewhere while a drag makes room) from ONE
+ * subscription to the ui store: an item re-renders only when its own state changes. Selecting
+ * everything is one pass over the selection, not a scan of it per item, and a camera move — a ui
+ * change every frame — asks the items nothing.
+ */
+class ItemStates {
+  private listeners = new Map<string, Set<() => void>>();
+  private selection: readonly string[] = [];
+  private selected: ReadonlySet<string> = new Set();
+  private editingId: string | null = null;
+  private moves: ReadonlyMap<string, { x: number; y: number }> | null = null;
+  private members: ReadonlySet<string> | null = null;
+
+  constructor(ui: EngineCore['ui']) {
+    this.apply(ui.getState());
+    ui.subscribe((s) => this.apply(s));
+  }
+
+  isSelected = (id: string) => this.selected.has(id);
+  isEditing = (id: string) => this.editingId === id;
+  shownAt = (id: string) => this.moves?.get(id) ?? null;
+  isSliding = (id: string) => !!this.members?.has(id);
+
+  subscribe(id: string, cb: () => void): () => void {
+    let set = this.listeners.get(id);
+    if (!set) this.listeners.set(id, (set = new Set()));
+    set.add(cb);
+    return () => {
+      set.delete(cb);
+      if (!set.size) this.listeners.delete(id);
+    };
+  }
+
+  private apply(s: UiState) {
+    const changed = new Set<string>();
+    if (s.selection !== this.selection) {
+      const next = new Set(s.selection);
+      for (const id of next) if (!this.selected.has(id)) changed.add(id);
+      for (const id of this.selected) if (!next.has(id)) changed.add(id);
+      this.selection = s.selection;
+      this.selected = next;
+    }
+    if (s.editingId !== this.editingId) {
+      if (this.editingId) changed.add(this.editingId);
+      if (s.editingId) changed.add(s.editingId);
+      this.editingId = s.editingId;
+    }
+    const moves = s.dragPreview?.moves ?? null;
+    if (moves !== this.moves) {
+      for (const [id, at] of moves ?? []) {
+        const was = this.moves?.get(id);
+        if (!was || was.x !== at.x || was.y !== at.y) changed.add(id);
+      }
+      for (const id of this.moves?.keys() ?? []) if (!moves?.has(id)) changed.add(id);
+      this.moves = moves;
+    }
+    const members = s.dragPreview?.members ?? null;
+    if (members !== this.members) {
+      for (const id of members ?? []) if (!this.members?.has(id)) changed.add(id);
+      for (const id of this.members ?? []) if (!members?.has(id)) changed.add(id);
+      this.members = members;
+    }
+    for (const id of changed) for (const cb of this.listeners.get(id) ?? []) cb();
+  }
+}
+
+const itemStatesOf = new WeakMap<EngineCore, ItemStates>();
+function itemStates(core: EngineCore): ItemStates {
+  let s = itemStatesOf.get(core);
+  if (!s) itemStatesOf.set(core, (s = new ItemStates(core.ui)));
+  return s;
 }
 
 export const ElementView = memo(function ElementView({ id }: { id: string }) {
   const core = useCore();
   const el = useElement(id);
-  const selected = useStore(core.ui, (s) => s.selection.includes(id));
-  const editing = useStore(core.ui, (s) => s.editingId === id);
-  const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
+  const items = itemStates(core);
+  const subscribe = useCallback((cb: () => void) => items.subscribe(id, cb), [items, id]);
+  const selected = useSyncExternalStore(subscribe, () => items.isSelected(id));
+  const editing = useSyncExternalStore(subscribe, () => items.isEditing(id));
   // [additive] While items are dragged over its container: where it is drawn to make room, and
   // whether it slides there (ElementDefinition.dragPreview). Display only, never written.
-  const shownAt = useStore(core.ui, (s) => s.dragPreview?.moves.get(id) ?? null);
-  const sliding = useStore(core.ui, (s) => !!s.dragPreview?.members.has(id));
+  const shownAt = useSyncExternalStore(subscribe, () => items.shownAt(id));
+  const sliding = useSyncExternalStore(subscribe, () => items.isSliding(id));
+  const { zoom, focusId, focusHide } = useContext(WorldViewContext);
   // [additive, #117] Outside the item this viewer focuses on (Editor.setFocus): faded and inert.
-  const focusId = useStore(core.ui, (s) => s.focusId);
-  const focusHide = useStore(core.ui, (s) => s.focusHide);
+  // [#135] or, with "hide the rest", not drawn at all.
   const unfocused = useMemo(() => (!!focusId && !!el && !core.editor.inFocus(el) ? (focusHide ? 'hidden' : 'faded') : null), [core, focusId, focusHide, el]);
   if (!el) return null;
   return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} shownAt={shownAt} sliding={sliding} unfocused={unfocused} />;
@@ -136,7 +277,10 @@ export function ElementFrame(props: {
   const { element: el } = props;
   const reg = core.registry.elements.get(el.type);
   const at = props.shownAt ?? el;
-  const transform = `translate(${at.x}px, ${at.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`;
+  // Placed with left / top, turned with a transform only when rotated: a transform per item is a
+  // paint property node per item, and Chrome's layerization of ten thousand of them took seconds
+  // a frame on a 10,000-item board (docs/performance.md).
+  const transform = el.rotation ? `rotate(${el.rotation}deg)` : undefined;
   const decorations = core.registry.decorations.filter((d) => d.def.appliesTo(el));
   // In this user's private layer (private mode): nobody else can see it until it is revealed.
   const isPrivate = useContext(RenderModeContext) !== 'export' && core.store.layerOf(el.id) === 'private';
@@ -159,7 +303,7 @@ export function ElementFrame(props: {
       className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}${props.unfocused === 'faded' ? ' fr-el--unfocused' : props.unfocused === 'hidden' ? ' fr-el--outside' : ''}`}
       data-id={props.preview ? undefined : el.id}
       data-type={el.type}
-      style={{ ...reg?.def.wrapperStyle?.(el as never), width: el.w, height: el.h, transform }}
+      style={{ ...reg?.def.wrapperStyle?.(el as never), left: at.x, top: at.y, width: el.w, height: el.h, transform }}
     >
       {content}
       {decorations.map(({ def, feature }) => (

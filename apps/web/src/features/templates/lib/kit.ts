@@ -175,6 +175,8 @@ export interface ShapeOpts {
   textColor?: string;
   align?: TextAlign;
   vAlign?: VerticalAlign;
+  /** Degrees clockwise (an arrow-like symbol pointing the other way). */
+  rotation?: number;
 }
 
 export interface TextOpts {
@@ -265,6 +267,7 @@ export class Kit {
       textColor: o.textColor ?? INK,
       align: o.align ?? 'center',
       vAlign: o.vAlign ?? 'middle',
+      ...(o.rotation ? { rotation: o.rotation } : {}),
       ...this.inFrame(),
     });
   }

@@ -4,6 +4,7 @@ import type { Role } from '@freero/shared';
 import type { Editor, EditorEvent, FeatureBundle, Host, Point } from '../api';
 import { BoardStore } from '../store/BoardStore';
 import { createPointerStore, createUiStore, type PointerState, type UiStore } from '../state/uiStore';
+import { nextLowDetail } from '../canvas/detail';
 import type { StoreApi } from 'zustand/vanilla';
 import { buildRegistry, type Registry } from './registry';
 import type { ClipboardMemory } from '../editor/clipboard';
@@ -240,6 +241,12 @@ export function createCore(
     }),
     installFollow(core),
     installLayerPlacement(core, () => core.editor.getPrivateRule()),
+    // Low detail follows the zoom, with hysteresis (canvas/detail.ts).
+    ui.subscribe((s, prev) => {
+      if (s.camera === prev.camera) return;
+      const low = nextLowDetail(s.lowDetail, s.camera.zoom);
+      if (low !== s.lowDetail) ui.setState({ lowDetail: low });
+    }),
     ui.subscribe((s, prev) => {
       if (s.selection !== prev.selection) {
         core.emitter.emit('selection');

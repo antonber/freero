@@ -219,6 +219,35 @@ describe('elbow lines route around other items', () => {
     expect(computeRoute('elbow', s, e, [], [middle]).poly).toEqual(poly);
   });
 
+  it('a line already drawn re-routes around an item moved into its way, also when many items move in the same step, and not for items that land elsewhere', () => {
+    const def = (type: string) => ({ type, Component: () => null, defaults: () => ({ type, w: 100, h: 100 }), resize: 'free' }) as unknown as ElementDefinition;
+    const bundle: FeatureBundle = {
+      manifest: { name: 'connector', description: 'lines' },
+      elements: [def('sticky'), connectorDef as unknown as ElementDefinition],
+      tools: [], formats: [], panels: [], commands: [],
+    };
+    const board = createTestBoard({ users: ['ann'], features: [bundle] });
+    try {
+      const [ed] = board.editors('connector');
+      const a = ed.create({ type: 'sticky', x: 0, y: 0 } as never);
+      const b = ed.create({ type: 'sticky', x: 3000, y: 0 } as never);
+      const target = (id: string, p: { x: number; y: number }) => ({ id, anchor: p.x < 1000 ? 'right' : 'left' }) as never;
+      const c = ed.create(buildConnector(ed, endpoint(target(a, { x: 100, y: 50 }), { x: 100, y: 50 }), endpoint(target(b, { x: 3000, y: 50 }), { x: 3000, y: 50 }), styleFromOptions({ routing: 'elbow' })));
+      const straight = ed.getElement<ConnectorElement>(c)!;
+      // A crowd moved in one step (a marquee drag): most land far away, one in the line's way.
+      const crowd = Array.from({ length: 300 }, (_, i) => ed.create({ type: 'sticky', x: (i % 30) * 120, y: 4000 + Math.floor(i / 30) * 120 } as never));
+      const blocker = crowd[150];
+      ed.updateMany(crowd.map((id) => ({ id, patch: id === blocker ? { x: 1500, y: -30 } : { y: (ed.getElement(id)!.y as number) + 2000 } })));
+      const around = ed.getElement<ConnectorElement>(c)!;
+      expect(around.h).toBeGreaterThan(straight.h + 30);
+      // Moving the crowd again, away from the line: nothing in its way changed, the route stays.
+      ed.updateMany(crowd.filter((id) => id !== blocker).map((id) => ({ id, patch: { x: (ed.getElement(id)!.x as number) + 50 } })));
+      expect(ed.getElement<ConnectorElement>(c)).toBe(around);
+    } finally {
+      board.destroy();
+    }
+  });
+
   it('routing 200 lines on a 2 000-item board fits in a frame', () => {
     // 50 × 40 grid of items; each line skips one item in its row, so every line has to detour.
     const items = Array.from({ length: 2000 }, (_, i) => ({ id: `n${i}`, box: { x: (i % 50) * 180, y: Math.floor(i / 50) * 140, w: 100, h: 60 } }));

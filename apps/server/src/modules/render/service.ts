@@ -7,7 +7,7 @@ import { rotatedBounds, type BoardElement, type Rect } from '@freero/shared';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { readBoardView, type BoardReader } from '../realtime/index';
 import { readUpload } from '../uploads/index';
-import { boardSvg } from './svg';
+import { boardSvg, stickerSrc } from './svg';
 import { pdfOf, rasterize } from './raster';
 
 export type RenderFormat = 'png' | 'svg' | 'pdf';
@@ -59,7 +59,7 @@ function insideFrame(all: readonly BoardElement[], frame: BoardElement): BoardEl
 async function pictures(els: readonly BoardElement[]): Promise<Map<string, string>> {
   const srcs = new Set<string>();
   for (const el of els) {
-    const src = el.type === 'image' ? (el as { src?: unknown }).src : el.type === 'embed' ? (el as { image?: unknown }).image : null;
+    const src = el.type === 'image' ? (el as { src?: unknown }).src : el.type === 'embed' ? (el as { image?: unknown }).image : stickerSrc(el);
     if (typeof src === 'string' && (src.startsWith('/uploads/') || /^data:image\/(png|jpeg|gif|webp);base64,/.test(src))) srcs.add(src);
   }
   const out = new Map<string, string>();

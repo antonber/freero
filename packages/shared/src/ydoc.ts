@@ -1,3 +1,4 @@
+import { chartCellOwner } from './charts';
 import { tableCellOwner } from './elements';
 import { TRACKER_COLLECTION } from './trackers';
 import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
@@ -17,6 +18,8 @@ import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts;
 //                                     element content: in the table's doc, ELEMENT_CONTENT_COLLECTIONS)
+//   'chartCells' -> features/chart (a chart's labels, series names and values per key — see
+//                                     charts.ts; element content like tableCells, #137)
 //   'privateMode' -> features/private-mode (key 'session' -> PrivateModeSession)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot,
 //                                     `h:${sessionId}` -> VotingHistoryEntry; while results are hidden the
@@ -134,6 +137,8 @@ export function homeLayer(layers: readonly string[]): string | null {
  */
 export const ELEMENT_CONTENT_COLLECTIONS: Readonly<Record<string, ElementContentRule>> = {
   tableCells: byKey(tableCellOwner),
+  // c:<chartId>:<rowId>:<colId> -> a chart's cell (charts.ts, #137)
+  chartCells: byKey(chartCellOwner),
   // frame id -> the presenter's notes for that frame
   presenterNotes: byKey((key) => key || null),
   // activity id -> its live results (ENGAGE_RESULTS_COLLECTION; written by the server only, which

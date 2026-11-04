@@ -199,6 +199,19 @@ export function downloadBoardFile(boardId: string): NonNullable<Host['downloadFi
   };
 }
 
+/** Host.commentFile on a real board (#143): images inline from the board, files as downloads. */
+export function commentFilesOf(boardId: string): NonNullable<Host['commentFile']> {
+  return {
+    imageUrl: (ref) => api.commentFileUrl(boardId, ref, true),
+    async download({ name, ...ref }) {
+      const blob = await api.downloadCommentFile(boardId, ref);
+      const url = URL.createObjectURL(blob);
+      saveAs(url, name);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
+  };
+}
+
 /** Host.downloadBackup on a real board: the server builds the .freero file (downloads policy, audit log). */
 export function downloadBackupOf(boardId: string): NonNullable<Host['downloadBackup']> {
   return async () => {

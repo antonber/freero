@@ -1,4 +1,5 @@
-// Freero's own stamps: simple vector badges drawn on a 100 × 100 grid.
+// Freero's own stamps: simple vector badges drawn on a 100 × 100 grid. Values are looked up
+// across these and the sticker packs by `stampOf` (packs.tsx).
 import type { ComponentType, ReactNode } from 'react';
 
 import { t } from '../messages';
@@ -112,12 +113,6 @@ export const STAMPS: StampDef[] = [
 ];
 
 export const STAMP_PREFIX = 'stamp:';
-const BY_ID = new Map(STAMPS.map((s) => [s.id, s]));
-
-export function stampOf(value: string): StampDef | null {
-  return value.startsWith(STAMP_PREFIX) ? (BY_ID.get(value.slice(STAMP_PREFIX.length)) ?? null) : null;
-}
-
 export function StampArt({ stamp }: { stamp: StampDef }) {
   return (
     <svg viewBox="0 0 100 100" width="100%" height="100%" role="img" aria-label={stamp.label}>

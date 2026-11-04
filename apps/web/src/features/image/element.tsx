@@ -1,7 +1,7 @@
 import { memo, useCallback, useState } from 'react';
 import { Image as ImageIcon, ImageOff } from 'lucide-react';
 import type { ImageElement } from '@freero/shared';
-import { defineElement, useIsExporting, type ElementRenderProps, type NewElement } from '@engine';
+import { defineElement, useIsExporting, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
 import { imageUrlFromPaste, isImageFile } from './lib/files';
 import { insertImageFiles, insertImageUrl } from './lib/insert';
 import { visibleCrop } from './lib/crop';
@@ -58,6 +58,11 @@ const ImageView = memo(function ImageView({ element }: ElementRenderProps<ImageE
   );
 });
 
+/** Zoomed out to low detail (#131): a box of the colour the picture reads as (the placeholder's grey until known). */
+function paintImage(el: ImageElement, p: LowDetailPaint) {
+  p.picture(el.src, '#e6e3f3');
+}
+
 export default defineElement({
   type: 'image',
   label: { one: t('image'), many: t('images') },
@@ -74,6 +79,7 @@ export default defineElement({
     alt: '',
   }),
   Component: ImageView,
+  lowDetail: paintImage,
   // Double-click = crop (images have no text to edit).
   onDoubleClick: (el, { editor }) => {
     if (el.src && el.naturalW > 0) editor.openPanel(CROP_PANEL, { id: el.id });

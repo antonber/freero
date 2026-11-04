@@ -10,9 +10,9 @@ export const RUNTIME_PATH = '/analytics.js';
 export const FRAME_PATH = '/analytics-frame';
 
 /**
- * The runtime's script tag for a marketing page (consent banner, then Google's script once the
- * visitor accepts), or '' without GA_MEASUREMENT_ID. Same-origin and `defer`: the page's
- * `script-src 'self'` lets it run, and Google's own script only after consent.
+ * The runtime's script tag for a marketing page (Google's script unless this browser opted out),
+ * or '' without GA_MEASUREMENT_ID. Same-origin and `defer`: the page's `script-src 'self'` lets it
+ * run.
  */
 export function analyticsScriptTag(config: Config, mode: 'site' | 'frame' = 'site'): string {
   const id = config.googleAnalyticsId;

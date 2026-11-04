@@ -16,6 +16,7 @@ import { HelpMenu } from '../../problems/HelpMenu';
 import { MyProblems } from '../../problems/MyProblems';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import { t as tr } from './messages';
+import { SlackSection } from './SlackSection';
 import './account.css';
 
 // Same palette the server assigns at signup: saturated enough to read on the canvas.
@@ -34,6 +35,8 @@ export function AccountSettingsPage() {
   const navigate = useNavigate();
   const [security, setSecurity] = useState<SecurityInfo | null>(null);
   const [sessionsVersion, setSessionsVersion] = useState(0);
+  // Connecting or disconnecting Slack changes which switches the notification settings show.
+  const [slackVersion, setSlackVersion] = useState(0);
   const loadSecurity = useCallback(() => {
     api.security().then(setSecurity, () => undefined);
   }, []);
@@ -70,7 +73,8 @@ export function AccountSettingsPage() {
           <LanguagePicker />
         </Section>
         <EmailSection security={security} />
-        <NotificationsSection />
+        <NotificationsSection version={slackVersion} />
+        <SlackSection onChange={() => setSlackVersion((v) => v + 1)} />
         <SignInMethodsSection security={security} onChange={setSecurity} />
         <PasswordSection security={security} onChanged={securityChanged} />
         <TwoFactorSection security={security} onChanged={securityChanged} />
@@ -259,8 +263,11 @@ const DIGEST_OPTIONS: Array<{ value: BoardChangesFrequency; label: string }> = [
   { value: 'weekly', label: tr('weekly') },
 ];
 
-/** Which notifications are also emailed (as a digest); the in-app inbox always shows them. */
-function NotificationsSection() {
+/**
+ * Which notifications are also emailed (as a digest) — or, with Slack connected (#105), sent to
+ * Slack instead; the in-app inbox always shows them.
+ */
+function NotificationsSection({ version }: { version: number }) {
   const { user } = useAuth();
   const notify = useToast();
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
@@ -276,7 +283,7 @@ function NotificationsSection() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [version]);
   // Arriving from the inbox's "Email settings" link or an unsubscribe page.
   useEffect(() => {
     if (prefs && window.location.hash === '#notifications') ref.current?.scrollIntoView({ block: 'start' });
@@ -294,12 +301,17 @@ function NotificationsSection() {
   };
 
   if (!user) return null;
+  const slack = !!prefs?.slack?.linked;
   return (
     <div ref={ref} id="notifications" className="fr-acct-anchor">
       <Section
         id="notifications-settings"
-        title={tr('notificationEmails')}
-        description={tr('mentionsRepliesAndSharedBoards')}
+        title={slack ? 'Notification emails and Slack' : 'Notification emails'}
+        description={
+          slack
+            ? 'Mentions, replies and shared boards always show under the bell. What you turned on for Slack arrives there at once as a direct message, instead of by email; the rest you haven’t seen a little later, we email you as one summary.'
+            : 'Mentions, replies and shared boards always show under the bell. What you haven’t seen there a little later, we email you as one summary.'
+        }
       >
         {failed ? (
           <p className="fr-acct__hint">{tr('emailSettingsCouldnTBe')}</p>
@@ -329,26 +341,63 @@ function NotificationsSection() {
                 aria-label={tr('emailASummaryOfChanges')}
               />
             </div>
-            <ul className="fr-acct-prefs__types" aria-label={tr('emailMeAbout')}>
-              {prefs.types.map((t) => (
-                <li key={t.type} className={prefs.emailAll ? undefined : 'is-off'}>
-                  <Toggle
-                    size="sm"
-                    disabled={!prefs.emailAll}
-                    label={
-                      <span className="fr-acct-prefs__type">
-                        <span className="fr-acct-prefs__label">{t.label}</span>
-                        <span className="fr-acct__hint">{t.description}</span>
-                      </span>
-                    }
-                    checked={t.email}
-                    onChange={(on) =>
-                      save({ email: { [t.type]: on } }, { ...prefs, types: prefs.types.map((x) => (x.type === t.type ? { ...x, email: on } : x)) })
-                    }
-                  />
+            {slack ? (
+              <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label="Notify me about">
+                <li className="fr-acct-prefs__channels-head" aria-hidden>
+                  <span />
+                  <span>Email</span>
+                  <span>Slack</span>
                 </li>
-              ))}
-            </ul>
+                {prefs.types.map((t) => (
+                  <li key={t.type}>
+                    <span className="fr-acct-prefs__type">
+                      <span className="fr-acct-prefs__label">{t.label}</span>
+                      <span className="fr-acct__hint">{t.description}</span>
+                    </span>
+                    <span className={prefs.emailAll ? undefined : 'is-off'}>
+                      <Toggle
+                        size="sm"
+                        aria-label={`Email: ${t.label}`}
+                        disabled={!prefs.emailAll}
+                        checked={t.email}
+                        onChange={(on) =>
+                          save({ email: { [t.type]: on } }, { ...prefs, types: prefs.types.map((x) => (x.type === t.type ? { ...x, email: on } : x)) })
+                        }
+                      />
+                    </span>
+                    <Toggle
+                      size="sm"
+                      aria-label={`Slack: ${t.label}`}
+                      checked={t.slack}
+                      onChange={(on) =>
+                        save({ slack: { [t.type]: on } }, { ...prefs, types: prefs.types.map((x) => (x.type === t.type ? { ...x, slack: on } : x)) })
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="fr-acct-prefs__types" aria-label="Email me about">
+                {prefs.types.map((t) => (
+                  <li key={t.type} className={prefs.emailAll ? undefined : 'is-off'}>
+                    <Toggle
+                      size="sm"
+                      disabled={!prefs.emailAll}
+                      label={
+                        <span className="fr-acct-prefs__type">
+                          <span className="fr-acct-prefs__label">{t.label}</span>
+                          <span className="fr-acct__hint">{t.description}</span>
+                        </span>
+                      }
+                      checked={t.email}
+                      onChange={(on) =>
+                        save({ email: { [t.type]: on } }, { ...prefs, types: prefs.types.map((x) => (x.type === t.type ? { ...x, email: on } : x)) })
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </Section>
