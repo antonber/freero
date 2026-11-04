@@ -97,7 +97,7 @@ round: connecting the same Slack account from another Freero account moves it th
 wasn't installed in that workspace yet, allowing it installs it (when the workspace lets members
 install apps).
 
-**Notifications.** Under **Notification emails and Slack**, each kind of notification gets an
+**Notifications.** In **Settings → Notifications**, each kind of notification gets an
 **Email** and a **Slack** switch. Slack is on by default for mentions, replies, access requests and
 answers to them, boards and workspaces shared with you, cards assigned to you, due-date changes and
 reminders, blocked agents and mentions in walkthroughs; off for comments on and reactions to your

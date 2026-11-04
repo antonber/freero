@@ -5,14 +5,14 @@ A test keeps it and the server in step. This page is the short version.
 
 ## Get a token
 
-**Your own scripts:** Settings → API tokens → name, permissions (scopes), expiry → *Create token*.
+**Your own scripts:** Settings → Developer → API tokens → name, permissions (scopes), expiry → *Create token*.
 The token (`frp_…`) is shown once. Pause it to refuse it without deleting it; revoke it to end it.
 
 ```
 curl -H "Authorization: Bearer frp_…" https://<your-freero>/api/v1/me
 ```
 
-**An app other people connect:** Settings → Your OAuth apps → register its redirect URIs. It then
+**An app other people connect:** Settings → Developer → Your OAuth apps → register its redirect URIs. It then
 uses the authorization code flow with PKCE (S256, required). A **confidential** app (registered with
 *Confidential app* on: it gets a client secret) may leave PKCE out when its platform can't send it
 (Power Automate's and Make's generic OAuth do not): it then authenticates with its secret at the
