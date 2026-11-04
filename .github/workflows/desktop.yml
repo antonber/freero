@@ -67,30 +67,76 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
-      # Update artifacts (.sig files, latest.json) only when the owner's updater key is there.
-      - name: Updater artifacts
+      # Windows code signing (docs/desktop.md "Windows"): import the owner's .pfx and hand Tauri its
+      # thumbprint (next step). No certificate: unsigned installers.
+      - name: Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) { Write-Host 'No WINDOWS_CERTIFICATE: building unsigned.'; exit 0 }
+          $pfx = Join-Path $env:RUNNER_TEMP 'windows-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $pw = if ($env:WINDOWS_CERTIFICATE_PASSWORD) { ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force } else { New-Object System.Security.SecureString }
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pw
+          Remove-Item $pfx
+          Add-Content -Path $env:GITHUB_ENV -Value "WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)"
+      # Each signing secret reaches the build only when it is set: Tauri acts on a variable that is
+      # merely present (an empty APPLE_CERTIFICATE still makes it run `security import`, which
+      # fails). Without the secrets everything builds, unsigned.
+      - name: Signing and updater keys
         shell: bash
         env:
-          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-        run: |
-          if [ "$HAS_KEY" = "true" ]; then
-            echo 'EXTRA_ARGS=--config {"bundle":{"createUpdaterArtifacts":true}}' >> "$GITHUB_ENV"
-          else
-            echo 'EXTRA_ARGS=' >> "$GITHUB_ENV"
-          fi
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Updates (docs/desktop.md "Updates"): minisign key made with `tauri signer generate`.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS: Developer ID signing and notarisation (docs/desktop.md "macOS"). Unset: unsigned.
+          # macOS: Developer ID signing and notarisation (docs/desktop.md "macOS").
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          put() { # NAME VALUE -> $GITHUB_ENV, safe for multi-line values
+            local d="EOF_${RANDOM}${RANDOM}${RANDOM}"
+            { echo "$1<<$d"; printf '%s\n' "$2"; echo "$d"; } >> "$GITHUB_ENV"
+          }
+          conf='{}'
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo 'Updater key set: signed update artifacts.'
+            put TAURI_SIGNING_PRIVATE_KEY "$TAURI_SIGNING_PRIVATE_KEY"
+            # Passed even when empty: a key made without a password needs it set to "".
+            put TAURI_SIGNING_PRIVATE_KEY_PASSWORD "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            conf=$(jq -c '.bundle.createUpdaterArtifacts = true' <<<"$conf")
+          fi
+          if [ "$RUNNER_OS" = macOS ] && [ -n "$APPLE_CERTIFICATE" ]; then
+            echo 'Apple certificate set: signed app.'
+            for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
+              if [ -n "${!v}" ]; then put "$v" "${!v}"; fi
+            done
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+              echo 'Apple ID set: notarised.'
+              for v in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do put "$v" "${!v}"; done
+            fi
+          fi
+          if [ -n "$WINDOWS_CERT_THUMBPRINT" ]; then
+            echo 'Windows certificate imported: signed installers.'
+            conf=$(jq -c --arg t "$WINDOWS_CERT_THUMBPRINT" '.bundle.windows += {certificateThumbprint: $t, digestAlgorithm: "sha256", timestampUrl: "http://timestamp.digicert.com"}' <<<"$conf")
+          fi
+          if [ "$conf" = '{}' ]; then
+            echo 'EXTRA_ARGS=' >> "$GITHUB_ENV"
+          else
+            # A file, not inline JSON: the action splits `args` on spaces and strips quotes.
+            file="$(printf '%s' "$GITHUB_WORKSPACE" | tr '\\\\' /)/tauri.ci.conf.json"
+            printf '%s\n' "$conf" > "$file"
+            echo "EXTRA_ARGS=--config $file" >> "$GITHUB_ENV"
+          fi
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop/src-tauri
           tauriScript: npx --yes ${{ env.TAURI_CLI }}

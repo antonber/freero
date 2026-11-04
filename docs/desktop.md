@@ -92,11 +92,10 @@ Tauri signs the app and submits it for notarisation with these (and staples the 
 Windows SmartScreen trusts signed installers (an EV or OV certificate builds reputation faster;
 Azure Trusted Signing is the cheapest current option for organisations in the US).
 
-- **A certificate file (OV/EV with an exportable key)**: import it on the runner and give Tauri
-  its thumbprint — add to `tauri.conf.json` › `bundle.windows`:
-  `"certificateThumbprint": "<thumbprint>", "digestAlgorithm": "sha256", "timestampUrl": "http://timestamp.digicert.com"`,
-  and a workflow step before the build that imports the `.pfx` from a secret
-  (`WINDOWS_CERTIFICATE` base64, `WINDOWS_CERTIFICATE_PASSWORD`) with `Import-PfxCertificate`.
+- **A certificate file (OV/EV with an exportable key)**: secrets `WINDOWS_CERTIFICATE` (the `.pfx`,
+  base64) and `WINDOWS_CERTIFICATE_PASSWORD`. The workflow imports it on the runner and gives
+  Tauri its thumbprint (`bundle.windows.certificateThumbprint`, sha256, DigiCert's timestamp server);
+  nothing in `tauri.conf.json` changes.
 - **Azure Trusted Signing or a hardware token / cloud HSM** (most EV certificates today): set
   `bundle.windows.signCommand` to the vendor's signing tool, e.g. for Trusted Signing
   `"signCommand": "trusted-signing-cli -e <endpoint> -a <account> -c <profile> %1"` with

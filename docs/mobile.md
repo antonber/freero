@@ -69,8 +69,9 @@ node apps/mobile/build.mjs icons                      # repaint the icon and lau
 After `mobile:sync`, Android Studio opens `apps/mobile/native/android` and Xcode
 `apps/mobile/native/ios/App/App.xcodeproj` (Swift Package Manager, no CocoaPods).
 
-CI (`.github/workflows/mobile.yml`) builds on every change to `apps/mobile`: a debug APK and the
-release bundle (unsigned unless the upload key is set) on Linux, an unsigned iOS simulator build on
+CI (`.github/workflows/mobile.yml`) builds on every change to `apps/mobile`: a debug APK (push off
+without `ANDROID_GOOGLE_SERVICES_JSON`) and, once the upload key is set, the signed release bundle
+on Linux, an unsigned iOS simulator build on
 macOS, as workflow artifacts. A `mobile-v<version>` tag sets the version name; the build number is
 the run number.
 
