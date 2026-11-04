@@ -34,6 +34,11 @@ export function slackReach(userId: string): (workspaceId: string) => Promise<boo
   };
 }
 
+/** Whether the app may carry something of this workspace to `userId`'s Slack (one check, see slackReach). */
+export function slackMayReach(userId: string, workspaceId: string): Promise<boolean> {
+  return integrationMayReach(workspaceId, SLACK_INTEGRATION, userId);
+}
+
 /**
  * Runs `fn` as the app acting for `userId`: board access then applies the IP exemptions a
  * workspace gave the app (apiauth's credential id in the request context, #156).

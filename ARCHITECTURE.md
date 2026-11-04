@@ -1461,7 +1461,8 @@ reports" below).
   session-less unsubscribe link (`List-Unsubscribe` one-click too) turns off.
   Slack (#105): `notify` hands each NEW notification, once committed (`repo.afterCommit`), to
   slack's `sendSlackDm` when the person connected Slack and wants that type there
-  (`notification_prefs.slack`, else the type's `slackByDefault`; `direct` types never). It is
+  (`notification_prefs.slack`, else the type's `slackByDefault`; `direct` types never; not when
+  the board's team workspace keeps apps out — `slackMayReach`). It is
   claimed first (`slacked_at`, only while `emailed_at` is null too), so it is one direct message
   at most and the digest leaves it out; a refused message is unclaimed (both columns) and goes into
   the next digest. A notification is delivered by Slack or by email, never both.
@@ -2567,7 +2568,8 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   ('slack:<userId>' in the workspace's API list: API switch, the organisation's as a floor, block,
   and an IP allowlist only with that credential exempted, since Slack's servers ask); the work runs
   in a request context carrying that credential id, so board access applies the same exemptions.
-  DMs are notifications (email's rules), not app access.
+  DMs too: notifications' `toSlack` asks slack's `slackMayReach` for the workspace of the
+  notification's board / doc (or `data.workspaceId`) before claiming; refused → left to the email.
 - **Meeting notes** are a structure kind, `meeting` (`@freero/shared` `layout/meeting.ts`: a pure
   reader of Markdown / text / WebVTT / SRT — headings, bullets, check boxes, owner and due phrases,
   speaker labels, cue times; no AI — and its one-frame layout). So the web (`features/meeting-notes`:

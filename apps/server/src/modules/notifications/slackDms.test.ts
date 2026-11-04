@@ -8,12 +8,20 @@ import { closeTestDb, openTestDb, outboxMails } from '../../platform/testing';
 import { createUser, markEmailVerified } from '../auth/index';
 import { createBoard } from '../boards/index';
 import type { CommentMessageEvent } from '../realtime/index';
+import { createTeamWorkspace } from '../workspaces/index';
 import { onCommentMessage, prefsFor, sendDigests, slackDeliveriesSettled, updatePrefs } from './service';
 
-const slack = vi.hoisted(() => ({ linked: new Set<string>(), dms: [] as Array<{ userId: string; title: string; quote?: string; url: string }>, refuse: false }));
+const slack = vi.hoisted(() => ({
+  linked: new Set<string>(),
+  dms: [] as Array<{ userId: string; title: string; quote?: string; url: string }>,
+  refuse: false,
+  /** Workspaces whose policies keep the app out (modules/slack decides that from apiauth's rules). */
+  keptOut: new Set<string>(),
+}));
 vi.mock('../slack/index', () => ({
   slackConnectOffered: () => true,
   slackLinked: async (userId: string) => slack.linked.has(userId),
+  slackMayReach: async (_userId: string, workspaceId: string) => !slack.keptOut.has(workspaceId),
   sendSlackDm: async (userId: string, m: { title: string; quote?: string; url: string }) => {
     if (!slack.linked.has(userId)) return 'not_linked';
     if (slack.refuse) return 'failed';
@@ -96,4 +104,16 @@ it('when Slack refuses the message, or the person turned that kind off for Slack
   await digest();
   expect(slack.dms).toHaveLength(0);
   expect(mailsTo(dee.email).map((m) => m.text).filter((t) => t.includes('and the forecast'))).toHaveLength(1);
+});
+
+it('a notification about a board in a team workspace that keeps apps out (API access off, the app blocked, an IP allowlist) is emailed, not sent to Slack', async () => {
+  const [ann, erin] = [await person('Ann'), await person('Erin')];
+  slack.linked.add(erin.id);
+  const team = await createTeamWorkspace(ann.id, 'Corp dev');
+  slack.keptOut.add(team.id);
+  const board = await createBoard(ann.id, 'Due diligence', '', 'commenter', { workspaceId: team.id, projectId: null });
+  await onCommentMessage(message(board.id, ann.id, `the data room ${mentionToken(erin.id)}`));
+  await digest();
+  expect(slack.dms).toHaveLength(0);
+  expect(mailsTo(erin.email).filter((m) => m.text.includes('the data room'))).toHaveLength(1);
 });

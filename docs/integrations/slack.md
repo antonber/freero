@@ -103,7 +103,8 @@ answers to them, boards and workspaces shared with you, cards assigned to you, d
 reminders, blocked agents and mentions in walkthroughs; off for comments on and reactions to your
 walkthroughs and fixed problem reports. A notification turned on for Slack is sent as a direct
 message at once and is **left out of the email digest**: each notification arrives once, by Slack
-or by email, never both. A comment that both mentions you and replies in your thread is one
+or by email, never both (and by email when its team workspace keeps the app out, see
+[Team workspace policies](#connect-slack-direct-messages-private-previews-and-freero)). A comment that both mentions you and replies in your thread is one
 notification, so one message. If Slack refuses the message (the app was removed, Slack is down),
 the notification goes into the next email digest instead. Moderation notices are always emailed,
 never sent to Slack. The bell in Freero shows everything, as before.
@@ -136,8 +137,8 @@ person connected. Its admin console's API page lists it under **Tokens and apps 
   **Any network** on the app for a person there (as for any token or app) lets it in for them.
 
 `/freero new` only creates boards in the person's personal workspace, which has no such policies.
-Direct messages are notifications, like the notification emails: they follow the person's settings,
-not these policies. There is no workspace allow-list of OAuth apps yet (#23); when there is, it
+A notification about a board, doc or workspace of a team that keeps the app out this way is not
+sent to Slack: it goes into the email digest instead, as if Slack were off for it. There is no workspace allow-list of OAuth apps yet (#23); when there is, it
 applies here too (`apiauth` `integrationMayReach`).
 
 **Disconnecting.** **Disconnect Slack** in Settings removes the link at once: no more messages,

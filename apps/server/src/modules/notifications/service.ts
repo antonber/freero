@@ -10,7 +10,7 @@ import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { getAccount, getGuests, getUsers } from '../auth/index';
-import { getBoardAccess, getBoardTitle } from '../boards/index';
+import { boardWorkspaceId, getBoardAccess, getBoardTitle } from '../boards/index';
 import {
   accessRequestOutcomes,
   invitedEmails,
@@ -20,7 +20,7 @@ import {
   type InviteAcceptedEvent,
 } from '../members/index';
 import type { CommentMessageEvent } from '../realtime/index';
-import { sendSlackDm, slackConnectOffered, slackLinked } from '../slack/index';
+import { sendSlackDm, slackConnectOffered, slackLinked, slackMayReach } from '../slack/index';
 import { setBoardChangesFrequency } from './boardChanges';
 import * as live from './live';
 import { slackDeliveries } from './metrics';
@@ -93,7 +93,13 @@ async function toSlack(n: { id: string; userId: string; type: NotificationType; 
     const def = NOTIFICATION_TYPES[n.type];
     if (def.direct) return;
     const on = (await repo.slackPrefs(n.userId)).get(n.type) ?? def.slackByDefault === true;
-    if (!on || !(await slackLinked(n.userId)) || !(await repo.claimForSlack(n.id, Date.now()))) return;
+    if (!on || !(await slackLinked(n.userId))) return;
+    // About a board, doc or workspace whose team keeps apps out (API access off, the app blocked,
+    // an IP allowlist it isn't exempt from): left to the email, like any app would be refused.
+    const boardId = n.boardId ?? n.data.requestedBoardId ?? null;
+    const workspaceId = (boardId ? await boardWorkspaceId(boardId) : null) ?? n.data.workspaceId ?? null;
+    if (workspaceId && !(await slackMayReach(n.userId, workspaceId))) return;
+    if (!(await repo.claimForSlack(n.id, Date.now()))) return;
     const actor = n.actorId ? (await getUsers([n.actorId])).get(n.actorId)?.name : undefined;
     const sent = await sendSlackDm(n.userId, {
       title: def.title(actor ?? n.data.actorName ?? 'Someone', n.data),
