@@ -55,7 +55,14 @@
 }
 
 .fr-acct-card--danger {
-  box-shadow: var(--fr-shadow-sm), 0 0 0 1px #f4c7c8;
+  box-shadow: var(--fr-shadow-sm), 0 0 0 1px color-mix(in srgb, var(--fr-danger) 40%, transparent);
+}
+
+.fr-acct-card__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
 .fr-acct-card__head h2 {
@@ -413,17 +420,7 @@
   border-radius: var(--fr-radius);
 }
 
-/* Notification emails */
-.fr-acct-anchor {
-  scroll-margin-top: 16px;
-}
-
-.fr-acct-prefs {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
+/* Notices inside a card (notifications: "confirm your email address") */
 .fr-acct-prefs__note {
   display: flex;
   align-items: center;
@@ -434,55 +431,6 @@
   background: var(--fr-warning-soft);
   color: var(--fr-ink-2);
   font-size: 13px;
-}
-
-.fr-acct-prefs__label {
-  font-size: 14px;
-  font-weight: 550;
-  color: var(--fr-ink);
-}
-
-.fr-acct-prefs__types {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-  padding: 12px 0 0 16px;
-  border-top: 1px solid var(--fr-line);
-  list-style: none;
-}
-
-.fr-acct-prefs__types li.is-off {
-  opacity: 0.55;
-}
-
-/* With Slack connected (#105): each kind with an Email and a Slack switch, in two columns. */
-.fr-acct-prefs__types--channels li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px 52px;
-  align-items: center;
-  gap: 8px;
-}
-
-.fr-acct-prefs__types--channels li > :not(.fr-acct-prefs__type) {
-  display: flex;
-  justify-self: center;
-}
-
-.fr-acct-prefs__types--channels .is-off {
-  opacity: 0.55;
-}
-
-.fr-acct-prefs__channels-head {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fr-ink-3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.fr-acct-prefs__channels-head > span {
-  text-align: center;
 }
 
 .fr-acct-slack {
@@ -503,49 +451,6 @@
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--fr-surface-2);
-}
-
-.fr-acct-prefs__type {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* "Changes on your boards": Off / Daily / Weekly beside its description. */
-.fr-acct-prefs__digest {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--fr-line);
-}
-
-.fr-acct-prefs__digest.is-off {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.fr-acct-tz {
-  max-width: 360px;
-  margin-top: 16px;
-}
-
-.fr-acct-tz__select {
-  height: 40px;
-  padding: 0 10px;
-  border: 1px solid var(--fr-line-strong);
-  border-radius: var(--fr-radius);
-  background: var(--fr-surface);
-  color: var(--fr-ink);
-  font: inherit;
-  font-size: 14px;
-}
-
-.fr-acct-tz__select:focus-visible {
-  outline: none;
-  border-color: var(--fr-primary);
-  box-shadow: var(--fr-focus-ring);
 }
 
 @media (max-width: 600px) {
@@ -582,4 +487,19 @@
 .fr-acct-verify > span {
   flex: 1;
   min-width: 200px;
+}
+
+/* Dark (#89): the status colours above are tuned for light surfaces. */
+:root[data-theme='dark'] .fr-acct__error {
+  color: #ffa3a6;
+}
+
+:root[data-theme='dark'] .fr-acct__ok,
+:root[data-theme='dark'] .fr-acct-badge--ok,
+:root[data-theme='dark'] .fr-acct-session__2fa {
+  color: var(--fr-success);
+}
+
+:root[data-theme='dark'] .fr-acct-badge--warn {
+  color: var(--fr-warning-ink);
 }
