@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "長方形",
   "roundedRectangle": "角丸長方形",
@@ -130,5 +133,8 @@
   "valueStream": "バリューストリーム",
   "leanValueStreamMappingProcesses": "リーンのバリューストリームマッピング: プロセス、在庫、フロー、カイゼンバースト",
   "dataFlow": "データフロー",
-  "processesDataStoresExternalEntities": "プロセス、データストア、外部エンティティ、信頼境界"
+  "processesDataStoresExternalEntities": "プロセス、データストア、外部エンティティ、信頼境界",
+  "workspaceShapePacks": "ワークスペースの図形パック",
+  "packNameIcons": "{name}：{count, plural, other {# 個のアイコン}}",
+  "packNameMatches": "{name}：{count, plural, other {# 件一致}}"
 }

@@ -497,7 +497,17 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.shape_pack_zip_too_many",
+    "errors.shape_pack_too_large",
+    "errors.shape_pack_unreadable",
+    "errors.shape_pack_name",
+    "errors.shape_pack_admins_only",
+    "errors.shape_pack_upload",
+    "errors.shape_pack_empty",
+    "errors.shape_pack_too_many",
+    "errors.shape_pack_limit",
+    "errors.shape_pack_workspace_full"
   ],
   "untitledFrame": "無題のフレーム",
   "couldNotChangeEmbedding": "埋め込み設定を変更できませんでした",
@@ -996,5 +1006,15 @@
   "noLabel": "ラベルなし",
   "thisLabelLimitsTheBoard": "このラベルによりボードが制限されています: {limits}。",
   "thisBoardSWorkspaceKey": "このボードのワークスペースのキーを利用できません",
-  "itsWorkspaceEncryptsItsBoards": "このボードのワークスペースは独自のキーでボードを暗号化していますが、そのキーは現在使用できません。管理者が一時停止したか、キーサービスが拒否したか応答しませんでした。キーが利用できるようになると、ボードを再び開けます。"
+  "itsWorkspaceEncryptsItsBoards": "このボードのワークスペースは独自のキーでボードを暗号化していますが、そのキーは現在使用できません。管理者が一時停止したか、キーサービスが拒否したか応答しませんでした。キーが利用できるようになると、ボードを再び開けます。",
+  "errors.shape_pack_zip_too_many": "パックの ZIP に入れられるファイルは最大 {max} 個です",
+  "errors.shape_pack_too_large": "この ZIP は展開するとパックの上限を超えます",
+  "errors.shape_pack_unreadable": "Freero が読める ZIP ファイルではありません",
+  "errors.shape_pack_name": "パックに名前を付けてください",
+  "errors.shape_pack_admins_only": "このワークスペースの図形パックを管理できるのはオーナーと管理者だけです",
+  "errors.shape_pack_upload": "先にパックの SVG（またはそれを含む ZIP）をアップロードしてください",
+  "errors.shape_pack_empty": "Freero が描画できる SVG がありません",
+  "errors.shape_pack_too_many": "1 つのパックに入るアイコンは最大 {max} 個です。複数のパックに分けてください",
+  "errors.shape_pack_limit": "ワークスペースに置ける図形パックは最大 {max} 個です。使っていないパックを先に削除してください。",
+  "errors.shape_pack_workspace_full": "このワークスペースの図形パックの容量がいっぱいです。使っていないパックを先に削除してください。"
 }

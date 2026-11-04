@@ -160,7 +160,7 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
+import type { ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -872,6 +872,12 @@ export const api = {
     }
     return ((await res.json()) as { sticker: Sticker }).sticker;
   },
+  // shape packs (#4): the board's workspace's own icon sets
+  shapePacks: (boardId: string) => request<ShapePacksResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`),
+  createShapePack: (boardId: string, name: string, upload: string) =>
+    request<ShapePackCreated>('POST', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`, { name, upload }),
+  renameShapePack: (packId: string, name: string) => request<{ pack: ShapePack }>('PATCH', `/api/shape-packs/${encodeURIComponent(packId)}`, { name }),
+  removeShapePack: (packId: string) => request<{ ok: true }>('DELETE', `/api/shape-packs/${encodeURIComponent(packId)}`),
   removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
   removeSticker: (setId: string, stickerId: string) =>
     request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),

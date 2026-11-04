@@ -9,6 +9,9 @@
 // (table cells) and the pictures it may embed (data: URLs by upload URL); nothing is fetched here.
 import {
   CHART_CELLS,
+  ICON_DEFAULT_VIEWBOX,
+  cleanIconNodes,
+  cleanViewBox,
   STICKY_COLORS,
   readChart,
   richTextToPlain,
@@ -265,14 +268,17 @@ function table(el: TableElement, cells: ReadonlyMap<string, unknown>): string {
 }
 
 function icon(el: IconElement): string {
-  const allowed = new Set(['path', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect']);
-  const attrs = (a: Record<string, string | number>) =>
-    Object.entries(a)
-      .filter(([k]) => /^[a-z][a-z-]*$/i.test(k) && !/^on/i.test(k) && !/href|style/i.test(k))
-      .map(([k, v]) => `${k}="${esc(String(v))}"`)
-      .join(' ');
-  const body = (Array.isArray(el.nodes) ? el.nodes : []).filter(([tag]) => allowed.has(tag)).map(([tag, a]) => `<${tag} ${attrs(a ?? {})}/>`).join('');
-  return `<svg x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" viewBox="0 0 24 24" fill="none" stroke="${color(el.color, INK)}" stroke-width="${n(el.strokeWidth, 2)}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+  // The element is written by anyone who can edit: only what the shared icon rule keeps is drawn
+  // (primitives with geometric and paint values; never a link, script, handler, style or url()).
+  const ink = color(el.color, INK);
+  const body = cleanIconNodes(el.nodes)
+    .map(([tag, a]) => `<${tag} ${Object.entries(a).map(([k, v]) => `${k}="${esc(v === 'currentColor' ? ink : String(v))}"`).join(' ')}/>`)
+    .join('');
+  const box = `x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}"`;
+  // Uploaded drawings (#4) carry their own paint; 'mono' ones in the element's colour.
+  if (el.art === 'mono' || el.art === 'color')
+    return `<svg ${box} viewBox="${cleanViewBox(el.viewBox) ?? ICON_DEFAULT_VIEWBOX}" fill="none" stroke="none">${body}</svg>`;
+  return `<svg ${box} viewBox="${ICON_DEFAULT_VIEWBOX}" fill="none" stroke="${ink}" stroke-width="${n(el.strokeWidth, 2)}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
 
 /** Round axis values covering [lo, hi] (about five). */

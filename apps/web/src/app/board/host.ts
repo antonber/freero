@@ -128,6 +128,19 @@ export function stickersOf(boardId: string): NonNullable<Host['stickers']> {
   };
 }
 
+/** The board's workspace's shape packs (#4): a pack is uploaded as one ZIP through the upload checks, then named. */
+export function shapePacksOf(boardId: string): NonNullable<Host['shapePacks']> {
+  return {
+    list: () => api.shapePacks(boardId),
+    async create(name, zip) {
+      const { url } = await api.uploadAttachment(zip);
+      return api.createShapePack(boardId, name, url);
+    },
+    rename: async (packId, name) => (await api.renameShapePack(packId, name)).pack,
+    remove: async (packId) => void (await api.removeShapePack(packId)),
+  };
+}
+
 /** Toasts with an action button stay up long enough to read and act on. */
 const ACTION_TOAST_MS = 12000;
 
@@ -163,6 +176,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     ...(deps.onAccessLost ? { onConnectionEnded: (end: { code: number }) => void (end.code === WS_CLOSE_NO_ACCESS && deps.onAccessLost?.()) } : {}),
     personalViews: personalViewsOf(board.id),
     stickers: stickersOf(board.id),
+    shapePacks: shapePacksOf(board.id),
     uploadImage,
     uploadFile,
     uploadAttachment,

@@ -497,7 +497,17 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.shape_pack_zip_too_many",
+    "errors.shape_pack_too_large",
+    "errors.shape_pack_unreadable",
+    "errors.shape_pack_name",
+    "errors.shape_pack_admins_only",
+    "errors.shape_pack_upload",
+    "errors.shape_pack_empty",
+    "errors.shape_pack_too_many",
+    "errors.shape_pack_limit",
+    "errors.shape_pack_workspace_full"
   ],
   "untitledFrame": "제목 없는 프레임",
   "couldNotChangeEmbedding": "임베드 설정을 바꾸지 못했어요",
@@ -996,5 +1006,15 @@
   "noLabel": "레이블 없음",
   "thisLabelLimitsTheBoard": "이 레이블이 보드를 제한해요: {limits}.",
   "thisBoardSWorkspaceKey": "이 보드의 워크스페이스 키를 사용할 수 없어요",
-  "itsWorkspaceEncryptsItsBoards": "이 보드의 워크스페이스는 자체 키로 보드를 암호화하는데, 지금은 그 키를 사용할 수 없어요. 관리자가 일시 중지했거나 키 서비스가 거부했거나 응답하지 않았어요. 키를 사용할 수 있게 되면 보드가 다시 열려요."
+  "itsWorkspaceEncryptsItsBoards": "이 보드의 워크스페이스는 자체 키로 보드를 암호화하는데, 지금은 그 키를 사용할 수 없어요. 관리자가 일시 중지했거나 키 서비스가 거부했거나 응답하지 않았어요. 키를 사용할 수 있게 되면 보드가 다시 열려요.",
+  "errors.shape_pack_zip_too_many": "팩의 ZIP에는 파일을 최대 {max}개까지 넣을 수 있습니다",
+  "errors.shape_pack_too_large": "이 ZIP은 압축을 풀면 팩에 담을 수 있는 크기를 넘습니다",
+  "errors.shape_pack_unreadable": "Freero가 읽을 수 있는 ZIP 파일이 아닙니다",
+  "errors.shape_pack_name": "팩 이름을 입력하세요",
+  "errors.shape_pack_admins_only": "이 워크스페이스의 도형 팩은 소유자와 관리자만 관리할 수 있습니다",
+  "errors.shape_pack_upload": "먼저 팩의 SVG(또는 SVG가 든 ZIP)를 업로드하세요",
+  "errors.shape_pack_empty": "Freero가 그릴 수 있는 SVG 파일이 없습니다",
+  "errors.shape_pack_too_many": "팩 하나에는 아이콘을 최대 {max}개까지 담을 수 있습니다. 여러 팩으로 나누세요",
+  "errors.shape_pack_limit": "워크스페이스에는 도형 팩을 최대 {max}개까지 둘 수 있습니다. 쓰지 않는 팩을 먼저 삭제하세요.",
+  "errors.shape_pack_workspace_full": "이 워크스페이스의 도형 팩 공간이 가득 찼습니다. 쓰지 않는 팩을 먼저 삭제하세요."
 }

@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "직사각형",
   "roundedRectangle": "둥근 직사각형",
@@ -130,5 +133,8 @@
   "valueStream": "가치 흐름",
   "leanValueStreamMappingProcesses": "린 가치 흐름 매핑: 프로세스, 재고, 흐름, 카이젠 버스트",
   "dataFlow": "데이터 흐름",
-  "processesDataStoresExternalEntities": "프로세스, 데이터 저장소, 외부 엔터티 및 신뢰 경계"
+  "processesDataStoresExternalEntities": "프로세스, 데이터 저장소, 외부 엔터티 및 신뢰 경계",
+  "workspaceShapePacks": "워크스페이스 도형 팩",
+  "packNameIcons": "{name}: 아이콘 {count, plural, other {#개}}",
+  "packNameMatches": "{name}: {count, plural, other {#개}} 일치"
 }

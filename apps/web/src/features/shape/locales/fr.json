@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "Rectangle",
   "roundedRectangle": "Rectangle arrondi",
@@ -130,5 +133,8 @@
   "valueStream": "Chaîne de valeur",
   "leanValueStreamMappingProcesses": "Cartographie lean de la chaîne de valeur : processus, stocks, flux, chantiers kaizen",
   "dataFlow": "Flux de données",
-  "processesDataStoresExternalEntities": "Processus, stockages de données, entités externes et frontières de confiance"
+  "processesDataStoresExternalEntities": "Processus, stockages de données, entités externes et frontières de confiance",
+  "workspaceShapePacks": "Packs de formes de votre espace de travail",
+  "packNameIcons": "{name} : {count, plural, one {# icône} other {# icônes}}",
+  "packNameMatches": "{name} : {count, plural, one {# résultat} other {# résultats}}"
 }

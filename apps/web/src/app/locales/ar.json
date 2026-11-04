@@ -497,7 +497,17 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.shape_pack_zip_too_many",
+    "errors.shape_pack_too_large",
+    "errors.shape_pack_unreadable",
+    "errors.shape_pack_name",
+    "errors.shape_pack_admins_only",
+    "errors.shape_pack_upload",
+    "errors.shape_pack_empty",
+    "errors.shape_pack_too_many",
+    "errors.shape_pack_limit",
+    "errors.shape_pack_workspace_full"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -996,5 +1006,15 @@
   "noLabel": "بدون تسمية",
   "thisLabelLimitsTheBoard": "هذه التسمية تقيّد اللوحة: {limits}.",
   "thisBoardSWorkspaceKey": "مفتاح مساحة العمل لهذه اللوحة غير متاح",
-  "itsWorkspaceEncryptsItsBoards": "تشفّر مساحة العمل لوحاتها بمفتاحها الخاص، ولا يمكن استخدام هذا المفتاح الآن: علّقه مسؤولوها، أو رفضت خدمة المفاتيح أو لم تستجب. ستُفتح اللوحة مجددًا بمجرد توفر المفتاح."
+  "itsWorkspaceEncryptsItsBoards": "تشفّر مساحة العمل لوحاتها بمفتاحها الخاص، ولا يمكن استخدام هذا المفتاح الآن: علّقه مسؤولوها، أو رفضت خدمة المفاتيح أو لم تستجب. ستُفتح اللوحة مجددًا بمجرد توفر المفتاح.",
+  "errors.shape_pack_zip_too_many": "يمكن أن يحتوي ملف ZIP للحزمة على {max} ملف كحد أقصى",
+  "errors.shape_pack_too_large": "يتجاوز حجم ملف ZIP هذا بعد فك ضغطه ما تتسع له الحزمة",
+  "errors.shape_pack_unreadable": "هذا ليس ملف ZIP يستطيع Freero قراءته",
+  "errors.shape_pack_name": "أعطِ الحزمة اسمًا",
+  "errors.shape_pack_admins_only": "لا يدير حزم الأشكال في مساحة العمل هذه إلا مالكوها ومشرفوها",
+  "errors.shape_pack_upload": "ارفع ملفات SVG للحزمة (أو ملف ZIP يحتويها) أولًا",
+  "errors.shape_pack_empty": "لا يوجد بين هذه الملفات ملف SVG يستطيع Freero رسمه",
+  "errors.shape_pack_too_many": "تتسع الحزمة لـ {max} أيقونة كحد أقصى: قسّمها على عدة حزم",
+  "errors.shape_pack_limit": "يمكن أن تحتوي مساحة العمل على {max} حزمة أشكال كحد أقصى. أزل أولًا حزمة لم تعد تستخدمها.",
+  "errors.shape_pack_workspace_full": "امتلأت حزم الأشكال في مساحة العمل هذه. أزل أولًا حزمة لم تعد تستخدمها."
 }

@@ -497,7 +497,17 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.shape_pack_zip_too_many",
+    "errors.shape_pack_too_large",
+    "errors.shape_pack_unreadable",
+    "errors.shape_pack_name",
+    "errors.shape_pack_admins_only",
+    "errors.shape_pack_upload",
+    "errors.shape_pack_empty",
+    "errors.shape_pack_too_many",
+    "errors.shape_pack_limit",
+    "errors.shape_pack_workspace_full"
   ],
   "untitledFrame": "Moldura sem título",
   "couldNotChangeEmbedding": "Não foi possível alterar a incorporação",
@@ -996,5 +1006,15 @@
   "noLabel": "Sem rótulo",
   "thisLabelLimitsTheBoard": "Este rótulo limita o quadro: {limits}.",
   "thisBoardSWorkspaceKey": "A chave do espaço de trabalho deste quadro não está disponível",
-  "itsWorkspaceEncryptsItsBoards": "O espaço de trabalho dele criptografa os quadros com uma chave própria, e essa chave não pode ser usada agora: os administradores a suspenderam, ou o serviço de chaves recusou ou não respondeu. O quadro volta a abrir assim que a chave estiver disponível."
+  "itsWorkspaceEncryptsItsBoards": "O espaço de trabalho dele criptografa os quadros com uma chave própria, e essa chave não pode ser usada agora: os administradores a suspenderam, ou o serviço de chaves recusou ou não respondeu. O quadro volta a abrir assim que a chave estiver disponível.",
+  "errors.shape_pack_zip_too_many": "O ZIP de um pacote pode ter no máximo {max} arquivos",
+  "errors.shape_pack_too_large": "Esse ZIP descompactado ultrapassa o que cabe em um pacote",
+  "errors.shape_pack_unreadable": "Esse não é um arquivo ZIP que o Freero consiga ler",
+  "errors.shape_pack_name": "Dê um nome ao pacote",
+  "errors.shape_pack_admins_only": "Só os proprietários e administradores deste workspace gerenciam os pacotes de formas dele",
+  "errors.shape_pack_upload": "Envie primeiro os SVGs do pacote (ou um ZIP com eles)",
+  "errors.shape_pack_empty": "Nenhum desses arquivos é um SVG que o Freero consiga desenhar",
+  "errors.shape_pack_too_many": "Um pacote comporta no máximo {max} ícones: divida-os em vários pacotes",
+  "errors.shape_pack_limit": "Um workspace pode ter no máximo {max} pacotes de formas. Remova primeiro um que você não usa mais.",
+  "errors.shape_pack_workspace_full": "Os pacotes de formas deste workspace estão cheios. Remova primeiro um pacote que você não usa mais."
 }

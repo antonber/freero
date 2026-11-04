@@ -497,7 +497,17 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.shape_pack_zip_too_many",
+    "errors.shape_pack_too_large",
+    "errors.shape_pack_unreadable",
+    "errors.shape_pack_name",
+    "errors.shape_pack_admins_only",
+    "errors.shape_pack_upload",
+    "errors.shape_pack_empty",
+    "errors.shape_pack_too_many",
+    "errors.shape_pack_limit",
+    "errors.shape_pack_workspace_full"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -996,5 +1006,15 @@
   "noLabel": "ללא תווית",
   "thisLabelLimitsTheBoard": "התווית הזו מגבילה את הלוח: {limits}.",
   "thisBoardSWorkspaceKey": "המפתח של סביבת העבודה של הלוח הזה לא זמין",
-  "itsWorkspaceEncryptsItsBoards": "סביבת העבודה שלו מצפינה את הלוחות שלה במפתח משלה, ואי אפשר להשתמש במפתח הזה כרגע: המנהלים שלה השעו אותו, או ששירות המפתחות שלה סירב או לא ענה. הלוח ייפתח שוב ברגע שהמפתח יהיה זמין."
+  "itsWorkspaceEncryptsItsBoards": "סביבת העבודה שלו מצפינה את הלוחות שלה במפתח משלה, ואי אפשר להשתמש במפתח הזה כרגע: המנהלים שלה השעו אותו, או ששירות המפתחות שלה סירב או לא ענה. הלוח ייפתח שוב ברגע שהמפתח יהיה זמין.",
+  "errors.shape_pack_zip_too_many": "קובץ ה־ZIP של חבילה יכול להכיל עד {max} קבצים",
+  "errors.shape_pack_too_large": "קובץ ה־ZIP הזה גדול מדי אחרי פריסה בשביל חבילה",
+  "errors.shape_pack_unreadable": "זה לא קובץ ZIP ש־Freero יכול לקרוא",
+  "errors.shape_pack_name": "יש לתת לחבילה שם",
+  "errors.shape_pack_admins_only": "רק הבעלים והמנהלים של סביבת העבודה הזו מנהלים את חבילות הצורות שלה",
+  "errors.shape_pack_upload": "קודם יש להעלות את קובצי ה־SVG של החבילה (או ZIP שמכיל אותם)",
+  "errors.shape_pack_empty": "אף אחד מהקבצים האלה אינו SVG ש־Freero יכול לצייר",
+  "errors.shape_pack_too_many": "חבילה מכילה עד {max} סמלים: כדאי לחלק אותם לכמה חבילות",
+  "errors.shape_pack_limit": "בסביבת עבודה יכולות להיות עד {max} חבילות צורות. קודם יש להסיר חבילה שכבר לא בשימוש.",
+  "errors.shape_pack_workspace_full": "חבילות הצורות של סביבת העבודה הזו מלאות. קודם יש להסיר חבילה שכבר לא בשימוש."
 }

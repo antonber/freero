@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Package, Search, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { iconWords, type ShapePack } from '@freero/shared';
 import { DockHeader, definePanel, useCanEdit, useCollection, type Editor } from '@engine';
 import { Input, Toggle } from '@ui';
 import { LIBRARY_COLLECTION, SHAPE_SETS, enabledSets, searchShapes, type LibraryShape } from './lib/library';
@@ -30,6 +31,29 @@ function Tile({ editor, shape, canEdit }: { editor: Editor; shape: LibraryShape;
   );
 }
 
+/** The workspace's shape packs (#4): their icons are the icon library's, so each pack opens it there. */
+function useWorkspacePacks(editor: Editor): ShapePack[] {
+  const [packs, setPacks] = useState<ShapePack[]>([]);
+  useEffect(() => {
+    let live = true;
+    editor.host.shapePacks?.list().then(
+      (r) => live && setPacks(r.packs),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [editor]);
+  return packs;
+}
+
+/** Icons of `pack` whose name (or the pack's) has every word of `query`. */
+function packMatches(pack: ShapePack, query: string): number {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const packWords = iconWords(pack.name);
+  return pack.icons.filter((ic) => words.every((w) => `${iconWords(ic.name)} ${packWords}`.includes(w))).length;
+}
+
 /** Searchable library of shape sets; which sets show is a per-board choice. */
 function ShapeLibraryPanel({ editor }: { editor: Editor }) {
   const canEdit = useCanEdit();
@@ -39,6 +63,8 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
   const sets = useMemo(() => enabledSets(choices), [choices]);
   const groups = useMemo(() => searchShapes(sets, query), [sets, query]);
   const on = new Set(sets.map((s) => s.id));
+  const packs = useWorkspacePacks(editor);
+  const packHits = packs.map((p) => ({ pack: p, count: packMatches(p, query) })).filter((h) => h.count > 0);
 
   return (
     <div className="fr-shape-lib">
@@ -89,7 +115,23 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
           )}
         </section>
       ))}
-      {!groups.length && (
+      {packHits.length > 0 && (
+        <section className="fr-shape-lib__group" aria-label={t('workspaceShapePacks')}>
+          <h3 className="fr-shape-lib__group-title">{t('workspaceShapePacks')}</h3>
+          {packHits.map(({ pack, count }) => (
+            <button
+              key={pack.id}
+              type="button"
+              className="fr-shape-options__more"
+              onClick={() => editor.runCommand('icons.openLibrary', { pack: pack.id, ...(query.trim() ? { query: query.trim() } : {}) })}
+            >
+              <Package size={14} aria-hidden />
+              {query.trim() ? t('packNameMatches', { name: pack.name, count }) : t('packNameIcons', { name: pack.name, count })}
+            </button>
+          ))}
+        </section>
+      )}
+      {!groups.length && !packHits.length && (
         <p className="fr-shape-lib__empty">
           {sets.length ? t('noShapesMatchQuery', { query }) : t('noShapeLibrariesAreOn')}
         </p>

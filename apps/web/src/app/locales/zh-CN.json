@@ -497,7 +497,17 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.shape_pack_zip_too_many",
+    "errors.shape_pack_too_large",
+    "errors.shape_pack_unreadable",
+    "errors.shape_pack_name",
+    "errors.shape_pack_admins_only",
+    "errors.shape_pack_upload",
+    "errors.shape_pack_empty",
+    "errors.shape_pack_too_many",
+    "errors.shape_pack_limit",
+    "errors.shape_pack_workspace_full"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -996,5 +1006,15 @@
   "noLabel": "无标签",
   "thisLabelLimitsTheBoard": "此标签限制了该白板：{limits}。",
   "thisBoardSWorkspaceKey": "此白板所在工作区的密钥不可用",
-  "itsWorkspaceEncryptsItsBoards": "其工作区使用自有密钥加密白板，而该密钥目前无法使用：管理员已将其暂停，或其密钥服务拒绝或未响应。密钥可用后，白板将再次打开。"
+  "itsWorkspaceEncryptsItsBoards": "其工作区使用自有密钥加密白板，而该密钥目前无法使用：管理员已将其暂停，或其密钥服务拒绝或未响应。密钥可用后，白板将再次打开。",
+  "errors.shape_pack_zip_too_many": "图形包的 ZIP 最多包含 {max} 个文件",
+  "errors.shape_pack_too_large": "这个 ZIP 解压后超出了图形包的容量",
+  "errors.shape_pack_unreadable": "这不是 Freero 能读取的 ZIP 文件",
+  "errors.shape_pack_name": "请为图形包命名",
+  "errors.shape_pack_admins_only": "只有此工作区的所有者和管理员可以管理其图形包",
+  "errors.shape_pack_upload": "请先上传图形包的 SVG（或包含它们的 ZIP）",
+  "errors.shape_pack_empty": "这些文件中没有 Freero 能绘制的 SVG",
+  "errors.shape_pack_too_many": "一个图形包最多包含 {max} 个图标，请拆分成多个图形包",
+  "errors.shape_pack_limit": "一个工作区最多有 {max} 个图形包。请先删除不再使用的图形包。",
+  "errors.shape_pack_workspace_full": "此工作区的图形包空间已满。请先删除不再使用的图形包。"
 }

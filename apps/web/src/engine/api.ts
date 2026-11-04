@@ -41,6 +41,9 @@ import type {
   Sticker,
   StickerSet,
   StickersResponse,
+  ShapePack,
+  ShapePackCreated,
+  ShapePacksResponse,
   StrokeStyle,
   SuggestionRecord,
   SuggestionState,
@@ -122,6 +125,15 @@ export interface HostStickers {
   add(setId: string, file: Blob, name: string): Promise<Sticker>;
   removeSet(setId: string): Promise<void>;
   remove(setId: string, stickerId: string): Promise<void>;
+}
+
+/** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
+export interface HostShapePacks {
+  list(): Promise<ShapePacksResponse>;
+  /** Uploads `zip` (a ZIP of SVG files) through the server's upload checks and makes it a pack. */
+  create(name: string, zip: Blob): Promise<ShapePackCreated>;
+  rename(packId: string, name: string): Promise<ShapePack>;
+  remove(packId: string): Promise<void>;
 }
 
 /** [additive] Light, dark, or whatever the device uses. */
@@ -211,6 +223,12 @@ export interface Host {
    * message that can be shown (too large, not an image, not allowed).
    */
   stickers?: HostStickers;
+  /**
+   * [additive, #4] The board's workspace's own shape packs (server modules/shapepacks): uploaded
+   * SVG icon sets, placed as icon elements that hold their drawing. Absent (offline sandbox, guests
+   * without an account, embeds): no packs. Rejections carry a message that can be shown.
+   */
+  shapePacks?: HostShapePacks;
   /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).

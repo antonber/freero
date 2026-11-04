@@ -497,7 +497,17 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.shape_pack_zip_too_many",
+    "errors.shape_pack_too_large",
+    "errors.shape_pack_unreadable",
+    "errors.shape_pack_name",
+    "errors.shape_pack_admins_only",
+    "errors.shape_pack_upload",
+    "errors.shape_pack_empty",
+    "errors.shape_pack_too_many",
+    "errors.shape_pack_limit",
+    "errors.shape_pack_workspace_full"
   ],
   "untitledFrame": "Marco sin título",
   "couldNotChangeEmbedding": "No se pudo cambiar la inserción",
@@ -996,5 +1006,15 @@
   "noLabel": "Sin etiqueta",
   "thisLabelLimitsTheBoard": "Esta etiqueta limita el tablero: {limits}.",
   "thisBoardSWorkspaceKey": "La clave del espacio de trabajo de este tablero no está disponible",
-  "itsWorkspaceEncryptsItsBoards": "Su espacio de trabajo cifra sus tableros con su propia clave, y esa clave no se puede usar ahora mismo: sus administradores la suspendieron, o su servicio de claves la rechazó o no respondió. El tablero se abrirá de nuevo en cuanto la clave esté disponible."
+  "itsWorkspaceEncryptsItsBoards": "Su espacio de trabajo cifra sus tableros con su propia clave, y esa clave no se puede usar ahora mismo: sus administradores la suspendieron, o su servicio de claves la rechazó o no respondió. El tablero se abrirá de nuevo en cuanto la clave esté disponible.",
+  "errors.shape_pack_zip_too_many": "El ZIP de un paquete puede tener como máximo {max} archivos",
+  "errors.shape_pack_too_large": "Ese ZIP descomprimido ocupa más de lo que cabe en un paquete",
+  "errors.shape_pack_unreadable": "No es un archivo ZIP que Freero pueda leer",
+  "errors.shape_pack_name": "Ponle un nombre al paquete",
+  "errors.shape_pack_admins_only": "Solo los propietarios y administradores de este espacio de trabajo gestionan sus paquetes de formas",
+  "errors.shape_pack_upload": "Sube primero los SVG del paquete (o un ZIP con ellos)",
+  "errors.shape_pack_empty": "Ninguno de esos archivos es un SVG que Freero pueda dibujar",
+  "errors.shape_pack_too_many": "Un paquete admite como máximo {max} iconos: repártelos en varios paquetes",
+  "errors.shape_pack_limit": "Un espacio de trabajo puede tener como máximo {max} paquetes de formas. Quita primero uno que ya no uses.",
+  "errors.shape_pack_workspace_full": "Los paquetes de formas de este espacio de trabajo están llenos. Quita primero uno que ya no uses."
 }

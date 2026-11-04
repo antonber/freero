@@ -63,5 +63,8 @@
   "valueStream": "Value stream",
   "leanValueStreamMappingProcesses": "Lean value-stream mapping: processes, inventory, flows, kaizen bursts",
   "dataFlow": "Data flow",
-  "processesDataStoresExternalEntities": "Processes, data stores, external entities and trust boundaries"
+  "processesDataStoresExternalEntities": "Processes, data stores, external entities and trust boundaries",
+  "workspaceShapePacks": "Your workspace’s shape packs",
+  "packNameIcons": "{name}: {count, plural, one {# icon} other {# icons}}",
+  "packNameMatches": "{name}: {count, plural, one {# match} other {# matches}}"
 }

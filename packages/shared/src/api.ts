@@ -3,7 +3,7 @@
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
 import type { BoardLabelSummary } from './compliance';
-import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
+import type { ActivityElement, BoardElement, IconNode, TableCopyContent } from './elements';
 import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
@@ -1276,6 +1276,60 @@ export const MAX_STICKERS_PER_SET = 120;
 export const MAX_STICKER_BYTES = 512 * 1024;
 export const MAX_STICKER_NAME = 60;
 
+// ---- Shape packs (#4; server modules/shapepacks) ----
+// A workspace's own icon and shape sets: SVGs its admins upload (their design system's icons, the
+// cloud architecture icons they are licensed to use, engineering symbols), searched and placed from
+// the icon library on any of its boards. Each SVG is reduced on the server to the primitives an
+// `icon` element may draw (`sanitizeSvg`, icons.ts) and a placed icon holds its drawing, so it keeps
+// showing after its pack is removed.
+// GET    /api/boards/:id/shape-packs      -> ShapePacksResponse  (the packs of the board's workspace;
+//                                          none when you aren't in that workspace)
+// POST   /api/boards/:id/shape-packs      body { name, upload } -> ShapePackCreated  (owners / admins
+//                                          of the board's workspace; `upload` is "/uploads/<name>" of
+//                                          the caller's own upload — a ZIP of SVGs uploaded as an
+//                                          attachment, or one SVG — read once and deleted; uploads'
+//                                          size cap, quota and rate limit apply to it)
+// PATCH  /api/shape-packs/:id             body { name } -> { pack: ShapePack }  (owners / admins)
+// DELETE /api/shape-packs/:id             -> { ok: true }  (owners / admins)
+export interface ShapePackIcon {
+  id: string;
+  /** From the file name ("Arch_Amazon-EC2_64"). */
+  name: string;
+  nodes: IconNode[];
+  viewBox: string;
+  art: 'mono' | 'color';
+}
+export interface ShapePack {
+  id: string;
+  name: string;
+  /** Who uploaded it, by their current name (null: an account deleted since). */
+  createdBy: string | null;
+  createdAt: number;
+  icons: ShapePackIcon[];
+}
+export interface ShapePacksResponse {
+  packs: ShapePack[];
+  /** You may upload, rename and remove the workspace's packs (its owners and admins). */
+  canManage: boolean;
+}
+export interface ShapePackCreated {
+  pack: ShapePack;
+  /** Files that weren't SVGs Freero could read (by name, at most 50), skipped. */
+  skipped: string[];
+}
+export const SHAPE_PACK_LIMITS = {
+  /** Packs one workspace may hold. */
+  packs: 50,
+  /** Icons in one pack. */
+  icons: 500,
+  /** Characters of a pack's name. */
+  name: 60,
+  /** Files read from one ZIP (others are ignored). */
+  zipEntries: 2000,
+  /** Characters of all of a workspace's drawings together (what the library loads). */
+  workspaceChars: 12_000_000,
+} as const;
+
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a
 // guest) of.
@@ -2500,6 +2554,8 @@ export const AUDIT_ACTIONS = {
   'blueprint.shared': 'Shared a blueprint with the team',
   'blueprint.used': 'Made a project from a blueprint',
   'stickers.set_removed': 'Removed a team sticker set',
+  'shape_pack.created': 'Uploaded a shape pack',
+  'shape_pack.removed': 'Removed a shape pack',
   'template.published': 'Published a company template',
   'template.unpublished': 'Withdrew a company template',
   'template.locked': 'Locked a template',
