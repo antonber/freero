@@ -2753,6 +2753,24 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   keeps both in step, free of OpenAPI 3 constructs and within Microsoft's published certification
   rules.
 
+### Apps that run on other platforms (`integrations/`; #166–#169, #173, #174)
+
+Code another vendor runs or hosts, kept in `integrations/<platform>/` (MIT, outside the npm
+workspaces: each platform's own SDK — Zapier's platform packages, Atlassian's Forge bridge — is
+installed only there by whoever publishes, never as Freero's dependency, since their licences
+aren't permissive). They talk to Freero only through what any client has — REST API v1, OAuth,
+webhooks, the public embed — so they add no server state. Their tests are in
+`apps/server/src/integrations/` (root layer, like the composition root: they mount the routes of the
+modules they call) and run the app definitions unchanged against a real HTTP server.
+
+- **Zapier** (`integrations/zapier`, Zapier Platform CLI): OAuth 2.0 with PKCE to freero.app (the
+  app's `CLIENT_ID`/`CLIENT_SECRET`) or to any Freero by address with that server's own confidential
+  OAuth app; REST-hook trigger Board Event (subscribe = `POST …/webhooks` scoped to a board,
+  unsubscribe = `DELETE`, every delivery's `Freero-Signature` checked with the subscription's
+  secret, five-minute window), polling New Item / New Comment, actions over `/structure`,
+  `/comments`, `/boards`. `zapier.test.ts` drives it with a stand-in `z` that applies the app's own
+  middleware.
+
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 
 Off unless the operator sets the ids (`config.teams`: `TEAMS_APP_ID`, `TEAMS_BOT_ID`;

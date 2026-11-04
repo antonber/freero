@@ -1012,17 +1012,17 @@ const AUTOMATION: Integration[] = [
     id: "zapier",
     name: "Zapier",
     category: 'automation',
-    oneLiner: "Zaps that react to Freero webhooks and add items through the REST API.",
+    oneLiner: "Freero’s Zapier app: board events, new items and comments start Zaps; Zaps add stickies, cards, comments and boards.",
     description: [
-      "Use Webhooks by Zapier to catch Freero events and the REST API to add notes or cards, following the guide.",
-      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Zapier’s own directory.",
+      "Pick Freero in the Zap editor and sign in. Board Event triggers instantly through a signed workspace webhook the Zap adds and removes itself; New Item and New Comment work for anyone who can open the board. Actions add sticky notes, cards (into a kanban column if you like) and comments, and create boards; Find Board searches by title.",
+      "The app works with freero.app and with your own Freero server. It is invite-only until Zapier’s review lists it in Zapier’s directory; without it, the guide’s Webhooks by Zapier recipes do the same.",
     ],
     status: 'api',
     connect: {
-      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Follow the guide to set up the Webhooks by Zapier trigger and actions."],
-      docs: { file: "docs/integrations/zapier.md", label: "Zapier recipe" },
+      steps: ["In a Zap, choose Freero and sign in (for your own server, set its address and an OAuth app of it).", "Pick a trigger such as Board Event or an action such as Add Card."],
+      docs: { file: "docs/integrations/zapier.md", label: "Zapier app" },
     },
-    keywords: ["zapier", "zap", "automation", "webhooks", "no-code"],
+    keywords: ["zapier", "zap", "automation", "webhooks", "no-code", "trigger", "action", "zapier app"],
     seo: {
       title: "Zapier and Freero: automate your whiteboards",
       description: "Automate Freero with Zapier: catch board events with Webhooks by Zapier and add notes or cards through Freero’s REST API.",

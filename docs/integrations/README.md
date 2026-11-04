@@ -18,7 +18,7 @@ server ([../mcp.md](../mcp.md)). Nothing here needs a marketplace listing or any
 | **Meeting notes import** | A summary or transcript (Granola-, Otter-, Fathom-, Meetily-style Markdown or text; WebVTT, SRT) becomes one frame: decisions, action items with owner and due date, points, who spoke | Board menu → *Import meeting notes…*, drop a `.vtt` / `.srt`, REST structure `kind: "meeting"`, MCP `import_meeting_notes`; [samples](meeting-notes/) |
 | **n8n** | Importable workflows: GitHub issue → card, board comment → Slack | [n8n.md](n8n.md) |
 | **Make** | The same two scenarios, step by step | [make.md](make.md) |
-| **Zapier** | Webhooks by Zapier + the REST API | [zapier.md](zapier.md) |
+| **Zapier** | Freero's Zapier app (triggers on board events, items, comments; actions for stickies, cards, comments, boards), or Webhooks by Zapier + the REST API | [zapier.md](zapier.md), `integrations/zapier` (owner publishes) |
 | **Power Automate / Logic Apps** | A custom connector for the whole REST API, with a trigger on board events; certification files for a listed connector (owner submits) | [power-automate.md](power-automate.md), `npm run gen:power-automate` |
 
 Matrix isn't on the list: it has no standard incoming-webhook URL to post to (see
