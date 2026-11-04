@@ -93,7 +93,17 @@
     "comment.thread.label",
     "comment.thread.description",
     "comment.thread.title",
-    "comment.thread.link"
+    "comment.thread.link",
+    "sensitiveData.found.label",
+    "sensitiveData.found.description",
+    "sensitiveData.found.title",
+    "sensitiveData.found.link",
+    "sensitiveData.kind.paymentCard",
+    "sensitiveData.kind.iban",
+    "sensitiveData.kind.nationalId",
+    "sensitiveData.kind.secret",
+    "sensitiveData.kind.email",
+    "sensitiveData.kind.phone"
   ],
   "someone": "מישהו",
   "quoted": "”{title}“",
@@ -188,5 +198,15 @@
   "comment.thread.label": "תגובות חדשות בלוחות שלך",
   "comment.thread.description": "מישהו פותח שרשור תגובות בלוח שבבעלותך או שסימנת בכוכב (אחרי שהפעלת זאת).",
   "comment.thread.title": "{actor} הגיב/ה על {board}",
-  "comment.thread.link": "פתיחת התגובה"
+  "comment.thread.link": "פתיחת התגובה",
+  "sensitiveData.found.label": "מידע רגיש בלוחות",
+  "sensitiveData.found.description": "סריקת המידע הרגיש מצאה מספרי כרטיס, מספרי IBAN, מספרי זהות או סודות בלוח של סביבת עבודה שאתה מנהל.",
+  "sensitiveData.found.title": "מידע רגיש ב-{board}: {kinds}",
+  "sensitiveData.found.link": "לעיון בממצאים",
+  "sensitiveData.kind.paymentCard": "מספרי כרטיס",
+  "sensitiveData.kind.iban": "מספרי IBAN",
+  "sensitiveData.kind.nationalId": "מספרי זהות",
+  "sensitiveData.kind.secret": "סודות או מפתחות API",
+  "sensitiveData.kind.email": "כתובות אימייל",
+  "sensitiveData.kind.phone": "מספרי טלפון"
 }

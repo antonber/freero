@@ -1,15 +1,25 @@
 // The workspace's encryption key (#159; docs/design/compliance.md §3), for its security admins:
-// turn a key on (the instance's, or the workspace's own AWS KMS key), rotate it, suspend / resume
+// turn a key on (the instance's, or the workspace's own key at AWS KMS, Google Cloud KMS, Azure Key
+// Vault or Vault Transit — whichever this server is set up for), rotate it, suspend / resume
 // it, and — owners only, typing the workspace's name — destroy it. Every action is checked again by
 // the server; destroying is irreversible and says so.
 import { useEffect, useState } from 'react';
-import type { WorkspaceKeyStatus, WorkspaceSummary } from '@freero/shared';
+import type { WorkspaceKeyProvider, WorkspaceKeyStatus, WorkspaceSummary } from '@freero/shared';
 import { Button, Input, Modal, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 
 import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 const when = (ms: number) => new Date(ms).toLocaleString();
+
+type External = Exclude<WorkspaceKeyProvider, 'instance'>;
+/** Product names (not translated) and what each provider's key id looks like. */
+const PROVIDER: Record<External, { name: string; example: string; format: string }> = {
+  'aws-kms': { name: 'AWS KMS', example: 'arn:aws:kms:eu-west-1:111122223333:key/…', format: t('keyFormat.awsKms') },
+  'gcp-kms': { name: 'Google Cloud KMS', example: 'projects/…/locations/…/keyRings/…/cryptoKeys/…', format: t('keyFormat.gcpKms') },
+  'azure-key-vault': { name: 'Azure Key Vault', example: 'https://<vault>.vault.azure.net/keys/<name>', format: t('keyFormat.azureKeyVault') },
+  'vault-transit': { name: 'HashiCorp Vault Transit', example: 'transit/keys/<name>', format: t('keyFormat.vaultTransit') },
+};
 
 const STATE: Record<NonNullable<WorkspaceKeyStatus['key']>['state'], { label: string; tone: 'ok' | 'warn' | 'off' }> = {
   active: { label: t('active'), tone: 'ok' },
@@ -47,7 +57,8 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
   if (status === undefined) return <Spinner />;
   if (!status || (!status.key && !status.providers.length)) return null; // this server offers no workspace keys
   const key = status.key;
-  const kms = status.providers.includes('aws-kms');
+  const external = status.providers.filter((p): p is External => p !== 'instance');
+  const kms = external.length > 0;
   const owner = workspace.role === 'owner';
 
   return (
@@ -57,13 +68,14 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
       {!key ? (
         <div className="fr-admin-key">
           {kms ? (
-            <Input
-              label={t('yourAwsKmsKeyOptional')}
-              value={arn}
-              onChange={(e) => setArn(e.target.value)}
-              placeholder={t('arnAwsKmsEuWest')}
-              spellCheck={false}
-            />
+            <>
+              <Input label={t('yourOwnKeyOptional')} value={arn} onChange={(e) => setArn(e.target.value)} placeholder={PROVIDER[external[0]].example} spellCheck={false} />
+              <ul className="fr-admin-row__hint fr-admin-key__formats">
+                {external.map((p) => (
+                  <li key={p}>{PROVIDER[p].format}</li>
+                ))}
+              </ul>
+            </>
           ) : null}
           <p className="fr-admin-row__hint">
             {kms
@@ -84,7 +96,7 @@ export function AdminEncryptionKey({ workspace }: { workspace: WorkspaceSummary 
           <div className="fr-admin-row">
             <div className="fr-admin-row__text">
               <span className="fr-admin-row__label">
-                {key.provider === 'aws-kms' ? t('yourAwsKmsKey') : t('managedByThisServer')}{' '}
+                {key.provider === 'instance' ? t('managedByThisServer') : t('yourKeyAt', { provider: PROVIDER[key.provider].name })}{' '}
                 <span className={`fr-admin-pill fr-admin-pill--${STATE[key.state].tone}`}>{STATE[key.state].label}</span>
               </span>
               <span className="fr-admin-row__hint">

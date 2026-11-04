@@ -179,6 +179,7 @@ import { serverErrorText } from '../i18n/errors';
 import type { MobilePushDevice, MobilePushStatus, FigmaFilesResponse, FigmaFramesResponse, FigmaPlaceResponse, FigmaStatus, GifPlaceResponse, GifSearchResponse, ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
+import type { BoardSensitiveData, SensitiveDataSettingsInput, SensitiveDataStatus } from '@freero/shared';
 import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
@@ -634,6 +635,10 @@ export const api = {
   setBoardLabel: (boardId: string, labelId: string | null) => request<{ board: BoardSummary }>('PUT', `/api/boards/${encodeURIComponent(boardId)}/label`, { labelId }),
   setLabelPolicy: (id: string, patch: { required?: boolean; defaultLabelId?: string | null }) =>
     request<{ required: boolean; defaultLabelId: string | null }>('PUT', `/api/workspaces/${encodeURIComponent(id)}/label-policy`, patch),
+  // The sensitive-data scan (#158): its settings and findings (content admins), and a board's findings (its managers).
+  sensitiveData: (id: string) => request<SensitiveDataStatus>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/sensitive-data`),
+  setSensitiveData: (id: string, patch: SensitiveDataSettingsInput) => request<SensitiveDataStatus>('PUT', `/api/workspaces/${encodeURIComponent(id)}/admin/sensitive-data`, patch),
+  boardSensitiveData: (boardId: string) => request<BoardSensitiveData>('GET', `/api/boards/${encodeURIComponent(boardId)}/sensitive-data`),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>
@@ -892,10 +897,13 @@ export const api = {
     return res.blob();
   },
 
-  // uploads (images, PDF documents, video and audio; the server checks type, size and quota)
-  uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
+  // uploads (images, PDF documents, video and audio; the server checks type, size and quota).
+  // `boardId`: the board it goes on — the file is then its workspace's (#159: sealed with the
+  // workspace's encryption key when it has one).
+  uploadImage: (file: Blob, boardId?: string) => upload(`/api/uploads${boardId ? `?board=${encodeURIComponent(boardId)}` : ''}`, file, file.type || 'application/octet-stream'),
   // any other file: an opaque attachment, only ever downloaded from its board
-  uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+  uploadAttachment: (file: Blob, boardId?: string) =>
+    upload(`/api/uploads?as=attachment${boardId ? `&board=${encodeURIComponent(boardId)}` : ''}`, file, 'application/octet-stream'),
 
   // team sticker sets (#138): the board's workspace's own stickers
   stickers: (boardId: string) => request<StickersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/stickers`),

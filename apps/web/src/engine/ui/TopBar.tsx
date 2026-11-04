@@ -264,6 +264,7 @@ function BoardMenu() {
 export function TopLeft() {
   const core = useCore();
   const role = useRole();
+  const { titleAccessory } = useContext(AppChromeContext);
   return (
     <div className="fr-topleft" data-fr-chrome="" data-fr-occludes="" data-fr-region="board" role="region" aria-label={t('board')}>
       <div className="fr-chrome-card fr-topleft__card">
@@ -283,6 +284,7 @@ export function TopLeft() {
           <span className="fr-rolebadge">
             <MessageSquare size={13} />{' '}{t('canComment')}</span>
         )}
+        {titleAccessory}
       </div>
       <PanelSlotView slot="topbar-left" className="fr-slot-row" />
     </div>

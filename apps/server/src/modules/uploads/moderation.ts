@@ -10,7 +10,8 @@ import type { Readable } from 'node:stream';
 import { newId } from '../../platform/ids';
 import { readAll, storage } from '../../platform/storage';
 import * as repo from './repo';
-import { FILE_NAME_RE, TYPE_BY_EXT, uploadCacheControl } from './store';
+import { openStoredUpload } from './sealedFiles';
+import { FILE_NAME_RE, SEALED_CACHE_CONTROL, TYPE_BY_EXT, uploadCacheControl } from './store';
 
 /** Kept copies never sit where a public bucket URL could reach them. */
 const PRIVATE = { area: 'private' } as const;
@@ -62,7 +63,8 @@ export async function uploadForModeration(name: string): Promise<ModerationUploa
 export async function openUploadForModeration(name: string): Promise<{ body: Readable; size: number | null; ownerId: string | null } | null> {
   if (!FILE_NAME_RE.test(name)) return null;
   const row = await repo.getUploadRow(name);
-  const obj = row?.removedAt != null ? (row.quarantineKey ? await storage().get(row.quarantineKey, PRIVATE) : null) : await storage().get(name);
+  // A sealed file (#159) opens like anywhere else: only while its workspace's key is usable.
+  const obj = row?.removedAt != null ? (row.quarantineKey ? await openStoredUpload(name, row, { storageKey: row.quarantineKey, area: 'private' }) : null) : await openStoredUpload(name, row);
   return obj ? { body: obj.body, size: obj.size, ownerId: row?.ownerId ?? null } : null;
 }
 
@@ -100,7 +102,8 @@ export async function restoreUpload(name: string): Promise<boolean> {
   if (!row || row.removedAt === null || !row.quarantineKey) return false;
   const obj = await storage().get(row.quarantineKey, PRIVATE);
   if (!obj) return false;
-  await storage().put(name, await readAll(obj), row.contentType, { cacheControl: uploadCacheControl() });
+  // The kept copy is the stored bytes as they were (still sealed, for a file under a workspace key).
+  await storage().put(name, await readAll(obj), row.contentType, { cacheControl: row.sealedWith ? SEALED_CACHE_CONTROL : uploadCacheControl() });
   if (!(await repo.clearRemoved(name, row.quarantineKey, Date.now()))) {
     // Changed meanwhile: restored by someone else (keep the file) or purged (don't bring it back).
     if (await repo.isRemoved(name)) await storage().delete(name);
@@ -113,6 +116,9 @@ export async function restoreUpload(name: string): Promise<boolean> {
 /**
  * Account purge (KAI-178): the user's removed files outlive the account — tombstone (410) and kept
  * copy alike, with no owner — until an operator restores or purges them, or their retention ends.
+ * So do the rows of their files sealed under a workspace key (#159): without the row, the sweep's
+ * adoption would give the name one that doesn't say it is sealed. Ownerless, the sweep treats them
+ * like any file.
  */
 export function keepRemovedUploadsOf(userId: string): Promise<number> {
   return repo.detachRemovedOf(userId);

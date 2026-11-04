@@ -5,6 +5,8 @@
 import type { Readable } from 'node:stream';
 import { newId } from '../../platform/ids';
 import { storage } from '../../platform/storage';
+import { KeyUnavailableError } from '../keys/index';
+import { openUpload } from './sealedFiles';
 import { contentMatches, FILE_NAME_RE } from './store';
 
 const PRIVATE_KEY_RE = /^private-[A-Za-z0-9_-]{16,64}\.zip$/;
@@ -55,11 +57,21 @@ export async function deletePrivateImage(key: string | null | undefined): Promis
   if (key && PRIVATE_IMAGE_KEY_RE.test(key)) await storage().delete(key, PRIVATE_AREA);
 }
 
-/** The bytes of an upload ("/uploads/<name>" or "<name>"), or null when it is gone. */
+/**
+ * The bytes of an upload ("/uploads/<name>" or "<name>") as uploaded, or null when it is gone — or
+ * sealed under a workspace key that can't be used now (#159): exports, backups and renders then
+ * leave it out rather than carry anything they couldn't show.
+ */
 export async function readUpload(urlOrName: string): Promise<Buffer | null> {
   const name = urlOrName.startsWith('/uploads/') ? urlOrName.slice('/uploads/'.length) : urlOrName;
   if (!FILE_NAME_RE.test(name)) return null;
-  const obj = await storage().get(name);
+  let obj;
+  try {
+    obj = await openUpload(name);
+  } catch (e) {
+    if (e instanceof KeyUnavailableError) return null;
+    throw e;
+  }
   if (!obj) return null;
   const chunks: Buffer[] = [];
   for await (const c of obj.body) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));

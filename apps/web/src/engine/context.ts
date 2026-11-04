@@ -14,11 +14,11 @@ export function useCore(): EngineCore {
 }
 
 /**
- * App-owned UI the engine places in its chrome (`BoardEngineProps.topbarAccessory`), and the
- * board's title as it is now: a rename made outside the title field (a feature, the share dialog)
- * arrives as a new host, which the title shows.
+ * App-owned UI the engine places in its chrome (`BoardEngineProps.topbarAccessory` top right,
+ * `titleAccessory` beside the board's title), and the board's title as it is now: a rename made
+ * outside the title field (a feature, the share dialog) arrives as a new host, which the title shows.
  */
-export const AppChromeContext = createContext<{ topbarAccessory?: ReactNode; boardTitle?: string }>({});
+export const AppChromeContext = createContext<{ topbarAccessory?: ReactNode; titleAccessory?: ReactNode; boardTitle?: string }>({});
 
 /** 'export' while rendering offscreen for images/thumbnails: no editors, no selection UI. */
 export const RenderModeContext = createContext<'live' | 'export'>('live');

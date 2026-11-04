@@ -13,7 +13,9 @@ import { getConfig } from '../../platform/config';
 import { badRequest, HttpError } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { storage } from '../../platform/storage';
+import { sealerFor } from '../keys/index';
 import * as repo from './repo';
+import { sealFile } from './sealedFiles';
 
 /** Inline images and documents: the declared type must be one of these, and the bytes must be it. */
 const IMAGE_EXT_BY_TYPE: Record<string, string> = {
@@ -170,6 +172,12 @@ export function tooLarge(kind: UploadKind): HttpError {
  * 304 (the ETag is the name) — and it is what makes a file an operator removed (410) stop showing
  * within that time where it was already loaded. Not `immutable`: that would keep it for a year.
  */
+/**
+ * A sealed file (#159): every use asks the server again (which answers only while its workspace's
+ * key is usable), and no shared cache keeps the opened bytes.
+ */
+export const SEALED_CACHE_CONTROL = 'private, no-cache';
+
 export function uploadCacheControl(): string {
   const s = getConfig().uploadCacheSeconds;
   return s > 0 ? `public, max-age=${s}` : 'no-cache';
@@ -180,9 +188,16 @@ export function uploadCacheControl(): string {
  * counts towards that user's quota (413 when it would exceed it); without (board thumbnails,
  * which replace each other) it does not. `attachment`: any bytes, stored as a file that is only
  * ever downloaded (see the header); otherwise the declared type must be one we serve and the bytes
- * must be it.
+ * must be it. `workspaceId` (#159): the workspace of the board it is uploaded to — the file is
+ * stored sealed with that workspace's key when it has one (refused, nothing stored, when that key
+ * can't be used), and is that workspace's from then on (a move of the board hands it on).
  */
-export async function saveUpload(data: Uint8Array, contentType: string, ownerId?: string, opts: { attachment?: boolean } = {}): Promise<string> {
+export async function saveUpload(
+  data: Uint8Array,
+  contentType: string,
+  ownerId?: string,
+  opts: { attachment?: boolean; workspaceId?: string | null } = {},
+): Promise<string> {
   const kind = uploadKindOf(contentType, !!opts.attachment);
   if (!kind) throw new HttpError(415, 'Unsupported file type. Use PNG, JPEG, GIF, WebP, SVG, PDF, a video or an audio file.');
   if (data.byteLength === 0) throw badRequest('Empty upload');
@@ -199,15 +214,21 @@ export async function saveUpload(data: Uint8Array, contentType: string, ownerId?
       throw badRequest(`File content is not a valid ${IMAGE_EXT_BY_TYPE[type].toUpperCase()} ${type === 'application/pdf' ? 'document' : 'image'}`);
   }
   const name = `${newId(16)}.${EXT_BY_TYPE[type]}`;
+  const workspaceId = opts.workspaceId ?? null;
+  // Throws KeyUnavailableError (403) when the workspace has a key that can't be used: never stored in the clear.
+  const sealer = workspaceId ? await sealerFor(workspaceId) : null;
+  const keyed = { workspaceId, sealedWith: sealer?.ref ?? null };
+  const stored = sealer ? sealFile(name, data, sealer) : data;
   if (ownerId) {
     const quota = getConfig().uploadQuotaBytes;
-    if (!(await repo.reserveUpload(name, ownerId, data.byteLength, type, quota, Date.now())))
+    if (!(await repo.reserveUpload(name, ownerId, data.byteLength, type, quota, Date.now(), keyed)))
       throw new HttpError(413, `Upload quota reached (${mb(quota)} per account). Delete unused files from your boards to free space.`);
-  }
+  } else if (workspaceId) await repo.insertOwnerless(name, data.byteLength, type, Date.now(), { workspaceId, sealedWith: keyed.sealedWith });
+  const hasRow = !!ownerId || !!workspaceId;
   try {
-    await storage().put(name, data, type, { cacheControl: uploadCacheControl() });
+    await storage().put(name, stored, type, { cacheControl: sealer ? SEALED_CACHE_CONTROL : uploadCacheControl() });
   } catch (e) {
-    if (ownerId) await repo.deleteUploadRow(name).catch(() => {});
+    if (hasRow) await repo.deleteUploadRow(name).catch(() => {});
     throw e;
   }
   return `/uploads/${name}`;
@@ -219,13 +240,13 @@ export async function saveUpload(data: Uint8Array, contentType: string, ownerId?
  * PDF must really be one, video / audio must be a container we play, anything else stays an
  * attachment — so a backup can't smuggle in content we wouldn't have accepted. Returns its URL.
  */
-export async function restoreUploadFile(originalName: string, data: Uint8Array, ownerId: string): Promise<string> {
+export async function restoreUploadFile(originalName: string, data: Uint8Array, ownerId: string, workspaceId: string | null = null): Promise<string> {
   const ext = FILE_NAME_RE.test(originalName) ? originalName.split('.').pop()! : null;
   const type = ext ? TYPE_BY_EXT[ext] : undefined;
   if (!type) throw badRequest(`The backup carries a file Freero doesn’t store (${originalName.slice(0, 80)})`);
-  if (type === ATTACHMENT_TYPE) return saveUpload(data, type, ownerId, { attachment: true });
+  if (type === ATTACHMENT_TYPE) return saveUpload(data, type, ownerId, { attachment: true, workspaceId });
   // Media were stored under the type their bytes said; saveUpload sniffs them again.
-  return saveUpload(data, type, ownerId);
+  return saveUpload(data, type, ownerId, { workspaceId });
 }
 
 /** Deletes a file previously returned by saveUpload. Unknown/foreign URLs are ignored. */

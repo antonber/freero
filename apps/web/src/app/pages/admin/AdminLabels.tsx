@@ -7,6 +7,7 @@ import type { BoardLabel, BoardLabelInput, LabelCaps, WorkspaceSummary } from '@
 import { Button, ColorSwatches, Input, Modal, Select, Spinner, TextArea, Toggle, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { capsText, LabelBadge } from '../../components/BoardLabelPicker';
+import { AdminSensitiveData } from './AdminSensitiveData';
 
 import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
@@ -137,6 +138,7 @@ export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {
           </tbody>
         </table>
       </div>
+      {workspace.kind === 'team' ? <AdminSensitiveData workspace={workspace} labels={state.labels} /> : null}
       {editing ? (
         <LabelEditor
           workspace={workspace}

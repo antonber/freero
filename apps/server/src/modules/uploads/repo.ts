@@ -13,15 +13,82 @@ export async function reserveUpload(
   contentType: string,
   quotaBytes: number,
   now: number,
+  keyed: { workspaceId: string | null; sealedWith: string | null } = { workspaceId: null, sealedWith: null },
 ): Promise<boolean> {
   const row = await one(
-    `INSERT INTO uploads (name, owner_id, bytes, content_type, created_at)
-     SELECT $1, $2, $3::bigint, $4, $5
+    `INSERT INTO uploads (name, owner_id, bytes, content_type, created_at, workspace_id, sealed_with)
+     SELECT $1, $2, $3::bigint, $4, $5, $7, $8
      WHERE (SELECT COALESCE(SUM(bytes), 0) FROM uploads WHERE owner_id = $2 AND removed_at IS NULL) + $3::bigint <= $6::bigint
      RETURNING name`,
-    [name, ownerId, bytes, contentType, new Date(now), quotaBytes],
+    [name, ownerId, bytes, contentType, new Date(now), quotaBytes, keyed.workspaceId, keyed.sealedWith],
   );
   return row !== null;
+}
+
+/** A file of a workspace stored without an owner (no quota): its row says whose key governs it. */
+export async function insertOwnerless(name: string, bytes: number, contentType: string, now: number, keyed: { workspaceId: string; sealedWith: string | null }): Promise<void> {
+  await query(`INSERT INTO uploads (name, owner_id, bytes, content_type, created_at, workspace_id, sealed_with) VALUES ($1, NULL, $2, $3, $4, $5, $6)`, [
+    name,
+    bytes,
+    contentType,
+    new Date(now),
+    keyed.workspaceId,
+    keyed.sealedWith,
+  ]);
+}
+
+// ---- files under a workspace's key (sealedFiles.ts, keyed.ts) ----
+
+/**
+ * Records that `name` is now stored sealed with `to` (null: as uploaded) for `workspaceId`, if its
+ * row still says `from` (compare-and-swap: a concurrent reseal wins). False when it changed.
+ */
+export async function setSealing(name: string, from: string | null, to: string | null, workspaceId: string): Promise<boolean> {
+  const rows = await query(
+    `UPDATE uploads SET sealed_with = $3, workspace_id = $4 WHERE name = $1 AND sealed_with IS NOT DISTINCT FROM $2 AND removed_at IS NULL RETURNING 1`,
+    [name, from, to, workspaceId],
+  );
+  return rows.length > 0;
+}
+
+/** Hands these files of `from` to workspace `to` (a board moved); their bytes are sealed again after. */
+export async function handFilesTo(names: readonly string[], from: string, to: string): Promise<string[]> {
+  if (!names.length) return [];
+  const rows = await query<{ name: string }>(`UPDATE uploads SET workspace_id = $3 WHERE name = ANY($1::text[]) AND workspace_id = $2 RETURNING name`, [names, from, to]);
+  return rows.map((r) => r.name);
+}
+
+/** Which of these names are files of `workspaceId`. */
+export async function filesOfWorkspaceAmong(names: readonly string[], workspaceId: string): Promise<string[]> {
+  if (!names.length) return [];
+  const rows = await query<{ name: string }>(`SELECT name FROM uploads WHERE name = ANY($1::text[]) AND workspace_id = $2`, [names, workspaceId]);
+  return rows.map((r) => r.name);
+}
+
+export interface KeyedFile {
+  name: string;
+  workspaceId: string;
+  sealedWith: string | null;
+}
+
+/**
+ * Up to `limit` files not stored the way their workspace seals now: files of a workspace in
+ * `refs` (its current data key) under anything else, and files sealed under another workspace's
+ * key than the one now governing them (handed over by a move, to a workspace with or without a key).
+ * Files of `unusable` workspaces (a key that can't seal now) wait.
+ */
+export async function filesToReseal(refs: ReadonlyMap<string, string>, unusable: readonly string[], limit: number): Promise<KeyedFile[]> {
+  const ws = [...refs.keys()];
+  const rows = await query<{ name: string; workspace_id: string; sealed_with: string | null }>(
+    `SELECT name, workspace_id, sealed_with FROM uploads
+     WHERE workspace_id IS NOT NULL AND removed_at IS NULL AND NOT (workspace_id = ANY($4::text[])) AND (
+       (workspace_id = ANY($1::text[]) AND sealed_with IS DISTINCT FROM ($2::text[])[array_position($1::text[], workspace_id)])
+       OR (sealed_with IS NOT NULL AND NOT starts_with(sealed_with, workspace_id || ':'))
+     )
+     ORDER BY name LIMIT $3`,
+    [ws, ws.map((w) => refs.get(w)!), limit, unusable],
+  );
+  return rows.map((r) => ({ name: r.name, workspaceId: r.workspace_id, sealedWith: r.sealed_with }));
 }
 
 /** Deletes the row of a file being deleted. A removed file's tombstone stays (its URL keeps answering 410). */
@@ -64,6 +131,9 @@ export interface UploadRow {
   createdAt: number;
   removedAt: number | null;
   quarantineKey: string | null;
+  /** #159: the workspace whose key governs it, and the data key its stored bytes are sealed with. */
+  workspaceId: string | null;
+  sealedWith: string | null;
 }
 
 export async function getUploadRow(name: string): Promise<UploadRow | null> {
@@ -75,7 +145,9 @@ export async function getUploadRow(name: string): Promise<UploadRow | null> {
     created_at: Date;
     removed_at: Date | null;
     quarantine_key: string | null;
-  }>(`SELECT name, owner_id, bytes, content_type, created_at, removed_at, quarantine_key FROM uploads WHERE name = $1`, [name]);
+    workspace_id: string | null;
+    sealed_with: string | null;
+  }>(`SELECT name, owner_id, bytes, content_type, created_at, removed_at, quarantine_key, workspace_id, sealed_with FROM uploads WHERE name = $1`, [name]);
   return r
     ? {
         name: r.name,
@@ -85,6 +157,8 @@ export async function getUploadRow(name: string): Promise<UploadRow | null> {
         createdAt: r.created_at.getTime(),
         removedAt: r.removed_at?.getTime() ?? null,
         quarantineKey: r.quarantine_key,
+        workspaceId: r.workspace_id,
+        sealedWith: r.sealed_with,
       }
     : null;
 }
@@ -130,7 +204,7 @@ export async function clearRemoved(name: string, quarantineKey: string, now: num
  * would otherwise cascade with it, losing the tombstone (410) and the record of the kept copy.
  */
 export async function detachRemovedOf(userId: string): Promise<number> {
-  return (await query(`UPDATE uploads SET owner_id = NULL WHERE owner_id = $1 AND removed_at IS NOT NULL RETURNING 1`, [userId])).length;
+  return (await query(`UPDATE uploads SET owner_id = NULL WHERE owner_id = $1 AND (removed_at IS NOT NULL OR sealed_with IS NOT NULL) RETURNING 1`, [userId])).length;
 }
 
 /** Removed files whose kept copy still exists and that were removed before `before`, oldest first. */

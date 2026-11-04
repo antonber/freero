@@ -93,7 +93,17 @@
     "comment.thread.label",
     "comment.thread.description",
     "comment.thread.title",
-    "comment.thread.link"
+    "comment.thread.link",
+    "sensitiveData.found.label",
+    "sensitiveData.found.description",
+    "sensitiveData.found.title",
+    "sensitiveData.found.link",
+    "sensitiveData.kind.paymentCard",
+    "sensitiveData.kind.iban",
+    "sensitiveData.kind.nationalId",
+    "sensitiveData.kind.secret",
+    "sensitiveData.kind.email",
+    "sensitiveData.kind.phone"
   ],
   "someone": "누군가",
   "quoted": "“{title}”",
@@ -188,5 +198,15 @@
   "comment.thread.label": "내 보드의 새 댓글",
   "comment.thread.description": "내가 소유하거나 별표한 보드에서 누군가 댓글 스레드를 시작할 때(켜 둔 경우).",
   "comment.thread.title": "{actor}님이 {board}에 댓글을 남겼습니다",
-  "comment.thread.link": "댓글 열기"
+  "comment.thread.link": "댓글 열기",
+  "sensitiveData.found.label": "보드의 민감한 데이터",
+  "sensitiveData.found.description": "민감한 데이터 검사에서 관리 중인 워크스페이스의 보드에서 카드 번호, IBAN, 신분증 번호 또는 비밀 정보가 발견되었습니다.",
+  "sensitiveData.found.title": "{board}의 민감한 데이터: {kinds}",
+  "sensitiveData.found.link": "발견 항목 검토",
+  "sensitiveData.kind.paymentCard": "카드 번호",
+  "sensitiveData.kind.iban": "IBAN",
+  "sensitiveData.kind.nationalId": "신분증 번호",
+  "sensitiveData.kind.secret": "비밀 정보 또는 API 키",
+  "sensitiveData.kind.email": "이메일 주소",
+  "sensitiveData.kind.phone": "전화번호"
 }

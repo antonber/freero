@@ -135,7 +135,7 @@ export function shapePacksOf(boardId: string): NonNullable<Host['shapePacks']> {
   return {
     list: () => api.shapePacks(boardId),
     async create(name, zip, opts) {
-      const { url } = await api.uploadAttachment(zip);
+      const { url } = await api.uploadAttachment(zip, boardId);
       return api.createShapePack(boardId, name, url, !!opts?.personal);
     },
     rename: async (packId, name) => (await api.renameShapePack(packId, name)).pack,
@@ -199,9 +199,9 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       mine: async () => (await api.myGalleryTemplates()).templates,
       withdraw: async (id) => void (await api.withdrawGalleryTemplate(id)),
     },
-    uploadImage,
-    uploadFile,
-    uploadAttachment,
+    uploadImage: (file) => uploadImage(file, board.id),
+    uploadFile: (file) => uploadFile(file, board.id),
+    uploadAttachment: (file) => uploadAttachment(file, board.id),
     downloadFile: downloadBoardFile(board.id),
     commentFile: commentFilesOf(board.id),
     downloadBackup: downloadBackupOf(board.id),

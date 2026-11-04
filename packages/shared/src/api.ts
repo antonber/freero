@@ -2021,7 +2021,9 @@ export type NotificationType =
   | 'walkthrough.comment'
   | 'walkthrough.reaction'
   | 'agent.blocked'
-  | 'problem.fixed';
+  | 'problem.fixed'
+  // #158: the sensitive-data scan found something on a board of a workspace you administer.
+  | 'sensitive_data.found';
 
 // ---- Push notifications to the phone and tablet apps (#177; server modules/mobile; docs/mobile.md) ----
 // GET    /api/mobile/push                       -> MobilePushStatus (which kinds of device this server reaches)
@@ -3084,6 +3086,7 @@ export const AUDIT_ACTIONS = {
   'label.updated': 'Changed a classification label',
   'label.deleted': 'Deleted a classification label',
   'board.label_changed': 'Changed a board’s classification label',
+  'sensitive_data.settings_changed': 'Changed the sensitive-data scan',
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
@@ -3325,7 +3328,11 @@ export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed' | 'key_unavailable';
 
 // ---- Workspace encryption keys (#159; docs/design/compliance.md §3) ----
-export type WorkspaceKeyProvider = 'instance' | 'aws-kms';
+/**
+ * Who holds a workspace's key-encryption key: this server ('instance') or the workspace's own key at
+ * AWS KMS, Google Cloud KMS, Azure Key Vault or a HashiCorp Vault Transit engine (#159).
+ */
+export type WorkspaceKeyProvider = 'instance' | 'aws-kms' | 'gcp-kms' | 'azure-key-vault' | 'vault-transit';
 /** active: content is sealed and opened; suspended: an owner or security admin stopped it (reversible);
  * unavailable: the KMS refused or could not be reached (back to active once it answers); destroyed: the data keys are gone for good. */
 export type WorkspaceKeyState = 'active' | 'suspended' | 'unavailable' | 'destroyed';
@@ -3334,7 +3341,7 @@ export interface WorkspaceKeyStatus {
   providers: WorkspaceKeyProvider[];
   key: {
     provider: WorkspaceKeyProvider;
-    /** The AWS KMS key (ARN) for 'aws-kms'. */
+    /** The workspace's own key at its provider (an AWS KMS ARN, a Google Cloud KMS key name, an Azure Key Vault key URL, a Vault Transit key path); null for 'instance'. */
     kmsKeyId: string | null;
     state: WorkspaceKeyState;
     /** Why it is unavailable (the KMS's answer), when it is. */

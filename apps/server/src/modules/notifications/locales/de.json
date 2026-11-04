@@ -93,7 +93,17 @@
     "comment.thread.label",
     "comment.thread.description",
     "comment.thread.title",
-    "comment.thread.link"
+    "comment.thread.link",
+    "sensitiveData.found.label",
+    "sensitiveData.found.description",
+    "sensitiveData.found.title",
+    "sensitiveData.found.link",
+    "sensitiveData.kind.paymentCard",
+    "sensitiveData.kind.iban",
+    "sensitiveData.kind.nationalId",
+    "sensitiveData.kind.secret",
+    "sensitiveData.kind.email",
+    "sensitiveData.kind.phone"
   ],
   "someone": "Jemand",
   "quoted": "„{title}“",
@@ -188,5 +198,15 @@
   "comment.thread.label": "Neue Kommentare auf Ihren Boards",
   "comment.thread.description": "Jemand beginnt einen Kommentar-Thread auf einem Board, das Ihnen gehört oder das Sie mit einem Stern markiert haben (sobald Sie dies einschalten).",
   "comment.thread.title": "{actor} hat {board} kommentiert",
-  "comment.thread.link": "Kommentar öffnen"
+  "comment.thread.link": "Kommentar öffnen",
+  "sensitiveData.found.label": "Sensible Daten auf Boards",
+  "sensitiveData.found.description": "Die Prüfung auf sensible Daten hat Kartennummern, IBANs, Ausweisnummern oder Geheimnisse auf einem Board eines Workspaces gefunden, den Sie verwalten.",
+  "sensitiveData.found.title": "Sensible Daten auf {board}: {kinds}",
+  "sensitiveData.found.link": "Funde ansehen",
+  "sensitiveData.kind.paymentCard": "Kartennummern",
+  "sensitiveData.kind.iban": "IBANs",
+  "sensitiveData.kind.nationalId": "Ausweisnummern",
+  "sensitiveData.kind.secret": "Geheimnisse oder API-Schlüssel",
+  "sensitiveData.kind.email": "E-Mail-Adressen",
+  "sensitiveData.kind.phone": "Telefonnummern"
 }

@@ -93,7 +93,17 @@
     "comment.thread.label",
     "comment.thread.description",
     "comment.thread.title",
-    "comment.thread.link"
+    "comment.thread.link",
+    "sensitiveData.found.label",
+    "sensitiveData.found.description",
+    "sensitiveData.found.title",
+    "sensitiveData.found.link",
+    "sensitiveData.kind.paymentCard",
+    "sensitiveData.kind.iban",
+    "sensitiveData.kind.nationalId",
+    "sensitiveData.kind.secret",
+    "sensitiveData.kind.email",
+    "sensitiveData.kind.phone"
   ],
   "someone": "Quelqu’un",
   "quoted": "« {title} »",
@@ -188,5 +198,15 @@
   "comment.thread.label": "Nouveaux commentaires sur vos tableaux",
   "comment.thread.description": "Quelqu’un ouvre un fil de commentaires sur un tableau qui vous appartient ou que vous avez mis en favori (une fois l’option activée).",
   "comment.thread.title": "{actor} a commenté {board}",
-  "comment.thread.link": "Ouvrir le commentaire"
+  "comment.thread.link": "Ouvrir le commentaire",
+  "sensitiveData.found.label": "Données sensibles sur les tableaux",
+  "sensitiveData.found.description": "L’analyse des données sensibles a trouvé des numéros de carte, des IBAN, des numéros d’identité ou des secrets sur un tableau d’un espace de travail que vous administrez.",
+  "sensitiveData.found.title": "Données sensibles sur {board} : {kinds}",
+  "sensitiveData.found.link": "Voir les résultats",
+  "sensitiveData.kind.paymentCard": "numéros de carte",
+  "sensitiveData.kind.iban": "IBAN",
+  "sensitiveData.kind.nationalId": "numéros d’identité",
+  "sensitiveData.kind.secret": "secrets ou clés d’API",
+  "sensitiveData.kind.email": "adresses e-mail",
+  "sensitiveData.kind.phone": "numéros de téléphone"
 }

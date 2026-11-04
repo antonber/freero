@@ -365,6 +365,8 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `comments.openThread` declares `'thread'`: `/board/<id>?thread=<threadId>` (notification links).
 - `BoardEngineProps.topbarAccessory`: an app-owned control the engine places next to Share (the
   notifications bell). It is app UI (REST, router), not a feature, and gets no Editor.
+  `titleAccessory` [#158]: the same beside the board's title (the classification label and the
+  sensitive-data chip, `app/components/BoardClassification.tsx`).
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
   every element, nearest to `near` (default: viewport center). Every "insert" action that
   isn't aimed at a point (templates, the image upload button) places content with it. The rule
@@ -1422,10 +1424,11 @@ user_recovery_codes: two-step verification; auth_two_factor_recoveries: delayed 
 authenticator" recoveries; guest_sessions: visitors without an account),
 `boards` (boards, stars, opens; trash; the guest join routes; board_legal_holds, board_owner_legal_holds: legal holds; boards.label_id), `members` (board_members,
 board_invites: pending invites for addresses without an account; board_access_requests; role
-resolution), `workspaces` (workspaces, workspace_members,
+resolution), `dlp` (dlp_settings, dlp_board_scans, dlp_findings: the optional sensitive-data scan,
+#158; see "Legal holds and classification labels"), `workspaces` (workspaces, workspace_members,
 workspace_invites, projects, project_members; workspace_labels, workspace_label_settings: classification labels; organisations are directory-only `workspaces` rows; see
 "Workspaces" and "Organisations" below), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors, board_sealed_refs; y-websocket
+`<data>/uploads`, sealed under their workspace's key when it has one, #159), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors, board_sealed_refs; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
@@ -2164,7 +2167,18 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   `label_restricted`; a label with no caps simply drops). Changing a label's caps re-resolves every
   board carrying it. A label in use can't be deleted (409 `label_in_use`); detaching a workspace
   drops the organisation's labels from its boards (they take the workspace's own default).
-  Sensitive-data scanning is not built (compliance.md §2).
+- **Sensitive-data scan** (`modules/dlp`, #158; off until a team workspace's content admins turn
+  it on): an outbox consumer (`board.content`, board moves / restores) scans search's rows
+  (`searchRowsOf`: what every reader sees) with `dlp/detect.ts` (cards with network prefix + Luhn,
+  IBANs mod-97, US SSN / UK NI, credentials by issuer prefix, opt-in email / phone) and keeps per
+  board, item and kind a count — never the text (single writer: dlp's repo). By the workspace's
+  action: its owners and content admins are notified (`sensitive_data.found`, no board access
+  needed: the link is the console), the board's managers see the suggested label
+  (`GET /boards/:id/sensitive-data`), or the label is given — boards' `applyLabelByPolicy`
+  (boards stays the only writer of `label_id`; audited with `reason: sensitive_data`) — and while
+  findings remain boards' `onLabelChange` guard (registered by dlp's init) refuses relabelling to
+  a less strict label (409 `label_required_by_scan`). Console: `GET` / `PUT
+  /workspaces/:id/admin/sensitive-data` (content scope; audited `sensitive_data.settings_changed`).
 
 ### Request access (`members/accessRequests.ts`, KAI-40)
 
@@ -3595,6 +3609,20 @@ docs/design/compliance.md §3; operating it: docs/operations.md "Workspace encry
   another workspace's key (realtime `resealBoard`, compare-and-swap per row).
 - **Moves** (#124): boards' `moveToWorkspace` reseals the board for the target (or opens it, for a
   target without a key) before the move and again after it; refused when either key can't be used.
+- **Key services** (`keys/kek.ts` `KmsProvider`, one file each, no SDKs): AWS KMS (SigV4), Google
+  Cloud KMS (a JWT signed with the service account's key for an OAuth token; AAD), Azure Key Vault
+  (client-credentials token; RSA-OAEP-256 wrap) and HashiCorp Vault Transit (token); the pasted key
+  id says which (`parseKmsKeyId`), a provider is offered only with its `KMS_*` credentials. Each
+  binds the workspace id into what it wraps and tells a refusal (the key's state changes) from an
+  outage (nothing changes).
+- **Files** (uploads' `sealedFiles.ts`, `keyed.ts`): a file uploaded to a board
+  (`POST /uploads?board=`, GIF placing, backup restores) is its workspace's (`uploads.workspace_id`)
+  and, with a key, stored sealed in 64 KiB chunks (keys' `sealerFor` / `openerFor`; additional data:
+  workspace, file, chunk index and count). Every read of an upload goes through `openStoredUpload`
+  (route, downloads, exports, backups, renders, moderation): never redirected to the bucket,
+  `private, no-cache`, ranges open only their chunks, 403 `workspace_key_unavailable` while the key
+  can't be used. A moved board takes the files only it uses (`onBoardMovedWorkspace`); the
+  `uploads:seal` job seals files again after a key is turned on, a rotation or an interrupted move.
 - Audited: `key.created` / `rotated` / `suspended` / `resumed` / `destroyed` / `unavailable` /
   `available` (never key material).
 

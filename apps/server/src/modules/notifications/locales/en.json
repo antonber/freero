@@ -92,5 +92,15 @@
   "comment.thread.label": "New comments on your boards",
   "comment.thread.description": "Someone starts a comment thread on a board you own or starred (once you turn these on).",
   "comment.thread.title": "{actor} commented on {board}",
-  "comment.thread.link": "Open the comment"
+  "comment.thread.link": "Open the comment",
+  "sensitiveData.found.label": "Sensitive data on boards",
+  "sensitiveData.found.description": "The sensitive-data scan found card numbers, IBANs, ID numbers or secrets on a board of a workspace you administer.",
+  "sensitiveData.found.title": "Sensitive data on {board}: {kinds}",
+  "sensitiveData.found.link": "Review findings",
+  "sensitiveData.kind.paymentCard": "card numbers",
+  "sensitiveData.kind.iban": "IBANs",
+  "sensitiveData.kind.nationalId": "national ID numbers",
+  "sensitiveData.kind.secret": "secrets or API keys",
+  "sensitiveData.kind.email": "email addresses",
+  "sensitiveData.kind.phone": "phone numbers"
 }

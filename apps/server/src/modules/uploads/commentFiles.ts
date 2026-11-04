@@ -10,11 +10,11 @@
 import type { Readable } from 'node:stream';
 import type { CommentAttachment, CommentMessageRecord } from '@freero/shared';
 import { HttpError, notFound } from '../../platform/http';
-import { storage } from '../../platform/storage';
 import { authorizeFileDownload, requireBoardAccess } from '../boards/index';
 import { readBoardView } from '../realtime/index';
 import * as repo from './repo';
 import { isUploadRemoved, uploadName } from './moderation';
+import { openUpload } from './sealedFiles';
 import { ATTACHMENT_EXT, contentMatches } from './store';
 
 const INLINE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -55,20 +55,20 @@ export async function openCommentFile(
     // Seeing a picture in a thread is reading the board: anyone who can open it.
     const { role } = await requireBoardAccess(boardId, userId);
     const { name, fileName } = await findAttachment(boardId, ref.threadId, ref.messageId, ref.index, userId, role);
-    const head = await storage().get(name, { range: { start: 0, end: 15 } });
+    const head = await openUpload(name, { range: { start: 0, end: 15 } });
     if (!head) throw notFound('File not found');
     const bytes: Buffer[] = [];
     for await (const c of head.body) bytes.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
     const contentType = INLINE_TYPES.find((t) => contentMatches(Buffer.concat(bytes), t));
     if (!contentType) throw new HttpError(415, 'Only pictures are shown in a thread; download the file instead');
-    const obj = await storage().get(name);
+    const obj = await openUpload(name);
     if (!obj) throw notFound('File not found');
     return { body: obj.body, size: obj.size, name: fileName, contentType };
   }
   // Taking the file away is an export: the downloads policy applies, and it is audited.
   const { role, record } = await authorizeFileDownload(boardId, userId);
   const { name, fileName } = await findAttachment(boardId, ref.threadId, ref.messageId, ref.index, userId, role);
-  const obj = await storage().get(name);
+  const obj = await openUpload(name);
   if (!obj) throw notFound('File not found');
   if (opts.audit !== false) {
     try {

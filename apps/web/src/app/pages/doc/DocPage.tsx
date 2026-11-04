@@ -170,7 +170,7 @@ function DocView({ initial }: { initial: BoardSummary }) {
     ),
     [],
   );
-  const uploadImage = useCallback(async (file: File) => (await api.uploadImage(file)).url, []);
+  const uploadImage = useCallback(async (file: File) => (await api.uploadImage(file, doc.id)).url, [doc.id]);
   const commentedBlocks = useMemo(() => live.threads.filter((t) => !t.resolved && t.blockId).map((t) => t.blockId!), [live.threads]);
   const activeBlock = activeThread ? (live.threads.find((t) => t.id === activeThread)?.blockId ?? null) : null;
   const openThreads = live.threads.filter((t) => !t.resolved).length;

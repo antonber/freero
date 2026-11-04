@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Archive, ArchiveRestore, Building2, Copy, Crown, Ellipsis, Folder, FolderInput, FolderLock, House, LogOut, Pencil, Share2, SquareArrowOutUpRight, Star, Trash } from 'lucide-react';
 import type { BoardSummary, ProjectSummary } from '@freero/shared';
 import { Avatar, IconButton, Menu, type MenuItem } from '@ui';
+import { LabelBadge } from '../../components/BoardLabelPicker';
 import { BoardThumb } from './BoardThumb';
 import { BOARD_DRAG_TYPE } from './Sidebar';
 import { boardTime, objectHref, type BoardSort } from '../../lib/boards';
@@ -202,6 +203,11 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
           <BoardThumb board={b} />
         </div>
         <div className="fr-row__title" title={b.description ? `${title} — ${b.description}` : title}>
+          {b.label ? (
+            <span className="fr-row__label">
+              <LabelBadge label={b.label} />
+            </span>
+          ) : null}
           {title}
         </div>
         <div className="fr-row__owner">
@@ -222,6 +228,12 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
       <Link to={objectHref(b)} className="fr-board__link" aria-label={t('openTitle', { title })} draggable={false} />
       <div className="fr-dash-card__thumb">
         <BoardThumb board={b} />
+        {/* #158: its classification label, so a Confidential board looks it before it is opened. */}
+        {b.label ? (
+          <span className="fr-dash-card__label">
+            <LabelBadge label={b.label} />
+          </span>
+        ) : null}
         <div className="fr-dash-card__hover-actions">
           {star}
           {more}

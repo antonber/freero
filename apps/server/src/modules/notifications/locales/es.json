@@ -93,7 +93,17 @@
     "comment.thread.label",
     "comment.thread.description",
     "comment.thread.title",
-    "comment.thread.link"
+    "comment.thread.link",
+    "sensitiveData.found.label",
+    "sensitiveData.found.description",
+    "sensitiveData.found.title",
+    "sensitiveData.found.link",
+    "sensitiveData.kind.paymentCard",
+    "sensitiveData.kind.iban",
+    "sensitiveData.kind.nationalId",
+    "sensitiveData.kind.secret",
+    "sensitiveData.kind.email",
+    "sensitiveData.kind.phone"
   ],
   "someone": "Alguien",
   "quoted": "“{title}”",
@@ -188,5 +198,15 @@
   "comment.thread.label": "Comentarios nuevos en tus tableros",
   "comment.thread.description": "Alguien inicia un hilo de comentarios en un tablero tuyo o que marcaste con estrella (cuando lo actives).",
   "comment.thread.title": "{actor} comentó en {board}",
-  "comment.thread.link": "Abrir el comentario"
+  "comment.thread.link": "Abrir el comentario",
+  "sensitiveData.found.label": "Datos sensibles en tableros",
+  "sensitiveData.found.description": "El análisis de datos sensibles encontró números de tarjeta, IBAN, números de identidad o secretos en un tablero de un espacio de trabajo que administras.",
+  "sensitiveData.found.title": "Datos sensibles en {board}: {kinds}",
+  "sensitiveData.found.link": "Revisar hallazgos",
+  "sensitiveData.kind.paymentCard": "números de tarjeta",
+  "sensitiveData.kind.iban": "IBAN",
+  "sensitiveData.kind.nationalId": "números de identidad",
+  "sensitiveData.kind.secret": "secretos o claves de API",
+  "sensitiveData.kind.email": "direcciones de correo",
+  "sensitiveData.kind.phone": "números de teléfono"
 }

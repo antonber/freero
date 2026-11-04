@@ -93,7 +93,17 @@
     "comment.thread.label",
     "comment.thread.description",
     "comment.thread.title",
-    "comment.thread.link"
+    "comment.thread.link",
+    "sensitiveData.found.label",
+    "sensitiveData.found.description",
+    "sensitiveData.found.title",
+    "sensitiveData.found.link",
+    "sensitiveData.kind.paymentCard",
+    "sensitiveData.kind.iban",
+    "sensitiveData.kind.nationalId",
+    "sensitiveData.kind.secret",
+    "sensitiveData.kind.email",
+    "sensitiveData.kind.phone"
   ],
   "someone": "誰か",
   "quoted": "「{title}」",
@@ -188,5 +198,15 @@
   "comment.thread.label": "自分のボードへの新しいコメント",
   "comment.thread.description": "自分が所有またはスターを付けたボードで誰かがコメントスレッドを始めたとき（オンにした場合）。",
   "comment.thread.title": "{actor} が {board} にコメントしました",
-  "comment.thread.link": "コメントを開く"
+  "comment.thread.link": "コメントを開く",
+  "sensitiveData.found.label": "ボード上の機密データ",
+  "sensitiveData.found.description": "機密データのスキャンで、管理しているワークスペースのボードにカード番号、IBAN、身分証明番号、またはシークレットが見つかりました。",
+  "sensitiveData.found.title": "{board} に機密データ: {kinds}",
+  "sensitiveData.found.link": "検出結果を確認",
+  "sensitiveData.kind.paymentCard": "カード番号",
+  "sensitiveData.kind.iban": "IBAN",
+  "sensitiveData.kind.nationalId": "身分証明番号",
+  "sensitiveData.kind.secret": "シークレットまたは API キー",
+  "sensitiveData.kind.email": "メールアドレス",
+  "sensitiveData.kind.phone": "電話番号"
 }

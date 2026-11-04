@@ -463,6 +463,23 @@
   background: #fff;
 }
 
+/* #158: the board's classification label over its thumbnail. */
+.fr-dash-card__label {
+  position: absolute;
+  top: 8px;
+  inset-inline-start: 8px;
+  z-index: 1;
+  display: inline-flex;
+  border-radius: 999px;
+  background: var(--fr-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.fr-row__label {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-inline-end: 8px;
+}
+
 .fr-dash-card__hover-actions {
   position: absolute;
   top: 8px;

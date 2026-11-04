@@ -116,14 +116,14 @@ export function walkthroughsOf(boardId: string, opts: { canDownload: boolean; si
     get: async (id) => (await api.getWalkthrough(boardId, id)).walkthrough,
     create: opts.signedIn
       ? async (recording, request) => {
-          const { url } = await api.uploadImage(recording);
+          const { url } = await api.uploadImage(recording, boardId);
           return (await api.createWalkthrough(boardId, { ...request, mediaUrl: url })).walkthrough;
         }
       : no('Recording a walkthrough'),
     ...(opts.signedIn
       ? {
           addVoice: async (recording: Blob, request: Omit<AddWalkthroughVoiceRequest, 'mediaUrl'>) => {
-            const { url } = await api.uploadImage(recording);
+            const { url } = await api.uploadImage(recording, boardId);
             await api.addWalkthroughVoice(boardId, { ...request, mediaUrl: url });
           },
         }
@@ -164,8 +164,9 @@ export function decisionsOf(boardId: string): NonNullable<Host['decisions']> {
   };
 }
 
-export function uploadImage(file: Blob): Promise<{ url: string }> {
-  return api.uploadImage(file);
+/** `boardId`: the board it goes on (its workspace's file, under its encryption key when it has one). */
+export function uploadImage(file: Blob, boardId?: string): Promise<{ url: string }> {
+  return api.uploadImage(file, boardId);
 }
 
 /** Reports to Freero's moderators (anyone who can open the board). */
@@ -176,13 +177,13 @@ export function reportOn(boardId: string): Host['report'] {
 }
 
 /** Documents (PDF), video and audio go through the same upload endpoint, quota and checks as images. */
-export function uploadFile(file: Blob): Promise<{ url: string }> {
-  return api.uploadImage(file);
+export function uploadFile(file: Blob, boardId?: string): Promise<{ url: string }> {
+  return api.uploadImage(file, boardId);
 }
 
 /** Any other file: stored as an attachment (never served inline). */
-export function uploadAttachment(file: Blob): Promise<{ url: string }> {
-  return api.uploadAttachment(file);
+export function uploadAttachment(file: Blob, boardId?: string): Promise<{ url: string }> {
+  return api.uploadAttachment(file, boardId);
 }
 
 /** Hands a file to the browser's downloads under `name`. */

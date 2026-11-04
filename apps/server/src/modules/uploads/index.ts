@@ -31,6 +31,9 @@ export { attachmentDisposition } from './routes';
 export function uploadsOwnedBy(userId: string) {
   return repo.ownedBy(userId);
 }
+// Files under a workspace's key (#159): a moved board takes its own files along (registered at
+// startup by init.ts; other modules' tests register it the same way), and the job that seals files again.
+export { followBoardMoves, sealPendingFiles } from './keyed';
 // Operators (modules/moderation): remove a file (410 from then on), restore it, purge its kept copy.
 export {
   uploadName,

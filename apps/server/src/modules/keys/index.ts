@@ -4,9 +4,11 @@
 export {
   currentSealRef,
   hasKey,
+  keyedWorkspaces,
   KEY_UNAVAILABLE,
   KeyUnavailableError,
   openSealed,
+  openerFor,
   sealerFor,
   unusableKeysAmong,
   keysInUse,
