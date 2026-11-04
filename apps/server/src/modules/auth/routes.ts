@@ -144,8 +144,9 @@ export default function authRoutes(_ctx: ServerContext): Router {
   r.post(
     '/auth/logout',
     handle(async (req, res) => {
-      await endSession(req, res);
-      res.json({ ok: true });
+      // Signed out here first; then, for a SAML session with single logout, on to the identity provider.
+      const redirect = await endSession(req, res);
+      res.json(redirect ? { ok: true, redirect } : { ok: true });
     }),
   );
 
