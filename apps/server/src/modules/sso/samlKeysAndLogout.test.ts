@@ -277,8 +277,10 @@ it('the SP private key is stored sealed and no answer â€” settings or metadata â
   const stored = await repo.listSpKeys(ws.id);
   expect(answers[0]).toContain('BEGIN CERTIFICATE');
   for (const k of keys) {
-    // A distinctive run of the key's own bytes: in no answer, and not in the stored (sealed) row.
-    const secret = k.privateKeyPem.replace(/-----[A-Z ]+-----|\s/g, '').slice(200, 260);
+    // A distinctive run of the key's private bytes: in no answer, and not in the stored (sealed) row.
+    // Taken from the end of the PKCS#8 body (the CRT values), never the start: chars ~50-390 are the
+    // public modulus, which the certificate legitimately carries.
+    const secret = k.privateKeyPem.replace(/-----[A-Z ]+-----|\s/g, '').slice(-120, -60);
     for (const a of answers) expect(a.replace(/\\n|\s/g, '')).not.toContain(secret);
     expect(stored.find((s) => s.id === k.id)!.privateKey).not.toContain(secret);
   }
