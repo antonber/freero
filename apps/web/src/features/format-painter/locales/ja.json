@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "selectOneItemToCopy",
+    "copyStyle",
+    "styleCopiedPasteItWith",
+    "pasteStyle",
+    "stopPaintingFormat",
+    "formatPainterClickOtherItems",
+    "formatPainter",
+    "selectOneItemThenPick",
+    "unlockThisItemToChange"
+  ],
+  "selectOneItemToCopy": "スタイルをコピーする項目を1つ選択してください。",
+  "copyStyle": "スタイルをコピー",
+  "styleCopiedPasteItWith": "スタイルをコピーしました。Alt+Mod+V で貼り付けます。",
+  "pasteStyle": "スタイルを貼り付け",
+  "stopPaintingFormat": "書式のコピーを終了",
+  "formatPainterClickOtherItems": "書式のコピー: 他の項目をクリックしてこのスタイルを適用",
+  "formatPainter": "書式のコピー",
+  "selectOneItemThenPick": "項目を1つ選択してから書式のコピーを選ぶと、スタイルをコピーできます。",
+  "unlockThisItemToChange": "スタイルを変更するには、この項目のロックを解除してください。"
+}

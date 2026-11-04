@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "selectAll",
+    "lengthItemsSelected",
+    "selectOnly",
+    "onlyOneKindOfItem",
+    "noNameInTheSelection",
+    "ofThisType",
+    "selectSomethingFirst",
+    "withThisColour",
+    "selectSomethingWithAColour",
+    "withThisTag",
+    "selectSomethingTagged"
+  ],
+  "selectAll": "すべて選択",
+  "lengthItemsSelected": "{length}個の項目を選択中",
+  "selectOnly": "次のみ選択",
+  "onlyOneKindOfItem": "選択されている項目は1種類だけです",
+  "noNameInTheSelection": "選択範囲に{name}はありません",
+  "ofThisType": "この種類",
+  "selectSomethingFirst": "先に何かを選択してください",
+  "withThisColour": "この色",
+  "selectSomethingWithAColour": "色のあるものを選択してください",
+  "withThisTag": "このタグ",
+  "selectSomethingTagged": "タグ付きのものを選択してください"
+}

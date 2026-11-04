@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "erasePartsOfStrokes",
+    "eraseWholeStrokes",
+    "eraserMode",
+    "eraserSize",
+    "eraser"
+  ],
+  "erasePartsOfStrokes": "線の一部を消去",
+  "eraseWholeStrokes": "線全体を消去",
+  "eraserMode": "消しゴムのモード",
+  "eraserSize": "消しゴムのサイズ",
+  "eraser": "消しゴム"
+}

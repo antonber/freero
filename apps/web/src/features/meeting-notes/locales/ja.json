@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "summarise",
+    "importMeetingNotes",
+    "youNeedEditAccessTo",
+    "couldNotImportThatTranscript",
+    "couldNotImportTheseNotes",
+    "importMeetingNotes2",
+    "aSummaryMarkdownOrText",
+    "cancel",
+    "importText",
+    "importing",
+    "chooseAFileMdTxt",
+    "orPasteTheNotes",
+    "forTranscriptsAddWhoSpoke",
+    "droppingAVttOrSrt"
+  ],
+  "summarise": "要約",
+  "importMeetingNotes": "議事録をインポート…",
+  "youNeedEditAccessTo": "インポートするには編集権限が必要です",
+  "couldNotImportThatTranscript": "その文字起こしをインポートできませんでした",
+  "couldNotImportTheseNotes": "このメモをインポートできませんでした",
+  "importMeetingNotes2": "議事録をインポート",
+  "aSummaryMarkdownOrText": "メモアプリの要約（Markdownまたはテキスト）や文字起こし（.vtt、.srt）が1つのフレームになります。決定事項、担当者と期限付きのアクション項目、その他のポイントが含まれます。1回の元に戻す操作で取り消せます。",
+  "cancel": "キャンセル",
+  "importText": "テキストをインポート",
+  "importing": "インポート中…",
+  "chooseAFileMdTxt": "ファイルを選択（.md、.txt、.vtt、.srt）",
+  "orPasteTheNotes": "またはメモを貼り付け",
+  "forTranscriptsAddWhoSpoke": "文字起こしの場合、誰がどれくらい話したかを追加",
+  "droppingAVttOrSrt": ".vttや.srtファイルをボードにドロップしてもインポートできます。"
+}

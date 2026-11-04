@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "ボードを報告…",
+  "report": "報告…",
+  "report2": "報告",
+  "thanksForYourReportFreero": "ご報告ありがとうございます。Freeroのモデレーターが確認します。",
+  "yourReportCouldNotBe": "報告を送信できませんでした。もう一度お試しください。",
+  "reportTargetNoun": "{target_noun}を報告",
+  "tellFreeroSModeratorsWhat": "何が問題なのかをFreeroのモデレーターにお知らせください。報告者がボードのオーナーに伝わることはありません。",
+  "cancel": "キャンセル",
+  "sendReport": "報告を送信",
+  "whatSTheProblem": "どのような問題ですか？",
+  "detailsOptional": "詳細（任意）",
+  "anythingThatHelpsUsUnderstand": "状況の理解に役立つこと（ボード上の場所など）",
+  "yourEmailOptional": "メールアドレス（任意）",
+  "toHearWhatWeDecided": "判断結果をお知らせするために使用します"
+}

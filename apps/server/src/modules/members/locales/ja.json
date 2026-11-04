@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter}さんがFreeroのボード「{board}」に招待しています",
+  "invite.title": "{inviter}さんがボードに招待しています",
+  "invite.body": "{role, select, editor {「{board}」を編集できます。} commenter {「{board}」にコメントできます。} other {「{board}」を閲覧できます。}}Freeroは無料のオンラインホワイトボードです。開くには無料のアカウントが必要です。",
+  "invite.action": "ボードを開く",
+  "invite.outro": "この招待は{inviter}さん（{email}）から送信されました。リンクは1回だけ使用でき、14日で期限切れになります。"
+}
