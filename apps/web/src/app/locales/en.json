@@ -277,7 +277,6 @@
   "help": "Help",
   "reportAProblem2": "Report a problem…",
   "helpAndSupport": "Help and support",
-  "cookieSettings": "Cookie settings",
   "opened": "Opened",
   "edited": "Edited",
   "freeroHome": "Freero home",
@@ -481,5 +480,11 @@
   "freeroTestsTheTokenRight": "Freero tests the token right away and keeps it encrypted; it is never shown again. Issues are created as that account.",
   "removeNameItsLinksLinked": "{links, plural, one {Remove {name}? Its {links} linked issue stop syncing; board items and issues stay as they are.} other {Remove {name}? Its {links} linked issues stop syncing; board items and issues stay as they are.}}",
   "aNewTabOpensCome": " A new tab opens; come back here when you’re signed in.",
-  "everyoneHereSeesTheBoard": "Everyone here sees the board as Freero shares it with them: people it’s shared with sign in once to edit or comment; others see it only if anyone with the link may view it."
+  "everyoneHereSeesTheBoard": "Everyone here sees the board as Freero shares it with them: people it’s shared with sign in once to edit or comment; others see it only if anyone with the link may view it.",
+  "yourBrowserSendsGlobalPrivacy": "Your browser sends Global Privacy Control or Do Not Track, so analytics stays off.",
+  "analyticsIsOffInThis": "Analytics is off in this browser.",
+  "analyticsIsOnAgainIn": "Analytics is on again in this browser.",
+  "analytics.turnOff": "Turn off analytics",
+  "analytics.turnOn": "Turn on analytics",
+  "analytics.signal": "Analytics off (browser privacy signal)"
 }

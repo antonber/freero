@@ -9,12 +9,8 @@
     "reactWith",
     "stamp",
     "stamps",
-    "searchEmojiAndStamps",
     "emoji",
-    "nothingMatchesQuery",
-    "recent",
-    "emojiCategories",
-    "emojiStamps"
+    "nothingMatchesQuery"
   ],
   "approved": "承認",
   "star": "スター",
@@ -25,10 +21,6 @@
   "reactWith": "リアクション",
   "stamp": "スタンプ",
   "stamps": "スタンプ",
-  "searchEmojiAndStamps": "絵文字とスタンプを検索",
   "emoji": "絵文字",
-  "nothingMatchesQuery": "「{query}」に一致するものはありません",
-  "recent": "最近使用",
-  "emojiCategories": "絵文字のカテゴリ",
-  "emojiStamps": "絵文字とスタンプ"
+  "nothingMatchesQuery": "「{query}」に一致するものはありません"
 }

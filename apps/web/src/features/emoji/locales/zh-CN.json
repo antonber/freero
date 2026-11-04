@@ -9,12 +9,8 @@
     "reactWith",
     "stamp",
     "stamps",
-    "searchEmojiAndStamps",
     "emoji",
-    "nothingMatchesQuery",
-    "recent",
-    "emojiCategories",
-    "emojiStamps"
+    "nothingMatchesQuery"
   ],
   "approved": "已批准",
   "star": "星标",
@@ -25,10 +21,6 @@
   "reactWith": "回应",
   "stamp": "印章",
   "stamps": "印章",
-  "searchEmojiAndStamps": "搜索表情和印章",
   "emoji": "表情",
-  "nothingMatchesQuery": "没有与「{query}」匹配的内容",
-  "recent": "最近使用",
-  "emojiCategories": "表情类别",
-  "emojiStamps": "表情与印章"
+  "nothingMatchesQuery": "没有与「{query}」匹配的内容"
 }

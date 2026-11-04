@@ -347,7 +347,7 @@ export function DashboardPage() {
       onPinProject={(p, pinned) =>
         void api.setProjectPinned(p.id, pinned).then(
           () => ws.reloadProjects(),
-          (e) => notify(e instanceof ApiError ? e.message : 'Could not pin the project', 'error'),
+          (e) => notify(e instanceof ApiError ? e.message : tr('couldNotPinTheProject'), 'error'),
         )
       }
       onUseBlueprint={(parent) => setUsingBlueprint({ parent })}
@@ -755,7 +755,7 @@ export function DashboardPage() {
             if (projectId === p.id) go(p.parentId ? 'project' : 'home', p.parentId ? { project: p.parentId } : {});
             // Its boards may have moved into the project on screen.
             else void load();
-            notify('Project deleted', 'info');
+            notify(tr('projectDeleted'), 'info');
           }}
         />
       ) : null}

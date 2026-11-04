@@ -8,6 +8,7 @@ import type { Editor } from '@engine';
 import { Button, IconButton, Input, Spinner } from '@ui';
 import { customValue, STICKER_ACCEPT, stickerNameOf } from './custom';
 
+import { t as tr } from '../messages';
 export interface TeamStickersState {
   data: StickersResponse | null;
   reload(): void;
@@ -32,7 +33,7 @@ export function useTeamStickers(editor: Editor): TeamStickersState {
   return { data, reload: useCallback(() => setTick((t) => t + 1), []) };
 }
 
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'That didn’t work. Try again.');
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : tr('thatDidnTWorkTry'));
 
 function Grid({
   stickers,
@@ -60,7 +61,7 @@ function Grid({
             <img className="fr-emoji__img" src={s.url} alt="" draggable={false} />
           </button>
           {onRemove && (
-            <button type="button" className="fr-emoji-team__remove" aria-label={`Remove ${s.name}`} title={`Remove ${s.name}`} onClick={() => onRemove(s)}>
+            <button type="button" className="fr-emoji-team__remove" aria-label={tr('removeName', { name: s.name })} title={tr('removeName', { name: s.name })} onClick={() => onRemove(s)}>
               <X size={10} strokeWidth={3} aria-hidden />
             </button>
           )}
@@ -136,7 +137,7 @@ export function TeamStickers({
   };
 
   return (
-    <section className="fr-emoji-team" aria-label="Team stickers">
+    <section className="fr-emoji-team" aria-label={tr('teamStickers')}>
       <input
         ref={file}
         type="file"
@@ -151,17 +152,15 @@ export function TeamStickers({
       {data.sets.map((set) => (
         <div key={set.id} className="fr-emoji-team__set">
           <div className="fr-emoji-team__head">
-            <span className="fr-emoji-picker__section" title={set.createdBy ? `Made by ${set.createdBy}` : undefined}>
-              {set.name} <span className="fr-emoji-team__kind">· team</span>
+            <span className="fr-emoji-picker__section" title={set.createdBy ? tr('madeByCreatedby', { createdBy: set.createdBy }) : undefined}>
+              {set.name} <span className="fr-emoji-team__kind">{tr('team')}</span>
             </span>
             {busy === set.id && <Spinner size={12} />}
             {set.canManage &&
               (confirming === set.id ? (
-                <Button size="sm" variant="danger" onClick={() => (setConfirming(null), void run(set.id, () => host.removeSet(set.id)))}>
-                  Remove set
-                </Button>
+                <Button size="sm" variant="danger" onClick={() => (setConfirming(null), void run(set.id, () => host.removeSet(set.id)))}>{tr('removeSet')}</Button>
               ) : (
-                <IconButton icon={Trash2} label={`Remove the ${set.name} set for everyone`} size={32} tooltip={false} onClick={() => setConfirming(set.id)} />
+                <IconButton icon={Trash2} label={tr('removeTheNameSetFor', { name: set.name })} size={32} tooltip={false} onClick={() => setConfirming(set.id)} />
               ))}
           </div>
           <div className="fr-emoji-picker__stamps">
@@ -175,8 +174,8 @@ export function TeamStickers({
               <button
                 type="button"
                 className="fr-emoji-picker__item fr-emoji-team__add"
-                aria-label={`Add images to ${set.name}`}
-                title="Add PNG, SVG, WebP or GIF images"
+                aria-label={tr('addImagesToName', { name: set.name })}
+                title={tr('addPngSvgWebpOr')}
                 disabled={busy === set.id}
                 onClick={() => {
                   target.current = set.id;
@@ -194,8 +193,8 @@ export function TeamStickers({
           <Input
             size="sm"
             autoFocus
-            placeholder="Name the set, then Enter"
-            aria-label="New sticker set name"
+            placeholder={tr('nameTheSetThenEnter')}
+            aria-label={tr('newStickerSetName')}
             value={name}
             maxLength={60}
             onChange={(e) => setName(e.target.value)}
@@ -207,7 +206,7 @@ export function TeamStickers({
           />
         ) : (
           <Button size="sm" variant="ghost" icon={Plus} loading={busy === 'new'} onClick={() => setNaming(true)}>
-            {data.sets.length ? 'New sticker set' : 'Make a sticker set for your team'}
+            {data.sets.length ? tr('newStickerSet') : tr('makeAStickerSetFor')}
           </Button>
         ))}
     </section>

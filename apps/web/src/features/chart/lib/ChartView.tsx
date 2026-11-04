@@ -4,6 +4,7 @@
 import type { ChartData, ChartKind } from '@freero/shared';
 import { canvasInk } from '@engine';
 
+import { t as tr } from '../messages';
 const INK = '#17162B';
 const MUTED = '#4B4A63';
 const FONT = "'Inter', system-ui, sans-serif";
@@ -72,7 +73,7 @@ export function ChartView({ kind, title, data, w, h, legend }: { kind: ChartKind
   const legendH = showLegend && legendItems.length ? legendRows(legendItems.length, w - 2 * pad) * 18 + 6 : 0;
   const box = { x: pad, y: pad + titleH, w: Math.max(10, w - 2 * pad), h: Math.max(10, h - 2 * pad - titleH - legendH) };
   return (
-    <svg className="fr-chart__svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} fontFamily={FONT} style={{ color: canvasInk(INK) }} role="img" aria-label={title || 'Chart'}>
+    <svg className="fr-chart__svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} fontFamily={FONT} style={{ color: canvasInk(INK) }} role="img" aria-label={title || tr('chart')}>
       {title && (
         <text x={w / 2} y={pad + 15} textAnchor="middle" fontSize="15" fontWeight="600" fill="currentColor">
           {clipText(title, Math.max(8, Math.floor(w / 8.5)))}

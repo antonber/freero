@@ -194,7 +194,7 @@ export function ProjectDialog({
   const team = workspace.kind === 'team';
   const places = placesFor(project, projects);
   const placeOptions: SelectOption<string>[] = [
-    { value: '', label: 'Top of the workspace' },
+    { value: '', label: t('topOfTheWorkspace') },
     ...places.map((p) => ({ value: p.id, label: projectPath(p.id, projects).map((x) => x.name).join(' / ') })),
   ];
 
@@ -227,8 +227,8 @@ export function ProjectDialog({
           error={error ?? undefined}
         />
         <TextArea
-          aria-label="What this project is for"
-          placeholder="What this project is for (shown on its page)"
+          aria-label={t('whatThisProjectIsFor')}
+          placeholder={t('whatThisProjectIsFor2')}
           value={description}
           maxLength={2000}
           rows={3}
@@ -236,12 +236,12 @@ export function ProjectDialog({
         />
         {places.length > 0 || parent ? (
           <label className="fr-dash-projdlg__level">
-            <span className="fr-dash-settings__label">Inside</span>
-            <Select<string> aria-label="The project it sits in" options={placeOptions} value={parent} onChange={setParent} width={240} />
+            <span className="fr-dash-settings__label">{t('inside')}</span>
+            <Select<string> aria-label={t('theProjectItSitsIn')} options={placeOptions} value={parent} onChange={setParent} width={240} />
           </label>
         ) : null}
-        {team ? <Select<ProjectAccess> aria-label="Who can see it" options={ACCESS_OPTIONS} value={access} onChange={setAccess} /> : null}
-        {team && parent ? <p className="fr-dash-projdlg__hint">Only people who can see the project it is in can see this one: a sub-project never opens its boards wider.</p> : null}
+        {team ? <Select<ProjectAccess> aria-label={t('whoCanSeeIt')} options={ACCESS_OPTIONS} value={access} onChange={setAccess} /> : null}
+        {team && parent ? <p className="fr-dash-projdlg__hint">{t('onlyPeopleWhoCanSee')}</p> : null}
         {team ? (
           <label className="fr-dash-projdlg__level">
             <span className="fr-dash-settings__label">{access === 'private' ? t('peopleInTheProject') : t('members')}{' '}{t('onItsBoards')}</span>
@@ -421,7 +421,7 @@ export function DeleteProjectDialog({
       await api.deleteProject(project.id, count ? mode : undefined);
       onDeleted();
     } catch (e) {
-      notify(errorText(e, 'Could not delete the project'), 'error');
+      notify(errorText(e, t('couldNotDeleteTheProject')), 'error');
     } finally {
       setBusy(false);
     }
@@ -430,35 +430,27 @@ export function DeleteProjectDialog({
     <Modal
       open
       onClose={onClose}
-      title={`Delete the project “${project.name}”?`}
+      title={t('deleteTheProjectName', { name: project.name })}
       width={440}
       footer={
         <>
-          <Button onClick={onClose} data-autofocus>
-            Cancel
-          </Button>
-          <Button variant="danger" loading={busy} disabled={subs > 0 || count === null} onClick={() => void remove()}>
-            Delete project
-          </Button>
+          <Button onClick={onClose} data-autofocus>{t('cancel')}</Button>
+          <Button variant="danger" loading={busy} disabled={subs > 0 || count === null} onClick={() => void remove()}>{t('deleteProject')}</Button>
         </>
       }
     >
       {subs > 0 ? (
-        <p className="fr-dash-projdlg__hint">It has {subs === 1 ? 'a sub-project' : `${subs} sub-projects`}. Move or delete {subs === 1 ? 'it' : 'them'} first.</p>
+        <p className="fr-dash-projdlg__hint">{t('itHasSubsPluralOne', { subs })}</p>
       ) : count === null ? null : count === 0 ? (
-        <p className="fr-dash-projdlg__hint">It holds no boards.</p>
+        <p className="fr-dash-projdlg__hint">{t('itHoldsNoBoards')}</p>
       ) : (
         <fieldset className="fr-dash-projdlg__choice">
-          <legend>
-            Its {count === 1 ? 'board' : `${count} boards`}:
-          </legend>
+          <legend>{t('itsCountBoards', { count })}</legend>
           <label>
-            <input type="radio" name="boards" checked={mode === 'parent'} onChange={() => setMode('parent')} /> Move to {where}
-            {parent ? null : <span className="fr-dash-projdlg__hint"> — everyone in the workspace who can see the top level will see {count === 1 ? 'it' : 'them'}</span>}
+            <input type="radio" name="boards" checked={mode === 'parent'} onChange={() => setMode('parent')} />{' '}{t('moveToWhere', { where })}{parent ? null : <span className="fr-dash-projdlg__hint">{' '}{t('everyoneInTheWorkspaceWho', { count })}</span>}
           </label>
           <label>
-            <input type="radio" name="boards" checked={mode === 'trash'} onChange={() => setMode('trash')} /> Move to the trash (their owners can restore them)
-          </label>
+            <input type="radio" name="boards" checked={mode === 'trash'} onChange={() => setMode('trash')} />{' '}{t('moveToTheTrashTheir')}</label>
         </fieldset>
       )}
     </Modal>

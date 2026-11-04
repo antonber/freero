@@ -219,7 +219,8 @@ function hardCoded(file) {
     } else if (ts.isCallExpression(node)) {
       const callee = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : ts.isIdentifier(node.expression) ? node.expression.text : '';
       const a = node.arguments[0];
-      if (callee === 'notify' && a && (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a) || ts.isTemplateExpression(a))) n++;
+      const said = a && (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a) ? a.text : ts.isTemplateExpression(a) ? a.head.text + a.templateSpans.map((s) => ` ${s.literal.text}`).join('') : null);
+      if (callee === 'notify' && said && isText(said)) n++;
     }
     ts.forEachChild(node, visit);
   };

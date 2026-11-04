@@ -229,5 +229,22 @@
   "confidentialAppGetsAClient": "Confidential app (gets a client secret; for apps with a server)",
   "whatYouSentWithReport": "What you sent with “Report a problem” and where it stands. Only Freero’s operators read reports; you get a notification when one is fixed.",
   "signOutADeviceYou": "Sign out a device you don't recognize; its open boards disconnect right away.",
-  "youLlBeSignedOut": "You'll be signed out everywhere. For 14 days you can log in and restore everything; after that your account, the boards you own and your profile photo are deleted for good. What you added to other people's boards stays with those boards, and your comments there will show as “Deleted user”."
+  "youLlBeSignedOut": "You'll be signed out everywhere. For 14 days you can log in and restore everything; after that your account, the boards you own and your profile photo are deleted for good. What you added to other people's boards stays with those boards, and your comments there will show as “Deleted user”.",
+  "slackConnected": "Slack connected",
+  "slackDisconnected": "Slack disconnected",
+  "couldNotDisconnectSlack": "Could not disconnect Slack",
+  "getYourNotificationsAsDirect": "Get your notifications as direct messages from Freero’s Slack app, show what a board is when you paste a link to it in Slack, and create or find boards with /freero.",
+  "connectedAs": "Connected as",
+  "in": "in",
+  "inSlackType": "In Slack, type",
+  "toCreateABoardOr": "to create a board, or",
+  "toFindYoursChooseWhich": "to find yours. Choose which notifications come to Slack under Notification emails and Slack above — those arrive in Slack instead of by email.",
+  "disconnectSlack": "Disconnect Slack",
+  "connectSlack": "Connect Slack",
+  "notificationEmailsAndSlack": "Notification emails and Slack",
+  "mentionsRepliesAndSharedBoards2": "Mentions, replies and shared boards always show under the bell. What you turned on for Slack arrives there at once as a direct message, instead of by email; the rest you haven’t seen a little later, we email you as one summary.",
+  "notifyMeAbout": "Notify me about",
+  "email": "Email",
+  "emailLabel": "Email: {label}",
+  "slackLabel": "Slack: {label}"
 }

@@ -58,5 +58,10 @@
   "iconsForYourScreens": "Icons for your screens",
   "noShapesMatchQuery": "No shapes match “{query}”.",
   "noShapeLibrariesAreOn": "No shape libraries are on for this board.",
-  "moreShapes": "More shapes"
+  "moreShapes": "More shapes",
+  "trustBoundary": "Trust boundary",
+  "valueStream": "Value stream",
+  "leanValueStreamMappingProcesses": "Lean value-stream mapping: processes, inventory, flows, kaizen bursts",
+  "dataFlow": "Data flow",
+  "processesDataStoresExternalEntities": "Processes, data stores, external entities and trust boundaries"
 }

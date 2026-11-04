@@ -4,7 +4,8 @@
 // toolbar with its "Edit" button (UiState.phoneEditing; local, never synced).
 import { useSyncExternalStore } from 'react';
 
-export const COMPACT_QUERY = '(max-width: 600px)';
+import { t } from '../messages';
+export const COMPACT_QUERY = t('maxWidth600px');
 
 const query = () => (typeof matchMedia === 'function' ? matchMedia(COMPACT_QUERY) : null);
 

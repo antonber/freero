@@ -37,7 +37,7 @@
 /* Every item of a multiple selection: one path in world units (Overlays.tsx MemberOutlines). */
 .fr-ov-members {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   overflow: visible;
   pointer-events: none;

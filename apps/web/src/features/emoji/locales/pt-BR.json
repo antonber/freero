@@ -9,12 +9,8 @@
     "reactWith",
     "stamp",
     "stamps",
-    "searchEmojiAndStamps",
     "emoji",
-    "nothingMatchesQuery",
-    "recent",
-    "emojiCategories",
-    "emojiStamps"
+    "nothingMatchesQuery"
   ],
   "approved": "Aprovado",
   "star": "Estrela",
@@ -25,10 +21,6 @@
   "reactWith": "Reagir com",
   "stamp": "Carimbo",
   "stamps": "Carimbos",
-  "searchEmojiAndStamps": "Pesquisar emojis e carimbos",
   "emoji": "Emoji",
-  "nothingMatchesQuery": "Nada corresponde a “{query}”",
-  "recent": "Recentes",
-  "emojiCategories": "Categorias de emoji",
-  "emojiStamps": "Emojis e carimbos"
+  "nothingMatchesQuery": "Nada corresponde a “{query}”"
 }

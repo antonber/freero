@@ -4,12 +4,13 @@ import { defineFormat } from '@engine';
 import { ToolbarButton } from '@ui';
 import { DATA_PANEL } from './lib/constants';
 
+import { t } from './messages';
 const KINDS: Array<{ kind: ChartKind; label: string; Icon: typeof BarChart3 }> = [
-  { kind: 'bar', label: 'Bar chart', Icon: BarChart3 },
-  { kind: 'stackedBar', label: 'Stacked bars', Icon: ChartColumnStacked },
-  { kind: 'line', label: 'Line chart', Icon: LineChart },
-  { kind: 'area', label: 'Area chart', Icon: AreaChart },
-  { kind: 'pie', label: 'Pie chart (first series)', Icon: ChartPie },
+  { kind: 'bar', label: t('barChart'), Icon: BarChart3 },
+  { kind: 'stackedBar', label: t('stackedBars'), Icon: ChartColumnStacked },
+  { kind: 'line', label: t('lineChart'), Icon: LineChart },
+  { kind: 'area', label: t('areaChart'), Icon: AreaChart },
+  { kind: 'pie', label: t('pieChartFirstSeries'), Icon: ChartPie },
 ];
 
 export default defineFormat({
@@ -33,9 +34,9 @@ export default defineFormat({
           </ToolbarButton>
         ))}
         {charts.length === 1 && (
-          <ToolbarButton label="Edit data" wide onClick={() => editor.openDock(DATA_PANEL)}>
+          <ToolbarButton label={t('editData')} wide onClick={() => editor.openDock(DATA_PANEL)}>
             <Table2 size={16} />
-            <span>Data</span>
+            <span>{t('data')}</span>
           </ToolbarButton>
         )}
       </>

@@ -182,8 +182,8 @@ export const SHAPE_SETS: ShapeSet[] = [
   },
   {
     id: 'valueStream',
-    label: 'Value stream',
-    description: 'Lean value-stream mapping: processes, inventory, flows, kaizen bursts',
+    label: t('valueStream'),
+    description: t('leanValueStreamMappingProcesses'),
     defaultOn: false,
     shapes: [
       S('vsmProcess', 'Process', 160, 120, 'vsm step operation work station lean'),
@@ -207,8 +207,8 @@ export const SHAPE_SETS: ShapeSet[] = [
   },
   {
     id: 'dataFlow',
-    label: 'Data flow',
-    description: 'Processes, data stores, external entities and trust boundaries',
+    label: t('dataFlow'),
+    description: t('processesDataStoresExternalEntities'),
     defaultOn: false,
     shapes: [
       S('dfdProcess', 'Process', 160, 110, 'dfd transform function gane sarson'),

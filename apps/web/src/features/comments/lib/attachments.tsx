@@ -8,6 +8,7 @@ import { COMMENT_MAX_ATTACHMENTS, type CommentAttachment } from '@freero/shared'
 import type { CommentFileRef, Editor } from '@engine';
 import { IconButton, Spinner } from '@ui';
 
+import { t } from '../messages';
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
 const size = (bytes: number) => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
@@ -21,7 +22,7 @@ export function useAttachDraft(editor: Editor) {
     const upload = editor.host.uploadAttachment;
     if (!upload) return;
     const room = COMMENT_MAX_ATTACHMENTS - items.length - uploading;
-    if (files.length > room) editor.host.notify(`A comment carries at most ${COMMENT_MAX_ATTACHMENTS} files`, 'info');
+    if (files.length > room) editor.host.notify(t('aCommentCarriesAtMost', { comment_max_attachments: COMMENT_MAX_ATTACHMENTS }), 'info');
     for (const file of files.slice(0, Math.max(0, room))) {
       setUploading((n) => n + 1);
       try {
@@ -29,7 +30,7 @@ export function useAttachDraft(editor: Editor) {
         const item: CommentAttachment = { src: url, name: file.name || 'file', size: file.size, ...(IMAGE_TYPES.has(file.type) ? { image: true } : {}) };
         setItems((list) => [...list, item]);
       } catch (e) {
-        editor.host.notify(e instanceof Error && e.message ? e.message : 'Could not attach the file', 'error');
+        editor.host.notify(e instanceof Error && e.message ? e.message : t('couldNotAttachTheFile'), 'error');
       } finally {
         setUploading((n) => n - 1);
       }
@@ -46,7 +47,7 @@ export function AttachButton({ draft }: { draft: AttachDraft }) {
   if (!draft.can) return null;
   return (
     <>
-      <IconButton icon={Paperclip} label="Attach a file or image" size={32} disabled={draft.items.length + draft.uploading >= COMMENT_MAX_ATTACHMENTS} onClick={() => input.current?.click()} />
+      <IconButton icon={Paperclip} label={t('attachAFileOrImage')} size={32} disabled={draft.items.length + draft.uploading >= COMMENT_MAX_ATTACHMENTS} onClick={() => input.current?.click()} />
       <input
         ref={input}
         type="file"
@@ -66,18 +67,18 @@ export function AttachButton({ draft }: { draft: AttachDraft }) {
 export function PendingAttachments({ draft }: { draft: AttachDraft }) {
   if (!draft.items.length && !draft.uploading) return null;
   return (
-    <ul className="fr-cm-files fr-cm-files--pending" aria-label="Attached files">
+    <ul className="fr-cm-files fr-cm-files--pending" aria-label={t('attachedFiles')}>
       {draft.items.map((a, i) => (
         <li key={a.src} className="fr-cm-file">
           <FileText size={14} aria-hidden />
           <span className="fr-cm-file__name">{a.name}</span>
           <span className="fr-cm-file__size">{size(a.size)}</span>
-          <IconButton icon={X} label={`Remove ${a.name}`} size={32} onClick={() => draft.remove(i)} />
+          <IconButton icon={X} label={t('removeName', { name: a.name })} size={32} onClick={() => draft.remove(i)} />
         </li>
       ))}
       {draft.uploading ? (
         <li className="fr-cm-file">
-          <Spinner size={14} /> <span className="fr-cm-file__name">Uploading…</span>
+          <Spinner size={14} /> <span className="fr-cm-file__name">{t('uploading')}</span>
         </li>
       ) : null}
     </ul>
@@ -91,9 +92,9 @@ export function MessageAttachments({ editor, files, at }: { editor: Editor; file
   const download = (a: CommentAttachment, index: number) =>
     host
       ?.download({ ...at, index, name: a.name })
-      .catch((e: unknown) => editor.host.notify(e instanceof Error && e.message ? e.message : 'Could not download the file', 'error'));
+      .catch((e: unknown) => editor.host.notify(e instanceof Error && e.message ? e.message : t('couldNotDownloadTheFile'), 'error'));
   return (
-    <ul className="fr-cm-files" aria-label="Files">
+    <ul className="fr-cm-files" aria-label={t('files')}>
       {files.map((a, index) => (
         <li key={`${a.src}-${index}`} className={`fr-cm-file${a.image && host ? ' fr-cm-file--image' : ''}`}>
           {a.image && host ? (
@@ -103,7 +104,7 @@ export function MessageAttachments({ editor, files, at }: { editor: Editor; file
           )}
           <span className="fr-cm-file__name">{a.name}</span>
           <span className="fr-cm-file__size">{size(a.size)}</span>
-          {host ? <IconButton icon={Download} label={`Download ${a.name}`} size={32} onClick={() => void download(a, index)} /> : null}
+          {host ? <IconButton icon={Download} label={t('downloadName', { name: a.name })} size={32} onClick={() => void download(a, index)} /> : null}
         </li>
       ))}
     </ul>

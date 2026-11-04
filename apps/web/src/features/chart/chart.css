@@ -11,7 +11,7 @@
 
 .fr-chart-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   border: 2px dashed var(--fr-primary);
   border-radius: 8px;
@@ -73,7 +73,7 @@
   color: var(--fr-ink-3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding-left: 4px;
+  padding-inline-start: 4px;
 }
 
 .fr-chart-grid__head {
@@ -109,7 +109,7 @@
 }
 
 .fr-chart-grid__cell.is-number {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 
@@ -143,7 +143,7 @@
 .fr-chart-grid__head .fr-chart-grid__x {
   position: absolute;
   top: -9px;
-  right: -6px;
+  inset-inline-end: -6px;
   width: 16px;
   height: 16px;
   border-radius: 50%;

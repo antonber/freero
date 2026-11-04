@@ -97,7 +97,8 @@ function skipFile(abs) {
   if (/^features\/templates\/lib\/(catalog|specs|spec)\//.test(r) || r === 'features/templates/lib/kit.ts') return true; // template content
   if (r.startsWith('app/i18n/') || r === 'ui/i18n.ts') return true;
   if (r === 'app/analytics/runtime.ts' || r === 'app/pwa/sw.ts') return true; // built on their own, without imports
-  if (r === 'features/templates/lib/gate.ts' || r === 'app/problems/diagnostics.ts') return true; // operators' / authors' text // the template gate's findings are for template authors
+  if (r === 'features/templates/lib/gate.ts' || r === 'app/problems/diagnostics.ts') return true; // operators' / authors' text
+  if (/^features\/templates\/lib\/(types|Preview|palette)\.tsx?$/.test(r)) return true; // the marketing site builds from these: no @ui
   if (outlineClosure().has(slash(abs).toLowerCase())) return true; // loaded by an outline.ts, which runs on the server [W13]
   if (r.startsWith('engine/store/')) return true;
   return false;

@@ -228,8 +228,8 @@ export function Sidebar(props: SidebarProps) {
             {/* Guests can't create projects, nor can anyone the workspace closed its boards to (KAI-193). */}
             {!guest && !current.blocked ? (
               <span className="fr-dash-proj__actions">
-                <IconButton size={32} icon={LayoutTemplate} label="New project from a blueprint" tooltipSide="right" onClick={() => props.onUseBlueprint(null)} />
-                <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} />
+                <IconButton size={32} icon={LayoutTemplate} label={tr('newProjectFromABlueprint')} tooltipSide="right" onClick={() => props.onUseBlueprint(null)} />
+                <IconButton size={32} icon={Plus} label={tr('newProject')} tooltipSide="right" onClick={props.onCreateProject} />
               </span>
             ) : null}
           </div>
@@ -238,7 +238,7 @@ export function Sidebar(props: SidebarProps) {
           ) : (
             <>
               {pinned.length > 0 ? (
-                <ul className="fr-dash-proj__list fr-dash-proj__list--pinned" aria-label="Pinned projects">
+                <ul className="fr-dash-proj__list fr-dash-proj__list--pinned" aria-label={tr('pinnedProjects')}>
                   {pinned.map((p) => item(p, 0, true))}
                 </ul>
               ) : null}
@@ -415,7 +415,7 @@ function ProjectItem({
         ref={moreRef}
         size={32}
         icon={Ellipsis}
-        label={`Project actions for ${p.name}`}
+        label={tr('projectActionsForName', { name: p.name })}
         tooltip={false}
         className="fr-dash-proj__more"
         aria-haspopup="menu"
@@ -427,18 +427,18 @@ function ProjectItem({
         onClose={() => setOpen(false)}
         anchor={moreRef.current}
         align="start"
-        aria-label={`Actions for ${p.name}`}
+        aria-label={tr('actionsForName', { name: p.name })}
         items={[
           p.pinned
-            ? { id: 'unpin', label: 'Unpin from the top', icon: PinOff, onSelect: () => onPin(false) }
-            : { id: 'pin', label: 'Pin to the top', icon: Pin, onSelect: () => onPin(true) },
-          ...(mayNest ? [{ id: 'sub', label: 'New sub-project…', icon: FolderPlus, onSelect: onSubProject }] : []),
-          ...(onSaveBlueprint ? [{ id: 'blueprint', label: 'Save as blueprint…', icon: LayoutTemplate, onSelect: onSaveBlueprint }] : []),
+            ? { id: 'unpin', label: tr('unpinFromTheTop'), icon: PinOff, onSelect: () => onPin(false) }
+            : { id: 'pin', label: tr('pinToTheTop'), icon: Pin, onSelect: () => onPin(true) },
+          ...(mayNest ? [{ id: 'sub', label: tr('newSubProject'), icon: FolderPlus, onSelect: onSubProject }] : []),
+          ...(onSaveBlueprint ? [{ id: 'blueprint', label: tr('saveAsBlueprint'), icon: LayoutTemplate, onSelect: onSaveBlueprint }] : []),
           ...(p.canManage
             ? [
-                { id: 'manage', label: 'Settings, access and people…', icon: SlidersHorizontal, onSelect: onManage },
+                { id: 'manage', label: tr('settingsAccessAndPeople'), icon: SlidersHorizontal, onSelect: onManage },
                 { divider: true as const },
-                { id: 'delete', label: 'Delete project…', icon: Trash2, danger: true, onSelect: onDelete },
+                { id: 'delete', label: tr('deleteProject2'), icon: Trash2, danger: true, onSelect: onDelete },
               ]
             : []),
         ]}

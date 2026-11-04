@@ -278,7 +278,7 @@ export function createGuestHost(
     // Visitors may download what the board's workspace lets them (the server decides).
     downloadFile: downloadBoardFile(board.id),
     commentFile: commentFilesOf(board.id),
-    renameBoard: needsAccount('Renaming boards'),
+    renameBoard: needsAccount(t('renamingBoards')),
     saveThumbnail: async () => undefined,
     colorTheme: browserTheme,
     openShareDialog: signUp,

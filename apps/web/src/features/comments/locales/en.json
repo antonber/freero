@@ -48,5 +48,18 @@
   "filterComments": "Filter comments",
   "showResolvedOnBoard": "Show resolved on board",
   "pressCThenClickAnywhere": "Press C, then click anywhere on the board to start a thread.",
-  "commentsUnreadUnread": "Comments ({unread} unread)"
+  "commentsUnreadUnread": "Comments ({unread} unread)",
+  "aCommentCarriesAtMost": "A comment carries at most {comment_max_attachments} files",
+  "couldNotAttachTheFile": "Could not attach the file",
+  "attachAFileOrImage": "Attach a file or image",
+  "attachedFiles": "Attached files",
+  "removeName": "Remove {name}",
+  "uploading": "Uploading…",
+  "couldNotDownloadTheFile": "Could not download the file",
+  "files": "Files",
+  "downloadName": "Download {name}",
+  "writtenBy": "Written by",
+  "anyone": "Anyone",
+  "you": "You",
+  "noCommentsByThemHere": "No comments by them here"
 }

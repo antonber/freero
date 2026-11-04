@@ -10,7 +10,6 @@
   "apps/web/src/engine/ui/FormatToolbar.tsx": 1,
   "apps/web/src/features/comments/lib/views.tsx": 1,
   "apps/web/src/features/decisions/panel.tsx": 1,
-  "apps/web/src/features/media/lib/download.ts": 1,
   "apps/web/src/features/shortcuts/lib/PaletteDialog.tsx": 2,
   "apps/web/src/features/templates/panel.tsx": 1,
   "apps/web/src/features/walkthrough/lib/List.tsx": 1,

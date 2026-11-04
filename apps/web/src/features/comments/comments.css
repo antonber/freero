@@ -575,7 +575,7 @@
 /* ---- #143: areas of the board, files on messages ---- */
 .fr-cm-area {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   transform-origin: 0 0;
   border: solid var(--fr-primary);

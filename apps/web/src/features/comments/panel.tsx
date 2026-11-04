@@ -333,21 +333,21 @@ function CommentsDock({ editor }: { editor: Editor }) {
   return (
     <div className="fr-cm-dock">
       <DockHeader className="fr-cm-dock__head">
-        <h2>Comments</h2>
-        <SegmentedControl<ThreadFilter> size="sm" value={filter} onChange={(v) => setUi(editor, { filter: v })} options={FILTERS} aria-label="Filter comments" />
+        <h2>{tr('comments')}</h2>
+        <SegmentedControl<ThreadFilter> size="sm" value={filter} onChange={(v) => setUi(editor, { filter: v })} options={FILTERS} aria-label={tr('filterComments')} />
         {authors.length > 1 || author ? (
           <Select<string>
             size="sm"
-            aria-label="Written by"
+            aria-label={tr('writtenBy')}
             value={author ?? ''}
             onChange={(v) => setUi(editor, { author: v || null })}
             options={[
-              { value: '', label: 'Anyone' },
-              ...authors.map((a) => ({ value: a.id, label: a.id === editor.user.id ? 'You' : (people[a.id]?.name ?? a.name) })),
+              { value: '', label: tr('anyone') },
+              ...authors.map((a) => ({ value: a.id, label: a.id === editor.user.id ? tr('you') : (people[a.id]?.name ?? a.name) })),
             ]}
           />
         ) : null}
-        <Toggle size="sm" label="Show resolved on board" checked={showResolved} onChange={(v) => setUi(editor, { showResolved: v })} />
+        <Toggle size="sm" label={tr('showResolvedOnBoard')} checked={showResolved} onChange={(v) => setUi(editor, { showResolved: v })} />
       </DockHeader>
       {list.length ? (
         <div className="fr-cm-dock__list">
@@ -367,7 +367,7 @@ function CommentsDock({ editor }: { editor: Editor }) {
         <div className="fr-cm-empty">
           <MessageSquareText size={28} strokeWidth={1.6} />
           <div className="fr-cm-empty__title">
-            {author ? 'No comments by them here' : EMPTY[filter]}
+            {author ? tr('noCommentsByThemHere') : EMPTY[filter]}
           </div>
           {canWrite && (filter === 'open' || filter === 'mine') && <div className="fr-cm-empty__hint">{tr('pressCThenClickAnywhere')}</div>}
         </div>

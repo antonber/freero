@@ -84,7 +84,7 @@ export interface ItemRow {
 /** The column a flip card's back goes in (only when some exported card has one). */
 export const BACK_HEADER = 'Back';
 
-export const EXPORT_HEADER = ['Type', 'Text', 'Description', 'Color', 'Tags', 'Status', 'Assignee', 'Due date', 'Frame'];
+export const EXPORT_HEADER = ['Type', 'Text', 'Description', 'Color', 'Tags', 'Status', 'Assignee', tr('dueDate'), 'Frame'];
 /** Tags inside one cell. */
 export const TAG_SEPARATOR = '; ';
 

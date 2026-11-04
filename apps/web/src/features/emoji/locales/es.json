@@ -9,12 +9,8 @@
     "reactWith",
     "stamp",
     "stamps",
-    "searchEmojiAndStamps",
     "emoji",
-    "nothingMatchesQuery",
-    "recent",
-    "emojiCategories",
-    "emojiStamps"
+    "nothingMatchesQuery"
   ],
   "approved": "Aprobado",
   "star": "Estrella",
@@ -25,10 +21,6 @@
   "reactWith": "Reaccionar con",
   "stamp": "Sello",
   "stamps": "Sellos",
-  "searchEmojiAndStamps": "Buscar emojis y sellos",
   "emoji": "Emoji",
-  "nothingMatchesQuery": "Nada coincide con “{query}”",
-  "recent": "Recientes",
-  "emojiCategories": "Categorías de emojis",
-  "emojiStamps": "Emojis y sellos"
+  "nothingMatchesQuery": "Nada coincide con “{query}”"
 }

@@ -306,11 +306,11 @@ function NotificationsSection({ version }: { version: number }) {
     <div ref={ref} id="notifications" className="fr-acct-anchor">
       <Section
         id="notifications-settings"
-        title={slack ? 'Notification emails and Slack' : 'Notification emails'}
+        title={slack ? tr('notificationEmailsAndSlack') : tr('notificationEmails')}
         description={
           slack
-            ? 'Mentions, replies and shared boards always show under the bell. What you turned on for Slack arrives there at once as a direct message, instead of by email; the rest you haven’t seen a little later, we email you as one summary.'
-            : 'Mentions, replies and shared boards always show under the bell. What you haven’t seen there a little later, we email you as one summary.'
+            ? tr('mentionsRepliesAndSharedBoards2')
+            : tr('mentionsRepliesAndSharedBoards')
         }
       >
         {failed ? (
@@ -342,10 +342,10 @@ function NotificationsSection({ version }: { version: number }) {
               />
             </div>
             {slack ? (
-              <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label="Notify me about">
+              <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label={tr('notifyMeAbout')}>
                 <li className="fr-acct-prefs__channels-head" aria-hidden>
                   <span />
-                  <span>Email</span>
+                  <span>{tr('email')}</span>
                   <span>Slack</span>
                 </li>
                 {prefs.types.map((t) => (
@@ -357,7 +357,7 @@ function NotificationsSection({ version }: { version: number }) {
                     <span className={prefs.emailAll ? undefined : 'is-off'}>
                       <Toggle
                         size="sm"
-                        aria-label={`Email: ${t.label}`}
+                        aria-label={tr('emailLabel', { label: t.label })}
                         disabled={!prefs.emailAll}
                         checked={t.email}
                         onChange={(on) =>
@@ -367,7 +367,7 @@ function NotificationsSection({ version }: { version: number }) {
                     </span>
                     <Toggle
                       size="sm"
-                      aria-label={`Slack: ${t.label}`}
+                      aria-label={tr('slackLabel', { label: t.label })}
                       checked={t.slack}
                       onChange={(on) =>
                         save({ slack: { [t.type]: on } }, { ...prefs, types: prefs.types.map((x) => (x.type === t.type ? { ...x, slack: on } : x)) })
@@ -377,7 +377,7 @@ function NotificationsSection({ version }: { version: number }) {
                 ))}
               </ul>
             ) : (
-              <ul className="fr-acct-prefs__types" aria-label="Email me about">
+              <ul className="fr-acct-prefs__types" aria-label={tr('emailMeAbout')}>
                 {prefs.types.map((t) => (
                   <li key={t.type} className={prefs.emailAll ? undefined : 'is-off'}>
                     <Toggle

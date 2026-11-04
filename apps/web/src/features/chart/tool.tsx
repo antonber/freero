@@ -3,9 +3,10 @@ import { defineTool, useToolGhost } from '@engine';
 import { placeChart } from './lib/data';
 import { DATA_PANEL, TOOL_ID } from './lib/constants';
 
+import { t } from './messages';
 export default defineTool({
   id: TOOL_ID,
-  label: 'Chart',
+  label: t('chart'),
   icon: BarChart3,
   order: 59,
   placement: 'more',

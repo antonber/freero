@@ -62,7 +62,7 @@ const KIND_STYLE: Partial<Record<ShapeKind, Partial<ShapeStyle>>> = {
   // names itself, a trust boundary is a dashed see-through zone with its name in the corner.
   vsmDataBox: { text: 'C/T =<br>C/O =<br>Uptime =<br>Shifts =', fontSize: 14, align: 'left', vAlign: 'top' },
   vsmFifo: { text: '<b>FIFO</b>', fontSize: 14 },
-  dfdBoundary: { fill: 'transparent', fillOpacity: 0, strokeStyle: 'dashed', fontSize: 14, align: 'left', vAlign: 'top', text: 'Trust boundary' },
+  dfdBoundary: { fill: 'transparent', fillOpacity: 0, strokeStyle: 'dashed', fontSize: 14, align: 'left', vAlign: 'top', text: t('trustBoundary') },
   erdEntity: {
     text: '<b>Entity</b><br>PK&nbsp; id<br>FK&nbsp; owner_id<br>name',
     fontSize: 14,

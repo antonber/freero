@@ -96,12 +96,8 @@ export function DraftComposer({ editor }: { editor: Editor }) {
       <div className="fr-cm-composer__foot">
         <AttachButton draft={files} />
         <SendHint />
-        <Button size="sm" variant="ghost" onClick={() => setUi(editor, { draft: null })}>
-          Cancel
-        </Button>
-        <Button size="sm" variant="primary" disabled={!ready} onClick={send}>
-          Comment
-        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setUi(editor, { draft: null })}>{tr('cancel')}</Button>
+        <Button size="sm" variant="primary" disabled={!ready} onClick={send}>{tr('comment')}</Button>
       </div>
     </div>
   );
@@ -367,7 +363,7 @@ export function ThreadView({
             label={tr('reply')}
             autoFocus={!quiet}
           />
-          <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!ready} onClick={send} />
+          <IconButton icon={ArrowUp} label={tr('sendReply')} shortcut="Enter" size={32} variant="solid" disabled={!ready} onClick={send} />
         </div>
       )}
     </div>

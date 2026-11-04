@@ -9,12 +9,8 @@
     "reactWith",
     "stamp",
     "stamps",
-    "searchEmojiAndStamps",
     "emoji",
-    "nothingMatchesQuery",
-    "recent",
-    "emojiCategories",
-    "emojiStamps"
+    "nothingMatchesQuery"
   ],
   "approved": "מאושר",
   "star": "כוכב",
@@ -25,10 +21,6 @@
   "reactWith": "תגובה עם",
   "stamp": "חותמת",
   "stamps": "חותמות",
-  "searchEmojiAndStamps": "חיפוש אמוג׳י וחותמות",
   "emoji": "אמוג׳י",
-  "nothingMatchesQuery": "אין התאמות ל”{query}“",
-  "recent": "אחרונים",
-  "emojiCategories": "קטגוריות אמוג׳י",
-  "emojiStamps": "אמוג׳י וחותמות"
+  "nothingMatchesQuery": "אין התאמות ל”{query}“"
 }

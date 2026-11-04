@@ -9,12 +9,8 @@
     "reactWith",
     "stamp",
     "stamps",
-    "searchEmojiAndStamps",
     "emoji",
-    "nothingMatchesQuery",
-    "recent",
-    "emojiCategories",
-    "emojiStamps"
+    "nothingMatchesQuery"
   ],
   "approved": "موافق عليه",
   "star": "نجمة",
@@ -25,10 +21,6 @@
   "reactWith": "التفاعل بـ",
   "stamp": "ختم",
   "stamps": "الأختام",
-  "searchEmojiAndStamps": "البحث في الرموز التعبيرية والأختام",
   "emoji": "الرموز التعبيرية",
-  "nothingMatchesQuery": "لا شيء يطابق «{query}»",
-  "recent": "الأخيرة",
-  "emojiCategories": "فئات الرموز التعبيرية",
-  "emojiStamps": "الرموز التعبيرية والأختام"
+  "nothingMatchesQuery": "لا شيء يطابق «{query}»"
 }

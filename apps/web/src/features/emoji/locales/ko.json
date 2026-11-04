@@ -9,12 +9,8 @@
     "reactWith",
     "stamp",
     "stamps",
-    "searchEmojiAndStamps",
     "emoji",
-    "nothingMatchesQuery",
-    "recent",
-    "emojiCategories",
-    "emojiStamps"
+    "nothingMatchesQuery"
   ],
   "approved": "승인",
   "star": "별",
@@ -25,10 +21,6 @@
   "reactWith": "반응하기",
   "stamp": "스탬프",
   "stamps": "스탬프",
-  "searchEmojiAndStamps": "이모지 및 스탬프 검색",
   "emoji": "이모지",
-  "nothingMatchesQuery": "“{query}”와(과) 일치하는 항목이 없습니다",
-  "recent": "최근 사용",
-  "emojiCategories": "이모지 카테고리",
-  "emojiStamps": "이모지 및 스탬프"
+  "nothingMatchesQuery": "“{query}”와(과) 일치하는 항목이 없습니다"
 }
