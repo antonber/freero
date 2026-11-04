@@ -13,6 +13,7 @@ import { dispatchToolPointer } from './toolDispatch';
 import type { Point, Rect, ToolDefinition, ToolPointerEvent } from '../api';
 import type { Registered } from '../runtime/registry';
 
+import { t as tr } from '../messages';
 /** A pause this long (ms) after the last arrow-key nudge ends the burst (one undo step). */
 const NUDGE_IDLE_MS = 1000;
 /** Grid lines a Shift+arrow nudge moves while snap to grid is on. */
@@ -31,19 +32,19 @@ const TEXT_RESERVED = new Set(['b', 'i', 'u', 'z', 'y', 'c', 'v', 'x', 'a', 'k',
  * and not listed here is a key nobody can discover.
  */
 export const ENGINE_KEYS: Array<{ name: string; label: string; shortcuts: string[]; minRole: 'viewer' | 'editor' }> = [
-  { name: 'escape', label: 'Deselect, stop editing, cancel or leave focus', shortcuts: ['escape'], minRole: 'viewer' },
+  { name: 'escape', label: tr('deselectStopEditingCancelOr'), shortcuts: ['escape'], minRole: 'viewer' },
   { name: 'delete', label: 'Delete', shortcuts: ['backspace'], minRole: 'editor' },
-  { name: 'nudge', label: 'Nudge selection', shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], minRole: 'editor' },
-  { name: 'nudgeFar', label: 'Nudge selection by 10', shortcuts: ['shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'], minRole: 'editor' },
-  { name: 'cycle', label: 'Select next item', shortcuts: ['tab'], minRole: 'viewer' },
-  { name: 'cycleBack', label: 'Select previous item', shortcuts: ['shift+tab'], minRole: 'viewer' },
-  { name: 'jump', label: 'Select the nearest item in that direction', shortcuts: ['alt+arrowup', 'alt+arrowdown', 'alt+arrowleft', 'alt+arrowright'], minRole: 'viewer' },
-  { name: 'resize', label: 'Resize selection (wider, narrower, taller, shorter)', shortcuts: ['alt+shift+arrowright', 'alt+shift+arrowleft', 'alt+shift+arrowdown', 'alt+shift+arrowup'], minRole: 'editor' },
-  { name: 'place', label: 'With a creation tool: place an item next to the selection', shortcuts: ['enter'], minRole: 'editor' },
-  { name: 'menu', label: 'Open the menu of the selection', shortcuts: ['shift+f10', 'contextmenu'], minRole: 'viewer' },
-  { name: 'format', label: 'Move focus to the format toolbar', shortcuts: ['alt+f10'], minRole: 'editor' },
-  { name: 'regions', label: 'Move focus between the canvas and the toolbars', shortcuts: ['f6', 'shift+f6'], minRole: 'viewer' },
-  { name: 'pan', label: 'Pan (hold and drag)', shortcuts: ['space'], minRole: 'viewer' },
+  { name: 'nudge', label: tr('nudgeSelection'), shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], minRole: 'editor' },
+  { name: 'nudgeFar', label: tr('nudgeSelectionBy10'), shortcuts: ['shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'], minRole: 'editor' },
+  { name: 'cycle', label: tr('selectNextItem'), shortcuts: ['tab'], minRole: 'viewer' },
+  { name: 'cycleBack', label: tr('selectPreviousItem'), shortcuts: ['shift+tab'], minRole: 'viewer' },
+  { name: 'jump', label: tr('selectTheNearestItemIn'), shortcuts: ['alt+arrowup', 'alt+arrowdown', 'alt+arrowleft', 'alt+arrowright'], minRole: 'viewer' },
+  { name: 'resize', label: tr('resizeSelectionWiderNarrowerTaller'), shortcuts: ['alt+shift+arrowright', 'alt+shift+arrowleft', 'alt+shift+arrowdown', 'alt+shift+arrowup'], minRole: 'editor' },
+  { name: 'place', label: tr('withACreationToolPlace'), shortcuts: ['enter'], minRole: 'editor' },
+  { name: 'menu', label: tr('openTheMenuOfThe'), shortcuts: ['shift+f10', 'contextmenu'], minRole: 'viewer' },
+  { name: 'format', label: tr('moveFocusToTheFormat'), shortcuts: ['alt+f10'], minRole: 'editor' },
+  { name: 'regions', label: tr('moveFocusBetweenTheCanvas'), shortcuts: ['f6', 'shift+f6'], minRole: 'viewer' },
+  { name: 'pan', label: tr('panHoldAndDrag'), shortcuts: ['space'], minRole: 'viewer' },
 ];
 
 /**

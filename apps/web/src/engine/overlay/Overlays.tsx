@@ -14,12 +14,13 @@ import { Lock, RotateCw, ShieldCheck } from 'lucide-react';
 function LockBadge({ el }: { el: BoardElement }) {
   const guarded = isProtectedLock(el);
   return (
-    <div className="fr-ov-lock" title={guarded ? 'Locked by the board owner' : 'Locked'}>
+    <div className="fr-ov-lock" title={guarded ? t('lockedByTheBoardOwner') : t('locked')}>
       {guarded ? <ShieldCheck size={11} strokeWidth={2.4} /> : <Lock size={11} strokeWidth={2.4} />}
     </div>
   );
 }
 import { readableTextColor } from '@ui';
+import { t } from '../messages';
 import './overlays.css';
 
 const HANDLE_ANGLE: Record<Handle, number> = { n: 0, ne: 45, e: 90, se: 135, s: 180, sw: 225, w: 270, nw: 315 };
@@ -103,7 +104,7 @@ function SelectionOverlay() {
           />
         ))}
         {rotatable && transforming !== 'rotate' && (
-          <div data-handle="rotate" className="fr-ov-rotate" title="Rotate (Shift snaps to 15°)">
+          <div data-handle="rotate" className="fr-ov-rotate" title={t('rotateShiftSnapsTo15')}>
             <RotateCw size={12} strokeWidth={2.4} />
           </div>
         )}
@@ -228,7 +229,7 @@ function PeersOverlay() {
             {i === 0 && (
               <span className="fr-ov-peer-tag" style={{ background: peer.user.color, color: readableTextColor(peer.user.color) }}>
                 {peer.user.name}
-                {peer.editingId === el.id ? ' is typing…' : ''}
+                {peer.editingId === el.id ? t('isTyping') : ''}
               </span>
             )}
           </div>

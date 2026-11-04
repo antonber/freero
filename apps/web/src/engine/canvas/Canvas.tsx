@@ -15,6 +15,7 @@ import type { ToolDefinition } from '../api';
 import { publicCursor } from '../editor/layers';
 import { LONG_PRESS_MS, routePress, TOUCH_HIT_PX, TOUCH_SLOP_PX } from '../interaction/touch';
 import { LASSO_TOOL } from '../interaction/selectTool';
+import { t as tr } from '../messages';
 import './canvas.css';
 
 const DOUBLE_CLICK_MS = 400;
@@ -520,7 +521,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       // pass keys through; the live region (ui/LiveRegion) reads what gets selected.
       role="application"
       aria-roledescription="whiteboard"
-      aria-label={`Board canvas: ${core.hostRef.current.board.title}`}
+      aria-label={tr('boardCanvasTitle', { title: core.hostRef.current.board.title })}
       aria-describedby={helpId}
       // The background as shown, also for what knocks the canvas out (connector labels): theme.ts.
       style={{ background: shownBackground(settings.background, theme), cursor, ['--fr-canvas-paper' as string]: shownBackground(settings.background, theme) }}

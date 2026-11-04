@@ -19,6 +19,7 @@ import { RenderModeContext, useCore } from '../context';
 import { plainToRichText, richTextToPlain, sanitizeRichText } from './sanitize';
 import { autoMaxFont, fitFontSize, FONT_VARS, getFontEpoch, LINE_HEIGHT, subscribeFontEpoch } from './autofit';
 import type { FormatCommand, TextFormatState, TextSession } from './session';
+import { t } from '../messages';
 import './text.css';
 
 export interface ElementTextProps {
@@ -133,7 +134,7 @@ function ElementTextImpl(props: ElementTextProps) {
         onKey={props.onKeyDown}
         className={props.className}
         style={boxStyle}
-        placeholder={props.placeholder ?? 'Type something…'}
+        placeholder={props.placeholder ?? t('typeSomething')}
         onLiveText={setLivePlain}
       />
     );

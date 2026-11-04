@@ -7,6 +7,7 @@ import { unavailableVersionHistory } from '../api';
 import { createCore, type EngineCore } from '../runtime/core';
 import { dispatchToolPointer } from '../interaction/toolDispatch';
 
+import { t } from '../messages';
 const Noop = () => null;
 
 export const boxDef: ElementDefinition<'sticky'> = {
@@ -34,7 +35,7 @@ export const frameDef: ElementDefinition<'frame'> = {
   resize: 'free',
   container: true,
   rotatable: false,
-  defaults: () => ({ type: 'frame', w: 400, h: 300, title: 'Frame', fill: '#fff', index: 0 }),
+  defaults: () => ({ type: 'frame', w: 400, h: 300, title: t('frame'), fill: '#fff', index: 0 }),
 };
 
 export function bundle(name: string, extra: Partial<FeatureBundle> = {}): FeatureBundle {
@@ -44,7 +45,7 @@ export function bundle(name: string, extra: Partial<FeatureBundle> = {}): Featur
 export function makeHost(role: Role = 'owner'): Host {
   return {
     user: { id: 'u1', name: 'Tester', color: '#5b3ff0', avatarUrl: null },
-    board: { id: 'test-board', title: 'Test', role },
+    board: { id: 'test-board', title: t('test'), role },
     syncUrl: '',
     uploadImage: async () => ({ url: '' }),
     uploadFile: async () => ({ url: '' }),
@@ -57,7 +58,7 @@ export function makeHost(role: Role = 'owner'): Host {
     saveTemplate: async () => Promise.reject(new Error('No saved templates in tests')),
     deleteTemplate: async () => undefined,
     shareTemplate: async () => Promise.reject(new Error('No teams in tests')),
-    versions: unavailableVersionHistory('No version history in tests'),
+    versions: unavailableVersionHistory(t('noVersionHistoryInTests')),
     importImage: async () => Promise.reject(new Error('No server in tests')),
     fetchImage: async () => Promise.reject(new Error('No server in tests')),
     report: async () => Promise.reject(new Error('No server in tests')),

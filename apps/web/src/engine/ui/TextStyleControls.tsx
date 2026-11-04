@@ -23,6 +23,7 @@ import type { Editor } from '../api';
 import { useEditingId, useTextFormatState } from '../hooks';
 import { FONT_VARS } from '../text/autofit';
 import { FONTS, fontOf, type FontGroup } from '../text/fonts';
+import { t } from '../messages';
 import './textStyle.css';
 
 /** Several selected items disagree on a value. */
@@ -91,7 +92,7 @@ export function FontFamilyControl({ value, onChange }: { value: Mixed<FontFamily
   const label = value === MIXED ? 'Mixed' : fontOf(value).label;
   return (
     <>
-      <ToolbarButton ref={ref} label="Font" wide aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} label={t('font')} wide aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="fr-textstyle-font" style={{ fontFamily: value === MIXED ? undefined : fontOf(value).css }}>
           {label}
         </span>
@@ -102,7 +103,7 @@ export function FontFamilyControl({ value, onChange }: { value: Mixed<FontFamily
         onClose={() => setOpen(false)}
         anchor={ref.current}
         minWidth={200}
-        aria-label="Font"
+        aria-label={t('font')}
         // Grouped, each name in its own face (opening the menu is what loads the faces).
         items={FONT_GROUPS.flatMap((group) => [
           { heading: group },
@@ -136,11 +137,11 @@ export function FontSizeControl({
   onChange: (size: FontSizeValue) => void;
 }) {
   const [custom, setCustom] = useState('');
-  const options = sizes.map((s) => (typeof s === 'object' ? s : { value: s, label: s === 'auto' ? 'Auto (fit)' : String(s) }));
+  const options = sizes.map((s) => (typeof s === 'object' ? s : { value: s, label: s === 'auto' ? t('autoFit') : String(s) }));
   const preset = value === MIXED ? undefined : sizes.find((s): s is { value: FontSizeValue; label: string } => typeof s === 'object' && s.value === value);
   const face = value === MIXED ? 'Mixed' : (preset?.label ?? sizeLabel(value));
   return (
-    <PopButton label="Text size" wide face={<><span>{face}</span><ChevronDown size={14} aria-hidden /></>} width={190}>
+    <PopButton label={t('textSize')} wide face={<><span>{face}</span><ChevronDown size={14} aria-hidden /></>} width={190}>
       {(close) => (
         <div className="fr-textstyle-sizes">
           <form
@@ -156,14 +157,14 @@ export function FontSizeControl({
             <Input
               size="sm"
               inputMode="decimal"
-              placeholder={value === MIXED || value === 'auto' ? 'Custom size' : `${sizeLabel(value)} (custom)`}
+              placeholder={value === MIXED || value === 'auto' ? t('customSize') : t('sizelabelCustom', { sizeLabel: sizeLabel(value) })}
               value={custom}
               onChange={(e) => setCustom(e.target.value)}
-              aria-label="Custom text size"
+              aria-label={t('customTextSize')}
               autoFocus
             />
           </form>
-          <div className="fr-textstyle-sizes__list" role="listbox" aria-label="Text sizes">
+          <div className="fr-textstyle-sizes__list" role="listbox" aria-label={t('textSizes')}>
             {options.map((o) => (
               <button
                 key={String(o.value)}
@@ -203,7 +204,7 @@ export function TextColorControl({
 }) {
   const editing = !!useEditingId();
   return (
-    <PopButton label="Text color" face={<span className="fr-textstyle-a">A<ColorBar color={value} /></span>} width={240}>
+    <PopButton label={t('textColor')} face={<span className="fr-textstyle-a">A<ColorBar color={value} /></span>} width={240}>
       {() => (
         <ColorSwatches
           colors={[...colors]}
@@ -218,7 +219,7 @@ export function TextColorControl({
               onChange(c);
             });
           }}
-          aria-label="Text color"
+          aria-label={t('textColor')}
         />
       )}
     </PopButton>
@@ -236,7 +237,7 @@ export function TextHighlightControl({
   colors?: readonly string[];
 }) {
   return (
-    <PopButton label="Highlight" face={<span className="fr-textstyle-a"><Highlighter size={15} aria-hidden /><ColorBar color={value} /></span>} width={240}>
+    <PopButton label={t('highlight')} face={<span className="fr-textstyle-a"><Highlighter size={15} aria-hidden /><ColorBar color={value} /></span>} width={240}>
       {() => (
         <ColorSwatches
           colors={[...colors]}
@@ -245,7 +246,7 @@ export function TextHighlightControl({
           columns={6}
           size={26}
           onChange={onChange}
-          aria-label="Highlight color"
+          aria-label={t('highlightColor')}
         />
       )}
     </PopButton>
@@ -264,13 +265,13 @@ export function TextMarkButtons({ editor, marks = ALL_MARKS }: { editor: Editor;
   const has = (m: TextMark) => marks.includes(m);
   return (
     <>
-      {has('bold') && <IconButton icon={Bold} label="Bold" shortcut="Mod+B" size={32} active={fmt.bold} onClick={() => editor.formatText('bold')} />}
-      {has('italic') && <IconButton icon={Italic} label="Italic" shortcut="Mod+I" size={32} active={fmt.italic} onClick={() => editor.formatText('italic')} />}
-      {has('underline') && <IconButton icon={Underline} label="Underline" shortcut="Mod+U" size={32} active={fmt.underline} onClick={() => editor.formatText('underline')} />}
-      {has('strike') && <IconButton icon={Strikethrough} label="Strikethrough" size={32} active={fmt.strike} onClick={() => editor.formatText('strike')} />}
+      {has('bold') && <IconButton icon={Bold} label={t('bold')} shortcut="Mod+B" size={32} active={fmt.bold} onClick={() => editor.formatText('bold')} />}
+      {has('italic') && <IconButton icon={Italic} label={t('italic')} shortcut="Mod+I" size={32} active={fmt.italic} onClick={() => editor.formatText('italic')} />}
+      {has('underline') && <IconButton icon={Underline} label={t('underline')} shortcut="Mod+U" size={32} active={fmt.underline} onClick={() => editor.formatText('underline')} />}
+      {has('strike') && <IconButton icon={Strikethrough} label={t('strikethrough')} size={32} active={fmt.strike} onClick={() => editor.formatText('strike')} />}
       {has('link') && <LinkControl editor={editor} link={fmt.link} />}
-      {has('bullets') && <IconButton icon={List} label="Bulleted list" size={32} active={fmt.bullets} onClick={() => editor.formatText('bullets')} />}
-      {has('numbers') && <IconButton icon={ListOrdered} label="Numbered list" size={32} active={fmt.numbers} onClick={() => editor.formatText('numbers')} />}
+      {has('bullets') && <IconButton icon={List} label={t('bulletedList')} size={32} active={fmt.bullets} onClick={() => editor.formatText('bullets')} />}
+      {has('numbers') && <IconButton icon={ListOrdered} label={t('numberedList')} size={32} active={fmt.numbers} onClick={() => editor.formatText('numbers')} />}
     </>
   );
 }
@@ -289,7 +290,7 @@ function LinkControl({ editor, link }: { editor: Editor; link: string | null }) 
       <IconButton
         ref={ref}
         icon={Link}
-        label="Link"
+        label={t('link')}
         shortcut="Mod+K"
         size={32}
         active={!!link || open}
@@ -298,7 +299,7 @@ function LinkControl({ editor, link }: { editor: Editor; link: string | null }) 
           setOpen((o) => !o);
         }}
       />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={320} aria-label="Link">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={320} aria-label={t('link')}>
         <form
           className="fr-textstyle-link"
           onSubmit={(e) => {
@@ -306,14 +307,10 @@ function LinkControl({ editor, link }: { editor: Editor; link: string | null }) 
             apply(value);
           }}
         >
-          <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Paste or type a link" aria-label="Link URL" autoFocus />
-          <Button type="submit" variant="primary" size="sm">
-            Apply
-          </Button>
+          <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder={t('pasteOrTypeALink')} aria-label={t('linkUrl')} autoFocus />
+          <Button type="submit" variant="primary" size="sm">{t('apply')}</Button>
           {link && (
-            <Button size="sm" variant="ghost" onClick={() => apply(null)}>
-              Remove
-            </Button>
+            <Button size="sm" variant="ghost" onClick={() => apply(null)}>{t('remove')}</Button>
           )}
         </form>
       </Popover>
@@ -340,7 +337,7 @@ export function TextAlignControl({
 }) {
   const Icon = ALIGN_ICONS[align === MIXED ? fallback : align];
   return (
-    <PopButton label="Alignment" face={<Icon size={18} aria-hidden />}>
+    <PopButton label={t('alignment')} face={<Icon size={18} aria-hidden />}>
       {() => (
         <div className="fr-textstyle-pop">
           <SegmentedControl<TextAlign | ''>
@@ -348,11 +345,11 @@ export function TextAlignControl({
             value={align === MIXED ? '' : align}
             onChange={(v) => v && onChange({ align: v })}
             options={[
-              { value: 'left', icon: AlignLeft, title: 'Align left' },
-              { value: 'center', icon: AlignCenter, title: 'Align center' },
-              { value: 'right', icon: AlignRight, title: 'Align right' },
+              { value: 'left', icon: AlignLeft, title: t('alignLeft') },
+              { value: 'center', icon: AlignCenter, title: t('alignCenter') },
+              { value: 'right', icon: AlignRight, title: t('alignRight') },
             ]}
-            aria-label="Horizontal alignment"
+            aria-label={t('horizontalAlignment')}
           />
           {vAlign !== undefined && (
             <SegmentedControl<VerticalAlign | ''>
@@ -360,11 +357,11 @@ export function TextAlignControl({
               value={vAlign === MIXED ? '' : vAlign}
               onChange={(v) => v && onChange({ vAlign: v })}
               options={[
-                { value: 'top', label: 'Top' },
-                { value: 'middle', label: 'Middle' },
-                { value: 'bottom', label: 'Bottom' },
+                { value: 'top', label: t('top') },
+                { value: 'middle', label: t('middle') },
+                { value: 'bottom', label: t('bottom') },
               ]}
-              aria-label="Vertical alignment"
+              aria-label={t('verticalAlignment')}
             />
           )}
         </div>

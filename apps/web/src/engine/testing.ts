@@ -16,6 +16,7 @@ import { EngineContext } from './context';
 import { createCore, type EngineCore } from './runtime/core';
 import { serverPropose, syncStores } from './store/replicas';
 
+import { t as tr } from './messages';
 export interface TestBoardOptions {
   /** One replica per user (an id, or a full user). */
   users: Array<string | HostUser>;
@@ -70,7 +71,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
     const user: HostUser = typeof u === 'string' ? { id: u, name: u, color: '#5b3ff0', avatarUrl: null } : u;
     const host: Host = {
       user,
-      board: { id: opts.boardId ?? 'test-board', title: opts.title ?? 'Test', role: opts.roles?.[index] ?? opts.role ?? 'owner' },
+      board: { id: opts.boardId ?? 'test-board', title: opts.title ?? tr('test'), role: opts.roles?.[index] ?? opts.role ?? 'owner' },
       syncUrl: '',
       personalViews: {
         list: async () =>
@@ -123,7 +124,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
         templates.splice(i, 1);
       },
       shareTemplate: async () => Promise.reject(new Error('No teams in tests')),
-      versions: unavailableVersionHistory('No version history in tests'),
+      versions: unavailableVersionHistory(tr('noVersionHistoryInTests')),
       importImage: async () => Promise.reject(new Error('No server in tests')),
       fetchImage: async () => Promise.reject(new Error('No server in tests')),
       report: async () => Promise.reject(new Error('No server in tests')),

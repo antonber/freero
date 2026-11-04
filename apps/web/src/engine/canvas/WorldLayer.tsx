@@ -11,6 +11,7 @@ import { elementAABB, expandRect, rectContainsRect, rectsIntersect } from '../ge
 import type { ChildPresentation, DecorationDefinition, Insets, Rect } from '../api';
 import { personalViews } from '../runtime/personalViews';
 
+import { t as tr } from '../messages';
 export function cameraTransform(cam: { x: number; y: number; zoom: number }): string {
   return `translate(${-cam.x * cam.zoom}px, ${-cam.y * cam.zoom}px) scale(${cam.zoom})`;
 }
@@ -144,7 +145,7 @@ export function ElementFrame(props: {
   const presentation = usePresentation(el);
   let content: ReactNode;
   if (!reg) {
-    content = <div className="fr-el-unknown">Unsupported item ({el.type})</div>;
+    content = <div className="fr-el-unknown">{tr('unsupportedItemType', { type: el.type })}</div>;
   } else {
     const C = reg.def.Component;
     content = (
@@ -167,10 +168,8 @@ export function ElementFrame(props: {
         </ScopeContext.Provider>
       ))}
       {isPrivate && (
-        <span className="fr-el-private-chip" title="Only you can see this until it is revealed" style={{ transform: `scale(${1 / Math.max(props.zoom, 0.5)})` }}>
-          <EyeOff size={11} strokeWidth={2.5} aria-hidden />
-          Only you
-        </span>
+        <span className="fr-el-private-chip" title={tr('onlyYouCanSeeThis')} style={{ transform: `scale(${1 / Math.max(props.zoom, 0.5)})` }}>
+          <EyeOff size={11} strokeWidth={2.5} aria-hidden />{tr('onlyYou')}</span>
       )}
     </div>
   );

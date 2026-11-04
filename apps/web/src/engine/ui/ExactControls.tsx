@@ -7,6 +7,7 @@ import type { Editor } from '../api';
 import { applyExact, exactFrame, exactTargets, stepExact, type ExactField } from '../editor/exact';
 import { MIXED, commonValue, type Mixed } from './TextStyleControls';
 
+import { t } from '../messages';
 const FIELDS: ReadonlyArray<{ field: ExactField; label: string; name: string; unit?: string }> = [
   { field: 'x', label: 'X', name: 'X position' },
   { field: 'y', label: 'Y', name: 'Y position' },
@@ -80,7 +81,7 @@ function NumberField(props: {
         inputMode="decimal"
         aria-label={props.name}
         disabled={disabled}
-        placeholder={value === MIXED ? 'Mixed' : disabled ? '–' : undefined}
+        placeholder={value === MIXED ? t('mixed') : disabled ? '–' : undefined}
         value={draft}
         autoFocus={props.autoFocus}
         onFocus={(e) => {
@@ -104,9 +105,9 @@ export function ExactControls({ editor, selection }: { editor: Editor; selection
   const ref = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <IconButton ref={ref} icon={Ruler} label="Size and position" size={32} active={open} aria-expanded={open} onClick={() => setOpen((o) => !o)} />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={232} escapeToContent aria-label="Size and position">
-        <div className="fr-exact" role="group" aria-label="Size and position">
+      <IconButton ref={ref} icon={Ruler} label={t('sizeAndPosition')} size={32} active={open} aria-expanded={open} onClick={() => setOpen((o) => !o)} />
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={232} escapeToContent aria-label={t('sizeAndPosition')}>
+        <div className="fr-exact" role="group" aria-label={t('sizeAndPosition')}>
           {FIELDS.map((f, i) => (
             <NumberField
               key={f.field}

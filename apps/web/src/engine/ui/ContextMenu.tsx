@@ -8,6 +8,7 @@ import { ROLE_RANK } from '../runtime/core';
 import type { Registered } from '../runtime/registry';
 import { formatShortcut } from '../runtime/shortcuts';
 
+import { t } from '../messages';
 const WITH_SELECTION = [
   ['engine.cut', 'engine.copy', 'engine.paste', 'engine.duplicate'],
   ['engine.bringToFront', 'engine.bringForward', 'engine.sendBackward', 'engine.sendToBack'],
@@ -113,7 +114,7 @@ export function ContextMenu() {
       align="start"
       minWidth={230}
       items={items}
-      aria-label="Context menu"
+      aria-label={t('contextMenu')}
     />
   );
 }

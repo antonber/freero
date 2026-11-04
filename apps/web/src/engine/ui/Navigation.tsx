@@ -10,6 +10,7 @@ import { boundsOf, expandRect, rectUnion } from '../geometry/geometry';
 import type { Rect } from '../api';
 import { PanelSlotView } from './PanelSlot';
 
+import { t } from '../messages';
 function ZoomControls() {
   const core = useCore();
   const editor = core.editor;
@@ -21,19 +22,19 @@ function ZoomControls() {
     <div className="fr-chrome-card fr-zoom" role="group" aria-label="Zoom">
       <IconButton
         icon={MapIcon}
-        label={minimapOpen ? 'Hide minimap' : 'Show minimap'}
+        label={minimapOpen ? t('hideMinimap') : t('showMinimap')}
         size={32}
         tooltipSide="top"
         active={minimapOpen}
         onClick={() => core.ui.setState({ minimapOpen: !minimapOpen })}
       />
       <div className="fr-zoom__sep" />
-      <IconButton icon={Minus} label="Zoom out" shortcut="Mod+-" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomOut')} />
-      <button ref={pctRef} type="button" className="fr-zoom__pct" aria-label="Zoom presets" onClick={() => setMenuOpen((o) => !o)}>
+      <IconButton icon={Minus} label={t('zoomOut')} shortcut="Mod+-" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomOut')} />
+      <button ref={pctRef} type="button" className="fr-zoom__pct" aria-label={t('zoomPresets')} onClick={() => setMenuOpen((o) => !o)}>
         {Math.round(zoom * 100)}%
       </button>
-      <IconButton icon={Plus} label="Zoom in" shortcut="Mod++" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomIn')} />
-      <IconButton icon={Maximize} label="Fit to screen" shortcut="Shift+1" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomToFit')} />
+      <IconButton icon={Plus} label={t('zoomIn')} shortcut="Mod++" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomIn')} />
+      <IconButton icon={Maximize} label={t('fitToScreen')} shortcut="Shift+1" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomToFit')} />
       <Menu
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
@@ -42,13 +43,13 @@ function ZoomControls() {
         align="center"
         minWidth={180}
         items={[
-          { id: 'fit', label: 'Zoom to fit', shortcut: 'Shift+1', onSelect: () => editor.runCommand('engine.zoomToFit') },
+          { id: 'fit', label: t('zoomToFit'), shortcut: 'Shift+1', onSelect: () => editor.runCommand('engine.zoomToFit') },
           {
             id: 'sel',
-            label: 'Zoom to selection',
+            label: t('zoomToSelection'),
             shortcut: 'Shift+2',
             disabled: editor.getSelection().length === 0,
-            disabledReason: 'Select something first',
+            disabledReason: t('selectSomethingFirst'),
             onSelect: () => editor.runCommand('engine.zoomToSelection'),
           },
           { divider: true },
@@ -182,7 +183,7 @@ function Minimap() {
       <canvas
         ref={canvasRef}
         style={{ width: MM_W, height: MM_H }}
-        aria-label="Board overview"
+        aria-label={t('boardOverview')}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -196,7 +197,7 @@ export function BottomRight() {
   const core = useCore();
   const minimapOpen = useStore(core.ui, (s) => s.minimapOpen);
   return (
-    <div className="fr-bottomright" data-fr-chrome="" data-fr-occludes="" data-fr-region="view" role="region" aria-label="View">
+    <div className="fr-bottomright" data-fr-chrome="" data-fr-occludes="" data-fr-region="view" role="region" aria-label={t('view')}>
       {minimapOpen && <Minimap />}
       <div className="fr-bottomright__row">
         <PanelSlotView slot="bottom-right" className="fr-chrome-card fr-slot-row" />
