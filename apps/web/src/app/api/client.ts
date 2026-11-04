@@ -4,6 +4,13 @@ import type {
   AdminBoardsResponse,
   AdminScope,
   AdminTrashedBoard,
+  BoardLabel,
+  BoardLabelInput,
+  LegalCaseChange,
+  LegalCaseDetail,
+  LegalCaseExportInfo,
+  LegalCaseInput,
+  LegalCaseSummary,
   UsageDay,
   BoardGroupGrant,
   DirectoryGroup,
@@ -561,6 +568,27 @@ export const api = {
   adminTrash: (id: string) => request<{ boards: AdminTrashedBoard[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/trash`),
   adminRestoreBoard: (id: string, boardId: string) =>
     request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/trash/${encodeURIComponent(boardId)}/restore`),
+  // Legal holds (#157): a team workspace's or organisation's eDiscovery cases.
+  legalCases: (id: string) => request<{ cases: LegalCaseSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/legal-cases`),
+  legalCase: (id: string, caseId: string) =>
+    request<{ case: LegalCaseDetail }>('GET', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}`),
+  createLegalCase: (id: string, input: LegalCaseInput) => request<{ case: LegalCaseDetail }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases`, input),
+  changeLegalCase: (id: string, caseId: string, change: LegalCaseChange) =>
+    request<{ case: LegalCaseDetail }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}`, change),
+  releaseLegalCase: (id: string, caseId: string) =>
+    request<{ case: LegalCaseDetail }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/release`),
+  exportLegalCase: (id: string, caseId: string) =>
+    request<{ export: LegalCaseExportInfo }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/exports`),
+  legalCaseExportUrl: (id: string, caseId: string, exportId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/exports/${encodeURIComponent(exportId)}/download`,
+  // Classification labels (#158) of a team workspace or organisation, and a board's label.
+  boardLabels: (id: string) =>
+    request<{ labels: BoardLabel[]; required: boolean; defaultLabelId: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/labels`),
+  createBoardLabel: (id: string, input: BoardLabelInput) => request<{ label: BoardLabel }>('POST', `/api/workspaces/${encodeURIComponent(id)}/labels`, input),
+  updateBoardLabel: (id: string, labelId: string, input: Partial<BoardLabelInput>) =>
+    request<{ label: BoardLabel }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`, input),
+  deleteBoardLabel: (id: string, labelId: string) => request<void>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`),
+  setBoardLabel: (boardId: string, labelId: string | null) => request<{ board: BoardSummary }>('PUT', `/api/boards/${encodeURIComponent(boardId)}/label`, { labelId }),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>

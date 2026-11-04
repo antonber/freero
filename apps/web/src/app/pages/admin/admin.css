@@ -799,3 +799,58 @@ td > .fr-admin-pill:first-child {
   justify-content: flex-end;
   margin-top: 8px;
 }
+
+/* ---- legal holds (#157) and classification labels (#158) ---- */
+.fr-admin-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--fr-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.fr-admin-link:hover {
+  text-decoration: underline;
+}
+.fr-admin-holds__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fr-admin-holds__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-y: auto;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-md, 8px);
+}
+.fr-admin-holds__pick legend {
+  padding: 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.fr-admin-holds__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.fr-admin-holds__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.fr-admin-holds__list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
