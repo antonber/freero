@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "按名称为项目添加标签",
+  "searchOrCreateATag": "搜索或创建标签",
+  "nameYourFirstTag": "为你的第一个标签命名",
+  "tags": "标签",
+  "tagsGroupStickiesAndCards": "标签可按主题、负责人或优先级对便利贴和卡片进行分组。",
+  "createName": "创建「{name}」",
+  "newTagColor": "新标签颜色",
+  "manageTags": "管理标签",
+  "colorOfName": "{name} 的颜色",
+  "renameName": "重命名 {name}",
+  "deleteUses": "删除（{uses}）",
+  "deleteTagUsedOnUses": "删除标签（用于 {uses}）",
+  "deleteTag": "删除标签",
+  "backToTags": "返回标签"
+}

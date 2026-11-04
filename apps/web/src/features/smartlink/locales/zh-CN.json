@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "doc",
+    "thatItemIsnTOn",
+    "thisKindOfLinkHas",
+    "openYouMayBeAble",
+    "open",
+    "openLink",
+    "openTitle",
+    "smartLink",
+    "smartLinks"
+  ],
+  "doc": "文档",
+  "thatItemIsnTOn": "该对象已不在此白板上，或已被隐藏。",
+  "thisKindOfLinkHas": "此类链接暂无可打开的页面。",
+  "openYouMayBeAble": "打开（你可能可以申请访问权限）",
+  "open": "打开",
+  "openLink": "打开链接",
+  "openTitle": "打开 {title}",
+  "smartLink": "智能链接",
+  "smartLinks": "智能链接"
+}

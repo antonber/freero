@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "nameIsnTAPdf",
+    "couldnTUploadNameTry",
+    "couldnTOpenThisPdf",
+    "placingTheFirstNOf",
+    "placingNPages",
+    "couldnTPlaceThePages",
+    "placeAllPages",
+    "namePagePage",
+    "couldnTOpenThisPdf2",
+    "document",
+    "previousPage",
+    "nextPage",
+    "pdfs",
+    "nextPreviousPageOfA"
+  ],
+  "nameIsnTAPdf": "「{name}」不是 Freero 能打开的 PDF。",
+  "couldnTUploadNameTry": "无法上传「{name}」。请稍后重试。",
+  "couldnTOpenThisPdf": "无法打开此 PDF。",
+  "placingTheFirstNOf": "正在放置 {numPages} 页中的前 {n} 页。",
+  "placingNPages": "{n, plural, other {正在放置 {n} 页…}}",
+  "couldnTPlaceThePages": "无法放置页面。请稍后重试。",
+  "placeAllPages": "放置所有页面",
+  "namePagePage": "{name}，第 {page} 页",
+  "couldnTOpenThisPdf2": "无法打开此 PDF",
+  "document": "文档",
+  "previousPage": "上一页",
+  "nextPage": "下一页",
+  "pdfs": "PDF",
+  "nextPreviousPageOfA": "文档的下一页 / 上一页"
+}
