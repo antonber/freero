@@ -18,7 +18,11 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
   `packages/shared`, engine commands, server modules and routes), not from the README alone. First
   checked on 2026-10-28; re-checked against `main` at de4d77c on 2026-11-03, with kanban steps 1–3c
   (fields, views, linked views; [docs/design/kanban-fields-and-views.md](design/kanban-fields-and-views.md))
-  live. An issue marked Done counts only for what the code on `main` actually does.
+  live. Checked against `main` at 10fb4ee on 2026-11-03, after the day's merges since the rewrite
+  (918fb01): 61 issues closed, most of the ranked fifteen among them. An issue marked Done
+  counts only for what the code on `main` actually does; code that ships off until the operator
+  registers an app with another vendor (Teams, Copilot, Asana and monday.com OAuth) counts as
+  Partial until it has been tried against a real account.
 
 **Legend**
 
@@ -56,9 +60,9 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Link to an item | Copies a URL that opens the board zoomed to one item or frame | Have | — | P1 | — |
 | Board outline | A list of frames for jumping around big boards | Have (Frames panel; Layers panel groups every item by frame) | — | P1 | — |
 | Shortcut reference | A cheat sheet of keyboard shortcuts inside the app | Have (searchable sheet generated from live bindings, incl. element keys) | — | P1 | — |
-| Shortcuts familiar from Miro | Ctrl/Cmd+K for the command palette, Alt+1 / Alt+2 to fit, Ctrl/Cmd+0 for 100%, PgUp / PgDn for front and back | Partial: Freero uses Mod+/, Shift+1 / Shift+2 / Shift+0 and Mod+] / Mod+[; Mod+K makes an item link, and Alt+arrows walk items for keyboard users, so they stay (#100) | S | P1 | parity |
-| Dark mode | Dark interface and canvas, chosen by the user or following the system | Partial: dark tokens and a dark canvas exist but only the live board in AI assistants turns them on; no toggle in the app (#101). Miro has no dark mode, so this is ahead once shipped | S | P1 | parity |
-| Large-board performance | Stays smooth with thousands of items | Partial: viewport culling with quantized zoom; low detail when zoomed out only for cards, code and kanbans; the only benchmark is the 5,000-card kanban (`npm run bench:kanban`), no mixed-board figure (#130, #131) | M | P0 | parity |
+| Shortcuts familiar from Miro | Ctrl/Cmd+K for the command palette, Alt+1 / Alt+2 to fit, Ctrl/Cmd+0 for 100%, PgUp / PgDn for front and back | Have: Mod+K, Alt+1, Alt+2, Mod+0 and Page Up / Down work as aliases beside Freero's own keys; an alias never shadows a key another command owns (Mod+K on a selected item still makes its link), and Alt+arrows stay item navigation (#100) | — | P1 | — |
+| Dark mode | Dark interface and canvas, chosen by the user or following the system | Have, ahead of Miro, which has no dark mode: light, dark or system in the app and account settings, a Theme toggle in the board menu, board content kept as authored with readable ink chosen at paint (#101) | — | P1 | — |
+| Large-board performance | Stays smooth with thousands of items | Have, with published numbers ([docs/performance.md](performance.md)): `npm run bench:board` seeds a 10,000-item mixed board and drives it in a real browser; below zoom 0.18 items draw on low-detail canvases, so panning at zoom to fit went from about 3.7 s to 7.6 ms a frame (p95 17 ms), select all from 1,455 to 122 ms, memory after load from 147 to 22 MB (#130, #131). Follow-ups: selected items outside the view (#182), a streamed first load (#183), a smoother exit from low detail (#184), low detail for kanbans, frames and diagrams (#185) | — | P0 | — |
 | Accessibility on the board | Move through board items with the keyboard, have a screen reader describe them, high-contrast option | Have: Tab and Alt+arrows walk items in reading order, a live region describes the selection and collaborators' edits, "Board as list" reads the whole board as a tree, forced colours and reduced motion are handled (KAI-108, docs/accessibility.md); items aren't DOM focus targets for browse mode (#29); no WCAG 2.2 review or published conformance report, which procurement asks for (#141) | L | P2 | parity |
 | Interface languages | The UI in several languages (Miro has eight) | Missing (#5; site hreflang #77) | L | P1 | parity |
 
@@ -69,37 +73,37 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
 | Sticky notes | Coloured notes whose text shrinks to fit; fast keyboard chaining | Have (12 colours, add-next-to and Tab chaining, auto-fit) | — | P0 | — |
-| Sticky shapes, sizes and dark colours | Square and rectangle stickies, size presets, dark and saturated papers | Partial: one 200 px square with free resize, 12 pastels plus white (#98) | S | P1 | parity |
-| Sticky pad | Drop a stack of blank stickies that people peel from | Missing (#132) | S | P3 | parity |
+| Sticky shapes, sizes and dark colours | Square and rectangle stickies, size presets, dark and saturated papers | Have: square and rectangle stickies in S, M and L, 24 papers incl. dark and saturated ones with readable ink chosen at paint; shape and size also in MCP `add_stickies` and the REST API (#98) | — | P1 | — |
+| Sticky pad | Drop a stack of blank stickies that people peel from | Have: a sticky pad people peel blank stickies from, with a low-detail drawing on big boards (#132) | — | P3 | — |
 | Paste a list as stickies | Pasting multi-line text makes one sticky per line | Have (sticky `importData`) | — | P1 | — |
 | Sticky author label | Optionally shows who wrote each sticky | Have: a board setting editors toggle; current names, none while private mode runs (KAI-112) | S | P2 | parity |
 | Capture paper stickies | Photograph physical notes (or send tablet handwriting) and turn them into digital stickies | Missing | L | P3 | parity |
 | Basic shapes | Rectangles, ellipses, polygons, arrows, callouts with fill, border and text | Have | — | P0 | — |
 | Change shape type | Swap an existing shape for another kind and keep its text and style | Have | — | P1 | — |
 | Text boxes | Free text with font, size, colour, highlight, lists, links, bold/italic/underline/strike | Have | — | P0 | — |
-| Font choice | Twenty-odd fonts, including faces for CJK and right-to-left scripts | Partial: four families (sans, serif, mono, hand) (#99) | S | P1 | parity |
+| Font choice | Twenty-odd fonts, including faces for CJK and right-to-left scripts | Have: fifteen self-hosted, openly licensed families in Sans, Serif, Mono and Handwritten groups, fetched per script the first time they're drawn, no font CDN; Chinese, Japanese and Korean fall back to system faces rather than bundled ones (#99) | — | P1 | — |
 | Connectors | Straight, elbow or curved lines that stay attached to items, with arrowheads, styles and a label | Have | — | P0 | — |
 | Quick connect | Drag from a handle on an item to draw a line or create a linked item | Have | — | P1 | — |
 | Richer connector labels | Several labels on one line, placed anywhere along it | Have (`labels[]` with a position each; double-click the line to add one) | — | P2 | — |
 | Attach anywhere on the outline | Connector ends fix to any point of a shape's edge, not only side midpoints | Have: an end dropped near an outline holds that spot as a fraction of the box, projected onto curves and slanted sides (KAI-113) | S | P2 | parity |
 | Pen and highlighter | Freehand pressure-sensitive ink and a translucent marker | Have | — | P0 | — |
 | Eraser | Rubs out ink | Have (cuts through strokes, or deletes whole strokes) | — | P2 | — |
-| Smart drawing | Turns rough hand-drawn shapes into clean shapes | Missing (#3) | M | P2 | parity |
-| Lasso | Draw a freeform loop to select ink and items | Missing: rectangular marquee only (#111) | S | P2 | parity |
+| Smart drawing | Turns rough hand-drawn shapes into clean shapes | Have: pen strokes become clean shapes, lines and arrows through Freero's own deterministic recogniser (no AI provider needed), switched in the pen flyout; undo brings the ink back, a scribble erases, holding at the end straightens (#3) | — | P2 | — |
+| Lasso | Draw a freeform loop to select ink and items | Have: a Lasso tool and Alt+drag freeform selection, picking items inside or touching the loop (#111) | — | P2 | — |
 | Images | Upload, paste, drag and drop, or paste an image link | Have (PNG/JPG/GIF/WebP/SVG) | — | P0 | — |
 | Image crop | Trim an image on the board without editing the file | Have | — | P1 | — |
 | Image alt text | A description of the image for accessibility | Have | — | P2 | — |
-| Emoji and stickers | Place emoji and decorative stamps on the board | Partial: the full emoji set and five stamps; no sticker packs (#138) or GIF search (#139) | M | P1 | parity |
-| Custom sticker sets | Save your own images as a reusable sticker palette | Missing (#138) | M | P3 | parity |
+| Emoji and stickers | Place emoji and decorative stamps on the board | Partial: the full emoji set, stamps and original sticker packs in a Stickers / Emoji picker (#138); no GIF search (#139) | S | P1 | parity |
+| Custom sticker sets | Save your own images as a reusable sticker palette | Have: team sticker sets uploaded through the usual upload checks, drawn as their pictures in server-side exports too (#138) | — | P3 | — |
 | Frames | Titled areas that hold items, with size presets and fit-to-content | Have (plus grid layouts) | — | P0 | — |
 | Hide frame contents | Keep a frame's contents hidden from others until the facilitator reveals them | Have (server keeps contents from viewers and commenters) | — | P2 | — |
 | Task cards | Cards with title, description, assignee, due date, status and tags | Have | — | P1 | — |
-| Flip cards | Two-sided cards for quizzes and reveals | Missing (#142) | S | P3 | parity |
+| Flip cards | Two-sided cards for quizzes and reveals | Have: two-sided cards; low detail draws the side that shows (#142) | — | P3 | — |
 | Kanban widget | Columns that hold cards; moving a card to another column changes its status | Have (columns with status, WIP limits) | — | P1 | — |
 | Tags | Named, coloured labels on items, for filtering and grouping | Have (stickies and cards) | — | P2 | — |
 | Mind maps | A central topic with automatically laid out branches; add, collapse and tidy | Have | — | P1 | — |
 | Mind map keyboard navigation | Arrow keys move between nodes | Have (arrows, Alt+arrows reorder, Space collapses) | — | P2 | — |
-| Mind map AI and layouts | Expand a node with AI ideas, grow the map downwards, turn stickies into a map | Partial: right, left or both directions; AI only as the general text-to-diagram action (#134) | M | P2 | parity |
+| Mind map AI and layouts | Expand a node with AI ideas, grow the map downwards, turn stickies into a map | Have: right, left, both directions or downwards; Expand with AI on a node (with a configured provider) and selected stickies into a map (#134) | — | P2 | — |
 | Outline to mind map | Paste an indented outline to build a map, and the reverse | Have: paste a 2+ level outline (or Insert from text), "Copy as outline" back (KAI-115) | S | P2 | parity |
 | Item links | Any item can open a URL or jump to another item or frame when clicked | Have | — | P1 | — |
 
@@ -115,17 +119,17 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | ERD shapes | Entity tables and crow's-foot line ends for data models | Have: ERD set with an entity table shape, crow's-foot ends (exactly one, zero or one, many, one or many, zero or many) and one-to-many / one-to-one / many-to-many presets (KAI-116) | M | P2 | parity |
 | Cloud architecture icons | Provider icon sets for AWS, Azure, Google Cloud and Kubernetes | Partial: an original generic network set (server, firewall, router, switch, devices, users); provider sets need their owners' terms (see §16; #4) | M | P2 | parity |
 | Engineering shape packs | Symbol sets for electrical circuits and process (P&ID) diagrams; Miro added circuit, electrical, P&ID and about 600 general shapes between Nov 2025 and Apr 2026 | Missing (custom packs are the route; #4) | M | P3 | parity |
-| Value-stream and data-flow sets | Symbols for value-stream mapping and data-flow diagrams | Missing (#133) | M | P3 | parity |
+| Value-stream and data-flow sets | Symbols for value-stream mapping and data-flow diagrams | Have: original value-stream and data-flow shape sets, each with templates (#133) | — | P3 | — |
 | Wireframe kit | Device frames and UI controls for low-fidelity mockups | Have: shape library "Wireframe" set (4 devices, 17 controls) + icon library, Tablet frame preset (KAI-120) | L | P2 | parity |
 | Interactive prototypes | Clickable screens linked into a flow you can play, increasingly generated by AI | Missing (item links give simple click-through between frames) | XL | P3 | parity |
 | Custom shape packs | Upload your own SVG shapes as a reusable library | Missing (#4) | M | P3 | parity |
-| Diagrams as code | Build editable diagrams from Mermaid or PlantUML text | Have for Mermaid flowchart / sequence / mind map: paste or Insert from text, edit the source to re-lay out (KAI-119); no PlantUML, class, ER, state or gantt diagrams (#38) | M | P2 | parity |
+| Diagrams as code | Build editable diagrams from Mermaid or PlantUML text | Have: Mermaid flowchart, sequence, mind map, class, ER and state diagrams (class and ER as real UML and ERD elements) and PlantUML sequence, class, activity, state, use case and component; paste, Insert from text or drop a `.mmd` / `.puml` file, edit the source to re-lay out; they land as a diagram container (KAI-119, #38, #116, #117); AI and MCP draw class, ER, state, org charts and kanbans. No gantt text | — | P2 | — |
 | Swimlanes and containers | Row and column lanes that hold and move diagram items | Have: swimlane pools with row or column lanes and phases that hold and move their items (KAI-117) | M | P2 | parity |
 | Auto-layout and org charts | Arrange a connected diagram or hierarchy automatically | Have: Auto-layout ▸ top-down / left to right / tree / org chart; org charts from "Name, Title, Manager" rows (KAI-118) | L | P2 | parity |
 | Obstacle-avoiding routing | Elbow connectors route around other items | Have: elbows without a user bend detour around items in the way (KAI-113) | M | P2 | parity |
-| Line jumps | A small hop where two connectors cross, on by default in Miro since 2023 | Missing (#115) | M | P2 | parity |
-| Diagram container and focus mode | A diagram as one object that owns its shapes, keeps its layout live and opens in a focus mode; Miro's Diagrams format | Missing: shapes sit on the open canvas, auto-layout is one-shot, swimlanes are the only diagram container (#117) | L | P2 | parity |
-| Diagram layers | Named layers inside a diagram that you can show or hide | Missing (#118, after the diagram container) | M | P2 | parity |
+| Line jumps | A small hop where two connectors cross, on by default in Miro since 2023 | Have: the line on top hops, a per-board setting on for new boards, drawn in exports too, with its own benchmark (`npm run bench:line-jumps`) (#115) | — | P2 | — |
+| Diagram container and focus mode | A diagram as one object that owns its shapes, keeps its layout live and opens in a focus mode; Miro's Diagrams format | Have: a Diagram item owns its steps and lines and re-lays out live when its structure changes (a step moved by hand stays pinned, one undo step), opens in focus mode (which can hide the rest of the board), and MCP `add_diagram` can draw into it (#117) | — | P2 | — |
+| Diagram layers | Named layers inside a diagram that you can show or hide | Have: per-diagram layers to show, hide, lock and reorder (#118) | — | P2 | — |
 
 ### 2c. Structured content
 
@@ -136,8 +140,8 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Timeline / Gantt | Bars on a date axis with lanes, for roadmaps and plans | Have: day/week/month/quarter axis, lanes, bars and milestones; dragging edits dates, cards join as bars, connectors are dependencies; tracker issues as a roadmap (KAI-122, KAI-160) | L | P2 | parity |
 | Docs | Long-form rich documents (headings, lists, tables) that live on the board, with Markdown import and export | Have (KAI-124, KAI-162: a doc placed on the board shows live; Markdown in and out) | L | P2 | parity |
 | Code blocks | Monospaced code with syntax highlighting | Have: syntax highlighting, line numbers, language picker, copy; pasted code fences become blocks (KAI-125) | S | P2 | parity |
-| Charts | Bar, line or pie charts from entered data | Missing (#137) | M | P3 | parity |
-| Slides | A deck view built from board content, with slide layouts | Have: a slide deck built from frames, with layouts, skip, duplicate and speaker notes; presentation mode and PDF export follow the deck (KAI-126; follow-ups #52); no single-slide focus editor (#135), PowerPoint import (#136) or AI decks (#1) | L | P2 | parity |
+| Charts | Bar, line or pie charts from entered data | Have: bar, stacked bar, line, area and pie charts from an editable data grid with spreadsheet paste (concurrent edits merge per cell), also from MCP `add_diagram` and in server-side exports (#137) | — | P3 | — |
+| Slides | A deck view built from board content, with slide layouts | Have: a slide deck built from frames with a filmstrip of real slide thumbnails, layouts incl. Big number and Quote that replace rather than pile up, image areas a dropped picture fills, skip, duplicate and speaker notes, a single-slide editor; presentation mode and PDF export follow the deck (KAI-126, #52, #135); PowerPoint import is in §8 (#136); no AI decks (#1) | — | P2 | — |
 
 ### 2d. Media, files and embeds
 
@@ -162,7 +166,7 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Paste and drop from outside | Text, images and image links from the clipboard or drag and drop | Have | — | P0 | — |
 | Group | Select and move several items as one | Have | — | P1 | — |
 | Lock items | Pin items so they can't be moved or edited by accident | Have | — | P1 | — |
-| Protected lock | A second lock that only board owners can undo | Missing: one lock kind, which any editor can undo (#140) | S | P2 | parity |
+| Protected lock | A second lock that only board owners can undo | Have: a protected lock only owners and co-owners can set or undo, enforced by the server (#140) | — | P2 | — |
 | Stacking order | Bring to front, send to back | Have: front, back, one step forward or backward (Mod+Alt+↑/↓), and drag to restack in the Layers panel (KAI-110, KAI-175) | S | P2 | parity |
 | Align | Line up the selection's left, centre, right, top, middle or bottom edges | Have | — | P1 | — |
 | Distribute | Space the selection evenly across or down | Have | — | P1 | — |
@@ -176,7 +180,7 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Exact size and position | Type width, height, position and rotation for the selection | Have: "Size and position" in the format toolbar (KAI-110) | S | P2 | parity |
 | Command palette | Search for any action by name and run it from the keyboard | Have: Mod+/ palette runs every action and says why one is unavailable (KAI-109) | S | P2 | parity |
 | Version history | Browse, preview and restore earlier states of the board; name versions | Have | — | P1 | — |
-| Activity feed | Who changed what on the board, and when | Partial: a board activity panel and workspace recent activity, API and agent writes included (KAI-44, KAI-207); entries keep no element ids, so they can't take you to what changed (#125); no "since your last visit" view (#103) | S | P2 | 3 |
+| Activity feed | Who changed what on the board, and when | Have: a board activity panel and workspace recent activity, API and agent writes included (KAI-44, KAI-207); an entry opens and highlights what it changed (#125); "since your last visit" is in §4 (#103) | — | P2 | — |
 
 ## 4. Collaboration
 
@@ -188,18 +192,18 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Presence list | An avatar stack of who is on the board | Have | — | P0 | — |
 | Follow someone | Your view tracks a collaborator's view | Have | — | P1 | — |
 | Bring everyone to me | Move all participants' views to yours | Have | — | P1 | — |
-| Live reactions | Emoji bursts on everyone's screen | Partial: six fixed emoji, no picker and no count for the presenter (#144) | S | P2 | parity |
+| Live reactions | Emoji bursts on everyone's screen | Have: any emoji from a picker, with a running count for the presenter (#144) | — | P2 | — |
 | Hide cursors | Turn other people's cursors off to reduce noise | Have: for yourself, or the facilitator hides them for everyone (KAI-129) | S | P2 | parity |
 | Comments | Threads on the board or on an item; replies, reactions, resolve, unread, filters | Have (authorship enforced by the server) | — | P0 | — |
-| Comment filters and anchors | Filter threads by mentions of me, unread or author; pin a thread to an area; attach files | Partial: open, resolved and mine filters; threads anchor to a point or one item; no attachments (#143) | S | P2 | parity |
+| Comment filters and anchors | Filter threads by mentions of me, unread or author; pin a thread to an area; attach files | Partial: open, resolved, mine, Unread and @Me filters (the first part of #143); threads anchor to a point or one item, not an area, and take no attachments (#143) | S | P2 | parity |
 | @mentions | Tag people in comments to pull them in | Have (member picker; inviting by address from the picker) | — | P1 | — |
-| Notifications | In-app and email alerts for mentions, replies and invites, also in Slack or Teams | Partial: inbox, live bell, email digests, one-click unsubscribe; no personal Slack (#105) or Teams (#113) messages, no board-change digest (#104), and due reminders count UTC days (#106) | M | P1 | parity |
-| Recent changes since your last visit | Coming back to a board, see and highlight what others changed while you were away | Missing (#103) | M | P1 | parity |
-| Board-change digest | An email summary of changes on boards you own or follow | Missing (#104; builds on #46) | M | P2 | parity |
+| Notifications | In-app and email alerts for mentions, replies and invites, also in Slack or Teams | Partial: inbox, live bell, email digests, one-click unsubscribe, an opt-in board-changes digest, reminders and email dates in each person's time zone (#104, #106); no alerts for new comments on boards you own (#104), no personal Slack (#105) or Teams (#113) messages | M | P1 | parity |
+| Recent changes since your last visit | Coming back to a board, see and highlight what others changed while you were away | Have: a marker per person and board, See recent changes with highlights and stepping through them (#103); an AI written catch-up is in §7 (#126) | — | P1 | — |
+| Board-change digest | An email summary of changes on boards you own or follow | Have: an opt-in email digest of changes on your boards (#104); comment alerts, the rest of #104, are under Notifications | — | P2 | — |
 | Assignment notifications | Tell people when work is assigned to them or is about to be due | Have: card assigned and due-date notifications, a reminder the day before, also in email digests (KAI-135) | S | P2 | parity |
 | Private mode | Participants add content that others can't see until it's revealed | Have (server-side private layers; whole board or one frame) | — | P1 | — |
 | Attention management | The facilitator keeps everyone in their view and stops people wandering off | Have: the facilitator leads everyone's view with a locked follow (KAI-129) | M | P2 | parity |
-| Async video walkthroughs | Record a narrated tour of the board (camera plus pointer) for others to watch later, with a summary, chapters and reactions | Partial: voice and optional camera over the live board with the narrator's view and pointer, comments at moments, captions typed or by the board's AI (KAI-133); decision snapshots freeze a board or frame (KAI-161). Against Miro's Talktrack: no AI summary, chapters or timeline reactions (#127), no tab capture (#69), no multi-person recording (#128) | M | P2 | parity |
+| Async video walkthroughs | Record a narrated tour of the board (camera plus pointer) for others to watch later, with a summary, chapters and reactions | Partial: voice and optional camera over the live board with the narrator's view and pointer, comments at moments, captions typed or by the board's AI (KAI-133); decision snapshots freeze a board or frame (KAI-161); an AI summary and chapters from the captions and emoji reactions on the timeline (#127). Against Miro's Talktrack: no tab or screen capture (#69), no multi-person recording (#128) | M | P2 | parity |
 | Audio and video calls | Talk and see each other inside the board | Partial: a per-board call link (the team's meeting URL or a Jitsi room) with "Join call" and who is in it; no built-in audio or video, by design (KAI-134; see §16); an optional embed of an operator's own Jitsi or LiveKit server is #149 | M | P2 | parity |
 
 ## 5. Facilitation and presentation
@@ -207,20 +211,20 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
 | Shared timer | One countdown everyone sees, with presets and a sound at zero | Have | — | P1 | — |
-| Dot voting | Facilitator-run voting with per-person limits, chosen items, hidden results and a ranking; anonymous by default in Miro | Partial: hidden votes stay on the server until results are shown, but commenters and link guests can't vote (#96); each ballot carries the voter's name in the shared doc, so who voted for what is readable after the reveal; at most 20 votes per person, no per-item cap, timer or past results (#102) | M | P1 | parity |
-| Estimation / planning poker | Everyone estimates stories privately, then the estimates are revealed together | Have: planning poker with sealed picks, estimates saved on cards (KAI-131); commenters and link guests can't estimate (#96); estimates on stickies and tracker write-back are #25 | M | P2 | parity |
+| Dot voting | Facilitator-run voting with per-person limits, chosen items, hidden results and a ranking; anonymous by default in Miro | Have: hidden votes stay on the server until results are shown; anonymous by default, 1–99 votes per person, a per-item cap, a deadline on the server clock and past votes kept as totals (#102); commenters and link guests vote too, own entries only, behind a per-board switch (#96) | — | P1 | — |
+| Estimation / planning poker | Everyone estimates stories privately, then the estimates are revealed together | Have: planning poker with sealed picks, estimates saved on cards (KAI-131); commenters and link guests estimate too (#96); estimates on stickies and tracker write-back are #25 | — | P2 | — |
 | Live polls, Q&A, word clouds | Audience activities (polls, word clouds, rankings, rating scales, Q&A) answered from the board or a phone, with results on the board | Have: polls, word clouds, rankings, rating scales and Q&A; answers stay on the server, sealed until revealed, guests and phones answer through a link (KAI-132) | L | P2 | parity |
-| Join by QR code | Participants scan a code on the shared screen to answer from a phone | Missing: the answer link exists, but no QR code is drawn (#40) | S | P2 | parity |
-| Quiz and 2×2 activities | A quiz with right answers and a leaderboard; a 2×2 matrix that everyone places items on | Missing (#147) | M | P3 | parity |
-| AI report from activity results | Turn a finished poll or Q&A into a short report with next steps | Missing (#148) | S | P3 | parity |
+| Join by QR code | Participants scan a code on the shared screen to answer from a phone | Have: a QR code for the answer link and a phone answer page that needs no board (#40) | — | P2 | — |
+| Quiz and 2×2 activities | A quiz with right answers and a leaderboard; a 2×2 matrix that everyone places items on | Have: a 2×2 matrix and a quiz with scores by place; the answer key stays on the server and follows copies only for editors (#147) | — | P3 | — |
+| AI report from activity results | Turn a finished poll or Q&A into a short report with next steps | Have with a configured provider: a report from the visible results of polls, Q&A, the 2×2 matrix and the quiz, never its answer key or anyone's name (#148) | — | P3 | — |
 | Presentation mode | Step through frames full screen without the editing chrome | Have | — | P1 | — |
-| Presenter handoff | Pass the presenter role to someone else mid-presentation; notes in a separate window | Missing (#146) | S | P2 | parity |
+| Presenter handoff | Pass the presenter role to someone else mid-presentation; notes in a separate window | Have: hand off to another presenter, and presenter notes in their own window (#146) | — | P2 | — |
 | Audience follows presenter | Viewers' screens follow the presenter, with a banner showing who is presenting | Have | — | P1 | — |
 | Laser pointer | A temporary pointer trail everyone sees while presenting | Have (KAI-130) | S | P2 | parity |
 | Presenter notes | Private notes for each slide or frame | Have (KAI-130) | S | P3 | parity |
 | Facilitator controls | Lock the board for non-facilitators, or restrict tools during a session | Have: facilitator bar to lock the board and limit tools, enforced by the server (KAI-129) | M | P2 | parity |
 | Timer music | Optional background music while the timer runs | Missing (#145; needs licensed audio) | S | P3 | parity |
-| Icebreaker widgets | Dice, spinners and other playful session helpers | Missing (#150) | M | P3 | parity |
+| Icebreaker widgets | Dice, spinners and other playful session helpers | Have: a wheel of names, dice and a random speaking order, all on the server clock so everyone sees the same result (#150) | — | P3 | — |
 
 ## 6. Templates
 
@@ -229,7 +233,7 @@ Linear archive ([docs/linear-to-github.md](linear-to-github.md) maps the ones th
 | Template picker | A searchable gallery that inserts an editable layout, also offered when you create a board | Have (grouped by category, ranked search) | — | P0 | — |
 | Template breadth | A large library across agile, strategy, research, UX, diagramming, education and meetings | Have: 584 original templates in 18 categories (KAI-100, the third batch in b6eaac2); new ones are data (specs rendered by 13 layout archetypes), so the catalog grows without new code | M | P1 | parity |
 | Save as template | Turn a board or selection into your own reusable template | Have | — | P1 | — |
-| Team templates | Templates shared across a team or workspace | Have: shared with the workspace, showing who shared them; workspace admins can unshare (KAI-42, KAI-96); no company-wide sets or publishing permission (#155) | M | P2 | 3 |
+| Team templates | Templates shared across a team or workspace | Have: shared with the workspace, showing who shared them; workspace admins can unshare (KAI-42, KAI-96); organisation-wide company template sets with a choice of who may publish them (#155) | — | P2 | — |
 | Community gallery | Publish templates publicly and browse other people's | Missing (#162) | L | P3 | parity |
 | Guided board setups | Reusable board structures (several boards, docs and tools) with steps and instructions for a whole process | Missing (#161) | L | P3 | parity |
 
@@ -242,15 +246,15 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
 | Generate ideas | Make a set of stickies from a prompt | Done with a configured provider: previewed, inserted as one undo step (KAI-102, docs/ai.md) | M | P2 | parity |
-| Cluster and sort | Group stickies by theme or sentiment | Done for themes: selected notes move into named groups (KAI-102); non-AI clustering by colour or tag exists too; no sentiment option (#148) | M | P2 | parity |
+| Cluster and sort | Group stickies by theme or sentiment | Done: selected notes move into named groups by theme (KAI-102) or by sentiment (#148); non-AI clustering by colour or tag exists too | — | P2 | — |
 | Summarise | Turn a selection or a board into a written summary | Done: a written note beside the selection (KAI-102) | M | P2 | parity |
 | Text to diagram | Make a flowchart, mind map or sequence diagram from a description | Done: via Mermaid / outline → layout, connectors attached (KAI-102) | M | P2 | parity |
 | Image generation | Make an image from a prompt | Missing | M | P3 | parity |
 | Board-aware assistant | A chat assistant that reads the board, answers questions about it and proposes edits | Missing (#1); outside agents already read and write through MCP with suggestions people accept, which matches Miro's 2026 Sidekicks and Connectors pitch | L | P3 | parity |
 | AI workflows | Reusable multi-step AI pipelines run on board content (Miro's Flows, May 2026) | Missing (#1) | XL | P3 | parity |
 | AI slides | Build a presentation from board content automatically | Missing (#1) | L | P3 | parity |
-| AI catch-up | A written summary of what changed on a board since your last visit or a chosen date | Missing (#126, after #103) | M | P3 | parity |
-| AI on meeting and activity results | Summarise an imported meeting transcript in one step; a report from live-activity answers | Missing: the meeting-notes import lays out the transcript without AI (#148) | S | P3 | parity |
+| AI catch-up | A written summary of what changed on a board since your last visit or a chosen date | Done: Catch me up summarises the changes since your last visit or a chosen period (#126) | — | P3 | — |
+| AI on meeting and activity results | Summarise an imported meeting transcript in one step; a report from live-activity answers | Done: an imported meeting's Summary box is filled by the board's AI, and live-activity results become a report (#148); AI actions say why when they're unavailable | — | P3 | — |
 | Natural-language search | Find content across all boards by describing it | Missing (plain full-text search shipped with KAI-141; semantic search is #47) | L | P3 | parity |
 | Screenshot to prototype | Turn a UI screenshot into an editable mockup | Missing | XL | P3 | parity |
 | AI admin controls | Turn AI on or off for the org, choose the model, use your own key | Done: operator provider (env) and per-workspace on/off, own provider and sealed key, who may use it, monthly budget, usage, audit (KAI-101) | M | P3 | parity |
@@ -266,30 +270,32 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | CSV export | Text of stickies and cards as rows | Have: stickies and cards as formula-safe CSV, tables too (KAI-136) | S | P2 | parity |
 | CSV / spreadsheet import | Rows become stickies or cards | Have: CSV rows become stickies or cards, as a grid or a kanban by status, in one undo step; spreadsheet paste fills tables (KAI-136) | S | P2 | parity |
 | Board backup and restore | Download a full-fidelity board file and restore it later or elsewhere | Have: a `.freero` file (content, comments, files; layers and the downloads policy respected) restored as a new board on any Freero (KAI-137) | M | P2 | 4 |
-| Diagram import | Bring in Visio, draw.io or Lucid diagrams as editable shapes | Partial: draw.io (KAI-138); Visio and Lucid `.vsdx` not yet (#116); PlantUML text is #38 | L | P2 | parity |
+| Diagram import | Bring in Visio, draw.io or Lucid diagrams as editable shapes | Have: draw.io (KAI-138) and `.vsdx` files from Visio or Lucidchart with shapes, masters, connectors glued to shapes, groups, containers and swimlanes as frames, pages as frames, and pictures, behind zip and XML safety limits (#116); PlantUML and Mermaid text and files (#38) | — | P2 | — |
+| PowerPoint import | Bring a `.pptx` deck in as slides | Have: `.pptx` files become slides with their formatting, theme colours, pictures, tables, master artwork and notes (#136) | — | P2 | — |
 | Import from Miro | Bring a team's Miro boards over with stickies, shapes, connectors and frames | Missing: through the person's own Miro token (#62), after a check of Miro's API terms (§16) | M | P1 | parity |
 | Import from other whiteboards | Bring boards over from Mural, FigJam, Lucidspark, Excalidraw and similar tools | Partial: Excalidraw and draw.io (KAI-138, `features/import/lib/drawio.ts`); Mural (#163), FigJam (#164), Lucidspark and Whimsical (#165) not yet | M | P2 | parity |
 | Print | Print the board or its frames | Partial: through PDF export only | S | P3 | parity |
+| Export from code | Get a board or frame as a picture or PDF through the API, for reports and agents | Have: `POST /boards/{id}/export` and MCP `export_board` draw PNG, SVG or PDF on the server without a headless browser, charts and team stickers included; the downloads policy and the board's copy-and-export setting apply (#33) | — | P2 | — |
 
 ## 9. Integrations, developer platform and embeds
 
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
 | Public REST API | Read and write boards, items and members from code | Have (`/api/v1`, docs/api/; KAI-104) | L | P2 | parity |
-| REST API depth | Rename and copy boards, image, file and embed items, groups, webhook and audit endpoints | Partial: six creatable item types, bulk up to 500, kanbans with fields and views, comments, docs, search, trackers; no board rename or copy, image or embed items, or groups (#170); webhooks (#48), the audit log (#17) and image export (#33) aren't in the API | M | P2 | parity |
-| Webhooks | Push board and item events to other systems | Have, ahead of Miro, which removed its experimental webhooks on 2025-12-05 with no replacement: workspace endpoints from the admin console, event filters, HMAC-signed, retries and delivery log, formats for Slack, Teams, Discord, Google Chat and Mattermost (KAI-105, docs/events.md); managing them through the API is #48 | — | P2 | parity |
+| REST API depth | Rename and copy boards, image, file and embed items, groups, webhook and audit endpoints | Have: bulk writes up to 500, kanbans with fields and views, comments, docs with block edits and doc comments, search, trackers; rename, copy and group boards, image and embed items by URL through the SSRF-safe fetcher, embed settings (#170, #61); webhook management (`webhooks:manage`, #48), the audit log (`audit:read`, #17) and server-side export (#33). Video, audio and file items stay app-only by decision: their file must be the person's own checked upload (#49) | — | P2 | — |
+| Webhooks | Push board and item events to other systems | Have, ahead of Miro, which removed its experimental webhooks on 2025-12-05 with no replacement: workspace endpoints from the admin console or the API with a project filter (#48), event filters, HMAC-signed, retries and delivery log, formats for Slack, Teams, Discord, Google Chat and Mattermost (KAI-105, docs/events.md) | — | P2 | — |
 | API tokens and OAuth apps | Credentials that let third-party apps act for a user | Have (tokens, OAuth 2.1 + PKCE, dynamic registration; KAI-104) | M | P2 | parity |
-| Embed a live board | Put a viewable or editable board in other sites (iframe, oEmbed) | Partial: a live board inside ChatGPT and Claude through MCP Apps (KAI-171); no iframe or oEmbed for other sites (#2), which Confluence, Jira, Notion, Teams, Zoom and Meet all wait on | M | P1 | parity |
-| Confluence and Jira embeds | A live board in a Confluence page or a Jira issue | Missing: tracker sync writes a remote link back to the issue, not an embed (#166, #167; after #2) | L | P2 | parity |
+| Embed a live board | Put a viewable or editable board in other sites (iframe, oEmbed) | Have: a live board inside ChatGPT and Claude through MCP Apps (KAI-171), and on any site through a per-board Embed on other sites switch: view only or click to edit (with an occlusion check), start at a frame, never wider than the board's sharing, a sign-in popup with board-scoped tokens, a visitor cap, oEmbed and discovery, a `boardEmbeds` workspace policy, also in the API and MCP (#2); in-place doc editing under zoom is #60 | — | P1 | — |
+| Confluence and Jira embeds | A live board in a Confluence page or a Jira issue | Missing: tracker sync writes a remote link back to the issue, not an embed; the public embed and oEmbed (#2) are the base these apps now build on (#166, #167) | L | P2 | parity |
 | In-board app SDK | Third-party apps that run on the canvas and add items or panels | Missing (API and webhooks first, see §16; #179) | XL | P3 | parity |
 | App marketplace | Browse and install third-party apps | Partial: Apps & agents (`/apps`, #87) lists every integration with its connect step, plus community integrations built on the API, webhooks or MCP, shown after an operator's review with a Community label (reportable, removable); none runs inside Freero, so there is nothing to install (no in-board apps, see §16) | XL | P3 | parity |
-| MCP server | Let AI coding and agent tools read and write boards | Have, and deeper than the tools Miro's MCP page describes: remote MCP server at `/mcp` with OAuth 2.1, about 33 scoped tools (kanban fields and views, tracker import and sync, meeting notes), suggestions people accept or reject, an agent control room and a live board in ChatGPT and Claude (KAI-107, KAI-169, KAI-171; docs/mcp.md). Miro now ships MCP on all plans | M | P2 | parity |
-| Microsoft Copilot app | Make diagrams, stickies and tables on a board from Microsoft 365 Copilot (Miro, April 2026) | Missing: MCP serves Claude, ChatGPT, Cursor, VS Code and others, not Copilot (#114) | M | P3 | parity |
-| Chat integrations | Board notifications and link previews in Slack or Teams | Partial: channel posts through webhooks in Slack, Teams, Discord, Google Chat and Mattermost formats (KAI-105); an operator-installed Slack app unfurls board links (docs/integrations/slack.md); no personal Slack messages (#105), and no link previews or personal messages in Teams (#113) | M | P2 | parity |
-| Work-tracker sync | Two-way sync between cards or table rows and Jira, Asana, Azure DevOps, monday.com, ClickUp or Trello items | Partial: two-way sync of stickies, cards and kanban cards with Jira (Cloud and Data Center), Linear and GitHub issues, live badges, issue import and roadmap timelines (KAI-153–KAI-157, KAI-160; docs/trackers.md); kanban Table, List, Calendar and Timeline tabs and linked views show the synced cards. No sprint field (#119), custom-field map (#43) or issue links as connectors (#50); no Asana (#120), monday.com (#121), ClickUp (#180) or Trello (#181); the plain table's rows don't sync. Miro's Tables now sync with Asana, monday.com, ClickUp and Trello | XL | P2 | parity |
-| Azure DevOps Boards | Two-way sync between cards and Azure work items | Missing (#6) | M | P2 | parity |
+| MCP server | Let AI coding and agent tools read and write boards | Have, and deeper than the tools Miro's MCP page describes: remote MCP server at `/mcp` with OAuth 2.1, about 40 scoped tools (kanban fields and views, diagrams into a diagram container, charts, docs with block edits and comments, board rename, copy, share and embed, server-side export, tracker import and sync, meeting notes), suggestions people accept or reject, an agent control room and a live board in ChatGPT and Claude (KAI-107, KAI-169, KAI-171, #33, #61, #117, #137, #170; docs/mcp.md). Miro now ships MCP on all plans | — | P2 | — |
+| Microsoft Copilot app | Make diagrams, stickies and tables on a board from Microsoft 365 Copilot (Miro, April 2026) | Partial: a generated Copilot agent package that reaches the MCP server through OAuth, labelled and audited like any agent; off until the operator registers it with Microsoft, and not yet tried against a real Microsoft 365 tenant (#114, docs/integrations/teams.md) | S | P3 | parity |
+| Chat integrations | Board notifications and link previews in Slack or Teams | Partial: channel posts through webhooks in Slack, Teams, Discord, Google Chat and Mattermost formats (KAI-105); an operator-installed Slack app unfurls board links (docs/integrations/slack.md); Teams link previews through a Bot Framework endpoint with verified tokens, off until registered and not yet tried in a real tenant (#113); no personal Slack (#105) or Teams (#113) messages | M | P2 | parity |
+| Work-tracker sync | Two-way sync between cards or table rows and Jira, Asana, Azure DevOps, monday.com, ClickUp or Trello items | Partial: two-way sync of stickies, cards and kanban cards with Jira (Cloud and Data Center), Linear, GitHub issues and Azure DevOps (#6), live badges, issue import and roadmap timelines (KAI-153–KAI-157, KAI-160; docs/trackers.md); a sprint, cycle or iteration field synced both ways with import by sprint or epic (#119), a per-connection field map, epic per cluster and tracker data in exports (#43); kanban Table, List, Calendar and Timeline tabs and linked views show the synced cards. Asana (#120) and monday.com (#121) sync two ways with personal tokens, and with OAuth once the operator registers the apps; neither has been tried against a real account, nor have the Jira, Linear and GitHub paths (#43). No issue links as connectors (#50), ClickUp (#180) or Trello (#181); the plain table's rows don't sync. Miro's Tables sync with Asana, monday.com, ClickUp and Trello; Freero's sync is free | L | P2 | parity |
+| Azure DevOps Boards | Two-way sync between cards and Azure work items | Have: Azure DevOps Services and Server, revision-checked writes, iterations as the sprint field (#6) | — | P2 | — |
 | Cloud file pickers | Insert files from Google Drive, OneDrive or Dropbox | Missing | M | P3 | parity |
-| Meeting-app integrations | Open a board inside Zoom, Teams or Meet calls | Missing: Teams tab and meeting app (#112), Zoom (#168), Meet (#169), all after #2 | L | P2 | parity |
+| Meeting-app integrations | Open a board inside Zoom, Teams or Meet calls | Partial: a Teams tab, meeting side panel and share to stage on the public embed, from a generated Teams app package; off until the operator registers it, not yet tried in a real tenant, and no Teams single sign-on (#112). Zoom (#168) and Meet (#169) are still missing | M | P2 | parity |
 | Automation directories | Listed apps in Zapier, Make and Power Automate | Partial: recipes for Zapier, Make and n8n and a generated Power Automate custom connector (docs/integrations/); no listed apps (#173, #174, #175) | M | P3 | parity |
 | Figma depth | Pick Figma frames after signing in and place them as images; a plugin that sends frames to a board | Partial: live Figma embeds from a pasted link (#171, #172) | M | P3 | parity |
 
@@ -320,25 +326,25 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Search inside boards | Find the boards whose content mentions something, from the dashboard | Have ("Inside boards": titles, items, frames, tables, tags, comments, opening the item; also the API and MCP; KAI-141, KAI-151) | — | P2 | parity |
 | Board lifecycle | Create (blank or from a template), rename, duplicate, delete, leave | Have | — | P0 | — |
 | Trash and restore | Recover deleted boards for a while | Have | — | P1 | — |
-| Admin trash and archive | Admins see and restore everyone's deleted boards; finished boards can be archived | Partial: trash belongs to each owner, with workspace retention of 1–365 days; no archive state (#153) | S | P2 | parity |
-| Board roles | Owner, editor, commenter and viewer per board | Have; no co-owner (below) | — | P0 | — |
-| Co-owner | A second owner-level role that manages sharing, the link and backups without ownership passing | Missing: only the owner changes roles, link access, password and expiry (#122) | M | P2 | parity |
-| Per-board sharing settings | The owner stops editors from sharing, or viewers and commenters from copying and exporting | Missing: editors can always invite; copy and export follow only the workspace's downloads policy (#123) | S | P2 | parity |
+| Admin trash and archive | Admins see and restore everyone's deleted boards; finished boards can be archived | Have: a workspace trash for content admins next to each owner's own, with retention of 1–365 days, and an archive state for finished boards (#153) | — | P2 | — |
+| Board roles | Owner, editor, commenter and viewer per board | Have, plus co-owner (below) | — | P0 | — |
+| Co-owner | A second owner-level role that manages sharing, the link and backups without ownership passing | Have: co-owners manage sharing, may set the protected lock and are told of access requests (#122) | — | P2 | — |
+| Per-board sharing settings | The owner stops editors from sharing, or viewers and commenters from copying and exporting | Have: per board, whether editors can share and whether viewers and commenters can copy and export, on top of the workspace's downloads policy (#123) | — | P2 | — |
 | Invite existing users | Add people by email with a role | Have | — | P0 | — |
 | Invite people without an account | Email invite → sign up → land on the board | Have | — | P0 | — |
 | Share by link | Anyone with the link gets a chosen role | Have (signed-in people, or guests without an account where allowed) | — | P0 | — |
-| Anonymous visitors | Open a shared link without an account, with a guest name | Have: named guests on a shared link, one board each, at most commenter; a workspace can require sign-in (KAI-43). Because they stop at commenter, guests can't vote, estimate or write private drafts (#96) or add stickies (#97): the most-felt facilitation gap, hit in the first minutes of an outside workshop | M | P1 | 3 |
+| Anonymous visitors | Open a shared link without an account, with a guest name | Have: named guests on a shared link, one board each, at most commenter; a workspace can require sign-in (KAI-43). Guests now vote, estimate and write private drafts, server-enforced and own entries only (#96), but still can't add stickies: owner-allowed guest editing with abuse controls is #97 | M | P1 | 3 |
 | Request access | Ask the owner for access from a locked board | Have: the owner or workspace admins approve or decline from the inbox or the share dialog (KAI-40) | S | P2 | 3 |
 | Transfer ownership | Hand a board to someone else | Have: boards and team workspaces (KAI-41) | S | P2 | 3 |
-| Link password or expiry | Protect public links | Have: a password and an expiry date on a board's link, for members and guests (KAI-145); admins can't require them (#39) | S | P3 | parity |
-| Workspaces and teams | Shared spaces with members and team-wide boards | Have: personal and team workspaces, every query scoped by membership; team access level per workspace or project (KAI-37, KAI-93); nothing sits above a workspace (below) | L | P1 | 3 |
-| Organisation above workspaces | One organisation over many teams, with SSO, SCIM, domains, policies and audit set up once | Missing: each team workspace has its own SSO, SCIM, policies and audit log (#108) | L | P2 | parity |
-| Move boards between workspaces | Move a board into another workspace, or duplicate it there | Partial: moves stay inside one workspace and duplicates land in the source workspace (#124) | M | P2 | parity |
+| Link password or expiry | Protect public links | Have: a password and an expiry date on a board's link, for members and guests (KAI-145); a workspace link policy can require a password and a maximum lifetime, with a list of boards that don't comply (#39) | — | P3 | — |
+| Workspaces and teams | Shared spaces with members and team-wide boards | Have: personal and team workspaces, every query scoped by membership; team access level per workspace or project (KAI-37, KAI-93); an organisation can sit above them (below) | L | P1 | 3 |
+| Organisation above workspaces | One organisation over many teams, with SSO, SCIM, domains, policies and audit set up once | Have: one organisation with org-level SSO, SCIM, domains, SIEM and a merged audit log; its policies are floors that attached workspaces can only tighten; an org console, attach and detach, org-wide deactivation (#108) | — | P2 | — |
+| Move boards between workspaces | Move a board into another workspace, or duplicate it there | Have: move a board into another workspace, or choose where a duplicate goes (#124) | — | P2 | — |
 | Projects / folders | Group boards inside a workspace | Have (KAI-39); flat, with no nesting, landing page or pinning (#129) | M | P1 | 3 |
 | Team roles | Workspace owner, admin, member and guest | Have (KAI-38) | M | P2 | 3 |
 | Sharing policies | Rules for who may share, export or invite guests | Have: outside sharing, link sharing and guest links, guest invites, downloads and exports, team access level, live embeds (KAI-42) | M | P2 | 3 |
-| User groups | Named groups of people to share boards with | Partial: directory (SCIM) groups grant a workspace role or a project's membership (KAI-46); no groups made in Freero, and a board can't be shared with a group directly (#63) | M | P3 | 4 |
-| Per-user time zone | Reminders and email dates follow each person's own time zone | Partial: due reminders count UTC days and emails show UTC dates (#106) | S | P2 | parity |
+| User groups | Named groups of people to share boards with | Have: directory (SCIM) groups grant a workspace role or a project's membership (KAI-46); groups made in Freero, and boards or projects shared with a group (#63) | — | P3 | — |
+| Per-user time zone | Reminders and email dates follow each person's own time zone | Have: a time zone per person for due reminders and dates in emails (#106) | — | P2 | — |
 
 ## 12. Admin, security and compliance
 
@@ -348,24 +354,24 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Backups and disaster recovery | Operator backups and restores of the database and files | Have (`scripts/backup.sh`, restore runbook in `docs/operations.md`, bucket versioning for files) | — | P1 | — |
 | Horizontal realtime scale | Many app instances share board updates | Have (Redis fan-out, append-only update log with snapshots) | — | P1 | — |
 | Encryption at rest | Stored data encrypted | Have: S3 server-side encryption (`S3_SSE`), encrypted database backups, every stored credential sealed or hashed by the app, a documented baseline for database storage encryption (KAI-143) | S | P2 | 1 |
-| SSO | SAML 2.0 / OIDC per workspace, verified domains, enforced SSO | Have: SAML 2.0 and OIDC per workspace, DNS-verified domains, just-in-time membership, Enforce SSO with a break-glass owner (KAI-45); service-provider-initiated only (next row), no single logout or encrypted assertions (#13), and no org-wide SSO (#108) | L | P2 | 4 |
-| IdP-initiated SSO | Open Freero from the identity provider's app tile and land signed in | Missing (#107) | S | P2 | parity |
+| SSO | SAML 2.0 / OIDC per workspace, verified domains, enforced SSO | Have: SAML 2.0 and OIDC per workspace, DNS-verified domains, just-in-time membership, Enforce SSO with a break-glass owner (KAI-45); IdP-initiated sign-in (next row) and org-wide SSO (#108); no single logout or encrypted assertions (#13) | L | P2 | 4 |
+| IdP-initiated SSO | Open Freero from the identity provider's app tile and land signed in | Have: behind a per-workspace switch, with signed InResponseTo, a Destination check, an assertion replay cache and same-origin RelayState (#107) | — | P2 | — |
 | SCIM provisioning | Create and remove users automatically from the identity provider | Have: SCIM 2.0 users and groups per workspace, rotatable tokens, groups map to roles or projects, deprovisioning deactivates (KAI-46) | L | P3 | 4 |
 | Admin console | Manage members, roles, security settings and usage | Have: members with two-step status and deactivation, security and retention settings, sharing policies, single sign-on and provisioning, issue trackers, usage, audit log (KAI-47) | L | P2 | 4 |
-| Granular admin roles | Separate admins for members, content and security | Missing: owner and admin only, and every admin can do everything (#151) | M | P2 | parity |
-| Admin content inventory | Every board in the workspace with owner, sharing and last activity, re-shared from the console (Miro's Content Explorer, in beta) | Missing: the console shows members and usage counts, not boards (#152) | M | P2 | parity |
-| Audit log | Record of security-relevant events, with export and SIEM streaming | Partial: append-only, hash-chained per workspace, filters, CSV/JSON export, integrity check (KAI-48); no SIEM streaming and not in the REST API (#17) | L | P2 | 4 |
+| Granular admin roles | Separate admins for members, content and security | Have: admin roles by area (members, content, security) next to owner and full admin (#151) | — | P2 | — |
+| Admin content inventory | Every board in the workspace with owner, sharing and last activity, re-shared from the console (Miro's Content Explorer, in beta) | Have: a board inventory with owner, sharing and last activity, and re-sharing from the console (#152) | — | P2 | — |
+| Audit log | Record of security-relevant events, with export and SIEM streaming | Have: append-only, hash-chained per workspace, filters, CSV/JSON export, integrity check (KAI-48); streaming to Splunk HEC, Sentinel, signed HTTPS or syslog over TLS with signed chain-head anchors kept outside the database, and in REST API v1 (`audit:read`) (#17); an organisation merges its workspaces' logs (#108) | — | P2 | — |
 | Data export and erasure | Per-user and org export and deletion (GDPR) | Have: personal data export, workspace export for admins, self-service account deletion with purge, workspace deletion (KAI-50) | M | P2 | 4 |
-| Retention policies | Delete or archive content automatically after a set time | Partial: per-workspace trash, version-history and audit-log retention (KAI-51); no content expiry (#154) | M | P3 | 4 |
+| Retention policies | Delete or archive content automatically after a set time | Have: per-workspace trash, version-history and audit-log retention (KAI-51); rules that archive or delete boards inactive for a set time, warning owners first and respecting holds (#154) | — | P3 | — |
 | Session policies | Idle timeouts and session length rules | Have: per-workspace session lifetime and idle timeout, strictest wins across a person's teams (KAI-51) | S | P3 | 4 |
-| Domain control | Claim a domain, capture accounts, block personal sign-ups | Partial: a workspace claims and DNS-verifies domains, and Enforce SSO sends every sign-in at them through its identity provider (KAI-45); existing accounts aren't moved into the workspace and personal sign-ups aren't blocked without SSO (#64) | M | P2 | 4 |
-| Admin usage analytics | Activity and adoption reports | Partial: the admin console shows boards, members by role, people active in the last 7 and 30 days and storage (KAI-47); no trends over time or reports (#65) | M | P3 | 4 |
-| IP allowlisting | Allow access to a workspace only from listed networks | Missing (#156) | S | P3 | parity |
+| Domain control | Claim a domain, capture accounts, block personal sign-ups | Have: a workspace claims and DNS-verifies domains, and Enforce SSO sends every sign-in at them through its identity provider (KAI-45); without SSO it captures verified accounts with notice, adds new sign-ups and blocks other team workspaces on the domain; an operator can make sign-up invite-only (#64) | — | P2 | — |
+| Admin usage analytics | Activity and adoption reports | Have: boards, members by role, people active in the last 7 and 30 days and storage (KAI-47); 90-day trends of active people, boards created and guests, with CSV export (#65) | — | P3 | — |
+| IP allowlisting | Allow access to a workspace only from listed networks | Have: per-workspace allowlists applied to the web app, board sockets and the API (#156) | — | P3 | — |
 | eDiscovery and legal hold | Keep and export a person's board history for legal cases | Missing (#157) | L | P3 | parity |
 | Data classification / DLP | Scan boards for personal or payment data and apply rules | Missing (#158) | XL | P3 | parity |
 | Customer-managed keys | Encrypt an org's data with keys the org controls | Missing (#159) | XL | P3 | parity |
 | Data residency | Choose the region where data is stored | Missing on the hosted service (#160); self-hosting picks any region | XL | P3 | parity |
-| Compliance certifications | Independent audits (SOC 2, ISO 27001) and the paperwork that goes with them | Missing: no security overview, subprocessor list or DPA for freero.app yet (#109), and no attestation (#110); self-hosting runs under the customer's own certifications | XL | P2 | parity |
+| Compliance certifications | Independent audits (SOC 2, ISO 27001) and the paperwork that goes with them | Partial: the paperwork is published for freero.app: /security, /subprocessors and /dpa (GDPR Art. 28 with the 2021 SCCs and UK Addendum), approved by the operator, plus SECURITY.md and a security questionnaire (#109); no independent attestation yet (#110); self-hosting runs under the customer's own certifications | XL | P2 | parity |
 | Abuse reporting and moderation | Report and take down harmful public boards | Have: report a board, item, file or comment (also without an account); operator queue, link block / take-down / file removal / suspension, appeals, legal hold (KAI-142, KAI-178, KAI-181) | M | P2 | 1 |
 
 ## 13. Plans and limits (context only, not counted)
@@ -386,44 +392,59 @@ Have. In the 2026-11-03 re-check: 7 rows moved from Have to Partial because the 
 stops early (large-board performance, emoji and stickers, notifications, activity feed, live
 reactions, walkthroughs, dot voting), 38 rows were added for gaps the doc didn't list, and 10 rows
 moved up in priority (interface languages, live embeds, MCP, chat, tracker sync, diagram
-import and layers, meeting apps, domain control, certifications).
+import and layers, meeting apps, domain control, certifications). In the update at 10fb4ee the same
+day, 48 rows moved to Have (20 from Partial, 28 from Missing), 3 Missing rows became Partial
+because what shipped still waits on the operator's Microsoft registrations and a real-tenant check
+(Copilot app, meeting apps) or on an independent audit (certifications), and 2 rows were added for
+shipped work that had none (PowerPoint import, export from code).
 
 **By status**
 
 | Status | Count |
 |---|---|
-| Have | 157 |
-| Partial | 35 |
-| Missing | 56 |
-| **Total** | **248** |
+| Have | 207 |
+| Partial | 18 |
+| Missing | 25 |
+| **Total** | **250** |
 
 **By priority and status**
 
 | Priority | Have | Partial | Missing | Total |
 |---|---|---|---|---|
-| P0 | 30 | 1 | 0 | 31 |
-| P1 | 48 | 8 | 3 | 59 |
-| P2 | 74 | 18 | 19 | 111 |
-| P3 | 5 | 8 | 34 | 47 |
+| P0 | 31 | 0 | 0 | 31 |
+| P1 | 55 | 2 | 2 | 59 |
+| P2 | 102 | 10 | 1 | 113 |
+| P3 | 19 | 6 | 22 | 47 |
 
 <!-- counts generated from the tables above; regenerate when rows change -->
 
 **Takeaways**
 
-- Freero has a counterpart for almost every Miro primitive. What's left is mostly about who can take
-  part, where a board can be shown, and how content gets in: link guests stop at commenter
-  (#96, #97), a live board can be embedded only in ChatGPT and Claude (#2), and there is no
-  Miro import (#62). Each is cheaper than its impact, because the features it unlocks (the guided
-  retro, sealed voting, Engage, tracker sync) already exist.
-- First-hour gaps a switcher notices are small: sticky shapes and dark colours, fonts, Miro-style
-  shortcuts and a dark-mode toggle (all S). The one P0 gap is large-board performance, which is
-  unmeasured rather than known to be slow (#130).
-- Several "Have" rows were shallow in the way the kanban was: voting, notifications and catch-up,
-  diagramming, walkthroughs, Jira depth and sharing. §15 lists the ranked order.
-- Enterprise gaps (an organisation layer, domain capture, SIEM, attestation, languages) block only
-  one kind of buyer, and self-hosting answers residency, keys and certification for most of them.
-- Freero is ahead on webhooks (Miro removed its own), MCP depth, free two-way Jira, Linear and GitHub
-  sync, server-sealed facilitation, free version history, phone-browser editing and self-hosting.
+- Every P0 row is now Have, and 207 of 250 rows in all. What's left at P1 is four rows: interface
+  languages (#5), Miro import (#62), GIF search (#139) and the rest of notifications (comment
+  alerts #104, personal Slack #105 and Teams #113 messages). Link guests vote, estimate and draft
+  (#96) but still can't add stickies (#97).
+- The first-hour gaps a switcher noticed (sticky shapes and dark colours, fonts, Miro-style
+  shortcuts, dark mode) have shipped, and large-board performance is measured rather than assumed:
+  a 10,000-item board pans at zoom to fit in 7.6 ms a frame (p95 17 ms) with 22 MB of JS heap
+  after load ([performance.md](performance.md)).
+- Several Partial rows wait on the owner rather than on code: the Teams app, Teams bot and
+  Copilot agent (#112–#114) and the Asana and monday.com OAuth apps (#120, #121) are built, off
+  until the operator registers them with each vendor, and not yet tried against a real account;
+  SOC 2 or ISO 27001 needs a funded auditor (#110).
+- Enterprise controls that Miro sells at its top tier are free: an organisation layer, domain
+  capture, SIEM streaming with anchored chain heads, admin roles by area, board inventory,
+  retention rules, IP allowlists, usage trends. What's still missing (eDiscovery, DLP, customer
+  keys, hosted residency) is answered by self-hosting for most buyers.
+- Freero is ahead of Miro on: webhooks, managed through the API too (Miro removed its own); MCP
+  depth (about 40 scoped tools, suggestions, a control room); free two-way tracker sync with Jira,
+  Linear, GitHub, Azure DevOps, Asana and monday.com, sprint field included; server-sealed
+  facilitation (votes, drafts, activity answers and quiz keys stay on the server until revealed,
+  icebreakers on the server clock); free enterprise controls (above); dark mode, which Miro lacks;
+  published, reproducible large-board numbers; server-side export without a headless browser;
+  free version history; phone-browser editing; and self-hosting. Line jumps and smart drawing
+  match Miro's and add to them: jumps appear in exports, and the pen recogniser runs without AI,
+  with scribble to erase and hold to straighten.
 
 ## 15. Recommended build order (web parity work)
 
@@ -434,37 +455,71 @@ they're cheap or strategic. Each follows the Dune layout: a new `apps/web/src/fe
 made with `npm run new:feature`, a server module per area, and engine changes only when a capability
 cuts across types. Batches A–D are independent and can run in parallel; E and F follow the teams merge.
 
-Status: the teams merge and batches A–F have shipped except #3 (smart drawing), #4 (custom packs),
-#5 (interface languages), #2 (embeds in other sites) and #1 (assistant). Follow-ups are filed as their
-own issues (named in the rows). The batch lists below keep their Linear ids as a record of what
-shipped.
+Status: the teams merge and batches A–F have shipped except #4 (custom packs), #5 (interface
+languages) and #1 (assistant); #3 (smart drawing) and #2 (embeds in other sites) shipped on
+2026-11-03. Follow-ups are filed as their own issues (named in the rows). The batch lists below keep
+their Linear ids as a record of what shipped.
 
-**Next: the 2026-11-03 ranking.** The re-check ranked the remaining gaps by who hits them, how soon,
-whether they block a buyer or a migration, and cost. The top fifteen carry `priority: high` in GitHub
-Issues:
+**The 2026-11-03 ranking, and where it stands at 10fb4ee.** The re-check ranked the remaining gaps
+by who hits them, how soon, whether they block a buyer or a migration, and cost. The top fifteen
+carry `priority: high` in GitHub Issues. Seven are done; three more are done but for owner steps
+or one piece (12–14); three are partly done (1, 6, 9); two are open (3, 10):
 
-1. Commenters and link guests take part in votes, estimates and private drafts (#96), then optional
-   guest editing (#97).
-2. A public live embed and oEmbed (#2), which Confluence, Jira, Notion, Teams, Zoom and Meet wait on.
-3. Miro import (#62), after the Miro API terms check.
-4. First-hour polish: sticky shapes, sizes and dark colours (#98), fonts (#99), Miro-style shortcut
-   aliases (#100), dark mode (#101).
-5. Voting depth: anonymous ballots, up to 99 votes, per-item cap, timer, past results (#102).
-6. Notifications and catch-up: since your last visit (#103), board-change digest (#104), personal
-   Slack messages (#105), per-user time zone (#106).
-7. Enterprise identity: domain capture (#64), IdP-initiated SAML (#107), SIEM streaming (#17).
-8. An organisation above team workspaces (#108).
-9. Hosted-service assurance: security overview, subprocessor list and DPA (#109), then SOC 2 or
-   ISO 27001 (#110).
-10. Interface languages (#5).
-11. Pen tools: smart drawing (#3) and lasso (#111).
-12. Microsoft surface: Teams app (#112), Teams bot (#113), Copilot app (#114).
-13. Diagramming depth: line jumps (#115), Mermaid class/ER/state (#38), `.vsdx` import (#116),
-    custom shape packs for cloud icons (#4), a diagram container (#117) with layers (#118).
-14. Tracker depth and breadth: sprint field (#119), custom-field map (#43), Azure DevOps (#6),
-    Asana (#120), monday.com (#121).
-15. Sharing depth: co-owner (#122), per-board sharing settings (#123), admin-required link
+1. Partly done. Commenters and link guests take part in votes, estimates and private drafts
+   (#96, done); optional guest editing (#97) is open.
+2. Done. A public live embed and oEmbed (#2).
+3. Open. Miro import (#62), after the Miro API terms check.
+4. Done. First-hour polish: sticky shapes, sizes and dark colours (#98), fonts (#99), Miro-style
+   shortcut aliases (#100), dark mode (#101).
+5. Done. Voting depth: anonymous ballots, up to 99 votes, per-item cap, timer, past results (#102).
+6. Partly done. Since your last visit (#103), the board-change digest (#104) and per-user time zone
+   (#106) shipped; alerts for new comments on your boards (#104) and personal Slack messages (#105)
+   are open.
+7. Done. Enterprise identity: domain capture (#64), IdP-initiated SAML (#107), SIEM streaming (#17).
+8. Done. An organisation above team workspaces (#108).
+9. Partly done. Security overview, subprocessor list and DPA are published (#109); SOC 2 or ISO
+   27001 (#110) needs the owner to fund an auditor.
+10. Open. Interface languages (#5).
+11. Done. Pen tools: smart drawing (#3) and lasso (#111).
+12. Code done, owner steps open. Teams app (#112), Teams bot (#113) and Copilot app (#114) ship off
+    until configured; they need the operator's Microsoft registrations and a check in a real tenant,
+    and personal Teams messages and Teams sign-on aren't built.
+13. Done except custom shape packs. Line jumps (#115), Mermaid class/ER/state and PlantUML (#38),
+    `.vsdx` import (#116), a diagram container (#117) with layers (#118); custom shape packs for
+    cloud icons (#4) are open.
+14. Done except owner steps. Sprint field (#119), custom-field map (#43), Azure DevOps (#6); Asana
+    (#120) and monday.com (#121) work with personal tokens and need the operator's OAuth app
+    registrations and a real-account check, as do the Jira, Linear and GitHub paths (#43).
+15. Done. Sharing depth: co-owner (#122), per-board sharing settings (#123), admin-required link
     password and expiry (#39), moves between workspaces (#124).
+
+Also shipped on 2026-11-03 outside the fifteen: flip cards (#142), sticky pads (#132), live
+reactions (#144), QR join (#40), 2×2 and quiz (#147), icebreakers (#150), presenter handoff (#146),
+AI catch-up (#126), sentiment clustering and activity reports (#148), mind map AI (#134),
+walkthrough summaries (#127), charts (#137), stickers (#138), value-stream and data-flow sets
+(#133), slides depth and PowerPoint import (#52, #135, #136), the activity feed's jump to a change
+(#125), protected lock (#140), admin roles, trash and archive, retention, inventory, user groups,
+company templates, usage trends and IP allowlists (#151–#156, #63, #65), API breadth (#170, #48,
+#49, #61, #33) and the large-board work (#130, #131).
+
+**Next.** Ranked the same way among what's left:
+
+1. Guest editing on owner-chosen boards, with abuse controls (#97): the last piece of the
+   outside-workshop gap.
+2. Miro import through the person's own token (#62), after the API terms check: the migration path.
+3. Interface languages (#5) with site hreflang (#77).
+4. The rest of notifications: comment alerts on your boards (#104), personal Slack (#105) and Teams
+   (#113) messages.
+5. Owner steps that turn built code on: Microsoft registrations and a real-tenant check
+   (#112–#114), Asana and monday.com OAuth apps and real-account checks for every tracker (#120,
+   #121, #43).
+6. Confluence and Jira embeds (#166, #167) and Zoom and Meet apps (#168, #169), now that the public
+   embed (#2) is in place.
+7. Comment area anchors and attachments (#143), and GIF search (#139).
+8. Custom shape packs (#4), which also answer cloud icons and engineering symbols.
+9. Large-board follow-ups (#182–#185).
+10. The board-aware assistant and AI decks (#1); ClickUp (#180) and Trello (#181); a WCAG 2.2 review
+    and conformance report (#141); SOC 2 or ISO 27001 when funded (#110).
 
 **Batch A: Editing polish (all S–M, engine and small features)**
 - **Issues:** KAI-110 (step forward/back, select only a type, exact size and position), KAI-109
@@ -513,7 +568,9 @@ higher with the diagram container), so the gap is tracked even where §16 keeps 
 timer music (needs licensed audio), icebreaker widgets,
 custom sticker sets, charts, diagram layers, offline editing, native apps, in-board app SDK,
 meeting-app integrations, community gallery, guided board setups, eDiscovery, DLP, customer-managed
-keys, data residency and certifications. Still not filed, on purpose: office document previews,
+keys, data residency and certifications. Of these, icebreakers, custom sticker sets, charts and
+diagram layers shipped the same day, and the Teams meeting app is built pending registration. Still
+not filed, on purpose: office document previews,
 interactive prototypes, image generation, screenshot to prototype, capture of paper stickies, the
 installable app marketplace (it needs the SDK first) and cloud file pickers. Revisit paper capture
 after the AI foundation.
@@ -522,14 +579,14 @@ after the AI foundation.
 
 | Item | Why it's hard | Pragmatic alternative |
 |---|---|---|
-| Official integrations with Jira, Asana, Azure DevOps, Slack, Teams, Zoom | Marketplace listings, partner reviews and OAuth app approval with each vendor, plus upkeep as their APIs change | Public REST API, webhooks with Slack/Teams-ready payloads and generic embeds (KAI-104, KAI-105, KAI-127); issue sync with Jira, Linear and GitHub through each user's or team's own credentials, no marketplace listing needed (KAI-153–KAI-157); documented recipes for no-code automation tools. Freero now ships an operator-installed Slack app (per-instance manifest, `docs/integrations/slack.md`), so vendor apps aren't unrealistic: the same approach can cover a Teams app (#112, #113) and an Atlassian app (#166, #167). Listing them in each vendor's store still needs the owner's developer accounts and reviews (named in each issue) |
+| Official integrations with Jira, Asana, Azure DevOps, Slack, Teams, Zoom | Marketplace listings, partner reviews and OAuth app approval with each vendor, plus upkeep as their APIs change | Public REST API, webhooks with Slack/Teams-ready payloads and generic embeds (KAI-104, KAI-105, KAI-127); issue sync with Jira, Linear, GitHub, Azure DevOps, Asana and monday.com through each user's or team's own credentials, no marketplace listing needed (KAI-153–KAI-157, #6, #120, #121); documented recipes for no-code automation tools. Freero ships operator-installed vendor apps: a Slack app (per-instance manifest, `docs/integrations/slack.md`) and generated Teams and Copilot packages (`docs/integrations/teams.md`, #112–#114), all off until configured; the same approach can cover an Atlassian app (#166, #167). Registering them, and listing them in each vendor's store, still needs the owner's developer accounts and reviews (named in each issue) |
 | In-board app SDK and app marketplace | A security review process and sandboxing for third-party code on everyone's boards | Start with API, webhooks and an MCP server (KAI-107); maybe a sandboxed iframe app model later (#179) |
 | Built-in audio/video calls | TURN/SFU servers cost money per minute at scale | A per-board call link to Jitsi or the team's meeting tool (KAI-134); optionally a self-hosted Jitsi or LiveKit when the operator provides one (#149) |
 | AI features at Miro's level | Model inference costs money per request; a free tier is open to abuse | Bring your own API key per workspace, or an operator-configured endpoint, including self-hosted open models (KAI-101). AI stays off unless configured. Strict rate limits |
 | Cloud provider icon sets (AWS, Azure, GCP) | Each provider has its own usage terms for its icons; we can't redistribute them as Freero assets without checking those terms | Generic, original infrastructure icons (shipped) plus custom SVG shape packs that users upload themselves (#4) |
 | Data residency in several regions | One deployment per region, plus routing and operations staff | Freero is open and Docker-based: organisations that need a region self-host there. The hosted service states its single region |
 | Customer-managed keys, DLP scanning, eDiscovery and legal hold | Need KMS integrations, content scanning pipelines and legal processes | Encryption at rest through the storage provider (KAI-143), audit log and data export (Phase 4); self-hosting for regulated organisations |
-| SOC 2 / ISO 27001 / HIPAA certification | Expensive yearly audits by outside firms | Publish the security architecture, a subprocessor list, a DPA, a responsible disclosure policy and the audit log (#109); self-hosting as the compliance path; an attestation for the hosted service once the owner funds an auditor (#110) |
+| SOC 2 / ISO 27001 / HIPAA certification | Expensive yearly audits by outside firms | The security overview, subprocessor list, DPA and responsible disclosure policy are published, next to the hash-chained audit log with SIEM streaming (#109, #17); self-hosting as the compliance path; an attestation for the hosted service once the owner funds an auditor (#110) |
 | Native mobile and desktop apps | Separate codebases, store fees and reviews | A PWA plus touch-optimised web chrome (KAI-140, KAI-139) |
-| Importing Miro's own board files | The backup format is proprietary; use of Miro's API is under Miro's terms | Import from open formats (CSV, draw.io XML, Excalidraw JSON; KAI-136, KAI-138). A Miro import through the user's own API token, after checking the terms (#62) |
+| Importing Miro's own board files | The backup format is proprietary; use of Miro's API is under Miro's terms | Import from open formats (CSV, draw.io XML, Excalidraw JSON, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid and PlantUML; KAI-136, KAI-138, #116, #136, #38). A Miro import through the user's own API token, after checking the terms (#62) |
 | Community template marketplace and moderation | Moderation work and legal exposure for user uploads | Shared team templates first (Phase 3); public gallery only with abuse reporting in place (KAI-142) |
