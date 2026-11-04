@@ -24,7 +24,10 @@ const FEATURE_RESERVED = new Set([
   'decoration.tsx',
   'outline.ts',
   'importer.ts',
+  'messages.ts',
 ]);
+// The web app's discovery roots: the only files that may use import.meta.glob [W6].
+const DISCOVERY_ROOTS = new Set(['app/board/features.ts', 'app/i18n/catalogs.ts']);
 
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 const errors = [];
@@ -133,8 +136,8 @@ function checkWebFile(file) {
   }
   for (const { spec, line, kind } of parseImports(src)) {
     if (kind === 'glob') {
-      if (meRel !== 'app/board/features.ts')
-        report('W6', file, line, `import.meta.glob is only allowed in apps/web/src/app/board/features.ts (the feature discovery root). Add a reserved file to your feature instead of a new registry.`, spec);
+      if (!DISCOVERY_ROOTS.has(meRel))
+        report('W6', file, line, `import.meta.glob is only allowed in the discovery roots (apps/web/src/app/board/features.ts for features, app/i18n/catalogs.ts for translations). Add a reserved file to your feature instead of a new registry.`, spec);
       continue;
     }
     const t = resolveWeb(file, spec);
