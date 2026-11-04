@@ -389,7 +389,7 @@
   "connectAnAgent": "Conectar um agente",
   "appsAgents": "Apps e agentes",
   "yourIssueTrackers": "Seus rastreadores de issues",
-  "yourOwnJiraLinearGithub": "Suas próprias conexões com Jira, Linear, GitHub, Azure DevOps, Asana ou monday.com, para enviar itens como issues de qualquer quadro que você possa editar. As conexões da sua equipe são configuradas no console de administração dela.",
+  "yourOwnJiraLinearGithub": "Suas próprias conexões com Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp ou Trello, para enviar itens como issues em qualquer quadro que você possa editar. As conexões da sua equipe são configuradas no console de administração dela.",
   "problemsYouReported": "Problemas que você relatou",
   "yourNameCanTBe": "Seu nome não pode ficar vazio",
   "keepItUnder80Characters": "Use menos de 80 caracteres",

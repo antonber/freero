@@ -389,7 +389,7 @@
   "connectAnAgent": "에이전트 연결",
   "appsAgents": "앱 및 에이전트",
   "yourIssueTrackers": "내 이슈 트래커",
-  "yourOwnJiraLinearGithub": "편집할 수 있는 모든 보드에서 항목을 이슈로 보낼 수 있는 나만의 Jira, Linear, GitHub, Azure DevOps, Asana 또는 monday.com 연결입니다. 팀의 연결은 팀 관리 콘솔에서 설정합니다.",
+  "yourOwnJiraLinearGithub": "편집할 수 있는 모든 보드에서 항목을 이슈로 보내기 위한 나만의 Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp, Trello 연결입니다. 팀의 연결은 팀 관리 콘솔에서 설정합니다.",
   "problemsYouReported": "내가 신고한 문제",
   "yourNameCanTBe": "이름은 비워 둘 수 없습니다",
   "keepItUnder80Characters": "80자 미만으로 입력하세요",

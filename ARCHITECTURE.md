@@ -1447,7 +1447,7 @@ below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals, engage_keys: live audience activities; see "Live activities" below), `icebreakers`
 (no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `presentations`
 (no tables: who presents a board, its handoffs, #146), `trackers`
-(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
+(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks, tracker_relations: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
@@ -2994,7 +2994,7 @@ target itself:
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
 one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub, Azure DevOps Boards (Services /
-Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
+Server, #6), Asana (#120), monday.com (#121), ClickUp (#180) or Trello (#181), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -3009,7 +3009,10 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
   capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
   (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
-  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below). `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below), `endpoints`
+  (GitHub Enterprise's GraphQL beside `/api/v3`). GitHub (#42) reads and writes the connection's
+  planning Project (v2) through GraphQL: Status, estimate, Iteration (`sprints`), start / target
+  dates; milestones as due dates; sub-issues as `parents`. `RemoteIssue.version` is the revision read (Azure DevOps): a write
   against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
   fresh reads (at most twice) instead of overwriting. Trackers without revisions (Asana,
   monday.com) write only the fields a sync changes (a PUT of those fields, a column write of those
@@ -3035,7 +3038,18 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
   (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
   Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
-- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, where
+- **Dependencies (#50)** are a synced RELATION, not a field (`relations.ts`, `tracker_relations`):
+  a connector with one arrowhead between two linked task cards of one connection is "tail blocks
+  head"; `TrackerProvider.dependencies` adds / removes the tracker's own blocks link and `getIssue`
+  reads them into `RemoteIssue.relations`. `syncLink` merges the pairs involving its link against
+  the agreed rows (`planRelations`: one-sided changes flow across), writes the tracker, draws or
+  removes connectors in the same board change, then stores the pairs as agreed;
+  `boardSideChanged` also notices a dependency connector drawn or removed. Only for connections
+  whose `settings.dependencies` is on (PATCH `syncDependencies`): new connections get it, those
+  from before #50 have no key and stay off, so an upgrade writes nothing to a tracker.
+  Writes that answer with the issue as written (Azure DevOps' PATCH, Linear's issueUpdate) are
+  what a sync agrees on, instead of a read-back that may already hold the next edit.
+- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, ClickUp, Trello, where
   nobody can paste an address): one per connection and project, registered after a send or import
   into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,
   registered again for a new secret). The address names the registration (`h`) and carries `k`, an
@@ -3043,7 +3057,13 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   handshake (`WebhookResult.handshake`: Asana's `X-Hook-Secret` echoed and kept sealed —
   `keepHookSecret` only for a pending row without one, so only once —, monday.com's challenge
   echoed) is answered only while that row is pending, i.e. while Freero waits on `register`; Asana
-  deliveries are then verified with that secret (`X-Hook-Signature`).
+  deliveries are then verified with that secret (`X-Hook-Signature`). ClickUp names its signing
+  secret in `register`'s answer (`{ id, secret }`), kept the same way while the row is pending;
+  Trello's is the API key's secret (`ProviderConnection.signingSecret`), and its HEAD check of an
+  address (`HEAD /api/trackers/webhooks/:id`) is answered 200 only while that row is pending.
+- **People a tracker hides addresses of** (Trello; `ProviderConnection.people`, connections.ts
+  `peopleOf`): a login is a Freero person's only through their OWN connection to that site, tested
+  as that login (`settings.login`, `repo.personalLogins`); a login two people tested is nobody's.
 - **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
   link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
   draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
@@ -3084,7 +3104,9 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks),
   `mock-asana.mjs` (sections, tags, custom fields, external attachments, OAuth, webhooks with the
   handshake and signatures) and `mock-monday.mjs` (GraphQL: columns, groups, updates, subitems,
-  webhooks with the challenge, complexity), which implement the subset of each public API used,
+  webhooks with the challenge, complexity) and `mock-clickup.mjs` (Lists, statuses, comments,
+  OAuth, webhooks naming their secret) and `mock-trello.mjs` (lists, hidden addresses, HEAD check,
+  signed webhooks), which implement the subset of each public API used,
   webhooks included.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)

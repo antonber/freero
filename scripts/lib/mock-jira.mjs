@@ -97,8 +97,20 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
   };
   const now = () => new Date().toISOString().replace('Z', '+0000');
   const touch = (issue) => (issue.fields.updated = now());
+  /** Issue links of type Blocks (#50): `blocker` (its inward issue) blocks `blocked` (the outward one). */
+  const links = [];
+  let linkSeq = 20_001;
+  const BLOCKS = { id: '10000', name: 'Blocks', inward: 'is blocked by', outward: 'blocks' };
+  const linksOf = (issue) =>
+    links
+      .filter((l) => l.blocker === issue.id || l.blocked === issue.id)
+      .map((l) => {
+        const other = issues.get(l.blocker === issue.id ? l.blocked : l.blocker);
+        const ref = { id: other.id, key: other.key };
+        return l.blocker === issue.id ? { id: l.id, type: BLOCKS, outwardIssue: ref } : { id: l.id, type: BLOCKS, inwardIssue: ref };
+      });
   const view = (issue, fields) => {
-    const f = { ...issue.fields, status: STATUSES[issue.status] };
+    const f = { ...issue.fields, status: STATUSES[issue.status], issuelinks: linksOf(issue) };
     if (fields) for (const k of Object.keys(f)) if (!fields.includes(k)) delete f[k];
     return { id: issue.id, key: issue.key, self: `${url}/rest/api/${v}/issue/${issue.id}`, fields: f };
   };
@@ -233,6 +245,23 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     const p = `/rest/api/${v}`;
     let m;
     if (path === `${p}/priority`) return json(200, PRIORITIES.map((name, i) => ({ id: String(i + 1), name })));
+    if (path === `${p}/issueLink` && req.method === 'POST') {
+      const a = find(String(body?.inwardIssue?.id ?? body?.inwardIssue?.key ?? ''));
+      const b = find(String(body?.outwardIssue?.id ?? body?.outwardIssue?.key ?? ''));
+      if (!a || !b) return json(404, { errorMessages: ['Issue Does Not Exist'] });
+      if (body?.type?.name !== 'Blocks') return json(404, { errorMessages: ['No issue link type with name found.'] });
+      if (!links.some((l) => l.blocker === a.id && l.blocked === b.id)) links.push({ id: String(linkSeq++), blocker: a.id, blocked: b.id });
+      touch(a);
+      touch(b);
+      return json(201, {});
+    }
+    if ((m = new RegExp(`^${p}/issueLink/(\\d+)$`).exec(path)) && req.method === 'DELETE') {
+      const at = links.findIndex((l) => l.id === m[1]);
+      if (at < 0) return json(404, { errorMessages: ['No issue link with id exists.'] });
+      const [l] = links.splice(at, 1);
+      for (const id of [l.blocker, l.blocked]) touch(issues.get(id));
+      return json(204, {});
+    }
     if (path === `${p}/myself`) return json(200, { accountId: 'acc-bot', name: 'freero-bot', emailAddress: email, displayName: 'Freero bot' });
     if (path === `${p}/field`)
       return json(200, [
@@ -382,6 +411,23 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     addUser,
     create,
     edit,
+    /** People in Jira (#50): `blocker` blocks `blocked` (keys), a Blocks issue link; `unblock` removes it. */
+    block(blocker, blocked) {
+      const a = find(blocker);
+      const b = find(blocked);
+      links.push({ id: String(linkSeq++), blocker: a.id, blocked: b.id });
+      touch(a);
+      touch(b);
+    },
+    unblock(blocker, blocked) {
+      const a = find(blocker);
+      const b = find(blocked);
+      const at = links.findIndex((l) => l.blocker === a.id && l.blocked === b.id);
+      if (at >= 0) links.splice(at, 1);
+      touch(a);
+      touch(b);
+    },
+    blocks: (key) => links.filter((l) => l.blocker === find(key).id).map((l) => issues.get(l.blocked).key),
     issue: (key) => {
       const i = find(key);
       const open = (i?.fields[SPRINT] ?? []).find((s) => s.state !== 'closed');

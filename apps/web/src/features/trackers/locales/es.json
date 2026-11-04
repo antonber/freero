@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "El tracker no respondió. Inténtalo de nuevo.",
   "sendToTracker": "Enviar al tracker…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "Cada incidencia se convierte en una tarjeta de tarea vinculada a ella (hasta 50 a la vez). Las incidencias que ya están en este tablero se omiten.",
   "countIssue": "{count, plural, one {# incidencia} other {# incidencias}}",
   "countItem": "{count, plural, one {# elemento} other {# elementos}}",
-  "countSelectedItem": "{count, plural, one {# elemento seleccionado} other {# elementos seleccionados}}"
+  "countSelectedItem": "{count, plural, one {# elemento seleccionado} other {# elementos seleccionados}}",
+  "quarter": "Trimestre",
+  "aList": "Una lista"
 }

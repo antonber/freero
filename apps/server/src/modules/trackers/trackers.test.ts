@@ -37,9 +37,12 @@ import { importIntoKanban, kanbanOf, planKanbanImport } from './kanban';
 import type { ProviderConnection, RemoteIssue } from './providers/types';
 import { trackerRequest, TrackerError } from './http';
 import { planRoadmapImport } from './roadmap';
+import { boardPairs, pairOf, planRelations, type Pair } from './relations';
 import { adfToMarkdown, asanaHtmlToMarkdown, htmlToMarkdown, markdownToAdf, markdownToAsanaHtml, markdownToHtml, markdownToWiki, wikiToMarkdown } from './markup';
 import { asana } from './providers/asana';
 import { azure } from './providers/azure';
+import { clickup } from './providers/clickup';
+import { trello } from './providers/trello';
 
 import { github, managedPart, withManagedPart } from './providers/github';
 import { jira } from './providers/jira';
@@ -224,6 +227,25 @@ it('roadmap import: issues join the timeline lane already named after their epic
   const tray = made.get(made.get('c3')!.frameId as string)!;
   expect(tray).toMatchObject({ type: 'frame', skip: true, index: 3 });
   expect(plan.unscheduled).toBe(1);
+});
+
+it('roadmap import by quarter: an empty timeline gets a lane per quarter its bars start in, in date order, whatever order the tracker listed them', () => {
+  const t = { id: 'tl', type: 'timeline', x: 0, y: 0, w: 900, h: 300, rotation: 0, z: 0, createdBy: 'u', createdAt: 0, updatedAt: 0, title: 'Plan', start: '2026-09-01', end: '2027-02-28', scale: 'month', lanes: [{ id: 'l0', title: 'Lane', color: '#000', rows: 2 }] } as unknown as TimelineElement;
+  const issue = (id: string, startDate: string) => ({ id, key: id, url: '', values: { title: id, description: '', labels: [], startDate, dueDate: startDate }, assigneeName: null, updatedAt: 0 });
+  const draft = (id: string) => ({ id, type: 'card', x: 0, y: 0, w: 300, h: 120 }) as unknown as ElementDraft;
+  let n = 0;
+  const plan = planRoadmapImport(
+    { elements: [{ el: t as unknown as BoardElement, layer: 'shared' as const }] },
+    t,
+    [
+      { id: 'c1', issue: issue('A', '2027-01-12'), draft: draft('c1') },
+      { id: 'c2', issue: issue('B', '2026-10-01'), draft: draft('c2') },
+      { id: 'c3', issue: issue('C', '2026-12-31'), draft: draft('c3') },
+    ],
+    { groupBy: 'quarter', today: 20_400, newId: () => `id${++n}`, frameIndex: 0 },
+  );
+  const lanes = plan.update.find((u) => u.id === 'tl')?.patch.lanes as Array<{ title: string }>;
+  expect(lanes.map((l) => l.title.replace(/<[^>]+>/g, ''))).toEqual(['2026 Q4', '2027 Q1']);
 });
 
 // ---- kanban fields (step 2f) ----
@@ -545,14 +567,15 @@ it('a tracker that answers 429 is asked again after the wait it named; a longer 
 // ---- Asana (#120) and monday.com (#121) ----
 
 type Sent = { method: string; path: string; body?: unknown; headers?: Record<string, string> };
-const fakeConn = (provider: 'asana' | 'monday', answer: (r: Sent) => { status?: number; json: unknown }, settings: Record<string, unknown> = {}) => {
+const SITES = { asana: ['https://app.asana.com', 'https://app.asana.com/api/1.0'], monday: ['https://monday.com', 'https://api.monday.com'], clickup: ['https://app.clickup.com', 'https://api.clickup.com/api/v2'], github: ['https://github.com', 'https://api.github.com'] } as const;
+const fakeConn = (provider: keyof typeof SITES, answer: (r: Sent) => { status?: number; json: unknown }, settings: Record<string, unknown> = {}) => {
   const sent: Sent[] = [];
   const conn = {
     id: provider,
     provider,
     deployment: null,
-    site: provider === 'asana' ? 'https://app.asana.com' : 'https://monday.com',
-    apiBase: provider === 'asana' ? 'https://app.asana.com/api/1.0' : 'https://api.monday.com',
+    site: SITES[provider][0],
+    apiBase: SITES[provider][1],
     settings,
     async call(req: Sent) {
       sent.push(req);
@@ -589,7 +612,7 @@ it('an Asana handshake is answered only while Freero is registering that webhook
   expect(monday.webhook({ headers: {}, rawBody: challenge, secret: 's', now, hook: { pending: false, secret: null } })).toBeNull();
 });
 
-it('a title pushed to Asana or monday.com writes only the title, so a field someone changed there in the meantime is not written over', async () => {
+it('a title pushed to Asana, monday.com or ClickUp writes only the title, so a field someone changed there in the meantime is not written over', async () => {
   const task = {
     gid: '1201',
     name: 'Old',
@@ -617,6 +640,29 @@ it('a title pushed to Asana or monday.com writes only the title, so a field some
   const writes = m.sent.map((r) => r.body as { query: string; variables: Record<string, unknown> }).filter((b) => /mutation/.test(b.query));
   expect(writes).toHaveLength(1);
   expect(JSON.parse(String(writes[0].variables.values))).toEqual({ name: 'New' });
+
+  // ClickUp: the title alone; an assignee change adds and removes those people, never sets the list.
+  const cu = { id: '86a01', name: 'Old', markdown_description: 'Edited in ClickUp a moment ago', status: { status: 'to do', type: 'open' }, assignees: [{ id: 7, email: 'ann@x.test' }, { id: 8, email: 'bo@x.test' }], list: { id: '9017' } };
+  const c = fakeConn('clickup', (r) => ({ json: r.path.startsWith('/list/9017/member') ? { members: [{ id: 9, email: 'cy@x.test' }] } : r.path.startsWith('/list/9017') ? { statuses: [] } : r.method === 'GET' ? cu : {} }));
+  await clickup.updateIssue(c.conn, { ...issue, id: '86a01', key: '86a01', project: '9017' }, { title: 'New' });
+  await clickup.updateIssue(c.conn, { ...issue, id: '86a01', key: '86a01', project: '9017' }, { assignee: 'cy@x.test' });
+  expect(c.sent.filter((r) => r.method === 'PUT')).toEqual([
+    { method: 'PUT', path: '/task/86a01', body: { name: 'New' } },
+    { method: 'PUT', path: '/task/86a01', body: { assignees: { add: [9], rem: [7] } } },
+  ]);
+});
+
+it('a ClickUp delivery is taken only when signed with the secret ClickUp named for that webhook', () => {
+  const now = Date.now();
+  const body = Buffer.from(JSON.stringify({ event: 'taskStatusUpdated', task_id: '86a1b2c3d', webhook_id: 'wh-1' }));
+  const sig = (s: string, b = body) => createHmac('sha256', s).update(b).digest('hex');
+  const hook = { pending: false, secret: 'NAMED-BY-CLICKUP' };
+  expect(clickup.webhook({ headers: { 'x-signature': sig('NAMED-BY-CLICKUP') }, rawBody: body, secret: 's', now, hook })).toEqual({ issues: ['86a1b2c3d'] });
+  // Signed with the connection's own secret, altered after signing, unsigned, or a webhook with no secret kept: refused.
+  expect(clickup.webhook({ headers: { 'x-signature': sig('s') }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(clickup.webhook({ headers: { 'x-signature': sig('NAMED-BY-CLICKUP') }, rawBody: Buffer.from(body.toString().replace('86a1b2c3d', '86a9')), secret: 's', now, hook })).toBeNull();
+  expect(clickup.webhook({ headers: {}, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(clickup.webhook({ headers: { 'x-signature': sig('s') }, rawBody: body, secret: 's', now, hook: { pending: true, secret: null } })).toBeNull();
 });
 
 it('a card moved to the In progress column moves its done Asana task to that section and reopens it; a monday.com item takes the label of the column, by name', async () => {
@@ -666,4 +712,85 @@ it('a spent monday.com complexity budget is waited out when it resets in a momen
   expect(err).toBeInstanceOf(TrackerError);
   expect(err).toMatchObject({ kind: 'rate', retryAfterMs: 40_000 });
   expect(later.sent).toHaveLength(1);
+});
+
+it('a Trello delivery is taken only from an address Freero registered, and with the API key’s secret known, only when signed over its body and that address', () => {
+  const now = Date.now();
+  const address = 'https://freero.example/api/trackers/webhooks/c1?h=abc&k=key';
+  const body = Buffer.from(JSON.stringify({ action: { type: 'updateCard', data: { card: { id: '5f1a2b3c4d5e6f7a8b9c0d1e' } } } }));
+  const sig = (s: string, b = body, a = address) => createHmac('sha1', s).update(Buffer.concat([b, Buffer.from(a)])).digest('base64');
+  const hook = { pending: false, secret: 'api-key-secret', address };
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret') }, rawBody: body, secret: 's', now, hook })).toEqual({ issues: ['5f1a2b3c4d5e6f7a8b9c0d1e'] });
+  // Another secret, another address (a delivery replayed to a different registration), altered, unsigned: refused.
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('guess') }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret', body, `${address}x`) }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret') }, rawBody: Buffer.from(body.toString().replace('5f1a', '6f1a')), secret: 's', now, hook })).toBeNull();
+  expect(trello.webhook({ headers: {}, rawBody: body, secret: 's', now, hook })).toBeNull();
+  // Not an address Freero registered (the service found no registration): refused whatever it carries.
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret') }, rawBody: body, secret: 's', now })).toBeNull();
+});
+
+it('labels and an assignee pushed to GitHub add and remove just those, so a label or assignee someone added there meanwhile is kept', async () => {
+  const issue = { id: 5001, node_id: 'I_5', number: 4, html_url: 'https://github.com/acme/web/issues/4', title: 'Flaky test', body: '', state: 'open', labels: [{ name: 'bug' }, { name: 'ux' }], assignees: [{ login: 'ann' }, { login: 'bo' }] };
+  const g = fakeConn('github', (r) =>
+    r.path.endsWith('/graphql')
+      ? { json: { data: { repository: { issue: { id: 'I_5', projectItems: { nodes: [] } } } } } }
+      : r.path.startsWith('/search/users')
+        ? { json: { items: [{ login: 'cy' }] } }
+        : { json: r.method === 'GET' ? issue : {} },
+  );
+  const remote = { id: 'acme/web#4', key: 'acme/web#4', url: issue.html_url, project: 'acme/web', values: { title: 'Flaky test', description: '', labels: ['bug', 'ux'] }, assigneeName: 'ann', updatedAt: 0 } as RemoteIssue;
+  await github.updateIssue(g.conn, remote, { labels: ['ux', 'flaky'], assignee: 'cy@x.test' });
+  const writes = g.sent.filter((r) => r.method !== 'GET' && !r.path.endsWith('/graphql'));
+  expect(writes).toEqual([
+    { method: 'POST', path: '/repos/acme/web/issues/4/labels', body: { labels: ['flaky'] } },
+    { method: 'DELETE', path: '/repos/acme/web/issues/4/labels/bug' },
+    { method: 'POST', path: '/repos/acme/web/issues/4/assignees', body: { assignees: ['cy'] } },
+    { method: 'DELETE', path: '/repos/acme/web/issues/4/assignees', body: { assignees: ['ann'] } },
+  ]);
+});
+
+// ---- dependencies (#50) ----
+
+it('a dependency removed on one side is removed on the other, one added on one side is added on the other, and one both sides already agree on is left alone', () => {
+  const set = (...p: Pair[]) => new Set<Pair>(p);
+  const ab = pairOf('A', 'B');
+  const bc = pairOf('B', 'C');
+  const cd = pairOf('C', 'D');
+  const de = pairOf('D', 'E');
+  // Agreed: A>B and B>C. Since: A>B deleted on the board, B>C deleted in the tracker, C>D drawn on the board, D>E made in the tracker.
+  const plan = planRelations(set(bc, cd), set(ab, de), set(ab, bc));
+  expect(plan.remove).toEqual([ab]);
+  expect(plan.erase).toEqual([bc]);
+  expect(plan.add).toEqual([cd]);
+  expect(plan.draw).toEqual([de]);
+  expect(new Set(plan.agreed)).toEqual(set(cd, de));
+  // Once that is done both sides hold C>D and D>E: the next merge changes nothing.
+  const again = planRelations(set(cd, de), set(cd, de), set(...plan.agreed));
+  expect([again.add, again.remove, again.draw, again.erase]).toEqual([[], [], [], []]);
+});
+
+it('only a connector with one arrowhead between two linked task cards is a dependency, read from its tail to its head', () => {
+  const card = (id: string) => ({ el: { id, type: 'card', x: 0, y: 0, w: 100, h: 30 } as unknown as BoardElement });
+  const sticky = { el: { id: 's', type: 'sticky', x: 0, y: 0, w: 100, h: 100 } as unknown as BoardElement };
+  const line = (id: string, from: string, to: string, startCap: string, endCap: string) => ({ el: { id, type: 'connector', start: { elementId: from, x: 0, y: 0 }, end: { elementId: to, x: 0, y: 0 }, startCap, endCap } as unknown as BoardElement });
+  const linkOf = (id: string) => ({ a: 'LA', b: 'LB', a2: 'LA', s: 'LS' })[id];
+  const pairs = boardPairs(
+    {
+      elements: [
+        card('a'),
+        card('b'),
+        card('a2'),
+        sticky,
+        line('forward', 'a', 'b', 'none', 'arrow'),
+        line('backward', 'b', 'a', 'arrow', 'none'),
+        line('both', 'a', 'b', 'arrow', 'arrow'),
+        line('plain', 'b', 'a', 'none', 'none'),
+        line('same-issue', 'a', 'a2', 'none', 'arrow'),
+        line('to-a-sticky', 'a', 's', 'none', 'arrow'),
+      ],
+    },
+    linkOf,
+  );
+  expect([...pairs]).toEqual([[pairOf('LA', 'LB'), ['forward', 'backward']]]);
 });

@@ -28,15 +28,15 @@ const STATUS_LABEL: Record<string, string> = {
   done: tr('done'),
 };
 /** What a tracker calls its sprints (#119); none: it has none Freero imports by. */
-const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprint', linear: 'Cycle', azure: 'Iteration' };
+const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprint', linear: 'Cycle', azure: 'Iteration', github: 'Iteration' };
 /** What a tracker calls the issue others go under (#43); none: not from Freero (GitHub). */
-const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: tr('parentIssue'), azure: tr('parentWorkItem'), asana: tr('parentTask'), monday: tr('parentItem') };
+const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: tr('parentIssue'), azure: tr('parentWorkItem'), asana: tr('parentTask'), monday: tr('parentItem'), clickup: tr('parentTask'), github: tr('parentIssue') };
 /** What a tracker's project is called where it isn't one (#120, #121). */
-const PROJECT_NAME: Partial<Record<TrackerProviderKind, string>> = { github: 'Repository', linear: 'Team', monday: 'Board' };
+const PROJECT_NAME: Partial<Record<TrackerProviderKind, string>> = { github: 'Repository', linear: 'Team', monday: 'Board', clickup: 'List', trello: 'Board' };
 /** A parent's key, as people find it in each tracker. */
-const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: tr('taskIdOrLink'), monday: tr('itemId') };
-/** Trackers whose whole project (board) can be imported without a query (#120, #121). */
-const WHOLE_PROJECT: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday']);
+const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: tr('taskIdOrLink'), monday: tr('itemId'), clickup: tr('taskIdOrLink'), github: '#12 · owner/name#12' };
+/** Trackers whose whole project (board, List) can be imported without a query (#120, #121, #180, #181). */
+const WHOLE_PROJECT: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday', 'clickup', 'trello']);
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 /** The connection picker and its projects, shared by both dialogs. */
@@ -356,12 +356,15 @@ const QUERY_HINT: Record<string, string> = {
   azure: "e.g. SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = 'Fabrikam'",
   asana: 'e.g. project:Launch section:"In progress" assignee:me',
   monday: 'e.g. board:Roadmap group:"This week" status:"Working on it"',
+  clickup: 'e.g. list:Sprint status:"in review" assignee:me tag:web',
+  trello: 'e.g. board:Launch list:"Doing" member:me label:web',
 };
 
 const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
   { value: 'epic', label: tr('epic2') },
   { value: 'team', label: tr('team') },
   { value: 'label', label: tr('label') },
+  { value: 'quarter', label: tr('quarter') },
   { value: 'none', label: tr('oneLane') },
 ];
 
@@ -482,7 +485,7 @@ function ImportDialog({ editor, props }: PanelProps) {
               value={by}
               options={[
                 { value: 'query', label: c.queryLanguage || tr('query') },
-                ...(provider && WHOLE_PROJECT.has(provider) ? [{ value: 'project' as const, label: provider === 'monday' ? tr('aBoard') : tr('aProject') }] : []),
+                ...(provider && WHOLE_PROJECT.has(provider) ? [{ value: 'project' as const, label: provider === 'monday' || provider === 'trello' ? tr('aBoard') : provider === 'clickup' ? tr('aList') : tr('aProject') }] : []),
                 ...(sprintName ? [{ value: 'sprint' as const, label: `A ${sprintName.toLowerCase()}` }] : []),
                 ...(parentName ? [{ value: 'epic' as const, label: parentName === 'Epic' ? tr('anEpic') : `A ${parentName.toLowerCase()}` }] : []),
               ]}

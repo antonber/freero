@@ -7223,6 +7223,8 @@ async function trackerChecks() {
   const { startMockAzure } = await import('./lib/mock-azure.mjs');
   const { startMockAsana } = await import('./lib/mock-asana.mjs');
   const { startMockMonday } = await import('./lib/mock-monday.mjs');
+  const { startMockClickUp } = await import('./lib/mock-clickup.mjs');
+  const { startMockTrello } = await import('./lib/mock-trello.mjs');
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-trackers-'));
@@ -7236,7 +7238,9 @@ async function trackerChecks() {
   const azServer = await startMockAzure({ deployment: 'server', organization: 'tfs/DefaultCollection', token: 'server-pat' });
   const asanaMock = await startMockAsana();
   const mondayMock = await startMockMonday();
-  const mocks = [cloud, dc, atlassian, lin, gh, az, azServer, asanaMock, mondayMock];
+  const clickupMock = await startMockClickUp();
+  const trelloMock = await startMockTrello();
+  const mocks = [cloud, dc, atlassian, lin, gh, az, azServer, asanaMock, mondayMock, clickupMock, trelloMock];
   let proc = null;
   const live = [];
   const mcpClients = [];
@@ -7252,6 +7256,14 @@ async function trackerChecks() {
       TRACKER_ASANA_CLIENT_ID: asanaMock.oauth.clientId,
       TRACKER_ASANA_CLIENT_SECRET: asanaMock.oauth.clientSecret,
       TRACKER_ASANA_URL: asanaMock.url,
+      TRACKER_CLICKUP_CLIENT_ID: clickupMock.oauth.clientId,
+      TRACKER_CLICKUP_CLIENT_SECRET: clickupMock.oauth.clientSecret,
+      TRACKER_CLICKUP_URL: clickupMock.url,
+      TRACKER_CLICKUP_API_URL: clickupMock.url,
+      TRACKER_TRELLO_KEY: trelloMock.key,
+      TRACKER_TRELLO_SECRET: trelloMock.secret,
+      TRACKER_TRELLO_URL: trelloMock.url,
+      TRACKER_TRELLO_API_URL: trelloMock.url,
       RATE_LIMIT_TRACKER_SEND: '500/10m',
     };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
@@ -7553,6 +7565,88 @@ async function trackerChecks() {
       await waitFor(() => E.get(other.id).dueDate === '2026-12-18' && Math.abs(E.get(other.id).x - wantX) < 1 && Math.abs(E.get(other.id).w - 12 * PPD) < 1, 10_000, `the bar at its new dates (x ${E.get(other.id).x}, want ${wantX})`);
     });
 
+    await check('trackers (#50): a dependency connector between two roadmap bars becomes a Jira “blocks” link, one made in Jira draws a connector, and one removed on either side is removed on the other', async () => {
+      // New connections sync dependencies (made after #50); the switch is the managers'.
+      const listed = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.connections.find((x) => x.id === cloudConn.id);
+      assert(listed?.syncDependencies === true, `a new connection doesn't sync dependencies: ${JSON.stringify(listed?.syncDependencies)}`);
+      const make = (n) => cloud.create('WEB', { summary: `Dependency ${n}`, labels: ['deps'], customfield_10015: `2026-11-${String(2 + n * 4).padStart(2, '0')}`, duedate: `2026-11-${String(5 + n * 4).padStart(2, '0')}`, description: { type: 'doc', version: 1, content: [] } });
+      const [a, b, d] = [make(1), make(2), make(3)];
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = deps', timeline: { id: 'tl', groupBy: 'none' } });
+      assert(r.status === 201 && r.json.cards.length === 3, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      const cardOf = (key) => E.get(r.json.cards.find((x) => x.key === key).id);
+      await waitFor(() => r.json.cards.every((x) => E.get(x.id)), 8000, 'the bars');
+      await waitFor(() => [a, b, d].every((i) => cloud.issue(i.key).remotelinks.length === 1), 10_000, 'the first syncs');
+      const connectors = () => [...E.values()].filter((x) => x?.type === 'connector');
+      const between = (from, to) => connectors().filter((x) => x.start.elementId === cardOf(from).id && x.end.elementId === cardOf(to).id && x.endCap !== 'none');
+      // On the board: a Dependency connector from bar A to bar B → "A blocks B" in Jira.
+      const ca = cardOf(a.key);
+      const cb = cardOf(b.key);
+      E.set('dep1', { ...base, id: 'dep1', type: 'connector', x: ca.x + ca.w, y: ca.y, w: Math.max(1, cb.x - ca.x - ca.w), h: Math.max(1, cb.y - ca.y), start: { elementId: ca.id, anchor: 'right', x: ca.x + ca.w, y: ca.y + ca.h / 2 }, end: { elementId: cb.id, anchor: 'left', x: cb.x, y: cb.y + cb.h / 2 }, routing: 'elbow', stroke: '#1F1A33', strokeWidth: 2, strokeStyle: 'dashed', startCap: 'none', endCap: 'arrow', label: '' });
+      await waitFor(() => JSON.stringify(cloud.blocks(a.key)) === JSON.stringify([b.key]), 15_000, `${a.key} blocks ${b.key} in Jira`);
+      // In Jira: B blocks D → a connector from bar B to bar D.
+      cloud.block(b.key, d.key);
+      assert((await cloud.webhook(webhookUrl, secret, b.key)) === 202, 'webhook');
+      await waitFor(() => between(b.key, d.key).length === 1, 15_000, 'the connector from Jira on the board');
+      const drawn = between(b.key, d.key)[0];
+      assert(drawn.strokeStyle === 'dashed' && drawn.endCap === 'arrow' && drawn.startCap === 'none', `the drawn connector: ${JSON.stringify(drawn)}`);
+      await settled(c);
+      assert(JSON.stringify(cloud.blocks(b.key)) === JSON.stringify([d.key]) && JSON.stringify(cloud.blocks(a.key)) === JSON.stringify([b.key]), 'the drawn connector was sent back as another link');
+      // Removed on the board → removed in Jira.
+      E.delete('dep1');
+      await waitFor(() => cloud.blocks(a.key).length === 0, 15_000, `${a.key} no longer blocks ${b.key} in Jira`);
+      // Removed in Jira → removed on the board.
+      cloud.unblock(b.key, d.key);
+      assert((await cloud.webhook(webhookUrl, secret, d.key)) === 202, 'webhook');
+      await waitFor(() => between(b.key, d.key).length === 0, 15_000, 'the connector gone from the board');
+      assert(cloud.blocks(b.key).length === 0 && cloud.blocks(a.key).length === 0, 'a removed link came back');
+    });
+
+    await check('trackers (#50): a connection from before dependency sync (the switch off, as an upgrade leaves it) writes no blocks link for arrows already between its linked cards, nor draws Jira’s; turned on, it does', async () => {
+      // Off removes the setting: the state an upgrade leaves connections made before #50 in.
+      const off = await O.req('PATCH', `/api/trackers/connections/${cloudConn.id}`, { syncDependencies: false });
+      assert(off.status === 200 && off.json.connection.syncDependencies === false, `switch off: ${off.status} ${off.text}`);
+      const make = (n) => cloud.create('WEB', { summary: `Upgrade ${n}`, labels: ['upgrade'], customfield_10015: `2026-12-0${n}`, duedate: `2026-12-0${n + 2}`, description: { type: 'doc', version: 1, content: [] } });
+      const [p, q, s] = [make(1), make(2), make(3)];
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = upgrade', timeline: { id: 'tl', groupBy: 'none' } });
+      assert(r.status === 201 && r.json.cards.length === 3, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      const cardOf = (key) => E.get(r.json.cards.find((x) => x.key === key).id);
+      await waitFor(() => [p, q, s].every((i) => cloud.issue(i.key).remotelinks.length === 1), 10_000, 'the first syncs');
+      const cp = cardOf(p.key);
+      const cq = cardOf(q.key);
+      E.set('dep-up', { ...base, id: 'dep-up', type: 'connector', x: cp.x, y: cp.y, w: 10, h: 10, start: { elementId: cp.id, anchor: 'right', x: cp.x + cp.w, y: cp.y }, end: { elementId: cq.id, anchor: 'left', x: cq.x, y: cq.y }, routing: 'elbow', stroke: '#1F1A33', strokeWidth: 2, strokeStyle: 'dashed', startCap: 'none', endCap: 'arrow', label: '' });
+      cloud.block(q.key, s.key);
+      // A sync of each issue (a title changed on the board, a webhook from Jira).
+      E.set(cp.id, { ...E.get(cp.id), title: '<p>Upgrade 1, renamed</p>' });
+      await waitFor(() => cloud.issue(p.key).fields.summary === 'Upgrade 1, renamed', 10_000, 'the rename in Jira');
+      assert((await cloud.webhook(webhookUrl, secret, q.key)) === 202, 'webhook');
+      await settled(c);
+      await new Promise((ok) => setTimeout(ok, 2000));
+      assert(cloud.blocks(p.key).length === 0, `an arrow from before was written to Jira: ${cloud.blocks(p.key)}`);
+      const between = (from, to) => [...E.values()].filter((x) => x?.type === 'connector' && x.start.elementId === cardOf(from).id && x.end.elementId === cardOf(to).id);
+      assert(between(q.key, s.key).length === 0, 'a Jira link was drawn with the switch off');
+      // Turned on by a manager: both ways from the next sync.
+      const on = await O.req('PATCH', `/api/trackers/connections/${cloudConn.id}`, { syncDependencies: true });
+      assert(on.status === 200 && on.json.connection.syncDependencies === true, `switch on: ${on.status}`);
+      assert((await cloud.webhook(webhookUrl, secret, p.key)) === 202 && (await cloud.webhook(webhookUrl, secret, q.key)) === 202, 'webhooks');
+      await waitFor(() => JSON.stringify(cloud.blocks(p.key)) === JSON.stringify([q.key]), 15_000, 'the arrow sent once the switch is on');
+      await waitFor(() => between(q.key, s.key).length === 1, 15_000, 'the Jira link drawn once the switch is on');
+    });
+
+    await check('trackers: a status set in Linear the moment Freero’s update lands is pulled by the next sync, not taken as Freero’s own', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear race', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
+      assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
+      E.set('lr1', { ...base, id: 'lr1', type: 'card', x: 500, y: 2600, w: 260, h: 120, title: '<p>Race in Linear</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: null, dueDate: null });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: made.json.connection.id, project: 'ENG', itemIds: ['lr1'] });
+      assert(sent.status === 201, `send: ${sent.status} ${sent.text}`);
+      const key = sent.json.issues[0].key;
+      await waitFor(() => lin.issueByKey(key).attachments.length === 1, 10_000, 'the first sync');
+      lin.editAfterNextUpdate(key, { stateType: 'started' });
+      E.set('lr1', { ...E.get('lr1'), status: 'done' });
+      await waitFor(() => lin.pendingAfterEdits() === 0 && lin.issueByKey(key).state.type === 'started', 15_000, 'done written, then started in Linear');
+      assert((await lin.webhook(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${made.json.connection.id}`, made.json.webhookSecret, key)) === 202, 'webhook');
+      await waitFor(() => E.get('lr1').status === 'doing', 10_000, 'In Progress from Linear on the card');
+    });
+
     await check('trackers: MCP sync_to_tracker sends items as one issue for the agent’s person', async () => {
       const tok = await O.req('POST', '/api/auth/tokens', { name: 'Planner agent', scopes: ['boards:read', 'boards:write'], expiresInDays: 1 });
       assert(tok.status === 201, tok.text);
@@ -7764,6 +7858,15 @@ async function trackerChecks() {
       assert((await az.webhook(hookUrl, 'not-the-secret', key.slice(1))) === 401, 'a hook with another secret was accepted');
       assert((await az.webhook(hookUrl, made.json.webhookSecret, key.slice(1))) === 202, 'service hook refused');
       await waitFor(() => E.get('az3').status === 'doing', 10_000, 'Active on the card');
+      // Someone resolves it in Azure DevOps the moment Freero's write of Closed lands, before Freero
+      // reads it back: their state still reaches the card (Freero agrees on what it wrote, so the
+      // service hook's sync sees Resolved as a change in Azure DevOps).
+      az.editAfterNextPatch(key.slice(1), { state: 'Resolved' });
+      E.set('az3', { ...E.get('az3'), status: 'done' });
+      await waitFor(() => az.pendingAfterEdits() === 0 && az.item(key).state === 'Resolved', 15_000, 'Closed written, then Resolved in Azure DevOps');
+      await waitFor(() => E.get('az3').status === 'done', 5000, 'the card still done after the write');
+      assert((await az.webhook(hookUrl, made.json.webhookSecret, key.slice(1))) === 202, 'service hook refused');
+      await waitFor(() => E.get('az3').status === 'doing', 10_000, 'Resolved (in progress) on the card');
       // The revision race: someone renames the work item between Freero's read and its write.
       az.editBeforeNextPatch(key.slice(1), { title: 'Audit log export (renamed in Azure)' });
       E.set('az3', { ...E.get('az3'), title: '<p>Audit log export, renamed on the board</p>' });
@@ -7972,6 +8075,160 @@ async function trackerChecks() {
       await waitFor(() => mondayMock.item(key).groupTitle === 'Done', 15_000, 'the item in the Done group');
     });
 
+    // ---- ClickUp (#180): webhooks Freero registers itself, signed with the secret ClickUp names ----
+
+    let clickupConn = null;
+    await check('trackers (ClickUp, #180): a personal token connection; a List imported into a new kanban has its statuses as columns; Freero registers the List’s webhook and keeps the secret ClickUp names, and a status changed in ClickUp moves the card by a signed delivery', async () => {
+      const body = { provider: 'clickup', name: 'ClickUp', workspaceId: team.id, site: clickupMock.site, token: clickupMock.token, defaults: { project: clickupMock.list } };
+      const wrong = await O.req('POST', '/api/trackers/connections', { ...body, token: 'pk_nope' });
+      assert(wrong.status === 400 && /refused the credentials/.test(wrong.json?.error ?? ''), `wrong token: ${wrong.status} ${wrong.text}`);
+      const made = await O.req('POST', '/api/trackers/connections', body);
+      assert(made.status === 201 && made.json.connection.account === 'bot@clickup.test' && made.json.connection.inbound === 'webhook' && !made.text.includes(clickupMock.token), `clickup connection: ${made.status} ${made.text}`);
+      clickupConn = made.json.connection;
+      const pricing = clickupMock.create(clickupMock.list, { name: 'Pricing page' });
+      const copy = clickupMock.create(clickupMock.list, { name: 'Checkout copy', status: 'in review', priority: 2 });
+      const shipped = clickupMock.create(clickupMock.list, { name: 'Logo refresh', status: 'complete' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: clickupConn.id, scope: { project: clickupMock.list }, placement: { newKanban: 'Sprint board' } });
+      assert(r.status === 201 && r.json.containerId && r.json.cards.length === 3, `import a whole List: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      await waitFor(() => E.get(kid) && r.json.cards.every((x) => E.get(x.id)), 8000, 'the Sprint board kanban and its cards');
+      const titles = E.get(kid).columns.map((c) => plain(c.title));
+      assert(JSON.stringify(titles) === JSON.stringify(['to do', 'in review', 'complete']), `columns: ${titles}`);
+      const card = (id) => E.get(r.json.cards.find((x) => x.key === id).id);
+      assert(columnTitle(kid, card(copy.id)) === 'in review' && columnTitle(kid, card(shipped.id)) === 'complete' && card(shipped.id).status === 'done', 'the cards’ columns');
+      assert(optionLabel(kid, 'Priority', card(copy.id)) === 'High', `the priority on the card: ${optionLabel(kid, 'Priority', card(copy.id))}`);
+      await waitFor(() => clickupMock.webhooks.length === 1 && clickupMock.webhooks[0].list_id === clickupMock.list, 10_000, 'a webhook on the Sprint board List');
+      await waitFor(() => clickupMock.task(pricing.id).comments.some((x) => x.comment_text.includes('item=')), 10_000, 'the first sync (a link back to the card)');
+      const statuses = await clickupMock.edit(pricing.id, { status: 'in review' });
+      assert(JSON.stringify(statuses) === '[202]', `the signed delivery: ${statuses}`);
+      await waitFor(() => columnTitle(kid, card(pricing.id)) === 'in review', 10_000, 'the card in “in review”');
+      // A card moved to complete on the board: the task's status in ClickUp.
+      const c = card(copy.id);
+      E.set(c.id, { ...c, x: xInColumn(kid, c, 'complete'), status: 'done' });
+      await waitFor(() => clickupMock.task(copy.id).statusName === 'complete', 15_000, 'complete in ClickUp');
+    });
+
+    await check('trackers (ClickUp, #180): a forged delivery and an address without its key are refused; a card sent with an assignee, due date and tag; a title changed on the board while someone edits the description in ClickUp keeps their description and brings it to the card', async () => {
+      const target = clickupMock.webhooks[0]?.endpoint;
+      assert(target && /[?&]h=/.test(target) && /[?&]k=/.test(target), `the registered address: ${target}`);
+      const id = clickupMock.create(clickupMock.list, { name: 'Forged' }).id;
+      assert((await clickupMock.forge(target, id)) === 401, 'a delivery signed with another secret was accepted');
+      assert((await clickupMock.forge(target.replace(/k=[^&]+/, 'k=guess'), id)) === 401, 'an address with a guessed key was accepted');
+      assert((await clickupMock.forge(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${clickupConn.id}`, id)) === 401, 'a delivery without the address’s key was accepted');
+      clickupMock.addUser(M.email, 'Member in ClickUp');
+      E.set('cu1', { ...base, id: 'cu1', type: 'card', x: 0, y: 22000, w: 260, h: 120, title: '<p>Onboarding email</p>', description: '', color: '#5B3FF0', status: 'todo', tags: ['t-ux'], assigneeId: M.id, dueDate: '2026-12-10' });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: clickupConn.id, project: clickupMock.list, itemIds: ['cu1'] });
+      assert(sent.status === 201, `clickup send: ${sent.status} ${sent.text}`);
+      const key = sent.json.issues[0].key;
+      const t = clickupMock.task(key);
+      assert(t.name === 'Onboarding email' && t.assignees[0]?.email === M.email && new Date(Number(t.due_date)).toISOString().slice(0, 10) === '2026-12-10' && JSON.stringify(t.tagNames) === '["ux"]' && t.statusName === 'to do', `the task: ${JSON.stringify(t)}`);
+      assert(t.comments.length === 1 && t.comments[0].comment_text.includes('item=cu1'), 'no link back to the card');
+      // Someone edits the description in ClickUp between Freero's read and its write of the new title.
+      clickupMock.editBeforeNextWrite(key, { markdown: 'Use the **spring** palette' });
+      E.set('cu1', { ...E.get('cu1'), title: '<p>Onboarding email, final</p>' });
+      await waitFor(() => clickupMock.task(key).name === 'Onboarding email, final', 15_000, 'the new title in ClickUp');
+      assert(clickupMock.task(key).markdown_description.includes('spring'), `Freero wrote over the description: ${clickupMock.task(key).markdown_description}`);
+      await waitFor(() => plain(E.get('cu1').description).includes('spring'), 15_000, 'the description from ClickUp on the card');
+    });
+
+    await check('trackers (ClickUp, #180): a custom field in the field map syncs with the kanban field of that name, and connecting through the operator’s ClickUp app (OAuth) works', async () => {
+      const set = await O.req('PATCH', `/api/trackers/connections/${clickupConn.id}`, { fieldMap: { fields: [{ tracker: clickupMock.teamField.id, trackerName: 'Team', board: 'Team', type: 'select' }] } });
+      assert(set.status === 200, `field map: ${set.status} ${set.text}`);
+      const fields = await O.req('GET', `/api/trackers/connections/${clickupConn.id}/fields`);
+      assert(fields.status === 200 && fields.json.fields.some((f) => f.name === 'Team' && f.type === 'select'), `fields: ${fields.text}`);
+      const t = clickupMock.create(clickupMock.list, { name: 'Field map: hero video' });
+      await clickupMock.edit(t.id, { team: 'Web' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: clickupConn.id, query: `list:${clickupMock.list} Field map`, placement: { newKanban: 'ClickUp teams' } });
+      assert(r.status === 201 && r.json.cards.length === 1, `import with the filter: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      const cid = r.json.cards[0].id;
+      await waitFor(() => E.get(cid) && optionLabel(kid, 'Team', E.get(cid)) === 'Web', 8000, 'the Team field on the card');
+      await waitFor(() => clickupMock.task(t.id).comments.length === 1, 10_000, 'the first sync');
+      await clickupMock.edit(t.id, { team: 'Mobile' });
+      await waitFor(() => optionLabel(kid, 'Team', E.get(cid)) === 'Mobile', 10_000, 'Mobile from ClickUp on the card');
+      setOption(kid, 'Team', cid, 'Web');
+      await waitFor(() => clickupMock.task(t.id).team === 'Web', 15_000, 'Web from the card in ClickUp');
+
+      const s = await fetch(`http://127.0.0.1:${proc.port}/api/trackers/oauth/clickup/start?workspace=${team.id}&name=ClickUp+via+OAuth`, { headers: { cookie: O.cookie }, redirect: 'manual' });
+      assert(s.status === 302 && s.headers.get('location').startsWith(`${clickupMock.url}/api?`), `start: ${s.status} ${s.headers.get('location')}`);
+      const browser = /freero_tracker_oauth=([^;]+)/.exec(s.headers.getSetCookie().join(';'))?.[1];
+      const consent = await fetch(s.headers.get('location'), { redirect: 'manual' });
+      const cb = new URL(consent.headers.get('location'));
+      const done = await fetch(`http://127.0.0.1:${proc.port}${cb.pathname}${cb.search}`, { headers: { cookie: `${O.cookie}; freero_tracker_oauth=${browser}` }, redirect: 'manual' });
+      assert(done.status === 302 && /tracker_connected=1/.test(done.headers.get('location')), `callback: ${done.status} ${done.headers.get('location')}`);
+      const conn = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.connections.find((x) => x.provider === 'clickup' && x.auth === 'oauth');
+      assert(conn && conn.inbound === 'webhook' && conn.account === 'bot@clickup.test', `the OAuth connection: ${JSON.stringify(conn)}`);
+      const projects = await O.req('GET', `/api/boards/${board.id}/trackers/connections/${conn.id}/projects`);
+      assert(projects.status === 200 && projects.json.projects.some((p) => p.name === 'Product / Web / Sprint board'), `Lists through OAuth: ${projects.status} ${projects.text.slice(0, 300)}`);
+    });
+
+    // ---- Trello (#181): webhooks Freero registers itself (Trello checks the address with HEAD) ----
+
+    let trelloConn = null;
+    await check('trackers (Trello, #181): a token for the operator’s API key; a board imported into a new kanban has its lists as columns; Freero registers the board’s webhook (Trello’s HEAD check of the address), and a card moved to another list in Trello moves the card by a signed delivery', async () => {
+      const offer = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.trello;
+      assert(offer?.key === trelloMock.key && offer.authorizeUrl.startsWith(`${trelloMock.url}/1/authorize?`) && !JSON.stringify(offer).includes(trelloMock.secret), `the Trello offer: ${JSON.stringify(offer)}`);
+      const body = { provider: 'trello', name: 'Trello', workspaceId: team.id, site: trelloMock.site, token: trelloMock.token, defaults: { project: trelloMock.board } };
+      const wrong = await O.req('POST', '/api/trackers/connections', { ...body, token: 'ATTA-nope' });
+      assert(wrong.status === 400 && /refused the credentials/.test(wrong.json?.error ?? ''), `wrong token: ${wrong.status} ${wrong.text}`);
+      const otherKey = await O.req('POST', '/api/trackers/connections', { ...body, apiKey: 'someone-elses-key' });
+      assert(otherKey.status === 400, `a token with another key was kept: ${otherKey.status}`);
+      const made = await O.req('POST', '/api/trackers/connections', body);
+      assert(made.status === 201 && made.json.connection.account === 'bot@trello.test' && made.json.connection.inbound === 'webhook' && !made.text.includes(trelloMock.token), `trello connection: ${made.status} ${made.text}`);
+      trelloConn = made.json.connection;
+      const pricing = trelloMock.create({ name: 'Pricing page' });
+      const copy = trelloMock.create({ name: 'Launch copy', list: 'Doing', due: '2026-12-01T17:00:00.000Z' });
+      const shipped = trelloMock.create({ name: 'Logo refresh', list: 'Done' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: trelloConn.id, scope: { project: trelloMock.board }, placement: { newKanban: 'Trello launch' } });
+      assert(r.status === 201 && r.json.containerId && r.json.cards.length === 3, `import a whole board: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      await waitFor(() => E.get(kid) && r.json.cards.every((x) => E.get(x.id)), 8000, 'the Trello launch kanban and its cards');
+      const titles = E.get(kid).columns.map((c) => plain(c.title));
+      assert(JSON.stringify(titles) === JSON.stringify(['To Do', 'Doing', 'Done']), `columns: ${titles}`);
+      const card = (id) => E.get(r.json.cards.find((x) => trelloMock.cardIdOf(x.url) === id).id);
+      assert(columnTitle(kid, card(copy.id)) === 'Doing' && columnTitle(kid, card(shipped.id)) === 'Done' && card(copy.id).dueDate === '2026-12-01', 'the cards’ columns and dates');
+      await waitFor(() => trelloMock.webhooks.length === 1 && trelloMock.webhooks[0].idModel === trelloMock.board, 10_000, 'a webhook on the Launch board');
+      await waitFor(() => trelloMock.card(pricing.id).attachments.length === 1, 10_000, 'the first sync (a link back to the card)');
+      const statuses = await trelloMock.edit(pricing.id, { list: 'Doing' });
+      assert(JSON.stringify(statuses) === '[202]', `the signed delivery: ${statuses}`);
+      await waitFor(() => columnTitle(kid, card(pricing.id)) === 'Doing', 10_000, 'the card in Doing');
+      const c = card(copy.id);
+      E.set(c.id, { ...c, x: xInColumn(kid, c, 'Done'), status: 'done' });
+      await waitFor(() => trelloMock.card(copy.id).listName === 'Done', 15_000, 'Done in Trello');
+    });
+
+    await check('trackers (Trello, #181): a forged delivery, an address without its key and a HEAD check of an address Freero isn’t registering are refused; a card renamed on the board while someone edits its description in Trello keeps their description; members match people through their own Trello connection', async () => {
+      const target = trelloMock.webhooks[0]?.callbackURL;
+      assert(target && /[?&]h=/.test(target) && /[?&]k=/.test(target), `the registered address: ${target}`);
+      const id = trelloMock.create({ name: 'Forged' }).id;
+      assert((await trelloMock.forge(target, id)) === 401, 'a delivery signed with another secret was accepted');
+      assert((await trelloMock.forge(target.replace(/k=[^&]+/, 'k=guess'), id)) === 401, 'an address with a guessed key was accepted');
+      assert((await fetch(target, { method: 'HEAD' })).status === 401, 'a HEAD check after the registration was answered');
+      // M connects their own Trello: Freero now knows which member they are.
+      const mine = trelloMock.addMember('member-m', M.email);
+      const own = await M.req('POST', '/api/trackers/connections', { provider: 'trello', name: 'My Trello', site: trelloMock.site, token: mine.token });
+      assert(own.status === 201 && own.json.connection.scope === 'personal', `M's own Trello: ${own.status} ${own.text}`);
+      E.set('tr1', { ...base, id: 'tr1', type: 'card', x: 0, y: 23000, w: 260, h: 120, title: '<p>Partner logos</p>', description: '', color: '#5B3FF0', status: 'todo', tags: ['t-ux'], assigneeId: M.id, dueDate: '2026-12-12' });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: trelloConn.id, project: trelloMock.board, itemIds: ['tr1'] });
+      assert(sent.status === 201, `trello send: ${sent.status} ${sent.text}`);
+      const cardId = trelloMock.cardIdOf(sent.json.issues[0].url);
+      assert(cardId, `the card's address: ${sent.json.issues[0].url}`);
+      const tc = trelloMock.card(cardId);
+      assert(tc.name === 'Partner logos' && JSON.stringify(tc.memberNames) === '["member-m"]' && tc.due?.startsWith('2026-12-12') && JSON.stringify(tc.labelNames) === '["ux"]' && tc.listName === 'To Do', `the card: ${JSON.stringify(tc)}`);
+      assert(tc.attachments.length === 1 && tc.attachments[0].url.includes('item=tr1'), 'no link back to the board card');
+      // Someone edits the description in Trello between Freero's read and its write of the new name.
+      trelloMock.editBeforeNextWrite(cardId, { desc: 'Use the **spring** palette' });
+      E.set('tr1', { ...E.get('tr1'), title: '<p>Partner logos, final</p>' });
+      await waitFor(() => trelloMock.card(cardId).name === 'Partner logos, final', 15_000, 'the new name in Trello');
+      assert(trelloMock.card(cardId).desc.includes('spring'), `Freero wrote over the description: ${trelloMock.card(cardId).desc}`);
+      await waitFor(() => plain(E.get('tr1').description).includes('spring'), 15_000, 'the description from Trello on the card');
+      // A member taken off in Trello: the card has nobody.
+      await trelloMock.edit(cardId, { member: null });
+      await waitFor(() => E.get('tr1').assigneeId === null, 10_000, 'nobody on the card');
+      await trelloMock.edit(cardId, { member: 'member-m' });
+      await waitFor(() => E.get('tr1').assigneeId === M.id, 10_000, 'M on the card again, matched through their own connection');
+    });
+
     await check('trackers: Linear — a cluster becomes one issue with an attachment per sticky, and a signed webhook moves the card', async () => {
       const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
       assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
@@ -8006,12 +8263,106 @@ async function trackerChecks() {
       assert(/\?item=g1/.test(body), 'no link back to the board item');
     });
 
+    // ---- GitHub Projects, milestones, assignees, sub-issues (#42) ----
+
+    let ghp = null;
+    await check('trackers (GitHub, #42): with a planning Project, an iteration imported into a kanban has the Project’s Status as columns, the estimate, the Iteration and the Start / Target dates; a card moved to Done closes the issue and sets its Status; a Status changed in the Project (no webhook for that) reaches the card by polling', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub planning', workspaceId: team.id, site: gh.url, token: gh.token, inbound: 'polling', defaults: { project: 'acme/app' } });
+      assert(made.status === 201, `github connection: ${made.status} ${made.text}`);
+      ghp = made.json.connection;
+      const bad = await O.req('PATCH', `/api/trackers/connections/${ghp.id}`, { fieldMap: { planningProject: 'not a project' } });
+      assert(bad.status === 400, `a malformed planning Project was kept: ${bad.status}`);
+      const set = await O.req('PATCH', `/api/trackers/connections/${ghp.id}`, { fieldMap: { planningProject: gh.project } });
+      assert(set.status === 200 && set.json.connection.fieldMap.planningProject === gh.project, `planning Project: ${set.status} ${set.text}`);
+      const fields = await O.req('GET', `/api/trackers/connections/${ghp.id}/fields`);
+      assert(fields.status === 200 && ['Status', 'Estimate', 'Start date', 'Target date', 'Team'].every((n) => fields.json.fields.some((f) => f.name === n)), `the Project's fields: ${fields.text}`);
+      const sprints = await O.req('GET', `/api/boards/${board.id}/trackers/connections/${ghp.id}/sprints?project=acme/app`);
+      assert(sprints.status === 200 && sprints.json.fieldName === 'Iteration' && sprints.json.sprints.find((s) => s.name === 'Iteration 2')?.state === 'active' && sprints.json.sprints.find((s) => s.name === 'Iteration 1')?.state === 'closed', `iterations: ${sprints.text}`);
+      const a = gh.create('acme/app', { title: 'Checkout redesign' });
+      gh.setField('acme/app', a, 'Status', 'In Review');
+      gh.setField('acme/app', a, 'Estimate', 5);
+      gh.setField('acme/app', a, 'Iteration', 'Iteration 2');
+      gh.setField('acme/app', a, 'Start date', '2026-11-09');
+      gh.setField('acme/app', a, 'Target date', '2026-11-20');
+      const b = gh.create('acme/app', { title: 'Receipt emails' });
+      gh.setField('acme/app', b, 'Status', 'Todo');
+      gh.setField('acme/app', b, 'Iteration', 'Iteration 2');
+      const shipped = gh.create('acme/app', { title: 'Saved carts' });
+      gh.setField('acme/app', shipped, 'Status', 'Done');
+      gh.setField('acme/app', shipped, 'Iteration', 'Iteration 2');
+      const later = gh.create('acme/app', { title: 'Gift cards' });
+      gh.setField('acme/app', later, 'Iteration', 'Iteration 3');
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: ghp.id, scope: { project: 'acme/app', sprint: 'current' }, placement: { newKanban: 'App iteration' } });
+      assert(r.status === 201 && r.json.cards.length === 3, `import the current iteration: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      await waitFor(() => E.get(kid) && r.json.cards.every((x) => E.get(x.id)), 8000, 'the App iteration kanban');
+      const titles = E.get(kid).columns.map((c) => plain(c.title));
+      assert(JSON.stringify(titles) === JSON.stringify(['Todo', 'In Review', 'Done']), `columns: ${titles}`);
+      const card = (n) => E.get(r.json.cards.find((x) => x.key === `acme/app#${n}`).id);
+      const ca = card(a);
+      assert(columnTitle(kid, ca) === 'In Review' && String(ca.estimate) === '5', `the column / estimate on the card: ${columnTitle(kid, ca)} ${ca.estimate}`);
+      assert(ca.startDate === '2026-11-09' && ca.dueDate === '2026-11-20' && optionLabel(kid, 'Iteration', ca) === 'Iteration 2', `dates / iteration: ${ca.startDate} ${ca.dueDate} ${optionLabel(kid, 'Iteration', ca)}`);
+      await waitFor(() => /\?item=/.test(gh.issue('acme/app', a).body), 10_000, 'the first sync (a link back)');
+      // Moved on the board: the Project's Status follows by name.
+      E.set(ca.id, { ...E.get(ca.id), x: xInColumn(kid, E.get(ca.id), 'Todo'), status: 'todo' });
+      await waitFor(() => gh.issue('acme/app', a).fields.Status === 'Todo', 15_000, 'Todo in the Project from the board');
+      // Moved in the Project (no repository webhook says so): polling brings it.
+      gh.setField('acme/app', b, 'Status', 'In Review');
+      await waitFor(() => columnTitle(kid, card(b)) === 'In Review', 20_000, 'In Review from the Project on the card, by polling');
+      const cb = card(b);
+      E.set(cb.id, { ...cb, x: xInColumn(kid, cb, 'Done'), status: 'done' });
+      await waitFor(() => gh.issue('acme/app', b).state === 'closed' && gh.issue('acme/app', b).fields.Status === 'Done', 15_000, 'closed and Done in GitHub');
+      // The next iteration, picked on the card, moves the issue there; a completed one is refused with a note.
+      await waitFor(() => fieldOf(kid, 'Iteration')?.options?.some((o) => o.label === 'Iteration 3'), 1000, 'Iteration 3 among the options');
+      setOption(kid, 'Iteration', ca.id, 'Iteration 3');
+      await waitFor(() => gh.issue('acme/app', a).fields.Iteration === 'Iteration 3', 15_000, 'Iteration 3 in the Project');
+    });
+
+    await check('trackers (GitHub, #42): assignees by the GitHub profile’s public address; without a Target date field the due date is the milestone’s; a card sent under a parent issue becomes its sub-issue, and an import by parent brings the sub-issues', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub docs', workspaceId: team.id, site: gh.url, token: gh.token, inbound: 'polling', defaults: { project: 'acme/docs' } });
+      assert(made.status === 201, `github connection: ${made.status} ${made.text}`);
+      const gd = made.json.connection;
+      gh.addUser('member-m', M.email);
+      gh.addUser('ann-hidden', null);
+      const m1 = gh.addMilestone('acme/docs', 'December docs', '2026-12-20');
+      gh.addMilestone('acme/docs', 'Year end', '2026-12-31');
+      const parent = gh.create('acme/docs', { title: 'Docs overhaul', milestone: m1 });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: gd.id, query: 'repo:acme/docs Docs overhaul' });
+      assert(r.status === 201 && r.json.cards.length === 1, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      const pid = r.json.cards[0].id;
+      await waitFor(() => E.get(pid)?.dueDate === '2026-12-20', 8000, 'the milestone’s due date on the card');
+      await waitFor(() => /\?item=/.test(gh.issue('acme/docs', parent).body), 10_000, 'the first sync');
+      E.set(pid, { ...E.get(pid), dueDate: '2026-12-31' });
+      await waitFor(() => gh.issue('acme/docs', parent).milestoneDue === '2026-12-31', 15_000, 'the issue moved to the milestone due that day');
+      E.set(pid, { ...E.get(pid), dueDate: '2027-01-05' });
+      await waitFor(() => comments().some((t) => /no open milestone due on 2027-01-05/.test(t)), 15_000, 'a note: no milestone due that day');
+      assert(gh.issue('acme/docs', parent).milestoneDue === '2026-12-31', 'the milestone changed without one due that day');
+      // A card assigned to M, sent under the parent: assigned by M's public address, a sub-issue of it.
+      E.set('gs1', { ...base, id: 'gs1', type: 'card', x: 0, y: 24000, w: 260, h: 120, title: '<p>API reference</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: M.id, dueDate: null });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: gd.id, project: 'acme/docs', itemIds: ['gs1'], parent: `#${parent}` });
+      assert(sent.status === 201, `send under a parent: ${sent.status} ${sent.text}`);
+      const key = sent.json.issues[0].key;
+      const n = Number(key.split('#')[1]);
+      assert(JSON.stringify(gh.issue('acme/docs', n).assignees) === '["member-m"]', `assignees: ${JSON.stringify(gh.issue('acme/docs', n).assignees)}`);
+      assert(JSON.stringify(gh.subIssues('acme/docs', parent)) === JSON.stringify([key]), `sub-issues: ${JSON.stringify(gh.subIssues('acme/docs', parent))}`);
+      // Assigned in GitHub to someone whose address it hides: the badge says who, the card keeps M (never a guess).
+      gh.edit('acme/docs', n, { assignees: ['ann-hidden'] });
+      await waitFor(() => records().get(E.get('gs1').trackerLink)?.assignee === 'ann-hidden', 20_000, 'the hidden-address login on the badge');
+      assert(E.get('gs1').assigneeId === M.id, 'the card’s assignee changed to a guess');
+      gh.edit('acme/docs', n, { assignees: [] });
+      await waitFor(() => E.get('gs1').assigneeId === null, 20_000, 'nobody on the card');
+      gh.edit('acme/docs', n, { assignees: ['member-m'] });
+      await waitFor(() => E.get('gs1').assigneeId === M.id, 20_000, 'M on the card from GitHub');
+      const kids = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: gd.id, scope: { project: 'acme/docs', epic: `#${parent}` } });
+      assert(kids.status === 201 && kids.json.skipped === 1 && kids.json.created.length === 0, `import by parent (its one sub-issue is on the board already): ${kids.status} ${kids.text.slice(0, 300)}`);
+    });
+
     await check('trackers: every sync is in the workspace’s audit log, and no credential appears there or in the server log', async () => {
       const events = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=500`)).json.events;
       const actions = new Set(events.map((e) => e.action));
       for (const a of ['tracker.connection_created', 'tracker.issue_created', 'tracker.synced', 'tracker.issues_imported']) assert(actions.has(a), `audit lacks ${a}`);
       const all = JSON.stringify(events) + proc.log.join('');
-      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token, az.token, azServer.token, asanaMock.token, mondayMock.token, ...asanaMock.webhooks.map((w) => w.secret)]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
+      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token, az.token, azServer.token, asanaMock.token, mondayMock.token, clickupMock.token, trelloMock.token, trelloMock.secret, ...asanaMock.webhooks.map((w) => w.secret), ...clickupMock.webhooks.map((w) => w.secret)]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
 
       const failures = proc.log
         .join('')

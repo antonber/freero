@@ -389,7 +389,7 @@
   "connectAnAgent": "连接智能体",
   "appsAgents": "应用与智能体",
   "yourIssueTrackers": "你的问题跟踪工具",
-  "yourOwnJiraLinearGithub": "你自己的 Jira、Linear、GitHub、Azure DevOps、Asana 或 monday.com 连接，用于在任何你可编辑的白板上将白板项目发送为问题。团队的连接在其管理控制台中设置。",
+  "yourOwnJiraLinearGithub": "你自己的 Jira、Linear、GitHub、Azure DevOps、Asana、monday.com、ClickUp 或 Trello 连接，可在你能编辑的任何看板上把条目作为问题发送。团队的连接在团队的管理控制台中设置。",
   "problemsYouReported": "你报告的问题",
   "yourNameCanTBe": "名称不能为空",
   "keepItUnder80Characters": "请少于 80 个字符",

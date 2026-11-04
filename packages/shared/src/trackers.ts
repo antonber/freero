@@ -20,6 +20,8 @@ export const TRACKER_PROVIDERS = {
   azure: 'Azure DevOps',
   asana: 'Asana',
   monday: 'monday.com',
+  clickup: 'ClickUp',
+  trello: 'Trello',
 } as const;
 export type TrackerProviderKind = keyof typeof TRACKER_PROVIDERS;
 
@@ -499,7 +501,8 @@ export function estimateNumber(v: unknown): number | null {
 // GET    /api/trackers/connections/:id/fields         -> { fields: TrackerFieldInfo[] } (managers: the field map's picker, #43)
 // GET    /api/trackers/oauth/:provider/start?workspace=<id>|personal=1  -> 302 to the tracker's consent page
 // POST   /api/trackers/webhooks/:connectionId         (the tracker; signed with the connection's secret)
-// POST   /api/trackers/webhooks/:connectionId?h=&k=   (Asana, monday.com: a webhook Freero registered itself;
+// POST   /api/trackers/webhooks/:connectionId?h=&k=   (Asana, monday.com, ClickUp, Trello: a webhook Freero registered itself;
+// HEAD   /api/trackers/webhooks/:connectionId?h=&k=   (Trello's check of an address: 200 only while Freero registers it)
 //                                                      `k` binds the address to the connection's secret, and
 //                                                      the handshake — Asana's X-Hook-Secret, monday's
 //                                                      challenge — is answered only while Freero registers it)
@@ -531,6 +534,12 @@ export interface TrackerConnectionInfo {
   fieldMap?: TrackerFieldMapSettings;
   /** Where the tracker sends webhooks (managers only). */
   webhookUrl?: string;
+  /**
+   * [additive, #50] Dependency connectors between linked cards sync as the tracker's "blocks"
+   * links (both ways); absent where the tracker has none Freero syncs. Off for connections made
+   * before #50, on for new ones; managers change it with PATCH `syncDependencies`.
+   */
+  syncDependencies?: boolean;
   links: number;
   createdAt: number;
 }
@@ -543,6 +552,12 @@ export interface TrackerFieldMapSettings {
   /** Issue (work item) type by project key, before the connection's default. */
   issueTypes: Record<string, string>;
   fields: FieldMapEntry[];
+  /**
+   * [additive] GitHub (#42): the Project (v2) whose fields sync ("acme/3": an organization or user
+   * and the Project's number) — Status ↔ column, estimate, Iteration, start and target dates. New
+   * issues join it; an issue in another Project uses the first one it is in.
+   */
+  planningProject?: string | null;
 }
 
 export interface TrackerConnectionInput {
@@ -556,10 +571,19 @@ export interface TrackerConnectionInput {
   email?: string;
   /** API token / personal access token. Never sent back. */
   token?: string;
+  /**
+   * [additive] Trello (#181): the API key the token was made for (left out: the operator's key,
+   * TRACKER_TRELLO_KEY), and optionally that key's secret, so webhook deliveries are verified by
+   * their signature. Never sent back.
+   */
+  apiKey?: string;
+  apiSecret?: string;
   inbound?: 'webhook' | 'polling';
   defaults?: { project?: string | null; issueType?: string | null };
   /** [additive] PATCH only (managers). */
   fieldMap?: Partial<TrackerFieldMapSettings>;
+  /** [additive, #50] PATCH only (managers): sync dependency connectors as "blocks" links. */
+  syncDependencies?: boolean;
 }
 
 export interface TrackerProject {
@@ -626,7 +650,8 @@ export interface TrackerImportRequest {
   limit?: number;
   /**
    * Roadmap mode (KAI-160): the issues become bars on this timeline instead of a grid of cards —
-   * still linked task cards, so their dates sync both ways — in a lane per team, epic or label
+   * still linked task cards, so their dates sync both ways — in a lane per team, epic, label or
+   * [additive, #50] quarter (the one each bar starts in)
    * (lanes are matched by name, missing ones added). Issues without dates go to an "Unscheduled"
    * frame below the timeline.
    */
@@ -641,7 +666,7 @@ export interface TrackerImportRequest {
 }
 
 /** How a roadmap import puts issues into lanes. */
-export type RoadmapGroupBy = 'none' | 'team' | 'epic' | 'label';
+export type RoadmapGroupBy = 'none' | 'team' | 'epic' | 'label' | 'quarter';
 
 /** What a tracker says an issue belongs to, for roadmap lanes (not synced fields). */
 export interface IssueGroups {
@@ -651,9 +676,17 @@ export interface IssueGroups {
   epic?: string | null;
 }
 
-/** The lane an issue goes to: its team / epic / first label (sorted), or null for "none". */
-export function roadmapLaneOf(groupBy: RoadmapGroupBy, groups: IssueGroups | undefined, labels: readonly string[]): string | null {
+/** A day's quarter as a lane is called ("2026 Q4"). */
+export const quarterOf = (day: string): string | null => (/^\d{4}-\d{2}/.test(day) ? `${day.slice(0, 4)} Q${Math.floor((Number(day.slice(5, 7)) - 1) / 3) + 1}` : null);
+
+/**
+ * The lane an issue goes to: its team / epic / first label (sorted) / the quarter it starts in
+ * (#50; `start`: its bar's first day), or null for "none".
+ */
+export function roadmapLaneOf(groupBy: RoadmapGroupBy, groups: IssueGroups | undefined, labels: readonly string[], start?: string | null): string | null {
   switch (groupBy) {
+    case 'quarter':
+      return start ? quarterOf(start) : null;
     case 'team':
       return groups?.team?.trim() || null;
     case 'epic':
@@ -665,7 +698,7 @@ export function roadmapLaneOf(groupBy: RoadmapGroupBy, groups: IssueGroups | und
   }
 }
 
-export const ROADMAP_NO_GROUP: Record<RoadmapGroupBy, string> = { none: '', team: 'No team', epic: 'No epic', label: 'No label' };
+export const ROADMAP_NO_GROUP: Record<RoadmapGroupBy, string> = { none: '', team: 'No team', epic: 'No epic', label: 'No label', quarter: 'No date' };
 
 export interface TrackerImportResponse {
   /** Cards created for issues new to this board. */

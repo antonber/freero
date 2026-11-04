@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "O rastreador não respondeu. Tente de novo.",
   "sendToTracker": "Enviar ao rastreador…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "Cada issue vira um cartão de tarefa vinculado a ela (até 50 por vez). Issues que já estão neste quadro ficam de fora.",
   "countIssue": "{count, plural, one {# issue} other {# issues}}",
   "countItem": "{count, plural, one {# item} other {# itens}}",
-  "countSelectedItem": "{count, plural, one {# item selecionado} other {# itens selecionados}}"
+  "countSelectedItem": "{count, plural, one {# item selecionado} other {# itens selecionados}}",
+  "quarter": "Trimestre",
+  "aList": "Uma lista"
 }

@@ -389,7 +389,7 @@
   "connectAnAgent": "ربط وكيل",
   "appsAgents": "التطبيقات والوكلاء",
   "yourIssueTrackers": "أدوات تتبع المشكلات الخاصة بك",
-  "yourOwnJiraLinearGithub": "اتصالاتك الخاصة بـ Jira أو Linear أو GitHub أو Azure DevOps أو Asana أو monday.com، لإرسال عناصر اللوحة كمشكلات من أي لوحة يمكنك تعديلها. تُعدّ اتصالات فريقك في وحدة تحكم المسؤول الخاصة به.",
+  "yourOwnJiraLinearGithub": "اتصالاتك الخاصة بـ Jira أو Linear أو GitHub أو Azure DevOps أو Asana أو monday.com أو ClickUp أو Trello، لإرسال عناصر اللوحة كمشكلات من أي لوحة يمكنك تعديلها. تُعدّ اتصالات فريقك في وحدة تحكم المسؤول الخاصة به.",
   "problemsYouReported": "المشكلات التي أبلغت عنها",
   "yourNameCanTBe": "لا يمكن أن يكون اسمك فارغًا",
   "keepItUnder80Characters": "اجعله أقل من 80 حرفًا",

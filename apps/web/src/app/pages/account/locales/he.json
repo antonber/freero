@@ -389,7 +389,7 @@
   "connectAnAgent": "חיבור סוכן",
   "appsAgents": "אפליקציות וסוכנים",
   "yourIssueTrackers": "מערכות מעקב הבעיות שלך",
-  "yourOwnJiraLinearGithub": "החיבורים האישיים שלך ל-Jira, ‏Linear, ‏GitHub, ‏Azure DevOps, ‏Asana או monday.com, לשליחת פריטי לוח כבעיות מכל לוח שמותר לך לערוך. חיבורי הצוות מוגדרים במסוף הניהול שלו.",
+  "yourOwnJiraLinearGithub": "החיבורים שלכם ל-Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp או Trello, לשליחת פריטי לוח כבעיות מכל לוח שאתם יכולים לערוך. חיבורי הצוות מוגדרים במסוף הניהול שלו.",
   "problemsYouReported": "בעיות שדיווחת עליהן",
   "yourNameCanTBe": "השם לא יכול להיות ריק",
   "keepItUnder80Characters": "עד 80 תווים",

@@ -38,6 +38,9 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
   const cycleView = (c) => (c ? { id: c.id, number: c.number, name: c.name, startsAt: c.startsAt, endsAt: c.endsAt, completedAt: c.completedAt } : null);
   const users = [];
   const issues = [];
+  /** "blocks" relations (#50): issue `from` blocks issue `to`. */
+  const relations = [];
+  const afterEdits = [];
   const counters = new Map();
   let url = '';
 
@@ -59,6 +62,8 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     parent: i.parentId ? { title: issues.find((p) => p.id === i.parentId)?.title ?? '' } : null,
     cycle: cycleView(cycles.find((c) => c.id === i.cycleId)),
     attachments: { nodes: i.attachments },
+    relations: { nodes: relations.filter((r) => r.from === i.id).map((r) => ({ id: r.id, type: 'blocks', relatedIssue: { id: r.to } })) },
+    inverseRelations: { nodes: relations.filter((r) => r.to === i.id).map((r) => ({ id: r.id, type: 'blocks', issue: { id: r.from } })) },
   });
   const touch = (i) => (i.updatedAt = new Date().toISOString());
   const find = (idOrKey) => issues.find((i) => i.id === idOrKey || i.identifier === idOrKey);
@@ -78,6 +83,23 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
   }
 
   function resolve(query, v) {
+    if (/issueRelationCreate/.test(query)) {
+      const a = find(v.a);
+      const b = find(v.b);
+      if (!a || !b) return { errors: [{ message: 'Entity not found: Issue' }] };
+      if (!/type: blocks/.test(query)) return { errors: [{ message: 'mock: only blocks relations' }] };
+      if (!relations.some((r) => r.from === a.id && r.to === b.id)) relations.push({ id: randomUUID(), from: a.id, to: b.id });
+      touch(a);
+      touch(b);
+      return { data: { issueRelationCreate: { success: true } } };
+    }
+    if (/issueRelationDelete/.test(query)) {
+      const at = relations.findIndex((r) => r.id === v.id);
+      if (at < 0) return { errors: [{ message: 'Entity not found: IssueRelation' }] };
+      const [r] = relations.splice(at, 1);
+      for (const id of [r.from, r.to]) touch(find(id));
+      return { data: { issueRelationDelete: { success: true } } };
+    }
     if (/issueCreate\(/.test(query)) {
       const team = teams.find((t) => t.id === v.input.teamId);
       if (!team) return { errors: [{ message: 'Entity not found: Team' }] };
@@ -92,7 +114,11 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
       const i = find(v.id);
       if (!i) return { errors: [{ message: 'Entity not found: Issue' }] };
       apply(i, v.input);
-      return { data: { issueUpdate: { success: true } } };
+      const answer = view(i);
+      // Someone edits it the moment this update lands, before anyone reads it again.
+      const after = afterEdits.findIndex((p) => p.id === i.id);
+      if (after >= 0) Object.assign(i, afterEdits.splice(after, 1)[0].changes(i)), touch(i);
+      return { data: { issueUpdate: { success: true, issue: answer } } };
     }
     if (/issueLabelCreate/.test(query)) {
       const l = { id: randomUUID(), name: v.name, teamId: v.teamId };
@@ -189,6 +215,29 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
 
       touch(i);
     },
+    /** Right after the next update of `key` lands, someone sets its state (by type) in Linear. */
+    editAfterNextUpdate(key, { stateType }) {
+      const i = find(key);
+      afterEdits.push({ id: i.id, changes: (x) => ({ stateId: states.find((s) => s.teamId === x.teamId && s.type === stateType).id }) });
+    },
+    pendingAfterEdits: () => afterEdits.length,
+    /** People in Linear (#50): `blocker` blocks `blocked` (keys); `unblock` removes it. */
+    block(blocker, blocked) {
+      const a = find(blocker);
+      const b = find(blocked);
+      relations.push({ id: randomUUID(), from: a.id, to: b.id });
+      touch(a);
+      touch(b);
+    },
+    unblock(blocker, blocked) {
+      const a = find(blocker);
+      const b = find(blocked);
+      const at = relations.findIndex((r) => r.from === a.id && r.to === b.id);
+      if (at >= 0) relations.splice(at, 1);
+      touch(a);
+      touch(b);
+    },
+    blocks: (key) => relations.filter((r) => r.from === find(key).id).map((r) => issues.find((i) => i.id === r.to).identifier),
     /** A delivery about `key`, signed like Linear signs them; `age` back-dates its timestamp. */
     async webhook(target, secret, key, { age = 0 } = {}) {
       const i = find(key);

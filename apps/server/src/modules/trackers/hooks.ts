@@ -1,4 +1,4 @@
-// Webhooks Freero registers in the tracker itself (`TrackerProvider.webhooks`: Asana, monday.com),
+// Webhooks Freero registers in the tracker itself (`TrackerProvider.webhooks`: Asana, monday.com, ClickUp),
 // one per connection and project, when someone sends to or imports from that project.
 //
 // The address the tracker posts to names the registration (`h`) and carries a key (`k`): an HMAC
@@ -67,8 +67,12 @@ export async function ensureWebhooks(conn: StoredConnection, projects: Array<str
     const pc = openConnection(conn);
     let externalId: string | null = null;
     try {
-      externalId = (await provider.webhooks.register(pc, project, hookAddress(origin, conn.id, h, secret))).id;
-      // Asana signs every delivery with what its handshake issued: none kept, none verifies.
+      const made = await provider.webhooks.register(pc, project, hookAddress(origin, conn.id, h, secret));
+      externalId = made.id;
+      // ClickUp names the secret it signs with in its answer: kept like a handshake's (once, while pending).
+      const row = made.secret ? await repo.getHook(h) : null;
+      if (made.secret && (!row || !(await keepHandshakeSecret(row, made.secret)))) throw new TrackerError('The webhook’s secret couldn’t be kept.', 'invalid');
+      // Asana and ClickUp sign every delivery with the secret they issued: none kept, none verifies.
       if (provider.webhooks.signed && !(await repo.getHook(h))?.secretSealed) throw new TrackerError('The tracker registered the webhook without the handshake.', 'invalid');
       await repo.activateHook(h, externalId);
     } catch (e) {

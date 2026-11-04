@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "跟踪工具没有响应，请重试。",
   "sendToTracker": "发送到跟踪工具…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "每个问题都会成为与之关联的任务卡片（每次最多 50 个）。已在此白板上的问题会被跳过。",
   "countIssue": "{count, plural, other {# 个问题}}",
   "countItem": "{count, plural, other {# 项}}",
-  "countSelectedItem": "{count, plural, other {# 个选中项}}"
+  "countSelectedItem": "{count, plural, other {# 个选中项}}",
+  "quarter": "季度",
+  "aList": "一个列表"
 }

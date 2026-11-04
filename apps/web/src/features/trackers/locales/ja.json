@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "トラッカーが応答しませんでした。もう一度お試しください。",
   "sendToTracker": "トラッカーに送信…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "各課題は、その課題とリンクされたタスクカードになります（一度に最大50件）。既にこのボードにある課題は除外されます。",
   "countIssue": "{count, plural, other {#件の課題}}",
   "countItem": "{count, plural, other {#個の項目}}",
-  "countSelectedItem": "{count, plural, other {選択した#個の項目}}"
+  "countSelectedItem": "{count, plural, other {選択した#個の項目}}",
+  "quarter": "四半期",
+  "aList": "リスト"
 }

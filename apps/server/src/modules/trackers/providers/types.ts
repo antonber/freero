@@ -8,8 +8,12 @@ import type { ConnectionSettings } from '../repo';
 
 /** Opened credentials (never stored like this: sealed in the connection row). */
 export type Credentials =
-  /** API token (Jira Cloud with `email`), personal access token (Jira DC, GitHub), API key (Linear). */
-  | { kind: 'token'; token: string; email?: string }
+  /**
+   * API token (Jira Cloud with `email`), personal access token (Jira DC, GitHub), API key (Linear),
+   * a Trello token with the API `key` it was made for (and, optionally, that key's `secret`, which
+   * Trello signs webhook deliveries with).
+   */
+  | { kind: 'token'; token: string; email?: string; key?: string; secret?: string }
   | {
       kind: 'oauth';
       accessToken: string;
@@ -27,6 +31,15 @@ export interface ProviderConnection {
   apiBase: string;
   deployment: 'cloud' | 'datacenter' | null;
   settings: ConnectionSettings;
+  /** The secret the tracker signs webhook deliveries with, when the connection knows it (Trello: its API key's). */
+  signingSecret?: string | null;
+  /**
+   * People in Freero matched to tracker accounts that hide their addresses (Trello, GitHub without a
+   * public email): a login is a person's when they connected their OWN account on that tracker
+   * (a personal connection to the same site, tested as that login), and the address is their
+   * verified one. Null: nobody is known by it.
+   */
+  people?: { emailOf(login: string): Promise<string | null>; loginOf(email: string): Promise<string | null> };
   /**
    * One authenticated API call (`path` relative to `apiBase`, or an absolute URL on it), with the
    * connection's credentials, rate-limit handling and retries. Resolves with any status.
@@ -59,6 +72,11 @@ export interface RemoteIssue {
    * the write when someone changed the issue since (TrackerError 'conflict').
    */
   version?: string | null;
+  /**
+   * Its dependencies (#50), by the other issues' ids (as `id` above): those it blocks and those it
+   * is blocked by. Read where the provider has `dependencies`.
+   */
+  relations?: { blocks: string[]; blockedBy: string[] };
 }
 
 export interface CreateIssueInput {
@@ -92,12 +110,14 @@ export interface WebhookDelivery {
   secret: string;
   now: number;
   /**
-   * A webhook Freero registered itself (`TrackerProvider.webhooks`: Asana, monday.com), its address
+   * A webhook Freero registered itself (`TrackerProvider.webhooks`: Asana, monday.com, ClickUp), its address
    * already checked (it names the registration and carries a key made with the connection's
    * secret): whether Freero is registering it right now — the only time a handshake is answered —
-   * and the secret the tracker issued in its handshake (Asana), once it has.
+   * and the secret the tracker issued in its handshake (Asana) or when it made the webhook (ClickUp),
+   * or the connection's signing secret (Trello); `address`: the address it was registered with
+   * (Trello signs the body together with it).
    */
-  hook?: { pending: boolean; secret: string | null };
+  hook?: { pending: boolean; secret: string | null; address?: string };
 }
 
 export interface WebhookResult {
@@ -116,6 +136,8 @@ export interface TrackerProvider {
   fields: readonly IssueField[];
   /** What the import query is, in the dialog ("JQL"). */
   queryLanguage: string;
+  /** Other addresses of the same tracker its calls may go to (GitHub Enterprise's GraphQL beside /api/v3). */
+  endpoints?(apiBase: string): string[];
   /** The headers that authenticate a call with these credentials. */
   authHeaders(creds: Credentials, conn: Pick<ProviderConnection, 'deployment'>): Record<string, string>;
   /** Who the credentials act as, plus what the connection should remember (estimate field…). */
@@ -125,8 +147,13 @@ export interface TrackerProvider {
   getIssue(conn: ProviderConnection, id: string): Promise<RemoteIssue | null>;
   /** Creates an issue; `notes`: what couldn't be set, in Freero's words ("No Jira user for …"). */
   createIssue(conn: ProviderConnection, input: CreateIssueInput): Promise<{ issue: RemoteIssue; notes: string[] }>;
-  /** Writes these fields (only the ones present); returns notes for what couldn't be written. */
-  updateIssue(conn: ProviderConnection, issue: RemoteIssue, patch: IssueValues): Promise<string[]>;
+  /**
+   * Writes these fields (only the ones present); returns notes for what couldn't be written — and,
+   * where the tracker answers a write with the issue as it left it (Azure DevOps), that issue: the
+   * sync agrees on it instead of reading the issue again, so a change someone makes right after
+   * Freero's write is not taken as what Freero wrote (it is pulled by the next sync).
+   */
+  updateIssue(conn: ProviderConnection, issue: RemoteIssue, patch: IssueValues): Promise<string[] | { notes: string[]; issue: RemoteIssue }>;
   /**
    * The tracker's priority levels by name, most pressing first (Jira: the site's; Linear: its fixed
    * scale), for a kanban's Priority options; null / absent when it can't say (or has none: GitHub).
@@ -151,6 +178,16 @@ export interface TrackerProvider {
    */
   parents?: { issueType: string | null };
 
+  /**
+   * "Blocks" links between issues (#50: Jira issue links, Linear relations, GitHub issue
+   * dependencies, ClickUp dependencies), by the issues' ids; `getIssue` reads them into
+   * `RemoteIssue.relations`.
+   */
+  dependencies?: {
+    add(conn: ProviderConnection, blocker: string, blocked: string): Promise<void>;
+    remove(conn: ProviderConnection, blocker: string, blocked: string): Promise<void>;
+  };
+
   /** Which of these issues changed at or after `since` (polling). */
   changedSince(conn: ProviderConnection, issues: Array<{ id: string; key: string }>, since: number): Promise<string[]>;
   /** Makes the issue's links back to the board exactly `links` (adds, updates, removes `removed`). */
@@ -160,14 +197,15 @@ export interface TrackerProvider {
   /** The issues a webhook delivery is about (ids or keys), or null when its signature doesn't verify. */
   webhook(d: WebhookDelivery): WebhookResult | null;
   /**
-   * Webhooks Freero registers itself, one per project it sends to or imports from (Asana, monday.com:
-   * people can't paste an address there). `register` may be called back by the tracker to shake
-   * hands before it answers; `signed`: deliveries are signed with a secret that handshake issued,
-   * so a registration without one is no use.
+   * Webhooks Freero registers itself, one per project it sends to or imports from (Asana, monday.com,
+   * ClickUp: people can't paste an address there). `register` may be called back by the tracker to
+   * shake hands before it answers; `signed`: deliveries are signed with a secret the tracker issued
+   * — in that handshake (Asana) or in its answer (`secret`: ClickUp) — so a registration without one
+   * is no use.
    */
   webhooks?: {
     signed: boolean;
-    register(conn: ProviderConnection, project: string, address: string): Promise<{ id: string }>;
+    register(conn: ProviderConnection, project: string, address: string): Promise<{ id: string; secret?: string }>;
     unregister(conn: ProviderConnection, id: string): Promise<void>;
   };
 }

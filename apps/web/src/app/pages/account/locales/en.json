@@ -136,7 +136,7 @@
   "connectAnAgent": "Connect an agent",
   "appsAgents": "Apps & agents",
   "yourIssueTrackers": "Your issue trackers",
-  "yourOwnJiraLinearGithub": "Your own Jira, Linear, GitHub, Azure DevOps, Asana or monday.com connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console.",
+  "yourOwnJiraLinearGithub": "Your own Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp or Trello connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console.",
   "problemsYouReported": "Problems you reported",
   "yourNameCanTBe": "Your name can’t be empty",
   "keepItUnder80Characters": "Keep it under 80 characters",
