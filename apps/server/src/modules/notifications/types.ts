@@ -87,16 +87,16 @@ export const dueDay = (date: string, locale?: L): string => {
 };
 const role = (d: NotificationData) => d.role ?? '';
 /** "card numbers and IBANs", in the reader's language. */
-const KIND_KEYS = {
-  payment_card: 'sensitiveData.kind.paymentCard',
-  iban: 'sensitiveData.kind.iban',
-  national_id: 'sensitiveData.kind.nationalId',
-  secret: 'sensitiveData.kind.secret',
-  email: 'sensitiveData.kind.email',
-  phone: 'sensitiveData.kind.phone',
-} as const;
+const KIND_WORDS: Record<string, (l: L) => string> = {
+  payment_card: (l) => t(l, 'sensitiveData.kind.paymentCard'),
+  iban: (l) => t(l, 'sensitiveData.kind.iban'),
+  national_id: (l) => t(l, 'sensitiveData.kind.nationalId'),
+  secret: (l) => t(l, 'sensitiveData.kind.secret'),
+  email: (l) => t(l, 'sensitiveData.kind.email'),
+  phone: (l) => t(l, 'sensitiveData.kind.phone'),
+};
 const formatKinds = (l: L, kinds: string[]): string => {
-  const words = kinds.filter((k): k is keyof typeof KIND_KEYS => k in KIND_KEYS).map((k) => t(l, KIND_KEYS[k]));
+  const words = kinds.filter((k) => k in KIND_WORDS).map((k) => KIND_WORDS[k](l));
   return new Intl.ListFormat(!l || l === 'en' ? 'en' : l, { type: 'conjunction' }).format(words);
 };
 

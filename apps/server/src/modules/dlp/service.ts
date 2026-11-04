@@ -170,20 +170,20 @@ export async function guardLabelChange(c: LabelChange): Promise<void> {
 function cleanSettings(body: Record<string, unknown>, now: SensitiveDataSettings): SensitiveDataSettings {
   const next = { ...now };
   if (body.enabled !== undefined) {
-    if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be true or false', 'invalid_request');
+    if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be true or false');
     next.enabled = body.enabled;
   }
   if (body.kinds !== undefined) {
     if (!Array.isArray(body.kinds) || !body.kinds.every((k) => (SENSITIVE_DATA_KINDS as readonly unknown[]).includes(k)))
-      throw badRequest(`kinds must be a list of ${SENSITIVE_DATA_KINDS.join(', ')}`, 'invalid_request');
+      throw badRequest(`kinds must be a list of ${SENSITIVE_DATA_KINDS.join(', ')}`);
     next.kinds = SENSITIVE_DATA_KINDS.filter((k) => (body.kinds as unknown[]).includes(k));
   }
   if (body.action !== undefined) {
-    if (!['notify', 'suggest', 'require'].includes(body.action as string)) throw badRequest('action must be notify, suggest or require', 'invalid_request');
+    if (!['notify', 'suggest', 'require'].includes(body.action as string)) throw badRequest('action must be notify, suggest or require');
     next.action = body.action as SensitiveDataAction;
   }
   if (body.labelId !== undefined) {
-    if (body.labelId !== null && (typeof body.labelId !== 'string' || !body.labelId)) throw badRequest('labelId must be a label id or null', 'invalid_request');
+    if (body.labelId !== null && (typeof body.labelId !== 'string' || !body.labelId)) throw badRequest('labelId must be a label id or null');
     next.labelId = body.labelId as string | null;
   }
   if (next.enabled && !next.kinds.length) throw badRequest('Choose at least one kind of data to look for', 'sensitive_kinds_needed');
