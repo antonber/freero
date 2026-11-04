@@ -7208,6 +7208,7 @@ async function trackerChecks() {
   const { startMockAzure } = await import('./lib/mock-azure.mjs');
   const { startMockAsana } = await import('./lib/mock-asana.mjs');
   const { startMockMonday } = await import('./lib/mock-monday.mjs');
+  const { startMockClickUp } = await import('./lib/mock-clickup.mjs');
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-trackers-'));
@@ -7221,7 +7222,8 @@ async function trackerChecks() {
   const azServer = await startMockAzure({ deployment: 'server', organization: 'tfs/DefaultCollection', token: 'server-pat' });
   const asanaMock = await startMockAsana();
   const mondayMock = await startMockMonday();
-  const mocks = [cloud, dc, atlassian, lin, gh, az, azServer, asanaMock, mondayMock];
+  const clickupMock = await startMockClickUp();
+  const mocks = [cloud, dc, atlassian, lin, gh, az, azServer, asanaMock, mondayMock, clickupMock];
   let proc = null;
   const live = [];
   const mcpClients = [];
@@ -7237,6 +7239,10 @@ async function trackerChecks() {
       TRACKER_ASANA_CLIENT_ID: asanaMock.oauth.clientId,
       TRACKER_ASANA_CLIENT_SECRET: asanaMock.oauth.clientSecret,
       TRACKER_ASANA_URL: asanaMock.url,
+      TRACKER_CLICKUP_CLIENT_ID: clickupMock.oauth.clientId,
+      TRACKER_CLICKUP_CLIENT_SECRET: clickupMock.oauth.clientSecret,
+      TRACKER_CLICKUP_URL: clickupMock.url,
+      TRACKER_CLICKUP_API_URL: clickupMock.url,
       RATE_LIMIT_TRACKER_SEND: '500/10m',
     };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
@@ -7957,6 +7963,93 @@ async function trackerChecks() {
       await waitFor(() => mondayMock.item(key).groupTitle === 'Done', 15_000, 'the item in the Done group');
     });
 
+    // ---- ClickUp (#180): webhooks Freero registers itself, signed with the secret ClickUp names ----
+
+    let clickupConn = null;
+    await check('trackers (ClickUp, #180): a personal token connection; a List imported into a new kanban has its statuses as columns; Freero registers the List’s webhook and keeps the secret ClickUp names, and a status changed in ClickUp moves the card by a signed delivery', async () => {
+      const body = { provider: 'clickup', name: 'ClickUp', workspaceId: team.id, site: clickupMock.site, token: clickupMock.token, defaults: { project: clickupMock.list } };
+      const wrong = await O.req('POST', '/api/trackers/connections', { ...body, token: 'pk_nope' });
+      assert(wrong.status === 400 && /refused the credentials/.test(wrong.json?.error ?? ''), `wrong token: ${wrong.status} ${wrong.text}`);
+      const made = await O.req('POST', '/api/trackers/connections', body);
+      assert(made.status === 201 && made.json.connection.account === 'bot@clickup.test' && made.json.connection.inbound === 'webhook' && !made.text.includes(clickupMock.token), `clickup connection: ${made.status} ${made.text}`);
+      clickupConn = made.json.connection;
+      const pricing = clickupMock.create(clickupMock.list, { name: 'Pricing page' });
+      const copy = clickupMock.create(clickupMock.list, { name: 'Checkout copy', status: 'in review', priority: 2 });
+      const shipped = clickupMock.create(clickupMock.list, { name: 'Logo refresh', status: 'complete' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: clickupConn.id, scope: { project: clickupMock.list }, placement: { newKanban: 'Sprint board' } });
+      assert(r.status === 201 && r.json.containerId && r.json.cards.length === 3, `import a whole List: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      await waitFor(() => E.get(kid) && r.json.cards.every((x) => E.get(x.id)), 8000, 'the Sprint board kanban and its cards');
+      const titles = E.get(kid).columns.map((c) => plain(c.title));
+      assert(JSON.stringify(titles) === JSON.stringify(['to do', 'in review', 'complete']), `columns: ${titles}`);
+      const card = (id) => E.get(r.json.cards.find((x) => x.key === id).id);
+      assert(columnTitle(kid, card(copy.id)) === 'in review' && columnTitle(kid, card(shipped.id)) === 'complete' && card(shipped.id).status === 'done', 'the cards’ columns');
+      assert(optionLabel(kid, 'Priority', card(copy.id)) === 'High', `the priority on the card: ${optionLabel(kid, 'Priority', card(copy.id))}`);
+      await waitFor(() => clickupMock.webhooks.length === 1 && clickupMock.webhooks[0].list_id === clickupMock.list, 10_000, 'a webhook on the Sprint board List');
+      await waitFor(() => clickupMock.task(pricing.id).comments.some((x) => x.comment_text.includes('item=')), 10_000, 'the first sync (a link back to the card)');
+      const statuses = await clickupMock.edit(pricing.id, { status: 'in review' });
+      assert(JSON.stringify(statuses) === '[202]', `the signed delivery: ${statuses}`);
+      await waitFor(() => columnTitle(kid, card(pricing.id)) === 'in review', 10_000, 'the card in “in review”');
+      // A card moved to complete on the board: the task's status in ClickUp.
+      const c = card(copy.id);
+      E.set(c.id, { ...c, x: xInColumn(kid, c, 'complete'), status: 'done' });
+      await waitFor(() => clickupMock.task(copy.id).statusName === 'complete', 15_000, 'complete in ClickUp');
+    });
+
+    await check('trackers (ClickUp, #180): a forged delivery and an address without its key are refused; a card sent with an assignee, due date and tag; a title changed on the board while someone edits the description in ClickUp keeps their description and brings it to the card', async () => {
+      const target = clickupMock.webhooks[0]?.endpoint;
+      assert(target && /[?&]h=/.test(target) && /[?&]k=/.test(target), `the registered address: ${target}`);
+      const id = clickupMock.create(clickupMock.list, { name: 'Forged' }).id;
+      assert((await clickupMock.forge(target, id)) === 401, 'a delivery signed with another secret was accepted');
+      assert((await clickupMock.forge(target.replace(/k=[^&]+/, 'k=guess'), id)) === 401, 'an address with a guessed key was accepted');
+      assert((await clickupMock.forge(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${clickupConn.id}`, id)) === 401, 'a delivery without the address’s key was accepted');
+      clickupMock.addUser(M.email, 'Member in ClickUp');
+      E.set('cu1', { ...base, id: 'cu1', type: 'card', x: 0, y: 22000, w: 260, h: 120, title: '<p>Onboarding email</p>', description: '', color: '#5B3FF0', status: 'todo', tags: ['t-ux'], assigneeId: M.id, dueDate: '2026-12-10' });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: clickupConn.id, project: clickupMock.list, itemIds: ['cu1'] });
+      assert(sent.status === 201, `clickup send: ${sent.status} ${sent.text}`);
+      const key = sent.json.issues[0].key;
+      const t = clickupMock.task(key);
+      assert(t.name === 'Onboarding email' && t.assignees[0]?.email === M.email && new Date(Number(t.due_date)).toISOString().slice(0, 10) === '2026-12-10' && JSON.stringify(t.tagNames) === '["ux"]' && t.statusName === 'to do', `the task: ${JSON.stringify(t)}`);
+      assert(t.comments.length === 1 && t.comments[0].comment_text.includes('item=cu1'), 'no link back to the card');
+      // Someone edits the description in ClickUp between Freero's read and its write of the new title.
+      clickupMock.editBeforeNextWrite(key, { markdown: 'Use the **spring** palette' });
+      E.set('cu1', { ...E.get('cu1'), title: '<p>Onboarding email, final</p>' });
+      await waitFor(() => clickupMock.task(key).name === 'Onboarding email, final', 15_000, 'the new title in ClickUp');
+      assert(clickupMock.task(key).markdown_description.includes('spring'), `Freero wrote over the description: ${clickupMock.task(key).markdown_description}`);
+      await waitFor(() => plain(E.get('cu1').description).includes('spring'), 15_000, 'the description from ClickUp on the card');
+    });
+
+    await check('trackers (ClickUp, #180): a custom field in the field map syncs with the kanban field of that name, and connecting through the operator’s ClickUp app (OAuth) works', async () => {
+      const set = await O.req('PATCH', `/api/trackers/connections/${clickupConn.id}`, { fieldMap: { fields: [{ tracker: clickupMock.teamField.id, trackerName: 'Team', board: 'Team', type: 'select' }] } });
+      assert(set.status === 200, `field map: ${set.status} ${set.text}`);
+      const fields = await O.req('GET', `/api/trackers/connections/${clickupConn.id}/fields`);
+      assert(fields.status === 200 && fields.json.fields.some((f) => f.name === 'Team' && f.type === 'select'), `fields: ${fields.text}`);
+      const t = clickupMock.create(clickupMock.list, { name: 'Field map: hero video' });
+      await clickupMock.edit(t.id, { team: 'Web' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: clickupConn.id, query: `list:${clickupMock.list} Field map`, placement: { newKanban: 'ClickUp teams' } });
+      assert(r.status === 201 && r.json.cards.length === 1, `import with the filter: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      const cid = r.json.cards[0].id;
+      await waitFor(() => E.get(cid) && optionLabel(kid, 'Team', E.get(cid)) === 'Web', 8000, 'the Team field on the card');
+      await waitFor(() => clickupMock.task(t.id).comments.length === 1, 10_000, 'the first sync');
+      await clickupMock.edit(t.id, { team: 'Mobile' });
+      await waitFor(() => optionLabel(kid, 'Team', E.get(cid)) === 'Mobile', 10_000, 'Mobile from ClickUp on the card');
+      setOption(kid, 'Team', cid, 'Web');
+      await waitFor(() => clickupMock.task(t.id).team === 'Web', 15_000, 'Web from the card in ClickUp');
+
+      const s = await fetch(`http://127.0.0.1:${proc.port}/api/trackers/oauth/clickup/start?workspace=${team.id}&name=ClickUp+via+OAuth`, { headers: { cookie: O.cookie }, redirect: 'manual' });
+      assert(s.status === 302 && s.headers.get('location').startsWith(`${clickupMock.url}/api?`), `start: ${s.status} ${s.headers.get('location')}`);
+      const browser = /freero_tracker_oauth=([^;]+)/.exec(s.headers.getSetCookie().join(';'))?.[1];
+      const consent = await fetch(s.headers.get('location'), { redirect: 'manual' });
+      const cb = new URL(consent.headers.get('location'));
+      const done = await fetch(`http://127.0.0.1:${proc.port}${cb.pathname}${cb.search}`, { headers: { cookie: `${O.cookie}; freero_tracker_oauth=${browser}` }, redirect: 'manual' });
+      assert(done.status === 302 && /tracker_connected=1/.test(done.headers.get('location')), `callback: ${done.status} ${done.headers.get('location')}`);
+      const conn = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.connections.find((x) => x.provider === 'clickup' && x.auth === 'oauth');
+      assert(conn && conn.inbound === 'webhook' && conn.account === 'bot@clickup.test', `the OAuth connection: ${JSON.stringify(conn)}`);
+      const projects = await O.req('GET', `/api/boards/${board.id}/trackers/connections/${conn.id}/projects`);
+      assert(projects.status === 200 && projects.json.projects.some((p) => p.name === 'Product / Web / Sprint board'), `Lists through OAuth: ${projects.status} ${projects.text.slice(0, 300)}`);
+    });
+
     await check('trackers: Linear — a cluster becomes one issue with an attachment per sticky, and a signed webhook moves the card', async () => {
       const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
       assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
@@ -7996,7 +8089,7 @@ async function trackerChecks() {
       const actions = new Set(events.map((e) => e.action));
       for (const a of ['tracker.connection_created', 'tracker.issue_created', 'tracker.synced', 'tracker.issues_imported']) assert(actions.has(a), `audit lacks ${a}`);
       const all = JSON.stringify(events) + proc.log.join('');
-      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token, az.token, azServer.token, asanaMock.token, mondayMock.token, ...asanaMock.webhooks.map((w) => w.secret)]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
+      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token, az.token, azServer.token, asanaMock.token, mondayMock.token, clickupMock.token, ...asanaMock.webhooks.map((w) => w.secret), ...clickupMock.webhooks.map((w) => w.secret)]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
 
       const failures = proc.log
         .join('')

@@ -414,6 +414,29 @@ const TRACKERS: Integration[] = [
       description: 'Turn sticky notes and cards into monday.com items and import a board onto a kanban, statuses as columns, kept in sync both ways.',
     },
   },
+  {
+    id: 'clickup',
+    name: 'ClickUp',
+    category: 'trackers',
+    oneLiner: 'Board items become ClickUp tasks, and a List comes onto a kanban with its statuses as columns.',
+    description: [
+      'Send notes, clusters or cards to a ClickUp List as tasks, or import a List (or a filter of it: a status, a tag, a person) as linked cards: into a kanban, each card lands in the column named after its status. Name, description, assignee, status, priority, start and due dates, sprint points, tags and mapped custom fields stay in step both ways.',
+      'Freero registers its own webhooks in ClickUp for the Lists you use, verifies every delivery’s signature, and polls as a fallback.',
+    ],
+    status: 'settings',
+    connect: {
+      ...trackerConnect('ClickUp', 'a personal token'),
+      steps: [
+        'In Settings → Your issue trackers (or your team’s admin console → Issue trackers), add a ClickUp connection with a personal token (ClickUp → Settings → Apps). Freero tests it before keeping it.',
+        'On a board, select notes or cards and choose Send to tracker…, or use Import issues… to bring in a List. Freero asks ClickUp for webhooks itself.',
+      ],
+    },
+    keywords: ['clickup', 'tasks', 'lists', 'statuses', 'subtasks', 'kanban', 'sync'],
+    seo: {
+      title: 'ClickUp integration: whiteboard notes to ClickUp tasks',
+      description: 'Turn sticky notes and cards into ClickUp tasks and import a List onto a kanban, statuses as columns, kept in sync both ways.',
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------

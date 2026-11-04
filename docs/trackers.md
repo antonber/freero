@@ -1,11 +1,12 @@
-# Issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com)
+# Issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp)
 
 Freero links board items to issues in the tracker a team already uses, and keeps both in step:
 select sticky notes, a cluster or cards → **Send to tracker…** → one issue (or one per item) with
 every field kept and a link back to each item; each item then shows the issue's key, status and
 assignee, live. **Import issues…** (board menu) turns a JQL / search query into linked cards, or
 — without writing a query — a project's current (or a chosen) sprint, Linear cycle or Azure DevOps
-iteration, or an epic's issues (#119, #43) — or a whole Asana project or monday.com board (#120, #121).
+iteration, or an epic's issues (#119, #43) — or a whole Asana project, monday.com board or ClickUp
+List (#120, #121, #180).
 Agents do the same through the MCP tool `sync_to_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/send`, #84), and import with `import_from_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/import`) — the same rules as *Import issues…*, placed into a
@@ -40,10 +41,11 @@ nobody can link an item to an issue by editing the board.
 | Azure DevOps Server 2020 or later | the collection's address (`https://tfs.acme.internal/tfs/DefaultCollection`) | personal access token | service hooks as above where the server can reach Freero, otherwise polling (`System.ChangedDate`) |
 | Asana (#120) | `https://app.asana.com` (the default) | personal access token, or OAuth (when the operator registered an app: `TRACKER_ASANA_CLIENT_ID`) | webhooks Freero registers itself, one per project you send to or import from (nothing to paste in Asana), and polling (`modified_at`, ten tasks per batch call) as the fallback |
 | monday.com (#121) | `https://monday.com` (the default) | API token (Developers → My access tokens), or OAuth (`TRACKER_MONDAY_CLIENT_ID`) | webhooks Freero registers itself on each board you send to or import from, and polling (`updated_at`) as the fallback |
+| ClickUp (#180) | `https://app.clickup.com` (the default) | personal token (`pk_…`: ClickUp → Settings → Apps → API Token), or OAuth (`TRACKER_CLICKUP_CLIENT_ID`) | webhooks Freero registers itself, one per List you send to or import from (ClickUp names the secret it signs them with when it makes one), and polling (the Workspace's tasks updated since, `date_updated_gt`) as the fallback |
 
 Freero tests every new connection before keeping it. The webhook secret is shown once (a new one
-can be made at any time; the old one stops working at once — for Asana and monday.com, where Freero
-registered the webhooks, it registers them again with the new secret). Switching an Asana or
+can be made at any time; the old one stops working at once — for Asana, monday.com and ClickUp, where Freero
+registered the webhooks, it registers them again with the new secret). Switching an Asana, ClickUp or
 monday.com connection to polling removes the webhooks Freero registered there; switching back
 registers them again. A self-hosted tracker on a private
 network needs `TRACKER_PRIVATE_ENDPOINTS=true` ([configuration.md](configuration.md)).
@@ -101,6 +103,21 @@ import query is a filter of a board: `board:Roadmap group:"This week" status:"Wo
 assignee:me words`. GraphQL complexity: an exhausted budget that resets within a few seconds is
 waited out, a longer one is handed back as a wait (the sync retries after it);
 429s are retried like every tracker's.
+
+**ClickUp (#180).** Tasks are the issues, **Lists** the projects (the import dialog lists them as
+"Space / Folder / List"). A kanban card's column is the task's **status** in its List, by name
+(ClickUp's statuses are lowercase: "in review"); a status of type closed / done is done, an open one
+to do, any other in progress. The description is ClickUp's Markdown (`markdown_content` written,
+`markdown_description` read), assignees are matched by email (ClickUp shows its members'
+addresses: the card's assignee is the task's first assignee, the others stay), priority is
+Urgent / High / Normal / Low, start and due dates are the task's, **sprint points** are the
+estimate, tags are labels (made in the Space when missing), and custom fields (text, number,
+drop-down, labels, date, people) map by id in the field map. Writes name only the fields that
+changed (a PUT of just those; assignees as add / remove; a tag or custom field its own call).
+*Under* / *One per cluster* make subtasks; **A parent task** imports a task's subtasks; **A List**
+imports a whole List. The links back to the board are one comment by Freero, edited as items come
+and go. The import query is a filter of a List: `list:"Sprint board" status:"in review"
+assignee:me tag:web done:no words`.
 
 ## The field map (#43)
 
@@ -194,7 +211,9 @@ columns): what someone else changed meanwhile in another field is never written 
   secret is kept only once — so nobody who learns an address can make it sign with their own
   secret. Asana deliveries are then verified with `X-Hook-Signature` (HMAC-SHA256 of the body
   with the secret Asana issued); monday.com doesn't sign deliveries of webhooks made with a token,
-  so its address's key is the credential. A verified delivery only says WHICH
+  so its address's key is the credential. ClickUp names the secret its deliveries are signed with
+  in its answer when Freero makes a webhook (kept sealed, only while that registration is
+  pending); deliveries carry `X-Signature` (HMAC-SHA256 hex of the body). A verified delivery only says WHICH
   issue changed: Freero reads the issue back with the connection's own credentials, so even a
   valid replay changes nothing by itself.
 - Data exports: a person's own connections (tracker, name, address, account, field map) and the
@@ -227,17 +246,20 @@ columns): what someone else changed meanwhile in another field is never written 
 Patch with revision checks, iterations, service hooks —, `mock-asana.mjs` — sections, tags, an enum
 custom field, external attachments, OAuth and webhooks with Asana's handshake and signatures — and
 `mock-monday.mjs` — Status / People / Date / Timeline columns, groups, updates, subitems, webhooks
-with the challenge, a spent complexity budget). They also run standalone for the UI (`node
+with the challenge, a spent complexity budget — and `mock-clickup.mjs` — Spaces, Folders and Lists
+with statuses, members with addresses, a drop-down custom field, comments, OAuth and webhooks that
+name their signing secret). They also run standalone for the UI (`node
 scripts/lib/mock-jira.mjs --port 4482`, `node scripts/lib/mock-azure.mjs --port 4484`, `node
-scripts/lib/mock-asana.mjs --port 4485`, `node scripts/lib/mock-monday.mjs --port 4486`, with
+scripts/lib/mock-asana.mjs --port 4485`, `node scripts/lib/mock-monday.mjs --port 4486`, `node scripts/lib/mock-clickup.mjs --port 4487`, with
 `TRACKER_PRIVATE_ENDPOINTS=true`).
 
 Not done yet: Microsoft Entra OAuth for Azure DevOps Services (needs the operator's Entra app
 registration; PATs work on both Services and Server), GitHub Projects iterations (#42), and the
 manual checks against real trackers (a Jira Cloud site with Jira Software, a Linear workspace, an
 Azure DevOps organization, an Asana workspace, a monday.com account) that #43, #119, #6, #120 and
-#121 ask to record in their PRs, and the operator's Asana and monday.com OAuth apps (off until
-registered: tokens work without them). monday.com subitems sync their name, people and dates on
+#121 ask to record in their PRs, and the operator's Asana, monday.com and ClickUp OAuth apps (off
+until registered: tokens work without them); a real ClickUp Workspace check (#180) is still to be
+recorded. monday.com subitems sync their name, people and dates on
 their own board (its columns); a whole project imported into a new kanban gets columns for the
 sections / statuses its tasks have (an empty section gets none).
 

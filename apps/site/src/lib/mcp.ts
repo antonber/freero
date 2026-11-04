@@ -23,7 +23,7 @@ export const MCP_TOOLS: Array<[name: string, needs: 'read' | 'suggest' | 'write'
   ['add_stickies', 'write', 'A titled grid of sticky notes, each with its own link if you like, in free space or into a frame, kanban column or cluster.'],
   ['add_clusters', 'write', 'Titled groups side by side; existing notes can move into them.'],
   ['add_cards', 'write', 'Task cards with description, status, due date, link and kanban fields, into a kanban column and swimlane, a frame or a cluster, or a new kanban with its columns.'],
-  ['import_from_tracker', 'write', 'Issues from a Jira, Linear, GitHub, Azure DevOps, Asana or monday.com query as cards linked to them, kept in sync both ways; proposed instead when the connection may only suggest.'],
+  ['import_from_tracker', 'write', 'Issues from a Jira, Linear, GitHub, Azure DevOps, Asana, monday.com or ClickUp query as cards linked to them, kept in sync both ways; proposed instead when the connection may only suggest.'],
   ['import_meeting_notes', 'write', 'Meeting notes or a transcript (Markdown, text, WebVTT, SRT) as one frame: decisions as a cluster, action items as cards with owner and due date, points as notes, who spoke. Read as written, no AI.'],
   ['add_diagram', 'write', 'A Mermaid flowchart or sequence diagram, a mind map or tree from an outline, or a node-and-edge graph, laid out by Freero.'],
   ['define_fields', 'write', 'A kanban’s fields (Priority, Points, Owner …) and their options added, renamed, reordered or deleted in one step.'],
@@ -41,7 +41,7 @@ export const MCP_TOOLS: Array<[name: string, needs: 'read' | 'suggest' | 'write'
   ['edit_doc', 'write', 'One part of a doc changed by block id: a block or a heading’s section replaced, Markdown inserted before or after, a block deleted.'],
   ['post_status', 'write', 'The agent’s plan, status and tasks (to do, doing, done, blocked) on its lane of a control-room board; retries never duplicate.'],
   ['list_tracker_connections', 'read', 'The issue trackers the person can use on a board, with each one’s default project, and a connection’s projects or repositories.'],
-  ['sync_to_tracker', 'write', 'Sends items to the board’s Jira, Linear, GitHub, Azure DevOps, Asana or monday.com as one issue or one per item, kept in sync.'],
+  ['sync_to_tracker', 'write', 'Sends items to the board’s Jira, Linear, GitHub, Azure DevOps, Asana, monday.com or ClickUp as one issue or one per item, kept in sync.'],
   ['add_comment', 'comment', 'A comment on the board or an item, or a reply in a thread.'],
   ['comment_on_doc', 'comment', 'A comment on a doc’s block or the whole doc, or a reply in a thread.'],
 ];

@@ -23,10 +23,21 @@ const SITE_PLACEHOLDER: Record<TrackerProviderKind, string> = {
   azure: 'https://dev.azure.com/your-organization',
   asana: 'https://app.asana.com',
   monday: 'https://monday.com',
+  clickup: 'https://app.clickup.com',
 };
-const TOKEN_LABEL: Record<TrackerProviderKind, string> = { jira: 'API token', linear: 'API key', github: 'Personal access token', azure: 'Personal access token (Work Items: read & write)', asana: 'Personal access token', monday: 'API token' };
+const TOKEN_LABEL: Record<TrackerProviderKind, string> = {
+  jira: 'API token',
+  linear: 'API key',
+  github: 'Personal access token',
+  azure: 'Personal access token (Work Items: read & write)',
+  asana: 'Personal access token',
+  monday: 'API token',
+  clickup: 'Personal token (pk_…)',
+};
 /** Trackers where Freero registers its webhooks itself (nothing to paste there). */
-const SELF_HOOKED: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday']);
+const SELF_HOOKED: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday', 'clickup']);
+/** What each tracker calls the place issues live, for "Default …" and the webhook note. */
+const PLACE: Partial<Record<TrackerProviderKind, string>> = { monday: 'board', clickup: 'List' };
 type OAuthOffered = Partial<Record<TrackerProviderKind, boolean>>;
 
 function Secret({ value, onDone }: { value: string; onDone: () => void }) {
@@ -153,7 +164,9 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
                     ? 'Default project (its id or name)'
                     : provider === 'monday'
                       ? 'Default board (its id or name)'
-                      : 'Default project key'
+                      : provider === 'clickup'
+                        ? 'Default List (its id or name)'
+                        : 'Default project key'
           }
           value={project}
           onChange={(e) => setProject(e.target.value)}
@@ -285,7 +298,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
           {SELF_HOOKED.has(c.provider) ? (
             <p className="fr-trackerconn__fine">
               {c.inbound === 'webhook'
-                ? `Freero registers its own webhooks in ${TRACKER_PROVIDERS[c.provider]} for each ${c.provider === 'monday' ? 'board' : 'project'} you send to or import from, and polls as a fallback.`
+                ? `Freero registers its own webhooks in ${TRACKER_PROVIDERS[c.provider]} for each ${PLACE[c.provider] ?? 'project'} you send to or import from, and polls as a fallback.`
                 : `Polling every minute: nothing is registered in ${TRACKER_PROVIDERS[c.provider]}.`}
             </p>
           ) : (

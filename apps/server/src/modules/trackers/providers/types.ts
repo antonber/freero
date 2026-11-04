@@ -92,10 +92,10 @@ export interface WebhookDelivery {
   secret: string;
   now: number;
   /**
-   * A webhook Freero registered itself (`TrackerProvider.webhooks`: Asana, monday.com), its address
+   * A webhook Freero registered itself (`TrackerProvider.webhooks`: Asana, monday.com, ClickUp), its address
    * already checked (it names the registration and carries a key made with the connection's
    * secret): whether Freero is registering it right now — the only time a handshake is answered —
-   * and the secret the tracker issued in its handshake (Asana), once it has.
+   * and the secret the tracker issued in its handshake (Asana) or when it made the webhook (ClickUp).
    */
   hook?: { pending: boolean; secret: string | null };
 }
@@ -160,14 +160,15 @@ export interface TrackerProvider {
   /** The issues a webhook delivery is about (ids or keys), or null when its signature doesn't verify. */
   webhook(d: WebhookDelivery): WebhookResult | null;
   /**
-   * Webhooks Freero registers itself, one per project it sends to or imports from (Asana, monday.com:
-   * people can't paste an address there). `register` may be called back by the tracker to shake
-   * hands before it answers; `signed`: deliveries are signed with a secret that handshake issued,
-   * so a registration without one is no use.
+   * Webhooks Freero registers itself, one per project it sends to or imports from (Asana, monday.com,
+   * ClickUp: people can't paste an address there). `register` may be called back by the tracker to
+   * shake hands before it answers; `signed`: deliveries are signed with a secret the tracker issued
+   * — in that handshake (Asana) or in its answer (`secret`: ClickUp) — so a registration without one
+   * is no use.
    */
   webhooks?: {
     signed: boolean;
-    register(conn: ProviderConnection, project: string, address: string): Promise<{ id: string }>;
+    register(conn: ProviderConnection, project: string, address: string): Promise<{ id: string; secret?: string }>;
     unregister(conn: ProviderConnection, id: string): Promise<void>;
   };
 }

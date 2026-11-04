@@ -40,6 +40,7 @@ import { planRoadmapImport } from './roadmap';
 import { adfToMarkdown, asanaHtmlToMarkdown, htmlToMarkdown, markdownToAdf, markdownToAsanaHtml, markdownToHtml, markdownToWiki, wikiToMarkdown } from './markup';
 import { asana } from './providers/asana';
 import { azure } from './providers/azure';
+import { clickup } from './providers/clickup';
 
 import { github, managedPart, withManagedPart } from './providers/github';
 import { jira } from './providers/jira';
@@ -545,14 +546,15 @@ it('a tracker that answers 429 is asked again after the wait it named; a longer 
 // ---- Asana (#120) and monday.com (#121) ----
 
 type Sent = { method: string; path: string; body?: unknown; headers?: Record<string, string> };
-const fakeConn = (provider: 'asana' | 'monday', answer: (r: Sent) => { status?: number; json: unknown }, settings: Record<string, unknown> = {}) => {
+const SITES = { asana: ['https://app.asana.com', 'https://app.asana.com/api/1.0'], monday: ['https://monday.com', 'https://api.monday.com'], clickup: ['https://app.clickup.com', 'https://api.clickup.com/api/v2'] } as const;
+const fakeConn = (provider: keyof typeof SITES, answer: (r: Sent) => { status?: number; json: unknown }, settings: Record<string, unknown> = {}) => {
   const sent: Sent[] = [];
   const conn = {
     id: provider,
     provider,
     deployment: null,
-    site: provider === 'asana' ? 'https://app.asana.com' : 'https://monday.com',
-    apiBase: provider === 'asana' ? 'https://app.asana.com/api/1.0' : 'https://api.monday.com',
+    site: SITES[provider][0],
+    apiBase: SITES[provider][1],
     settings,
     async call(req: Sent) {
       sent.push(req);
@@ -589,7 +591,7 @@ it('an Asana handshake is answered only while Freero is registering that webhook
   expect(monday.webhook({ headers: {}, rawBody: challenge, secret: 's', now, hook: { pending: false, secret: null } })).toBeNull();
 });
 
-it('a title pushed to Asana or monday.com writes only the title, so a field someone changed there in the meantime is not written over', async () => {
+it('a title pushed to Asana, monday.com or ClickUp writes only the title, so a field someone changed there in the meantime is not written over', async () => {
   const task = {
     gid: '1201',
     name: 'Old',
@@ -617,6 +619,29 @@ it('a title pushed to Asana or monday.com writes only the title, so a field some
   const writes = m.sent.map((r) => r.body as { query: string; variables: Record<string, unknown> }).filter((b) => /mutation/.test(b.query));
   expect(writes).toHaveLength(1);
   expect(JSON.parse(String(writes[0].variables.values))).toEqual({ name: 'New' });
+
+  // ClickUp: the title alone; an assignee change adds and removes those people, never sets the list.
+  const cu = { id: '86a01', name: 'Old', markdown_description: 'Edited in ClickUp a moment ago', status: { status: 'to do', type: 'open' }, assignees: [{ id: 7, email: 'ann@x.test' }, { id: 8, email: 'bo@x.test' }], list: { id: '9017' } };
+  const c = fakeConn('clickup', (r) => ({ json: r.path.startsWith('/list/9017/member') ? { members: [{ id: 9, email: 'cy@x.test' }] } : r.path.startsWith('/list/9017') ? { statuses: [] } : r.method === 'GET' ? cu : {} }));
+  await clickup.updateIssue(c.conn, { ...issue, id: '86a01', key: '86a01', project: '9017' }, { title: 'New' });
+  await clickup.updateIssue(c.conn, { ...issue, id: '86a01', key: '86a01', project: '9017' }, { assignee: 'cy@x.test' });
+  expect(c.sent.filter((r) => r.method === 'PUT')).toEqual([
+    { method: 'PUT', path: '/task/86a01', body: { name: 'New' } },
+    { method: 'PUT', path: '/task/86a01', body: { assignees: { add: [9], rem: [7] } } },
+  ]);
+});
+
+it('a ClickUp delivery is taken only when signed with the secret ClickUp named for that webhook', () => {
+  const now = Date.now();
+  const body = Buffer.from(JSON.stringify({ event: 'taskStatusUpdated', task_id: '86a1b2c3d', webhook_id: 'wh-1' }));
+  const sig = (s: string, b = body) => createHmac('sha256', s).update(b).digest('hex');
+  const hook = { pending: false, secret: 'NAMED-BY-CLICKUP' };
+  expect(clickup.webhook({ headers: { 'x-signature': sig('NAMED-BY-CLICKUP') }, rawBody: body, secret: 's', now, hook })).toEqual({ issues: ['86a1b2c3d'] });
+  // Signed with the connection's own secret, altered after signing, unsigned, or a webhook with no secret kept: refused.
+  expect(clickup.webhook({ headers: { 'x-signature': sig('s') }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(clickup.webhook({ headers: { 'x-signature': sig('NAMED-BY-CLICKUP') }, rawBody: Buffer.from(body.toString().replace('86a1b2c3d', '86a9')), secret: 's', now, hook })).toBeNull();
+  expect(clickup.webhook({ headers: {}, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(clickup.webhook({ headers: { 'x-signature': sig('s') }, rawBody: body, secret: 's', now, hook: { pending: true, secret: null } })).toBeNull();
 });
 
 it('a card moved to the In progress column moves its done Asana task to that section and reopens it; a monday.com item takes the label of the column, by name', async () => {

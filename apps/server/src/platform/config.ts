@@ -75,6 +75,11 @@ export interface TrackersConfig {
   asanaUrl: string;
   mondayAuthUrl: string;
   mondayApiUrl: string;
+  /** ClickUp's OAuth app the operator registered (#180), or null: personal tokens only. */
+  clickupOAuth: { clientId: string; clientSecret: string } | null;
+  /** ClickUp's app (its consent page: <url>/api) and API host (<url>/api/v2); overridden only to test against a mock. */
+  clickupUrl: string;
+  clickupApiUrl: string;
 }
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
@@ -864,6 +869,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     asanaUrl: (url('TRACKER_ASANA_URL', ['https:', 'http:']) ?? 'https://app.asana.com').replace(/\/+$/, ''),
     mondayAuthUrl: (url('TRACKER_MONDAY_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.monday.com').replace(/\/+$/, ''),
     mondayApiUrl: (url('TRACKER_MONDAY_API_URL', ['https:', 'http:']) ?? 'https://api.monday.com').replace(/\/+$/, ''),
+    clickupOAuth: pair('TRACKER_CLICKUP_CLIENT_ID', 'TRACKER_CLICKUP_CLIENT_SECRET', 'the ClickUp OAuth app'),
+    clickupUrl: (url('TRACKER_CLICKUP_URL', ['https:', 'http:']) ?? 'https://app.clickup.com').replace(/\/+$/, ''),
+    clickupApiUrl: (url('TRACKER_CLICKUP_API_URL', ['https:', 'http:']) ?? 'https://api.clickup.com').replace(/\/+$/, ''),
   };
   // Slack link unfurls: both halves of the operator's Slack app, or off. One without the other is a
   // mistake worth saying out loud rather than a silently missing feature.

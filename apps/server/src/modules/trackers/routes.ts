@@ -22,7 +22,7 @@ import { boardConnections, importIssues, issueTypesOf, markDisconnected, preview
 allowCrossSitePost(/^\/api\/trackers\/webhooks\/[^/]+$/, 'tracker webhooks are posted by the tracker’s servers and verified by their HMAC signature (or the secret, for Azure DevOps service hooks; or the address’s key, for webhooks Freero registered)');
 
 const origin = (req: Parameters<typeof appUrl>[0]) => appUrl(req, '');
-const providerParam = (p: string): TrackerProviderKind => (p === 'asana' || p === 'monday' ? p : 'jira');
+const providerParam = (p: string): TrackerProviderKind => (p === 'asana' || p === 'monday' || p === 'clickup' ? p : 'jira');
 
 export default function trackerRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -110,7 +110,7 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
       const workspaceId = typeof req.query.workspace === 'string' && req.query.workspace ? req.query.workspace : null;
       res.json({
         connections: await listManaged(currentUser(req).id, workspaceId, req),
-        oauth: { jira: oauthOffered('jira'), asana: oauthOffered('asana'), monday: oauthOffered('monday') },
+        oauth: { jira: oauthOffered('jira'), asana: oauthOffered('asana'), monday: oauthOffered('monday'), clickup: oauthOffered('clickup') },
       });
     }),
   );

@@ -3,6 +3,7 @@
 import type { TrackerProviderKind } from '@freero/shared';
 import { asana, asanaOAuth } from './asana';
 import { azure } from './azure';
+import { clickup, clickupOAuth } from './clickup';
 import { github } from './github';
 import { jira, jiraOAuth } from './jira';
 import { linear } from './linear';
@@ -16,11 +17,13 @@ const PROVIDERS: Record<TrackerProviderKind, TrackerProvider> = {
   azure,
   asana,
   monday,
+  clickup,
 };
 const OAUTH: Partial<Record<TrackerProviderKind, OAuthProvider>> = {
   jira: jiraOAuth,
   asana: asanaOAuth,
   monday: mondayOAuth,
+  clickup: clickupOAuth,
 };
 
 export const providerOf = (kind: TrackerProviderKind): TrackerProvider => PROVIDERS[kind];

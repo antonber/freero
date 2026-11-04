@@ -2812,7 +2812,7 @@ target itself:
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
 one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub, Azure DevOps Boards (Services /
-Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
+Server, #6), Asana (#120), monday.com (#121) or ClickUp (#180), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -2853,7 +2853,7 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
   (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
   Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
-- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, where
+- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, ClickUp, where
   nobody can paste an address): one per connection and project, registered after a send or import
   into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,
   registered again for a new secret). The address names the registration (`h`) and carries `k`, an
@@ -2861,7 +2861,8 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   handshake (`WebhookResult.handshake`: Asana's `X-Hook-Secret` echoed and kept sealed —
   `keepHookSecret` only for a pending row without one, so only once —, monday.com's challenge
   echoed) is answered only while that row is pending, i.e. while Freero waits on `register`; Asana
-  deliveries are then verified with that secret (`X-Hook-Signature`).
+  deliveries are then verified with that secret (`X-Hook-Signature`). ClickUp names its signing
+  secret in `register`'s answer (`{ id, secret }`), kept the same way while the row is pending.
 - **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
   link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
   draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
@@ -2902,7 +2903,8 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks),
   `mock-asana.mjs` (sections, tags, custom fields, external attachments, OAuth, webhooks with the
   handshake and signatures) and `mock-monday.mjs` (GraphQL: columns, groups, updates, subitems,
-  webhooks with the challenge, complexity), which implement the subset of each public API used,
+  webhooks with the challenge, complexity) and `mock-clickup.mjs` (Lists, statuses, comments,
+  OAuth, webhooks naming their secret), which implement the subset of each public API used,
   webhooks included.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)

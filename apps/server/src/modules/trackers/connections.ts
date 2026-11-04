@@ -97,10 +97,10 @@ const sealCredentials = (creds: Credentials) => seal(CREDENTIALS_PURPOSE, JSON.s
  * hand too, which may not be stored yet (a connection is tested before it is saved) — and a pair
  * someone else stored meanwhile (another instance's refresh) is used instead of refreshing again.
  */
-/** The OAuth app the operator registered for a tracker (Jira Cloud, Asana, monday.com), or null. */
+/** The OAuth app the operator registered for a tracker (Jira Cloud, Asana, monday.com, ClickUp), or null. */
 export function oauthAppOf(provider: TrackerProviderKind): { clientId: string; clientSecret: string } | null {
   const t = getConfig().trackers;
-  return provider === 'jira' ? t.jiraOAuth : provider === 'asana' ? t.asanaOAuth : provider === 'monday' ? t.mondayOAuth : null;
+  return provider === 'jira' ? t.jiraOAuth : provider === 'asana' ? t.asanaOAuth : provider === 'monday' ? t.mondayOAuth : provider === 'clickup' ? t.clickupOAuth : null;
 }
 
 async function refreshed(c: StoredConnection, creds: Extract<Credentials, { kind: 'oauth' }>, force: boolean): Promise<Credentials> {
@@ -189,6 +189,8 @@ export function apiBaseOf(provider: TrackerProviderKind, site: string): string {
   // Asana's API lives under its app; monday.com's at one address for every account.
   if (provider === 'asana') return `${s}/api/1.0`;
   if (provider === 'monday') return /^https:\/\/([a-z0-9-]+\.)?monday\.com$/i.test(s) ? getConfig().trackers.mondayApiUrl : s;
+  // ClickUp's API is on its own host for every Workspace (a mock serves both under one address).
+  if (provider === 'clickup') return /^https:\/\/(app\.)?clickup\.com$/i.test(s) ? `${getConfig().trackers.clickupApiUrl}/api/v2` : `${s}/api/v2`;
   return s;
 }
 
@@ -197,6 +199,7 @@ const defaultSite: Partial<Record<TrackerProviderKind, string>> = {
   linear: 'https://linear.app',
   asana: 'https://app.asana.com',
   monday: 'https://monday.com',
+  clickup: 'https://app.clickup.com',
 };
 
 export function info(c: StoredConnection, links: number, req: Request | null, manager: boolean): TrackerConnectionInfo {

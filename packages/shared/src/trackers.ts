@@ -20,6 +20,7 @@ export const TRACKER_PROVIDERS = {
   azure: 'Azure DevOps',
   asana: 'Asana',
   monday: 'monday.com',
+  clickup: 'ClickUp',
 } as const;
 export type TrackerProviderKind = keyof typeof TRACKER_PROVIDERS;
 
