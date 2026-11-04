@@ -36,6 +36,8 @@ export interface UiState {
   /** [additive] Part of `editingId` being edited (table cell, extra connector label), or null. */
   editingPart: string | null;
   dock: string | null;
+  /** [additive, #4] What `Editor.openPanel(id, props)` passed the open dock panel (null: opened without). */
+  dockProps: Record<string, unknown> | null;
   /** [additive, #52] The open 'dock-bottom' panel (the slide filmstrip), or null. */
   bottomDock: string | null;
   toolOptions: Record<string, Record<string, unknown>>;
@@ -142,6 +144,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     editRequest: null,
     editingPart: null,
     dock: null,
+    dockProps: null,
     bottomDock: null,
     toolOptions: {},
     hoverId: null,

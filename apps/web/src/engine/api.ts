@@ -1431,7 +1431,7 @@ export type PanelSlot =
   | 'dialog';          // [additive] mounted only while opened with editor.openPanel(id, props); stays
                        // available while the chrome is hidden (presenting). Close: editor.closePanel(id).
 
-/** [additive] Props every panel component gets. `props` = what `openPanel(id, props)` passed (dialogs). */
+/** [additive] Props every panel component gets. `props` = what `openPanel(id, props)` passed (dialogs; dock panels too, #4: opening one again with other props starts it afresh from them). */
 export interface PanelProps {
   editor: Editor;
   props?: Record<string, unknown>;
@@ -2038,7 +2038,8 @@ export interface Editor {
   /**
    * [additive] Opens a panel from anywhere (a command, a button): a 'dialog' panel mounts with
    * `props` (one dialog at a time, also while the chrome is hidden); a 'dock-right' panel opens the
-   * dock. closePanel(id) closes it if it is the open one; closePanel() closes the open dialog.
+   * dock, its component given `props` too (#4; `openDock(id)` opens one without). closePanel(id)
+   * closes it if it is the open one; closePanel() closes the open dialog.
    */
   openPanel(id: string, props?: Record<string, unknown>): void;
   closePanel(id?: string): void;
