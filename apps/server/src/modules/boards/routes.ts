@@ -38,6 +38,7 @@ import {
   requireDownload,
   restoreFromTrash,
   setBoardArchived,
+  setBoardLabel,
   summarize,
   toSummary,
   transferBoard,
@@ -236,6 +237,17 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         res.json({ board: await summarize(board, user.id) } satisfies Out);
       }),
     );
+
+  // #158: the board's classification label (owner, co-owners, content admins).
+  r.put(
+    '/boards/:id/label',
+    requireUser,
+    handle(async (req, res) => {
+      const user = currentUser(req);
+      const board = await setBoardLabel(req.params.id, user.id, (req.body ?? {}).labelId ?? null);
+      res.json({ board: await summarize(board, user.id) } satisfies Out);
+    }),
+  );
 
   r.delete(
     '/boards/:id/permanent',

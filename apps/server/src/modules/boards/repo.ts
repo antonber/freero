@@ -48,6 +48,8 @@ export interface Board {
   /** #153: archived (read-only for everyone, out of the default lists) since, and by whom (null: a retention rule). */
   archivedAt: number | null;
   archivedBy: string | null;
+  /** #158: its classification label (modules/workspaces' labels), or null. */
+  labelId: string | null;
 }
 
 interface Row {
@@ -76,6 +78,7 @@ interface Row {
   deleted_by: string | null;
   archived_at: Date | null;
   archived_by: string | null;
+  label_id?: string | null;
 }
 
 // Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
@@ -108,6 +111,7 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   deletedBy: r.deleted_by ?? null,
   archivedAt: r.archived_at ? r.archived_at.getTime() : null,
   archivedBy: r.archived_by ?? null,
+  labelId: r.label_id ?? null,
 });
 
 /** A board in service: not in the trash, not taken down by an operator. */
@@ -154,10 +158,34 @@ export async function appendBoardEvent(e: Omit<BoardEventRecord, 'at'>, at = Dat
 
 export async function insertBoard(b: Board): Promise<void> {
   await query(
-    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at, workspace_id, project_id, kind)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt), b.workspaceId, b.projectId, b.kind],
+    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at, workspace_id, project_id, kind, label_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt), b.workspaceId, b.projectId, b.kind, b.labelId ?? null],
   );
+}
+
+/** #158: sets a live board's label (null: none); false when there is no such live board. */
+export async function setLabel(id: string, labelId: string | null): Promise<boolean> {
+  return (await query(`UPDATE boards SET label_id = $2 WHERE id = $1 AND ${LIVE} RETURNING 1`, [id, labelId])).length > 0;
+}
+
+/** #158: a workspace no longer sees these labels (it left their organisation): its boards carrying one get `to`. */
+export async function replaceLabels(workspaceId: string, labelIds: string[], to: string | null): Promise<string[]> {
+  if (!labelIds.length) return [];
+  return (await query<{ id: string }>(`UPDATE boards SET label_id = $3 WHERE workspace_id = $1 AND label_id = ANY($2::text[]) RETURNING id`, [workspaceId, labelIds, to])).map(
+    (r) => r.id,
+  );
+}
+
+export async function idsWithLabel(labelId: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM boards WHERE label_id = $1`, [labelId])).map((r) => r.id);
+}
+
+/** #158: how many boards carry each label. */
+export async function labelUse(labelIds: string[]): Promise<Map<string, number>> {
+  if (!labelIds.length) return new Map();
+  const rows = await query<{ label_id: string; n: number }>(`SELECT label_id, count(*)::int AS n FROM boards WHERE label_id = ANY($1::text[]) GROUP BY label_id`, [labelIds]);
+  return new Map(rows.map((r) => [r.label_id, r.n]));
 }
 
 /** A live board (null when missing, in the trash or taken down). */
@@ -677,14 +705,14 @@ export async function updateBoardFields(
  */
 export async function moveToWorkspace(
   id: string,
-  to: { workspaceId: string; projectId: string | null; linkAccess?: LinkAccess; embeddable?: false },
+  to: { workspaceId: string; projectId: string | null; labelId: string | null; linkAccess?: LinkAccess; embeddable?: false },
   now: number,
 ): Promise<boolean> {
   const rows = await query(
     `UPDATE boards SET workspace_id = $2, project_id = $3, link_access = COALESCE($4, link_access),
-       embeddable = COALESCE($5, embeddable), updated_at = GREATEST(updated_at, $6)
+       embeddable = COALESCE($5, embeddable), updated_at = GREATEST(updated_at, $6), label_id = $7
      WHERE id = $1 AND ${LIVE} RETURNING 1`,
-    [id, to.workspaceId, to.projectId, to.linkAccess ?? null, to.embeddable ?? null, new Date(now)],
+    [id, to.workspaceId, to.projectId, to.linkAccess ?? null, to.embeddable ?? null, new Date(now), to.labelId],
   );
   return rows.length > 0;
 }

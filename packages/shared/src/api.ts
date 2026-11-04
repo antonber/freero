@@ -2,6 +2,7 @@
 // All REST endpoints live under /api, send/receive JSON, and authenticate via
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
+import type { BoardLabelSummary } from './compliance';
 import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
 import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
@@ -66,6 +67,8 @@ export interface BoardSummary {
    * reads at most 'viewer') and out of the default lists until someone unarchives it. Absent: live.
    */
   archivedAt?: number;
+  /** [additive, #158] Its classification label: its caps are already in `permissions` (the server enforces them). */
+  label?: BoardLabelSummary;
   /** The workspace the board belongs to, and its project (folder) there, if any. */
   workspaceId: string;
   projectId: string | null;

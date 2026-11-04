@@ -207,9 +207,9 @@ export async function linksOutOfPolicy(
 ): Promise<Array<{ id: string; title: string; ownerId: string; linkAccess: string; expiresAt: number | null; problems: Array<'no_password' | 'no_expiry' | 'expiry_too_late'> }>> {
   const boards = await repo.linkedBoardsIn(workspaceId);
   if (!boards.length) return [];
-  const policies = (await boardAccessLoader('', [workspaceId]))(boards[0]).policies;
+  const accessOf = await boardAccessLoader('', [workspaceId]); // per board: a label (#158) may ask more of its link
   return boards
-    .map((b) => ({ b, problems: linkProblems(b, policies) }))
+    .map((b) => ({ b, problems: linkProblems(b, accessOf(b).policies) }))
     .filter((x) => x.problems.length > 0)
     .map(({ b, problems }) => ({ id: b.id, title: b.title, ownerId: b.ownerId, linkAccess: b.storedLinkAccess, expiresAt: b.linkExpiresAt, problems }));
 }
@@ -340,7 +340,7 @@ export async function boardReadPolicies(userId: string, boardIds: string[]): Pro
   for (const b of boards) {
     const allowed = mayDownload(accessOf(b).workspaceRole, accessOf(b).policies);
     // Only a board that keeps its content from viewers and commenters needs the person's role.
-    const copies = allowed && (b.viewersCanExport || boardLetsCopy(b, (await describeAccess(b, userId)).role));
+    const copies = allowed && boardLetsCopy(b, b.viewersCanExport && accessOf(b).label?.caps.viewerExports !== 'off' ? null : (await describeAccess(b, userId)).role, accessOf(b));
     out.set(b.id, { workspaceId: b.workspaceId, mayDownload: copies });
   }
   return out;
@@ -366,6 +366,18 @@ export function allBoardIds(): Promise<string[]> {
 // ---- for modules/workspaces ----
 
 /** Every board of a workspace (trash included): whose access to re-check when the workspace changes. */
+/** #158: the boards carrying a label (whose access to re-check when its caps change), and how many carry each. */
+export function boardIdsWithLabel(labelId: string): Promise<string[]> {
+  return repo.idsWithLabel(labelId);
+}
+export function labelUse(labelIds: string[]): Promise<Map<string, number>> {
+  return repo.labelUse(labelIds);
+}
+/** #158: a workspace left the organisation whose labels these are: its boards carrying one get `to` (its default, or none). */
+export function replaceBoardLabels(workspaceId: string, labelIds: string[], to: string | null): Promise<string[]> {
+  return repo.replaceLabels(workspaceId, labelIds, to);
+}
+
 export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
   return repo.idsInWorkspace(workspaceId);
 }
