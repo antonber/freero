@@ -64,6 +64,58 @@
   overflow-wrap: anywhere;
 }
 
+/* A cut-off description ends in "…" (the line clamp) clear of the button that opens all of it. */
+.fr-card__desc-wrap {
+  position: relative;
+}
+
+.fr-card__desc.is-cut {
+  padding-inline-end: 24px;
+}
+
+/* Shown while the card is hovered, selected (touch, keyboard) or the button has focus; until
+   then it is not there for the pointer either, so a drag can start from that corner. */
+.fr-card__expand {
+  position: absolute;
+  inset-block-end: -1px;
+  inset-inline-end: -2px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fr-ink-2);
+  box-shadow:
+    0 0 0 1px rgba(23, 22, 43, 0.14),
+    0 1px 2px rgba(23, 22, 43, 0.1);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.fr-el--hover .fr-card__expand,
+.fr-card.is-selected .fr-card__expand,
+.fr-card__expand:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.fr-card__expand:hover {
+  color: var(--fr-primary);
+  box-shadow:
+    0 0 0 1px var(--fr-primary),
+    0 1px 2px rgba(23, 22, 43, 0.1);
+}
+
+.fr-card__expand:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
 .fr-card__footer {
   flex: none;
   margin-top: auto;
@@ -289,7 +341,9 @@
 }
 
 .fr-card-details textarea {
-  min-height: 140px;
+  min-height: 220px;
+  max-height: 60vh;
+  resize: vertical;
 }
 
 /* Card details: the kanban's fields */

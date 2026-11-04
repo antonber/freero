@@ -100,6 +100,12 @@ export function createSelectTool(core: EngineCore, variant: 'select' | 'lasso' =
     else return false;
     return true;
   };
+  /** [additive] Is `p` on a place of `el` that opens it (ElementDefinition.opensAt)? */
+  const opensAt = (el: BoardElement, p: Point): boolean => {
+    const reg = core.registry.elements.get(el.type);
+    if (!reg?.def.opensAt || !reg.def.onOpen) return false;
+    return reg.def.opensAt(el as never, worldToLocal(el, p), { editor: core.scoped(reg.feature), zoom: core.editor.getCamera().zoom });
+  };
   const ui = core.ui;
 
   const zoom = () => ui.getState().camera.zoom;
@@ -431,6 +437,10 @@ export function createSelectTool(core: EngineCore, variant: 'select' | 'lasso' =
           // Double-click: dive into a group, or edit text.
           if (target.groupId && sel.length > 1 && sel.includes(target.id)) {
             ed().select([target.id]);
+          } else if (opensAt(target, e.point)) {
+            // [additive] A place that opens the item (a card's description → its details): any role.
+            const reg = core.registry.elements.get(target.type)!;
+            reg.def.onOpen!(target as never, { editor: core.scoped(reg.feature), point: e.point });
           } else if (ed().mayEdit([target.id]) && !editAt(target, e.point) && !target.locked) {
             // [additive] No text there: the type's own double-click (image → crop mode).
             const reg = core.registry.elements.get(target.type);
@@ -521,7 +531,8 @@ export function createSelectTool(core: EngineCore, variant: 'select' | 'lasso' =
           else if (sel.length === 1 && sel[0] === s.hitId) {
             const el = ed().getElement(s.hitId);
             // Click on an already-selected text element enters editing (the part under the pointer).
-            if (el && !el.locked && ed().mayEdit([el.id])) editAt(el, s.start);
+            // Not where a double-click opens it: the second click must find it not yet editing.
+            if (el && !el.locked && ed().mayEdit([el.id]) && !opensAt(el, s.start)) editAt(el, s.start);
           }
         }
       } else if (s.kind === 'lasso') {

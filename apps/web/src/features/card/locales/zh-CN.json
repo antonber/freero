@@ -47,7 +47,11 @@
     "makeOneSided",
     "twoSidedAddABack",
     "flipToTheBack",
-    "backColor"
+    "backColor",
+    "thisCardIsNoLonger",
+    "viewOnly",
+    "noDescription",
+    "selectOneCard"
   ],
   "toDo": "待办",
   "doing": "进行中",
@@ -96,5 +100,9 @@
   "makeOneSided": "改为单面",
   "twoSidedAddABack": "双面（添加背面）",
   "flipToTheBack": "翻到背面",
-  "backColor": "背面颜色"
+  "backColor": "背面颜色",
+  "thisCardIsNoLonger": "此卡片已不在白板上。",
+  "viewOnly": "仅查看",
+  "noDescription": "无描述",
+  "selectOneCard": "请选择一张卡片"
 }

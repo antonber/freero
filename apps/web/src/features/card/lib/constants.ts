@@ -2,6 +2,10 @@ import type { CardElement, StickyColor } from '@freero/shared';
 
 import { t } from '../messages';
 export const TOOL_ID = 'card';
+/** The card details dialog: editor.openPanel(DETAILS_PANEL, { id }). */
+export const DETAILS_PANEL = 'card.details';
+/** Opens a selected card's details (Enter edits its title). */
+export const DETAILS_SHORTCUT = 'shift+enter';
 export const DEFAULT_ACCENT = '#5B3FF0';
 
 export const ACCENTS = ['#5B3FF0', '#2E9BF0', '#14B8A6', '#1FA463', '#84CC16', '#F5A524', '#F97316', '#E5484D', '#E64DA6', '#8B5CF6', '#8A89A3', '#17162B'];

@@ -1,13 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { CalendarDays, CircleDashed, NotebookText, Repeat2, SquareStack, UserPlus } from 'lucide-react';
 import type { CardElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
-import { Avatar, Button, ColorSwatches, IconButton, Menu, Popover, TextArea, ToolbarButton } from '@ui';
-import { ACCENTS, ACCENT_NAMES, BACK_COLORS, BACK_COLOR_NAMES, STATUSES, TOOL_ID, type CardStatus } from './lib/constants';
+import { Avatar, Button, ColorSwatches, IconButton, Menu, Popover, ToolbarButton, formatShortcut } from '@ui';
+import { ACCENTS, ACCENT_NAMES, BACK_COLORS, BACK_COLOR_NAMES, DETAILS_PANEL, DETAILS_SHORTCUT, STATUSES, TOOL_ID, type CardStatus } from './lib/constants';
 import { formatDue, localISODate } from './lib/actions';
-import { detailsSession, type DetailsSession } from './lib/details';
 import { useBoardPeople, usePerson } from './lib/people';
-import { CardFields } from './lib/FieldsEditor';
 
 import { t } from './messages';
 type Props = { editor: Editor; cards: CardElement[] };
@@ -168,89 +166,17 @@ function AssigneeControl({ editor, cards }: Props) {
   );
 }
 
-/**
- * "Open details": edit the description. Typing in one sitting is one undo step. Writes go through
- * a session (lib/details.ts), so only an editor that was opened ever writes, and only its card.
- */
+/** "Open details": the card details dialog (panel.tsx), as a double-click on the description opens it. */
 function DetailsControl({ editor, cards }: Props) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLButtonElement>(null);
-  const card = cards[0];
-  const [text, setText] = useState('');
-  const gesture = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const session = useRef<DetailsSession | null>(null);
-  session.current ??= detailsSession(editor);
-
-  const flush = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    session.current!.flush();
-  };
-  /** The text area lost focus: write, and end the undo step (the editor stays open). */
-  const end = () => {
-    flush();
-    if (gesture.current) {
-      gesture.current = false;
-      editor.endGesture();
-    }
-  };
-  const close = () => {
-    end();
-    session.current!.close();
-    setOpen(false);
-  };
-  // The toolbar unmounts (selection changed): finish an open edit, never leave a gesture open.
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  useEffect(() => () => closeRef.current(), []);
-  // Another card selected while the editor is open: finish this card's edit, don't carry it over.
-  useEffect(() => {
-    if (open && session.current!.cardId !== card.id) close();
-  });
-
   return (
-    <>
-      <IconButton
-        ref={ref}
-        icon={NotebookText}
-        label={t('openDetails')}
-        size={32}
-        active={open}
-        disabled={cards.length !== 1}
-        onClick={() => {
-          if (open) return close();
-          setText(session.current!.open(card.id));
-          setOpen(true);
-        }}
-      />
-      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" offset={10} width={380} aria-label={t('cardDetails')} className="fr-card-details">
-        <div className="fr-card-pop">
-          <CardFields editor={editor} card={card} />
-          <div className="fr-card-pop__label">{t('description')}</div>
-          <TextArea
-            autoFocus
-            value={text}
-            placeholder={t('addDetailsLinksAcceptanceCriteria')}
-            aria-label={t('cardDescription')}
-            onFocus={() => {
-              if (!gesture.current) {
-                gesture.current = true;
-                editor.beginGesture();
-              }
-            }}
-            onBlur={end}
-            onChange={(e) => {
-              const v = e.target.value;
-              setText(v);
-              session.current!.type(v);
-              if (timer.current) clearTimeout(timer.current);
-              timer.current = setTimeout(flush, 250);
-            }}
-          />
-        </div>
-      </Popover>
-    </>
+    <IconButton
+      icon={NotebookText}
+      label={t('openDetails')}
+      shortcut={formatShortcut(DETAILS_SHORTCUT)}
+      size={32}
+      disabled={cards.length !== 1}
+      onClick={() => editor.openPanel(DETAILS_PANEL, { id: cards[0].id })}
+    />
   );
 }
 

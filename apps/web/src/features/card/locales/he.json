@@ -47,7 +47,11 @@
     "makeOneSided",
     "twoSidedAddABack",
     "flipToTheBack",
-    "backColor"
+    "backColor",
+    "thisCardIsNoLonger",
+    "viewOnly",
+    "noDescription",
+    "selectOneCard"
   ],
   "toDo": "לביצוע",
   "doing": "בביצוע",
@@ -96,5 +100,9 @@
   "makeOneSided": "הפיכה לחד־צדדי",
   "twoSidedAddABack": "דו־צדדי (הוספת גב)",
   "flipToTheBack": "היפוך לגב",
-  "backColor": "צבע הגב"
+  "backColor": "צבע הגב",
+  "thisCardIsNoLonger": "הכרטיס הזה כבר לא נמצא על הלוח.",
+  "viewOnly": "צפייה בלבד",
+  "noDescription": "אין תיאור",
+  "selectOneCard": "בחרו כרטיס אחד"
 }

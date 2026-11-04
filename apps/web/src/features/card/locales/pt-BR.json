@@ -47,7 +47,11 @@
     "makeOneSided",
     "twoSidedAddABack",
     "flipToTheBack",
-    "backColor"
+    "backColor",
+    "thisCardIsNoLonger",
+    "viewOnly",
+    "noDescription",
+    "selectOneCard"
   ],
   "toDo": "A fazer",
   "doing": "Fazendo",
@@ -96,5 +100,9 @@
   "makeOneSided": "Deixar só com frente",
   "twoSidedAddABack": "Frente e verso (adicionar um verso)",
   "flipToTheBack": "Virar para o verso",
-  "backColor": "Cor do verso"
+  "backColor": "Cor do verso",
+  "thisCardIsNoLonger": "Este cartão não está mais no quadro.",
+  "viewOnly": "Somente leitura",
+  "noDescription": "Sem descrição",
+  "selectOneCard": "Selecione um cartão"
 }

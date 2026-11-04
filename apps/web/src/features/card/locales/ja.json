@@ -47,7 +47,11 @@
     "makeOneSided",
     "twoSidedAddABack",
     "flipToTheBack",
-    "backColor"
+    "backColor",
+    "thisCardIsNoLonger",
+    "viewOnly",
+    "noDescription",
+    "selectOneCard"
   ],
   "toDo": "未着手",
   "doing": "進行中",
@@ -96,5 +100,9 @@
   "makeOneSided": "片面にする",
   "twoSidedAddABack": "両面（裏面を追加）",
   "flipToTheBack": "裏返す",
-  "backColor": "裏面の色"
+  "backColor": "裏面の色",
+  "thisCardIsNoLonger": "このカードはもうボード上にありません。",
+  "viewOnly": "閲覧のみ",
+  "noDescription": "説明はありません",
+  "selectOneCard": "カードを1枚選択してください"
 }

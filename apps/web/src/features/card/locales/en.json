@@ -46,5 +46,9 @@
   "makeOneSided": "Make one-sided",
   "twoSidedAddABack": "Two-sided (add a back)",
   "flipToTheBack": "Flip to the back",
-  "backColor": "Back color"
+  "backColor": "Back color",
+  "thisCardIsNoLonger": "This card is no longer on the board.",
+  "viewOnly": "View only",
+  "noDescription": "No description",
+  "selectOneCard": "Select one card"
 }
