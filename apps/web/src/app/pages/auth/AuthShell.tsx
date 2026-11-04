@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Logo } from '@ui';
+import { LanguagePicker } from '../../components/LanguagePicker';
 import { t } from './messages';
 import './AuthPage.css';
 
@@ -24,6 +25,10 @@ export function AuthShell({ title, sub, docTitle, children }: { title: string; s
         {sub ? <p className="fr-authcard__sub">{sub}</p> : null}
         {children}
       </main>
+      {/* People without an account choose the language here (#5); it's this browser's until they sign up. */}
+      <div className="fr-authpage__lang">
+        <LanguagePicker size="sm" />
+      </div>
     </div>
   );
 }

@@ -150,6 +150,7 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
+import { serverErrorText } from '../i18n/errors';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -183,8 +184,9 @@ async function failure(res: Response): Promise<ApiError> {
   let code: string | undefined;
   try {
     const body = await res.json();
-    message = body.error ?? message;
     code = typeof body.code === 'string' ? body.code : undefined;
+    // The reader's language when the app knows the code (#5); the server's English otherwise.
+    message = serverErrorText(code, body.params, body.error ?? message);
   } catch {
     // non-JSON error body
   }
@@ -235,7 +237,7 @@ export const api = {
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
-  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) =>
+  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
     const res = await fetch('/api/auth/me/avatar', {

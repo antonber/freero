@@ -223,5 +223,7 @@
   "removesYourAccountEveryBoard": "Removes your account, every board you own and your profile photo.",
   "deleteMyAccount": "Delete my account",
   "deleteYourAccount": "Delete your account?",
-  "enterYourPasswordToConfirm": "Enter your password to confirm"
+  "enterYourPasswordToConfirm": "Enter your password to confirm",
+  "language.title": "Language",
+  "language.description": "The language of Freero’s menus, buttons and emails, on every device you sign in on. What boards say stays as it was written."
 }

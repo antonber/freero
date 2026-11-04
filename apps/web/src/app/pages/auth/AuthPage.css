@@ -1,6 +1,7 @@
 .fr-authpage {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100%;
@@ -355,4 +356,13 @@
   .fr-authcard {
     padding: 28px 22px 22px;
   }
+}
+
+/* The language picker under the card (#5). */
+.fr-authpage__lang {
+  position: relative;
+  z-index: 1;
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
 }

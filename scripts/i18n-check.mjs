@@ -114,7 +114,11 @@ for (const u of units) {
       const lead = u.side === 'server' ? String.raw`[^,()]+,\s*` : '';
       const call = new RegExp(String.raw`(?<![\w.$])${name}\(\s*${lead}(['"\x60])((?:(?!\1)[^\\$]|\\.)*)(\1|\$\{)`, 'g');
       for (const c of text.matchAll(call)) {
-        if (c[3] === '${') prefixes.push(c[2]);
+        // t(`status.${s}`) uses every key starting with 'status.'; a key built from nothing but
+        // a variable can't be checked, so it counts for none (name the keys instead).
+        if (c[3] === '${') {
+          if (c[2]) prefixes.push(c[2]);
+        }
         else {
           used.add(c[2]);
           if (!(c[2] in u.en)) fail(f, `uses '${c[2]}', which ${rel(enFile)} doesn't have. Add it there (English).`);

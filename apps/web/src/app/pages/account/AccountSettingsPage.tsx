@@ -11,6 +11,7 @@ import { TrackerConnections } from '../../components/TrackerConnections';
 import { ApiTokensSection, ConnectedAppsSection, DeveloperAppsSection } from './ApiSections';
 import { Section } from './Section';
 import { ThemeSwitch } from '../../components/ThemeSwitch';
+import { LanguagePicker } from '../../components/LanguagePicker';
 import { HelpMenu } from '../../problems/HelpMenu';
 import { MyProblems } from '../../problems/MyProblems';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
@@ -64,6 +65,9 @@ export function AccountSettingsPage() {
           description={tr('lightOrDarkEverywhereYou')}
         >
           <ThemeSwitch />
+        </Section>
+        <Section id="language" title={tr('language.title')} description={tr('language.description')}>
+          <LanguagePicker />
         </Section>
         <EmailSection security={security} />
         <NotificationsSection />
