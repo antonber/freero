@@ -29,7 +29,7 @@ describe('every catalog entry’s connect step works', () => {
   it('each in-app link opens a page of the web app, and the tab or section it names exists there', () => {
     const connectTabs = all(web('app/pages/connect/clients.ts'), /\{ id: '([a-z-]+)', label:/g);
     const adminTabs = all(web('app/pages/admin/AdminConsolePage.tsx'), /\{ id: '([a-z-]+)', label:/g);
-    const settingsSections = ['AccountSettingsPage.tsx', 'ApiSections.tsx', 'SecuritySections.tsx'].flatMap((f) => all(web(`app/pages/account/${f}`), /\bid="([a-z-]+)"/g));
+    const settingsSections = ['AccountSettingsPage.tsx', 'ApiSections.tsx', 'SecuritySections.tsx', 'SlackSection.tsx'].flatMap((f) => all(web(`app/pages/account/${f}`), /\bid="([a-z-]+)"/g));
     expect(connectTabs.length).toBeGreaterThan(3);
     expect(adminTabs.length).toBeGreaterThan(3);
     let checked = 0;

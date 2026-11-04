@@ -122,6 +122,7 @@ import type {
   LoginRequest,
   LoginResponse,
   NotificationPrefs,
+  SlackAccountInfo,
   NotificationsResponse,
   NotificationType,
   PendingInvite,
@@ -434,8 +435,15 @@ export const api = {
     request<NotificationsResponse>('GET', `/api/notifications${before ? `?before=${before}` : ''}`),
   markNotificationsRead: (ids?: string[]) => request<{ unread: number }>('POST', '/api/notifications/read', ids ? { ids } : {}),
   notificationPrefs: () => request<NotificationPrefs>('GET', '/api/notifications/prefs'),
-  setNotificationPrefs: (body: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>>; boardChanges?: BoardChangesFrequency }) =>
-    request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
+  setNotificationPrefs: (body: {
+    emailAll?: boolean;
+    email?: Partial<Record<NotificationType, boolean>>;
+    slack?: Partial<Record<NotificationType, boolean>>;
+    boardChanges?: BoardChangesFrequency;
+  }) => request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
+  /** Personal Slack (#105): whether the server offers it and the person's connected account. Connecting is a page visit to /api/integrations/slack/oauth/start. */
+  slackAccount: () => request<SlackAccountInfo>('GET', '/api/integrations/slack/me'),
+  disconnectSlack: () => request<{ ok: true }>('DELETE', '/api/integrations/slack/me'),
   /** `list` 'board-changes': only the "changes on your boards" email (its own link). */
   unsubscribe: (token: string, list?: string) =>
     request<{ ok: true; email: string; list: string }>(
