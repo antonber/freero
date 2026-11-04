@@ -55,7 +55,8 @@ export type RateLimitName =
   | 'listingSubmit'
   | 'problemReport'
   | 'boardRender'
-  | 'gifSearch';
+  | 'gifSearch'
+  | 'figma';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -472,6 +473,13 @@ export interface Config {
    */
   meet: { cloudProjectNumber: string } | null;
   /**
+   * The operator's Figma app (modules/figma, #171; docs/integrations/figma.md): "Place from Figma"
+   * for everyone, each person signing in to their own Figma account. Off (null) unless
+   * FIGMA_CLIENT_ID and FIGMA_CLIENT_SECRET are set. `apiUrl` (api.figma.com) and `oauthUrl`
+   * (Figma's consent page) are overridden only to test against a stand-in.
+   */
+  figma: { clientId: string; clientSecret: string; apiUrl: string; oauthUrl: string } | null;
+  /**
    * Further https origins boards may frame as live embeds (KAI-127), besides the built-in providers
    * (`EMBED_PROVIDERS` in @freero/shared): a link on one of them is framed as given, sandboxed.
    * Added to the CSP `frame-src`.
@@ -557,6 +565,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   problemReport: '10/1h', // per person: problem reports sent with "Report a problem" (each may carry a screenshot)
   boardRender: '30/10m', // per person: boards drawn as PNG / SVG / PDF on the server (the API, MCP export_board; #33)
   gifSearch: '60/1m', // per person: GIF searches (each one calls the operator's GIF provider, #139)
+  figma: '60/10m', // per person: Figma files read and frames rendered through the operator's Figma app (#171; Figma limits each app per person too)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -607,6 +616,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   problemReport: 'RATE_LIMIT_PROBLEM_REPORT',
   boardRender: 'RATE_LIMIT_BOARD_RENDER',
   gifSearch: 'RATE_LIMIT_GIF_SEARCH',
+  figma: 'RATE_LIMIT_FIGMA',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -1020,6 +1030,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }
     return { cloudProjectNumber: v };
   };
+  const figmaApp = (): Config['figma'] => {
+    const oauth = pair('FIGMA_CLIENT_ID', 'FIGMA_CLIENT_SECRET', 'the Figma app (Place from Figma)');
+    const apiUrl = (url('FIGMA_API_URL', ['https:', 'http:']) ?? 'https://api.figma.com').replace(/\/+$/, '');
+    const oauthUrl = url('FIGMA_OAUTH_URL', ['https:', 'http:']) ?? 'https://www.figma.com/oauth';
+    return oauth ? { ...oauth, apiUrl, oauthUrl } : null;
+  };
   const ai: AiConfig = {
     instance: aiInstance,
     instanceFor: { personal: aiFor.includes('personal'), teams: aiFor.includes('teams') },
@@ -1139,6 +1155,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     atlassian: atlassianApp(),
     zoom: zoomApp(),
     meet: meetAddOn(),
+    figma: figmaApp(),
     embedExtraOrigins,
     appFrameAncestors,
   };

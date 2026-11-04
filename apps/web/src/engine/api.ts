@@ -45,6 +45,10 @@ import type {
   StickerSet,
   StickersResponse,
   GifPlaceResponse,
+  FigmaFilesResponse,
+  FigmaFramesResponse,
+  FigmaPlaceResponse,
+  FigmaStatus,
   GifSearchResponse,
   ShapePack,
   ShapePackCreated,
@@ -159,6 +163,18 @@ export interface HostGifs {
   place(media: string): Promise<GifPlaceResponse>;
 }
 
+/** [additive, #171] See `Host.figma` (wire: @freero/shared "Figma frames as images"). */
+export interface HostFigma {
+  status(): Promise<FigmaStatus>;
+  /** Leaves the board for Figma's consent; Figma sends the person back to this board (`?figma=connected`). */
+  connect(): void;
+  disconnect(): Promise<void>;
+  recentFiles(): Promise<FigmaFilesResponse>;
+  frames(fileKey: string): Promise<FigmaFramesResponse>;
+  /** Renders a frame into the person's uploads: `{ url: '/uploads/…', w, h, link, name }`. Also how a placed frame is refreshed. */
+  place(fileKey: string, nodeId: string): Promise<FigmaPlaceResponse>;
+}
+
 /** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
 export interface HostShapePacks {
   list(): Promise<ShapePacksResponse>;
@@ -261,6 +277,12 @@ export interface Host {
    * off, and in the sandbox, embeds and for guests without an account: no GIF tab.
    */
   gifs?: HostGifs;
+  /**
+   * [additive, #171] Place frames from Figma as images, through the person's own Figma account and
+   * the server (tokens never reach the browser). Absent where the operator registered no Figma app,
+   * in the sandbox, embeds and for guests: no Figma picker.
+   */
+  figma?: HostFigma;
   /**
    * [additive, #4] The board's workspace's own shape packs (server modules/shapepacks): uploaded
    * SVG icon sets, placed as icon elements that hold their drawing. Absent (offline sandbox, guests

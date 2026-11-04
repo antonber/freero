@@ -326,6 +326,20 @@ interface language and the server's IP reach it — never who searched); and app
 access if the provider requires it beyond its testing quota. Searches are rate limited per person
 (`RATE_LIMIT_GIF_SEARCH`).
 
+## Place from Figma
+
+"Place from Figma…" on boards (#171): each person connects their own Figma account and places
+frames as pictures that link back to the frame, refreshed on demand. Off unless both are set.
+Owner steps: [integrations/figma.md](integrations/figma.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `FIGMA_CLIENT_ID` | — | Your Figma OAuth app's client ID (figma.com/developers/apps). |
+| `FIGMA_CLIENT_SECRET` | — | Its client secret. One without the other refuses to start. |
+| `FIGMA_API_URL` | `https://api.figma.com` | Only to test against a stand-in (`scripts/lib/mock-figma.mjs`). |
+| `FIGMA_OAUTH_URL` | `https://www.figma.com/oauth` | Figma's consent page; only to test against a stand-in. |
+| `RATE_LIMIT_FIGMA` | `60/10m` | Per person: Figma files read and frames rendered (each calls Figma's API). |
+
 ## Marketing site
 
 The public pages at `/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`, `/support`, the legal pages,

@@ -1,0 +1,152 @@
+.fr-figma {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fr-figma__connect {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--fr-ink-2);
+}
+
+.fr-figma__connect p {
+  margin: 0;
+}
+
+.fr-figma__account,
+.fr-figma__file-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+
+.fr-figma__open {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.fr-figma__open > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fr-figma__heading {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-ink);
+}
+
+.fr-figma__files,
+.fr-figma__frames {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-figma__files {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.fr-figma__frames {
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  max-block-size: 340px;
+  overflow-y: auto;
+}
+
+.fr-figma__file,
+.fr-figma__frame {
+  position: relative;
+  display: flex;
+  inline-size: 100%;
+  gap: 8px;
+  padding: 8px;
+  color: var(--fr-ink);
+  text-align: start;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  cursor: pointer;
+  font: inherit;
+}
+
+.fr-figma__file {
+  align-items: center;
+}
+
+.fr-figma__file img {
+  inline-size: 40px;
+  block-size: 30px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.fr-figma__frame {
+  flex-direction: column;
+}
+
+.fr-figma__file:hover,
+.fr-figma__frame:hover,
+.fr-figma__file:focus-visible,
+.fr-figma__frame:focus-visible {
+  border-color: var(--fr-primary);
+}
+
+.fr-figma__frame[aria-pressed='true'] {
+  border-color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+.fr-figma__thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: 96px;
+  color: var(--fr-ink-3);
+  background: var(--fr-surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fr-figma__thumb img {
+  max-inline-size: 100%;
+  max-block-size: 100%;
+  object-fit: contain;
+}
+
+.fr-figma__name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-figma__page,
+.fr-figma__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+.fr-figma__tick {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  color: var(--fr-primary);
+}
+
+.fr-figma__error {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--fr-danger);
+}

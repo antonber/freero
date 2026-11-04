@@ -384,6 +384,8 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     boardEmbeds: access.policies.boardEmbeds !== 'off',
     // #139: GIF search where the operator configured a provider and the workspace allows it.
     gifs: getConfig().gifs !== null && access.policies.gifs !== 'off',
+    // #171: Place from Figma where the operator registered a Figma app (modules/figma).
+    figma: getConfig().figma !== null,
     manageSharing: manages,
     invite: manages || (atLeast(role, 'editor') && board.editorsCanShare),
     canCopy: copies,

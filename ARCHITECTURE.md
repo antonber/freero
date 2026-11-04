@@ -1428,7 +1428,8 @@ sticker sets, #138), `gifs` (no table: GIF search in the sticker panel through t
 the operator's provider (`GIF_PROVIDER`, `GIF_API_KEY`) is asked for results no more mature than
 the workspace's `gifs` policy; previews come through `GET /gifs/media` and a placed GIF is copied
 into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provider links the
-server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
+server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `figma`
+(figma_accounts, figma_oauth_flows, figma_recent_files: "Place from Figma", #171 — see "Figma" below), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
 packs, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -2858,6 +2859,24 @@ exactly those paths render framed.
 - **`/embed/choose`** (`app/hosts/EmbedChoosePage`, `allowOpener`): the first-party chooser window a
   Freero frame without a session opens; it posts `EmbedChooseMessage` (the board and its member token)
   to `window.opener` with targetOrigin = Freero's origin, like `/embed/connect`.
+
+### Figma (`modules/figma`, `features/figma`; #171; docs/integrations/figma.md)
+
+- **Place from Figma** (off unless `FIGMA_CLIENT_ID` + `FIGMA_CLIENT_SECRET`; `BoardPermissions.figma`,
+  `Host.figma`). Each person connects their own Figma account through the operator's Figma app
+  (`oauth.ts`: Slack's state-bound-to-the-browser pattern, read-only scopes); its tokens are sealed
+  in `figma_accounts` (`tokens.ts` `withFigmaToken`: refreshed before expiry, a 401 refreshed once,
+  a refused refresh drops the connection — `figma_reconnect`). The picker lists a file's top-level
+  frames (`GET /v1/files/:key?depth=2`) with Figma's small renders as previews; placing renders the
+  frame at 2x (`GET /v1/images`), downloads it (https only, unfurl's SSRF-safe fetch; a stand-in at
+  `FIGMA_API_URL`'s own origin is fetched directly) and stores it through uploads' `saveUpload` —
+  the bytes must be a PNG, within the size cap and the placer's quota.
+- A placed frame is an ordinary `image` whose item `link` is the frame's Figma link
+  (`@freero/shared` `figma.ts`: `figmaFrameLink`, `parseFigmaFrameLink`, `sameFigmaFrame`), so no
+  element field is added and older clients see a linked picture. *Refresh from Figma*
+  (`features/figma`: format toolbar, context menu) reads the link, places again and swaps `src`
+  (same width and centre, the new proportions). The feature creates image elements itself; it
+  never imports the image feature.
 
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 

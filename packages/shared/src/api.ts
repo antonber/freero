@@ -186,6 +186,11 @@ export interface BoardPermissions {
    */
   gifs?: boolean;
   /**
+   * [additive, #171] Frames can be placed from Figma here: the operator registered a Figma app.
+   * Absent: no Figma picker (pasted Figma links are still live embeds).
+   */
+  figma?: boolean;
+  /**
    * [additive, #178] You may keep a copy of this board on your devices to open and edit it offline:
    * the workspace's `offlineCopies` policy allows it (a workspace under its own encryption key only
    * with 'all'). Absent or false: nothing is kept on the device, and a copy already there is deleted.
@@ -1351,6 +1356,61 @@ export interface GifPlaceResponse {
   url: string;
   w: number;
   h: number;
+}
+
+// ---- Figma frames as images (#171; modules/figma; docs/integrations/figma.md) ----
+// Offered only where the operator registered a Figma OAuth app (FIGMA_CLIENT_ID + _SECRET;
+// `BoardPermissions.figma`). Each person connects their own Figma account; its tokens are sealed on
+// the server and never reach the browser, and everything Figma renders is copied into the placer's
+// uploads (the board never loads it from Figma, so everyone who can open the board sees it).
+// GET    /api/integrations/figma/me                    -> FigmaStatus
+// DELETE /api/integrations/figma/me                    -> { ok: true }: disconnected, tokens deleted
+// GET    /api/integrations/figma/oauth/start?return=<path on this server>  -> 302 to Figma's consent
+// GET    /api/integrations/figma/oauth/callback        -> 302 back to `return` with figma=connected
+//                                                         (or figma_error=<message>)
+// GET    /api/integrations/figma/files                 -> FigmaFilesResponse (files used through Freero)
+// GET    /api/integrations/figma/files/:key/frames     -> FigmaFramesResponse
+// POST   /api/boards/:id/figma/place  body { fileKey, nodeId }  -> 201 FigmaPlaceResponse (editors):
+//        Figma renders the frame, the PNG goes through the upload checks into the caller's uploads.
+//        The same call refreshes a placed frame: the client swaps the image's `src`.
+export interface FigmaStatus {
+  connected: { handle: string; email: string | null } | null;
+}
+export interface FigmaFile {
+  key: string;
+  name: string;
+  /** Figma's own thumbnail of the file (https), or null. */
+  thumbnail: string | null;
+  usedAt: number;
+}
+export interface FigmaFilesResponse {
+  files: FigmaFile[];
+}
+export interface FigmaFrame {
+  /** "12:34" */
+  id: string;
+  name: string;
+  /** The page it is on. */
+  page: string;
+  w: number;
+  h: number;
+  /** A small render (https, from Figma), or null when Figma didn't make one. */
+  preview: string | null;
+}
+export interface FigmaFramesResponse {
+  file: { key: string; name: string };
+  frames: FigmaFrame[];
+  /** The file has more top-level frames than were listed. */
+  more: boolean;
+}
+export interface FigmaPlaceResponse {
+  /** "/uploads/<name>" */
+  url: string;
+  w: number;
+  h: number;
+  /** Back to the frame in Figma (figmaFrameLink): the image's item link. */
+  link: string;
+  name: string;
 }
 
 // ---- Shape packs (#4; server modules/shapepacks) ----
@@ -2847,6 +2907,9 @@ export const AUDIT_ACTIONS = {
   // Personal Slack (modules/slack, #105): the Slack account and workspace ids, never a token.
   'slack.account_linked': 'Connected a Slack account',
   'slack.account_unlinked': 'Disconnected a Slack account',
+  // Place from Figma (modules/figma, #171): the Figma account's id and handle, never a token.
+  'figma.account_linked': 'Connected a Figma account',
+  'figma.account_unlinked': 'Disconnected a Figma account',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',
