@@ -7,6 +7,7 @@ export {
   KEY_UNAVAILABLE,
   KeyUnavailableError,
   openSealed,
+  openerFor,
   sealerFor,
   unusableKeysAmong,
   keysInUse,

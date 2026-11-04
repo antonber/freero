@@ -3069,7 +3069,11 @@ export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed' | 'key_unavailable';
 
 // ---- Workspace encryption keys (#159; docs/design/compliance.md §3) ----
-export type WorkspaceKeyProvider = 'instance' | 'aws-kms';
+/**
+ * Who holds a workspace's key-encryption key: this server ('instance') or the workspace's own key at
+ * AWS KMS, Google Cloud KMS, Azure Key Vault or a HashiCorp Vault Transit engine (#159).
+ */
+export type WorkspaceKeyProvider = 'instance' | 'aws-kms' | 'gcp-kms' | 'azure-key-vault' | 'vault-transit';
 /** active: content is sealed and opened; suspended: an owner or security admin stopped it (reversible);
  * unavailable: the KMS refused or could not be reached (back to active once it answers); destroyed: the data keys are gone for good. */
 export type WorkspaceKeyState = 'active' | 'suspended' | 'unavailable' | 'destroyed';
@@ -3078,7 +3082,7 @@ export interface WorkspaceKeyStatus {
   providers: WorkspaceKeyProvider[];
   key: {
     provider: WorkspaceKeyProvider;
-    /** The AWS KMS key (ARN) for 'aws-kms'. */
+    /** The workspace's own key at its provider (an AWS KMS ARN, a Google Cloud KMS key name, an Azure Key Vault key URL, a Vault Transit key path); null for 'instance'. */
     kmsKeyId: string | null;
     state: WorkspaceKeyState;
     /** Why it is unavailable (the KMS's answer), when it is. */

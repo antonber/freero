@@ -421,6 +421,12 @@ export interface Config {
     cacheMs: number;
     /** AWS KMS: the operator's principal that customers' key policies grant (null: 'aws-kms' is not offered). */
     awsKms: { accessKeyId: string; secretAccessKey: string; sessionToken: string | null; endpoint: string | null } | null;
+    /** Google Cloud KMS: the operator's service account (its JSON key) that customers grant `cloudkms.cryptoKeyEncrypterDecrypter` (null: 'gcp-kms' is not offered). */
+    gcpKms: { clientEmail: string; privateKey: string; tokenUri: string; endpoint: string } | null;
+    /** Azure Key Vault: the operator's app registration that customers' vaults grant wrapKey / unwrapKey (null: 'azure-key-vault' is not offered). */
+    azureKeyVault: { tenantId: string; clientId: string; clientSecret: string; authority: string; endpoint: string | null } | null;
+    /** HashiCorp Vault's Transit engine on the operator's Vault, one key per workspace (null: 'vault-transit' is not offered). */
+    vaultTransit: { addr: string; token: string; namespace: string | null } | null;
   };
   /** Audit log streaming to workspaces' SIEMs (modules/siem, #17). */
   siem: {
@@ -696,6 +702,51 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       return null;
     }
     return { accessKeyId: id, secretAccessKey: secret, sessionToken: str('KMS_AWS_SESSION_TOKEN'), endpoint: url('KMS_AWS_ENDPOINT', ['https:', 'http:']) };
+  };
+
+  const gcpKms = (): Config['workspaceKeys']['gcpKms'] => {
+    const raw = str('KMS_GCP_CREDENTIALS');
+    if (!raw) return null;
+    try {
+      // The service account's JSON key as is, or base64 of it (easier in some secret stores).
+      const j = JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8')) as Record<string, unknown>;
+      if (typeof j.client_email !== 'string' || typeof j.private_key !== 'string') throw new Error();
+      const tokenUri = typeof j.token_uri === 'string' ? j.token_uri : 'https://oauth2.googleapis.com/token';
+      if (!/^https?:\/\//.test(tokenUri)) throw new Error();
+      return { clientEmail: j.client_email, privateKey: j.private_key, tokenUri, endpoint: url('KMS_GCP_ENDPOINT', ['https:', 'http:']) ?? 'https://cloudkms.googleapis.com/' };
+    } catch {
+      problems.push('KMS_GCP_CREDENTIALS must be a Google Cloud service account JSON key (or base64 of it) with client_email and private_key');
+      return null;
+    }
+  };
+
+  const azureKeyVault = (): Config['workspaceKeys']['azureKeyVault'] => {
+    const tenantId = str('KMS_AZURE_TENANT_ID');
+    const clientId = str('KMS_AZURE_CLIENT_ID');
+    const clientSecret = str('KMS_AZURE_CLIENT_SECRET');
+    if (!tenantId && !clientId && !clientSecret) return null;
+    if (!tenantId || !clientId || !clientSecret) {
+      problems.push('KMS_AZURE_TENANT_ID, KMS_AZURE_CLIENT_ID and KMS_AZURE_CLIENT_SECRET go together');
+      return null;
+    }
+    return {
+      tenantId,
+      clientId,
+      clientSecret,
+      authority: url('KMS_AZURE_AUTHORITY', ['https:', 'http:']) ?? 'https://login.microsoftonline.com/',
+      endpoint: url('KMS_AZURE_ENDPOINT', ['https:', 'http:']),
+    };
+  };
+
+  const vaultTransit = (): Config['workspaceKeys']['vaultTransit'] => {
+    const addr = url('KMS_VAULT_ADDR', ['https:', 'http:']);
+    const token = str('KMS_VAULT_TOKEN');
+    if (!addr && !token) return null;
+    if (!addr || !token) {
+      problems.push('KMS_VAULT_ADDR and KMS_VAULT_TOKEN go together');
+      return null;
+    }
+    return { addr, token, namespace: str('KMS_VAULT_NAMESPACE') };
   };
 
   const production = env.NODE_ENV === 'production';
@@ -1125,6 +1176,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       enabled: bool('WORKSPACE_KEYS', false),
       cacheMs: int('WORKSPACE_KEY_CACHE_SECONDS', 300, 5, 3600) * 1000,
       awsKms: awsKms(),
+      gcpKms: gcpKms(),
+      azureKeyVault: azureKeyVault(),
+      vaultTransit: vaultTransit(),
     },
     siem: {
       enabled: bool('SIEM', true),

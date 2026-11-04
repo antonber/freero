@@ -26,7 +26,7 @@ import { boardIdsInWorkspace, underLegalHold } from '../boards/index';
 import { BOARD_CONTENT_TOPIC, boardsNeedingReseal, resealBoard } from '../realtime/index';
 import { refreshWorkspaceBoards, requireWorkspace } from '../workspaces/index';
 import { newDataKey, openBlob, sealBlob } from './envelope';
-import { KeyRefusedError, kekRefOf, kmsRegionOf, KmsUnreachableError, unwrapDataKey, wrapDataKey, type KekRef } from './kek';
+import { KeyRefusedError, kekRefOf, KMS_PROVIDERS, KmsUnreachableError, parseKmsKeyId, unwrapDataKey, wrapDataKey, type KekRef } from './kek';
 import * as repo from './repo';
 
 export const KEY_UNAVAILABLE = 'workspace_key_unavailable';
@@ -181,8 +181,13 @@ export async function sealerFor(workspaceId: string): Promise<BlobSealer | null>
   return { ref: `${workspaceId}:${key.currentVersion}`, seal: (aad, plain) => sealBlob(dek, aad, plain) };
 }
 
-/** Opens a blob sealed under `ref`. Throws KeyUnavailableError unless the key is active and opens it. */
-export async function openSealed(ref: string, aad: string, data: Uint8Array): Promise<Buffer> {
+/**
+ * How to open blobs sealed under `ref`: checked once (the key is active, its data key unwraps), then
+ * each blob opens without another lookup — for many blobs under one ref (a file's chunks). Throws
+ * KeyUnavailableError when the key can't be used; `open` throws it for a blob that doesn't belong
+ * where it was found (another board's, workspace's or file's) or was altered.
+ */
+export async function openerFor(ref: string): Promise<(aad: string, data: Uint8Array) => Buffer> {
   const at = ref.lastIndexOf(':');
   const workspaceId = ref.slice(0, at);
   const version = Number(ref.slice(at + 1));
@@ -190,12 +195,19 @@ export async function openSealed(ref: string, aad: string, data: Uint8Array): Pr
   const key = await keyOf(workspaceId);
   if (!key || key.state !== 'active') throw new KeyUnavailableError(workspaceId);
   const dek = await dataKeyOf(key, version);
-  try {
-    return openBlob(dek, aad, data);
-  } catch {
-    // Not this board's / workspace's / table's blob, or altered: never readable.
-    throw new KeyUnavailableError(workspaceId, 'a stored blob does not belong where it was found');
-  }
+  return (aad, data) => {
+    try {
+      return openBlob(dek, aad, data);
+    } catch {
+      // Not this board's / workspace's / table's / file's blob, or altered: never readable.
+      throw new KeyUnavailableError(workspaceId, 'a stored blob does not belong where it was found');
+    }
+  };
+}
+
+/** Opens a blob sealed under `ref`. Throws KeyUnavailableError unless the key is active and opens it. */
+export async function openSealed(ref: string, aad: string, data: Uint8Array): Promise<Buffer> {
+  return (await openerFor(ref))(aad, data);
 }
 
 /** The data-key reference new content of the workspace is sealed with, or null (no key / not active). */
@@ -304,9 +316,8 @@ export async function sealPendingContent(maxBoards = 50): Promise<number> {
 // ---- the admin console (security admins; destroying: owners) ----
 
 const offered = (): WorkspaceKeyProvider[] => {
-  const c = getConfig().workspaceKeys;
-  if (!c.enabled) return [];
-  return c.awsKms ? ['instance', 'aws-kms'] : ['instance'];
+  if (!getConfig().workspaceKeys.enabled) return [];
+  return ['instance', ...KMS_PROVIDERS.filter((p) => p.configured()).map((p) => p.id)];
 };
 
 export async function keyStatus(workspaceId: string, userId: string): Promise<WorkspaceKeyStatus> {
@@ -330,16 +341,26 @@ export async function keyStatus(workspaceId: string, userId: string): Promise<Wo
   };
 }
 
-/** The KEK a request names: `kmsKeyId` an ARN (AWS KMS) or absent/null (the instance's). */
+/**
+ * The KEK a request names: `kmsKeyId` the workspace's own key at a key service — an AWS KMS ARN, a
+ * Google Cloud KMS key name, an Azure Key Vault key URL or a Vault Transit key path, which says
+ * which — or absent/null (the instance's).
+ */
 function kekFromBody(body: Record<string, unknown>): KekRef {
-  const arn = body.kmsKeyId;
-  if (arn === undefined || arn === null || arn === '') {
+  const id = body.kmsKeyId;
+  if (id === undefined || id === null || id === '') {
     if (!offered().includes('instance')) throw notFound();
     return { provider: 'instance', kmsKeyId: null };
   }
-  if (typeof arn !== 'string' || !kmsRegionOf(arn.trim())) throw badRequest('kmsKeyId must be an AWS KMS key ARN (arn:aws:kms:<region>:<account>:key/<id>)');
-  if (!offered().includes('aws-kms')) throw badRequest('This server is not set up to use AWS KMS keys');
-  return { provider: 'aws-kms', kmsKeyId: arn.trim() };
+  const parsed = typeof id === 'string' ? parseKmsKeyId(id.trim()) : null;
+  if (!parsed)
+    throw new HttpError(
+      400,
+      'kmsKeyId must be an AWS KMS key ARN, a Google Cloud KMS key name (projects/…/cryptoKeys/…), an Azure Key Vault key URL or a Vault Transit key path (<mount>/keys/<name>)',
+      'kms_key_id_invalid',
+    );
+  if (!offered().includes(parsed.provider.id)) throw new HttpError(400, `This server is not set up to use ${parsed.provider.name} keys`, 'kms_provider_unavailable');
+  return { provider: parsed.provider.id, kmsKeyId: parsed.keyId };
 }
 
 /** Wraps a new data key under `kek` and proves the KEK opens it again (the KMS grant works both ways). */
