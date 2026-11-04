@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "启动计时器",
   "stopTheTimer": "停止计时器",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "时间到。点击关闭",
   "timeSUp": "时间到",
   "paused2": "，已暂停",
-  "timerValueValue2": "计时器 {value}{value2}"
+  "timerValueValue2": "计时器 {value}{value2}",
+  "backgroundMusic": "背景音乐",
+  "musicNone": "无",
+  "musicDrift": "漂流",
+  "musicDriftHint": "缓慢温暖的和弦",
+  "musicPulse": "脉动",
+  "musicPulseHint": "轻柔平稳的琶音",
+  "musicRain": "雨声",
+  "musicRainHint": "轻柔的雨声和低沉的持续音",
+  "musicOnForYou": "已为你开启音乐（{track}）",
+  "musicOffForYou": "已为你静音音乐（{track}）",
+  "musicVolume": "音乐音量"
 }

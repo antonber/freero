@@ -82,3 +82,8 @@ export function parseDuration(input: string): number | null {
   const ms = (m * 60 + s) * 1000;
   return ms > 0 && ms <= MAX_DURATION ? ms : null;
 }
+
+/** How far into the run the countdown is (ms): unchanged by a pause, a resume or "+1 min". */
+export function elapsedMs(state: TimerState, now: number): number {
+  return Math.max(0, state.duration - remainingMs(state, now));
+}

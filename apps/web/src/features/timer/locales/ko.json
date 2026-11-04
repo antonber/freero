@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "타이머 시작",
   "stopTheTimer": "타이머 정지",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "시간이 다 됐어요. 클릭해서 닫기",
   "timeSUp": "시간이 다 됐어요",
   "paused2": ", 일시 정지됨",
-  "timerValueValue2": "타이머 {value}{value2}"
+  "timerValueValue2": "타이머 {value}{value2}",
+  "backgroundMusic": "배경 음악",
+  "musicNone": "없음",
+  "musicDrift": "드리프트",
+  "musicDriftHint": "느리고 따뜻한 화음",
+  "musicPulse": "펄스",
+  "musicPulseHint": "부드럽고 일정한 아르페지오",
+  "musicRain": "비",
+  "musicRainHint": "잔잔한 빗소리와 낮은 드론",
+  "musicOnForYou": "내 음악 켜짐 ({track})",
+  "musicOffForYou": "내 음악 음소거됨 ({track})",
+  "musicVolume": "음악 볼륨"
 }

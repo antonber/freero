@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "הפעלת הטיימר",
   "stopTheTimer": "עצירת הטיימר",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "הזמן נגמר. לחיצה לסגירה",
   "timeSUp": "הזמן נגמר",
   "paused2": ", מושהה",
-  "timerValueValue2": "טיימר {value}{value2}"
+  "timerValueValue2": "טיימר {value}{value2}",
+  "backgroundMusic": "מוזיקת רקע",
+  "musicNone": "ללא",
+  "musicDrift": "סחף",
+  "musicDriftHint": "אקורדים איטיים וחמים",
+  "musicPulse": "דופק",
+  "musicPulseHint": "ארפג'ו עדין ויציב",
+  "musicRain": "גשם",
+  "musicRainHint": "גשם רך וצליל נמוך מתמשך",
+  "musicOnForYou": "המוזיקה פועלת אצלך ({track})",
+  "musicOffForYou": "המוזיקה מושתקת אצלך ({track})",
+  "musicVolume": "עוצמת המוזיקה"
 }

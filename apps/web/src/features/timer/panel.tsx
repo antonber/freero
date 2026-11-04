@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, BellOff, Pause, Play, Plus, Square, Timer as TimerIcon } from 'lucide-react';
+import { Bell, BellOff, Music, Pause, Play, Plus, Square, Timer as TimerIcon, VolumeX } from 'lucide-react';
 import type { TimerState } from '@freero/shared';
 import { definePanel, useCanEdit, useCollection, type Editor } from '@engine';
-import { Button, IconButton, Input, Popover, Tooltip } from '@ui';
+import { Button, IconButton, Input, Popover, Select, Slider, Tooltip } from '@ui';
 import {
   MINUTE,
   addTime,
+  elapsedMs,
   formatClock,
   parseDuration,
   pauseTimer,
@@ -15,7 +16,11 @@ import {
   startTimer,
   type TimerPhase,
 } from './lib/timer';
-import { playChime, readMuted, unlockAudioOnFirstGesture, writeMuted } from './lib/chime';
+import { playChime } from './lib/chime';
+import { unlockAudioOnFirstGesture } from './lib/audio';
+import { MUSIC_TRACKS, isMusicTrack, type MusicTrack } from './lib/music';
+import { MusicPlayer } from './lib/musicPlayer';
+import { hearsMusic, readMusicPref, readMuted, readVolume, writeMusicPref, writeMuted, writeVolume } from './lib/prefs';
 import { t } from './messages';
 import './timer.css';
 
@@ -46,6 +51,59 @@ function useMuted(): [boolean, (m: boolean) => void] {
   ];
 }
 
+type MusicChoice = MusicTrack | 'none';
+
+function trackLabel(track: MusicChoice): string {
+  return track === 'drift' ? t('musicDrift') : track === 'pulse' ? t('musicPulse') : track === 'rain' ? t('musicRain') : t('musicNone');
+}
+
+const MUSIC_OPTIONS: ReadonlyArray<{ value: MusicChoice; label: string; description?: string }> = [
+  { value: 'none', label: trackLabel('none') },
+  ...MUSIC_TRACKS.map((track) => ({
+    value: track,
+    label: trackLabel(track),
+    description: track === 'drift' ? t('musicDriftHint') : track === 'pulse' ? t('musicPulseHint') : t('musicRainHint'),
+  })),
+];
+
+function musicOf(state: TimerState | undefined): MusicTrack | null {
+  const track = state?.music?.track;
+  return isMusicTrack(track) ? track : null;
+}
+
+/** The facilitator's music choice: when starting the timer, and while it runs. */
+function MusicSelect({ value, onChange }: { value: MusicChoice; onChange: (v: MusicChoice) => void }) {
+  return (
+    <div className="fr-timer-music">
+      <span className="fr-timer-music__label">{t('backgroundMusic')}</span>
+      <Select<MusicChoice> options={MUSIC_OPTIONS} value={value} onChange={onChange} size="sm" width="100%" aria-label={t('backgroundMusic')} />
+    </div>
+  );
+}
+
+/** Each person's own: hear the music or not, and how loud. */
+function MusicForMe({ on, onToggle, volume, onVolume, track }: { on: boolean; onToggle: (on: boolean) => void; volume: number; onVolume: (v: number) => void; track: MusicTrack }) {
+  return (
+    <div className="fr-timer-music-me">
+      <button type="button" className="fr-timer-mute" aria-pressed={on} onClick={() => onToggle(!on)}>
+        {on ? <Music size={15} /> : <VolumeX size={15} />}
+        {on ? t('musicOnForYou', { track: trackLabel(track) }) : t('musicOffForYou', { track: trackLabel(track) })}
+      </button>
+      {on && (
+        <Slider
+          min={0}
+          max={100}
+          step={5}
+          value={Math.round(volume * 100)}
+          onChange={(v) => onVolume(v / 100)}
+          aria-label={t('musicVolume')}
+          className="fr-timer-volume"
+        />
+      )}
+    </div>
+  );
+}
+
 function MuteToggle({ muted, onChange }: { muted: boolean; onChange: (m: boolean) => void }) {
   return (
     <button type="button" className="fr-timer-mute" aria-pressed={muted} onClick={() => onChange(!muted)}>
@@ -55,15 +113,16 @@ function MuteToggle({ muted, onChange }: { muted: boolean; onChange: (m: boolean
   );
 }
 
-function Setup({ onStart }: { onStart: (ms: number) => void }) {
+function Setup({ onStart }: { onStart: (ms: number, music: MusicTrack | null) => void }) {
   const [custom, setCustom] = useState('05:00');
+  const [music, setMusic] = useState<MusicChoice>('none');
   const parsed = parseDuration(custom);
   return (
     <form
       className="fr-timer-setup"
       onSubmit={(e) => {
         e.preventDefault();
-        if (parsed) onStart(parsed);
+        if (parsed) onStart(parsed, music === 'none' ? null : music);
       }}
     >
       <div className="fr-timer-presets" role="group" aria-label={t('presets')}>
@@ -89,6 +148,7 @@ function Setup({ onStart }: { onStart: (ms: number) => void }) {
         aria-label={t('customDuration')}
         size="sm"
       />
+      <MusicSelect value={music} onChange={setMusic} />
       <Button type="submit" variant="primary" icon={Play} block disabled={!parsed}>{t('start')}{' '}{parsed ? formatClock(parsed) : ''}
       </Button>
     </form>
@@ -115,6 +175,15 @@ function Controls({ editor, state, phase, now }: { editor: Editor; state: TimerS
           <Button size="sm" variant="ghost" icon={Square} onClick={() => editor.collection<TimerState>('timer').delete(KEY)}>{t('stop')}</Button>
         </div>
       )}
+      {canEdit && (
+        <MusicSelect
+          value={musicOf(state) ?? 'none'}
+          onChange={(v) => {
+            const cur = editor.collection<TimerState>('timer').get(KEY);
+            if (cur) write({ ...cur, music: v === 'none' ? null : { track: v } });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -125,6 +194,9 @@ function TimerPanel({ editor }: { editor: Editor }) {
   const canEdit = useCanEdit();
   const [open, setOpen] = useState(false);
   const [muted, setMuted] = useMuted();
+  const [musicPref, setMusicPref] = useState(readMusicPref);
+  const [volume, setVolume] = useState(readVolume);
+  const player = useRef<MusicPlayer | null>(null);
   const [flashUntil, setFlashUntil] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -135,6 +207,27 @@ function TimerPanel({ editor }: { editor: Editor }) {
   if (phase === 'done' && dismissedAt === state?.endsAt) phase = 'idle';
 
   useEffect(() => unlockAudioOnFirstGesture(), []);
+
+  // Music: plays while the countdown runs, at the timer's own position (everyone in step).
+  const track = musicOf(state);
+  const musicOn = hearsMusic(musicPref, state?.startedBy, editor.user.id);
+  const playMusic = !!track && musicOn && phase === 'running';
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  useEffect(() => {
+    if (!playMusic || !track) {
+      player.current?.stop();
+      return;
+    }
+    player.current ??= new MusicPlayer();
+    player.current.play(
+      track,
+      () => (stateRef.current ? elapsedMs(stateRef.current, editor.host.serverNow()) : 0),
+      () => stateRef.current?.duration ?? 0,
+    );
+  }, [playMusic, track, editor]);
+  useEffect(() => player.current?.setVolume(volume), [volume, playMusic]);
+  useEffect(() => () => player.current?.stop(), []);
 
   // Chime + flash only for clients that watched the countdown cross zero (not late joiners).
   const prev = useRef<{ phase: TimerPhase; endsAt: number | null }>({ phase, endsAt: state?.endsAt ?? null });
@@ -158,8 +251,8 @@ function TimerPanel({ editor }: { editor: Editor }) {
 
   if (phase === 'idle' && !canEdit) return null;
 
-  const start = (ms: number) => {
-    editor.collection<TimerState>('timer').set(KEY, startTimer(ms, editor.host.serverNow(), editor.user.id));
+  const start = (ms: number, music: MusicTrack | null) => {
+    editor.collection<TimerState>('timer').set(KEY, { ...startTimer(ms, editor.host.serverNow(), editor.user.id), music: music ? { track: music } : null });
     setDismissedAt(null);
     setOpen(false);
   };
@@ -210,6 +303,21 @@ function TimerPanel({ editor }: { editor: Editor }) {
             <Setup onStart={start} />
           ) : (
             state && <Controls editor={editor} state={state} phase={phase} now={now} />
+          )}
+          {track && phase !== 'idle' && (
+            <MusicForMe
+              track={track}
+              on={musicOn}
+              onToggle={(on) => {
+                writeMusicPref(on);
+                setMusicPref(on);
+              }}
+              volume={volume}
+              onVolume={(v) => {
+                writeVolume(v);
+                setVolume(v);
+              }}
+            />
           )}
           <MuteToggle muted={muted} onChange={setMuted} />
         </div>

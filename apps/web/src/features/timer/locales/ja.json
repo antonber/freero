@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "タイマーを開始",
   "stopTheTimer": "タイマーを停止",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "時間になりました。クリックして閉じる",
   "timeSUp": "時間になりました",
   "paused2": "、一時停止中",
-  "timerValueValue2": "タイマー {value}{value2}"
+  "timerValueValue2": "タイマー {value}{value2}",
+  "backgroundMusic": "BGM",
+  "musicNone": "なし",
+  "musicDrift": "ドリフト",
+  "musicDriftHint": "ゆったりとした温かいコード",
+  "musicPulse": "パルス",
+  "musicPulseHint": "穏やかで一定のアルペジオ",
+  "musicRain": "雨",
+  "musicRainHint": "静かな雨音と低いドローン",
+  "musicOnForYou": "あなたの音楽はオン（{track}）",
+  "musicOffForYou": "あなたの音楽はミュート（{track}）",
+  "musicVolume": "音楽の音量"
 }

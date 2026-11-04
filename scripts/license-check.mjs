@@ -7,6 +7,11 @@
 // core packages; we use them unmodified).
 //
 // Exceptions go in ALLOWED_UNDECLARED below with the licence checked by hand and where.
+//
+// Sounds: Freero ships no audio files. The timer's chime and its background music tracks (#145:
+// Drift, Pulse, Rain) are composed and synthesized at run time by Freero's own MIT code
+// (apps/web/src/features/timer/lib/music.ts, musicPlayer.ts, chime.ts) — no samples, recordings
+// or third-party compositions. Adding a recorded sound means recording its licence here.
 import fs from 'node:fs';
 import path from 'node:path';
 

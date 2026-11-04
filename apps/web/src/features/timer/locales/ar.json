@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "تشغيل المؤقت",
   "stopTheTimer": "إيقاف المؤقت",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "انتهى الوقت. انقر للإغلاق",
   "timeSUp": "انتهى الوقت",
   "paused2": "، متوقف مؤقتًا",
-  "timerValueValue2": "المؤقت {value}{value2}"
+  "timerValueValue2": "المؤقت {value}{value2}",
+  "backgroundMusic": "موسيقى الخلفية",
+  "musicNone": "بلا",
+  "musicDrift": "انسياب",
+  "musicDriftHint": "أوتار بطيئة ودافئة",
+  "musicPulse": "نبض",
+  "musicPulseHint": "تتابع نغمات هادئ ومنتظم",
+  "musicRain": "مطر",
+  "musicRainHint": "مطر خفيف ونغمة منخفضة متواصلة",
+  "musicOnForYou": "الموسيقى مشغّلة لك ({track})",
+  "musicOffForYou": "الموسيقى مكتومة لك ({track})",
+  "musicVolume": "مستوى صوت الموسيقى"
 }

@@ -20,5 +20,16 @@
   "timeSUpClickTo": "Time's up. Click to dismiss",
   "timeSUp": "Time's up",
   "paused2": ", paused",
-  "timerValueValue2": "Timer {value}{value2}"
+  "timerValueValue2": "Timer {value}{value2}",
+  "backgroundMusic": "Background music",
+  "musicNone": "None",
+  "musicDrift": "Drift",
+  "musicDriftHint": "Slow, warm chords",
+  "musicPulse": "Pulse",
+  "musicPulseHint": "A gentle, steady arpeggio",
+  "musicRain": "Rain",
+  "musicRainHint": "Soft rain and a low drone",
+  "musicOnForYou": "Music on for you ({track})",
+  "musicOffForYou": "Music muted for you ({track})",
+  "musicVolume": "Music volume"
 }

@@ -165,3 +165,31 @@
 .fr-timer-mute:hover {
   color: var(--fr-ink);
 }
+
+.fr-timer-music {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+}
+
+.fr-timer-music__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-ink);
+}
+
+.fr-timer-controls .fr-timer-music {
+  margin-block-start: 10px;
+}
+
+.fr-timer-music-me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fr-timer-volume {
+  flex: 1;
+  min-inline-size: 0;
+}

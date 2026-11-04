@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "Iniciar el temporizador",
   "stopTheTimer": "Detener el temporizador",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "Se acabó el tiempo. Haz clic para descartar",
   "timeSUp": "Se acabó el tiempo",
   "paused2": ", en pausa",
-  "timerValueValue2": "Temporizador {value}{value2}"
+  "timerValueValue2": "Temporizador {value}{value2}",
+  "backgroundMusic": "Música de fondo",
+  "musicNone": "Ninguna",
+  "musicDrift": "Deriva",
+  "musicDriftHint": "Acordes lentos y cálidos",
+  "musicPulse": "Pulso",
+  "musicPulseHint": "Un arpegio suave y constante",
+  "musicRain": "Lluvia",
+  "musicRainHint": "Lluvia suave y un zumbido grave",
+  "musicOnForYou": "Música activada para ti ({track})",
+  "musicOffForYou": "Música silenciada para ti ({track})",
+  "musicVolume": "Volumen de la música"
 }

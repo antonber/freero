@@ -266,6 +266,12 @@ export interface TimerState {
   pausedRemaining: number | null;
   running: boolean;
   startedBy: string | null;
+  /**
+   * Background music the person who started the timer chose (#145): an id of the timer feature's
+   * own generated tracks (`features/timer/lib/music.ts`), played on every client in step with the
+   * countdown. Absent or null: none. Clients ignore ids they don't know.
+   */
+  music?: { track: string } | null;
 }
 
 /**
