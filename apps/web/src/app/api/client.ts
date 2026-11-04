@@ -180,7 +180,7 @@ import type { MobilePushDevice, MobilePushStatus, FigmaFilesResponse, FigmaFrame
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
 import type { BoardSensitiveData, SensitiveDataSettingsInput, SensitiveDataStatus } from '@freero/shared';
-import type { BoardGuestsResponse } from '@freero/shared';
+import type { BoardCallToken, BoardGuestsResponse } from '@freero/shared';
 import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
@@ -411,6 +411,8 @@ export const api = {
   // the board's call link (KAI-134)
   boardCall: (id: string) => request<BoardCallResponse>('GET', `/api/boards/${encodeURIComponent(id)}/call`),
   setBoardCall: (id: string, body: SetBoardCallRequest) => request<BoardCallResponse>('PUT', `/api/boards/${encodeURIComponent(id)}/call`, body),
+  /** #149: joining the board's room on the operator's media server. */
+  boardCallToken: (id: string) => request<BoardCallToken>('POST', `/api/boards/${encodeURIComponent(id)}/call/token`),
   personalViews: (id: string) => request<PersonalViewsResponse>('GET', `/api/boards/${encodeURIComponent(id)}/personal-views`),
   savePersonalView: (id: string, body: { itemId: string; viewId: string; settings: Record<string, unknown> | null }) =>
     request<{ ok: true }>('PUT', `/api/boards/${encodeURIComponent(id)}/personal-views`, body),

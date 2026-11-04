@@ -1,6 +1,8 @@
 // Public API of modules/boards [S2].
 import type { BoardSummary, ObjectKind, Role } from '@freero/shared';
-import { forbidden, notFound } from '../../platform/http';
+import { forbidden, HttpError, notFound } from '../../platform/http';
+import { BOARD_CALLS_OFF, type BoardCallToken } from '@freero/shared';
+import { callToken } from './callRoom';
 import { closeBoardDoc, initBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
@@ -34,6 +36,17 @@ import {
 } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+
+/**
+ * #149: a token for the board's room on the operator's media server, for someone who can open the
+ * board (any role, guests too: `who.id` may be a guest id); 404 `board_calls_off` without one.
+ */
+export async function boardCallToken(boardId: string, who: { id: string; name: string; avatarUrl?: string | null }): Promise<BoardCallToken> {
+  await requireAccess(boardId, who.id);
+  const token = callToken(boardId, who);
+  if (!token) throw new HttpError(404, 'This Freero server has no calls on the board', BOARD_CALLS_OFF);
+  return token;
+}
 // Legal holds (#157) keep boards from retention rules (#154).
 export { onBoardRetentionHold, type BoardHoldCheck } from './retention';
 // Legal holds themselves (#157; modules/ediscovery places and releases them): nothing deletes a held board.

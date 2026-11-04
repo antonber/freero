@@ -196,9 +196,12 @@ export function contentSecurityPolicy(
   // app's same-origin analytics frame. Never on a page another site may frame (the assistants'
   // live view, a board embedded anywhere) nor on the embeds' own pages: they load no analytics.
   const ga = !!config.googleAnalyticsId && !opts.framable && !opts.ancestors && opts.analytics !== false;
+  // #149: calls docked on the board talk to the operator's own media server — a Jitsi deployment's
+  // IFrame API script and meeting frame, or a LiveKit server's signalling socket.
+  const calls = callOrigins(config);
   return [
     "default-src 'self'",
-    `script-src ${["'self'", ...(ga ? [GA_SCRIPT_ORIGIN] : []), ...(opts.scripts ?? [])].join(' ')}`,
+    `script-src ${["'self'", ...(ga ? [GA_SCRIPT_ORIGIN] : []), ...calls.scripts, ...(opts.scripts ?? [])].join(' ')}`,
     // React style attributes. Fonts are self-hosted (scripts/fonts.mjs); data: is an export's
     // inlined faces.
     "style-src 'self' 'unsafe-inline'",
@@ -209,17 +212,40 @@ export function contentSecurityPolicy(
     // blob: is the file being dropped, read locally for its poster frame before it is uploaded.
     `media-src 'self' blob: ${s3}`.trim(),
     // https: lets "paste an image URL" fetch and re-host the image, and exports inline web fonts.
-    `connect-src 'self' ${ws} https:${ga ? ` ${GA_CONNECT_SOURCES.join(' ')}` : ''}`.replace(/\s+/g, ' '),
+    `connect-src 'self' ${ws} https:${ga ? ` ${GA_CONNECT_SOURCES.join(' ')}` : ''} ${calls.connect.join(' ')}`.replace(/\s+/g, ' ').trim(),
     "worker-src 'self' blob:",
     // Live embeds in link cards (features/embed): the built-in providers' players and viewers plus
     // the operator's EMBED_EXTRA_ORIGINS — only these origins, only after a click.
-    `frame-src ${[...(ga ? ["'self'"] : []), ...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
+    `frame-src ${[...(ga ? ["'self'"] : []), ...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins, ...calls.frames].join(' ')}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     `frame-ancestors ${ancestors.join(' ')}`,
     ...(secure ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
+}
+
+/** #149: what the operator's media server for docked calls needs in the CSP (nothing without one). */
+function callOrigins(config: Config): { scripts: string[]; frames: string[]; connect: string[] } {
+  const c = config.boardCalls;
+  if (!c) return { scripts: [], frames: [], connect: [] };
+  if (c.provider === 'jitsi') return { scripts: [`https://${c.domain}`], frames: [`https://${c.domain}`], connect: [`wss://${c.domain}`] };
+  const u = new URL(c.url);
+  const host = u.host;
+  const plain = u.protocol === 'ws:' || u.protocol === 'http:';
+  return { scripts: [], frames: [], connect: plain ? [`ws://${host}`, `http://${host}`] : [`wss://${host}`] };
+}
+
+/**
+ * Camera, microphone and screen sharing stay off for every page — except where the operator runs a
+ * media server for calls on the board (#149): then this origin may ask for them, and a Jitsi
+ * deployment's meeting frame too.
+ */
+export function permissionsPolicy(config: Config): string {
+  const c = config.boardCalls;
+  if (!c) return 'camera=(), microphone=(), geolocation=(), payment=(), usb=()';
+  const allow = c.provider === 'jitsi' ? `(self "https://${c.domain}")` : '(self)';
+  return `camera=${allow}, microphone=${allow}, display-capture=${allow}, geolocation=(), payment=(), usb=()`;
 }
 
 export function securityHeaders(config: Config): RequestHandler {
@@ -231,7 +257,7 @@ export function securityHeaders(config: Config): RequestHandler {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Cross-Origin-Opener-Policy', req.method === 'GET' && openerPaths.some((p) => p.path.test(req.path)) ? 'unsafe-none' : 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', frame ? 'cross-origin' : 'same-origin');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    res.setHeader('Permissions-Policy', permissionsPolicy(config));
     if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
   };

@@ -19,6 +19,8 @@ import type {
   ActivityState,
   BoardCall,
   BoardCallResponse,
+  BoardCallProvider,
+  BoardCallToken,
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
@@ -266,6 +268,11 @@ export interface Host {
     call?: BoardCall | null;
     /** [additive] The server can give the board a Jitsi room of its own. */
     jitsiCalls?: boolean;
+    /**
+     * [additive, #149] The operator runs a media server for calls on the board: "Join call" opens the
+     * board's own room docked on the board (`call.token()`), unless its editors set a meeting link.
+     */
+    dockedCalls?: BoardCallProvider;
     /**
      * [additive] Live embeds (KAI-127): `enabled` false when the board's workspace turned them off
      * (links stay preview cards); `extraOrigins` are https origins the server's operator allows to
@@ -571,6 +578,8 @@ export interface Host {
   call?: {
     get(): Promise<BoardCallResponse>;
     set(request: SetBoardCallRequest): Promise<BoardCallResponse>;
+    /** [additive, #149] A token for the board's room on the operator's media server (rejects: none, or no access). */
+    token?(): Promise<BoardCallToken>;
   };
   /**
    * [additive] Live audience activities (KAI-132): answers go to the SERVER, never into the board

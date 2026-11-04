@@ -3022,6 +3022,20 @@ piece reuses an owner that already exists.
   Adaptive Card from boards' `publicLinkPreview` (Slack's rule), untrusted text in `TextRun`s only.
   Per-tenant `RATE_LIMIT_TEAMS_UNFURL`. Nothing calls the Bot Connector, so there is no bot secret.
 
+### Calls docked on the board (#149, `boards/callRoom.ts`, `features/call`; docs/configuration.md)
+
+Off unless the operator configures a media server (`config.boardCalls`: LIVEKIT_URL + key + secret,
+or JITSI_DOMAIN with an optional JWT app id / secret). Freero carries no media: `callRoom(boardId)`
+derives the board's room with the server's secret, and `POST /boards/:id/call/token`
+(boards' `boardCallToken`: `requireAccess` for any role, guests too) mints a token for that room
+only — a LiveKit access token (HS256, the account or guest id as identity) or a Jitsi JWT. The CSP
+and `Permissions-Policy` open camera, microphone, screen capture and the media server's origins only
+while one is configured (`platform/security.ts`). `BoardPermissions.dockedCalls` → `Host.board.dockedCalls`;
+`features/call` then shows "Join call" on every board whose editors set no meeting link of their
+own, and joining mounts the room in a `screen-overlay` panel (`livekit-client`, loaded on demand,
+or Jitsi's IFrame API from the operator's domain) — the panel lives with the board, so leaving the
+board hangs up. Who is in the call stays presence (`ext.call`), as for linked calls.
+
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 
 **Walkthroughs** are not screen videos. `features/walkthrough` records the narrator's voice (and

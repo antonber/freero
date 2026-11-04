@@ -90,6 +90,7 @@ Links in emails point at `PUBLIC_URL` (in development: the origin the request ca
 | Variable | Default | Description |
 |---|---|---|
 | `SIGNUPS` | `open` | Who may create an account on this server. `open`: anyone. `invite-only`: an address with a live board or workspace invite, at one of `SIGNUP_DOMAINS`, at a domain a workspace here verified with "Add new sign-ups" on, or an operator's (`OPERATOR_EMAILS`); applies to signup with a password and to a first sign-in with Google / Microsoft. Accounts a workspace's own identity provider or directory makes (SSO, SCIM) are vouched for by a workspace that proved the domain, so they pass. Everyone else is told the server is by invitation. |
+| `GUEST_EDITING` | `true` | `false` stops every board on this instance from letting guests without an account edit (#97) — the switch for personal boards, which have no workspace policies. With it on, each board's owner decides (off by default) and a workspace's `guestEditing` policy can forbid it. |
 | `SIGNUP_DOMAINS` | — | Comma-separated domains (`example.com`) whose addresses may always sign up on an `invite-only` server (your own organization's). |
 | `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
 | `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
@@ -326,8 +327,32 @@ unless its id is set; `PUBLIC_URL` must be https. Owner steps: [atlassian.md](in
 
 | Variable | Default | Description |
 |---|---|---|
-| `GUEST_EDITING` | `true` | `false` stops every board on this instance from letting guests without an account edit (#97) — the switch for personal boards, which have no workspace policies. With it on, each board's owner decides (off by default) and a workspace's `guestEditing` policy can forbid it. |
 | `JITSI_BASE_URL` | — | An https Jitsi deployment (`https://meet.jit.si`, or your own) where a board can get a call room of its own ("Call link…" → Jitsi room). The room name is derived from the board id with `SESSION_SECRET` (`Freero` + 24 hex characters), so nobody can guess another board's room; rotating the secret gives every board a new room. Unset: boards only use meeting links their editors paste (Meet, Zoom, Teams…, https only). Freero carries no audio or video itself. |
+
+### Calls docked on the board (#149)
+
+Optional. With a media server of your own, "Join call" opens the board's own room in a panel docked
+on the board (camera, microphone, screen sharing; who is in the call shows in presence; leaving the
+board leaves the call) instead of a new tab. Boards whose editors pasted a meeting link keep it.
+Without these variables nothing changes. Freero's server never carries audio or video: it only
+decides who may join which room. The room name is derived from the board id with `SESSION_SECRET`
+(`freero-` + 32 hex characters), and only someone who can open the board (guests included) gets a
+token for it (`POST /api/boards/:id/call/token`). When both are configured, LiveKit is used.
+
+| Variable | Default | Description |
+|---|---|---|
+| `LIVEKIT_URL` | — | Your LiveKit server's URL (`wss://livekit.example.com`). With the two below, Freero mints each person's access token (HS256, valid 6 hours, one room, their account or guest id as identity) and the browser connects with `livekit-client` (Apache-2.0). The CSP's `connect-src` and the `Permissions-Policy` (camera, microphone, screen capture for this origin) open only while it is set. |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | — | The API key and secret from your LiveKit server's `keys:` (never sent to browsers). All three go together. |
+| `JITSI_DOMAIN` | — | The host name of your own Jitsi Meet deployment (`meet.example.com`, no scheme). The board loads its IFrame API (`https://<domain>/external_api.js`, Apache-2.0) and shows the meeting in the panel; the CSP allows that origin for scripts, frames and its socket, and the `Permissions-Policy` delegates camera, microphone and screen capture to it. |
+| `JITSI_APP_ID` / `JITSI_APP_SECRET` | — | Only for a deployment with token authentication (prosody `mod_auth_token`, `app_id` / `app_secret`): Freero signs a JWT per person for the board's room (`room` claim), so nobody can enter it without one. Both or neither. Without them the room name is the only guard — use a deployment that requires tokens for anything beyond a trusted network. |
+
+Setting up LiveKit: run `livekit-server` with a key pair (`keys: { <key>: <secret> }`), TURN/TLS as
+its docs describe for your network, and set the three variables. A quick local trial:
+`docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp livekit/livekit-server --dev` and
+`LIVEKIT_URL=ws://localhost:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret` (dev keys; never in
+production). Setting up Jitsi: a Jitsi Meet deployment (the docker-jitsi-meet project) with
+`ENABLE_AUTH=1`, `AUTH_TYPE=jwt`, `JWT_APP_ID`, `JWT_APP_SECRET` matching `JITSI_APP_ID` /
+`JITSI_APP_SECRET`; its public host name is `JITSI_DOMAIN`. Hosted freero.app sets none of these.
 
 ## GIF search
 

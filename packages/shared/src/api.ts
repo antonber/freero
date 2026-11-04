@@ -162,6 +162,8 @@ export interface BoardPermissions {
   guestLinks?: boolean;
   /** [additive] This server offers boards a Jitsi room of their own (operator's JITSI_BASE_URL, KAI-134). */
   jitsiCalls?: boolean;
+  /** [additive, #149] Calls open docked on the board, on the operator's media server (BoardCallResponse.docked). */
+  dockedCalls?: BoardCallProvider;
   /**
    * [additive] Live embeds (KAI-127) may be activated on this board: false when its workspace turned
    * them off (policy `liveEmbeds`); links then stay preview cards. Absent: on.
@@ -236,7 +238,46 @@ export interface BoardCall {
   /** https URL to open in a new tab. */
   url: string;
 }
-export interface BoardCallResponse { call: BoardCall | null; jitsiAvailable: boolean }
+export interface BoardCallResponse {
+  call: BoardCall | null;
+  jitsiAvailable: boolean;
+  /**
+   * [additive, #149] The operator runs a media server for calls on the board: "Join call" opens the
+   * board's own room in a panel docked on the board (unless its editors set a meeting link of their
+   * own). Absent: calls are links opened in a new tab, as before.
+   */
+  docked?: BoardCallProvider;
+}
+/** [additive, #149] The media server an operator configured for calls docked on boards. */
+export type BoardCallProvider = 'livekit' | 'jitsi';
+// POST /api/boards/:id/call/token -> BoardCallToken  (#149; anyone who can open the board, guests
+//   too; 404 `board_calls_off` without a configured media server). The room is derived from the
+//   board id with the server's secret, so a token opens that board's room and no other.
+/** [additive, #149] What a client needs to join the board's room on the operator's media server. */
+export type BoardCallToken =
+  | {
+      provider: 'livekit';
+      /** The LiveKit server's URL (wss://…). */
+      url: string;
+      room: string;
+      /** An access token for `room` only, minted by Freero's server (HS256 with the operator's API secret). */
+      token: string;
+      /** Who the token joins as (the account or guest id). */
+      identity: string;
+      expiresAt: number;
+    }
+  | {
+      provider: 'jitsi';
+      /** The Jitsi deployment's host name (its IFrame API is https://<domain>/external_api.js). */
+      domain: string;
+      room: string;
+      /** A JWT for `room` when the operator configured JITSI_APP_ID / JITSI_APP_SECRET, else null. */
+      jwt: string | null;
+      displayName: string;
+      expiresAt: number;
+    };
+/** `code` of a 404: the server has no media server for calls on the board (#149). */
+export const BOARD_CALLS_OFF = 'board_calls_off';
 /** `url`: a meeting link; `jitsi: true`: the board's own Jitsi room; neither (or url null): no call. */
 export interface SetBoardCallRequest { url?: string | null; jitsi?: boolean }
 export const MAX_CALL_URL = 2000;

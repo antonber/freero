@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { hasKey } from '../keys/index';
-import { GUEST_REMOVED, OFFLINE_CHECK_MAX, type BoardGuestsResponse, type BoardCallResponse, type BoardSharingSettings, type BoardSummary, type GuestBoardInfo, type GuestJoinResponse, type LinkAccess, type MoveBoardResponse, type OfflineCheckResponse } from '@freero/shared';
+import { guestDisplayName, GUEST_REMOVED, OFFLINE_CHECK_MAX, type BoardCallToken, type BoardGuestsResponse, type BoardCallResponse, type BoardSharingSettings, type BoardSummary, type GuestBoardInfo, type GuestJoinResponse, type LinkAccess, type MoveBoardResponse, type OfflineCheckResponse } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
@@ -10,6 +10,8 @@ import { listBoardGuests, removeBoardGuest, undoGuestEdits } from './guests';
 import { isLinkAccess, managesSharing } from '../members/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
 import { callOf, cleanCallUrl, jitsiAvailable } from './call';
+import { dockedCalls } from './callRoom';
+import { boardCallToken } from './index';
 import { boardLifecycle } from './events';
 import { applyLinkProtection, checkVisitorPassword, cleanLinkProtection, hasLinkProtectionPatch, unlockLink } from './linkProtection';
 import * as repo from './repo';
@@ -202,7 +204,23 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     requireUserOrGuest,
     handle(async (req, res) => {
       const { board } = await requireAccess(req.params.id, actorId(currentActor(req)));
-      res.json({ call: callOf(board), jitsiAvailable: jitsiAvailable() } satisfies BoardCallResponse);
+      res.json({ call: callOf(board), jitsiAvailable: jitsiAvailable(), ...(dockedCalls() ? { docked: dockedCalls()! } : {}) } satisfies BoardCallResponse);
+    }),
+  );
+
+  // #149: joining the board's room on the operator's media server (callRoom.ts).
+  r.post(
+    '/boards/:id/call/token',
+    requireUserOrGuest,
+    rateLimit('wsConnect', 'user'),
+    handle(async (req, res) => {
+      const actor = currentActor(req);
+      const who =
+        actor.kind === 'user'
+          ? { id: actor.user.id, name: actor.user.name, avatarUrl: actor.user.avatarUrl }
+          : { id: actor.guest.id, name: guestDisplayName(actor.guest.name) };
+      res.setHeader('Cache-Control', 'no-store');
+      res.json((await boardCallToken(req.params.id, who)) satisfies BoardCallToken);
     }),
   );
 
@@ -229,7 +247,11 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         // The host only: meeting links often carry their passcode.
         metadata: { kind: next.jitsi ? 'jitsi' : next.url ? 'link' : 'none', ...(host && !next.jitsi ? { host } : {}) },
       });
-      res.json({ call: callOf({ ...board, callUrl: next.url, callJitsi: next.jitsi }), jitsiAvailable: jitsiAvailable() } satisfies BoardCallResponse);
+      res.json({
+        call: callOf({ ...board, callUrl: next.url, callJitsi: next.jitsi }),
+        jitsiAvailable: jitsiAvailable(),
+        ...(dockedCalls() ? { docked: dockedCalls()! } : {}),
+      } satisfies BoardCallResponse);
     }),
   );
 

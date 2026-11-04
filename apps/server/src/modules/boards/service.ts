@@ -68,6 +68,7 @@ import {
   workspaceRolesOf,
 } from '../workspaces/index';
 import { callOf, jitsiAvailable } from './call';
+import { dockedCalls } from './callRoom';
 import { boardLifecycle, boardMovedWorkspace } from './events';
 import { checkLabelChange } from './labelPolicy';
 import * as repo from './repo';
@@ -393,6 +394,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     canArchive: mayArchive(board, userId, access),
     guestLinks: access.anonymousLinks && !access.outsidersBlocked,
     jitsiCalls: jitsiAvailable(),
+    ...(dockedCalls() ? { dockedCalls: dockedCalls()! } : {}),
     liveEmbeds: access.policies.liveEmbeds !== 'off',
     embedOrigins: getConfig().embedExtraOrigins,
     boardEmbeds: access.policies.boardEmbeds !== 'off',

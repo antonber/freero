@@ -398,6 +398,16 @@ export interface Config {
    */
   guestEditing: boolean;
   /**
+   * #149: the operator's own media server for calls docked on the board, or null (calls stay links
+   * opened in a new tab). LiveKit (LIVEKIT_URL + LIVEKIT_API_KEY + LIVEKIT_API_SECRET: tokens are
+   * minted by this server) wins over Jitsi (JITSI_DOMAIN, with JITSI_APP_ID + JITSI_APP_SECRET when
+   * the deployment checks JWTs) when both are set.
+   */
+  boardCalls:
+    | { provider: 'livekit'; url: string; apiKey: string; apiSecret: string }
+    | { provider: 'jitsi'; domain: string; appId: string | null; appSecret: string | null }
+    | null;
+  /**
    * GIF search in the sticker panel (#139): the operator's GIF provider and API key, or null (no
    * GIF search anywhere). Every request goes through the server; the key never reaches a browser.
    */
@@ -711,6 +721,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (['0', 'false', 'no', 'off'].includes(v)) return false;
     problems.push(`${name} must be true or false (got "${v}")`);
     return def;
+  };
+
+  const boardCalls = (): Config['boardCalls'] => {
+    const lkUrl = url('LIVEKIT_URL', ['wss:', 'https:', 'ws:', 'http:']);
+    const lkKey = str('LIVEKIT_API_KEY');
+    const lkSecret = str('LIVEKIT_API_SECRET');
+    if (lkUrl || lkKey || lkSecret) {
+      if (!lkUrl || !lkKey || !lkSecret) problems.push('LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET go together');
+      else return { provider: 'livekit', url: lkUrl.replace(/\/+$/, ''), apiKey: lkKey, apiSecret: lkSecret };
+    }
+    const domain = str('JITSI_DOMAIN')?.toLowerCase() ?? null;
+    if (!domain) return null;
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/.test(domain)) {
+      problems.push('JITSI_DOMAIN must be a host name such as meet.example.com (no scheme, no path)');
+      return null;
+    }
+    const appId = str('JITSI_APP_ID');
+    const appSecret = str('JITSI_APP_SECRET');
+    if (!appId !== !appSecret) problems.push('JITSI_APP_ID and JITSI_APP_SECRET go together');
+    return { provider: 'jitsi', domain, appId: appId && appSecret ? appId : null, appSecret: appId && appSecret ? appSecret : null };
   };
 
   const gifs = (): Config['gifs'] => {
@@ -1246,6 +1276,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
     guestEditing: bool('GUEST_EDITING', true),
+    boardCalls: boardCalls(),
     gifs: gifs(),
     events: {
       settleMs: int('EVENTS_SETTLE_SECONDS', 3, 0, 600) * 1000,
