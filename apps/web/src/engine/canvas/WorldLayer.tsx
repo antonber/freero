@@ -268,6 +268,7 @@ class ItemStates {
   private selection: readonly string[] = [];
   private selected: ReadonlySet<string> = new Set();
   private editingId: string | null = null;
+  private hoverId: string | null = null;
   private moves: ReadonlyMap<string, { x: number; y: number }> | null = null;
   private members: ReadonlySet<string> | null = null;
 
@@ -278,6 +279,7 @@ class ItemStates {
 
   isSelected = (id: string) => this.selected.has(id);
   isEditing = (id: string) => this.editingId === id;
+  isHovered = (id: string) => this.hoverId === id;
   shownAt = (id: string) => this.moves?.get(id) ?? null;
   isSliding = (id: string) => !!this.members?.has(id);
 
@@ -304,6 +306,11 @@ class ItemStates {
       if (this.editingId) changed.add(this.editingId);
       if (s.editingId) changed.add(s.editingId);
       this.editingId = s.editingId;
+    }
+    if (s.hoverId !== this.hoverId) {
+      if (this.hoverId) changed.add(this.hoverId);
+      if (s.hoverId) changed.add(s.hoverId);
+      this.hoverId = s.hoverId;
     }
     const moves = s.dragPreview?.moves ?? null;
     if (moves !== this.moves) {
@@ -338,6 +345,9 @@ export const ElementView = memo(function ElementView({ id }: { id: string }) {
   const subscribe = useCallback((cb: () => void) => items.subscribe(id, cb), [items, id]);
   const selected = useSyncExternalStore(subscribe, () => items.isSelected(id));
   const editing = useSyncExternalStore(subscribe, () => items.isEditing(id));
+  // [additive] Under the resting pointer (the select tool's hover): a class on the wrapper, so an
+  // item shows hover-only controls with CSS and its memoized component never re-renders for it.
+  const hovered = useSyncExternalStore(subscribe, () => items.isHovered(id));
   // [additive] While items are dragged over its container: where it is drawn to make room, and
   // whether it slides there (ElementDefinition.dragPreview). Display only, never written.
   const shownAt = useSyncExternalStore(subscribe, () => items.shownAt(id));
@@ -347,7 +357,7 @@ export const ElementView = memo(function ElementView({ id }: { id: string }) {
   // [#135] or, with "hide the rest", not drawn at all.
   const unfocused = useMemo(() => (!!focusId && !!el && !core.editor.inFocus(el) ? (focusHide ? 'hidden' : 'faded') : null), [core, focusId, focusHide, el]);
   if (!el) return null;
-  return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} shownAt={shownAt} sliding={sliding} unfocused={unfocused} />;
+  return <ElementFrame element={el} selected={selected} editing={editing} hovered={hovered} zoom={zoom} shownAt={shownAt} sliding={sliding} unfocused={unfocused} />;
 });
 
 /**
@@ -359,6 +369,8 @@ export function ElementFrame(props: {
   element: BoardElement;
   selected: boolean;
   editing: boolean;
+  /** [additive] Under the resting pointer: the wrapper gets `fr-el--hover` (see ElementView). */
+  hovered?: boolean;
   zoom: number;
   preview?: boolean;
   /** Drawn here instead of at its own position (making room for a drag), see ElementView. */
@@ -395,7 +407,7 @@ export function ElementFrame(props: {
   }
   return (
     <div
-      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}${props.unfocused === 'faded' ? ' fr-el--unfocused' : props.unfocused === 'hidden' ? ' fr-el--outside' : ''}`}
+      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${props.hovered ? ' fr-el--hover' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}${props.unfocused === 'faded' ? ' fr-el--unfocused' : props.unfocused === 'hidden' ? ' fr-el--outside' : ''}`}
       data-id={props.preview ? undefined : el.id}
       data-type={el.type}
       style={{ ...reg?.def.wrapperStyle?.(el as never), left: at.x, top: at.y, width: el.w, height: el.h, transform }}

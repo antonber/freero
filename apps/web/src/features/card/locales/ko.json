@@ -47,7 +47,11 @@
     "makeOneSided",
     "twoSidedAddABack",
     "flipToTheBack",
-    "backColor"
+    "backColor",
+    "thisCardIsNoLonger",
+    "viewOnly",
+    "noDescription",
+    "selectOneCard"
   ],
   "toDo": "할 일",
   "doing": "진행 중",
@@ -96,5 +100,9 @@
   "makeOneSided": "단면으로 만들기",
   "twoSidedAddABack": "양면(뒷면 추가)",
   "flipToTheBack": "뒷면으로 뒤집기",
-  "backColor": "뒷면 색상"
+  "backColor": "뒷면 색상",
+  "thisCardIsNoLonger": "이 카드는 더 이상 보드에 없습니다.",
+  "viewOnly": "보기 전용",
+  "noDescription": "설명 없음",
+  "selectOneCard": "카드를 하나 선택하세요"
 }

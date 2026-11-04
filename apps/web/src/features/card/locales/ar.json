@@ -47,7 +47,11 @@
     "makeOneSided",
     "twoSidedAddABack",
     "flipToTheBack",
-    "backColor"
+    "backColor",
+    "thisCardIsNoLonger",
+    "viewOnly",
+    "noDescription",
+    "selectOneCard"
   ],
   "toDo": "للتنفيذ",
   "doing": "قيد التنفيذ",
@@ -96,5 +100,9 @@
   "makeOneSided": "جعلها بوجه واحد",
   "twoSidedAddABack": "بوجهين (إضافة ظهر)",
   "flipToTheBack": "القلب إلى الظهر",
-  "backColor": "لون الظهر"
+  "backColor": "لون الظهر",
+  "thisCardIsNoLonger": "لم تعد هذه البطاقة على اللوحة.",
+  "viewOnly": "للعرض فقط",
+  "noDescription": "لا يوجد وصف",
+  "selectOneCard": "اختر بطاقة واحدة"
 }

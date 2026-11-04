@@ -1195,6 +1195,20 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    */
   onDoubleClick?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
   /**
+   * [additive] Places on the element that OPEN it instead of editing text there (a card's
+   * description opens its details): true when element-local `local` (unrotated) is on one. A
+   * double-click there with the select tool calls `onOpen`, for every role — viewers and
+   * commenters too, so what it opens decides what they may change — and a click on the already
+   * selected element there doesn't start text editing. Called on clicks: keep it cheap.
+   */
+  opensAt?(element: ElementOf<T>, local: Point, ctx: { editor: Editor; zoom: number }): boolean;
+  /**
+   * [additive] See `opensAt`. Shows something (`editor.openPanel`); it must not write, since it
+   * runs for viewers as well. `point` is in world coordinates; `editor` is scoped to the defining
+   * feature.
+   */
+  onOpen?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
+  /**
    * [additive] Containers that LAY OUT their children (kanban columns, frame grids). After every
    * LOCAL change — when the outermost gesture ends if one is open (drag, edit session), else
    * right after the write — the engine asks each element of this type for the patches that put

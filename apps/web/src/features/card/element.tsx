@@ -1,5 +1,5 @@
-import { memo, type KeyboardEvent, type ReactNode } from 'react';
-import { CalendarDays, Check, ListTodo as ListTodoIcon, Repeat2 } from 'lucide-react';
+import { memo, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { CalendarDays, Check, ListTodo as ListTodoIcon, Maximize2, Repeat2 } from 'lucide-react';
 import type { CardElement, Tag } from '@freero/shared';
 import {
   defineElement,
@@ -14,12 +14,13 @@ import {
   type LowDetailPaint,
   type NewElement,
 } from '@engine';
-import { Avatar } from '@ui';
+import { Avatar, formatShortcut } from '@ui';
 import { CARD_MIN_W, CARD_W, DESC, FOOTER, PAD, TITLE, cardLayout, isBar } from './lib/layout';
-import { BACK_COLORS, BACK_PART, DEFAULT_ACCENT, STATUSES } from './lib/constants';
+import { BACK_COLORS, BACK_PART, DEFAULT_ACCENT, DETAILS_PANEL, DETAILS_SHORTCUT, STATUSES } from './lib/constants';
 import { formatDue, isOverdue } from './lib/actions';
 import { usePerson } from './lib/people';
 import { Chips } from './lib/Chips';
+import { useTruncated } from './lib/truncation';
 import { t as tr } from './messages';
 import './card.css';
 
@@ -54,8 +55,36 @@ function TagChips({ ids }: { ids: string[] }) {
   );
 }
 
-const CardView = memo(function CardView({ element, editing, zoom, presentation }: ElementRenderProps<CardElement>) {
+/**
+ * Opens the card's details (the description in full): a cut-off description's corner button and a
+ * double-click on the description (`opensAt`). Never a drag, never a selection change.
+ */
+function ExpandButton({ id }: { id: string }) {
   const editor = useEditor();
+  const label = tr('openDetails');
+  return (
+    <button
+      type="button"
+      className="fr-card__expand"
+      data-fr-interactive
+      aria-label={label}
+      title={`${label} (${formatShortcut(DETAILS_SHORTCUT)})`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        editor.openPanel(DETAILS_PANEL, { id });
+      }}
+    >
+      <Maximize2 size={12} strokeWidth={2.4} aria-hidden />
+    </button>
+  );
+}
+
+const CardView = memo(function CardView({ element, selected, editing, zoom, presentation }: ElementRenderProps<CardElement>) {
+  const editor = useEditor();
+  const exporting = useIsExporting();
+  const descRef = useRef<HTMLDivElement>(null);
   // In a kanban the board view decides: colour (by column, a field, or the card's own), density, fields.
   const compact = presentation?.density === 'compact';
   const desc = compact ? '' : richTextToPlain(element.description ?? '').trim();
@@ -64,6 +93,8 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
   // Server clock: a skewed local clock must not flip "overdue" for one viewer.
   const now = new Date(editor.host.serverNow());
   const overdue = isOverdue(element.dueDate, element.status, now);
+  // The description is line-clamped (it ends in "…"); cut off, a button opens all of it.
+  const cut = useTruncated(descRef, desc);
 
   // The title feels single-line: Enter commits (Shift+Enter still breaks the line).
   const onKeyDownCapture = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -110,7 +141,7 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
   }
 
   const front = (
-    <div className={`fr-card${element.status === 'done' ? ' is-done' : ''}${presentation?.muted ? ' is-muted' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
+    <div className={`fr-card${element.status === 'done' ? ' is-done' : ''}${presentation?.muted ? ' is-muted' : ''}${selected ? ' is-selected' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
       {/* Laid out by the browser, top to bottom, never from a measurement taken while rendering
           (#89): one taken before the web font arrived, or a height another client or the server
           measured, put a title line under the footer's status chip or cut it off. The footer
@@ -132,8 +163,11 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
             />
           </div>
           {desc && (
-            <div className="fr-card__desc" style={{ marginTop: DESC.gap, WebkitLineClamp: DESC.maxLines }}>
-              {desc}
+            <div className="fr-card__desc-wrap" style={{ marginTop: DESC.gap }}>
+              <div ref={descRef} className={`fr-card__desc${cut ? ' is-cut' : ''}`} style={{ WebkitLineClamp: DESC.maxLines }}>
+                {desc}
+              </div>
+              {cut && !exporting && !editing && <ExpandButton id={element.id} />}
             </div>
           )}
         </div>
@@ -256,6 +290,15 @@ function paintCard(el: CardElement, p: LowDetailPaint) {
   p.rect(22, el.h * 0.22 + h * 2, (el.w - 36) * 0.55, h, '#17162B', 0.16 * alpha);
 }
 
+/** Is element-local `local` on the card's description: below the title, above the footer? */
+function descriptionAt(el: CardElement, local: { x: number; y: number }): boolean {
+  if (isBar(el) || (el.back && el.flipped) || !richTextToPlain(el.description ?? '').trim()) return false;
+  const top = PAD.top + cardLayout(el).titleLines * TITLE.line;
+  const bottom = el.h - PAD.bottom - FOOTER.h;
+  // A compact card (a kanban's density) keeps only the footer's gap there: no description shown.
+  return bottom - top >= DESC.line && local.y >= top && local.y < bottom && local.x >= 0 && local.x <= el.w;
+}
+
 export default defineElement({
   type: 'card',
   label: { one: tr('card'), many: tr('cards') },
@@ -286,6 +329,10 @@ export default defineElement({
   lowDetail: paintCard,
   // Both sides of a flip card (find on board, copy as text).
   toPlainText: (el) => [richTextToPlain(el.title), richTextToPlain(el.description), el.back ? richTextToPlain(el.back.title) : ''].filter(Boolean).join('\n'),
+  // A double-click on the description (anywhere between the title and the footer) opens the
+  // details, for viewers too; on the title it edits the title. Compact cards show no description.
+  opensAt: (el, local) => descriptionAt(el, local),
+  onOpen: (el, { editor }) => editor.openPanel(DETAILS_PANEL, { id: el.id }),
   // The back of a turned flip card is what a double-click edits.
   textPartAt: (el) => (el.back && el.flipped && !isBar(el) ? BACK_PART : null),
   writeTextPart(el, part, html, editor) {

@@ -76,10 +76,10 @@ function PersonPicker({ editor, id, value, disabled, onChange }: { editor: Edito
   );
 }
 
-function FieldControl({ editor, card, kanban, field }: { editor: Editor; card: CardElement; kanban: KanbanElement; field: FieldDef }) {
+function FieldControl({ editor, card, kanban, field, readOnly }: { editor: Editor; card: CardElement; kanban: KanbanElement; field: FieldDef; readOnly: boolean }) {
   const id = useId();
   const value = cardValue(kanban, card, field);
-  const disabled = !!card.locked;
+  const disabled = readOnly || !!card.locked;
   const set = (v: FieldValue | null) => setValues(editor, card.id, { [field.id]: v });
   const str = typeof value === 'string' ? value : typeof value === 'number' ? String(value) : '';
   let control;
@@ -159,8 +159,8 @@ function FieldControl({ editor, card, kanban, field }: { editor: Editor; card: C
   );
 }
 
-/** The card's fields on its kanban; nothing for a card outside any kanban. */
-export function CardFields({ editor, card }: { editor: Editor; card: CardElement }) {
+/** The card's fields on its kanban; nothing for a card outside any kanban. `readOnly`: shown, never changed (viewers). */
+export function CardFields({ editor, card, readOnly = false }: { editor: Editor; card: CardElement; readOnly?: boolean }) {
   // Re-renders when the kanban's fields change, not only when the card does.
   const frameId = card.frameId ?? null;
   useSyncExternalStore(
@@ -174,7 +174,7 @@ export function CardFields({ editor, card }: { editor: Editor; card: CardElement
       <div className="fr-card-pop__label">{t('fields')}</div>
       <div className="fr-card-fields__grid">
         {coll.schema.map((f) => (
-          <FieldControl key={f.id} editor={editor} card={card} kanban={coll.kanban} field={f} />
+          <FieldControl key={f.id} editor={editor} card={card} kanban={coll.kanban} field={f} readOnly={readOnly} />
         ))}
       </div>
     </div>

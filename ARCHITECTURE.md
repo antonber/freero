@@ -234,6 +234,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   first in batches sized by the last frame (`useLeavingLowDetail`).
 - Only items near the view are mounted — the selection too (#182); the item being edited is the
   one kept mounted wherever it is.
+- The item under the resting pointer (the select tool's `hoverId`) gets `fr-el--hover` on its
+  wrapper, from the same per-item subscription as selected / edited: an item shows hover-only
+  controls with CSS under it (a card's "open details" corner button), and its memoized component
+  never re-renders for a hover. Touch has no hover: show such controls while selected too.
 - Items are placed with `left` / `top` (a transform only when rotated) and are each a stacking
   context (`z-index: 0`). Each item's selected / edited / drag-preview state comes from one ui
   subscription per editor (`ItemStates` in `WorldLayer.tsx`) that notifies only the items whose
@@ -380,7 +384,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   canvas (its component inside that replica's engine, selected while that replica selects it), to
   render with react-dom and test what an element shows and does, its hooks included. `roles`
   gives each replica its own role and `participants` (indexes) marks commenters the server lets
-  take part (`Editor.isParticipant`).
+  take part (`Editor.isParticipant`). `board.click(user, at, { count? })` presses the select tool
+  at a world point as the canvas dispatches it (`count: 2` = a double-click's second press),
+  `board.dialog(user)` is the dialog that replica has open, `board.panel(user, id, props?)` a panel
+  as its chrome mounts it.
 - Collections hold LWW values per key. When several people may change the same logical thing
   at once, give each independent change its own key (one record per message / reaction /
   vote) instead of read-modify-writing one big value. Example: `comments` (layout in
@@ -1104,6 +1111,16 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   text to edit there (image → crop mode). Editors only, never on locked items. A container that
   defines it keeps double-clicks on its empty area instead of the canvas's "write here" (timeline:
   add a bar).
+- `ElementDefinition.opensAt?(el, local, { editor, zoom })` + `onOpen?(el, { editor, point })`:
+  places on an item that OPEN it instead of editing text there. A double-click there calls `onOpen`
+  for every role (viewers and commenters too: it shows, never writes; what it opens decides what
+  they may change), and a click on the already selected item there doesn't start text editing,
+  so the double-click's second press finds it not editing. A card's description (below the title,
+  above the footer) opens its details dialog (`features/card/panel.tsx`, `card.details`), which
+  the toolbar's "Open details", Shift+Enter (`card.openDetails`; Enter stays "edit the title"),
+  the context menu, a cut-off description's corner button and other features
+  (`runCommand('card.showDetails', { id })`: a kanban table's description line) open too; it is
+  read-only for viewers, commenters and on locked cards.
 - `ElementDefinition.minSize` may be a function of the element (a card drawn as a timeline bar).
 - `useGonePeople(ids)` (`@engine`): the ids the people lookup answered without (deleted accounts).
 - `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out

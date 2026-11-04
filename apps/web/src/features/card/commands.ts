@@ -1,10 +1,44 @@
-import { ListTodo } from 'lucide-react';
-import { defineCommands } from '@engine';
+import { ListTodo, NotebookText } from 'lucide-react';
+import { defineCommands, type Editor } from '@engine';
 import { convertStickiesToCards, selectedStickies } from './lib/actions';
 import { setValues } from './lib/values';
+import { DETAILS_PANEL, DETAILS_SHORTCUT } from './lib/constants';
 
 import { t } from './messages';
+/** The one card selected, if the selection is exactly that. */
+const selectedCard = (editor: Editor) => {
+  const sel = editor.getSelection();
+  const el = sel.length === 1 ? editor.getElement(sel[0]) : undefined;
+  return el?.type === 'card' ? el : undefined;
+};
+
 export default defineCommands([
+  {
+    // The selected card's details, for everyone who can see the board (viewers read them).
+    // Enter stays "edit the title"; Shift+Enter is free on a selected item.
+    id: 'card.openDetails',
+    icon: NotebookText,
+    label: t('openDetails'),
+    shortcut: DETAILS_SHORTCUT,
+    menus: ['context'],
+    minRole: 'viewer',
+    when: (editor) => !!selectedCard(editor),
+    disabledReason: t('selectOneCard'),
+    run(editor) {
+      const card = selectedCard(editor);
+      if (card) editor.openPanel(DETAILS_PANEL, { id: card.id });
+    },
+  },
+  {
+    // Other features open a card's details (a kanban table's description line). Args { id }.
+    id: 'card.showDetails',
+    label: t('openDetails'),
+    minRole: 'viewer',
+    run(editor, args) {
+      const id = typeof args?.id === 'string' ? args.id : null;
+      if (id && editor.getElement(id)?.type === 'card') editor.openPanel(DETAILS_PANEL, { id });
+    },
+  },
   {
     // Planning poker (features/estimation) writes the agreed value through this: card fields have
     // one writer. Args { id, value } (value null clears it). One undo step.

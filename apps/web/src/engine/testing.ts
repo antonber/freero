@@ -9,11 +9,12 @@
 //   board.sync();                           // both replicas now agree
 import { createElement, type ReactElement } from 'react';
 import type { Role, SuggestionRecord } from '@freero/shared';
-import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, HostUser, SavedTemplateInfo } from './api';
+import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, HostUser, Point, SavedTemplateInfo, ToolPointerEvent } from './api';
 import { unavailableVersionHistory } from './api';
 import { ElementPreview, ElementView, WorldElements, WorldViewProvider } from './canvas/WorldLayer';
 import { EngineContext } from './context';
 import { createCore, type EngineCore } from './runtime/core';
+import { dispatchToolPointer } from './interaction/toolDispatch';
 import { serverPropose, syncStores } from './store/replicas';
 
 import { t as tr } from './messages';
@@ -64,6 +65,16 @@ export interface TestBoard {
    * 1000 × 800): every visible item, culled and in low detail as on screen.
    */
   world(user: number): ReactElement;
+  /**
+   * [additive] Replica `user` presses and releases the select tool's primary button at world
+   * point `at`, as the canvas dispatches it; `count: 2` is the second press of a double-click
+   * (call it after a plain click, as a person's double-click arrives).
+   */
+  click(user: number, at: Point, opts?: { count?: number }): void;
+  /** [additive] The 'dialog' panel open in replica `user` (Editor.openPanel), or null. */
+  dialog(user: number): { id: string; props?: Record<string, unknown> } | null;
+  /** [additive] Panel `id` as replica `user`'s chrome mounts it (a dialog with the `props` openPanel gave it). */
+  panel(user: number, id: string, props?: Record<string, unknown>): ReactElement;
   destroy(): void;
 }
 
@@ -161,6 +172,30 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       return createElement(EngineContext.Provider, { value: cores[user] }, el ? createElement(ElementPreview, { element: el }) : null);
     },
     world: (user) => createElement(EngineContext.Provider, { value: cores[user] }, createElement(WorldElements)),
+    click: (user, at, opts) => {
+      const core = cores[user];
+      const tool = core.registry.toolsById.get('select')!;
+      const ev = (): ToolPointerEvent => {
+        const e = { editor: core.editor, point: at, screen: core.editor.worldToScreen(at), shiftKey: false, altKey: false, metaKey: false, button: 0, buttons: 1, pressure: 0.5, pointerType: 'mouse' };
+        return Object.defineProperty(e, 'target', { get: () => core.editor.hitTest(at) }) as unknown as ToolPointerEvent;
+      };
+      core.interaction.handle = null;
+      core.interaction.clickCount = opts?.count ?? 1;
+      core.editor.beginGesture();
+      try {
+        dispatchToolPointer(core, tool, 'onPointerDown', ev());
+        dispatchToolPointer(core, tool, 'onPointerUp', ev());
+      } finally {
+        core.editor.endGesture();
+        core.interaction.clickCount = 1;
+      }
+    },
+    dialog: (user) => cores[user].ui.getState().dialog,
+    panel: (user, id, props) => {
+      const reg = cores[user].registry.panelsById.get(id);
+      if (!reg) throw new Error(`Unknown panel '${id}'`);
+      return createElement(EngineContext.Provider, { value: cores[user] }, createElement(reg.def.Component, { editor: cores[user].scoped(reg.feature), props }));
+    },
     destroy: () => cores.forEach((c) => c.destroy()),
   };
 }

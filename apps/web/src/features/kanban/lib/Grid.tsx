@@ -130,10 +130,13 @@ interface RowProps {
   editing: Cell | null;
   canEdit: boolean;
   personName: (id: string) => string | undefined;
-  onCell: (cell: Cell, how: 'click' | 'dblclick') => void;
+  /** 'select': the cell becomes the active one, never edited (a click on a title's description line). */
+  onCell: (cell: Cell, how: 'click' | 'dblclick' | 'select') => void;
   onEditDone: (value: string | null, then: 'stay' | 'next' | 'prev' | 'cancel') => void;
   cellRef: (row: number, col: number, el: HTMLElement | null) => void;
 }
+
+const onDescription = (e: { target: EventTarget }, col: GridColumn) => col.id === '$title' && e.target instanceof Element && !!e.target.closest('.fr-kanban-grid__desc');
 
 const GridRow = memo(function GridRow(p: RowProps) {
   const { entry, index, columns } = p;
@@ -194,8 +197,10 @@ const GridRow = memo(function GridRow(p: RowProps) {
             className={`fr-kanban-grid__cell${isActive ? ' is-active' : ''}${isEditing ? ' is-editing' : ''}`}
             style={{ width: col.width }}
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => p.onCell({ row: index, col: c }, 'click')}
-            onDoubleClick={() => p.onCell({ row: index, col: c }, 'dblclick')}
+            // A title's description line opens the card's details on a double-click (the title
+            // itself edits), so a click there only makes the cell active.
+            onClick={(e) => p.onCell({ row: index, col: c }, onDescription(e, col) ? 'select' : 'click')}
+            onDoubleClick={(e) => (onDescription(e, col) ? p.editor.runCommand('card.showDetails', { id: card.id }) : p.onCell({ row: index, col: c }, 'dblclick'))}
           >
             {content}
           </div>
@@ -320,11 +325,12 @@ export function Grid(props: GridProps) {
     moveTo(next);
   };
 
-  const onCell = (c: Cell, how: 'click' | 'dblclick') => {
+  const onCell = (c: Cell, how: 'click' | 'dblclick' | 'select') => {
     if (!props.interactive) return;
     const wasActive = at.row === c.row && at.col === c.col;
     setActive(c);
     wantFocus.current = !editing;
+    if (how === 'select') return;
     if (how === 'dblclick' || wasActive || columns[c.col]?.type === 'checkbox') startEdit(c);
   };
 
