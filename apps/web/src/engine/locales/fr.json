@@ -191,7 +191,9 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen"
   ],
   "dots": "Points",
   "lines": "Lignes",
@@ -375,6 +377,8 @@
   "youNoLongerHaveAccess": "Vous n’avez plus accès à ce tableau.",
   "connecting": "Connexion…",
   "reconnectingYourChangesAreKept": "Reconnexion… vos modifications sont conservées et seront synchronisées.",
+  "youReOfflineChangesAreKeptOnDevice": "Vous êtes hors ligne. Les modifications sont conservées sur cet appareil et se synchronisent dès votre retour en ligne.",
+  "youReOfflineKeepThisTabOpen": "Vous êtes hors ligne. Gardez cet onglet ouvert : vos modifications se synchronisent dès votre retour en ligne.",
   "groupOfLengthItemsSelected": "Groupe de {length} éléments sélectionné.",
   "thisBoardCouldnTStart": "Ce tableau n’a pas pu démarrer",
   "liveBoard": "Tableau en direct",

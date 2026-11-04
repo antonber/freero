@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { hasKey } from '../keys/index';
-import type { BoardCallResponse, BoardSharingSettings, BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess, MoveBoardResponse } from '@freero/shared';
+import { OFFLINE_CHECK_MAX, type BoardCallResponse, type BoardSharingSettings, type BoardSummary, type GuestBoardInfo, type GuestJoinResponse, type LinkAccess, type MoveBoardResponse, type OfflineCheckResponse } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
@@ -40,6 +40,7 @@ import {
   restoreFromTrash,
   setBoardArchived,
   setBoardLabel,
+  mayKeepOffline,
   summarize,
   toSummary,
   transferBoard,
@@ -93,6 +94,30 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       const { board, role, access } = await requireAccess(req.params.id, user.id);
       await repo.recordOpen(board.id, user.id, Date.now());
       res.json({ board: await toSummary(board, user.id, role, access) } satisfies Out);
+    }),
+  );
+
+  // #178: which of the boards kept on this device may stay there — the person can still open it and
+  // its workspace still lets it be kept. Anything else (gone, no access, policy off) is dropped by
+  // the device. Never counts as opening the boards.
+  r.post(
+    '/boards/offline-check',
+    requireUser,
+    handle(async (req, res) => {
+      const user = currentUser(req);
+      const ids = (req.body ?? {}).ids;
+      if (!Array.isArray(ids) || ids.length > OFFLINE_CHECK_MAX || !ids.every((id) => typeof id === 'string' && id.length <= 64))
+        throw badRequest(`ids must be a list of at most ${OFFLINE_CHECK_MAX} board ids`, 'invalid_offline_check');
+      const keep: string[] = [];
+      for (const id of new Set(ids as string[])) {
+        try {
+          const { board, access } = await requireAccess(id, user.id);
+          if (board.deletedAt === null && (await mayKeepOffline(board, access))) keep.push(id);
+        } catch (err) {
+          if (!(err instanceof HttpError)) throw err;
+        }
+      }
+      res.json({ keep } satisfies OfflineCheckResponse);
     }),
   );
 

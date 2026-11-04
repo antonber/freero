@@ -191,7 +191,9 @@
     "noVersionHistoryInTests",
     "frame",
     "tabAndShiftTabMove",
-    "xAndYMoveThe"
+    "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen"
   ],
   "dots": "点",
   "lines": "线",
@@ -375,6 +377,8 @@
   "youNoLongerHaveAccess": "你已无权访问此白板。",
   "connecting": "正在连接…",
   "reconnectingYourChangesAreKept": "正在重新连接… 你的更改已保留，并将同步。",
+  "youReOfflineChangesAreKeptOnDevice": "你已离线。更改会保存在此设备上，恢复联网后自动同步。",
+  "youReOfflineKeepThisTabOpen": "你已离线。请保持此标签页打开：恢复联网后你的更改会自动同步。",
   "groupOfLengthItemsSelected": "已选择包含 {length} 个项目的组合。",
   "thisBoardCouldnTStart": "此白板无法启动",
   "liveBoard": "实时白板",

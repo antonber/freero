@@ -6,6 +6,10 @@ import { api } from '../api/client';
 import { getLocale } from '@ui';
 import { setThemePreference } from '../lib/theme';
 import { adoptAccountLocale } from '../i18n/locale';
+import { offlineAccount, offlineSignedIn, offlineSignedOut } from '../offline/copies';
+
+/** #178: a session the server confirmed — the device's offline copies follow it. */
+const confirmed = (user: Account) => void offlineSignedIn(user, api.offlineCheck);
 
 export interface AuthValue {
   /** The signed-in user, or null. `deletionScheduledFor` set: only the restore page is usable. */
@@ -52,9 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { user } = await api.session();
       setUser(user);
+      // #178: signed out (here or elsewhere), or the session ended: nothing of it stays on the device.
+      if (user) confirmed(user);
+      else void offlineSignedOut();
       return user;
     } catch {
-      // Network / server error: keep whatever we had.
+      // Network / server error: keep whatever we had — or, starting offline, the account the
+      // device's offline copies belong to, so those boards open (BoardPage reads them).
+      const kept = await offlineAccount();
+      if (kept) setUser((cur) => cur ?? kept);
       return null;
     } finally {
       setLoading(false);
@@ -82,6 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ch.close();
     };
   }, [refresh, offline]);
+  // Back online (#178): the session is checked again, which also drops copies no longer allowed.
+  useEffect(() => {
+    if (offline) return;
+    const back = () => void refresh();
+    window.addEventListener('online', back);
+    return () => window.removeEventListener('online', back);
+  }, [refresh, offline]);
   const announce = useCallback(() => channel.current?.postMessage('changed'), []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -89,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     takeProviderSignIn(); // a provider sign-in abandoned in this tab doesn't count instead
     if (!('user' in res)) return null;
     setUser(res.user);
+    confirmed(res.user);
     announce();
     track({ name: 'login', method: 'password' });
     return res.user;
@@ -97,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeTwoFactor = useCallback(async (code: string) => {
     const { user } = await api.loginTwoFactor(code);
     setUser(user);
+    confirmed(user);
     announce();
     // The second step of a password sign-in, or of one through a provider (noted when it started).
     track({ name: 'login', method: takeProviderSignIn() ?? 'password' });
@@ -107,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // The page's language becomes the account's (#5): the verification email is already in it.
     const { user } = await api.signup({ name: name.trim(), email: email.trim(), password, locale: getLocale() });
     setUser(user);
+    confirmed(user);
     announce();
     takeProviderSignIn();
     track({ name: 'sign_up', method: 'password' });
@@ -119,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       next = (await api.logout()).redirect;
     } finally {
       setUser(null);
+      await offlineSignedOut();
       announce();
     }
     // Signed out here; a SAML session goes on to sign out at the identity provider too (#13), which
@@ -135,6 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const adopt = useCallback((next: Account | null) => {
     setUser(next);
+    if (next) confirmed(next);
+    else void offlineSignedOut();
     announce();
   }, [announce]);
 

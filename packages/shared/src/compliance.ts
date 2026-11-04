@@ -88,7 +88,7 @@ export interface LegalCaseChange {
 // ---- classification labels (#158) ----
 
 /** The policies a label can cap (the floored ones; numeric `linkMaxDays` too). */
-export const LABEL_CAP_KEYS = ['linkSharing', 'publicLinks', 'externalSharing', 'downloads', 'boardEmbeds', 'liveEmbeds', 'linkPassword', 'linkMaxDays'] as const;
+export const LABEL_CAP_KEYS = ['linkSharing', 'publicLinks', 'externalSharing', 'downloads', 'boardEmbeds', 'liveEmbeds', 'linkPassword', 'linkMaxDays', 'offlineCopies'] as const;
 export type LabelCapKey = (typeof LABEL_CAP_KEYS)[number];
 
 /**

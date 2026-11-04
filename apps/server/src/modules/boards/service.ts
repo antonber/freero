@@ -21,7 +21,7 @@ import { badRequest, forbidden, HttpError, notFound } from '../../platform/http'
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
 import { log, logError } from '../../platform/log';
-import { KeyUnavailableError } from '../keys/index';
+import { hasKey, KeyUnavailableError, keysInUse } from '../keys/index';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
 import {
@@ -392,6 +392,19 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
 }
 
 /**
+ * #178: may people keep a copy of the board on their devices (to open and edit it offline)? The
+ * workspace's `offlineCopies` policy (a label may cap it): 'all' yes, 'off' no, 'unkeyed' (default)
+ * unless the workspace keeps its boards under its own encryption key (#159) — a key on a device
+ * can't promise what the workspace's key does. Boards only (docs have no offline copy yet).
+ */
+export async function mayKeepOffline(board: Pick<Board, 'kind' | 'workspaceId'>, access: Pick<BoardWorkspaceAccess, 'policies'>): Promise<boolean> {
+  const policy = access.policies.offlineCopies ?? 'unkeyed';
+  if (board.kind !== 'board' || policy === 'off') return false;
+  if (policy === 'all') return true;
+  return !((await keysInUse()) && (await hasKey(board.workspaceId)));
+}
+
+/**
  * Throws unless the person may turn embedding on other sites on or off (#2): the owner or a
  * co-owner (`manages`, #122), like the link; turning it ON also needs the workspace's
  * `boardEmbeds` policy. Turning it off is always possible.
@@ -516,7 +529,7 @@ export async function toSummary(
     projectId: board.projectId,
     team: access.team,
     member,
-    permissions: permissionsFor(board, userId, role, access, coOwner),
+    permissions: { ...permissionsFor(board, userId, role, access, coOwner), offline: await mayKeepOffline(board, access) },
     ...(board.linkBlocked ? { linkBlocked: true } : {}),
     ...(manages ? { linkProtection: linkProtectionOf(board) } : {}),
     call: callOf(board),

@@ -27,6 +27,7 @@ export const UNKNOWN_LABEL_CAPS: LabelCaps = {
   linkPassword: 'required',
   linkMaxDays: 1,
   viewerExports: 'off',
+  offlineCopies: 'off',
 };
 
 /** `policies` raised by a label's caps, key by key (the stricter wins), like an organisation's floors. */

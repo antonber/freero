@@ -25,6 +25,7 @@ export function capsText(caps: LabelCaps): string[] {
   if (caps.boardEmbeds === 'off') out.push('no embedding on other sites');
   if (caps.liveEmbeds === 'off') out.push('no live embeds');
   if (caps.linkPassword === 'required') out.push('links need a password');
+  if (caps.offlineCopies === 'off') out.push('no offline copies');
   if (caps.linkMaxDays) out.push(`links expire within ${caps.linkMaxDays} days`);
   return out;
 }

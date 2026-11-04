@@ -3,10 +3,13 @@
 //
 // It caches the APP SHELL ONLY:
 // - content-hashed build files (/assets/*) and a few static shell files (icons, manifest, the
-//   offline page): cache first — a hashed file never changes, so it can never be stale;
+//   offline page, this build's index.html): cache first — a hashed file never changes, so it can
+//   never be stale;
 // - page navigations: always the network (a deploy's new index.html is picked up on the next load,
-//   so nobody runs stale code), the offline page when the network fails — never a cached page, so
-//   the sign-in pages' responses are never stored either;
+//   so nobody runs stale code). When the network fails: a board (/board/:id) gets this build's
+//   index.html, so a board kept on the device opens offline (#178; the app reads it from IndexedDB,
+//   never from this worker); every other page gets the offline page. No server response to a
+//   navigation is ever stored, so the sign-in pages' responses never are either;
 // - /api, /ws and /uploads (board data, sockets, people's files): never touched, never stored.
 // Anything else (other origins: fonts, embeds) is left to the browser.
 
@@ -16,6 +19,10 @@ export type Strategy = 'bypass' | 'navigate' | 'cache-first';
 /** Static shell files served from the cache (besides /assets/*). */
 export const SHELL_FILES = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/theme-boot.js'];
 export const OFFLINE_PAGE = '/offline.html';
+/** This build's index.html, precached with its assets: what a board opens with offline (#178). */
+export const APP_SHELL = '/index.html';
+/** Navigations that get the app shell when the network fails: boards, which may be kept on the device. */
+const SHELL_OFFLINE = /^\/board\/[^/]+\/?$/;
 const CACHE_PREFIX = 'freero-shell-';
 const NEVER = /^\/(api|ws|uploads)(\/|$)/;
 
@@ -45,7 +52,12 @@ export function respond(req: Request, origin: string, env: FetchEnv): Promise<Re
   const strategy = strategyFor(req, origin);
   if (strategy === 'bypass') return null;
   if (strategy === 'navigate')
-    return env.fetch(req).catch(async () => (await env.match(OFFLINE_PAGE)) ?? new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } }));
+    return env.fetch(req).catch(
+      async () =>
+        (SHELL_OFFLINE.test(new URL(req.url).pathname) ? await env.match(APP_SHELL) : undefined) ??
+        (await env.match(OFFLINE_PAGE)) ??
+        new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } }),
+    );
   return (async () => {
     const hit = await env.match(req);
     if (hit) return hit;

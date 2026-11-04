@@ -73,6 +73,8 @@ export interface HostDeps {
   onAccessLost?: () => void;
   /** The person's theme (app/lib/theme.ts; saved to their account when they have one). */
   colorTheme?: Host['colorTheme'];
+  /** #178: where the device copy of the board is kept (app/offline), when it may be. */
+  offline?: Host['offline'];
 }
 
 /** Close code of a board socket whose access ended (y-websocket contract in @freero/shared api.ts). */
@@ -183,6 +185,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     openShareDialog: deps.openShareDialog,
     ...(deps.reportProblem ? { reportProblem: deps.reportProblem } : {}),
     ...(deps.colorTheme ? { colorTheme: deps.colorTheme } : {}),
+    ...(deps.offline ? { offline: deps.offline } : {}),
     navigate: deps.navigate,
     notify: deps.notify,
     track,
