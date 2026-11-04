@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "nameIsnTAPdf",
+    "couldnTUploadNameTry",
+    "couldnTOpenThisPdf",
+    "placingTheFirstNOf",
+    "placingNPages",
+    "couldnTPlaceThePages",
+    "placeAllPages",
+    "namePagePage",
+    "couldnTOpenThisPdf2",
+    "document",
+    "previousPage",
+    "nextPage",
+    "pdfs",
+    "nextPreviousPageOfA"
+  ],
+  "nameIsnTAPdf": "“{name}”은(는) Freero에서 열 수 있는 PDF가 아니에요.",
+  "couldnTUploadNameTry": "“{name}”을(를) 업로드하지 못했어요. 나중에 다시 시도하세요.",
+  "couldnTOpenThisPdf": "이 PDF를 열지 못했어요.",
+  "placingTheFirstNOf": "{numPages}페이지 중 처음 {n}페이지를 배치하고 있어요.",
+  "placingNPages": "{n, plural, other {{n}페이지 배치 중…}}",
+  "couldnTPlaceThePages": "페이지를 배치하지 못했어요. 나중에 다시 시도하세요.",
+  "placeAllPages": "모든 페이지 배치",
+  "namePagePage": "{name}, {page}페이지",
+  "couldnTOpenThisPdf2": "이 PDF를 열지 못했어요",
+  "document": "문서",
+  "previousPage": "이전 페이지",
+  "nextPage": "다음 페이지",
+  "pdfs": "PDF",
+  "nextPreviousPageOfA": "문서의 다음 / 이전 페이지"
+}

@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "erasePartsOfStrokes",
+    "eraseWholeStrokes",
+    "eraserMode",
+    "eraserSize",
+    "eraser"
+  ],
+  "erasePartsOfStrokes": "획의 일부 지우기",
+  "eraseWholeStrokes": "획 전체 지우기",
+  "eraserMode": "지우개 모드",
+  "eraserSize": "지우개 크기",
+  "eraser": "지우개"
+}

@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "보드 신고…",
+  "report": "신고…",
+  "report2": "신고",
+  "thanksForYourReportFreero": "신고해 주셔서 감사해요. Freero 운영진이 검토할 거예요.",
+  "yourReportCouldNotBe": "신고를 보낼 수 없어요. 다시 시도하세요.",
+  "reportTargetNoun": "{target_noun} 신고",
+  "tellFreeroSModeratorsWhat": "무엇이 문제인지 Freero 운영진에게 알려 주세요. 보드 소유자에게는 누가 신고했는지 알리지 않아요.",
+  "cancel": "취소",
+  "sendReport": "신고 보내기",
+  "whatSTheProblem": "어떤 문제인가요?",
+  "detailsOptional": "세부 정보(선택 사항)",
+  "anythingThatHelpsUsUnderstand": "이해에 도움이 되는 내용(예: 보드의 어느 위치인지)",
+  "yourEmailOptional": "이메일(선택 사항)",
+  "toHearWhatWeDecided": "결정 결과를 알려 드리기 위해 사용해요"
+}
