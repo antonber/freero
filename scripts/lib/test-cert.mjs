@@ -34,7 +34,9 @@ export function selfSignedCertificate(cn = 'Freero test IdP', days = 365) {
   const now = Date.now();
   const tbs = seq(
     tlv(0xa0, int(Buffer.from([2]))), // v3
-    int(randomBytes(12)),
+    // A random serial whose first byte is never 0: a leading zero (1 in 256 runs) is a non-minimal
+    // DER INTEGER, which strict parsers refuse ("could not be read as an X.509 certificate").
+    int(Buffer.from([1 + (randomBytes(1)[0] % 0x7f), ...randomBytes(11)])),
     SHA256_RSA,
     name(cn),
     seq(utcTime(new Date(now - 86_400_000)), utcTime(new Date(now + days * 86_400_000))),
