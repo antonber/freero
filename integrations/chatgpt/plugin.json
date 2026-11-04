@@ -1,0 +1,52 @@
+{
+  "name": "freero",
+  "version": "1.0.0",
+  "description": "A collaborative whiteboard ChatGPT can read, fill and show live.",
+  "author": {
+    "name": "Kaiten Gaming LLC",
+    "url": "https://freero.app/"
+  },
+  "homepage": "https://freero.app/chatgpt",
+  "license": "MIT",
+  "keywords": [
+    "whiteboard",
+    "retrospective",
+    "roadmap",
+    "diagram",
+    "kanban"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Freero",
+        "shortDescription": "Whiteboards you build together",
+        "longDescription": "Freero is a collaborative online whiteboard for teams of people and AI assistants. Connect it and ChatGPT can find your boards, read them as a structured outline, and add to them: sticky notes, themed clusters, task cards and kanbans, flowcharts, sequence diagrams and mind maps. Freero lays everything out, so nothing lands on top of what people already made.\n\nAsk ChatGPT to group a retro's notes into themes and propose action items, turn meeting notes into a flowchart, build a Now / Next / Later roadmap from a planning doc, or summarize what a team decided on a board. With open_board, the board appears live in the conversation: pan, zoom, edit it, accept the suggestions ChatGPT made, and share it with your team without leaving the chat.\n\nFor long tasks, ChatGPT can work in a control room: a lane on a board with its plan, status and tasks on a To do / Doing / Done / Blocked kanban. People drag cards to steer it, and a task ChatGPT marks as blocked reaches the person it works for.\n\nYou stay in charge. By default a connection can only read boards and propose changes that people accept or reject; changing boards directly and commenting are permissions you tick on the consent screen. ChatGPT acts with your access and never more, every change is labelled with the app's name and yours, every call is in the audit log, and deleting needs your explicit confirmation. Board text reaches ChatGPT marked as untrusted content. Disconnect at any time in Settings.\n\nFreero is open source. It also connects Jira, Linear and GitHub issues to boards, keeping cards and issues in sync both ways.",
+        "developerName": "Kaiten Gaming LLC",
+        "category": "Productivity",
+        "capabilities": [
+          "Read boards",
+          "Add notes, cards and diagrams",
+          "Propose changes for review",
+          "Show a board live",
+          "Agent control rooms"
+        ],
+        "websiteURL": "https://freero.app/",
+        "supportURL": "https://freero.app/support",
+        "privacyPolicyURL": "https://freero.app/privacy",
+        "termsOfServiceURL": "https://freero.app/terms",
+        "defaultPrompt": [
+          "Group the notes on my retro board into themes and propose action items.",
+          "Turn these meeting notes into a flowchart on a new Freero board.",
+          "What did the team decide on the Product roadmap board?"
+        ],
+        "brandColor": "#5B3FF0",
+        "brandColorDark": "#8F7BFF",
+        "composerIcon": "./assets/freero-icon-512.png",
+        "logo": "./assets/freero-icon-512.png"
+      },
+      "publication": {
+        "release_notes": "First release: boards, docs, a live board view in the conversation, and agent control rooms."
+      }
+    }
+  }
+}

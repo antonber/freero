@@ -29,6 +29,7 @@
     "bench:line-jumps": "npm exec -w @freero/web -- vite-node ../../scripts/bench/line-jumps-web.ts",
     "admin": "node --import tsx apps/server/src/admin.ts",
     "db:import-sqlite": "tsx scripts/migrate-sqlite-to-pg.mjs",
+    "chatgpt:plugin": "node scripts/chatgpt-plugin.mjs",
     "gen:power-automate": "node --import tsx scripts/gen-power-automate.mjs",
     "desktop:dev": "node apps/desktop/build.mjs dev",
     "desktop:build": "node apps/desktop/build.mjs build",

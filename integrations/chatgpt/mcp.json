@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "freero": {
+      "type": "streamable-http",
+      "url": "https://freero.app/mcp"
+    }
+  }
+}

@@ -194,8 +194,11 @@ the top of `scripts/directory-shots.mjs`.
 ## ChatGPT app directory (platform.openai.com → Plugins → Upload)
 
 ChatGPT now takes a **plugin ZIP** (manifest + `mcp.json` + icons), then connects and scans the MCP
-server. Screenshots are no longer shown in the directory; example prompts are. Draft package
-(fill `<HOST>`, then zip `plugin.json`, `mcp.json` and `assets/`):
+server. Screenshots are no longer shown in the directory; example prompts are. The package lives in
+[`integrations/chatgpt/`](../../integrations/chatgpt/) for `https://freero.app`;
+`npm run chatgpt:plugin` checks the portal's limits and writes `dist/freero-chatgpt-plugin.zip`.
+The review fields (test cases, demo video) are entered in the portal's Review details form. Its
+manifest, for reference:
 
 ```json
 {
