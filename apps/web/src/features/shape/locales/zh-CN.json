@@ -67,7 +67,10 @@
     "processesDataStoresExternalEntities",
     "workspaceShapePacks",
     "packNameIcons",
-    "packNameMatches"
+    "packNameMatches",
+    "cloudArchitecture",
+    "setNameIcons",
+    "findQueryInSet"
   ],
   "rectangle": "矩形",
   "roundedRectangle": "圆角矩形",
@@ -136,5 +139,8 @@
   "processesDataStoresExternalEntities": "处理过程、数据存储、外部实体和信任边界",
   "workspaceShapePacks": "工作区的图形包",
   "packNameIcons": "{name}：{count, plural, other {# 个图标}}",
-  "packNameMatches": "{name}：{count, plural, other {# 个匹配}}"
+  "packNameMatches": "{name}：{count, plural, other {# 个匹配}}",
+  "cloudArchitecture": "云架构",
+  "setNameIcons": "{name} 图标",
+  "findQueryInSet": "在 {name} 中查找“{query}”"
 }

@@ -67,7 +67,10 @@
     "processesDataStoresExternalEntities",
     "workspaceShapePacks",
     "packNameIcons",
-    "packNameMatches"
+    "packNameMatches",
+    "cloudArchitecture",
+    "setNameIcons",
+    "findQueryInSet"
   ],
   "rectangle": "직사각형",
   "roundedRectangle": "둥근 직사각형",
@@ -136,5 +139,8 @@
   "processesDataStoresExternalEntities": "프로세스, 데이터 저장소, 외부 엔터티 및 신뢰 경계",
   "workspaceShapePacks": "워크스페이스 도형 팩",
   "packNameIcons": "{name}: 아이콘 {count, plural, other {#개}}",
-  "packNameMatches": "{name}: {count, plural, other {#개}} 일치"
+  "packNameMatches": "{name}: {count, plural, other {#개}} 일치",
+  "cloudArchitecture": "클라우드 아키텍처",
+  "setNameIcons": "{name} 아이콘",
+  "findQueryInSet": "{name}에서 “{query}” 찾기"
 }
