@@ -507,7 +507,9 @@
     "errors.shape_pack_empty",
     "errors.shape_pack_too_many",
     "errors.shape_pack_limit",
-    "errors.shape_pack_workspace_full"
+    "errors.shape_pack_workspace_full",
+    "errors.assistant_question",
+    "errors.assistant_question_long"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -1016,5 +1018,7 @@
   "errors.shape_pack_empty": "אף אחד מהקבצים האלה אינו SVG ש־Freero יכול לצייר",
   "errors.shape_pack_too_many": "חבילה מכילה עד {max} סמלים: כדאי לחלק אותם לכמה חבילות",
   "errors.shape_pack_limit": "בסביבת עבודה יכולות להיות עד {max} חבילות צורות. קודם יש להסיר חבילה שכבר לא בשימוש.",
-  "errors.shape_pack_workspace_full": "חבילות הצורות של סביבת העבודה הזו מלאות. קודם יש להסיר חבילה שכבר לא בשימוש."
+  "errors.shape_pack_workspace_full": "חבילות הצורות של סביבת העבודה הזו מלאות. קודם יש להסיר חבילה שכבר לא בשימוש.",
+  "errors.assistant_question": "אפשר לשאול את העוזר משהו",
+  "errors.assistant_question_long": "שאלה יכולה להכיל עד {max} תווים"
 }

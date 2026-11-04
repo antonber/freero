@@ -1,6 +1,6 @@
-import { ClipboardList, FileText, History, Lightbulb, Shapes, Workflow } from 'lucide-react';
+import { ClipboardList, FileText, History, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
 import { defineCommands } from '@engine';
-import { AI_DIALOG, aiAvailable, aiOfferedHere, aiOrExplain, CATCH_UP_DIALOG, clusterable, openAi, selectedElements } from './lib/actions';
+import { AI_DIALOG, aiAvailable, aiOfferedHere, aiOrExplain, ASSISTANT_DOCK, CATCH_UP_DIALOG, clusterable, openAi, selectedElements } from './lib/actions';
 
 import { t } from './messages';
 // Every entry point hides itself unless the server offered AI on this board for this person (and
@@ -9,6 +9,18 @@ import { t } from './messages';
 // The newer ones (#126, #148, #134) also show where the server offers AI but not to this person on
 // this board, and say why when run (`aiOrExplain`).
 export default defineCommands([
+  {
+    // #1: the board assistant beside the board (also for viewers the workspace lets use AI).
+    id: 'ai.assistant',
+    label: t('askTheBoardAssistant'),
+    icon: Sparkles,
+    group: 'AI',
+    menus: ['board'],
+    palette: false,
+    minRole: 'viewer',
+    when: (editor) => !!editor.host.assistant,
+    run: (editor) => editor.openDock(editor.getDock() === ASSISTANT_DOCK ? null : ASSISTANT_DOCK),
+  },
   {
     id: 'ai.ideas',
     label: t('generateIdeas'),

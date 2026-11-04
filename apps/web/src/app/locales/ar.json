@@ -507,7 +507,9 @@
     "errors.shape_pack_empty",
     "errors.shape_pack_too_many",
     "errors.shape_pack_limit",
-    "errors.shape_pack_workspace_full"
+    "errors.shape_pack_workspace_full",
+    "errors.assistant_question",
+    "errors.assistant_question_long"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -1016,5 +1018,7 @@
   "errors.shape_pack_empty": "لا يوجد بين هذه الملفات ملف SVG يستطيع Freero رسمه",
   "errors.shape_pack_too_many": "تتسع الحزمة لـ {max} أيقونة كحد أقصى: قسّمها على عدة حزم",
   "errors.shape_pack_limit": "يمكن أن تحتوي مساحة العمل على {max} حزمة أشكال كحد أقصى. أزل أولًا حزمة لم تعد تستخدمها.",
-  "errors.shape_pack_workspace_full": "امتلأت حزم الأشكال في مساحة العمل هذه. أزل أولًا حزمة لم تعد تستخدمها."
+  "errors.shape_pack_workspace_full": "امتلأت حزم الأشكال في مساحة العمل هذه. أزل أولًا حزمة لم تعد تستخدمها.",
+  "errors.assistant_question": "اسأل المساعد شيئًا",
+  "errors.assistant_question_long": "يمكن أن يتكون السؤال من {max} حرف كحد أقصى"
 }

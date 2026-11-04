@@ -507,7 +507,9 @@
     "errors.shape_pack_empty",
     "errors.shape_pack_too_many",
     "errors.shape_pack_limit",
-    "errors.shape_pack_workspace_full"
+    "errors.shape_pack_workspace_full",
+    "errors.assistant_question",
+    "errors.assistant_question_long"
   ],
   "untitledFrame": "Unbenannter Rahmen",
   "couldNotChangeEmbedding": "Einbettung konnte nicht geändert werden",
@@ -1016,5 +1018,7 @@
   "errors.shape_pack_empty": "Keine dieser Dateien ist ein SVG, das Freero zeichnen kann",
   "errors.shape_pack_too_many": "Ein Paket fasst höchstens {max} Symbole: teile sie auf mehrere Pakete auf",
   "errors.shape_pack_limit": "Ein Workspace kann höchstens {max} Formenpakete haben. Entferne zuerst eines, das du nicht mehr brauchst.",
-  "errors.shape_pack_workspace_full": "Die Formenpakete dieses Workspace sind voll. Entferne zuerst ein Paket, das du nicht mehr brauchst."
+  "errors.shape_pack_workspace_full": "Die Formenpakete dieses Workspace sind voll. Entferne zuerst ein Paket, das du nicht mehr brauchst.",
+  "errors.assistant_question": "Frag den Assistenten etwas",
+  "errors.assistant_question_long": "Eine Frage darf höchstens {max} Zeichen lang sein"
 }

@@ -507,7 +507,9 @@
     "errors.shape_pack_empty",
     "errors.shape_pack_too_many",
     "errors.shape_pack_limit",
-    "errors.shape_pack_workspace_full"
+    "errors.shape_pack_workspace_full",
+    "errors.assistant_question",
+    "errors.assistant_question_long"
   ],
   "untitledFrame": "Marco sin título",
   "couldNotChangeEmbedding": "No se pudo cambiar la inserción",
@@ -1016,5 +1018,7 @@
   "errors.shape_pack_empty": "Ninguno de esos archivos es un SVG que Freero pueda dibujar",
   "errors.shape_pack_too_many": "Un paquete admite como máximo {max} iconos: repártelos en varios paquetes",
   "errors.shape_pack_limit": "Un espacio de trabajo puede tener como máximo {max} paquetes de formas. Quita primero uno que ya no uses.",
-  "errors.shape_pack_workspace_full": "Los paquetes de formas de este espacio de trabajo están llenos. Quita primero uno que ya no uses."
+  "errors.shape_pack_workspace_full": "Los paquetes de formas de este espacio de trabajo están llenos. Quita primero uno que ya no uses.",
+  "errors.assistant_question": "Pregúntale algo al asistente",
+  "errors.assistant_question_long": "Una pregunta puede tener como máximo {max} caracteres"
 }

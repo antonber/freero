@@ -22,6 +22,9 @@ import type {
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
+  AssistantAsk,
+  AssistantMessage,
+  AssistantTurn,
   BoardElement,
   BoardOutline,
   BoardLayer,
@@ -450,6 +453,13 @@ export interface Host {
    */
   ai?: HostAi;
   /**
+   * [additive, #1] The board assistant, present when the server says this person may ask it here
+   * (also viewers and commenters: it reads the board as they see it). It never writes the board:
+   * what it proposes arrives as suggestions (`canPropose`: only for people who can edit). Calls
+   * reject with a message fit for the panel (budget used up, rate limit, the model's answer unusable).
+   */
+  assistant?: HostAssistant;
+  /**
    * [additive] Why AI can't be used here by this person, in words fit for the UI ("AI is off for
    * this workspace…", "…need edit access"): set when the server offers AI on this instance but not
    * to them on this board, so an AI action can show greyed out with the reason. Absent when `ai`
@@ -624,6 +634,20 @@ export interface HostAi {
   /** Who set the provider up: the Freero server's operator or the workspace's admins. */
   source: 'instance' | 'workspace';
   run(request: AiActionRequest): Promise<AiActionResponse>;
+}
+
+/** [additive, #1] See `Host.assistant` (wire: @freero/shared "The board assistant"). */
+export interface HostAssistant {
+  /** Where board content goes ("Anthropic (Claude) · claude-sonnet-5-5"), for the data notice. */
+  provider: string;
+  source: 'instance' | 'workspace';
+  /** This person can edit: the assistant may propose changes (as suggestions). */
+  canPropose: boolean;
+  /** Their own conversation on this board, oldest first. */
+  conversation(): Promise<AssistantMessage[]>;
+  ask(request: AssistantAsk): Promise<AssistantTurn>;
+  /** Forgets their conversation on this board. */
+  clear(): Promise<void>;
 }
 
 /** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */

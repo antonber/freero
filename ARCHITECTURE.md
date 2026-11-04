@@ -1427,8 +1427,8 @@ and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed
 SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
 admin console of team workspaces; see "Audit log, admin console and workspace
 policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
-(ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
-configures; see "AI" below), `apiauth` (api_tokens,
+(ai_workspace_settings, ai_usage, ai_assistant_messages: AI board actions and the board assistant
+with a provider the operator or a workspace configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
 `/api/v1`; see "Public API and OAuth" below), `embed` (embed_member_tokens: live board views inside AI assistants, `/embed/board`, `/ws/embed/boards`, see "The MCP server"; boards embedded on other sites, `/embed/b`, `/ws/embed/b`, oEmbed, see "Boards embedded on other sites"), `mcp` (no table: the remote MCP server `/mcp`; see
@@ -2319,6 +2319,21 @@ board and builds `Host.ai` only when it says yes.
 - **Text-only answers** (#134): `expand` reads one mind-map topic, its path and its children from
   the reader's view (no private draft but the topic itself) and returns `children` (3–7, repeats of
   what is there dropped, fewer gets the repair turn); nothing is laid out or placed on the server.
+- **The board assistant** (#1; `ai/assistant.ts`, `features/ai` dock `ai.assistant`): a conversation
+  about one board, `GET|POST|DELETE /boards/:id/ai/assistant`. `decideAi(…, { read: true })`: anyone
+  who can open the board and passes the workspace's AI policy may ask (`BoardAiStatus.assistant`,
+  `Host.assistant`), within the same rate limits, budgets, downloads policy and `ai.request` audit
+  (task `assistant`). It reads the board through `boardOutline` with the asker's OWN access (their
+  drafts only, hidden frames only for owners/editors), budgeted after the conversation's last
+  `ASSISTANT_LIMITS.context` messages, in the untrusted envelope; the model answers JSON (answer,
+  cites, proposal), validated: cites only ids the asker was shown; the proposal kept only for people
+  who can edit, only the propose_changes shapes and fields, only ids they see that aren't private
+  drafts. It never writes the board: the proposal goes through api's `readProposal` / `planProposal`
+  (the same planners as MCP `propose_changes`) into realtime's `proposeSuggestions` as one group from
+  "AI for <person>" — accepting it is the suggestions feature's ordinary one-step edit. The
+  conversation is the asker's alone (`ai_assistant_messages`, single writer `ai/repo.ts`, newest
+  `ASSISTANT_LIMITS.kept`; the body sealed with the workspace key when it has one, #159; cascades
+  with the board and the account; DELETE clears it; in the personal data export).
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited

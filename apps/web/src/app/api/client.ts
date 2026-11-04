@@ -53,6 +53,9 @@ import type {
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
+  AssistantAsk,
+  AssistantConversation,
+  AssistantTurn,
   BoardAiStatus,
   WorkspaceAiAdmin,
   WorkspaceAiPatch,
@@ -629,6 +632,10 @@ export const api = {
   // AI (404 while the server offers no AI at all)
   boardAi: (boardId: string) => request<{ ai: BoardAiStatus | null }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
   runAi: (boardId: string, body: AiActionRequest) => request<AiActionResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/actions`, body),
+  // the board assistant (#1): your own conversation on this board
+  assistant: (boardId: string) => request<AssistantConversation>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
+  askAssistant: (boardId: string, body: AssistantAsk) => request<AssistantTurn>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`, body),
+  clearAssistant: (boardId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
   testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),

@@ -507,7 +507,9 @@
     "errors.shape_pack_empty",
     "errors.shape_pack_too_many",
     "errors.shape_pack_limit",
-    "errors.shape_pack_workspace_full"
+    "errors.shape_pack_workspace_full",
+    "errors.assistant_question",
+    "errors.assistant_question_long"
   ],
   "untitledFrame": "제목 없는 프레임",
   "couldNotChangeEmbedding": "임베드 설정을 바꾸지 못했어요",
@@ -1016,5 +1018,7 @@
   "errors.shape_pack_empty": "Freero가 그릴 수 있는 SVG 파일이 없습니다",
   "errors.shape_pack_too_many": "팩 하나에는 아이콘을 최대 {max}개까지 담을 수 있습니다. 여러 팩으로 나누세요",
   "errors.shape_pack_limit": "워크스페이스에는 도형 팩을 최대 {max}개까지 둘 수 있습니다. 쓰지 않는 팩을 먼저 삭제하세요.",
-  "errors.shape_pack_workspace_full": "이 워크스페이스의 도형 팩 공간이 가득 찼습니다. 쓰지 않는 팩을 먼저 삭제하세요."
+  "errors.shape_pack_workspace_full": "이 워크스페이스의 도형 팩 공간이 가득 찼습니다. 쓰지 않는 팩을 먼저 삭제하세요.",
+  "errors.assistant_question": "어시스턴트에게 질문을 입력하세요",
+  "errors.assistant_question_long": "질문은 최대 {max}자까지 입력할 수 있습니다"
 }

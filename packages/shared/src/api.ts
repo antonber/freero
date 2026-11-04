@@ -2177,7 +2177,72 @@ export interface BoardAiStatus {
   provider?: string;
   /** Who configured it: Freero's operator ('instance') or the workspace's admins ('workspace'). */
   source?: 'instance' | 'workspace';
+  /**
+   * [additive, #1] The board assistant is open to this person here: it reads the board as they see
+   * it, so viewers and commenters may ask too (when the workspace lets them use AI); `canPropose`
+   * when they can edit, so its changes can be proposed as suggestions. Absent: no assistant.
+   * `provider` and `source` are set whenever this is.
+   */
+  assistant?: { canPropose: boolean };
 }
+
+// ---- The board assistant (#1; server modules/ai assistant.ts; docs/ai.md "Board assistant") ----
+// A conversation about one board with the AI the board's workspace uses, kept per person per board
+// (only that person ever reads it; deleted with the board or the account, or when they clear it).
+// It reads the board through the outline AS THE PERSON SEES IT — never another person's private
+// draft, never a hidden frame's contents they can't see — and answers in text, citing the items it
+// used. It never writes the board: changes the person asks for are PROPOSED as one group of
+// suggestions ("AI for <person>", KAI-169), planned like the public API's propose_changes, and
+// nothing changes until someone who can edit accepts them. Board text is untrusted data to the
+// model; what the model returns is validated (only ids the person can see; only the proposal's
+// shapes) before anything else happens.
+// GET    /api/boards/:id/ai/assistant          -> AssistantConversation  (your own; [] when none)
+// POST   /api/boards/:id/ai/assistant  body AssistantAsk -> AssistantTurn  (rate limited, budgeted
+//        and audited like AI actions; 403 'downloads_restricted' under the downloads policy)
+// DELETE /api/boards/:id/ai/assistant          -> { ok: true }  (forgets your conversation here)
+export interface AssistantProposal {
+  /** The suggestion group on the board (accept / reject it there). */
+  groupId: string;
+  /** Changes in it. */
+  count: number;
+  description: string;
+}
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  /** Plain text (never markup). */
+  text: string;
+  at: number;
+  /** assistant: the items its answer is about (ids on this board that the person could see). */
+  cites?: string[];
+  /** assistant: what it proposed, as suggestions. */
+  proposal?: AssistantProposal;
+  /** assistant: it was asked for a change but could not propose it (why, in words). */
+  proposalError?: string;
+}
+export interface AssistantConversation {
+  messages: AssistantMessage[];
+}
+export interface AssistantAsk {
+  question: string;
+  /** Items the person has selected, so "these" means them (ids; others are ignored). */
+  ids?: string[];
+}
+export interface AssistantTurn {
+  question: AssistantMessage;
+  answer: AssistantMessage;
+  usage: { inputTokens: number; outputTokens: number };
+}
+export const ASSISTANT_LIMITS = {
+  /** Characters of one question. */
+  question: 2000,
+  /** Messages kept per person per board (the oldest go first). */
+  kept: 200,
+  /** Earlier messages the model sees with each question. */
+  context: 12,
+  /** Changes one proposal may hold. */
+  changes: 100,
+} as const;
 
 export interface AiActionRequest {
   task: AiTask;

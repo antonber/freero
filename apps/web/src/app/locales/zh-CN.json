@@ -507,7 +507,9 @@
     "errors.shape_pack_empty",
     "errors.shape_pack_too_many",
     "errors.shape_pack_limit",
-    "errors.shape_pack_workspace_full"
+    "errors.shape_pack_workspace_full",
+    "errors.assistant_question",
+    "errors.assistant_question_long"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -1016,5 +1018,7 @@
   "errors.shape_pack_empty": "这些文件中没有 Freero 能绘制的 SVG",
   "errors.shape_pack_too_many": "一个图形包最多包含 {max} 个图标，请拆分成多个图形包",
   "errors.shape_pack_limit": "一个工作区最多有 {max} 个图形包。请先删除不再使用的图形包。",
-  "errors.shape_pack_workspace_full": "此工作区的图形包空间已满。请先删除不再使用的图形包。"
+  "errors.shape_pack_workspace_full": "此工作区的图形包空间已满。请先删除不再使用的图形包。",
+  "errors.assistant_question": "请向助手提问",
+  "errors.assistant_question_long": "问题最多 {max} 个字符"
 }
