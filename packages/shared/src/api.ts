@@ -2445,6 +2445,17 @@ export const AUDIT_ACTIONS = {
   'account.export_downloaded': 'Downloaded a copy of their data',
   'workspace.export_requested': 'Asked for an export of the workspace',
   'workspace.export_downloaded': 'Downloaded an export of the workspace',
+  // Legal holds and eDiscovery cases (modules/ediscovery, #157).
+  'legal_hold.created': 'Placed a legal hold',
+  'legal_hold.scope_changed': 'Changed what a legal hold covers',
+  'legal_hold.released': 'Released a legal hold',
+  'legal_hold.export_requested': 'Asked for an export of a legal case',
+  'legal_hold.export_downloaded': 'Downloaded an export of a legal case',
+  // Classification labels (#158).
+  'label.created': 'Created a classification label',
+  'label.updated': 'Changed a classification label',
+  'label.deleted': 'Deleted a classification label',
+  'board.label_changed': 'Changed a board’s classification label',
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
