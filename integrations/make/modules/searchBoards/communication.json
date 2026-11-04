@@ -1,0 +1,12 @@
+{
+    "url": "/boards",
+    "method": "GET",
+    "qs": {
+        "q": "{{parameters.q}}",
+        "limit": "{{ifempty(parameters.limit, 10)}}"
+    },
+    "response": {
+        "iterate": "{{body.boards}}",
+        "output": "{{item}}"
+    }
+}

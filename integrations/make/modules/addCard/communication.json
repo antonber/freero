@@ -1,0 +1,25 @@
+{
+    "url": "/boards/{{parameters.board}}/structure",
+    "method": "POST",
+    "body": {
+        "structure": {
+            "kind": "items",
+            "items": [
+                {
+                    "type": "card",
+                    "text": "{{parameters.title}}",
+                    "description": "{{parameters.description}}",
+                    "link": "{{parameters.link}}",
+                    "dueDate": "{{formatDate(parameters.due, 'YYYY-MM-DD')}}"
+                }
+            ]
+        },
+        "placement": {
+            "into": "{{parameters.into}}",
+            "column": "{{parameters.column}}"
+        }
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

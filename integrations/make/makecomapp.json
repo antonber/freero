@@ -1,0 +1,154 @@
+{
+    "fileVersion": 1,
+    "generalCodeFiles": {
+        "base": "base.iml.json",
+        "common": "common.json",
+        "readme": "README.md",
+        "groups": "groups.json"
+    },
+    "components": {
+        "connection": {
+            "freero": {
+                "label": "Freero",
+                "connectionType": "oauth",
+                "codeFiles": {
+                    "communication": "connection/communication.json",
+                    "params": "connection/parameters.json",
+                    "common": null
+                }
+            }
+        },
+        "webhook": {
+            "boardEvent": {
+                "label": "Board event",
+                "webhookType": "web",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "webhook/communication.json",
+                    "params": "webhook/parameters.json",
+                    "attach": "webhook/attach.json",
+                    "detach": "webhook/detach.json"
+                }
+            }
+        },
+        "module": {
+            "watchBoardEvents": {
+                "label": "Watch board events",
+                "description": "Triggers when something happens on a board of a team workspace you administer.",
+                "moduleType": "instant_trigger",
+                "connection": "freero",
+                "webhook": "boardEvent",
+                "codeFiles": {
+                    "communication": "modules/watchBoardEvents/communication.json",
+                    "parameters": "modules/watchBoardEvents/parameters.json",
+                    "mappableParams": "modules/watchBoardEvents/expect.json",
+                    "interface": "modules/watchBoardEvents/interface.json",
+                    "samples": "modules/watchBoardEvents/samples.json"
+                }
+            },
+            "addSticky": {
+                "label": "Add a sticky note",
+                "description": "Adds a sticky note to a board, on free space or into a frame.",
+                "moduleType": "action",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "modules/addSticky/communication.json",
+                    "parameters": "modules/addSticky/parameters.json",
+                    "mappableParams": "modules/addSticky/expect.json",
+                    "interface": "modules/addSticky/interface.json",
+                    "samples": "modules/addSticky/samples.json"
+                }
+            },
+            "addCard": {
+                "label": "Add a card",
+                "description": "Adds a task card to a board, on free space or into a kanban column.",
+                "moduleType": "action",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "modules/addCard/communication.json",
+                    "parameters": "modules/addCard/parameters.json",
+                    "mappableParams": "modules/addCard/expect.json",
+                    "interface": "modules/addCard/interface.json",
+                    "samples": "modules/addCard/samples.json"
+                }
+            },
+            "addComment": {
+                "label": "Add a comment",
+                "description": "Comments on a board, or on one of its items.",
+                "moduleType": "action",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "modules/addComment/communication.json",
+                    "parameters": "modules/addComment/parameters.json",
+                    "mappableParams": "modules/addComment/expect.json",
+                    "interface": "modules/addComment/interface.json",
+                    "samples": "modules/addComment/samples.json"
+                }
+            },
+            "createBoard": {
+                "label": "Create a board",
+                "description": "Creates a board in one of your workspaces.",
+                "moduleType": "action",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "modules/createBoard/communication.json",
+                    "parameters": "modules/createBoard/parameters.json",
+                    "mappableParams": "modules/createBoard/expect.json",
+                    "interface": "modules/createBoard/interface.json",
+                    "samples": "modules/createBoard/samples.json"
+                }
+            },
+            "searchBoards": {
+                "label": "Search boards",
+                "description": "Finds boards you can open by words in their title.",
+                "moduleType": "search",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "modules/searchBoards/communication.json",
+                    "parameters": "modules/searchBoards/parameters.json",
+                    "mappableParams": "modules/searchBoards/expect.json",
+                    "interface": "modules/searchBoards/interface.json",
+                    "samples": "modules/searchBoards/samples.json"
+                }
+            },
+            "makeApiCall": {
+                "label": "Make an API call",
+                "description": "Calls any operation of Freero’s REST API v1 with this connection.",
+                "moduleType": "universal",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "modules/makeApiCall/communication.json",
+                    "parameters": "modules/makeApiCall/parameters.json",
+                    "mappableParams": "modules/makeApiCall/expect.json",
+                    "interface": "modules/makeApiCall/interface.json",
+                    "samples": "modules/makeApiCall/samples.json"
+                }
+            }
+        },
+        "rpc": {
+            "listWorkspaces": {
+                "label": "List workspaces",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "rpcs/listWorkspaces.json"
+                }
+            },
+            "listAdminWorkspaces": {
+                "label": "List team workspaces you administer",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "rpcs/listAdminWorkspaces.json"
+                }
+            },
+            "listBoards": {
+                "label": "List boards",
+                "connection": "freero",
+                "codeFiles": {
+                    "communication": "rpcs/listBoards.json"
+                }
+            }
+        },
+        "function": {},
+        "endpoint": {}
+    }
+}

@@ -1,0 +1,12 @@
+{
+    "url": "/boards",
+    "method": "POST",
+    "body": {
+        "title": "{{parameters.title}}",
+        "description": "{{parameters.description}}",
+        "workspaceId": "{{if(parameters.workspace, parameters.workspace, null)}}"
+    },
+    "response": {
+        "output": "{{body.board}}"
+    }
+}

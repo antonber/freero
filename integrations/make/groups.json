@@ -1,0 +1,24 @@
+[
+    {
+        "label": "Triggers",
+        "modules": [
+            "watchBoardEvents"
+        ]
+    },
+    {
+        "label": "Boards and items",
+        "modules": [
+            "addSticky",
+            "addCard",
+            "addComment",
+            "createBoard",
+            "searchBoards"
+        ]
+    },
+    {
+        "label": "Other",
+        "modules": [
+            "makeApiCall"
+        ]
+    }
+]

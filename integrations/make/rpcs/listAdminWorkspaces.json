@@ -1,0 +1,14 @@
+{
+    "url": "/workspaces",
+    "method": "GET",
+    "response": {
+        "iterate": {
+            "container": "{{body.workspaces}}",
+            "condition": "{{item.kind = 'team' & (item.role = 'owner' | item.role = 'admin')}}"
+        },
+        "output": {
+            "label": "{{item.name}}",
+            "value": "{{item.id}}"
+        }
+    }
+}

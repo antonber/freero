@@ -992,17 +992,17 @@ const AUTOMATION: Integration[] = [
     id: "make",
     name: "Make",
     category: 'automation',
-    oneLiner: "A step-by-step Make scenario on Freero’s REST API and signed webhooks.",
+    oneLiner: "Freero’s Make app: watch board events instantly; add stickies, cards and comments, create and search boards.",
     description: [
-      "Build a Make scenario that reacts to Freero webhooks or adds items to a board through the REST API, following the step-by-step guide.",
-      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Make’s own directory.",
+      "Add Freero modules to a scenario and sign in. Watch board events triggers instantly through a workspace webhook the scenario adds and removes; actions add sticky notes, cards (into a kanban column if you like) and comments, create boards, search boards, and call any REST operation.",
+      "The app works with freero.app and with your own Freero server. It is shared by invitation until Make’s review lists it; without it, the guide’s HTTP-module recipes do the same.",
     ],
     status: 'api',
     connect: {
-      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Follow the guide to add the webhook trigger and HTTP modules in Make."],
-      docs: { file: "docs/integrations/make.md", label: "Make recipe" },
+      steps: ["In a scenario, add a Freero module and create a connection (for your own server, its address and an OAuth app of it).", "Pick Watch board events, or an action such as Add a card."],
+      docs: { file: "docs/integrations/make.md", label: "Make app" },
     },
-    keywords: ["make", "integromat", "automation", "scenario", "webhooks"],
+    keywords: ["make", "integromat", "automation", "scenario", "webhooks", "make app", "instant trigger"],
     seo: {
       title: "Make and Freero: whiteboard automation scenarios",
       description: "Connect Freero boards to Make scenarios with the REST API and signed webhooks: a step-by-step guide to triggers and actions.",

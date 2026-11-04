@@ -1,0 +1,15 @@
+[
+    {
+        "name": "created",
+        "label": "New item IDs",
+        "type": "array",
+        "spec": {
+            "type": "text"
+        }
+    },
+    {
+        "name": "target",
+        "label": "Target",
+        "type": "text"
+    }
+]

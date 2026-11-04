@@ -1,0 +1,12 @@
+[
+    {
+        "name": "id",
+        "label": "Thread ID",
+        "type": "text"
+    },
+    {
+        "name": "itemId",
+        "label": "Item ID",
+        "type": "text"
+    }
+]

@@ -1,0 +1,15 @@
+{
+    "url": "/boards",
+    "method": "GET",
+    "qs": {
+        "limit": 100,
+        "workspace": "{{parameters.workspace}}"
+    },
+    "response": {
+        "iterate": "{{body.boards}}",
+        "output": {
+            "label": "{{item.title}}",
+            "value": "{{item.id}}"
+        }
+    }
+}

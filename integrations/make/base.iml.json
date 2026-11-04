@@ -1,0 +1,21 @@
+{
+    "baseUrl": "{{connection.baseUrl}}/api/v1",
+    "headers": {
+        "Authorization": "Bearer {{connection.accessToken}}",
+        "Accept": "application/json"
+    },
+    "response": {
+        "error": {
+            "message": "[{{statusCode}}] {{ifempty(body.error_description, ifempty(body.error, 'Freero refused the request'))}}"
+        }
+    },
+    "log": {
+        "sanitize": [
+            "request.headers.authorization",
+            "request.body.client_secret",
+            "request.body.refresh_token",
+            "response.body.access_token",
+            "response.body.refresh_token"
+        ]
+    }
+}

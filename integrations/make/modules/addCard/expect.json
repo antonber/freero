@@ -1,0 +1,47 @@
+[
+    {
+        "name": "board",
+        "label": "Board",
+        "type": "select",
+        "required": true,
+        "options": "rpc://listBoards",
+        "mappable": true,
+        "help": "Pick a board, or map its id (in its address: /board/<id>)."
+    },
+    {
+        "name": "title",
+        "label": "Title",
+        "type": "text",
+        "required": true
+    },
+    {
+        "name": "description",
+        "label": "Description",
+        "type": "text",
+        "multiline": true
+    },
+    {
+        "name": "link",
+        "label": "Link",
+        "type": "url",
+        "help": "An https address shown on the card."
+    },
+    {
+        "name": "due",
+        "label": "Due date",
+        "type": "date"
+    },
+    {
+        "name": "into",
+        "label": "Into kanban or frame",
+        "type": "text",
+        "required": false,
+        "help": "Optional: the id of a frame or kanban (Copy link to item in Freero: the part after item=). Leave it empty for free space."
+    },
+    {
+        "name": "column",
+        "label": "Kanban column",
+        "type": "text",
+        "help": "The column’s title, such as To do (with a kanban above)."
+    }
+]

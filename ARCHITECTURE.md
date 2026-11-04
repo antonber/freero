@@ -2770,6 +2770,14 @@ modules they call) and run the app definitions unchanged against a real HTTP ser
   secret, five-minute window), polling New Item / New Comment, actions over `/structure`,
   `/comments`, `/boards`. `zapier.test.ts` drives it with a stand-in `z` that applies the app's own
   middleware.
+- **Make** (`integrations/make`, the Make Apps Editor's local layout: `makecomapp.json` + IML JSON):
+  OAuth 2.0 as a confidential app without PKCE (Make can't send it; apiauth allows exactly that),
+  the hosted app's client in Make's common data, any Freero by address with its own app; a dedicated
+  webhook whose attach / detach add and remove the workspace webhook; actions over `/structure`
+  (empty optional fields — Make sends them — mean "not given": structure's `readPlacement`),
+  `/comments`, `/boards`, a universal module. `make.test.ts` checks every request against the API
+  reference and runs the connection, modules and webhook against the real server with a deliberately
+  tiny IML evaluator that refuses expressions it doesn't know.
 
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 

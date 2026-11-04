@@ -1,0 +1,23 @@
+{
+    "id": "evt_1042",
+    "type": "item.created",
+    "createdAt": "2026-10-28T23:41:07.512Z",
+    "workspaceId": "w1",
+    "board": {
+        "id": "b1",
+        "title": "Team roadmap",
+        "url": "https://freero.app/board/b1"
+    },
+    "actor": {
+        "kind": "user",
+        "id": "u1",
+        "name": "Maria"
+    },
+    "data": {
+        "item": {
+            "id": "s1",
+            "type": "sticky",
+            "text": "Ship the importer"
+        }
+    }
+}

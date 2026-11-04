@@ -1,0 +1,11 @@
+{
+    "url": "/workspaces",
+    "method": "GET",
+    "response": {
+        "iterate": "{{body.workspaces}}",
+        "output": {
+            "label": "{{item.name}}",
+            "value": "{{item.id}}"
+        }
+    }
+}

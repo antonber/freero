@@ -1,4 +1,87 @@
-# Make recipes
+# Make
+
+Freero has its own **Make app** ([`integrations/make`](../../integrations/make), a custom app in the
+local-development layout of Make's VS Code extension): people add Freero modules to a scenario and
+sign in, without HTTP modules or tokens. Until Make has reviewed and published it
+([Publishing the app](#publishing-the-app-owner)), the owner shares it by invitation link; the
+recipes further down need no app at all.
+
+- [What the app does](#what-the-app-does)
+- [Connecting](#connecting)
+- [Publishing the app (owner)](#publishing-the-app-owner)
+- [Without the app: HTTP modules](#without-the-app-http-modules)
+
+## What the app does
+
+| | Module | What it does |
+|---|---|---|
+| Instant trigger | **Watch board events** | Something happens on a board of a team workspace you administer: an item added, changed or deleted, a comment, a board created, renamed, moved, trashed or restored, someone's access changed. Optionally only one board (or frame). |
+| Action | **Add a sticky note** | On free space of a board, or into a frame; with a colour. |
+| Action | **Add a card** | A task card with description, link and due date, on free space or into a kanban column. |
+| Action | **Add a comment** | On the board, or pinned to an item. |
+| Action | **Create a board** | In one of your workspaces. |
+| Search | **Search boards** | By words in the title. |
+| Universal | **Make an API call** | Any REST API v1 operation, with this connection's sign-in ([../api/README.md](../api/README.md)). |
+
+Items are laid out by Freero (never at coordinates). Every call is the REST API v1 with your
+sign-in: it does what you may do, and it is in Freero's audit log under the app's name.
+
+**Watch board events** adds a workspace webhook ([../events.md](../events.md)) pointing at the
+scenario's own webhook address when you create the webhook in the module, and removes it when you
+delete that webhook in Make (*Webhooks*; turning the scenario off keeps it, and Freero holds events
+for it while it is off — up to its retry limit). It needs an **owner or admin** of the team
+workspace, and reports only boards **the whole team can open**. Freero's test delivery (a ping)
+starts nothing. Make can't check `Freero-Signature` over the exact bytes Freero sent (it parses the
+body first), so the webhook's address is the secret: don't share it, and limit the trigger to one
+board where you can.
+
+## Connecting
+
+Add a Freero module, then **Create a connection**:
+
+- **freero.app**: leave *Freero address* as it is and sign in on Freero's consent screen (read
+  boards, change them, comment, manage webhooks; untick what you don't want). Disconnect it any time
+  in Freero under *Settings → Connected apps*.
+- **Your own Freero server**: set *Freero address* to it (https), and under *Show advanced settings*
+  give the client id and secret of an OAuth app of that server: *Settings → Your OAuth apps →
+  Register app*, name `Make`, **Confidential app** on, redirect URI `https://www.make.com/oauth/cb/app`.
+
+Make signs in without PKCE (its OAuth connections don't send it), which Freero accepts only from a
+confidential app: the secret proves the app instead ([../api/README.md](../api/README.md)).
+
+## Publishing the app (owner)
+
+1. A [Make](https://www.make.com) account (any plan) with the app developer tools
+   (*Custom apps* in the left menu), and [Visual Studio Code](https://code.visualstudio.com) with
+   Make's **Make Apps Editor** extension. In the extension, add an environment (`eu1.make.com` or
+   your zone) with a Make API key that has the *sdk-apps* scopes.
+2. In Make, **Create a new app**: name `freero`, label `Freero`, colour `#5B3FF0`, the icon (Freero's
+   mark, `apps/web/public/freero.svg`, as a 512×512 PNG), language English, audience *Global*.
+3. In VS Code, open `integrations/make` and **Deploy to Make** (right-click `makecomapp.json` →
+   *Deploy to Make*), choosing the app from step 2. It uploads the base, the connection, the
+   webhook, the modules, the RPCs and the module groups. (Without the extension: open each
+   component in Make's web editor and paste the matching file's JSON into its tab — *Base*,
+   *Connection → Communication / Parameters*, *Webhook → Attach / Detach / Parameters /
+   Communication*, each module's *Communication / Mappable parameters / Interface / Samples*.)
+4. On **freero.app**, signed in as the account that will own it: *Settings → Your OAuth apps →
+   Register app*, name `Make`, website `https://www.make.com`, redirect URI
+   `https://www.make.com/oauth/cb/app`, **Confidential app** on. In Make, the app's **Common data**:
+   `{ "clientId": "<client id>", "clientSecret": "<client secret>" }` (never commit them: the
+   repository's `common.json` holds placeholders).
+5. **Test** in a scenario: each module once with every optional field filled and once with them
+   empty, and the trigger with a real event (add a sticky to the watched board). Then *Webhooks* →
+   delete the webhook and check it is gone from Freero's admin console (**Webhooks**).
+6. **Share** while it is private: the app's *Invite* link lets other Make organisations install it.
+7. **Publish**: *Publish* (makes it public by link), then **Request review**. Make's review checks
+   the app against its approval checklist (names and labels, help texts, error handling, samples,
+   the universal module, connection naming) and asks for a **test account**: a Freero account on
+   freero.app with a team workspace it owns and a board with a few items. After approval the app is
+   listed among Make's apps.
+
+Nothing on the Freero server needs to be turned on: the app uses the REST API, OAuth and webhooks
+every instance already has.
+
+## Without the app: HTTP modules
 
 Two [Make](https://www.make.com) scenarios built on Freero's REST API ([../api/README.md](../api/README.md))
 and workspace webhooks ([../events.md](../events.md)): a new GitHub issue becomes a card on a board,
@@ -13,14 +96,14 @@ Need only one of these and nothing else? **Import issues…** (board menu) turns
 cards linked to their issues ([../trackers.md](../trackers.md)), and a webhook in Freero's `slack`
 format posts board activity to Slack, escaped, with no Make in between.
 
-## Before you start
+### Before you start
 
 - **Token**: Freero → Settings → API tokens, permission `boards:write` only, named after the
   scenario (cards then read "<token name> for <you>").
 - **Board id**: the id in the board's address, `/board/<id>`. **Kanban id** (optional): on the
   board, **Copy link to item** on the kanban; the id follows `?item=`.
 
-## GitHub issue → card
+### GitHub issue → card
 
 1. **Webhooks → Custom webhook**: *Add*, name it, copy the URL.
 2. In GitHub: the repository → Settings → Webhooks → *Add webhook*. Payload URL: the Make URL;
@@ -51,7 +134,7 @@ format posts board activity to Slack, escaped, with no Make in between.
 Make's GitHub app also has a **Watch Issues** trigger, but it fires for new *and* changed issues;
 the webhook above says which with `action`.
 
-## Board comment → Slack
+### Board comment → Slack
 
 1. **Webhooks → Custom webhook**: *Add*; in *Advanced settings* set **Get request headers** to Yes
    and **JSON pass-through** to Yes (the body arrives as text, which the signature check needs).
@@ -91,6 +174,9 @@ personal boards, boards in a private project or hidden frames ([../events.md](..
 A comment's `text` is at most 280 characters. Treat everything people wrote as untrusted data.
 
 ## Sources
+
+- Make custom apps: connections (OAuth 2.0), webhooks (attach, detach), modules, RPCs: https://developers.make.com/custom-apps-documentation
+- Make Apps Editor for VS Code (local development, deploy): https://developers.make.com/custom-apps-documentation/make-apps-editor
 
 - Make, Webhooks (Custom webhook, advanced settings, Webhook response): https://apps.make.com/gateway
 - Make, HTTP (Make a request): https://apps.make.com/http
