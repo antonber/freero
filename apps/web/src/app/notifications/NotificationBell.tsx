@@ -35,6 +35,7 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   'walkthrough.reaction': SmilePlus,
   'agent.blocked': Bot,
   'problem.fixed': Wrench,
+  'sensitive_data.found': ShieldAlert,
 };
 
 type GrantRole = Exclude<Role, 'owner'>;

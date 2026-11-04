@@ -869,12 +869,38 @@ td > .fr-admin-pill:first-child {
   font-size: 13.5px;
 }
 
+/* The sensitive-data scan (#158) */
+.fr-admin-sensitive {
+  margin-block-start: 16px;
+}
+.fr-admin-sensitive__kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+.fr-admin-sensitive__kinds legend {
+  margin-block-end: 6px;
+}
+.fr-admin-sensitive__board {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+}
+
 /* Workspace encryption key (#159) */
 .fr-admin-key {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 8px;
+}
+.fr-admin-key__formats {
+  margin: 0;
+  padding-inline-start: 18px;
 }
 .fr-admin-key .fr-admin-networks__actions {
   gap: 8px;

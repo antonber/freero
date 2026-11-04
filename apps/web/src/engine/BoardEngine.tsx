@@ -24,6 +24,8 @@ export interface BoardEngineProps {
    * renders in the app's own scope: it is not a feature and gets no Editor.
    */
   topbarAccessory?: ReactNode;
+  /** [additive, #158] App-owned UI beside the board's title (its classification label). */
+  titleAccessory?: ReactNode;
   /**
    * [additive] The app's current URL query, with a key that changes on every navigation (react
    * router's `location`). Commands with `urlParam` run when it carries their param — also when the
@@ -38,7 +40,7 @@ export interface BoardEngineProps {
   initialState?: Uint8Array;
 }
 
-export function BoardEngine({ host, features, topbarAccessory, location, initialState }: BoardEngineProps) {
+export function BoardEngine({ host, features, topbarAccessory, titleAccessory, location, initialState }: BoardEngineProps) {
   const [core, setCore] = useState<EngineCore | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const hostRef = useRef(host);
@@ -75,7 +77,7 @@ export function BoardEngine({ host, features, topbarAccessory, location, initial
   }, [core, host]);
 
   const boardTitle = host.board.title;
-  const appChrome = useMemo(() => ({ topbarAccessory, boardTitle }), [topbarAccessory, boardTitle]);
+  const appChrome = useMemo(() => ({ topbarAccessory, titleAccessory, boardTitle }), [topbarAccessory, titleAccessory, boardTitle]);
 
   if (error)
     return (

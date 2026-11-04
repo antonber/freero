@@ -7,6 +7,7 @@ import { Button, Logo, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { loginPath } from '../lib/nav';
+import { BoardClassification } from '../components/BoardClassification';
 import { ShareDialog } from '../components/ShareDialog';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import { NotificationBell } from '../notifications/NotificationBell';
@@ -188,6 +189,12 @@ function ServerBoard({ id }: { id: string }) {
     (title: string) => setState((s) => (s.status === 'ready' ? { ...s, board: { ...s.board, title } } : s)),
     [],
   );
+  // The board as the share dialog or its label chip changed it.
+  const changeBoard = useCallback(
+    (b: BoardSummary) =>
+      setState((s) => ({ status: 'ready', board: b, team: s.status === 'ready' ? s.team : null, ai: s.status === 'ready' ? s.ai : null, trackers: s.status === 'ready' ? s.trackers : undefined })),
+    [],
+  );
   const openShare = useCallback(() => setShareOpen(true), []);
   const go = useCallback((path: string) => navigate(path), [navigate]);
   const toast = useMemo(() => toastNotify(notify), [notify]);
@@ -231,7 +238,7 @@ function ServerBoard({ id }: { id: string }) {
   if (!host || !board) return <FullPageSpinner label={tr('openingBoard')} />;
   return (
     <>
-      <BoardEngine host={host} features={features} topbarAccessory={bell} location={location} />
+      <BoardEngine host={host} features={features} topbarAccessory={bell} titleAccessory={<BoardClassification board={board} onBoardChange={changeBoard} />} location={location} />
       {board.archivedAt ? <ArchivedNotice board={board} onUnarchived={retry} /> : null}
       <ShareDialog
         boardId={board.id}
@@ -241,9 +248,7 @@ function ServerBoard({ id }: { id: string }) {
           if (new URLSearchParams(location.search).has('share')) navigate(location.pathname, { replace: true });
         }}
         board={board}
-        onBoardChange={(b) =>
-          setState((s) => ({ status: 'ready', board: b, team: s.status === 'ready' ? s.team : null, ai: s.status === 'ready' ? s.ai : null, trackers: s.status === 'ready' ? s.trackers : undefined }))
-        }
+        onBoardChange={changeBoard}
         onLeft={() => navigate('/app')}
       />
     </>
