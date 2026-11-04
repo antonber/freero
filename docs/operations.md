@@ -389,6 +389,7 @@ workspace (modules/workspaces).
 | Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
 | Problem reports they sent with “Report a problem”: the note, whether they may be contacted, a screenshot of their screen (unless they removed it), diagnostics (page path, board and role, release, browser, window size, scrubbed recent errors), the status and operators' note | `problem_reports` (problems) + screenshots in the private storage area (`confidential.<random>.<ext>`, never under `/uploads/`) | `problems/index.json` + `problems/<id>.<ext>` (the operators' note is not included) | deleted with their screenshots | — |
 | API tokens (sha256 only, name, scopes, times), apps they authorised (consents, codes, access/refresh tokens), apps they registered; where their credentials were used in team workspaces | `api_tokens`, `oauth_grants`, `oauth_codes`, `oauth_clients`, `api_workspace_credentials` (apiauth) | `api.json` (never a secret or hash) | deleted (cascade); revoked already when deletion is scheduled (signed out everywhere) | usage rows deleted (cascade) |
+| Legal holds (#157): eDiscovery cases naming them as a custodian (case name, notes, who opened / released it), the holds on their boards, and case exports (every board in scope in full, with versions and the audit events about it and the custodians) | `legal_cases`, `legal_case_subjects`, `legal_case_workspaces`, `legal_case_exports` + private ZIP files (ediscovery); `board_legal_holds`, `board_owner_legal_holds` (boards) | no: a legal matter of the workspace, not the person's data (a hold is kept silent from its custodians) | **waits** while a hold names them or keeps a board they own: nothing is deleted or handed over until the case is released; the account stays signed out | refused (409 `legal_hold`) while anything there is held; a case's own record has no foreign key and outlives the workspace |
 | Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
 | Request logs | stdout (pino) → your log pipeline | no | not touched: user ids and IP addresses (never emails, bodies, query strings or tokens) — expire them in your log retention | — |
 | Audit log (sign-ins, sharing, exports, every API / MCP call: actor, IP, target, outcome) — and what was streamed to a workspace's SIEM (a copy outside Freero, under the customer's retention) | `audit_events`, `audit_chains`, `audit_anchors` (audit) | no (team admins read and export the workspace's log in the admin console) | kept until retention (`DEFAULT_AUDIT_RETENTION_DAYS`, a workspace's `auditRetentionDays`); actor read as "Deleted user"; no foreign keys | the workspace's chain kept until the default retention |
@@ -422,8 +423,16 @@ workspace (modules/workspaces).
 - **Workspace**: owners, in Workspace settings (type the name). Immediate; every owner is mailed a
   receipt of what was deleted. **Retention / legal holds**: a module registers
   `onWorkspaceDeletionHold` (`modules/workspaces/index.ts`); while any hold applies, deletion is
-  refused (409) and nothing is removed. Nothing registers one yet (legal holds; time-based
-  retention is the Data tab's settings).
+  refused (409) and nothing is removed — ediscovery registers it for organisations with an open
+  case. **Legal holds** (#157, admin console → Legal holds; owners and admins with both the
+  security and content scopes): while a case keeps a board, no path deletes it — the trash purge
+  and retention rules skip it, "delete forever" only hides it, version thinning and audit
+  retention keep everything, the account purge waits, a team workspace holding it can't be deleted
+  and its encryption key can't be destroyed; the database itself refuses `DELETE FROM boards` of a
+  held board (trigger `boards_legal_hold_guard`, error code `FH001`). An operator who must remove a
+  held board (illegal content) takes it down — nobody sees it then — and has the case released or
+  narrowed by the workspace's admins before deleting it for good (`board.delete` answers 409
+  `legal_hold` meanwhile).
 - **Audit trail** (the workspace's audit log, admin console): workspace export requests and
   downloads, workspace deletion, every SSO configuration change, SSO sign-ins and refusals,
   just-in-time joins, SCIM tokens, group mappings, provisioning and deprovisioning. A person's own

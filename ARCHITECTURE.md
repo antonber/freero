@@ -1330,10 +1330,10 @@ auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
 user_recovery_codes: two-step verification; auth_two_factor_recoveries: delayed "lost my
 authenticator" recoveries; guest_sessions: visitors without an account),
-`boards` (boards, stars, opens; trash; the guest join routes), `members` (board_members,
+`boards` (boards, stars, opens; trash; the guest join routes; board_legal_holds, board_owner_legal_holds: legal holds; boards.label_id), `members` (board_members,
 board_invites: pending invites for addresses without an account; board_access_requests; role
 resolution), `workspaces` (workspaces, workspace_members,
-workspace_invites, projects, project_members; organisations are directory-only `workspaces` rows; see
+workspace_invites, projects, project_members; workspace_labels, workspace_label_settings: classification labels; organisations are directory-only `workspaces` rows; see
 "Workspaces" and "Organisations" below), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors, board_sealed_refs; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
@@ -1384,7 +1384,7 @@ Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copi
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
-encryption keys, see "Workspace encryption keys" below), and `problems` (problem_reports: “Report a problem”, see "Problem
+encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
@@ -1889,10 +1889,61 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
   mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
   workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409),
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (an organisation with an open legal case: modules/ediscovery; refused deletion with 409),
   `workspaces.onTeamWorkspaceCreation` (domain control), `auth.onSignupExpected` (invite-only).
 - **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
   under Data (pages/admin/AdminIdentity.tsx).
+
+### Legal holds and classification labels (`modules/ediscovery`, `boards/legalHolds.ts`, `workspaces/labels.ts`; #157, #158; docs/design/compliance.md)
+
+- **Legal holds**: an eDiscovery case (`modules/ediscovery`) belongs to a team workspace or an
+  organisation (covering the workspaces attached when it is placed; "refresh" adds later ones) and
+  names custodians (every board a person owns in a covered workspace, now and later, trash
+  included) and boards. Owners and admins with BOTH the security and content scopes manage cases
+  (`requireCaseManager`): a case reveals and exports every board in it. Audited
+  `legal_hold.created / scope_changed / released / export_requested / export_downloaded` in the
+  place's log.
+- **Boards keeps the hold** (the only module that deletes boards): `board_legal_holds` (hold id =
+  case id, board, `via_owner` when carried from a custodian) and `board_owner_legal_holds` (hold,
+  workspace, custodian), written only by boards' repo through `placeLegalHold` / `narrowLegalHold` /
+  `releaseLegalHold`. The database refuses deleting a held board on ANY path — foreign keys
+  RESTRICT and the `boards_legal_hold_guard` trigger (owner holds; SQLSTATE `FH001`,
+  `repo.isLegalHoldViolation`), so even cascades from a deleted account or workspace fail — and the
+  same trigger gives a board its own hold row before it leaves a held owner (transfer, hand-over,
+  move). Every purge path honours it without reaching the trigger: the trash purge skips held
+  boards (`purgeTrashedBefore … NOT HELD`) and marks expired ones `discarded_at` (out of everyone's
+  trash, kept); "delete forever" on a held board only discards it (the hold is silent to its people;
+  audited `board.deleted` with `keptBy`); both are purged on the first round after release;
+  retention rules (`heldAmong`) skip held boards; realtime's snapshot pruning skips them
+  (`pruneSnapshots({ heldAmong })`, fail closed); the account purge waits (`underLegalHold({
+  ownerId })`, before any hand-over); a team workspace with held content can't be deleted (409
+  `legal_hold`), nor can its encryption key be destroyed (#159); an operator's "delete for good"
+  answers 409 (the board stays taken down). Audit retention skips the chains of open cases' places,
+  covered workspaces and custodians (`audit.onAuditRetentionHold`, registered by ediscovery's init;
+  fail closed).
+- **Case export**: a ZIP (`ediscovery/archive.ts`) of every held board in full — realtime's
+  `exportBoardForReview`: the shared doc, EVERY layer and every version as JSON — the audit events
+  of the place's chain about those boards and custodians, and `manifest.json` with the sha256 of
+  every file. Built by the `ediscovery:exports` job into uploads' private files, downloadable by
+  whoever manages the case until `DATA_EXPORT_TTL_HOURS`.
+- **Classification labels** (`workspace_labels`, `workspace_label_settings`, workspaces' repo; a
+  board's `boards.label_id`, boards' repo): a team workspace or organisation defines labels (an
+  organisation's reach all its workspaces) with `caps` — a partial set of the floored policies plus
+  `viewerExports: 'off'`. **One place applies them**: `boardAccessLoader` raises the board's
+  effective policies by its label's caps (`withLabelCaps`, the stricter wins key by key, like an
+  organisation's floor), so `maxLink`, `anonymousLinks`, `outsidersBlocked`, downloads, embedding
+  and link policies follow it on REST, lists, search, the public API, MCP, embeds, guests and
+  socket admission — including links and embeds turned on before the label (the stored setting is
+  kept; removing the label restores it). `BoardPlace.labelId` carries it, so a caller that passes a
+  `Board` gets it for free; a label id nothing defines caps everything (`UNKNOWN_LABEL_CAPS`).
+  `boardLetsCopy` reads `viewerExports`. `PUT /boards/:id/label` (owners, co-owners, content
+  admins; audited `board.label_changed`; live sockets re-resolved); a workspace can require a label
+  and set the default new boards get (an organisation's requirement is a floor). Copies keep their
+  label, and a labelled board can't be copied or moved where its label doesn't apply (403
+  `label_restricted`; a label with no caps simply drops). Changing a label's caps re-resolves every
+  board carrying it. A label in use can't be deleted (409 `label_in_use`); detaching a workspace
+  drops the organisation's labels from its boards (they take the workspace's own default).
+  Sensitive-data scanning is not built (compliance.md §2).
 
 ### Request access (`members/accessRequests.ts`, KAI-40)
 
@@ -2998,7 +3049,7 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   still inactive, still noticed), so the job is idempotent and never races an open. Audited
   `board.archived` / `board.trashed` with no actor and `reason: 'retention'`. Never touched:
   archived boards (archiving is how a board is kept), taken-down boards, boards a hold check names
-  (`boards.onBoardRetentionHold`, the seam for legal holds, #157; a failing check holds them all)
+  (`boards.onBoardRetentionHold`; boards' own legal-hold rows, #157, are checked first; a failing check holds them all)
   and every board of a workspace with a deletion hold (`workspaceHoldOn`). Board events with no
   actor reach the event stream as `actor: { kind: 'system' }`.
 

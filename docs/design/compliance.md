@@ -1,9 +1,9 @@
 # Compliance: legal holds, classification labels, workspace keys and SAML hardening
 
-Status: **design** for #157 (eDiscovery and legal holds), #158 (classification labels), #159
-(per-workspace encryption keys) and #13 (SAML encrypted assertions, signed AuthnRequests, single
-logout). Each section ends with what was built and what is left; the sections are independent and
-ship as separate commits.
+Status: **built** (with the gaps each section's "Built / left" lists) for #157 (eDiscovery and
+legal holds), #158 (classification labels), #159 (per-workspace encryption keys) and #13 (SAML
+encrypted assertions, signed AuthnRequests, single logout). The sections are independent and
+shipped as separate commits.
 
 Shared ground: organisations (docs/design/organisations.md) are directory-only `workspaces` rows
 whose policies are floors for their workspaces; admin roles (#151) split admins into `members`,
@@ -112,7 +112,21 @@ exportable) for the record.
 
 ### Built / left
 
-Filled in when the work lands.
+Built as designed: `modules/ediscovery` (cases, scope changes, release, the export job and its
+archive), boards' hold rows and trigger (migration `202611301000_board_legal_holds.sql`), the purge
+paths in the table, the realtime and audit retention holds, and the admin console's Legal holds
+tab. One path was added to the table while building: destroying a workspace's encryption key
+(#159) is crypto-shredding, so it is refused (409 `legal_hold`) while anything there is held.
+Tests: `boards/legalHolds.test.ts` (every purge path, a raw DELETE, hand-overs, who manages cases,
+scope), `realtime/retention.test.ts` (versions kept; a failing check keeps them),
+`audit/audit.test.ts` (held chains; fail closed), `ediscovery/cases.test.ts` (export content and
+manifest hashes).
+
+Left: the organisation console has no Legal holds tab yet (the API serves organisations; cases of
+an organisation are created through `POST /api/workspaces/:orgId/legal-cases`); comments of a
+custodian whose account is purged after release are anonymised as usual (the export made while
+held keeps their names); a case's custodian list is limited to members of the covered workspaces
+(former members' boards were handed over and are reached as explicit boards).
 
 ---
 
@@ -130,7 +144,7 @@ the embed page and oEmbed, guests and links.
 ```
 modules/workspaces   workspace_labels (id, workspace_id → workspaces (team or organisation),
                        name, color, description, caps jsonb, position, created_at)
-                     workspaces.require_label / default_label_id (settings; floors on an org)
+                     workspace_label_settings (required, default_label_id; an org's required is a floor)
 modules/boards       boards.label_id → workspace_labels ON DELETE RESTRICT
 ```
 
@@ -152,8 +166,10 @@ modules/boards       boards.label_id → workspace_labels ON DELETE RESTRICT
   content admins: `PUT /boards/:id/label { labelId }`. Any change is audited `board.label_changed`
   (from → to). While the workspace requires a label, a board can't be left without one, and new
   boards there get the default label.
-- **Moving a board** (#124) to another workspace keeps its label only if the label is available
-  there; otherwise it takes the target's default (or none).
+- **Copying or moving a board** (#124) keeps its label. Where the label doesn't apply (another
+  workspace that neither defines it nor belongs to its organisation) the copy or move is refused
+  (403 `label_restricted`) — otherwise duplicating a Confidential board into a personal workspace
+  would shed its caps. A label that caps nothing simply drops (the target's default applies).
 - **Deleting a label** in use is refused (409, with how many boards carry it): relabel first.
 
 ### Sensitive-data scan (optional, lower priority)
@@ -165,7 +181,19 @@ workspace's admins (a notification and a list in the console). Nothing leaves th
 
 ### Built / left
 
-Filled in when the work lands.
+Built: labels with caps (`workspaces/labels.ts`; the required-label and default settings live in
+their own table, `workspace_label_settings`, rather than as `WorkspaceSettings` columns), the caps in
+`boardAccessLoader` (`withLabelCaps`; an unknown label id caps everything), `viewerExports` in
+`boardLetsCopy`, `PUT /boards/:id/label`, defaults on new boards, copies and moves that keep the
+label (or are refused), re-resolved sockets when a board's label or a label's caps change, the
+admin console's Classification tab (workspace and organisation) and the label in the share dialog.
+Tests: `boards/labels.test.ts` (every way in capped at once — link, visitors, API/MCP export and
+share, embed — for settings made before the label; copies, moves, required labels, who may relabel,
+the audit record).
+
+Left: **the sensitive-data scan is not built** (the issue marks it optional and lower priority;
+the design above stands). The label is shown in the share dialog only — not yet as a badge on the
+board's top bar or the dashboard cards.
 
 ---
 
