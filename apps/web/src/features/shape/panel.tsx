@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Package, Search, SlidersHorizontal, Sparkles } from 'lucide-react';
-import { iconWords, type ShapePack } from '@freero/shared';
+import { Cloud, Package, Search, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { CLOUD_ICON_SETS, cloudPackId, iconWords, type ShapePack } from '@freero/shared';
 import { DockHeader, definePanel, useCanEdit, useCollection, type Editor } from '@engine';
 import { Input, Toggle } from '@ui';
 import { LIBRARY_COLLECTION, SHAPE_SETS, enabledSets, searchShapes, type LibraryShape } from './lib/library';
@@ -136,6 +136,21 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
           {sets.length ? t('noShapesMatchQuery', { query }) : t('noShapeLibrariesAreOn')}
         </p>
       )}
+      {/* The vendors' cloud icon sets (#4) are built-in packs of the icon library; each opens there, searched. */}
+      <section className="fr-shape-lib__group" aria-label={t('cloudArchitecture')}>
+        <h3 className="fr-shape-lib__group-title">{t('cloudArchitecture')}</h3>
+        {CLOUD_ICON_SETS.map((set) => (
+          <button
+            key={set.id}
+            type="button"
+            className="fr-shape-options__more"
+            onClick={() => editor.runCommand('icons.openLibrary', { pack: cloudPackId(set.id), ...(query.trim() ? { query: query.trim() } : {}) })}
+          >
+            <Cloud size={14} aria-hidden />
+            {query.trim() ? t('findQueryInSet', { query: query.trim(), name: set.name }) : t('setNameIcons', { name: set.name })}
+          </button>
+        ))}
+      </section>
     </div>
   );
 }

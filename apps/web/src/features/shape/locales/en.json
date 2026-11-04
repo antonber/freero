@@ -66,5 +66,8 @@
   "processesDataStoresExternalEntities": "Processes, data stores, external entities and trust boundaries",
   "workspaceShapePacks": "Your workspace’s shape packs",
   "packNameIcons": "{name}: {count, plural, one {# icon} other {# icons}}",
-  "packNameMatches": "{name}: {count, plural, one {# match} other {# matches}}"
+  "packNameMatches": "{name}: {count, plural, one {# match} other {# matches}}",
+  "cloudArchitecture": "Cloud architecture",
+  "setNameIcons": "{name} icons",
+  "findQueryInSet": "Find “{query}” in {name}"
 }

@@ -47,7 +47,12 @@
     "everyoneInThisWorkspace",
     "onlyMe",
     "onlyYouSeeThisPack",
-    "myPackNameCount"
+    "myPackNameCount",
+    "cloudArchitectureIcons",
+    "cloudNoticeAws",
+    "cloudNoticeAzure",
+    "cloudNoticeKubernetes",
+    "cloudTerms"
   ],
   "openTheIconLibrary": "打开图标库",
   "icon": "图标",
@@ -96,5 +101,10 @@
   "everyoneInThisWorkspace": "此工作区的所有人",
   "onlyMe": "仅我自己",
   "onlyYouSeeThisPack": "你自己的图标包：只有你能看到",
-  "myPackNameCount": "{name} · 我的（{count, number}）"
+  "myPackNameCount": "{name} · 我的（{count, number}）",
+  "cloudArchitectureIcons": "云架构图标",
+  "cloudNoticeAws": "来自 Amazon Web Services 的官方 AWS Architecture Icons,未经修改,用于绘制架构图。AWS 及其服务名称和图标是 Amazon.com, Inc. 或其关联公司的商标;Freero 与 AWS 无关联,也未获 AWS 认可。",
+  "cloudNoticeAzure": "来自 Microsoft 的官方 Azure 架构图标,用于架构图、培训材料和文档。请勿裁剪、翻转、旋转或改变其形状,并在每个图标附近标注其服务的完整名称。Freero 将其渐变绘制为纯色。Microsoft 和 Azure 是 Microsoft 集团的商标;Freero 与 Microsoft 无关联。",
+  "cloudNoticeKubernetes": "Kubernetes Authors 的 Kubernetes Icons Set,采用 CC BY 4.0 许可,已转换为 Freero 的绘图格式并去掉了文字标签。Kubernetes 是 The Linux Foundation 的注册商标。",
+  "cloudTerms": "{name} 的条款"
 }

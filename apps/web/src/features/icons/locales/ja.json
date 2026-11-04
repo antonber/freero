@@ -47,7 +47,12 @@
     "everyoneInThisWorkspace",
     "onlyMe",
     "onlyYouSeeThisPack",
-    "myPackNameCount"
+    "myPackNameCount",
+    "cloudArchitectureIcons",
+    "cloudNoticeAws",
+    "cloudNoticeAzure",
+    "cloudNoticeKubernetes",
+    "cloudTerms"
   ],
   "openTheIconLibrary": "アイコンライブラリを開く",
   "icon": "アイコン",
@@ -96,5 +101,10 @@
   "everyoneInThisWorkspace": "このワークスペースの全員",
   "onlyMe": "自分のみ",
   "onlyYouSeeThisPack": "自分専用のパック：自分だけに表示されます",
-  "myPackNameCount": "{name}・自分用（{count, number}）"
+  "myPackNameCount": "{name}・自分用（{count, number}）",
+  "cloudArchitectureIcons": "クラウドアーキテクチャアイコン",
+  "cloudNoticeAws": "Amazon Web Services の公式 AWS Architecture Icons(無加工)。アーキテクチャ図の作成用です。AWS およびそのサービス名とアイコンは Amazon.com, Inc. またはその関連会社の商標です。Freero は AWS と提携しておらず、AWS の推奨を受けていません。",
+  "cloudNoticeAzure": "Microsoft の公式 Azure アーキテクチャアイコン。アーキテクチャ図、トレーニング資料、ドキュメント用です。切り抜き、反転、回転、形の変更はせず、各アイコンの近くにサービスの正式名称を記載してください。Freero ではグラデーションを単色で描画します。Microsoft および Azure は Microsoft グループの商標です。Freero は Microsoft と提携していません。",
+  "cloudNoticeKubernetes": "Kubernetes Authors による Kubernetes Icons Set(CC BY 4.0 ライセンス)。Freero の描画形式に変換し、テキストラベルを除いています。Kubernetes は The Linux Foundation の登録商標です。",
+  "cloudTerms": "{name} の利用規約"
 }

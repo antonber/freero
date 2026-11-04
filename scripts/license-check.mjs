@@ -88,4 +88,55 @@ if (problems.length) {
   console.error('Pick a permissively licensed alternative. An exception needs the licence checked by hand (ALLOWED_UNDECLARED, with where).');
   process.exit(1);
 }
-console.log(`license-check: ${checked} installed packages, all under licences an MIT project may ship.`);
+
+// ---- bundled assets that aren't npm packages ----
+//
+// The vendors' cloud architecture icon sets (#4): drawn from each vendor's official package by
+// scripts/cloud-icons.mjs into apps/web/src/features/icons/lib/cloud/, whose manifest.json names each
+// set's licence. They are NOT under Freero's MIT licence; THIRD_PARTY_NOTICES.md says so and carries
+// each set's notice. A set may ship only under a licence listed here, each allowed for the reason
+// given (the terms, quoted with their URLs and the date they were read: docs/design/cloud-icons.md).
+const ASSET_LICENCES = {
+  // Apache-2.0 or CC BY 4.0, our choice: we take CC BY 4.0, whose one condition is attribution —
+  // credit, the licence's link, and that we changed them (the library's notice and THIRD_PARTY_NOTICES.md).
+  'CC-BY-4.0': 'Kubernetes Icons Set (kubernetes/community icons/README.md)',
+  // AWS: "We allow customers and partners to use these toolkits and assets to create architecture
+  // diagrams", and points people to "preexisting libraries on third-party tools". Freero offers them,
+  // unchanged, only as icons people place on their own diagrams; no logo icons, no AWS branding of
+  // Freero; AWS's trademark notice in the library.
+  'LicenseRef-AWS-Architecture-Icons': 'AWS Architecture Icons (aws.amazon.com/architecture/icons)',
+  // Azure: "You may copy, distribute, and display the icons only for the permitted use" — architectural
+  // diagrams, training materials, documentation. A shape library for drawing architecture diagrams
+  // distributes them for that use; the library repeats Microsoft's don'ts (crop, flip, rotate, distort)
+  // and asks for the service's name beside each icon.
+  'LicenseRef-Azure-Architecture-Icons': 'Azure architecture icons (learn.microsoft.com/azure/architecture/icons)',
+};
+/** Sets whose vendor grants no licence to redistribute them: never bundled (users may upload their own copy as a pack). */
+const FORBIDDEN_ASSET_SETS = {
+  gcp: 'Google Cloud icons: cloud.google.com/icons offers them "for your diagrams" but grants no licence to copy or redistribute them, and the guide marks them proprietary',
+  'google-cloud': 'see gcp',
+};
+
+const CLOUD = path.join(ROOT, 'apps/web/src/features/icons/lib/cloud');
+const assetProblems = [];
+let sets = 0;
+if (fs.existsSync(CLOUD)) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(CLOUD, 'manifest.json'), 'utf8'));
+  const notices = fs.readFileSync(path.join(ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8');
+  const files = fs.readdirSync(CLOUD).filter((f) => f !== 'manifest.json');
+  for (const f of files) {
+    const id = f.replace(/\.json$/, '');
+    const entry = manifest.sets.find((s) => s.id === id);
+    sets++;
+    if (FORBIDDEN_ASSET_SETS[id]) assetProblems.push(`${f}: not allowed in Freero — ${FORBIDDEN_ASSET_SETS[id]}`);
+    else if (!entry) assetProblems.push(`${f}: not in manifest.json, so its licence is unknown (regenerate with npm run icons:cloud)`);
+    else if (!ASSET_LICENCES[entry.licence]) assetProblems.push(`${f}: licence ${entry.licence} isn't one Freero has checked (ASSET_LICENCES in scripts/license-check.mjs)`);
+    else if (!entry.source?.sha256 || !entry.terms) assetProblems.push(`${f}: the manifest doesn't say which official package it came from`);
+    else if (!notices.includes(`## ${entry.name} `)) assetProblems.push(`${f}: THIRD_PARTY_NOTICES.md has no "## ${entry.name} …" section with its notice`);
+  }
+}
+if (assetProblems.length) {
+  console.error(`license-check: ${assetProblems.length} bundled asset set(s) Freero may not ship as they are:\n  ${assetProblems.join('\n  ')}`);
+  process.exit(1);
+}
+console.log(`license-check: ${checked} installed packages, all under licences an MIT project may ship; ${sets} bundled icon sets, each under a licence checked by hand.`);

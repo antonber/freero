@@ -47,7 +47,12 @@
     "everyoneInThisWorkspace",
     "onlyMe",
     "onlyYouSeeThisPack",
-    "myPackNameCount"
+    "myPackNameCount",
+    "cloudArchitectureIcons",
+    "cloudNoticeAws",
+    "cloudNoticeAzure",
+    "cloudNoticeKubernetes",
+    "cloudTerms"
   ],
   "openTheIconLibrary": "Abrir la biblioteca de iconos",
   "icon": "Icono",
@@ -96,5 +101,10 @@
   "everyoneInThisWorkspace": "Todo el espacio de trabajo",
   "onlyMe": "Solo yo",
   "onlyYouSeeThisPack": "Tu propio paquete: solo tú lo ves",
-  "myPackNameCount": "{name} · tuyo ({count, number})"
+  "myPackNameCount": "{name} · tuyo ({count, number})",
+  "cloudArchitectureIcons": "Iconos de arquitectura en la nube",
+  "cloudNoticeAws": "Los AWS Architecture Icons oficiales de Amazon Web Services, sin cambios, para diagramas de arquitectura. AWS y los nombres e iconos de sus servicios son marcas comerciales de Amazon.com, Inc. o sus filiales; Freero no está afiliado a AWS ni cuenta con su respaldo.",
+  "cloudNoticeAzure": "Los iconos de arquitectura de Azure oficiales de Microsoft, para diagramas de arquitectura, materiales de formación y documentación. No los recortes, voltees, gires ni cambies su forma, y etiqueta cada uno con el nombre completo de su servicio. Freero dibuja sus degradados como color plano. Microsoft y Azure son marcas comerciales del grupo de empresas Microsoft; Freero no está afiliado a Microsoft.",
+  "cloudNoticeKubernetes": "El Kubernetes Icons Set de los Kubernetes Authors, con licencia CC BY 4.0, convertido al formato de dibujo de Freero sin sus etiquetas de texto. Kubernetes es una marca registrada de The Linux Foundation.",
+  "cloudTerms": "Términos de {name}"
 }

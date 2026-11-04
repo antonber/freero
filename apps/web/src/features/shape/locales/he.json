@@ -67,7 +67,10 @@
     "processesDataStoresExternalEntities",
     "workspaceShapePacks",
     "packNameIcons",
-    "packNameMatches"
+    "packNameMatches",
+    "cloudArchitecture",
+    "setNameIcons",
+    "findQueryInSet"
   ],
   "rectangle": "מלבן",
   "roundedRectangle": "מלבן מעוגל",
@@ -136,5 +139,8 @@
   "processesDataStoresExternalEntities": "תהליכים, מאגרי נתונים, ישויות חיצוניות וגבולות אמון",
   "workspaceShapePacks": "חבילות הצורות של סביבת העבודה",
   "packNameIcons": "{name}: {count, plural, one {סמל אחד} other {# סמלים}}",
-  "packNameMatches": "{name}: {count, plural, one {תוצאה אחת} other {# תוצאות}}"
+  "packNameMatches": "{name}: {count, plural, one {תוצאה אחת} other {# תוצאות}}",
+  "cloudArchitecture": "ארכיטקטורת ענן",
+  "setNameIcons": "סמלי {name}",
+  "findQueryInSet": "חיפוש „{query}” ב-{name}"
 }

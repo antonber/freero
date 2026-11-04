@@ -30,6 +30,22 @@ export const ICON_LIMITS = {
   name: 64,
 } as const;
 
+/**
+ * The vendors' cloud architecture icon sets Freero bundles as built-in, read-only packs (#4):
+ * drawn from each vendor's official package by scripts/cloud-icons.mjs, only where the vendor's
+ * terms allow a product to (docs/design/cloud-icons.md; Google Cloud's don't). The icon library
+ * shows them as the pack `cloud:<id>`; the shape library links to them.
+ */
+export const CLOUD_ICON_SETS = [
+  { id: 'aws', name: 'AWS' },
+  { id: 'azure', name: 'Azure' },
+  { id: 'kubernetes', name: 'Kubernetes' },
+] as const;
+export type CloudIconSetId = (typeof CLOUD_ICON_SETS)[number]['id'];
+/** The icon library's source showing every cloud set at once. */
+export const CLOUD_ICON_SOURCE = 'cloud';
+export const cloudPackId = (id: CloudIconSetId) => `${CLOUD_ICON_SOURCE}:${id}`;
+
 /** lucide's grid, the coordinate system of icons without a `viewBox`. */
 export const ICON_DEFAULT_VIEWBOX = '0 0 24 24';
 
@@ -351,8 +367,12 @@ interface Paint {
 
 const unit = (v: string | undefined) => (v !== undefined ? /^([-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?)(px)?$/i.exec(v.trim())?.[1] : undefined);
 
-/** Reduces an uploaded SVG to an icon's drawing (see the top of this file). Pure; never throws. */
-export function sanitizeSvg(src: string): SanitizedSvg {
+/**
+ * Reduces an uploaded SVG to an icon's drawing (see the top of this file). Pure; never throws.
+ * `keepColours`: a one-colour drawing keeps its colour instead of becoming `currentColor` (the
+ * vendors' cloud icons, whose terms ask that they be used as they are: never recoloured).
+ */
+export function sanitizeSvg(src: string, { keepColours = false }: { keepColours?: boolean } = {}): SanitizedSvg {
   if (typeof src !== 'string' || src.length > ICON_LIMITS.svgChars) return { ok: false, reason: 'too_large' };
   const toks = tokenize(src.replace(/^﻿/, ''));
 
@@ -465,7 +485,7 @@ export function sanitizeSvg(src: string): SanitizedSvg {
   // One colour: the board recolours it.
   const colours = new Set<string>();
   for (const [, a] of clean) for (const k of ['fill', 'stroke']) if (a[k] && a[k] !== 'none') colours.add(String(a[k]));
-  const mono = colours.size <= 1;
+  const mono = colours.size <= 1 && !keepColours;
   if (mono) clean = clean.map(([tag, a]) => [tag, Object.fromEntries(Object.entries(a).map(([k, v]) => [k, (k === 'fill' || k === 'stroke') && v !== 'none' ? 'currentColor' : v]))]);
   return { ok: true, nodes: clean, viewBox: viewBox ?? ICON_DEFAULT_VIEWBOX, art: mono ? 'mono' : 'color' };
 }

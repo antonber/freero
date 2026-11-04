@@ -157,6 +157,19 @@
   color: var(--fr-ink-2);
 }
 
+/* Built-in cloud sets: where they come from and the vendor's terms, wherever their icons show. */
+.fr-icons__notice {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fr-ink-3);
+}
+
+.fr-icons__notice a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .fr-icons-pack {
   display: flex;
   align-items: center;

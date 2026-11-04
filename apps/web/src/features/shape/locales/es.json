@@ -67,7 +67,10 @@
     "processesDataStoresExternalEntities",
     "workspaceShapePacks",
     "packNameIcons",
-    "packNameMatches"
+    "packNameMatches",
+    "cloudArchitecture",
+    "setNameIcons",
+    "findQueryInSet"
   ],
   "rectangle": "Rectángulo",
   "roundedRectangle": "Rectángulo redondeado",
@@ -136,5 +139,8 @@
   "processesDataStoresExternalEntities": "Procesos, almacenes de datos, entidades externas y límites de confianza",
   "workspaceShapePacks": "Paquetes de formas de tu espacio de trabajo",
   "packNameIcons": "{name}: {count, plural, one {# icono} other {# iconos}}",
-  "packNameMatches": "{name}: {count, plural, one {# coincidencia} other {# coincidencias}}"
+  "packNameMatches": "{name}: {count, plural, one {# coincidencia} other {# coincidencias}}",
+  "cloudArchitecture": "Arquitectura en la nube",
+  "setNameIcons": "Iconos de {name}",
+  "findQueryInSet": "Buscar «{query}» en {name}"
 }

@@ -47,7 +47,12 @@
     "everyoneInThisWorkspace",
     "onlyMe",
     "onlyYouSeeThisPack",
-    "myPackNameCount"
+    "myPackNameCount",
+    "cloudArchitectureIcons",
+    "cloudNoticeAws",
+    "cloudNoticeAzure",
+    "cloudNoticeKubernetes",
+    "cloudTerms"
   ],
   "openTheIconLibrary": "아이콘 라이브러리 열기",
   "icon": "아이콘",
@@ -96,5 +101,10 @@
   "everyoneInThisWorkspace": "이 워크스페이스의 모든 사람",
   "onlyMe": "나만",
   "onlyYouSeeThisPack": "나만의 팩: 나에게만 보입니다",
-  "myPackNameCount": "{name} · 내 팩 ({count, number})"
+  "myPackNameCount": "{name} · 내 팩 ({count, number})",
+  "cloudArchitectureIcons": "클라우드 아키텍처 아이콘",
+  "cloudNoticeAws": "Amazon Web Services의 공식 AWS Architecture Icons를 변경 없이 제공하며, 아키텍처 다이어그램용입니다. AWS와 그 서비스 이름 및 아이콘은 Amazon.com, Inc. 또는 그 계열사의 상표입니다. Freero는 AWS와 제휴하거나 AWS의 보증을 받지 않았습니다.",
+  "cloudNoticeAzure": "Microsoft의 공식 Azure 아키텍처 아이콘으로, 아키텍처 다이어그램, 교육 자료, 문서용입니다. 자르거나 뒤집거나 회전하거나 모양을 바꾸지 말고, 각 아이콘 가까이에 서비스의 전체 이름을 표시하세요. Freero는 그라데이션을 단색으로 그립니다. Microsoft와 Azure는 Microsoft 그룹의 상표입니다. Freero는 Microsoft와 제휴하지 않았습니다.",
+  "cloudNoticeKubernetes": "Kubernetes Authors의 Kubernetes Icons Set으로, CC BY 4.0 라이선스이며 Freero의 그리기 형식으로 변환하고 텍스트 라벨을 제거했습니다. Kubernetes는 The Linux Foundation의 등록 상표입니다.",
+  "cloudTerms": "{name} 약관"
 }

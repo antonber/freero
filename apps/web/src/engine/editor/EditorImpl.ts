@@ -1902,7 +1902,7 @@ export class EditorImpl implements Editor {
   // ------------------------------------------------------------------ UI state
   openDock(panelId: string | null): void {
     if (panelId && this.core.registry.panelsById.get(panelId)?.def.slot === 'dock-bottom') return this.openBottomDock(panelId);
-    this.core.ui.setState({ dock: panelId });
+    this.core.ui.setState({ dock: panelId, dockProps: null });
   }
 
   getDock(): string | null {
@@ -1925,7 +1925,7 @@ export class EditorImpl implements Editor {
       return;
     }
     if (!this.can(reg.def.minRole ?? 'viewer')) return;
-    if (reg.def.slot === 'dock-right') this.openDock(id);
+    if (reg.def.slot === 'dock-right') this.core.ui.setState({ dock: id, dockProps: props ?? null });
     else if (reg.def.slot === 'dock-bottom') this.openBottomDock(id);
     else if (reg.def.slot === 'dialog') this.core.ui.setState({ dialog: { id, props } });
     else console.warn(`Panel '${id}' lives in the '${reg.def.slot}' slot, which is always mounted; only dialog and dock panels open.`);

@@ -67,7 +67,10 @@
     "processesDataStoresExternalEntities",
     "workspaceShapePacks",
     "packNameIcons",
-    "packNameMatches"
+    "packNameMatches",
+    "cloudArchitecture",
+    "setNameIcons",
+    "findQueryInSet"
   ],
   "rectangle": "مستطيل",
   "roundedRectangle": "مستطيل مستدير الزوايا",
@@ -136,5 +139,8 @@
   "processesDataStoresExternalEntities": "العمليات، مخازن البيانات، الكيانات الخارجية وحدود الثقة",
   "workspaceShapePacks": "حزم الأشكال في مساحة عملك",
   "packNameIcons": "{name}: {count, plural, one {أيقونة واحدة} two {أيقونتان} few {# أيقونات} many {# أيقونة} other {# أيقونة}}",
-  "packNameMatches": "{name}: {count, plural, one {نتيجة واحدة} two {نتيجتان} few {# نتائج} many {# نتيجة} other {# نتيجة}}"
+  "packNameMatches": "{name}: {count, plural, one {نتيجة واحدة} two {نتيجتان} few {# نتائج} many {# نتيجة} other {# نتيجة}}",
+  "cloudArchitecture": "البنية السحابية",
+  "setNameIcons": "أيقونات {name}",
+  "findQueryInSet": "ابحث عن «{query}» في {name}"
 }

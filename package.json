@@ -20,6 +20,7 @@
     "i18n:extract": "node scripts/i18n-extract.mjs",
     "new:feature": "node scripts/new-feature.mjs",
     "templates:index": "node --import tsx scripts/templates-index.mjs",
+    "icons:cloud": "node --import tsx scripts/cloud-icons.mjs",
     "check": "npm run check:dune && npm run check:licenses && npm run check:i18n && npm run typecheck && npm run test",
     "verify": "node scripts/verify.mjs",
     "a11y": "node scripts/a11y.mjs",

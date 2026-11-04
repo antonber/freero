@@ -19,6 +19,7 @@ import './chrome.css';
 function Dock() {
   const core = useCore();
   const dock = useDock();
+  const dockProps = useStore(core.ui, (st) => st.dockProps);
   const role = useRole();
   const reg = dock ? core.registry.panelsById.get(dock) : undefined;
   const [headSlot, setHeadSlot] = useState<HTMLDivElement | null>(null);
@@ -37,7 +38,8 @@ function Dock() {
         {headSlot && (
           <DockHeaderContext.Provider value={headSlot}>
             <ScopeContext.Provider value={feature}>
-              <def.Component editor={core.scoped(feature)} />
+              {/* Opened again with other props (openPanel): a fresh panel that starts from them. */}
+              <def.Component key={dockProps ? JSON.stringify(dockProps) : ''} editor={core.scoped(feature)} props={dockProps ?? undefined} />
             </ScopeContext.Provider>
           </DockHeaderContext.Provider>
         )}

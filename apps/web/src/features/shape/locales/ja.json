@@ -67,7 +67,10 @@
     "processesDataStoresExternalEntities",
     "workspaceShapePacks",
     "packNameIcons",
-    "packNameMatches"
+    "packNameMatches",
+    "cloudArchitecture",
+    "setNameIcons",
+    "findQueryInSet"
   ],
   "rectangle": "長方形",
   "roundedRectangle": "角丸長方形",
@@ -136,5 +139,8 @@
   "processesDataStoresExternalEntities": "プロセス、データストア、外部エンティティ、信頼境界",
   "workspaceShapePacks": "ワークスペースの図形パック",
   "packNameIcons": "{name}：{count, plural, other {# 個のアイコン}}",
-  "packNameMatches": "{name}：{count, plural, other {# 件一致}}"
+  "packNameMatches": "{name}：{count, plural, other {# 件一致}}",
+  "cloudArchitecture": "クラウドアーキテクチャ",
+  "setNameIcons": "{name} のアイコン",
+  "findQueryInSet": "{name} で「{query}」を探す"
 }
