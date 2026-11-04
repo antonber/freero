@@ -150,7 +150,7 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
-import type { Sticker, StickerSet, StickersResponse } from '@freero/shared';
+import type { Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -736,6 +736,13 @@ export const api = {
   backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
 
   // audit streaming to a SIEM (#17): owners/admins; 404 when the server has none
+  // Workspace encryption key (#159; security admins, destroying: owners).
+  workspaceKey: (id: string) => request<WorkspaceKeyStatus>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/key`),
+  createWorkspaceKey: (id: string, body: { kmsKeyId?: string }) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key`, body),
+  rotateWorkspaceKey: (id: string, body: { kmsKeyId?: string | null }) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/rotate`, body),
+  suspendWorkspaceKey: (id: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/suspend`),
+  resumeWorkspaceKey: (id: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/resume`),
+  destroyWorkspaceKey: (id: string, confirm: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/destroy`, { confirm }),
   siemSinks: (id: string) => request<{ sinks: SiemSinkInfo[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`),
   createSiemSink: (id: string, body: SiemSinkInput) =>
     request<{ sink: SiemSinkInfo; signingSecret?: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`, body),

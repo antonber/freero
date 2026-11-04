@@ -799,3 +799,19 @@ td > .fr-admin-pill:first-child {
   justify-content: flex-end;
   margin-top: 8px;
 }
+
+/* Workspace encryption key (#159) */
+.fr-admin-key {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.fr-admin-key .fr-admin-networks__actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fr-admin-key code {
+  font: 12px/1.4 var(--fr-font-mono);
+  word-break: break-all;
+}
