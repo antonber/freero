@@ -235,7 +235,8 @@ export const api = {
   login: (body: LoginRequest) => request<LoginResponse>('POST', '/api/auth/login', body),
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
-  logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
+  /** `redirect` (#13): the identity provider's single logout, to visit once signed out here. */
+  logout: () => request<{ ok: true; redirect?: string }>('POST', '/api/auth/logout'),
   updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
@@ -517,6 +518,12 @@ export const api = {
     request<DomainControlSettings & { started: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures`, { userIds, graceDays }),
   cancelDomainCapture: (id: string, userId: string) =>
     request<DomainControlSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures/${encodeURIComponent(userId)}`),
+  // The SAML service provider's key pairs (#13).
+  createSsoSpKey: (id: string) => request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys`),
+  promoteSsoSpKey: (id: string, keyId: string) =>
+    request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys/${encodeURIComponent(keyId)}/promote`),
+  removeSsoSpKey: (id: string, keyId: string) =>
+    request<SsoSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys/${encodeURIComponent(keyId)}`),
   discoverSso: (email: string, next: string) =>
     request<SsoDiscovery>('GET', `/api/sso/discover?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`),
   scimSettings: (id: string) => request<ScimSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/scim`),
