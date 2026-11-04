@@ -854,3 +854,17 @@ td > .fr-admin-pill:first-child {
   align-items: center;
   gap: 8px;
 }
+.fr-admin-labels__policy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0 0;
+}
+.fr-admin-labels__choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+}

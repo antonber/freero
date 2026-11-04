@@ -589,6 +589,8 @@ export const api = {
     request<{ label: BoardLabel }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`, input),
   deleteBoardLabel: (id: string, labelId: string) => request<void>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`),
   setBoardLabel: (boardId: string, labelId: string | null) => request<{ board: BoardSummary }>('PUT', `/api/boards/${encodeURIComponent(boardId)}/label`, { labelId }),
+  setLabelPolicy: (id: string, patch: { required?: boolean; defaultLabelId?: string | null }) =>
+    request<{ required: boolean; defaultLabelId: string | null }>('PUT', `/api/workspaces/${encodeURIComponent(id)}/label-policy`, patch),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>

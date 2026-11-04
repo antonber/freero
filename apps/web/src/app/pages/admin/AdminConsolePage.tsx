@@ -5,7 +5,7 @@
 // can't do.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Gavel, Hourglass, LayoutGrid, LayoutTemplate, UsersRound, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, Trash2, UserCog, Users, Webhook } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Gavel, Hourglass, LayoutGrid, LayoutTemplate, UsersRound, KeyRound, Lock, Plug, ScrollText, Sparkles, Tag, Ticket, Trash2, UserCog, Users, Webhook } from 'lucide-react';
 import { ADMIN_SCOPES, type AdminScope, type WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
@@ -23,6 +23,7 @@ import { AdminWebhooks, webhooksOffered } from './AdminWebhooks';
 import { AdminTrackers } from './AdminTrackers';
 import { AdminTrash } from './AdminTrash';
 import { AdminLegalHolds } from './AdminLegalHolds';
+import { AdminLabels } from './AdminLabels';
 import { AdminBoards } from './AdminBoards';
 import { AdminGroups } from './AdminGroups';
 import { AdminTemplates } from './AdminTemplates';
@@ -37,6 +38,7 @@ const TABS = [
   { id: 'boards', label: 'Boards', icon: LayoutGrid, scopes: ['content'] },
   { id: 'trash', label: 'Trash', icon: Trash2, scopes: ['content'] },
   { id: 'templates', label: 'Templates', icon: LayoutTemplate, scopes: ['content'] },
+  { id: 'labels', label: 'Classification', icon: Tag, scopes: ['content'] },
   { id: 'sso', label: 'Single sign-on', icon: KeyRound, scopes: ['security'] },
   { id: 'provisioning', label: 'Provisioning', icon: UserCog, scopes: ['security'] },
   { id: 'ai', label: 'AI', icon: Sparkles, scopes: ['security'] },
@@ -152,6 +154,7 @@ export function AdminConsolePage() {
             {tab === 'trash' ? <AdminTrash workspace={workspace} /> : null}
             {tab === 'holds' ? <AdminLegalHolds workspace={workspace} /> : null}
             {tab === 'templates' ? <AdminTemplates workspace={workspace} /> : null}
+            {tab === 'labels' ? <AdminLabels workspace={workspace} /> : null}
             {tab === 'sso' ? <AdminSso workspace={workspace} /> : null}
             {tab === 'provisioning' ? <AdminProvisioning workspace={workspace} /> : null}
             {tab === 'ai' ? <AdminAi workspace={workspace} /> : null}
