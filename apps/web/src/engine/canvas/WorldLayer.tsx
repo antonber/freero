@@ -212,14 +212,16 @@ function lowDetailRuns(
   let run: LowDetailRun | null = null;
   for (const id of ids) {
     const el = core.store.getElement(id);
+    const def = el && core.registry.elements.get(el.type)?.def;
+    const max = def?.lowDetailMaxPx;
     const low =
       !!el &&
       // Leaving: an item mounted already only joins a run that something still painted started.
       (!leaving || leaving.has(id) || !!run) &&
-      !!core.registry.elements.get(el.type)?.def.lowDetail &&
+      !!def?.lowDetail &&
       id !== editingId &&
       !moves?.has(id) &&
-      drawsLowDetail(true, el.w, el.h, zoom) &&
+      drawsLowDetail(true, el.w, el.h, zoom, typeof max === 'function' ? max(el as never) : max) &&
       core.store.layerOf(id) !== 'private';
     if (low) {
       if (!run) out.push((run = leaving ? { ids: [], painted: [] } : { ids: [] }));

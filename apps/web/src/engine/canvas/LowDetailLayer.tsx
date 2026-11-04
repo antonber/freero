@@ -15,7 +15,7 @@ import type { ChildPresentation, LowDetailPaint, Rect } from '../api';
 import { useCore } from '../context';
 import { elementAABB, rectContainsRect, rectsIntersect, rectUnion } from '../geometry/geometry';
 import { pictureColor } from './pictureColor';
-import { useDocumentTheme } from './theme';
+import { darkFiltered, isLightSurface, useDocumentTheme } from './theme';
 
 /** At most this many canvas pixels (a zoomed-out view on a large, dense screen draws a little softer). */
 const MAX_PIXELS = 12_000_000;
@@ -148,7 +148,9 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
       selected: false,
       presentation: null,
       selectionColor: resolve('var(--fr-select, #5b3ff0)'),
-      box({ fill, stroke, strokeWidth = 0, radius, round, alpha = 1 }) {
+      zoom,
+      surface: (color) => (theme === 'dark' && isLightSurface(color) ? darkFiltered(color) : color),
+      box({ fill, stroke, strokeWidth = 0, radius, round, alpha = 1, strokeAlpha = 1 }) {
         const sw = stroke && stroke !== 'transparent' ? Math.max(0, strokeWidth) : 0;
         const w = Math.max(0, el.w - sw);
         const h = Math.max(0, el.h - sw);
@@ -164,11 +166,12 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
         else if (!plain && ctx.roundRect) ctx.roundRect(x, y, w, h, Math.min(radius!, w / 2, h / 2));
         else ctx.rect(x, y, w, h);
         if (fill && fill !== 'transparent') withAlpha(alpha, () => ((ctx.fillStyle = resolve(fill)), ctx.fill()));
-        if (sw > 0) {
-          ctx.strokeStyle = resolve(stroke!);
-          ctx.lineWidth = sw;
-          ctx.stroke();
-        }
+        if (sw > 0)
+          withAlpha(strokeAlpha, () => {
+            ctx.strokeStyle = resolve(stroke!);
+            ctx.lineWidth = sw;
+            ctx.stroke();
+          });
       },
       rect(x, y, w, h, color, alpha = 1) {
         withAlpha(alpha, () => ((ctx.fillStyle = resolve(color)), ctx.fillRect(ox + x, oy + y, w, h)));
