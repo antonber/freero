@@ -352,7 +352,10 @@
     "newProjectName",
     "stopSharing",
     "deleteBlueprint",
-    "couldNotPinTheProject"
+    "couldNotPinTheProject",
+    "nameEncryptsItsBoardsWith",
+    "thisWorkspaceSKeyIsn",
+    "itsBoardsAreEncryptedWith"
   ],
   "home": "首页",
   "recent": "最近",
@@ -706,5 +709,8 @@
   "newProjectName": "新项目名称",
   "stopSharing": "停止分享",
   "deleteBlueprint": "删除蓝图",
-  "couldNotPinTheProject": "无法置顶项目"
+  "couldNotPinTheProject": "无法置顶项目",
+  "nameEncryptsItsBoardsWith": "{name} 使用自有密钥加密其白板，而该密钥目前无法使用（管理员已将其暂停，或其密钥服务拒绝或未响应）。在密钥再次可用之前，其白板将保持关闭。",
+  "thisWorkspaceSKeyIsn": "此工作区的密钥不可用",
+  "itsBoardsAreEncryptedWith": "其白板使用工作区自有的密钥加密，而该密钥目前无法使用。管理员恢复密钥后，白板将再次打开。"
 }

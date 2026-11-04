@@ -27,7 +27,8 @@
     "deleteDecision",
     "deleteThisDecision",
     "itsLinkStopsWorkingFor",
-    "aReadOnlyCopyOf"
+    "aReadOnlyCopyOf",
+    "delete"
   ],
   "freezeForADecision": "Für eine Entscheidung einfrieren …",
   "freezeThisFrameForA": "Diesen Rahmen für eine Entscheidung einfrieren …",
@@ -56,5 +57,6 @@
   "deleteDecision": "Entscheidung löschen",
   "deleteThisDecision": "Diese Entscheidung löschen?",
   "itsLinkStopsWorkingFor": "Der Link funktioniert dann für niemanden mehr. Das Board im damaligen Zustand bleibt im Versionsverlauf.",
-  "aReadOnlyCopyOf": "Eine schreibgeschützte Kopie genau dessen, was jetzt hier ist, mit eigenem Link zum Zitieren in Tickets und Dokumenten. Spätere Änderungen wirken sich nie darauf aus. Alle, die dieses Board öffnen können, können sie sehen; ausgeblendete Rahmen und private Entwürfe sind nie enthalten."
+  "aReadOnlyCopyOf": "Eine schreibgeschützte Kopie genau dessen, was jetzt hier ist, mit eigenem Link zum Zitieren in Tickets und Dokumenten. Spätere Änderungen wirken sich nie darauf aus. Alle, die dieses Board öffnen können, können sie sehen; ausgeblendete Rahmen und private Entwürfe sind nie enthalten.",
+  "delete": "Löschen"
 }

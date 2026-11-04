@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "이 워크스루를 열지 못했어요.",
   "walkthroughsNeedAFreeroServer": "워크스루를 사용하려면 Freero 서버가 필요해요.",
@@ -258,5 +259,6 @@
   "stopAndSave": "중지 후 저장",
   "discard": "삭제",
   "savingTheWalkthrough": "워크스루를 저장하는 중…",
-  "minutesStopAnyTime": "분까지 녹화할 수 있어요. 언제든 멈출 수 있어요."
+  "minutesStopAnyTime": "분까지 녹화할 수 있어요. 언제든 멈출 수 있어요.",
+  "delete": "삭제"
 }

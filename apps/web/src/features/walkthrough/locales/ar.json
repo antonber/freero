@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "تعذّر فتح هذه الجولة الإرشادية.",
   "walkthroughsNeedAFreeroServer": "تحتاج الجولات الإرشادية إلى خادم Freero.",
@@ -258,5 +259,6 @@
   "stopAndSave": "إيقاف وحفظ",
   "discard": "تجاهل",
   "savingTheWalkthrough": "جارٍ حفظ الجولة الإرشادية…",
-  "minutesStopAnyTime": "دقائق؛ يمكنك الإيقاف في أي وقت."
+  "minutesStopAnyTime": "دقائق؛ يمكنك الإيقاف في أي وقت.",
+  "delete": "حذف"
 }

@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "عصف ذهني",
   "teamBuilding": "بناء الفريق",
@@ -190,5 +191,6 @@
   "tryAgain": "حاول مرة أخرى",
   "freeroTemplates": "قوالب Freero",
   "noTemplatesMatchQuery": "لا توجد قوالب تطابق «{query}».",
-  "showAllTemplates": "عرض كل القوالب"
+  "showAllTemplates": "عرض كل القوالب",
+  "delete": "حذف"
 }

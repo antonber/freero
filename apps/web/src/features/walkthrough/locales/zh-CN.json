@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "无法打开此讲解视频。",
   "walkthroughsNeedAFreeroServer": "讲解视频需要 Freero 服务器。",
@@ -258,5 +259,6 @@
   "stopAndSave": "停止并保存",
   "discard": "放弃",
   "savingTheWalkthrough": "正在保存讲解视频…",
-  "minutesStopAnyTime": "分钟；可随时停止。"
+  "minutesStopAnyTime": "分钟；可随时停止。",
+  "delete": "删除"
 }

@@ -352,7 +352,10 @@
     "newProjectName",
     "stopSharing",
     "deleteBlueprint",
-    "couldNotPinTheProject"
+    "couldNotPinTheProject",
+    "nameEncryptsItsBoardsWith",
+    "thisWorkspaceSKeyIsn",
+    "itsBoardsAreEncryptedWith"
   ],
   "home": "ホーム",
   "recent": "最近",
@@ -706,5 +709,8 @@
   "newProjectName": "新しいプロジェクト名",
   "stopSharing": "共有を停止",
   "deleteBlueprint": "ブループリントを削除",
-  "couldNotPinTheProject": "プロジェクトをピン留めできませんでした"
+  "couldNotPinTheProject": "プロジェクトをピン留めできませんでした",
+  "nameEncryptsItsBoardsWith": "{name}は独自のキーでボードを暗号化していますが、そのキーは現在使用できません（管理者が一時停止したか、キーサービスが拒否したか応答しませんでした）。キーが再び利用できるようになるまで、ボードは閉じられたままです。",
+  "thisWorkspaceSKeyIsn": "このワークスペースのキーを利用できません",
+  "itsBoardsAreEncryptedWith": "ボードはワークスペース独自のキーで暗号化されていますが、そのキーは現在使用できません。管理者がキーを復元すると、再び開けるようになります。"
 }

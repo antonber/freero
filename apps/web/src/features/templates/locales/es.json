@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "Lluvia de ideas",
   "teamBuilding": "Cohesión de equipo",
@@ -190,5 +191,6 @@
   "tryAgain": "Intentar de nuevo",
   "freeroTemplates": "Plantillas de Freero",
   "noTemplatesMatchQuery": "Ninguna plantilla coincide con “{query}”.",
-  "showAllTemplates": "Mostrar todas las plantillas"
+  "showAllTemplates": "Mostrar todas las plantillas",
+  "delete": "Eliminar"
 }

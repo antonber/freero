@@ -247,7 +247,8 @@
     "notifyMeAbout",
     "email",
     "emailLabel",
-    "slackLabel"
+    "slackLabel",
+    "delete"
   ],
   "couldNotReachFreeroTry": "Freero에 연결할 수 없습니다. 다시 시도해 주세요.",
   "restoreAccount": "계정 복원",
@@ -496,5 +497,6 @@
   "notifyMeAbout": "알림 받을 항목",
   "email": "이메일",
   "emailLabel": "이메일: {label}",
-  "slackLabel": "Slack: {label}"
+  "slackLabel": "Slack: {label}",
+  "delete": "삭제"
 }

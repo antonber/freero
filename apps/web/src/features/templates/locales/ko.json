@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "브레인스토밍",
   "teamBuilding": "팀 빌딩",
@@ -190,5 +191,6 @@
   "tryAgain": "다시 시도",
   "freeroTemplates": "Freero 템플릿",
   "noTemplatesMatchQuery": "“{query}”와(과) 일치하는 템플릿이 없어요.",
-  "showAllTemplates": "모든 템플릿 보기"
+  "showAllTemplates": "모든 템플릿 보기",
+  "delete": "삭제"
 }

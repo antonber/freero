@@ -247,7 +247,8 @@
     "notifyMeAbout",
     "email",
     "emailLabel",
-    "slackLabel"
+    "slackLabel",
+    "delete"
   ],
   "couldNotReachFreeroTry": "Não foi possível conectar ao Freero. Tente novamente.",
   "restoreAccount": "Restaurar conta",
@@ -496,5 +497,6 @@
   "notifyMeAbout": "Notificar-me sobre",
   "email": "E-mail",
   "emailLabel": "E-mail: {label}",
-  "slackLabel": "Slack: {label}"
+  "slackLabel": "Slack: {label}",
+  "delete": "Excluir"
 }

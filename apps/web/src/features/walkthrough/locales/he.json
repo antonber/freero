@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "לא ניתן היה לפתוח את הסיור המודרך הזה.",
   "walkthroughsNeedAFreeroServer": "סיורים מודרכים דורשים שרת Freero.",
@@ -258,5 +259,6 @@
   "stopAndSave": "עצירה ושמירה",
   "discard": "מחיקה",
   "savingTheWalkthrough": "שומר את הסיור המודרך…",
-  "minutesStopAnyTime": "דקות; אפשר לעצור בכל רגע."
+  "minutesStopAnyTime": "דקות; אפשר לעצור בכל רגע.",
+  "delete": "מחיקה"
 }

@@ -27,7 +27,8 @@
     "deleteDecision",
     "deleteThisDecision",
     "itsLinkStopsWorkingFor",
-    "aReadOnlyCopyOf"
+    "aReadOnlyCopyOf",
+    "delete"
   ],
   "freezeForADecision": "Figer pour une décision…",
   "freezeThisFrameForA": "Figer ce cadre pour une décision…",
@@ -56,5 +57,6 @@
   "deleteDecision": "Supprimer la décision",
   "deleteThisDecision": "Supprimer cette décision ?",
   "itsLinkStopsWorkingFor": "Son lien cesse de fonctionner pour tout le monde. Le tableau tel qu’il était reste dans l’historique des versions.",
-  "aReadOnlyCopyOf": "Une copie en lecture seule de ce qui est ici en ce moment, avec son propre lien à citer dans les tickets et les documents. Les modifications ultérieures ne la changent jamais. Toute personne qui peut ouvrir ce tableau peut la voir ; les cadres masqués et les brouillons privés n’y sont jamais inclus."
+  "aReadOnlyCopyOf": "Une copie en lecture seule de ce qui est ici en ce moment, avec son propre lien à citer dans les tickets et les documents. Les modifications ultérieures ne la changent jamais. Toute personne qui peut ouvrir ce tableau peut la voir ; les cadres masqués et les brouillons privés n’y sont jamais inclus.",
+  "delete": "Supprimer"
 }

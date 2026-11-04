@@ -247,7 +247,8 @@
     "notifyMeAbout",
     "email",
     "emailLabel",
-    "slackLabel"
+    "slackLabel",
+    "delete"
   ],
   "couldNotReachFreeroTry": "Freero に接続できませんでした。もう一度お試しください。",
   "restoreAccount": "アカウントを復元",
@@ -496,5 +497,6 @@
   "notifyMeAbout": "通知する内容",
   "email": "メール",
   "emailLabel": "メール: {label}",
-  "slackLabel": "Slack: {label}"
+  "slackLabel": "Slack: {label}",
+  "delete": "削除"
 }

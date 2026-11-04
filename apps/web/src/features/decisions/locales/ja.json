@@ -27,7 +27,8 @@
     "deleteDecision",
     "deleteThisDecision",
     "itsLinkStopsWorkingFor",
-    "aReadOnlyCopyOf"
+    "aReadOnlyCopyOf",
+    "delete"
   ],
   "freezeForADecision": "決定として固定…",
   "freezeThisFrameForA": "このフレームを決定として固定…",
@@ -56,5 +57,6 @@
   "deleteDecision": "決定を削除",
   "deleteThisDecision": "この決定を削除しますか？",
   "itsLinkStopsWorkingFor": "そのリンクは全員に対して無効になります。当時のボードはバージョン履歴に残ります。",
-  "aReadOnlyCopyOf": "現在の内容をそのまま写した読み取り専用のコピーで、チケットやドキュメントで引用できる専用リンクが付きます。後で編集しても変わりません。このボードを開ける人は誰でも見られます。非表示のフレームや非公開の下書きは含まれません。"
+  "aReadOnlyCopyOf": "現在の内容をそのまま写した読み取り専用のコピーで、チケットやドキュメントで引用できる専用リンクが付きます。後で編集しても変わりません。このボードを開ける人は誰でも見られます。非表示のフレームや非公開の下書きは含まれません。",
+  "delete": "削除"
 }

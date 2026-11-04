@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "Unbenannter Rahmen",
   "couldNotChangeEmbedding": "Einbettung konnte nicht geändert werden",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "Die Analyse ist in diesem Browser wieder eingeschaltet.",
   "analytics.turnOff": "Analyse ausschalten",
   "analytics.turnOn": "Analyse einschalten",
-  "analytics.signal": "Analyse aus (Datenschutzsignal des Browsers)"
+  "analytics.signal": "Analyse aus (Datenschutzsignal des Browsers)",
+  "turnedOffByItsLabel": "Durch sein Label „{name}“ ausgeschaltet",
+  "labelledName": "Label „{name}“ gesetzt",
+  "labelRemoved": "Label entfernt",
+  "couldNotChangeTheLabel": "Das Label konnte nicht geändert werden",
+  "classification": "Klassifizierung",
+  "classificationLabel": "Klassifizierungslabel",
+  "noLabel": "Kein Label",
+  "thisLabelLimitsTheBoard": "Dieses Label schränkt das Board ein: {limits}.",
+  "thisBoardSWorkspaceKey": "Der Schlüssel des Arbeitsbereichs dieses Boards ist nicht verfügbar",
+  "itsWorkspaceEncryptsItsBoards": "Sein Arbeitsbereich verschlüsselt seine Boards mit einem eigenen Schlüssel, und dieser kann gerade nicht verwendet werden: Die Admins haben ihn ausgesetzt, oder sein Schlüsseldienst hat abgelehnt oder nicht geantwortet. Das Board öffnet sich wieder, sobald der Schlüssel verfügbar ist."
 }

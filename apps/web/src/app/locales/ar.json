@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "عادت التحليلات للعمل في هذا المتصفح.",
   "analytics.turnOff": "إيقاف التحليلات",
   "analytics.turnOn": "تشغيل التحليلات",
-  "analytics.signal": "التحليلات متوقفة (إشارة الخصوصية في المتصفح)"
+  "analytics.signal": "التحليلات متوقفة (إشارة الخصوصية في المتصفح)",
+  "turnedOffByItsLabel": "معطّل بسبب تسميتها «{name}»",
+  "labelledName": "تم وضع التسمية «{name}»",
+  "labelRemoved": "تمت إزالة التسمية",
+  "couldNotChangeTheLabel": "تعذّر تغيير التسمية",
+  "classification": "التصنيف",
+  "classificationLabel": "تسمية التصنيف",
+  "noLabel": "بدون تسمية",
+  "thisLabelLimitsTheBoard": "هذه التسمية تقيّد اللوحة: {limits}.",
+  "thisBoardSWorkspaceKey": "مفتاح مساحة العمل لهذه اللوحة غير متاح",
+  "itsWorkspaceEncryptsItsBoards": "تشفّر مساحة العمل لوحاتها بمفتاحها الخاص، ولا يمكن استخدام هذا المفتاح الآن: علّقه مسؤولوها، أو رفضت خدمة المفاتيح أو لم تستجب. ستُفتح اللوحة مجددًا بمجرد توفر المفتاح."
 }

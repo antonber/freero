@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "סיעור מוחות",
   "teamBuilding": "גיבוש צוות",
@@ -190,5 +191,6 @@
   "tryAgain": "ניסיון חוזר",
   "freeroTemplates": "תבניות Freero",
   "noTemplatesMatchQuery": "אין תבניות שתואמות ל־”{query}“.",
-  "showAllTemplates": "הצגת כל התבניות"
+  "showAllTemplates": "הצגת כל התבניות",
+  "delete": "מחיקה"
 }

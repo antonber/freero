@@ -352,7 +352,10 @@
     "newProjectName",
     "stopSharing",
     "deleteBlueprint",
-    "couldNotPinTheProject"
+    "couldNotPinTheProject",
+    "nameEncryptsItsBoardsWith",
+    "thisWorkspaceSKeyIsn",
+    "itsBoardsAreEncryptedWith"
   ],
   "home": "الرئيسية",
   "recent": "الأحدث",
@@ -706,5 +709,8 @@
   "newProjectName": "اسم المشروع الجديد",
   "stopSharing": "إيقاف المشاركة",
   "deleteBlueprint": "حذف المخطط",
-  "couldNotPinTheProject": "تعذّر تثبيت المشروع"
+  "couldNotPinTheProject": "تعذّر تثبيت المشروع",
+  "nameEncryptsItsBoardsWith": "تشفّر {name} لوحاتها بمفتاحها الخاص، ولا يمكن استخدام هذا المفتاح الآن (علّقه مسؤولوها، أو رفضت خدمة المفاتيح أو لم تستجب). تبقى لوحاتها مغلقة حتى يتوفر المفتاح مجددًا.",
+  "thisWorkspaceSKeyIsn": "مفتاح مساحة العمل هذه غير متاح",
+  "itsBoardsAreEncryptedWith": "لوحاتها مشفّرة بالمفتاح الخاص لمساحة العمل، ولا يمكن استخدامه الآن. ستُفتح مجددًا بمجرد أن يستعيده مسؤولوها."
 }

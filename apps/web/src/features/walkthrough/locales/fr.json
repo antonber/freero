@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "Impossible d’ouvrir cette visite guidée.",
   "walkthroughsNeedAFreeroServer": "Les visites guidées nécessitent un serveur Freero.",
@@ -258,5 +259,6 @@
   "stopAndSave": "Arrêter et enregistrer",
   "discard": "Abandonner",
   "savingTheWalkthrough": "Enregistrement de la visite guidée…",
-  "minutesStopAnyTime": "minutes ; arrêtez quand vous voulez."
+  "minutesStopAnyTime": "minutes ; arrêtez quand vous voulez.",
+  "delete": "Supprimer"
 }

@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "Cadre sans titre",
   "couldNotChangeEmbedding": "Impossible de modifier l’intégration",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "Les statistiques d’usage sont de nouveau activées dans ce navigateur.",
   "analytics.turnOff": "Désactiver les statistiques d’usage",
   "analytics.turnOn": "Activer les statistiques d’usage",
-  "analytics.signal": "Statistiques d’usage désactivées (signal de confidentialité du navigateur)"
+  "analytics.signal": "Statistiques d’usage désactivées (signal de confidentialité du navigateur)",
+  "turnedOffByItsLabel": "Désactivé par son étiquette « {name} »",
+  "labelledName": "Étiquette « {name} » appliquée",
+  "labelRemoved": "Étiquette retirée",
+  "couldNotChangeTheLabel": "Impossible de changer l’étiquette",
+  "classification": "Classification",
+  "classificationLabel": "Étiquette de classification",
+  "noLabel": "Aucune étiquette",
+  "thisLabelLimitsTheBoard": "Cette étiquette limite le tableau : {limits}.",
+  "thisBoardSWorkspaceKey": "La clé de l’espace de travail de ce tableau n’est pas disponible",
+  "itsWorkspaceEncryptsItsBoards": "Son espace de travail chiffre ses tableaux avec sa propre clé, et cette clé ne peut pas être utilisée pour le moment : ses admins l’ont suspendue, ou son service de clés a refusé ou n’a pas répondu. Le tableau s’ouvrira de nouveau dès que la clé sera disponible."
 }

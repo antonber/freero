@@ -27,7 +27,8 @@
     "deleteDecision",
     "deleteThisDecision",
     "itsLinkStopsWorkingFor",
-    "aReadOnlyCopyOf"
+    "aReadOnlyCopyOf",
+    "delete"
   ],
   "freezeForADecision": "Congelar para uma decisão…",
   "freezeThisFrameForA": "Congelar esta moldura para uma decisão…",
@@ -56,5 +57,6 @@
   "deleteDecision": "Excluir decisão",
   "deleteThisDecision": "Excluir esta decisão?",
   "itsLinkStopsWorkingFor": "O link dela para de funcionar para todos. O quadro como estava continua no histórico de versões.",
-  "aReadOnlyCopyOf": "Uma cópia somente leitura exatamente do que está aqui agora, com link próprio para citar em tickets e documentos. Edições posteriores nunca a alteram. Todos que podem abrir este quadro podem vê-la; molduras ocultas e rascunhos privados nunca são incluídos."
+  "aReadOnlyCopyOf": "Uma cópia somente leitura exatamente do que está aqui agora, com link próprio para citar em tickets e documentos. Edições posteriores nunca a alteram. Todos que podem abrir este quadro podem vê-la; molduras ocultas e rascunhos privados nunca são incluídos.",
+  "delete": "Excluir"
 }

@@ -352,7 +352,10 @@
     "newProjectName",
     "stopSharing",
     "deleteBlueprint",
-    "couldNotPinTheProject"
+    "couldNotPinTheProject",
+    "nameEncryptsItsBoardsWith",
+    "thisWorkspaceSKeyIsn",
+    "itsBoardsAreEncryptedWith"
   ],
   "home": "홈",
   "recent": "최근",
@@ -706,5 +709,8 @@
   "newProjectName": "새 프로젝트 이름",
   "stopSharing": "공유 중지",
   "deleteBlueprint": "블루프린트 삭제",
-  "couldNotPinTheProject": "프로젝트를 고정하지 못했어요"
+  "couldNotPinTheProject": "프로젝트를 고정하지 못했어요",
+  "nameEncryptsItsBoardsWith": "{name}은(는) 자체 키로 보드를 암호화하는데, 지금은 그 키를 사용할 수 없어요(관리자가 일시 중지했거나 키 서비스가 거부했거나 응답하지 않았어요). 키를 다시 사용할 수 있을 때까지 보드는 닫혀 있어요.",
+  "thisWorkspaceSKeyIsn": "이 워크스페이스의 키를 사용할 수 없어요",
+  "itsBoardsAreEncryptedWith": "보드가 워크스페이스 자체 키로 암호화되어 있는데, 지금은 그 키를 사용할 수 없어요. 관리자가 키를 복원하면 다시 열려요."
 }

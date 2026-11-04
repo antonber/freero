@@ -352,7 +352,10 @@
     "newProjectName",
     "stopSharing",
     "deleteBlueprint",
-    "couldNotPinTheProject"
+    "couldNotPinTheProject",
+    "nameEncryptsItsBoardsWith",
+    "thisWorkspaceSKeyIsn",
+    "itsBoardsAreEncryptedWith"
   ],
   "home": "Inicio",
   "recent": "Recientes",
@@ -706,5 +709,8 @@
   "newProjectName": "Nombre del nuevo proyecto",
   "stopSharing": "Dejar de compartir",
   "deleteBlueprint": "Eliminar plano",
-  "couldNotPinTheProject": "No se pudo fijar el proyecto"
+  "couldNotPinTheProject": "No se pudo fijar el proyecto",
+  "nameEncryptsItsBoardsWith": "{name} cifra sus tableros con su propia clave, y esa clave no se puede usar ahora mismo (sus administradores la suspendieron, o su servicio de claves la rechazó o no respondió). Sus tableros siguen cerrados hasta que la clave vuelva a estar disponible.",
+  "thisWorkspaceSKeyIsn": "La clave de este espacio de trabajo no está disponible",
+  "itsBoardsAreEncryptedWith": "Sus tableros están cifrados con la clave propia del espacio de trabajo, que no se puede usar ahora mismo. Se abrirán de nuevo en cuanto sus administradores la restablezcan."
 }

@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "הניתוח הסטטיסטי מופעל שוב בדפדפן הזה.",
   "analytics.turnOff": "כיבוי הניתוח הסטטיסטי",
   "analytics.turnOn": "הפעלת הניתוח הסטטיסטי",
-  "analytics.signal": "הניתוח הסטטיסטי כבוי (אות פרטיות של הדפדפן)"
+  "analytics.signal": "הניתוח הסטטיסטי כבוי (אות פרטיות של הדפדפן)",
+  "turnedOffByItsLabel": "כובה בגלל התווית שלו, ”{name}“",
+  "labelledName": "התווית ”{name}“ הוחלה",
+  "labelRemoved": "התווית הוסרה",
+  "couldNotChangeTheLabel": "לא ניתן לשנות את התווית",
+  "classification": "סיווג",
+  "classificationLabel": "תווית סיווג",
+  "noLabel": "ללא תווית",
+  "thisLabelLimitsTheBoard": "התווית הזו מגבילה את הלוח: {limits}.",
+  "thisBoardSWorkspaceKey": "המפתח של סביבת העבודה של הלוח הזה לא זמין",
+  "itsWorkspaceEncryptsItsBoards": "סביבת העבודה שלו מצפינה את הלוחות שלה במפתח משלה, ואי אפשר להשתמש במפתח הזה כרגע: המנהלים שלה השעו אותו, או ששירות המפתחות שלה סירב או לא ענה. הלוח ייפתח שוב ברגע שהמפתח יהיה זמין."
 }

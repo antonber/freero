@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "제목 없는 프레임",
   "couldNotChangeEmbedding": "임베드 설정을 바꾸지 못했어요",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "이 브라우저에서 분석이 다시 켜졌어요.",
   "analytics.turnOff": "분석 끄기",
   "analytics.turnOn": "분석 켜기",
-  "analytics.signal": "분석 꺼짐(브라우저 개인정보 보호 신호)"
+  "analytics.signal": "분석 꺼짐(브라우저 개인정보 보호 신호)",
+  "turnedOffByItsLabel": "레이블 ‘{name}’에 의해 꺼짐",
+  "labelledName": "레이블 ‘{name}’을(를) 붙였어요",
+  "labelRemoved": "레이블을 뗐어요",
+  "couldNotChangeTheLabel": "레이블을 변경할 수 없어요",
+  "classification": "분류",
+  "classificationLabel": "분류 레이블",
+  "noLabel": "레이블 없음",
+  "thisLabelLimitsTheBoard": "이 레이블이 보드를 제한해요: {limits}.",
+  "thisBoardSWorkspaceKey": "이 보드의 워크스페이스 키를 사용할 수 없어요",
+  "itsWorkspaceEncryptsItsBoards": "이 보드의 워크스페이스는 자체 키로 보드를 암호화하는데, 지금은 그 키를 사용할 수 없어요. 관리자가 일시 중지했거나 키 서비스가 거부했거나 응답하지 않았어요. 키를 사용할 수 있게 되면 보드가 다시 열려요."
 }

@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "No se pudo abrir este recorrido.",
   "walkthroughsNeedAFreeroServer": "Los recorridos necesitan un servidor de Freero.",
@@ -258,5 +259,6 @@
   "stopAndSave": "Detener y guardar",
   "discard": "Descartar",
   "savingTheWalkthrough": "Guardando el recorrido…",
-  "minutesStopAnyTime": "minutos; puedes parar cuando quieras."
+  "minutesStopAnyTime": "minutos; puedes parar cuando quieras.",
+  "delete": "Eliminar"
 }

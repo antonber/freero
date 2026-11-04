@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "Marco sin título",
   "couldNotChangeEmbedding": "No se pudo cambiar la inserción",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "La analítica vuelve a estar activada en este navegador.",
   "analytics.turnOff": "Desactivar la analítica",
   "analytics.turnOn": "Activar la analítica",
-  "analytics.signal": "Analítica desactivada (señal de privacidad del navegador)"
+  "analytics.signal": "Analítica desactivada (señal de privacidad del navegador)",
+  "turnedOffByItsLabel": "Desactivado por su etiqueta “{name}”",
+  "labelledName": "Etiqueta “{name}” aplicada",
+  "labelRemoved": "Etiqueta quitada",
+  "couldNotChangeTheLabel": "No se pudo cambiar la etiqueta",
+  "classification": "Clasificación",
+  "classificationLabel": "Etiqueta de clasificación",
+  "noLabel": "Sin etiqueta",
+  "thisLabelLimitsTheBoard": "Esta etiqueta limita el tablero: {limits}.",
+  "thisBoardSWorkspaceKey": "La clave del espacio de trabajo de este tablero no está disponible",
+  "itsWorkspaceEncryptsItsBoards": "Su espacio de trabajo cifra sus tableros con su propia clave, y esa clave no se puede usar ahora mismo: sus administradores la suspendieron, o su servicio de claves la rechazó o no respondió. El tablero se abrirá de nuevo en cuanto la clave esté disponible."
 }

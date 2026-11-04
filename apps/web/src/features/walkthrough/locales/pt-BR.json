@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "Não foi possível abrir este tour guiado.",
   "walkthroughsNeedAFreeroServer": "Tours guiados precisam de um servidor Freero.",
@@ -258,5 +259,6 @@
   "stopAndSave": "Parar e salvar",
   "discard": "Descartar",
   "savingTheWalkthrough": "Salvando o tour guiado…",
-  "minutesStopAnyTime": "minutos; pare quando quiser."
+  "minutesStopAnyTime": "minutos; pare quando quiser.",
+  "delete": "Excluir"
 }

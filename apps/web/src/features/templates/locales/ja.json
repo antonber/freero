@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "ブレインストーミング",
   "teamBuilding": "チームビルディング",
@@ -190,5 +191,6 @@
   "tryAgain": "再試行",
   "freeroTemplates": "Freero のテンプレート",
   "noTemplatesMatchQuery": "「{query}」に一致するテンプレートはありません。",
-  "showAllTemplates": "すべてのテンプレートを表示"
+  "showAllTemplates": "すべてのテンプレートを表示",
+  "delete": "削除"
 }

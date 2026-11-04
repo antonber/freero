@@ -27,7 +27,8 @@
     "deleteDecision",
     "deleteThisDecision",
     "itsLinkStopsWorkingFor",
-    "aReadOnlyCopyOf"
+    "aReadOnlyCopyOf",
+    "delete"
   ],
   "freezeForADecision": "冻结以记录决策…",
   "freezeThisFrameForA": "冻结此框架以记录决策…",
@@ -56,5 +57,6 @@
   "deleteDecision": "删除决策",
   "deleteThisDecision": "要删除此决策吗？",
   "itsLinkStopsWorkingFor": "其链接将对所有人失效。白板当时的状态仍保留在版本历史中。",
-  "aReadOnlyCopyOf": "当前内容的只读副本，带有独立链接，可在工单和文档中引用。之后的编辑不会改变它。所有能打开此白板的人都能看到它；隐藏的框架和私密草稿永远不会包含在内。"
+  "aReadOnlyCopyOf": "当前内容的只读副本，带有独立链接，可在工单和文档中引用。之后的编辑不会改变它。所有能打开此白板的人都能看到它；隐藏的框架和私密草稿永远不会包含在内。",
+  "delete": "删除"
 }

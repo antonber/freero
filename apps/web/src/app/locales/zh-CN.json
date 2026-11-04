@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "此浏览器中的分析功能已重新开启。",
   "analytics.turnOff": "关闭分析",
   "analytics.turnOn": "开启分析",
-  "analytics.signal": "分析已关闭（浏览器隐私信号）"
+  "analytics.signal": "分析已关闭（浏览器隐私信号）",
+  "turnedOffByItsLabel": "已被其标签“{name}”关闭",
+  "labelledName": "已添加标签“{name}”",
+  "labelRemoved": "标签已移除",
+  "couldNotChangeTheLabel": "无法更改标签",
+  "classification": "分类",
+  "classificationLabel": "分类标签",
+  "noLabel": "无标签",
+  "thisLabelLimitsTheBoard": "此标签限制了该白板：{limits}。",
+  "thisBoardSWorkspaceKey": "此白板所在工作区的密钥不可用",
+  "itsWorkspaceEncryptsItsBoards": "其工作区使用自有密钥加密白板，而该密钥目前无法使用：管理员已将其暂停，或其密钥服务拒绝或未响应。密钥可用后，白板将再次打开。"
 }

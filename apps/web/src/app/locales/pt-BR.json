@@ -487,7 +487,17 @@
     "analyticsIsOnAgainIn",
     "analytics.turnOff",
     "analytics.turnOn",
-    "analytics.signal"
+    "analytics.signal",
+    "turnedOffByItsLabel",
+    "labelledName",
+    "labelRemoved",
+    "couldNotChangeTheLabel",
+    "classification",
+    "classificationLabel",
+    "noLabel",
+    "thisLabelLimitsTheBoard",
+    "thisBoardSWorkspaceKey",
+    "itsWorkspaceEncryptsItsBoards"
   ],
   "untitledFrame": "Moldura sem título",
   "couldNotChangeEmbedding": "Não foi possível alterar a incorporação",
@@ -976,5 +986,15 @@
   "analyticsIsOnAgainIn": "A análise de uso está ativada de novo neste navegador.",
   "analytics.turnOff": "Desativar a análise de uso",
   "analytics.turnOn": "Ativar a análise de uso",
-  "analytics.signal": "Análise de uso desativada (sinal de privacidade do navegador)"
+  "analytics.signal": "Análise de uso desativada (sinal de privacidade do navegador)",
+  "turnedOffByItsLabel": "Desativado pelo rótulo “{name}”",
+  "labelledName": "Rótulo “{name}” aplicado",
+  "labelRemoved": "Rótulo removido",
+  "couldNotChangeTheLabel": "Não foi possível alterar o rótulo",
+  "classification": "Classificação",
+  "classificationLabel": "Rótulo de classificação",
+  "noLabel": "Sem rótulo",
+  "thisLabelLimitsTheBoard": "Este rótulo limita o quadro: {limits}.",
+  "thisBoardSWorkspaceKey": "A chave do espaço de trabalho deste quadro não está disponível",
+  "itsWorkspaceEncryptsItsBoards": "O espaço de trabalho dele criptografa os quadros com uma chave própria, e essa chave não pode ser usada agora: os administradores a suspenderam, ou o serviço de chaves recusou ou não respondeu. O quadro volta a abrir assim que a chave estiver disponível."
 }

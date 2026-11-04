@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "Dieser Rundgang konnte nicht geöffnet werden.",
   "walkthroughsNeedAFreeroServer": "Rundgänge benötigen einen Freero-Server.",
@@ -258,5 +259,6 @@
   "stopAndSave": "Beenden und speichern",
   "discard": "Verwerfen",
   "savingTheWalkthrough": "Rundgang wird gespeichert…",
-  "minutesStopAnyTime": "Minuten; Sie können jederzeit stoppen."
+  "minutesStopAnyTime": "Minuten; Sie können jederzeit stoppen.",
+  "delete": "Löschen"
 }

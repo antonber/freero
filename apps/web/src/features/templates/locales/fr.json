@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "Brainstorming",
   "teamBuilding": "Cohésion d’équipe",
@@ -190,5 +191,6 @@
   "tryAgain": "Réessayer",
   "freeroTemplates": "Modèles Freero",
   "noTemplatesMatchQuery": "Aucun modèle ne correspond à « {query} ».",
-  "showAllTemplates": "Afficher tous les modèles"
+  "showAllTemplates": "Afficher tous les modèles",
+  "delete": "Supprimer"
 }

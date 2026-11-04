@@ -27,7 +27,8 @@
     "deleteDecision",
     "deleteThisDecision",
     "itsLinkStopsWorkingFor",
-    "aReadOnlyCopyOf"
+    "aReadOnlyCopyOf",
+    "delete"
   ],
   "freezeForADecision": "결정으로 고정…",
   "freezeThisFrameForA": "이 프레임을 결정으로 고정…",
@@ -56,5 +57,6 @@
   "deleteDecision": "결정 삭제",
   "deleteThisDecision": "이 결정을 삭제할까요?",
   "itsLinkStopsWorkingFor": "이 결정의 링크는 모든 사람에게 더 이상 작동하지 않아요. 당시의 보드는 버전 기록에 남아 있어요.",
-  "aReadOnlyCopyOf": "지금 여기 있는 그대로의 읽기 전용 사본으로, 티켓과 문서에 인용할 수 있는 자체 링크가 있어요. 나중에 편집해도 바뀌지 않아요. 이 보드를 열 수 있는 모든 사람이 볼 수 있으며, 숨겨진 프레임과 비공개 초안은 절대 포함되지 않아요."
+  "aReadOnlyCopyOf": "지금 여기 있는 그대로의 읽기 전용 사본으로, 티켓과 문서에 인용할 수 있는 자체 링크가 있어요. 나중에 편집해도 바뀌지 않아요. 이 보드를 열 수 있는 모든 사람이 볼 수 있으며, 숨겨진 프레임과 비공개 초안은 절대 포함되지 않아요.",
+  "delete": "삭제"
 }

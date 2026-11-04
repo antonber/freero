@@ -128,7 +128,8 @@
     "stopAndSave",
     "discard",
     "savingTheWalkthrough",
-    "minutesStopAnyTime"
+    "minutesStopAnyTime",
+    "delete"
   ],
   "thisWalkthroughCouldnTBe": "このウォークスルーを開けませんでした。",
   "walkthroughsNeedAFreeroServer": "ウォークスルーには Freero サーバーが必要です。",
@@ -258,5 +259,6 @@
   "stopAndSave": "停止して保存",
   "discard": "破棄",
   "savingTheWalkthrough": "ウォークスルーを保存しています…",
-  "minutesStopAnyTime": "分まで録画できます。いつでも停止できます。"
+  "minutesStopAnyTime": "分まで録画できます。いつでも停止できます。",
+  "delete": "削除"
 }

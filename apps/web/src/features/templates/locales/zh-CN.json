@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "头脑风暴",
   "teamBuilding": "团队建设",
@@ -190,5 +191,6 @@
   "tryAgain": "重试",
   "freeroTemplates": "Freero 模板",
   "noTemplatesMatchQuery": "没有与「{query}」匹配的模板。",
-  "showAllTemplates": "显示所有模板"
+  "showAllTemplates": "显示所有模板",
+  "delete": "删除"
 }

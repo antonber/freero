@@ -352,7 +352,10 @@
     "newProjectName",
     "stopSharing",
     "deleteBlueprint",
-    "couldNotPinTheProject"
+    "couldNotPinTheProject",
+    "nameEncryptsItsBoardsWith",
+    "thisWorkspaceSKeyIsn",
+    "itsBoardsAreEncryptedWith"
   ],
   "home": "Accueil",
   "recent": "Récents",
@@ -706,5 +709,8 @@
   "newProjectName": "Nom du nouveau projet",
   "stopSharing": "Arrêter le partage",
   "deleteBlueprint": "Supprimer le plan type",
-  "couldNotPinTheProject": "Impossible d’épingler le projet"
+  "couldNotPinTheProject": "Impossible d’épingler le projet",
+  "nameEncryptsItsBoardsWith": "{name} chiffre ses tableaux avec sa propre clé, et cette clé ne peut pas être utilisée pour le moment (ses admins l’ont suspendue, ou son service de clés a refusé ou n’a pas répondu). Ses tableaux restent fermés jusqu’à ce que la clé soit de nouveau disponible.",
+  "thisWorkspaceSKeyIsn": "La clé de cet espace de travail n’est pas disponible",
+  "itsBoardsAreEncryptedWith": "Ses tableaux sont chiffrés avec la propre clé de l’espace de travail, qui ne peut pas être utilisée pour le moment. Ils s’ouvriront de nouveau dès que ses admins l’auront rétablie."
 }

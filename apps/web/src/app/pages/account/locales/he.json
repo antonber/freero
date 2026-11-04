@@ -247,7 +247,8 @@
     "notifyMeAbout",
     "email",
     "emailLabel",
-    "slackLabel"
+    "slackLabel",
+    "delete"
   ],
   "couldNotReachFreeroTry": "לא ניתן להתחבר ל-Freero. נא לנסות שוב.",
   "restoreAccount": "שחזור החשבון",
@@ -496,5 +497,6 @@
   "notifyMeAbout": "התראות על",
   "email": "דוא״ל",
   "emailLabel": "דוא״ל: {label}",
-  "slackLabel": "Slack: {label}"
+  "slackLabel": "Slack: {label}",
+  "delete": "מחיקה"
 }

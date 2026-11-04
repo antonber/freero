@@ -27,7 +27,8 @@
     "deleteDecision",
     "deleteThisDecision",
     "itsLinkStopsWorkingFor",
-    "aReadOnlyCopyOf"
+    "aReadOnlyCopyOf",
+    "delete"
   ],
   "freezeForADecision": "Congelar para una decisión…",
   "freezeThisFrameForA": "Congelar este marco para una decisión…",
@@ -56,5 +57,6 @@
   "deleteDecision": "Eliminar decisión",
   "deleteThisDecision": "¿Eliminar esta decisión?",
   "itsLinkStopsWorkingFor": "Su enlace deja de funcionar para todos. El tablero tal como estaba sigue en el historial de versiones.",
-  "aReadOnlyCopyOf": "Una copia de solo lectura de exactamente lo que hay aquí ahora, con su propio enlace para citar en tickets y documentos. Las ediciones posteriores nunca la cambian. Todos los que pueden abrir este tablero pueden verla; los marcos ocultos y los borradores privados nunca se incluyen."
+  "aReadOnlyCopyOf": "Una copia de solo lectura de exactamente lo que hay aquí ahora, con su propio enlace para citar en tickets y documentos. Las ediciones posteriores nunca la cambian. Todos los que pueden abrir este tablero pueden verla; los marcos ocultos y los borradores privados nunca se incluyen.",
+  "delete": "Eliminar"
 }

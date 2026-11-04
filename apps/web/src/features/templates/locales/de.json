@@ -94,7 +94,8 @@
     "tryAgain",
     "freeroTemplates",
     "noTemplatesMatchQuery",
-    "showAllTemplates"
+    "showAllTemplates",
+    "delete"
   ],
   "brainstorm": "Brainstorming",
   "teamBuilding": "Teambuilding",
@@ -190,5 +191,6 @@
   "tryAgain": "Erneut versuchen",
   "freeroTemplates": "Freero-Vorlagen",
   "noTemplatesMatchQuery": "Keine Vorlagen passen zu „{query}“.",
-  "showAllTemplates": "Alle Vorlagen anzeigen"
+  "showAllTemplates": "Alle Vorlagen anzeigen",
+  "delete": "Löschen"
 }
