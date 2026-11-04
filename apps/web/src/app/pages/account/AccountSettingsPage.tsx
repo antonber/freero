@@ -17,6 +17,7 @@ import { MyProblems } from '../../problems/MyProblems';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import { t as tr } from './messages';
 import { SlackSection } from './SlackSection';
+import { DeviceNotificationsSection } from './DeviceNotificationsSection';
 import './account.css';
 
 // Same palette the server assigns at signup: saturated enough to read on the canvas.
@@ -74,6 +75,7 @@ export function AccountSettingsPage() {
         </Section>
         <EmailSection security={security} />
         <NotificationsSection version={slackVersion} />
+        <DeviceNotificationsSection />
         <SlackSection onChange={() => setSlackVersion((v) => v + 1)} />
         <SignInMethodsSection security={security} onChange={setSecurity} />
         <PasswordSection security={security} onChanged={securityChanged} />

@@ -3,6 +3,7 @@
 import { createStore, useStore } from 'zustand';
 import type { AppNotification, NotificationsLiveMessage } from '@freero/shared';
 import { api, wsBase } from '../api/client';
+import { announceOnDevice, devicePrefs } from './device';
 
 export interface NotificationsState {
   unread: number;
@@ -80,8 +81,11 @@ function open(): void {
     try {
       const msg = JSON.parse(String(e.data)) as NotificationsLiveMessage;
       if (msg.type !== 'changed') return;
-      const changed = msg.unread !== notificationsStore.getState().unread;
+      const before = notificationsStore.getState().unread;
+      const changed = msg.unread !== before;
       notificationsStore.setState({ unread: msg.unread });
+      // #176: something new — the operating system's notification too, where this device wants them.
+      if (msg.unread > before && devicePrefs().on) void api.listNotifications().then((r) => announceOnDevice(r.notifications), () => undefined);
       if (changed && notificationsStore.getState().items) void loadNotifications();
     } catch {
       // not ours

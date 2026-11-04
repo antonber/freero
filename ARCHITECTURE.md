@@ -3076,6 +3076,27 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   webhooks with the challenge, complexity), which implement the subset of each public API used,
   webhooks included.
 
+### Desktop app (`apps/desktop`, #176; docs/desktop.md)
+
+A Tauri 2 shell (Rust, `apps/desktop/src-tauri`) whose one window shows a Freero instance's web
+app as the server serves it — the operator's by default (`FREERO_INSTANCE_URL` at build time), any
+https server the person chooses (Freero › Change server…, the shell's own page `apps/desktop/ui`).
+Not an npm workspace: the Tauri CLI is fetched at a pinned version (`npm run desktop:dev` /
+`desktop:build`, `apps/desktop/build.mjs`), `Cargo.lock` is committed, and CI
+(`.github/workflows/desktop.yml`) tests it on Linux and builds unsigned Windows / macOS installers
+(signing, notarisation and the update key are the owner's secrets; docs/desktop.md).
+- `freero://board/<id>`, `doc/<id>`, `app`, `open?url=` and the chosen server's own https pages
+  open in the window; anything else never does (`src/links.rs`, tested). A second launch hands its
+  link to the running app (single instance).
+- The page may call only the notification plugin, and only from the chosen server's origin (a
+  capability added at start); changing the server is a command only the shell's own page may call.
+- Notifications: the web app's `app/notifications/device.ts` turns new inbox items into the
+  system's notifications (the shell's plugin, or the browser's Notification API) for the types
+  left on in Settings › "Notifications on this computer / in this browser" — a per-device choice
+  kept in this browser's storage, written only there — and only while Freero isn't in front.
+- Updates: tauri-plugin-updater against a signed manifest (default: the latest GitHub release's
+  `latest.json`); without the owner's public key baked in, the app never updates itself.
+
 ### Offline copies (#178; `app/offline/`, `engine/store/BoardStore` persistence)
 
 A board someone opened on a device is kept there, so it opens — and can be edited — without a
