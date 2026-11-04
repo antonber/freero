@@ -773,7 +773,8 @@ export interface DocElement extends BaseElement {
 /**
  * A vector icon from the icon library. The drawing is stored IN the element (a short list of
  * SVG primitives on a 24×24 grid, stroke-only), so it renders and exports without loading the
- * icon set, and never changes when the library is upgraded.
+ * icon set, and never changes when the library is upgraded. Every reader draws only what
+ * `cleanIconNodes` (icons.ts) keeps of it: the element is written by anyone who can edit.
  */
 export interface IconElement extends BaseElement {
   type: 'icon';
@@ -784,6 +785,18 @@ export interface IconElement extends BaseElement {
   color: string;
   /** Stroke width on the 24-unit grid (lucide's default is 2). */
   strokeWidth: number;
+  /**
+   * [additive, #4] An icon from a workspace's shape pack (an uploaded SVG): its own coordinate
+   * system ("minX minY width height"; absent: lucide's "0 0 24 24").
+   */
+  viewBox?: string;
+  /**
+   * [additive, #4] How an uploaded drawing is painted (absent: lucide line art, stroked in `color`
+   * at `strokeWidth`). Its nodes carry their own fill / stroke: 'mono' — a single-colour drawing
+   * whose colour became `currentColor`, so `color` recolours it; 'color' — several colours of its
+   * own, drawn as uploaded (`color` and `strokeWidth` unused).
+   */
+  art?: 'mono' | 'color';
 }
 
 export type IconNode = [string, Record<string, string | number>];

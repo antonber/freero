@@ -3,7 +3,7 @@
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
 import type { BoardLabelSummary } from './compliance';
-import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
+import type { ActivityElement, BoardElement, IconNode, TableCopyContent } from './elements';
 import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
@@ -1276,6 +1276,60 @@ export const MAX_STICKERS_PER_SET = 120;
 export const MAX_STICKER_BYTES = 512 * 1024;
 export const MAX_STICKER_NAME = 60;
 
+// ---- Shape packs (#4; server modules/shapepacks) ----
+// A workspace's own icon and shape sets: SVGs its admins upload (their design system's icons, the
+// cloud architecture icons they are licensed to use, engineering symbols), searched and placed from
+// the icon library on any of its boards. Each SVG is reduced on the server to the primitives an
+// `icon` element may draw (`sanitizeSvg`, icons.ts) and a placed icon holds its drawing, so it keeps
+// showing after its pack is removed.
+// GET    /api/boards/:id/shape-packs      -> ShapePacksResponse  (the packs of the board's workspace;
+//                                          none when you aren't in that workspace)
+// POST   /api/boards/:id/shape-packs      body { name, upload } -> ShapePackCreated  (owners / admins
+//                                          of the board's workspace; `upload` is "/uploads/<name>" of
+//                                          the caller's own upload — a ZIP of SVGs uploaded as an
+//                                          attachment, or one SVG — read once and deleted; uploads'
+//                                          size cap, quota and rate limit apply to it)
+// PATCH  /api/shape-packs/:id             body { name } -> { pack: ShapePack }  (owners / admins)
+// DELETE /api/shape-packs/:id             -> { ok: true }  (owners / admins)
+export interface ShapePackIcon {
+  id: string;
+  /** From the file name ("Arch_Amazon-EC2_64"). */
+  name: string;
+  nodes: IconNode[];
+  viewBox: string;
+  art: 'mono' | 'color';
+}
+export interface ShapePack {
+  id: string;
+  name: string;
+  /** Who uploaded it, by their current name (null: an account deleted since). */
+  createdBy: string | null;
+  createdAt: number;
+  icons: ShapePackIcon[];
+}
+export interface ShapePacksResponse {
+  packs: ShapePack[];
+  /** You may upload, rename and remove the workspace's packs (its owners and admins). */
+  canManage: boolean;
+}
+export interface ShapePackCreated {
+  pack: ShapePack;
+  /** Files that weren't SVGs Freero could read (by name, at most 50), skipped. */
+  skipped: string[];
+}
+export const SHAPE_PACK_LIMITS = {
+  /** Packs one workspace may hold. */
+  packs: 50,
+  /** Icons in one pack. */
+  icons: 500,
+  /** Characters of a pack's name. */
+  name: 60,
+  /** Files read from one ZIP (others are ignored). */
+  zipEntries: 2000,
+  /** Characters of all of a workspace's drawings together (what the library loads). */
+  workspaceChars: 12_000_000,
+} as const;
+
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a
 // guest) of.
@@ -2130,7 +2184,72 @@ export interface BoardAiStatus {
   provider?: string;
   /** Who configured it: Freero's operator ('instance') or the workspace's admins ('workspace'). */
   source?: 'instance' | 'workspace';
+  /**
+   * [additive, #1] The board assistant is open to this person here: it reads the board as they see
+   * it, so viewers and commenters may ask too (when the workspace lets them use AI); `canPropose`
+   * when they can edit, so its changes can be proposed as suggestions. Absent: no assistant.
+   * `provider` and `source` are set whenever this is.
+   */
+  assistant?: { canPropose: boolean };
 }
+
+// ---- The board assistant (#1; server modules/ai assistant.ts; docs/ai.md "Board assistant") ----
+// A conversation about one board with the AI the board's workspace uses, kept per person per board
+// (only that person ever reads it; deleted with the board or the account, or when they clear it).
+// It reads the board through the outline AS THE PERSON SEES IT — never another person's private
+// draft, never a hidden frame's contents they can't see — and answers in text, citing the items it
+// used. It never writes the board: changes the person asks for are PROPOSED as one group of
+// suggestions ("AI for <person>", KAI-169), planned like the public API's propose_changes, and
+// nothing changes until someone who can edit accepts them. Board text is untrusted data to the
+// model; what the model returns is validated (only ids the person can see; only the proposal's
+// shapes) before anything else happens.
+// GET    /api/boards/:id/ai/assistant          -> AssistantConversation  (your own; [] when none)
+// POST   /api/boards/:id/ai/assistant  body AssistantAsk -> AssistantTurn  (rate limited, budgeted
+//        and audited like AI actions; 403 'downloads_restricted' under the downloads policy)
+// DELETE /api/boards/:id/ai/assistant          -> { ok: true }  (forgets your conversation here)
+export interface AssistantProposal {
+  /** The suggestion group on the board (accept / reject it there). */
+  groupId: string;
+  /** Changes in it. */
+  count: number;
+  description: string;
+}
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  /** Plain text (never markup). */
+  text: string;
+  at: number;
+  /** assistant: the items its answer is about (ids on this board that the person could see). */
+  cites?: string[];
+  /** assistant: what it proposed, as suggestions. */
+  proposal?: AssistantProposal;
+  /** assistant: it was asked for a change but could not propose it (why, in words). */
+  proposalError?: string;
+}
+export interface AssistantConversation {
+  messages: AssistantMessage[];
+}
+export interface AssistantAsk {
+  question: string;
+  /** Items the person has selected, so "these" means them (ids; others are ignored). */
+  ids?: string[];
+}
+export interface AssistantTurn {
+  question: AssistantMessage;
+  answer: AssistantMessage;
+  usage: { inputTokens: number; outputTokens: number };
+}
+export const ASSISTANT_LIMITS = {
+  /** Characters of one question. */
+  question: 2000,
+  /** Messages kept per person per board (the oldest go first). */
+  kept: 200,
+  /** Earlier messages the model sees with each question. */
+  context: 12,
+  /** Changes one proposal may hold. */
+  changes: 100,
+} as const;
 
 export interface AiActionRequest {
   task: AiTask;
@@ -2507,6 +2626,8 @@ export const AUDIT_ACTIONS = {
   'blueprint.shared': 'Shared a blueprint with the team',
   'blueprint.used': 'Made a project from a blueprint',
   'stickers.set_removed': 'Removed a team sticker set',
+  'shape_pack.created': 'Uploaded a shape pack',
+  'shape_pack.removed': 'Removed a shape pack',
   'template.published': 'Published a company template',
   'template.unpublished': 'Withdrew a company template',
   'template.locked': 'Locked a template',

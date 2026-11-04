@@ -5,7 +5,9 @@
 //   personal boards   the operator's provider, if AI_INSTANCE_FOR includes `personal`
 //   team boards       the workspace's admins turned AI on, with the operator's provider (if offered
 //                     to teams) or their own; the person passes the workspace's "who may use AI"
-//   always            edit access to the board (actions write it)
+//   always            edit access to the board (actions write it) — except for the board assistant
+//                     (#1), which reads the board as the person sees it and only proposes: anyone
+//                     who can open the board may ask it (`{ read: true }`)
 import { AI_PROVIDER_LABELS, type AiAccess, type AiProviderKind, type BoardAiStatus, type Role } from '@freero/shared';
 import { getConfig, type AiConfig } from '../../platform/config';
 import { notFound } from '../../platform/http';
@@ -58,8 +60,13 @@ async function openKey(workspaceId: string, sealed: string | null): Promise<stri
   return opened.value;
 }
 
-/** Decides whether `userId` may run AI actions on the board now (404/403 for no access at all). */
-export async function decideAi(boardId: string, userId: string): Promise<AiDecision> {
+export const EDIT_NEEDED = 'AI actions add to the board, so they need edit access.';
+
+/**
+ * Decides whether `userId` may run AI actions on the board now (404/403 for no access at all);
+ * `read`: whether they may ask the board assistant, which needs no edit access (#1).
+ */
+export async function decideAi(boardId: string, userId: string, opts: { read?: boolean } = {}): Promise<AiDecision> {
   requireAiOffered();
   const config = getConfig().ai;
   const board = await requireBoardAccess(boardId, userId, 'viewer');
@@ -67,7 +74,7 @@ export async function decideAi(boardId: string, userId: string): Promise<AiDecis
   const ws = await getWorkspaceInfo(board.workspaceId);
   // (An organisation holds no boards; its kind never reaches AI.)
   if (!ws || ws.kind === 'organisation') throw notFound('Board not found');
-  if (!atLeast(board.role, 'editor')) return no('AI actions add to the board, so they need edit access.');
+  if (!opts.read && !atLeast(board.role, 'editor')) return no(EDIT_NEEDED);
   const base = { boardId, boardTitle: board.title, workspaceId: ws.id, kind: ws.kind, role: board.role };
 
   if (ws.kind === 'personal') {
@@ -103,9 +110,15 @@ export function workspaceEndpoint(s: repo.StoredAiSettings, apiKey: string): Pro
 /** The workspace's key opened for a call ('' when none is stored; null when it can't be opened). */
 export const workspaceKey = (s: repo.StoredAiSettings) => openKey(s.workspaceId, s.apiKeySealed);
 
-/** What the app shows (never the key or the endpoint URL). */
+/**
+ * What the app shows (never the key or the endpoint URL), from the decision for the board
+ * assistant (`decideAi(…, { read: true })`): AI actions only for those who can edit.
+ */
 export function statusOf(d: AiDecision): BoardAiStatus {
-  return d.ok ? { available: true, provider: label(d.grant.endpoint), source: d.grant.source } : { available: false, reason: d.reason };
+  if (!d.ok) return { available: false, reason: d.reason };
+  const provider = { provider: label(d.grant.endpoint), source: d.grant.source };
+  const canPropose = atLeast(d.grant.role, 'editor');
+  return canPropose ? { available: true, ...provider, assistant: { canPropose } } : { available: false, reason: EDIT_NEEDED, ...provider, assistant: { canPropose } };
 }
 
 export { label as providerLabel };

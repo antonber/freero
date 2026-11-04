@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "מלבן",
   "roundedRectangle": "מלבן מעוגל",
@@ -130,5 +133,8 @@
   "valueStream": "זרם ערך",
   "leanValueStreamMappingProcesses": "מיפוי זרם ערך רזה: תהליכים, מלאי, זרימות, פרצי קייזן",
   "dataFlow": "זרימת נתונים",
-  "processesDataStoresExternalEntities": "תהליכים, מאגרי נתונים, ישויות חיצוניות וגבולות אמון"
+  "processesDataStoresExternalEntities": "תהליכים, מאגרי נתונים, ישויות חיצוניות וגבולות אמון",
+  "workspaceShapePacks": "חבילות הצורות של סביבת העבודה",
+  "packNameIcons": "{name}: {count, plural, one {סמל אחד} other {# סמלים}}",
+  "packNameMatches": "{name}: {count, plural, one {תוצאה אחת} other {# תוצאות}}"
 }

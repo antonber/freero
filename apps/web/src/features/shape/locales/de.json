@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "Rechteck",
   "roundedRectangle": "Abgerundetes Rechteck",
@@ -130,5 +133,8 @@
   "valueStream": "Wertstrom",
   "leanValueStreamMappingProcesses": "Lean-Wertstromanalyse: Prozesse, Bestände, Flüsse, Kaizen-Blitze",
   "dataFlow": "Datenfluss",
-  "processesDataStoresExternalEntities": "Prozesse, Datenspeicher, externe Entitäten und Vertrauensgrenzen"
+  "processesDataStoresExternalEntities": "Prozesse, Datenspeicher, externe Entitäten und Vertrauensgrenzen",
+  "workspaceShapePacks": "Formenpakete eures Workspace",
+  "packNameIcons": "{name}: {count, plural, one {# Symbol} other {# Symbole}}",
+  "packNameMatches": "{name}: {count, plural, one {# Treffer} other {# Treffer}}"
 }

@@ -37,8 +37,56 @@ const PEOPLE = /pair|review|offsite|team|fun|mentor|help|people|retro/i;
 const GOOD = /love|great|nice|good|thank|happy|enjoy|fun|win/i;
 const BAD = /slow|flaky|bad|hate|broken|bug|late|hard|pain|annoy/i;
 
+/** The LAST block of a tag (a conversation repeats <question> once per turn). */
+function lastBlock(text, tag) {
+  const a = text.lastIndexOf(`<${tag}>`);
+  const b = text.lastIndexOf(`</${tag}>`);
+  if (a < 0 || b < a) return '';
+  try {
+    return JSON.parse(text.slice(a + tag.length + 2, b).trim());
+  } catch {
+    return '';
+  }
+}
+
+const NO_PROPOSAL = { description: '', create: [], update: [], delete: [] };
+const blank = { title: '', color: '', status: '', from: '', to: '' };
+
+/**
+ * The board assistant (#1): answers from the outline lines whose words the question shares
+ * (citing them); "add / create / make …" proposes three stickies, "remove / delete …" the matching
+ * items' removal — only when the system prompt says the person can edit.
+ */
+function assistantAnswer(system, user) {
+  const question = String(lastBlock(user, 'question'));
+  const content = String(lastBlock(user, 'board_content'));
+  const canPropose = /When, and only when/.test(system);
+  const items = content
+    .split('\n')
+    .map((l) => /\[([^\]]+)\] [a-z]+(?: [a-z#0-9]+)?: (.*)$/.exec(l))
+    .filter(Boolean)
+    .map((m) => ({ id: m[1], text: m[2] }));
+  const words = question.toLowerCase().match(/[\p{L}\p{N}$]{3,}/gu) ?? [];
+  const hits = items.filter((it) => words.some((w) => it.text.toLowerCase().includes(w)));
+  if (/^(please )?(add|create|make|draft|brainstorm)\b/i.test(question.trim())) {
+    if (!canPropose) return JSON.stringify({ answer: 'I can’t change this board for you: someone who can edit it would have to.', cites: [], proposal: NO_PROPOSAL });
+    const topic = question.replace(/^(please )?(add|create|make|draft|brainstorm)\s+(three |3 |some )?(stick(y|ies)|notes?|ideas?)?\s*(about|for|on)?\s*/i, '').replace(/[.?!]+$/, '').slice(0, 40) || 'this board';
+    const ideas = [`Ask customers about ${topic}`, `Try a small pilot of ${topic}`, `Measure ${topic} weekly`];
+    return JSON.stringify({
+      answer: `I’ve proposed three stickies about ${topic}. Accept them on the board if they fit.`,
+      cites: hits.map((h) => h.id).slice(0, 5),
+      proposal: { description: `Three stickies about ${topic}`, create: ideas.map((text) => ({ type: 'sticky', text, ...blank })), update: [], delete: [] },
+    });
+  }
+  if (/^(please )?(remove|delete)\b/i.test(question.trim()) && canPropose && hits.length)
+    return JSON.stringify({ answer: `I’ve proposed removing ${hits.length} item(s). Nothing is gone until you accept.`, cites: hits.map((h) => h.id), proposal: { description: 'Remove items', create: [], update: [], delete: hits.map((h) => h.id) } });
+  if (!hits.length) return JSON.stringify({ answer: items.length ? `The board doesn’t say anything about that. It has ${items.length} item(s).` : 'The board is empty.', cites: [], proposal: NO_PROPOSAL });
+  return JSON.stringify({ answer: `Here is what the board says:\n${hits.slice(0, 5).map((h) => `- ${h.text}`).join('\n')}`, cites: hits.map((h) => h.id).slice(0, 5), proposal: NO_PROPOSAL });
+}
+
 /** A plausible answer for the task the system prompt names. */
 export function answer(system, user) {
+  if (/You are the board assistant inside Freero/.test(system)) return assistantAnswer(system, user);
   const instruction = block(user, 'instruction');
   const content = block(user, 'board_content');
   if (/MALFORMED/.test(instruction)) return 'Sure! Here is what I came up with, in prose instead of JSON.';

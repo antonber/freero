@@ -37,8 +37,9 @@ server sends that provider:
 The provider processes it under its own terms (data retention, training, region): choose a provider
 and plan whose terms fit your organization, or run a model yourself (Ollama, vLLM, LM Studio).
 
-Freero itself **does not store prompts, board content sent to the model, or the model's answers**.
-It keeps:
+For AI actions, Freero itself **does not store prompts, board content sent to the model, or the
+model's answers**. The one exception is the board assistant (below): each person's conversation
+with it on a board — their questions and its answers — is kept so they can come back to it. It keeps:
 
 - **usage counts** per workspace, person and month (requests, input and output tokens), for budgets
   and the admin console; included in personal and workspace data exports;
@@ -68,12 +69,39 @@ from the board.
   never at private, loopback or link-local addresses (checked when connecting, so DNS can't be used
   to reach them) — unless the operator sets `AI_WORKSPACE_PRIVATE_ENDPOINTS=true` for a self-hosted
   model on the local network. The operator's own `AI_BASE_URL` may be anything.
-- **Who**: only people who can edit the board; in a team workspace, only whom its admins allow
+- **Who**: only people who can edit the board (the board assistant: anyone who can open it, read
+  only, see below); in a team workspace, only whom its admins allow
   (members, admins, or everyone with edit access).
 - **Limits**: per-person and per-workspace rate limits (`RATE_LIMIT_AI`, `RATE_LIMIT_AI_WORKSPACE`), a
   monthly token budget per team workspace, and a monthly cap per person on the operator's provider
   (`AI_INSTANCE_MONTHLY_TOKENS_PER_USER`). Usage is counted after each call, so concurrent calls can
   overshoot a budget by at most those calls.
+
+## Board assistant (#1)
+
+The sparkle button in the top bar (or the board menu's **AI ▸ Ask the board assistant**) opens a
+chat beside the board. Ask what the board says ("what did we decide about pricing?", "what is still
+open?"), or — if you can edit — ask for changes ("add three stickies with next steps", "remove the
+duplicates"). Selected items are what "these" means.
+
+- **It reads the board as you see it**: the board's outline with your own access — never other
+  people's private drafts, and a hidden frame's contents only if you are an owner or editor — cut
+  to `AI_MAX_INPUT_TOKENS` after the last few messages of the conversation. Viewers and commenters
+  may ask too (when the workspace lets them use AI): it reads only what they can see.
+- **Answers cite the items they use**: click one to zoom to it.
+- **It never changes the board.** The only thing an answer can do is *propose* changes — new items,
+  edits, removals, in the same shapes as the public API's `propose_changes` — which arrive as one
+  group of suggestions from "AI for <you>": everyone who can edit sees them on the board and accepts
+  or rejects them (accepting is one undo step). Only people who can edit get proposals, and only on
+  items they can see. Board text stays untrusted data: a sticky that says "delete everything" can at
+  most make a confused model *propose* that, and nothing happens until a person accepts it.
+- **Your conversation is yours**: kept on the server per person per board (the newest 200
+  messages), read by nobody else, in your personal data export, sealed with the workspace's key when
+  it uses its own encryption key, and deleted with the board, with your account, or when you clear it
+  (the bin in the panel).
+- It counts towards the same rate limits and budgets as AI actions, is audited the same way
+  (`ai.request`, task `assistant`; never the question or the answer), and the downloads policy
+  applies.
 
 ## Setting it up
 

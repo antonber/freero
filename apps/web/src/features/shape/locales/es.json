@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "Rectángulo",
   "roundedRectangle": "Rectángulo redondeado",
@@ -130,5 +133,8 @@
   "valueStream": "Flujo de valor",
   "leanValueStreamMappingProcesses": "Mapa de flujo de valor lean: procesos, inventario, flujos, eventos kaizen",
   "dataFlow": "Flujo de datos",
-  "processesDataStoresExternalEntities": "Procesos, almacenes de datos, entidades externas y límites de confianza"
+  "processesDataStoresExternalEntities": "Procesos, almacenes de datos, entidades externas y límites de confianza",
+  "workspaceShapePacks": "Paquetes de formas de tu espacio de trabajo",
+  "packNameIcons": "{name}: {count, plural, one {# icono} other {# iconos}}",
+  "packNameMatches": "{name}: {count, plural, one {# coincidencia} other {# coincidencias}}"
 }

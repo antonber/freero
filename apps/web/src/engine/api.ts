@@ -22,6 +22,9 @@ import type {
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
+  AssistantAsk,
+  AssistantMessage,
+  AssistantTurn,
   BoardElement,
   BoardOutline,
   BoardLayer,
@@ -41,6 +44,9 @@ import type {
   Sticker,
   StickerSet,
   StickersResponse,
+  ShapePack,
+  ShapePackCreated,
+  ShapePacksResponse,
   StrokeStyle,
   SuggestionRecord,
   SuggestionState,
@@ -122,6 +128,15 @@ export interface HostStickers {
   add(setId: string, file: Blob, name: string): Promise<Sticker>;
   removeSet(setId: string): Promise<void>;
   remove(setId: string, stickerId: string): Promise<void>;
+}
+
+/** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
+export interface HostShapePacks {
+  list(): Promise<ShapePacksResponse>;
+  /** Uploads `zip` (a ZIP of SVG files) through the server's upload checks and makes it a pack. */
+  create(name: string, zip: Blob): Promise<ShapePackCreated>;
+  rename(packId: string, name: string): Promise<ShapePack>;
+  remove(packId: string): Promise<void>;
 }
 
 /** [additive] Light, dark, or whatever the device uses. */
@@ -211,6 +226,12 @@ export interface Host {
    * message that can be shown (too large, not an image, not allowed).
    */
   stickers?: HostStickers;
+  /**
+   * [additive, #4] The board's workspace's own shape packs (server modules/shapepacks): uploaded
+   * SVG icon sets, placed as icon elements that hold their drawing. Absent (offline sandbox, guests
+   * without an account, embeds): no packs. Rejections carry a message that can be shown.
+   */
+  shapePacks?: HostShapePacks;
   /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).
@@ -432,6 +453,13 @@ export interface Host {
    */
   ai?: HostAi;
   /**
+   * [additive, #1] The board assistant, present when the server says this person may ask it here
+   * (also viewers and commenters: it reads the board as they see it). It never writes the board:
+   * what it proposes arrives as suggestions (`canPropose`: only for people who can edit). Calls
+   * reject with a message fit for the panel (budget used up, rate limit, the model's answer unusable).
+   */
+  assistant?: HostAssistant;
+  /**
    * [additive] Why AI can't be used here by this person, in words fit for the UI ("AI is off for
    * this workspace…", "…need edit access"): set when the server offers AI on this instance but not
    * to them on this board, so an AI action can show greyed out with the reason. Absent when `ai`
@@ -606,6 +634,20 @@ export interface HostAi {
   /** Who set the provider up: the Freero server's operator or the workspace's admins. */
   source: 'instance' | 'workspace';
   run(request: AiActionRequest): Promise<AiActionResponse>;
+}
+
+/** [additive, #1] See `Host.assistant` (wire: @freero/shared "The board assistant"). */
+export interface HostAssistant {
+  /** Where board content goes ("Anthropic (Claude) · claude-sonnet-5-5"), for the data notice. */
+  provider: string;
+  source: 'instance' | 'workspace';
+  /** This person can edit: the assistant may propose changes (as suggestions). */
+  canPropose: boolean;
+  /** Their own conversation on this board, oldest first. */
+  conversation(): Promise<AssistantMessage[]>;
+  ask(request: AssistantAsk): Promise<AssistantTurn>;
+  /** Forgets their conversation on this board. */
+  clear(): Promise<void>;
 }
 
 /** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */

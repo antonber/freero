@@ -25,3 +25,21 @@ it('a server export draws a chart from its cells and a team sticker as its pictu
   expect(svg).toContain('>Alpha</text>');
   expect(svg).toContain('href="data:image/png;base64,AAAA"');
 });
+
+it('an icon is exported with nothing that could run or load, even when its drawing was written straight into the element (#4)', () => {
+  const icon = (nodes: unknown, extra: Record<string, unknown> = {}) =>
+    ({ ...base, id: 'i1', type: 'icon', x: 0, y: 0, w: 96, h: 96, name: 'x', nodes, color: '#1f1a33', strokeWidth: 2, ...extra }) as BoardElement;
+  const crafted = [
+    ['path', { d: 'M4 4h16', onload: 'alert(1)', fill: 'url(https://evil.test/x)', style: 'fill:red', href: 'https://evil.test' }],
+    ['script', { href: 'https://evil.test/x.js' }],
+    ['foreignObject', { width: 24, height: 24 }],
+    ['rect', { x: 0, y: 0, width: 10, height: 10, transform: 'translate(1 1)"/><script>alert(2)</script>' }],
+    ['circle', { cx: 12, cy: 12, r: 4, fill: '#ff9900' }],
+  ];
+  for (const el of [icon(crafted), icon(crafted, { art: 'color', viewBox: '0 0 24 24" onload="alert(3)' })]) {
+    const { svg } = boardSvg({ elements: [el], collection: () => new Map(), imageData: () => null });
+    expect(svg).toContain('<path d="M4 4h16"');
+    expect(svg).toContain('fill="#ff9900"');
+    expect(svg).not.toMatch(/script|alert|onload|href|url\(|foreignObject|style=/i);
+  }
+});

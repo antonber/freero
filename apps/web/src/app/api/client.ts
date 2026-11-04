@@ -53,6 +53,9 @@ import type {
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
+  AssistantAsk,
+  AssistantConversation,
+  AssistantTurn,
   BoardAiStatus,
   WorkspaceAiAdmin,
   WorkspaceAiPatch,
@@ -160,7 +163,7 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
+import type { ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -630,6 +633,10 @@ export const api = {
   // AI (404 while the server offers no AI at all)
   boardAi: (boardId: string) => request<{ ai: BoardAiStatus | null }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
   runAi: (boardId: string, body: AiActionRequest) => request<AiActionResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/actions`, body),
+  // the board assistant (#1): your own conversation on this board
+  assistant: (boardId: string) => request<AssistantConversation>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
+  askAssistant: (boardId: string, body: AssistantAsk) => request<AssistantTurn>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`, body),
+  clearAssistant: (boardId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
   testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),
@@ -873,6 +880,12 @@ export const api = {
     }
     return ((await res.json()) as { sticker: Sticker }).sticker;
   },
+  // shape packs (#4): the board's workspace's own icon sets
+  shapePacks: (boardId: string) => request<ShapePacksResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`),
+  createShapePack: (boardId: string, name: string, upload: string) =>
+    request<ShapePackCreated>('POST', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`, { name, upload }),
+  renameShapePack: (packId: string, name: string) => request<{ pack: ShapePack }>('PATCH', `/api/shape-packs/${encodeURIComponent(packId)}`, { name }),
+  removeShapePack: (packId: string) => request<{ ok: true }>('DELETE', `/api/shape-packs/${encodeURIComponent(packId)}`),
   removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
   removeSticker: (setId: string, stickerId: string) =>
     request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),

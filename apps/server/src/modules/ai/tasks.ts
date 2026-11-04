@@ -40,6 +40,8 @@ export class InvalidOutput extends Error {}
 
 export interface TaskPlan {
   system: string;
+  /** [#1] Earlier turns of a conversation (the board assistant), before `user`. */
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   user: string;
   schema: Record<string, unknown>;
   /** The parsed JSON → a structure and a one-line description; throws InvalidOutput. */
@@ -56,6 +58,15 @@ export interface Accepted {
   walkthrough?: WalkthroughChaptersInput;
   /** catchup (#126): the points with their citations, mapped to ids. */
   catchUp?: Pick<AiCatchUp, 'points' | 'items'>;
+  /** the board assistant (#1): its validated answer (assistant.ts). */
+  assistant?: AssistantAnswer;
+}
+
+/** What the board assistant may answer (#1), after validation: text, citations, a proposal to suggest. */
+export interface AssistantAnswer {
+  answer: string;
+  cites: string[];
+  proposal: { description: string; create: Record<string, unknown>[]; update: Record<string, unknown>[]; delete: string[] } | null;
 }
 
 /** One JSON string with < and > escaped: board text can't end the envelope it sits in. */

@@ -149,6 +149,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
 | A table's views and derived row layout (#51: `TableElement.view` grid / board / timeline, `groupRows`, `timeline` start / end date columns; derived `hiddenRows` and `bands`, from which normalize sizes the grid — a filter reclaims what it hides, a grouped grid's bands take room) | `features/table` (format toolbar; `refreshRows` in the transaction of every cell, filter or grouping change; timeline bars write the date cells through `setRowSpan`, @freero/shared `spanValues` / `spanOfDates` / `timelineRange` as a kanban's timeline tab) | its format toolbar; never edit `hiddenRows` / `bands` by hand (server `render/svg.ts` only reads `hiddenRows`) |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
+| A workspace's shape packs (`shape_packs`, `shape_pack_icons`, #4): names, each icon's sanitised drawing | server `modules/shapepacks` (the workspace's owners / admins upload, rename, remove; the upload is the caller's own ZIP of SVGs through modules/uploads — its size cap, quota, rate limit — read once and deleted; every SVG reduced by `@freero/shared` `sanitizeSvg`) | `Host.shapePacks` (the icons feature's library: a pack switcher, search by name; the shape library lists matching packs); a PLACED icon is an ordinary `icon` element holding its drawing (`nodes`, `viewBox`, `art`), so it outlives its pack. Every reader (board, exports, the server's SVG render) draws only what `cleanIconNodes` keeps |
 | Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
@@ -1419,7 +1420,8 @@ protocol + role filter + update log; version history + snapshot retention), `unf
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
 templates; content is opaque engine JSON), `blueprints` (blueprints, blueprint_items: a project's boards and docs saved for reuse, #161; see "Blueprints"), `stickers` (sticker_sets, stickers: a workspace's own
-sticker sets, #138), `outline` (no table: the semantic board read model,
+sticker sets, #138), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
+packs, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
@@ -1435,8 +1437,8 @@ and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed
 SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
 admin console of team workspaces; see "Audit log, admin console and workspace
 policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
-(ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
-configures; see "AI" below), `apiauth` (api_tokens,
+(ai_workspace_settings, ai_usage, ai_assistant_messages: AI board actions and the board assistant
+with a provider the operator or a workspace configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
 `/api/v1`; see "Public API and OAuth" below), `embed` (embed_member_tokens: live board views inside AI assistants, `/embed/board`, `/ws/embed/boards`, see "The MCP server"; boards embedded on other sites, `/embed/b`, `/ws/embed/b`, oEmbed, see "Boards embedded on other sites"), `mcp` (no table: the remote MCP server `/mcp`; see
@@ -2335,6 +2337,21 @@ board and builds `Host.ai` only when it says yes.
 - **Text-only answers** (#134): `expand` reads one mind-map topic, its path and its children from
   the reader's view (no private draft but the topic itself) and returns `children` (3–7, repeats of
   what is there dropped, fewer gets the repair turn); nothing is laid out or placed on the server.
+- **The board assistant** (#1; `ai/assistant.ts`, `features/ai` dock `ai.assistant`): a conversation
+  about one board, `GET|POST|DELETE /boards/:id/ai/assistant`. `decideAi(…, { read: true })`: anyone
+  who can open the board and passes the workspace's AI policy may ask (`BoardAiStatus.assistant`,
+  `Host.assistant`), within the same rate limits, budgets, downloads policy and `ai.request` audit
+  (task `assistant`). It reads the board through `boardOutline` with the asker's OWN access (their
+  drafts only, hidden frames only for owners/editors), budgeted after the conversation's last
+  `ASSISTANT_LIMITS.context` messages, in the untrusted envelope; the model answers JSON (answer,
+  cites, proposal), validated: cites only ids the asker was shown; the proposal kept only for people
+  who can edit, only the propose_changes shapes and fields, only ids they see that aren't private
+  drafts. It never writes the board: the proposal goes through api's `readProposal` / `planProposal`
+  (the same planners as MCP `propose_changes`) into realtime's `proposeSuggestions` as one group from
+  "AI for <person>" — accepting it is the suggestions feature's ordinary one-step edit. The
+  conversation is the asker's alone (`ai_assistant_messages`, single writer `ai/repo.ts`, newest
+  `ASSISTANT_LIMITS.kept`; the body sealed with the workspace key when it has one, #159; cascades
+  with the board and the account; DELETE clears it; in the personal data export).
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited

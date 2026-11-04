@@ -54,6 +54,10 @@ export {
   shareLink,
   type ApiCall,
 } from './service';
+// What may be proposed as suggestions and how it is planned (KAI-169), for the in-app board
+// assistant (modules/ai, #1): the same shapes and planners as propose_changes, so a proposal from
+// either path does exactly what writing it would have done.
+export { readProposal, planProposal, type Proposal } from './suggestions';
 // Search, object addresses and backlinks (KAI-151, KAI-227).
 export { searchContent, resolveForApi, backlinksForApi } from './objects';
 // A board as an agent's control room (KAI-172): post plan / status / tasks, read people's feedback.

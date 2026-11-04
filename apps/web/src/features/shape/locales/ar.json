@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "مستطيل",
   "roundedRectangle": "مستطيل مستدير الزوايا",
@@ -130,5 +133,8 @@
   "valueStream": "تدفق القيمة",
   "leanValueStreamMappingProcesses": "رسم خريطة تدفق القيمة الرشيقة: العمليات، المخزون، التدفقات، ومضات كايزن",
   "dataFlow": "تدفق البيانات",
-  "processesDataStoresExternalEntities": "العمليات، مخازن البيانات، الكيانات الخارجية وحدود الثقة"
+  "processesDataStoresExternalEntities": "العمليات، مخازن البيانات، الكيانات الخارجية وحدود الثقة",
+  "workspaceShapePacks": "حزم الأشكال في مساحة عملك",
+  "packNameIcons": "{name}: {count, plural, one {أيقونة واحدة} two {أيقونتان} few {# أيقونات} many {# أيقونة} other {# أيقونة}}",
+  "packNameMatches": "{name}: {count, plural, one {نتيجة واحدة} two {نتيجتان} few {# نتائج} many {# نتيجة} other {# نتيجة}}"
 }

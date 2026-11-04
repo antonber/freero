@@ -7,7 +7,7 @@
 //   (a doc, KAI-162: the same folder, plus doc.md — its document as Markdown)
 // workspace: README.txt, workspace.json, templates/…, boards/… (the same board layout).
 import { strToU8, zipSync, type Zippable } from 'fflate';
-import { aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
+import { aiAssistantExportOf, aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { apiDataOf } from '../apiauth/index';
 import { exportAccountData, getUser } from '../auth/index';
 import { decisionsExportOf } from '../decisions/index';
@@ -147,6 +147,8 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
     ...(await boardActivityOf(userId)),
     dataExports: (await exportsRequestedBy(userId)).map((e) => ({ kind: e.kind, status: e.status, createdAt: new Date(e.createdAt).toISOString() })),
     aiUsage: await aiUsageExportOf(userId),
+    // Their own conversations with the board assistant (#1), as kept.
+    aiAssistant: await aiAssistantExportOf(userId),
   });
 
   // Comments: on every board they could have written on (owned, invited, opened, their teams').

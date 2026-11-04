@@ -6,7 +6,8 @@ import { FileText, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
 import { AI_LIMITS, type AiActionResponse, type AiClusterBy, type AiDiagramKind, type AiTask, type BoardElement } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
 import { Button, ElementsPreview, Modal, SegmentedControl, Select, TextArea } from '@ui';
-import { AI_DIALOG, applyPreview, CATCH_UP_DIALOG, clusterable, fillNote, suggestedTask } from './lib/actions';
+import { AI_DIALOG, applyPreview, ASSISTANT_DOCK, CATCH_UP_DIALOG, clusterable, fillNote, suggestedTask } from './lib/actions';
+import { AssistantButton, AssistantDock } from './lib/Assistant';
 import { CatchUpDialog } from './lib/CatchUp';
 import { t as tr } from './messages';
 import './ai.css';
@@ -214,5 +215,8 @@ export default [
     Component: AiDialog,
   }),
   definePanel({ id: CATCH_UP_DIALOG, slot: 'dialog', order: 61, minRole: 'editor', Component: CatchUpDialog }),
+  // The board assistant (#1): viewers may ask too (it reads the board as they see it).
+  definePanel({ id: ASSISTANT_DOCK, slot: 'dock-right', order: 54, minRole: 'viewer', Component: AssistantDock }),
+  definePanel({ id: 'ai.assistant.button', slot: 'topbar-right', order: 20, minRole: 'viewer', Component: AssistantButton }),
 ];
 
