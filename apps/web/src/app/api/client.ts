@@ -180,6 +180,7 @@ import type { MobilePushDevice, MobilePushStatus, FigmaFilesResponse, FigmaFrame
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
 import type { BoardSensitiveData, SensitiveDataSettingsInput, SensitiveDataStatus } from '@freero/shared';
+import type { BoardGuestsResponse } from '@freero/shared';
 import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
@@ -782,6 +783,13 @@ export const api = {
     request<{ version: BoardVersion }>('PATCH', `/api/boards/${boardId}/versions/${versionId}`, { name }),
   restoreVersion: (boardId: string, versionId: number) =>
     request<{ before: BoardVersion }>('POST', `/api/boards/${boardId}/versions/${versionId}/restore`),
+
+  // a board's guests as its owner and co-owners manage them (#97)
+  boardGuests: (boardId: string) => request<BoardGuestsResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/guests`),
+  undoGuestEdits: (boardId: string, guestId: string) =>
+    request<{ removed: number }>('POST', `/api/boards/${encodeURIComponent(boardId)}/guests/${encodeURIComponent(guestId)}/undo`),
+  removeBoardGuest: (boardId: string, guestId: string) =>
+    request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/guests/${encodeURIComponent(guestId)}`),
 
   // reports and moderation (KAI-142)
   report: (body: ReportRequest) => request<{ ok: true }>('POST', '/api/reports', body),

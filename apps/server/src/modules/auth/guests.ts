@@ -74,6 +74,29 @@ export async function getGuests(ids: Iterable<string>): Promise<Map<string, Gues
   return new Map((await repo.findGuests(list, Date.now())).map((g) => [g.id, toInfo(g)]));
 }
 
+/** #97: the board this browser's guest was removed from (by its owner), or null. */
+export async function removedGuestBoard(cookieHeader: string | undefined): Promise<string | null> {
+  const key = guestKeyFromCookieHeader(cookieHeader);
+  return key ? repo.findRemovedGuestBoard(key, Date.now()) : null;
+}
+
+/** #97: a board's guests whose sessions haven't expired, removed ones included (for its owner). */
+export async function guestsOfBoard(boardId: string): Promise<Array<GuestInfo & { removed: boolean }>> {
+  return (await repo.guestsOfBoard(boardId, Date.now())).map((g) => ({ ...toInfo(g), removed: !!g.removedAt }));
+}
+
+/**
+ * #97: removes a guest from its board: the session stays (until it expires) only to keep that
+ * browser from joining the board again; it is no live guest, and its sockets close on every
+ * instance. False when there is no such live guest of the board.
+ */
+export async function removeGuest(boardId: string, guestId: string): Promise<boolean> {
+  const key = await repo.markGuestRemoved(boardId, guestId, Date.now());
+  if (!key) return false;
+  sessionsEnded([key]);
+  return true;
+}
+
 /** Ends the request's guest session (its sockets close everywhere) and clears the cookie. */
 export async function endGuestSession(req: Request, res: Response): Promise<void> {
   const key = guestKeyFromCookieHeader(req.headers.cookie);

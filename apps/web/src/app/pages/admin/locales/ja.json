@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "コピー",
   "copied": "コピーしました",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "アイテム上",
   "sensitive.nothingFound": "まだ何も見つかっていません。ボードは変更されるたびにスキャンされます。",
   "sensitive.untitled": "無題のボード",
-  "sensitive.couldNotLoad": "機密データのスキャンを読み込めませんでした"
+  "sensitive.couldNotLoad": "機密データのスキャンを読み込めませんでした",
+  "guestsOnEditLinksCanEdit": "編集リンクのゲストが編集できる",
+  "guestsOnEditLinksCanEditHint": "ボードの所有者が、「編集可」リンクを持つアカウントのない訪問者に、自分のアイテムの追加・変更を許可できるかどうか。各ボードで決め、初期状態はオフです。"
 }

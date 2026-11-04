@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "Kopieren",
   "copied": "Kopiert",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "Auf einem Element",
   "sensitive.nothingFound": "Bisher nichts gefunden. Boards werden geprüft, wenn sie sich ändern.",
   "sensitive.untitled": "Unbenanntes Board",
-  "sensitive.couldNotLoad": "Die Prüfung auf sensible Daten konnte nicht geladen werden"
+  "sensitive.couldNotLoad": "Die Prüfung auf sensible Daten konnte nicht geladen werden",
+  "guestsOnEditLinksCanEdit": "Gäste mit Bearbeitungslinks können bearbeiten",
+  "guestsOnEditLinksCanEditHint": "Ob der Eigentümer eines Boards Besuchern ohne Konto über seinen „Kann bearbeiten“-Link erlauben darf, eigene Elemente hinzuzufügen und zu ändern. Jedes Board entscheidet selbst; anfangs ist es aus."
 }

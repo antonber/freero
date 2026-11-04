@@ -29,6 +29,7 @@ export * from './problems';
 export * from './analytics';
 export * from './embedCode';
 export * from './participation';
+export * from './guestEditing';
 export * from './i18n';
 export * from './compliance';
 export * from './icons';

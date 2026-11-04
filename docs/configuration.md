@@ -326,6 +326,7 @@ unless its id is set; `PUBLIC_URL` must be https. Owner steps: [atlassian.md](in
 
 | Variable | Default | Description |
 |---|---|---|
+| `GUEST_EDITING` | `true` | `false` stops every board on this instance from letting guests without an account edit (#97) — the switch for personal boards, which have no workspace policies. With it on, each board's owner decides (off by default) and a workspace's `guestEditing` policy can forbid it. |
 | `JITSI_BASE_URL` | — | An https Jitsi deployment (`https://meet.jit.si`, or your own) where a board can get a call room of its own ("Call link…" → Jitsi room). The room name is derived from the board id with `SESSION_SECRET` (`Freero` + 24 hex characters), so nobody can guess another board's room; rotating the secret gives every board a new room. Unset: boards only use meeting links their editors paste (Meet, Zoom, Teams…, https only). Freero carries no audio or video itself. |
 
 ## GIF search

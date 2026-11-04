@@ -192,5 +192,12 @@
   "frame": "Frame",
   "tabAndShiftTabMove": "Tab and Shift+Tab move through the items in reading order, a frame’s items right after it; Alt+arrow keys jump to the nearest item in that direction. Enter edits the selected item, arrow keys move it and Alt+Shift+arrow keys resize it. Shift+F10 opens its menu, Alt+F10 the format toolbar, F6 moves between the canvas and the toolbars. With a creation tool picked, Enter places a new item next to the selection. Alt+Shift+L lists the board as text.",
   "xAndYMoveThe": "X and Y move the whole selection; size and rotation apply to each item.",
-  "zoomPercentPresets": "{pct}% zoom: presets"
+  "zoomPercentPresets": "{pct}% zoom: presets",
+  "asAGuestYouCanChangeOnly": "As a guest you can change only what you added, and not locked items.",
+  "guestLimitHourly": "You’ve added as much as a guest can in an hour. Try again later.",
+  "guestLimitTotal": "You’ve added as many items as a guest can on this board.",
+  "guestLimitBoard": "Guests have added as much as this board takes from guests.",
+  "guestLimitRate": "You’re changing things faster than a guest can. Slow down a little.",
+  "guestChangeUndone": "That change wasn’t allowed for guests and was undone.",
+  "guestCanEditOwn": "Can add and edit own"
 }

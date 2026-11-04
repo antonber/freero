@@ -193,7 +193,14 @@
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
     "youReOfflineKeepThisTabOpen",
-    "zoomPercentPresets"
+    "zoomPercentPresets",
+    "asAGuestYouCanChangeOnly",
+    "guestLimitHourly",
+    "guestLimitTotal",
+    "guestLimitBoard",
+    "guestLimitRate",
+    "guestChangeUndone",
+    "guestCanEditOwn"
   ],
   "dots": "نقاط",
   "lines": "خطوط",
@@ -388,5 +395,12 @@
   "frame": "إطار",
   "tabAndShiftTabMove": "ينقلك Tab وShift+Tab بين العناصر بترتيب القراءة، وتأتي عناصر الإطار بعده مباشرة؛ وتنتقل Alt+مفاتيح الأسهم إلى أقرب عنصر في ذلك الاتجاه. يعدّل Enter العنصر المحدد، وتنقله مفاتيح الأسهم، وتغيّر Alt+Shift+مفاتيح الأسهم حجمه. يفتح Shift+F10 قائمته، وAlt+F10 شريط أدوات التنسيق، وينقلك F6 بين اللوحة القماشية وأشرطة الأدوات. عند اختيار أداة إنشاء، يضع Enter عنصرًا جديدًا بجوار التحديد. يعرض Alt+Shift+L اللوحة كنص.",
   "xAndYMoveThe": "تنقل X وY التحديد بالكامل؛ ويُطبَّق الحجم والتدوير على كل عنصر.",
-  "zoomPercentPresets": "تكبير {pct}%: إعدادات مسبقة"
+  "zoomPercentPresets": "تكبير {pct}%: إعدادات مسبقة",
+  "asAGuestYouCanChangeOnly": "بصفتك ضيفًا، يمكنك تغيير ما أضفته فقط، وليس العناصر المقفلة.",
+  "guestLimitHourly": "لقد أضفت أقصى ما يمكن للضيف إضافته في ساعة. حاول مرة أخرى لاحقًا.",
+  "guestLimitTotal": "لقد أضفت أقصى عدد من العناصر يمكن للضيف إضافته في هذه اللوحة.",
+  "guestLimitBoard": "أضاف الضيوف أقصى ما تقبله هذه اللوحة من الضيوف.",
+  "guestLimitRate": "أنت تغيّر الأشياء أسرع مما يُسمح للضيف. تمهّل قليلًا.",
+  "guestChangeUndone": "هذا التغيير غير مسموح به للضيوف وتم التراجع عنه.",
+  "guestCanEditOwn": "يمكنه إضافة ما يخصه وتعديله"
 }

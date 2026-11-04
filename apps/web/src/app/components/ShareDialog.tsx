@@ -11,6 +11,7 @@ import { LinkedFrom } from './LinkedFrom';
 import { LinkProtection } from './LinkProtection';
 import { ShareGroups } from './ShareGroups';
 import { SharingSettings } from './SharingSettings';
+import { GuestEditing } from './GuestEditing';
 import { t } from '../messages';
 import { BoardLabelPicker } from './BoardLabelPicker';
 import './ShareDialog.css';
@@ -467,7 +468,9 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                     : linkAccess === 'none'
                       ? t('onlyPeopleAddedAboveCan')
                       : board.permissions.guestLinks
-                        ? t('alsoWithoutAnAccountAs', { value: linkAccess === 'viewer' ? t('view') : t('viewAndComment') })
+                        ? t('alsoWithoutAnAccountAs', {
+                            value: linkAccess === 'viewer' ? t('view') : linkAccess === 'editor' && board.sharing?.guestsCanEdit ? t('guestsViewAndEdit') : t('viewAndComment'),
+                          })
                         : t('mustBeSignedInTo')}
                 </span>
               </div>
@@ -483,6 +486,17 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
             {manages && !board.linkBlocked && board.linkProtection && (linkAccess !== 'none' || board.linkProtection.storedAccess !== 'none' || !!linkPolicy) ? (
               <LinkProtection
                 board={board}
+                onChange={(updated) => {
+                  setBoard(updated);
+                  onBoardChange?.(updated);
+                }}
+              />
+            ) : null}
+
+            {manages && !board.linkBlocked && board.kind !== 'doc' ? (
+              <GuestEditing
+                board={board}
+                linkAccess={linkAccess}
                 onChange={(updated) => {
                   setBoard(updated);
                   onBoardChange?.(updated);

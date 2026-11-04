@@ -101,8 +101,9 @@ export function installKeyboard(core: EngineCore): () => void {
         const bindings = primary ? [def.shortcut!] : (def.extraShortcuts ?? []);
         if (!bindings.some((sc) => filter(sc) && matchShortcut(e, sc, { altGr }))) continue;
         const scoped = core.scoped(feature);
-        // A participant deletes their own drafts (Editor.mayEdit) like an editor deletes anything.
-        const ownDrafts = def.id === 'engine.delete' && editor.isParticipant() && editor.mayEdit(editor.getSelection());
+        // A participant deletes their own drafts (Editor.mayEdit) like an editor deletes anything; a
+        // guest editor (#97) what it added.
+        const ownDrafts = def.id === 'engine.delete' && (editor.isParticipant() || editor.isGuestEditor()) && editor.mayEdit(editor.getSelection());
         if (!editor.can(def.minRole ?? 'editor') && !ownDrafts) continue;
         if (def.when && !def.when(scoped)) continue;
         e.preventDefault();

@@ -879,5 +879,7 @@
   "sensitive.onAnItem": "On an item",
   "sensitive.nothingFound": "Nothing found so far. Boards are scanned as they change.",
   "sensitive.untitled": "Untitled board",
-  "sensitive.couldNotLoad": "Could not load the sensitive-data scan"
+  "sensitive.couldNotLoad": "Could not load the sensitive-data scan",
+  "guestsOnEditLinksCanEdit": "Guests on edit links can edit",
+  "guestsOnEditLinksCanEditHint": "Whether a board’s owner may let visitors without an account on its “Can edit” link add and change their own items. Each board decides, and it starts off."
 }

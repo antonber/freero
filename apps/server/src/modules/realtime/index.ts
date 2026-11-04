@@ -14,6 +14,9 @@ export {
   flushAllRooms,
   renameCommentAuthor,
   commentPeopleOf,
+  // Guest editing (#97, guestEditing.ts): the board's guests as its owner manages them.
+  boardGuestActivity,
+  removeGuestItems,
   readBoardView,
   changeBoard,
   proposeSuggestions,

@@ -392,6 +392,12 @@ export interface Config {
    */
   jitsiBaseUrl: string | null;
   /**
+   * #97: may boards let guests on their "can edit" link edit (each board's owner decides, off by
+   * default; a workspace's `guestEditing` policy can forbid it)? GUEST_EDITING=false turns it off
+   * on the whole instance — the setting that covers personal boards, which have no policies.
+   */
+  guestEditing: boolean;
+  /**
    * GIF search in the sticker panel (#139): the operator's GIF provider and API key, or null (no
    * GIF search anywhere). Every request goes through the server; the key never reaches a browser.
    */
@@ -1239,6 +1245,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       legal: siteLegal,
     },
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
+    guestEditing: bool('GUEST_EDITING', true),
     gifs: gifs(),
     events: {
       settleMs: int('EVENTS_SETTLE_SECONDS', 3, 0, 600) * 1000,

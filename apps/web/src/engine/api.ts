@@ -1685,9 +1685,16 @@ export interface Editor {
    */
   isParticipant(): boolean;
   /**
+   * [additive, #97] This guest (a visitor without an account) may edit: add the types the server's
+   * role message names (`guestEdit`, @freero/shared guestEditing.ts) and change or delete what it
+   * added itself, while the board lets guests edit. The server enforces exactly that. False for
+   * owners and editors.
+   */
+  isGuestEditor(): boolean;
+  /**
    * [additive] May this user change these elements: an editor any, a participant only their own
-   * drafts (in their private layer); nobody but the owner a protected one (`mayProtect`). Element
-   * writes check it and toast otherwise.
+   * drafts (in their private layer), a guest editor only what it added; nobody but the owner a
+   * protected one (`mayProtect`). Element writes check it and toast otherwise.
    */
   mayEdit(ids: readonly string[]): boolean;
   /**

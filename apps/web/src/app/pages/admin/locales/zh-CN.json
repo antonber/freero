@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "复制",
   "copied": "已复制",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "在某个项目上",
   "sensitive.nothingFound": "暂未发现任何内容。白板在变更时会被扫描。",
   "sensitive.untitled": "未命名白板",
-  "sensitive.couldNotLoad": "无法加载敏感数据扫描"
+  "sensitive.couldNotLoad": "无法加载敏感数据扫描",
+  "guestsOnEditLinksCanEdit": "持编辑链接的访客可以编辑",
+  "guestsOnEditLinksCanEditHint": "白板所有者是否可以允许通过“可编辑”链接访问的无账户访客添加和更改自己的项目。由每个白板自行决定，默认关闭。"
 }

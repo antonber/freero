@@ -97,6 +97,12 @@ export interface BaseElement {
    */
   createdVia?: ActingApp | null;
   /**
+   * [additive, #97] Added by a guest (a visitor without an account) on a board that lets guests
+   * edit: the name the guest gave, shown as "Guest · <name>" on the item. Stamped by the server on
+   * what a guest's socket adds; never set or changed by a client.
+   */
+  guestName?: string | null;
+  /**
    * [additive] The tracker issue this item was sent to or imported from (KAI-153): the id of its
    * record in the board's `trackers` collection. Written only by the server (modules/trackers);
    * the badge shows only while that record still lists this item among its sources, so a copy of

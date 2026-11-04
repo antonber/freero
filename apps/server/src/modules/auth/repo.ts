@@ -1059,6 +1059,8 @@ export interface GuestRow {
   color: string;
   createdAt: number;
   expiresAt: number;
+  /** #97: removed from its board by the owner (no live guest any more), or null. */
+  removedAt?: number | null;
 }
 interface GuestDbRow {
   id: string;
@@ -1067,6 +1069,7 @@ interface GuestDbRow {
   color: string;
   created_at: Date;
   expires_at: Date;
+  removed_at?: Date | null;
 }
 const toGuest = (r: GuestDbRow): GuestRow => ({
   id: r.id,
@@ -1075,6 +1078,7 @@ const toGuest = (r: GuestDbRow): GuestRow => ({
   color: r.color,
   createdAt: r.created_at.getTime(),
   expiresAt: r.expires_at.getTime(),
+  removedAt: r.removed_at ? r.removed_at.getTime() : null,
 });
 
 /** False when the board is gone (deleted meanwhile). */
@@ -1093,14 +1097,41 @@ export async function insertGuest(g: GuestRow & { tokenHash: string; ip: string 
 
 /** The live guest session behind a token hash, or null. */
 export async function findGuestByToken(tokenHash: string, now: number): Promise<GuestRow | null> {
-  const r = await one<GuestDbRow>(`SELECT * FROM guest_sessions WHERE token_hash = $1 AND expires_at > $2`, [tokenHash, new Date(now)]);
+  const r = await one<GuestDbRow>(`SELECT * FROM guest_sessions WHERE token_hash = $1 AND expires_at > $2 AND removed_at IS NULL`, [tokenHash, new Date(now)]);
   return r ? toGuest(r) : null;
 }
 
-/** Live guests by id (expired ones are left out). */
+/** #97: the board a REMOVED guest session behind a token hash was on, or null. */
+export async function findRemovedGuestBoard(tokenHash: string, now: number): Promise<string | null> {
+  const r = await one<{ board_id: string }>(`SELECT board_id FROM guest_sessions WHERE token_hash = $1 AND expires_at > $2 AND removed_at IS NOT NULL`, [
+    tokenHash,
+    new Date(now),
+  ]);
+  return r?.board_id ?? null;
+}
+
+/** Live guests by id (expired and removed ones are left out). */
 export async function findGuests(ids: string[], now: number): Promise<GuestRow[]> {
   if (ids.length === 0) return [];
-  return (await query<GuestDbRow>(`SELECT * FROM guest_sessions WHERE id = ANY($1::text[]) AND expires_at > $2`, [ids, new Date(now)])).map(toGuest);
+  return (
+    await query<GuestDbRow>(`SELECT * FROM guest_sessions WHERE id = ANY($1::text[]) AND expires_at > $2 AND removed_at IS NULL`, [ids, new Date(now)])
+  ).map(toGuest);
+}
+
+/** #97: every unexpired guest session of a board, removed ones included (the owner's guest list). */
+export async function guestsOfBoard(boardId: string, now: number): Promise<GuestRow[]> {
+  return (
+    await query<GuestDbRow>(`SELECT * FROM guest_sessions WHERE board_id = $1 AND expires_at > $2 ORDER BY created_at LIMIT 500`, [boardId, new Date(now)])
+  ).map(toGuest);
+}
+
+/** #97: marks a board's guest removed; returns its token hash (to close its sockets), or null (no such live guest). */
+export async function markGuestRemoved(boardId: string, guestId: string, now: number): Promise<string | null> {
+  const r = await one<{ token_hash: string }>(
+    `UPDATE guest_sessions SET removed_at = $3 WHERE id = $1 AND board_id = $2 AND removed_at IS NULL AND expires_at > $3 RETURNING token_hash`,
+    [guestId, boardId, new Date(now)],
+  );
+  return r?.token_hash ?? null;
 }
 
 /** Ends one guest session; returns its token hash (to close its sockets), or null. */

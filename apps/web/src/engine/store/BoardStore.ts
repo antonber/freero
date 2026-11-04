@@ -28,8 +28,11 @@ import {
   WS_MESSAGE_LAYER,
   WS_MESSAGE_LAYER_OP,
   WS_MESSAGE_ROLE,
+  WS_MESSAGE_NOTICE,
   Y_ELEMENTS,
   Y_SETTINGS,
+  type GuestEditGrant,
+  type GuestEditNotice,
   type BoardElement,
   type BoardLayer,
   type BoardSettings,
@@ -138,6 +141,8 @@ export class BoardStore {
   serverLimits: SessionLimits | null = null;
   /** This commenter may take part: own ballot, pick and private-mode drafts (RoleMessage.participant). */
   serverParticipant = false;
+  /** [#97] This guest may add these types and change what it added (RoleMessage.guestEdit), or null. */
+  serverGuestEdit: GuestEditGrant | null = null;
   /** [#178] The board was opened from the copy kept on this device (before or without a server sync). */
   restored = false;
 
@@ -151,6 +156,7 @@ export class BoardStore {
   private settingsListeners = new Set<Listener>();
   private statusListeners = new Set<Listener>();
   private roleListeners = new Set<Listener>();
+  private noticeListeners = new Set<(n: GuestEditNotice) => void>();
   private undoListeners = new Set<Listener>();
   private localChangeListeners = new Set<Listener>();
   private foreignKeyListeners = new Set<(ids: string[]) => void>();
@@ -229,10 +235,20 @@ export class BoardStore {
             this.serverReadRole = m.readRole ?? null;
             this.serverLimits = m.limits && typeof m.limits === 'object' ? m.limits : null;
             this.serverParticipant = m.participant === true;
+            this.serverGuestEdit = m.guestEdit && Array.isArray(m.guestEdit.types) ? m.guestEdit : null;
             this.emit(this.roleListeners);
           }
         } catch {
           // ignore malformed role message
+        }
+      };
+      // [#97] Why the server undid a guest's change (a limit): the editor tells the person.
+      provider.messageHandlers[WS_MESSAGE_NOTICE] = (_encoder, decoder) => {
+        try {
+          const n = JSON.parse(decoding.readVarString(decoder)) as GuestEditNotice;
+          if (n && n.type === 'guest-edit') for (const l of this.noticeListeners) l(n);
+        } catch {
+          // ignore a malformed notice
         }
       };
       // A layer's sync message: apply it to that layer doc; answer (step 1 -> step 2) in the
@@ -275,6 +291,7 @@ export class BoardStore {
           this.serverReadRole = null;
           this.serverLimits = null;
           this.serverParticipant = false;
+          this.serverGuestEdit = null;
           this.emit(this.roleListeners);
         }
       });
@@ -1095,6 +1112,12 @@ export class BoardStore {
 
   subscribeRole(l: Listener): () => void {
     return this.on(this.roleListeners, l);
+  }
+
+  /** [#97] The server's notices to a guest editor (GuestEditNotice). */
+  subscribeNotice(l: (n: GuestEditNotice) => void): () => void {
+    this.noticeListeners.add(l);
+    return () => void this.noticeListeners.delete(l);
   }
 
   destroy(): void {

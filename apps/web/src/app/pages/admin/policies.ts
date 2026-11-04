@@ -99,6 +99,15 @@ export const POLICY_FIELDS: Array<{
     ],
   },
   {
+    key: 'guestEditing',
+    label: t('guestsOnEditLinksCanEdit'),
+    hint: t('guestsOnEditLinksCanEditHint'),
+    options: [
+      { value: 'on', label: t('allowed') },
+      { value: 'off', label: t('off') },
+    ],
+  },
+  {
     key: 'gifs',
     label: t('gifSearch'),
     hint: t('gifSearchHint'),

@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { hasKey } from '../keys/index';
-import { OFFLINE_CHECK_MAX, type BoardCallResponse, type BoardSharingSettings, type BoardSummary, type GuestBoardInfo, type GuestJoinResponse, type LinkAccess, type MoveBoardResponse, type OfflineCheckResponse } from '@freero/shared';
+import { GUEST_REMOVED, OFFLINE_CHECK_MAX, type BoardGuestsResponse, type BoardCallResponse, type BoardSharingSettings, type BoardSummary, type GuestBoardInfo, type GuestJoinResponse, type LinkAccess, type MoveBoardResponse, type OfflineCheckResponse } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAuditQuietly } from '../audit/index';
-import { actorId, currentActor, currentUser, endGuestSession, guestFromCookieHeader, requireUser, requireUserOrGuest, startGuestSession } from '../auth/index';
+import { actorId, currentActor, currentUser, endGuestSession, guestFromCookieHeader, removedGuestBoard, requireUser, requireUserOrGuest, startGuestSession } from '../auth/index';
+import { listBoardGuests, removeBoardGuest, undoGuestEdits } from './guests';
 import { isLinkAccess, managesSharing } from '../members/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
 import { callOf, cleanCallUrl, jitsiAvailable } from './call';
@@ -25,11 +26,13 @@ import {
   cleanTitle,
   moveToWorkspace,
   sharingSettingsChanged,
+  checkGuestEditingChange,
   embeddingChanged,
   createBoard,
   deleteForever,
   duplicateBoard,
   guestRoleFor,
+  guestEditFor,
   linkAccessChanged,
   listBoards,
   moveToProject,
@@ -146,6 +149,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       }
       const sharing = cleanSharing(body.sharing);
       if (Object.keys(sharing).length && !manages) throw forbidden('Only the board’s owner and co-owners can change its sharing settings');
+      if (sharing.guestsCanEdit !== undefined) checkGuestEditingChange(board, access, sharing.guestsCanEdit, patch.linkAccess ?? board.linkAccess);
       Object.assign(patch, sharing);
       if (hasLinkProtectionPatch(body) && !manages) throw forbidden('Only the board’s owner and co-owners can protect its link');
       if ((details.title !== undefined || details.description !== undefined) && role !== 'owner' && role !== 'editor')
@@ -374,6 +378,35 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     }),
   );
 
+  // ---- a board's guests as its owner and co-owners manage them (#97, @freero/shared guestEditing.ts) ----
+
+  r.get(
+    '/boards/:id/guests',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ guests: await listBoardGuests(req.params.id, currentUser(req).id) } satisfies BoardGuestsResponse);
+    }),
+  );
+
+  r.post(
+    '/boards/:id/guests/:guestId/undo',
+    requireUser,
+    rateLimit('invite', 'user'),
+    handle(async (req, res) => {
+      res.json({ removed: await undoGuestEdits(req.params.id, currentUser(req).id, req.params.guestId) });
+    }),
+  );
+
+  r.delete(
+    '/boards/:id/guests/:guestId',
+    requireUser,
+    rateLimit('invite', 'user'),
+    handle(async (req, res) => {
+      await removeBoardGuest(req.params.id, currentUser(req).id, req.params.guestId);
+      res.json({ ok: true } satisfies Out);
+    }),
+  );
+
   // ---- guests: visitors without an account on a shared link (see @freero/shared api.ts) ----
 
   r.get(
@@ -382,8 +415,13 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       const board = await repo.getBoard(req.params.id);
       if (!board) throw notFound('Board not found');
       const role = await guestRoleFor(board);
+      // #97: a browser whose guest the owner removed is told so instead of being offered to join again.
+      if (role && (await removedGuestBoard(req.headers.cookie)) === board.id) return void res.json({ allowed: false, removed: true } satisfies GuestBoardInfo);
+      const canEdit = role ? await guestEditFor(board) : false;
       res.json(
-        (role ? { allowed: true, role, title: board.title, ...(board.linkPasswordHash ? { passwordRequired: true } : {}) } : { allowed: false }) satisfies GuestBoardInfo,
+        (role
+          ? { allowed: true, role, title: board.title, ...(board.linkPasswordHash ? { passwordRequired: true } : {}), ...(canEdit ? { canEdit: true } : {}) }
+          : { allowed: false }) satisfies GuestBoardInfo,
       );
     }),
   );
@@ -395,6 +433,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       const board = await repo.getBoard(req.params.id);
       if (!board) throw notFound('Board not found');
       if (!(await guestRoleFor(board))) throw forbidden('This board doesn’t let visitors without an account in. Sign in to open it.');
+      if ((await removedGuestBoard(req.headers.cookie)) === board.id) throw new HttpError(403, 'The board’s owner removed you from this board', GUEST_REMOVED);
       // A protected link (KAI-145): the password first, then the guest exists and is remembered as having given it.
       if (board.linkPasswordHash) await checkVisitorPassword(req, board, req.body?.password);
       const guest = await startGuestSession(req, res, board.id, req.body?.name);

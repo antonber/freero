@@ -6,6 +6,7 @@ import {
   buildOutline,
   COMMENTER_WRITABLE,
   isProtectedLock,
+  guestMayChange,
   mayProtect,
   PARTICIPANT_WRITABLE,
   pendingSuggestions,
@@ -240,6 +241,20 @@ export class EditorImpl implements Editor {
     return !this.can('editor') && this.core.store.serverParticipant;
   }
 
+  isGuestEditor(): boolean {
+    return !this.can('editor') && this.core.store.serverGuestEdit !== null;
+  }
+
+  /** [#97] The types a guest editor may add (empty for everyone else). */
+  private guestTypes(): readonly string[] {
+    return this.isGuestEditor() ? (this.core.store.serverGuestEdit?.types ?? []) : [];
+  }
+
+  /** Is `id` on the shared board, added by this guest editor, and still theirs to change (guestMayChange)? */
+  private guestOwn(id: string): boolean {
+    return this.isGuestEditor() && this.core.store.layerOf(id) === 'shared' && guestMayChange(this.getElement(id), this.user.id);
+  }
+
   /** Is `id` one of this participant's own drafts (in their private layer)? */
   private ownDraft(id: string): boolean {
     return this.isParticipant() && this.core.store.layerOf(id) === 'private';
@@ -249,7 +264,7 @@ export class EditorImpl implements Editor {
     // A protected lock (BaseElement.lockProtected) holds for everyone but the owner (mayProtect).
     if (!this.mayProtect() && ids.some((id) => isProtectedLock(this.getElement(id)))) return false;
     if (this.can('editor')) return true;
-    return ids.length > 0 && ids.every((id) => this.ownDraft(id));
+    return ids.length > 0 && ids.every((id) => this.ownDraft(id) || this.guestOwn(id));
   }
 
   /** Would a participant's new element `el` go private now (private mode's rule)? Then they may add it. */
@@ -264,6 +279,12 @@ export class EditorImpl implements Editor {
    */
   canUseTool(def: ToolDefinition): boolean {
     if (this.can(def.minRole ?? 'editor')) return true;
+    // A guest editor (#97): the tools that only add what guests may add (never an upload: act-now tools).
+    const guest = this.guestTypes();
+    if (guest.length && !def.onSelect) {
+      const creates = this.toolCreates(def);
+      if (creates.length > 0 && creates.every((t) => guest.includes(t))) return true;
+    }
     const types = this.shared.privateTypes;
     if (!this.isParticipant() || !this.shared.privateRule || !types || def.onSelect) return false;
     const creates = this.toolCreates(def);
@@ -279,6 +300,10 @@ export class EditorImpl implements Editor {
     if (ids && this.mayEdit(ids)) return true;
     const role = this.getRole();
     const limits = this.getLimits();
+    if (this.isGuestEditor()) {
+      this.deny(tr('asAGuestYouCanChangeOnly'));
+      return false;
+    }
     this.deny(
       limits?.locked
         ? `${limits.byName} has locked the board for now. You can still comment.`
@@ -302,7 +327,7 @@ export class EditorImpl implements Editor {
 
   mayAdd(type: ElementType): boolean {
     const types = this.getLimits()?.addTypes;
-    return this.can('editor') && (!types || types.includes(type));
+    return (this.can('editor') && (!types || types.includes(type))) || this.guestTypes().includes(type);
   }
 
   /** May every one of these types be added now? Otherwise explains why (toast). */
@@ -692,9 +717,12 @@ export class EditorImpl implements Editor {
     const now = Date.now();
     let z = this.core.store.maxZ();
     let built = els.map((e) => this.build(e, ++z, now));
-    // A participant adds only drafts that go private (participation.ts on the server).
-    const drafting = !this.can('editor') && built.every((el) => this.mayDraft(el));
-    if ((!drafting && !this.guardWrite()) || !this.guardAdd(els.map((e) => e.type))) return [];
+    // A participant adds only drafts that go private (participation.ts on the server); a guest
+    // editor (#97) only the types guests may add.
+    const guest = this.guestTypes();
+    const guestAdd = guest.length > 0 && built.every((el) => guest.includes(el.type));
+    const drafting = !this.can('editor') && !guestAdd && built.every((el) => this.mayDraft(el));
+    if ((!drafting && !guestAdd && !this.guardWrite()) || !this.guardAdd(els.map((e) => e.type))) return [];
     // Created by a grid-snapping tool's pointer event: land on the grid like a snapped drag
     // (top-left of everything created at once, moved together).
     const grid = this.core.interaction.createGrid;

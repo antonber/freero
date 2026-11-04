@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "העתקה",
   "copied": "הועתק",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "בפריט",
   "sensitive.nothingFound": "עדיין לא נמצא דבר. לוחות נסרקים כשהם משתנים.",
   "sensitive.untitled": "לוח ללא שם",
-  "sensitive.couldNotLoad": "לא ניתן לטעון את סריקת המידע הרגיש"
+  "sensitive.couldNotLoad": "לא ניתן לטעון את סריקת המידע הרגיש",
+  "guestsOnEditLinksCanEdit": "אורחים עם קישורי עריכה יכולים לערוך",
+  "guestsOnEditLinksCanEditHint": "האם בעל לוח רשאי לאפשר למבקרים ללא חשבון עם קישור \"יכול לערוך\" להוסיף ולשנות פריטים משלהם. כל לוח מחליט, וזה כבוי בהתחלה."
 }

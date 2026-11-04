@@ -15,6 +15,7 @@ import {
   createBoard,
   checkEmbeddingChange,
   cleanSharing,
+  checkGuestEditingChange,
   sharingSettingsChanged,
   describeAccess,
   duplicateBoard,
@@ -94,11 +95,12 @@ export {
 export async function getBoardAccess(
   boardId: string,
   userId: string,
-): Promise<{ exists: boolean; role: Role | null; ownerId: string | null; removed: boolean; kind: ObjectKind | null; coOwner: boolean }> {
+): Promise<{ exists: boolean; role: Role | null; ownerId: string | null; removed: boolean; kind: ObjectKind | null; coOwner: boolean; guestEdit: boolean }> {
   const board = await repo.getBoard(boardId);
-  if (!board) return { exists: false, role: null, ownerId: null, removed: await removedFor(boardId, userId), kind: null, coOwner: false };
-  const { role, coOwner } = await describeAccess(board, userId);
-  return { exists: true, role, ownerId: board.ownerId, removed: false, kind: board.kind, coOwner };
+  if (!board) return { exists: false, role: null, ownerId: null, removed: await removedFor(boardId, userId), kind: null, coOwner: false, guestEdit: false };
+  const { role, coOwner, guestEdit } = await describeAccess(board, userId);
+  // #97 guestEdit: a guest (role commenter) whose board socket may also edit what it adds.
+  return { exists: true, role, ownerId: board.ownerId, removed: false, kind: board.kind, coOwner, guestEdit: guestEdit === true };
 }
 
 /**
@@ -156,10 +158,11 @@ export async function setBoardEmbeddable(boardId: string, userId: string, embedd
  * and export") as `userId`, by the share dialog's rules: the owner or a co-owner; audited.
  */
 export async function setBoardSharingSettings(boardId: string, userId: string, sharing: unknown): Promise<void> {
-  const { board, role, coOwner } = await requireAccess(boardId, userId);
+  const { board, role, coOwner, access } = await requireAccess(boardId, userId);
   const patch = cleanSharing(sharing);
   if (!Object.keys(patch).length) return;
   if (!managesSharing(role, coOwner)) throw forbidden('Only the board’s owner and co-owners can change its sharing settings');
+  if (patch.guestsCanEdit !== undefined) checkGuestEditingChange(board, access, patch.guestsCanEdit, board.linkAccess);
   await repo.updateBoardFields(board.id, patch, Date.now());
   await sharingSettingsChanged(board, userId, patch);
 }

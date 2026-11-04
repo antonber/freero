@@ -9,6 +9,7 @@ import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
 import type { BoardOutline } from './outline/types';
 import type { ActivityResults } from './ydoc';
+import type { GuestEditGrant } from './guestEditing';
 
 export type Role = 'owner' | 'editor' | 'commenter' | 'viewer';
 /**
@@ -127,6 +128,13 @@ export interface BoardSharingSettings {
    * from it. Off: those routes answer them 403 `downloads_restricted`, and their clipboard copy is off.
    */
   viewersCanExport: boolean;
+  /**
+   * [additive, #97] Visitors without an account on its "can edit" link may edit (guestEditing.ts):
+   * add simple items and change what they added. Off unless the owner or a co-owner turns it on;
+   * works only while the link is "can edit", the workspace's `guestEditing` policy and the
+   * operator allow it. Absent: off.
+   */
+  guestsCanEdit?: boolean;
 }
 /** `code` of a 403: the board's "Editors can share" is off (#123). */
 export const BOARD_SHARING_RESTRICTED = 'board_sharing_restricted';
@@ -196,6 +204,11 @@ export interface BoardPermissions {
    * with 'all'). Absent or false: nothing is kept on the device, and a copy already there is deleted.
    */
   offline?: boolean;
+  /**
+   * [additive, #97] Guests on the link may be allowed to edit here: the operator and the workspace's
+   * `guestEditing` policy allow it and the workspace lets visitors without an account in. Absent: no.
+   */
+  guestEditing?: boolean;
 }
 
 /**
@@ -470,6 +483,11 @@ export interface WorkspacePolicies {
    * the app is online there).
    */
   offlineCopies: 'all' | 'unkeyed' | 'off';
+  /**
+   * [additive, #97] May a board's owner let visitors without an account on its "can edit" link edit
+   * (each board decides, off by default)? 'off': guests stay commenters on every board here.
+   */
+  guestEditing: 'on' | 'off';
 }
 /** The longest a workspace may let board links live without changing them (#39 `linkMaxDays`). */
 export const LINK_MAX_DAYS_LIMIT = 365;
@@ -534,6 +552,7 @@ export const POLICY_STRICTNESS: { [K in OrderedPolicyKey]: ReadonlyArray<Workspa
   templatePublishing: ['members', 'admins'],
   gifs: ['pg-13', 'g', 'off'],
   offlineCopies: ['all', 'unkeyed', 'off'],
+  guestEditing: ['on', 'off'],
 };
 /** The floored policies whose values are an ordered choice (all but the numeric `linkMaxDays`). */
 export type OrderedPolicyKey = Exclude<OrganisationPolicyKey, 'linkMaxDays'>;
@@ -1719,6 +1738,9 @@ export interface BoardAccessRequest {
 // Changing the link or the policy re-checks connected guests at once; expired guests are dropped.
 // A commenter guest takes part in votes, planning poker and private mode like any commenter while
 // the board lets them (participation.ts: their own ballot, pick and drafts only, server-enforced).
+// #97: on an "editor" link whose board lets guests edit (BoardSharingSettings.guestsCanEdit) a guest
+// may also add simple items and change its own (guestEditing.ts); its socket learns it from
+// RoleMessage.guestEdit. A guest its board's owner removed gets 403 GUEST_REMOVED on join.
 // GET  /api/guest/boards/:id        -> GuestBoardInfo           (no session needed; 404: no such board)
 // POST /api/guest/boards/:id/join   body { name } -> GuestJoinResponse (rate limited per IP; 403 when
 //                                      the board doesn't let guests in)
@@ -1751,6 +1773,10 @@ export interface GuestBoardInfo {
   title?: string;
   /** [additive] The link asks for a password (KAI-145): send it with the join. */
   passwordRequired?: boolean;
+  /** [additive, #97] This browser's guest was removed from the board by its owner (`allowed` is false). */
+  removed?: boolean;
+  /** [additive, #97] A guest may also edit (add simple items and change its own): the board lets guests edit. */
+  canEdit?: boolean;
 }
 export interface GuestInfo {
   id: string;
@@ -2265,6 +2291,12 @@ export interface RoleMessage {
    * again whenever that changes. Clients that don't know it simply don't offer taking part.
    */
   participant?: boolean;
+  /**
+   * [additive, #97] This guest may edit (guestEditing.ts): add GUEST_EDIT_TYPES and change or delete
+   * what it added itself. Absent: a guest is a commenter. Sent again whenever that changes (the
+   * board's owner, the workspace or a facilitator's lock turned it off). Old clients ignore it.
+   */
+  guestEdit?: GuestEditGrant;
 }
 /** What a facilitator limits for this connection (enforced by the server, mirrored by the client). */
 export interface SessionLimits {
@@ -2973,6 +3005,8 @@ export const AUDIT_ACTIONS = {
   'board.access_approved': 'Let someone into a board (access request)',
   'board.access_declined': 'Declined a request for access to a board',
   'board.guest_joined': 'A visitor without an account joined a board by its link',
+  'board.guest_removed': 'Removed a visitor without an account from a board',
+  'board.guest_edits_undone': 'Removed everything a visitor without an account added to a board',
   'board.link_protection_changed': 'Changed a board link’s password or expiry',
   'board.link_password_refused': 'Gave a wrong password for a board’s link',
   'board.call_link_changed': 'Changed a board’s call link',

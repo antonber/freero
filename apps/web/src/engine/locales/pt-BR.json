@@ -193,7 +193,14 @@
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
     "youReOfflineKeepThisTabOpen",
-    "zoomPercentPresets"
+    "zoomPercentPresets",
+    "asAGuestYouCanChangeOnly",
+    "guestLimitHourly",
+    "guestLimitTotal",
+    "guestLimitBoard",
+    "guestLimitRate",
+    "guestChangeUndone",
+    "guestCanEditOwn"
   ],
   "dots": "Pontos",
   "lines": "Linhas",
@@ -388,5 +395,12 @@
   "frame": "Moldura",
   "tabAndShiftTabMove": "Tab e Shift+Tab percorrem os itens na ordem de leitura, com os itens de uma moldura logo depois dela; Alt+setas pulam para o item mais próximo nessa direção. Enter edita o item selecionado, as setas o movem e Alt+Shift+setas o redimensionam. Shift+F10 abre o menu dele, Alt+F10 a barra de formatação, e F6 alterna entre a tela e as barras de ferramentas. Com uma ferramenta de criação escolhida, Enter coloca um novo item ao lado da seleção. Alt+Shift+L lista o quadro como texto.",
   "xAndYMoveThe": "X e Y movem a seleção inteira; tamanho e rotação se aplicam a cada item.",
-  "zoomPercentPresets": "Zoom de {pct}%: predefinições"
+  "zoomPercentPresets": "Zoom de {pct}%: predefinições",
+  "asAGuestYouCanChangeOnly": "Como convidado, você só pode alterar o que você adicionou, e não itens bloqueados.",
+  "guestLimitHourly": "Você adicionou o máximo que um convidado pode em uma hora. Tente novamente mais tarde.",
+  "guestLimitTotal": "Você adicionou o máximo de itens que um convidado pode neste quadro.",
+  "guestLimitBoard": "Os convidados já adicionaram o máximo que este quadro aceita de convidados.",
+  "guestLimitRate": "Você está alterando as coisas mais rápido do que um convidado pode. Vá um pouco mais devagar.",
+  "guestChangeUndone": "Essa alteração não é permitida para convidados e foi desfeita.",
+  "guestCanEditOwn": "Pode adicionar e editar o seu"
 }

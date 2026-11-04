@@ -1,0 +1,8 @@
+{
+  "@@unreviewed": [
+    "guestName",
+    "addedByAGuest"
+  ],
+  "guestName": "ゲスト · {name}",
+  "addedByAGuest": "アカウントのないゲスト {name} が追加"
+}

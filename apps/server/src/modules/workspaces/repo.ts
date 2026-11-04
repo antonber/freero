@@ -47,6 +47,7 @@ interface WsRow {
   link_max_days: number | null;
   template_publishing: 'members' | 'admins' | null;
   offline_copies: WorkspacePolicies['offlineCopies'] | null;
+  guest_editing: 'on' | 'off' | null;
   require_two_factor: boolean;
   session_max_hours: number | null;
   session_idle_minutes: number | null;
@@ -74,6 +75,7 @@ interface WsRow {
   org_link_max_days: number | null;
   org_template_publishing: 'members' | 'admins' | null;
   org_offline_copies: WorkspacePolicies['offlineCopies'] | null;
+  org_guest_editing: 'on' | 'off' | null;
   org_require_two_factor: boolean | null;
   org_session_max_hours: number | null;
   org_session_idle_minutes: number | null;
@@ -90,7 +92,7 @@ const WS_SELECT = `SELECT w.*, o.name AS org_name, o.external_sharing AS org_ext
     o.guest_invites AS org_guest_invites, o.downloads AS org_downloads, o.public_links AS org_public_links,
     o.live_embeds AS org_live_embeds, o.board_embeds AS org_board_embeds, o.gifs AS org_gifs, o.require_two_factor AS org_require_two_factor,
     o.link_password AS org_link_password, o.link_max_days AS org_link_max_days, o.template_publishing AS org_template_publishing,
-    o.offline_copies AS org_offline_copies,
+    o.offline_copies AS org_offline_copies, o.guest_editing AS org_guest_editing,
     o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes,
     o.inactive_board_action AS org_inactive_board_action, o.inactive_board_days AS org_inactive_board_days,
     o.ip_allowlist AS org_ip_allowlist
@@ -114,6 +116,7 @@ function toWorkspace(r: WsRow): Workspace {
     gifs: r.gifs === 'off' || r.gifs === 'pg-13' ? r.gifs : 'g',
     // #178: unset is 'unkeyed' on a team workspace, and no floor on an organisation.
     offlineCopies: r.offline_copies ?? (r.kind === 'organisation' ? NO_FLOOR_POLICIES.offlineCopies : 'unkeyed'),
+    guestEditing: r.guest_editing === 'off' ? 'off' : 'on',
   };
   const ownSettings: WorkspaceSettings = {
     requireTwoFactor: r.require_two_factor,
@@ -144,6 +147,7 @@ function toWorkspace(r: WsRow): Workspace {
             templatePublishing: r.org_template_publishing ?? NO_FLOOR_POLICIES.templatePublishing,
             gifs: r.org_gifs ?? NO_FLOOR_POLICIES.gifs,
             offlineCopies: r.org_offline_copies ?? NO_FLOOR_POLICIES.offlineCopies,
+            guestEditing: r.org_guest_editing ?? NO_FLOOR_POLICIES.guestEditing,
           },
           settings: {
             requireTwoFactor: r.org_require_two_factor ?? false,
@@ -280,7 +284,8 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
        board_embeds = COALESCE($11, board_embeds), link_password = COALESCE($12, link_password),
        link_max_days = CASE WHEN $13::boolean THEN $14::integer ELSE link_max_days END,
        template_publishing = COALESCE($15, template_publishing),
-       offline_copies = COALESCE($16, offline_copies), gifs = COALESCE($17, gifs)
+       offline_copies = COALESCE($16, offline_copies), gifs = COALESCE($17, gifs),
+       guest_editing = COALESCE($18, guest_editing)
      WHERE id = $1`,
     [
       id,
@@ -301,6 +306,7 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
       p.templatePublishing ?? null,
       p.offlineCopies ?? null,
       p.gifs ?? null,
+      p.guestEditing ?? null,
     ],
   );
 }

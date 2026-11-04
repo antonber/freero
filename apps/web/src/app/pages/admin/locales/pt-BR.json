@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "Copiar",
   "copied": "Copiado",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "Em um item",
   "sensitive.nothingFound": "Nada encontrado até agora. Os quadros são verificados quando mudam.",
   "sensitive.untitled": "Quadro sem título",
-  "sensitive.couldNotLoad": "Não foi possível carregar a verificação de dados sensíveis"
+  "sensitive.couldNotLoad": "Não foi possível carregar a verificação de dados sensíveis",
+  "guestsOnEditLinksCanEdit": "Convidados com links de edição podem editar",
+  "guestsOnEditLinksCanEditHint": "Se o proprietário de um quadro pode deixar visitantes sem conta com o link “Pode editar” adicionar e alterar os próprios itens. Cada quadro decide, e começa desativado."
 }

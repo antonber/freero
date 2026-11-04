@@ -66,6 +66,7 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   templatePublishing: 'members',
   gifs: 'g',
   offlineCopies: 'unkeyed',
+  guestEditing: 'on',
 };
 
 /**

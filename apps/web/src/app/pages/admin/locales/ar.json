@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "نسخ",
   "copied": "تم النسخ",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "على عنصر",
   "sensitive.nothingFound": "لم يُعثر على شيء حتى الآن. تُفحص اللوحات عند تغييرها.",
   "sensitive.untitled": "لوحة بلا عنوان",
-  "sensitive.couldNotLoad": "تعذّر تحميل فحص البيانات الحساسة"
+  "sensitive.couldNotLoad": "تعذّر تحميل فحص البيانات الحساسة",
+  "guestsOnEditLinksCanEdit": "يمكن للضيوف عبر روابط التعديل التعديل",
+  "guestsOnEditLinksCanEditHint": "هل يمكن لمالك اللوحة السماح للزوار بلا حساب عبر رابط «يمكنه التعديل» بإضافة عناصرهم وتغييرها. تقرر كل لوحة ذلك، ويبدأ متوقفًا."
 }

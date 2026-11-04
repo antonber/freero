@@ -37,7 +37,9 @@ export function Toolbar() {
   // A participant drafting in private mode gets the tools that add what they may draft.
   const participant = useStore(core.ui, (s) => s.participant);
   useStore(core.ui, (s) => s.draftVersion);
-  const drafting = participant && !canEdit;
+  // A guest editor (#97) gets the tools that add what guests may add.
+  const guestEdit = useStore(core.ui, (s) => s.guestEdit);
+  const drafting = (participant || guestEdit) && !canEdit;
   const allowed = (t: Registered<ToolDefinition>) =>
     editor.canUseTool(t.def) &&
     editor.toolAllowed(t.def.id) &&

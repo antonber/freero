@@ -90,6 +90,8 @@ export interface UiState {
   limits: SessionLimits | null;
   /** This commenter may take part (the server's role message `participant`; Editor.isParticipant). */
   participant: boolean;
+  /** [#97] This guest may add and change its own content (the role message `guestEdit`; Editor.isGuestEditor). */
+  guestEdit: boolean;
   /** Bumped when private mode's placement changes (setPrivatePlacement): what a participant may draft. */
   draftVersion: number;
   /** Other people's cursors hidden for this viewer (Editor.setCursorsHidden). */
@@ -171,6 +173,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     following: null,
     limits: null,
     participant: false,
+    guestEdit: false,
     draftVersion: 0,
     cursorsHidden: false,
     viewHidden: new Set<string>(),

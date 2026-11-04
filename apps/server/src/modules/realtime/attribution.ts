@@ -19,6 +19,10 @@
 //
 // `createdVia` is only ever set by the server: accepting an app's suggestion in the app makes the
 // acceptor the creator and the proposer `suggestedBy`, as the client already writes it.
+//
+// `guestName` (#97) likewise: the name of the guest whose socket added the element (`guestName` of
+// the guard: a guest socket's own name, none for accounts), kept as it was on every change. So an
+// item reads "Guest · <name>" only if a guest really added it, whoever's client says otherwise.
 import * as Y from 'yjs';
 import { ANONYMOUS_AUTHOR, type PrivateModeSession } from '@freero/shared';
 import { changedKeys } from './facilitation';
@@ -28,13 +32,14 @@ export interface Attribution {
   createdBy: unknown;
   createdVia: unknown;
   createdAt?: unknown;
+  guestName?: unknown;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 export const attributionOf = (v: unknown): Attribution | undefined =>
-  isObj(v) ? { createdBy: v.createdBy, createdVia: v.createdVia, createdAt: v.createdAt } : undefined;
+  isObj(v) ? { createdBy: v.createdBy, createdVia: v.createdVia, createdAt: v.createdAt, guestName: v.guestName } : undefined;
 
 /** `el` with `want`'s attribution fields (absent ones removed). */
 function withAttribution(el: Record<string, unknown>, want: Attribution, fields: Array<keyof Attribution>): Record<string, unknown> {
@@ -66,21 +71,29 @@ export const creatorOf = (userId: string, privateLayer: boolean, main: Y.Doc): s
  * attribution the room already holds for an element that is in another of its docs or was removed
  * lately (a move or an undo), else undefined. Returns how many it rewrote.
  */
-export function guardAttribution(tr: Y.Transaction, elements: Y.Map<unknown>, creator: string, known: (id: string) => Attribution | undefined): number {
+export function guardAttribution(
+  tr: Y.Transaction,
+  elements: Y.Map<unknown>,
+  creator: string,
+  known: (id: string) => Attribution | undefined,
+  /** #97: the name of the guest whose socket this is (none for accounts, and for anonymous drafts). */
+  guestName?: string,
+): number {
   let n = 0;
   for (const [key, { before, after }] of changedKeys(tr, elements)) {
     if (!isObj(after)) continue; // removed (or not an element at all: nothing to attribute)
     if (isObj(before)) {
       const was = attributionOf(before)!;
-      if (same(after.createdBy, was.createdBy) && same(after.createdVia, was.createdVia) && same(after.createdAt, was.createdAt)) continue;
-      elements.set(key, withAttribution(after, was, ['createdBy', 'createdVia', 'createdAt']));
+      if (same(after.createdBy, was.createdBy) && same(after.createdVia, was.createdVia) && same(after.createdAt, was.createdAt) && same(after.guestName, was.guestName))
+        continue;
+      elements.set(key, withAttribution(after, was, ['createdBy', 'createdVia', 'createdAt', 'guestName']));
       n++;
       continue;
     }
     const prior = known(key);
-    const want: Attribution = prior ?? { createdBy: creator, createdVia: undefined };
-    if (same(after.createdBy, want.createdBy) && same(after.createdVia, want.createdVia)) continue;
-    elements.set(key, withAttribution(after, want, ['createdBy', 'createdVia']));
+    const want: Attribution = prior ?? { createdBy: creator, createdVia: undefined, guestName: creator === ANONYMOUS_AUTHOR ? undefined : guestName };
+    if (same(after.createdBy, want.createdBy) && same(after.createdVia, want.createdVia) && same(after.guestName, want.guestName)) continue;
+    elements.set(key, withAttribution(after, want, ['createdBy', 'createdVia', 'guestName']));
     n++;
   }
   return n;
