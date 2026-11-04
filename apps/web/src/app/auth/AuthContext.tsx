@@ -111,12 +111,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [announce]);
 
   const logout = useCallback(async () => {
+    let next: string | undefined;
     try {
-      await api.logout();
+      next = (await api.logout()).redirect;
     } finally {
       setUser(null);
       announce();
     }
+    // Signed out here; a SAML session goes on to sign out at the identity provider too (#13), which
+    // sends the browser back to the sign-in page.
+    if (next && /^https?:\/\//i.test(next)) window.location.assign(next);
   }, [announce]);
 
   const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) => {

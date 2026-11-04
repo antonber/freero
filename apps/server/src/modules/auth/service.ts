@@ -357,7 +357,7 @@ export async function startSession(
   req: Request,
   res: Response,
   userId: string,
-  how: { method?: string; twoFactor?: boolean; expiresAt?: number | null } = {},
+  how: { method?: string; twoFactor?: boolean; expiresAt?: number | null; tag?: string | null } = {},
 ): Promise<{ knownDevice: boolean }> {
   await refuseIfSuspended(userId); // every way in ends here
   const token = newToken();
@@ -365,17 +365,22 @@ export async function startSession(
   const knownDevice = await rememberDevice(req, res, userId, now); // before this session exists
   // Single sign-on caps the session at the identity provider's (never beyond our own maximum).
   const expiresAt = Math.min(now + SESSION_TTL_MS, how.expiresAt ?? Infinity);
+  const key = hashToken(token);
+  const method = how.method ?? 'password';
   await repo.insertSession({
     id: newId(20),
-    tokenHash: hashToken(token),
+    tokenHash: key,
     userId,
     now,
     expiresAt,
     userAgent: (req.get('user-agent') ?? '').slice(0, 400),
     ip: clientIp(req).slice(0, 64),
-    method: how.method ?? 'password',
+    method,
     twoFactor: how.twoFactor ?? false,
   });
+  // Before the cookie: a listener that fails (single logout couldn't record the IdP session) leaves
+  // an orphan row nobody holds a cookie for, never a session single logout can't end.
+  for (const fn of sessionStartListeners) await fn({ key, userId, method, tag: how.tag ?? null, expiresAt });
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -423,14 +428,68 @@ export function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', path: '/' });
 }
 
-export async function endSession(req: Request, res: Response): Promise<void> {
+/** A session that just started (directory sign-ins record which IdP session it belongs to, #13). */
+export interface StartedSession {
+  /** The session's opaque key (as onSessionEnd and endSessionsByKeys name it). */
+  key: string;
+  userId: string;
+  method: string;
+  /** What the sign-in passed as `sessionTag` to completeSignIn, or null. */
+  tag: string | null;
+  expiresAt: number;
+}
+const sessionStartListeners = new Set<(s: StartedSession) => Promise<void> | void>();
+
+/** Called (and awaited) for every session started, before its cookie is set; a throw fails the sign-in. */
+export function onSessionStarted(fn: (s: StartedSession) => Promise<void> | void): () => void {
+  sessionStartListeners.add(fn);
+  return () => sessionStartListeners.delete(fn);
+}
+
+/**
+ * Ends the sessions with these keys (an identity provider's single logout names them through the
+ * module that recorded them); their connections close on every instance. Returns those that existed.
+ */
+export async function endSessionsByKeys(keys: string[]): Promise<Array<{ key: string; userId: string }>> {
+  const ended = await repo.deleteSessionsByKeys(keys);
+  sessionsEnded(ended.map((s) => s.key));
+  return ended;
+}
+
+/**
+ * Where the browser goes after signing out, for sessions another module knows more about (SAML
+ * single logout: on to the identity provider). Asked with the session's key just BEFORE it is
+ * deleted (what it records about the session goes with it); the session is ended whatever the
+ * answer, before the browser is told. The first URL wins.
+ */
+type SignOutRedirect = (sessionKey: string, req: Request) => Promise<string | null> | string | null;
+const signOutRedirects = new Set<SignOutRedirect>();
+export function onSignOutRedirect(fn: SignOutRedirect): () => void {
+  signOutRedirects.add(fn);
+  return () => signOutRedirects.delete(fn);
+}
+
+/** Signs this browser out; returns where it should go next (the IdP's single logout), if anywhere. */
+export async function endSession(req: Request, res: Response): Promise<string | null> {
   const key = sessionKeyFromCookieHeader(req.headers.cookie);
+  let redirect: string | null = null;
   if (key) {
+    for (const fn of signOutRedirects) {
+      if (redirect) break;
+      try {
+        redirect = await fn(key, req);
+      } catch (e) {
+        // Signed out here either way; the identity provider's session is left as it is.
+        logError('auth: a sign-out redirect failed', e);
+      }
+    }
     const userId = await repo.deleteSessionReturningUser(key);
     sessionsEnded([key]);
     if (userId) await recordAuditQuietly({ action: 'auth.logout', accountId: userId, actorId: userId });
+    else redirect = null; // not a session (already gone): nothing to sign out of at the IdP either
   }
   clearSessionCookie(res);
+  return redirect;
 }
 
 /**

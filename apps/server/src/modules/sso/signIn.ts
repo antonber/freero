@@ -17,6 +17,12 @@
 //                                       that posted (cookie set on that answer) and finished by the same
 //                                       …/saml/finish; RelayState counts only as a same-origin path.
 //
+//   #13: with a service-provider key pair, AuthnRequests are signed ("Sign requests") and
+//   encrypted assertions are decrypted (each key tried: rotation); "Require encrypted assertions"
+//   refuses one that arrived in the clear before anything is validated. The sign-in's IdP session
+//   (NameID, SessionIndex) rides along to the session it opens (sessionTag → logout.ts), so the
+//   IdP's single logout can end exactly it.
+//
 // Both end in completeDirectorySignIn: the address must be at a domain the workspace verified, the
 // account is resolved (auth.resolveDirectoryLogin), a deprovisioned person is refused, a newcomer
 // joins with the default role (just in time), and auth.completeSignIn opens the session (second
@@ -44,7 +50,8 @@ import { applyDirectoryMembership, isDeactivatedMember } from '../workspaces/ind
 import { CLIENT_SECRET_PURPOSE, serviceProviderUrls, ssoMethod } from './connections';
 import { domainOf, isOrganizationEmail } from './domains';
 import * as repo from './repo';
-import { claimsFromProfile, responseDestination, SAML_REQUEST_TTL_MS, sameAcs, samlFor, splitCertificates } from './saml';
+import { claimsFromProfile, responseAssertionKind, responseDestination, SAML_REQUEST_TTL_MS, sameAcs, samlFor, splitCertificates, type SpKeyUse } from './saml';
+import { usableKeys } from './spKeys';
 
 const COOKIE = 'freero_sso';
 const COOKIE_PATH = '/api/sso';
@@ -76,12 +83,25 @@ function oidcConfigOf(c: repo.ConnectionRecord): OidcClientConfig | null {
 
 const sealAgain = (v: string) => seal(CLIENT_SECRET_PURPOSE, v);
 
-function samlOf(req: Request, c: repo.ConnectionRecord, requestId?: string) {
+/**
+ * The connection's SAML service provider: one per decryption key (the current key first; a single
+ * one without keys), each signing with the current key when "Sign requests" is on.
+ */
+export async function samlOf(req: Request | null, c: repo.ConnectionRecord, requestId?: string) {
   if (!c.samlEntityId || !c.samlSsoUrl || !c.samlCerts) return null;
   const sp = serviceProviderUrls(req, c.workspaceId);
-  const saml = samlFor(c.workspaceId, { entityId: sp.entityId, acsUrl: sp.acsUrl }, { entityId: c.samlEntityId, ssoUrl: c.samlSsoUrl, certs: splitCertificates(c.samlCerts) });
-  if (requestId) saml.options.generateUniqueId = () => requestId;
-  return { saml, acsUrl: sp.acsUrl };
+  const keys = await usableKeys(c.workspaceId);
+  const signingKey = c.signRequests ? (keys.find((k) => k.current)?.privateKeyPem ?? null) : null;
+  // Signing was asked for and the key can't be opened: refuse rather than send unsigned requests.
+  if (c.signRequests && !signingKey) return null;
+  const idp = { entityId: c.samlEntityId, ssoUrl: c.samlSsoUrl, certs: splitCertificates(c.samlCerts), sloUrl: c.samlSloUrl };
+  const make = (use: SpKeyUse) => {
+    const saml = samlFor(c.workspaceId, { entityId: sp.entityId, acsUrl: sp.acsUrl }, idp, { signingKey, sloUrl: sp.sloUrl, ...use });
+    if (requestId) saml.options.generateUniqueId = () => requestId;
+    return saml;
+  };
+  const all = keys.length ? keys.map((k) => make({ decryptionKey: k.privateKeyPem })) : [make({})];
+  return { saml: all[0], all, acsUrl: sp.acsUrl, sloUrl: sp.sloUrl };
 }
 
 /** GET /api/sso/:workspaceId/start */
@@ -97,7 +117,7 @@ export async function startSso(req: Request, res: Response): Promise<void> {
   const flowId = newId(24);
   if (c.protocol === 'saml') {
     const requestId = `_${randomBytes(20).toString('hex')}`;
-    const s = samlOf(req, c, requestId);
+    const s = await samlOf(req, c, requestId);
     if (!s) return void fail(res, 'sso_unavailable');
     // node-saml records the request ID (sso_saml_cache) for InResponseTo.
     const url = await s.saml.getAuthorizeUrlAsync(flowId, hint ? { additionalParams: { login_hint: hint } } : {});
@@ -150,8 +170,14 @@ interface DirectoryClaims {
   sessionNotOnOrAfter: number | null;
   /** SAML started at the identity provider (its app tile), for the audit log. */
   idpInitiated?: boolean;
+  /** SAML (#13): the IdP's session this sign-in belongs to, for single logout. */
+  samlSession?: SamlSessionTag['saml'];
 }
 
+/** What a SAML sign-in tells the session it opens (auth's opaque `sessionTag`; logout.ts reads it). */
+export interface SamlSessionTag {
+  saml: { workspaceId?: string; nameId: string; nameIdFormat: string | null; sessionIndex: string | null };
+}
 /**
  * Where an IdP-initiated sign-in lands: its RelayState only when that is a plain same-origin path
  * (no scheme, host, protocol-relative `//`, backslash, whitespace or control character), else the
@@ -174,11 +200,32 @@ export async function samlAcs(req: Request, res: Response): Promise<void> {
   const relay = typeof body.RelayState === 'string' ? body.RelayState : '';
   const c = await repo.getConnection(workspaceId);
   if (!c || !c.enabled || c.protocol !== 'saml') return void fail(res, 'sso_unavailable');
-  const s = samlOf(req, c);
+  const s = await samlOf(req, c);
   if (!s || !response) return void fail(res, 'sso_failed');
+  const kind = responseAssertionKind(response);
+  // Decryption is not authentication (the signature inside is still required), but an IdP set up to
+  // encrypt that suddenly sends the clear is either misconfigured or not the IdP.
+  if (c.requireEncrypted && kind !== 'encrypted') {
+    await refused(workspaceId, 'a SAML assertion that was not encrypted, which this workspace requires');
+    return void fail(res, 'sso_failed');
+  }
   let claims: ReturnType<typeof claimsFromProfile>;
   try {
-    const { profile } = await s.saml.validatePostResponseAsync({ SAMLResponse: response });
+    let profile = null;
+    // An encrypted assertion is tried with each key (rotation: the IdP may still use the previous
+    // certificate). Nothing is consumed before decryption, so a wrong key costs only the attempt.
+    const candidates = kind === 'encrypted' ? s.all : [s.saml];
+    let firstError: unknown = null;
+    for (const candidate of candidates) {
+      try {
+        profile = (await candidate.validatePostResponseAsync({ SAMLResponse: response })).profile;
+        firstError = null;
+        break;
+      } catch (e) {
+        firstError ??= e; // the current key's reason is the one worth recording
+      }
+    }
+    if (firstError) throw firstError;
     if (!profile) throw new Error('not a sign-in response');
     claims = claimsFromProfile(profile, s.acsUrl);
   } catch (e) {
@@ -191,6 +238,7 @@ export async function samlAcs(req: Request, res: Response): Promise<void> {
     email: claims.email,
     name: claims.name,
     sessionNotOnOrAfter: claims.sessionNotOnOrAfter,
+    samlSession: { nameId: claims.subject, nameIdFormat: claims.nameIdFormat, sessionIndex: claims.sessionIndex },
   };
   if (claims.inResponseTo === null) {
     // Unsolicited: the identity provider started this sign-in (its app tile). The library has
@@ -301,7 +349,8 @@ async function completeDirectorySignIn(req: Request, res: Response, c: repo.Conn
   const sessionExpiresAt = claims.sessionNotOnOrAfter;
   let done;
   try {
-    done = await completeSignIn(req, res, r.userId, method, { link: r.link, newAccount: r.created, sessionExpiresAt });
+    const sessionTag = claims.samlSession ? JSON.stringify({ saml: { ...claims.samlSession, workspaceId } } satisfies SamlSessionTag) : null;
+    done = await completeSignIn(req, res, r.userId, method, { link: r.link, newAccount: r.created, sessionExpiresAt, sessionTag });
   } catch (e) {
     if (!(e instanceof HttpError) || e.status >= 500) throw e;
     await refused(workspaceId, e.message, { userId: r.userId, email: claims.email });

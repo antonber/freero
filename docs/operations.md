@@ -247,6 +247,7 @@ The data-store table (what is encrypted where, by whom) is in
      for two-step secrets, on use for AI keys / webhooks / tracker credentials, the hourly
      `boards:seal-call-links` job for call links). **Losing it** loses what it sealed: two-step
      secrets (people sign in with a recovery code and set it up again), AI keys, SSO client secrets,
+     SAML service-provider keys (admins create a new key and give its certificate to their IdP),
      tracker connections and webhook secrets (admins enter them again), call links (editors paste
      them again). Board content, accounts and files are not affected.
    - The backup private key (GPG / age) never goes on the servers; store it offline with at least
@@ -258,7 +259,7 @@ What is sealed by the app today (audit, KAI-143):
 
 | Column | Protection |
 |---|---|
-| `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `siem_sinks.secrets_sealed` (HEC token / Entra client secret / bearer token, the HTTPS collector URL, the signing secret), `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
+| `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `sso_sp_keys.private_key` (SAML service-provider keys, #13), `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `siem_sinks.secrets_sealed` (HEC token / Entra client secret / bearer token, the HTTPS collector URL, the signing secret), `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
 | `users.password_hash`, board link passwords | scrypt |
 | `sessions`, `guest_sessions`, `auth_tokens`, `auth_challenges`, `auth_devices`, `api_tokens`, `embed_member_tokens`, `oauth_codes`, OAuth client secrets, `scim_tokens`, `user_recovery_codes`, OIDC / SSO flow `state` | sha256 only |
 | `auth_oidc_flows` / `sso_flows` PKCE verifier and nonce | plain, by decision: single use, deleted within minutes, and useless without the authorization code, which is never stored |
@@ -280,6 +281,15 @@ the resolver).
   workspace_id = '<id>';` (then everyone at the domain can use their password or a reset link).
 - **Certificate rollover**: paste the IdP's new metadata (it may list both certificates); every
   listed signing certificate is accepted until the next save.
+- **Freero's own SAML key** (#13; encrypted assertions, signed requests): created per workspace in
+  the console, 10-year self-signed certificate in the SP metadata. Rotation needs no downtime: add
+  the next key (both are published and both decrypt), give its certificate to the IdP, make it
+  current, remove the old one. Nothing for operators to do, except that the private keys are sealed
+  under `SESSION_SECRET` (rotating it re-seals them on use; losing it loses them — see "Keys").
+- **Single logout** (#13): the IdP's LogoutRequest at `/api/sso/<workspace>/saml/slo` ends the
+  Freero sessions that its SAML sign-in started for that NameID (refusals: `sso.logout_refused`,
+  with the reason — unsigned, another key or issuer, another Destination, too old, replayed); signing
+  out of Freero sends the browser to the IdP's SingleLogoutService when the connection has one.
 - **What is refused** (`sso.login_refused` in the workspace's audit log, with the reason):
   responses that fail signature, audience, recipient, timestamps, InResponseTo or replay checks;
   IdP-initiated (unsolicited) responses unless the workspace turned on "Allow sign-in from the
