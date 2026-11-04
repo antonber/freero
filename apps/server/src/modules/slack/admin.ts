@@ -8,6 +8,7 @@ export default function slackAdmin(ctx: ServerContext): AdminCommand[] {
     {
       name: 'slack:manifest',
       usage: '[--url https://your-freero.example]',
+      database: false,
       summary: 'Prints the Slack app manifest — link previews, Connect Slack (direct messages) and /freero — to paste into "Create New App → From a manifest" (or an existing app’s App Manifest page), for PUBLIC_URL or --url.',
       async run(args) {
         const url = typeof args.flags.url === 'string' ? args.flags.url : ctx.config.publicUrl;

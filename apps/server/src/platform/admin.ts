@@ -20,6 +20,9 @@ export interface AdminCommand {
   /** What follows the name, e.g. '<email> --operator <name> --reason <text> [--yes]'. */
   usage: string;
   summary: string;
+  /** False for a command that touches no data (it only prints something): it then runs without
+   * opening the database, so also beside a dev server holding the built-in one. */
+  database?: false;
   /** Resolves when done; throw AdminUsageError for a wrong invocation (exit code 2), anything else fails (1). */
   run(args: AdminArgs): Promise<void>;
 }

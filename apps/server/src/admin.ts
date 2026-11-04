@@ -63,12 +63,15 @@ async function main(): Promise<number> {
     console.log(help(commands));
     return command && !cmd ? 2 : 0;
   }
-  await openDb(config.databaseUrl ? { url: config.databaseUrl, poolSize: 2 } : { pgliteDir: config.pgliteDir });
-  // With REDIS_URL, what a command announces (sessions it ended: their open board tabs close at
-  // once) reaches the running instances. Without it they notice within SESSION_RECHECK_SECONDS.
-  await connectRedis(config);
+  const database = cmd.database !== false;
+  if (database) {
+    await openDb(config.databaseUrl ? { url: config.databaseUrl, poolSize: 2 } : { pgliteDir: config.pgliteDir });
+    // With REDIS_URL, what a command announces (sessions it ended: their open board tabs close at
+    // once) reaches the running instances. Without it they notice within SESSION_RECHECK_SECONDS.
+    await connectRedis(config);
+  }
   try {
-    await migrate(discoverMigrations(MODULES_DIR));
+    if (database) await migrate(discoverMigrations(MODULES_DIR));
     await cmd.run({ positional, flags, print: (line) => console.log(line) });
     return 0;
   } catch (e) {
@@ -79,8 +82,10 @@ async function main(): Promise<number> {
     await mailSettled(); // notices the command sent
     await ctx.shutdown();
     await closePubSub();
-    await closeRedis(); // after the publishes queued on it went out
-    await closeDb();
+    if (database) {
+      await closeRedis(); // after the publishes queued on it went out
+      await closeDb();
+    }
   }
 }
 
