@@ -35,18 +35,19 @@ import { personColor } from '../../lib/placeholder';
 import { workspaceLabel } from './useWorkspaces';
 import { PROBLEM_SHORTCUT, useProblemReport } from '../../problems/ProblemReport';
 
+import { t as tr } from './messages';
 export type BoardView = 'home' | 'recent' | 'starred' | 'shared' | 'mine' | 'trash' | 'archived';
 /** Board collections, a project's boards, or a team's members / settings page. */
 export type View = BoardView | 'project' | 'members' | 'settings';
 
 export const NAV: { id: BoardView; label: string; icon: typeof House }[] = [
-  { id: 'home', label: 'Home', icon: House },
-  { id: 'recent', label: 'Recent', icon: Clock },
-  { id: 'starred', label: 'Starred', icon: Star },
-  { id: 'shared', label: 'Shared with me', icon: Users },
-  { id: 'mine', label: 'My boards', icon: Folder },
-  { id: 'archived', label: 'Archived', icon: Archive },
-  { id: 'trash', label: 'Trash', icon: Trash2 },
+  { id: 'home', label: tr('home'), icon: House },
+  { id: 'recent', label: tr('recent'), icon: Clock },
+  { id: 'starred', label: tr('starred'), icon: Star },
+  { id: 'shared', label: tr('sharedWithMe'), icon: Users },
+  { id: 'mine', label: tr('myBoards'), icon: Folder },
+  { id: 'archived', label: tr('archived'), icon: Archive },
+  { id: 'trash', label: tr('trash'), icon: Trash2 },
 ];
 
 /** Drag payload of a dashboard board card (dropped on a project to move it there). */
@@ -83,7 +84,7 @@ export function WorkspaceBadge({ workspace, size = 28 }: { workspace: WorkspaceS
   );
 }
 
-const ROLE_WORD: Record<WorkspaceSummary['role'], string> = { owner: 'Owner', admin: 'Admin', member: 'Member', guest: 'Guest' };
+const ROLE_WORD: Record<WorkspaceSummary['role'], string> = { owner: tr('owner'), admin: tr('admin'), member: tr('member'), guest: tr('guest') };
 
 export function Sidebar(props: SidebarProps) {
   const { view, onView, workspaces, current, projects, projectId } = props;
@@ -117,10 +118,10 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <aside className="fr-sidebar">
-      <Link to="/app" className="fr-sidebar__brand" aria-label="Freero home" onClick={() => onView('home')}>
+      <Link to="/app" className="fr-sidebar__brand" aria-label={tr('freeroHome')} onClick={() => onView('home')}>
         <Logo size={28} withWordmark />
       </Link>
-      <Link to="/app" className="fr-sidebar__brand fr-sidebar__brand--compact" aria-label="Freero home" onClick={() => onView('home')}>
+      <Link to="/app" className="fr-sidebar__brand fr-sidebar__brand--compact" aria-label={tr('freeroHome')} onClick={() => onView('home')}>
         <Logo size={30} />
       </Link>
 
@@ -133,14 +134,14 @@ export function Sidebar(props: SidebarProps) {
               className={`fr-dash-ws${switcherOpen ? ' fr-dash-ws--open' : ''}`}
               aria-haspopup="menu"
               aria-expanded={switcherOpen}
-              aria-label={`Workspace: ${workspaceLabel(current)}. Switch workspace`}
+              aria-label={tr('workspaceWorkspacelabelSwitchWorkspace', { workspaceLabel: workspaceLabel(current) })}
               onClick={() => setSwitcherOpen((o) => !o)}
             >
               <WorkspaceBadge workspace={current} />
               <span className="fr-dash-ws__text">
                 <span className="fr-dash-ws__name">{workspaceLabel(current)}</span>
                 <span className="fr-dash-ws__meta">
-                  {current.kind === 'personal' ? 'Just you' : `${ROLE_WORD[current.role]} · ${current.memberCount} ${current.memberCount === 1 ? 'member' : 'members'}`}
+                  {current.kind === 'personal' ? tr('justYou') : `${ROLE_WORD[current.role]} · ${current.memberCount} ${current.memberCount === 1 ? 'member' : 'members'}`}
                 </span>
               </span>
               <ChevronsUpDown className="fr-dash-ws__chev" size={15} aria-hidden />
@@ -152,9 +153,9 @@ export function Sidebar(props: SidebarProps) {
             anchor={switcherRef.current}
             align="start"
             minWidth={240}
-            aria-label="Workspaces"
+            aria-label={tr('workspaces')}
             items={[
-              { heading: 'Workspaces' },
+              { heading: tr('workspaces') },
               ...(workspaces ?? []).map((w) => ({
                 id: `ws-${w.id}`,
                 label: workspaceLabel(w),
@@ -163,7 +164,7 @@ export function Sidebar(props: SidebarProps) {
                 onSelect: () => props.onSwitchWorkspace(w.id),
               })),
               { divider: true },
-              { id: 'new-ws', label: 'New team workspace…', icon: Plus, onSelect: props.onCreateWorkspace },
+              { id: 'new-ws', label: tr('newTeamWorkspace'), icon: Plus, onSelect: props.onCreateWorkspace },
             ]}
           />
         </>
@@ -171,7 +172,7 @@ export function Sidebar(props: SidebarProps) {
         <div className="fr-dash-ws fr-dash-ws--loading" aria-hidden />
       )}
 
-      <nav className="fr-sidebar__nav" aria-label="Boards">
+      <nav className="fr-sidebar__nav" aria-label={tr('boards')}>
         {NAV.map((n) => (
           <Tooltip key={n.id} content={n.label} side="right" disabled={!compact}>
             <button
@@ -189,14 +190,14 @@ export function Sidebar(props: SidebarProps) {
       </nav>
 
       {current ? (
-        <section className="fr-dash-proj" aria-label="Projects">
+        <section className="fr-dash-proj" aria-label={tr('projects')}>
           <div className="fr-dash-proj__head">
-            <span className="fr-dash-proj__title">Projects</span>
+            <span className="fr-dash-proj__title">{tr('projects')}</span>
             {/* Guests can't create projects, nor can anyone the workspace closed its boards to (KAI-193). */}
-            {!guest && !current.blocked ? <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} /> : null}
+            {!guest && !current.blocked ? <IconButton size={32} icon={Plus} label={tr('newProject')} tooltipSide="right" onClick={props.onCreateProject} /> : null}
           </div>
           {projects.length === 0 ? (
-            <p className="fr-dash-proj__empty">{guest ? 'No projects shared with you' : 'Group boards into projects'}</p>
+            <p className="fr-dash-proj__empty">{guest ? tr('noProjectsSharedWithYou') : tr('groupBoardsIntoProjects')}</p>
           ) : (
             <ul className="fr-dash-proj__list">
               {projects.map((p) => (
@@ -217,26 +218,26 @@ export function Sidebar(props: SidebarProps) {
       ) : null}
 
       {team && !guest && current?.blocked !== 'deactivated' ? (
-        <nav className="fr-sidebar__nav fr-dash-ws__nav" aria-label="Workspace">
-          <Tooltip content="Members" side="right" disabled={!compact}>
+        <nav className="fr-sidebar__nav fr-dash-ws__nav" aria-label={tr('workspace')}>
+          <Tooltip content={tr('members')} side="right" disabled={!compact}>
             <button type="button" className={`fr-nav${view === 'members' ? ' fr-nav--active' : ''}`} aria-current={view === 'members' ? 'page' : undefined} onClick={() => onView('members')}>
               <Users size={18} aria-hidden />
-              <span className="fr-nav__label">Members</span>
+              <span className="fr-nav__label">{tr('members')}</span>
             </button>
           </Tooltip>
           {manager ? (
-            <Tooltip content="Workspace settings" side="right" disabled={!compact}>
+            <Tooltip content={tr('workspaceSettings')} side="right" disabled={!compact}>
               <button type="button" className={`fr-nav${view === 'settings' ? ' fr-nav--active' : ''}`} aria-current={view === 'settings' ? 'page' : undefined} onClick={() => onView('settings')}>
                 <SlidersHorizontal size={18} aria-hidden />
-                <span className="fr-nav__label">Workspace settings</span>
+                <span className="fr-nav__label">{tr('workspaceSettings')}</span>
               </button>
             </Tooltip>
           ) : null}
           {manager ? (
-            <Tooltip content="Admin console" side="right" disabled={!compact}>
+            <Tooltip content={tr('adminConsole')} side="right" disabled={!compact}>
               <Link to={`/admin/${encodeURIComponent(current!.id)}`} className="fr-nav">
                 <ShieldCheck size={18} aria-hidden />
-                <span className="fr-nav__label">Admin console</span>
+                <span className="fr-nav__label">{tr('adminConsole')}</span>
               </Link>
             </Tooltip>
           ) : null}
@@ -244,7 +245,7 @@ export function Sidebar(props: SidebarProps) {
             <Tooltip content={current.organisation.name} side="right" disabled={!compact}>
               <Link to={`/org/${encodeURIComponent(current.organisation.id)}`} className="fr-nav">
                 <Building2 size={18} aria-hidden />
-                <span className="fr-nav__label">Organisation</span>
+                <span className="fr-nav__label">{tr('organisation')}</span>
               </Link>
             </Tooltip>
           ) : null}
@@ -259,7 +260,7 @@ export function Sidebar(props: SidebarProps) {
         className={`fr-account${menuOpen ? ' fr-account--open' : ''}`}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        aria-label="Account menu"
+        aria-label={tr('accountMenu')}
         onClick={() => setMenuOpen((o) => !o)}
       >
         <Avatar name={user.name} color={user.color} src={user.avatarUrl} size={32} />
@@ -276,29 +277,29 @@ export function Sidebar(props: SidebarProps) {
         side="top"
         align="start"
         minWidth={220}
-        aria-label="Account"
+        aria-label={tr('account')}
         items={[
           { heading: user.email },
-          { id: 'settings', label: 'Account settings', icon: Settings, onSelect: () => navigate('/settings') },
+          { id: 'settings', label: tr('accountSettings'), icon: Settings, onSelect: () => navigate('/settings') },
           {
             id: 'theme',
-            label: 'Theme',
+            label: tr('theme'),
             icon: themeIcon[theme],
             onSelect: () => undefined,
             submenu: (['system', 'light', 'dark'] as const).map((t) => ({
               id: `theme-${t}`,
-              label: t === 'system' ? 'Same as device' : t === 'light' ? 'Light' : 'Dark',
+              label: t === 'system' ? tr('sameAsDevice') : t === 'light' ? tr('light') : tr('dark'),
               icon: themeIcon[t],
               checked: theme === t,
               onSelect: () => chooseTheme(t),
             })),
           },
-          { id: 'problem', label: 'Report a problem…', icon: MessageSquareWarning, shortcut: PROBLEM_SHORTCUT, onSelect: () => problems.open() },
-          ...(operator ? [{ id: 'moderation', label: 'Moderation queue', icon: ShieldAlert, onSelect: () => navigate('/operator') }] : []),
+          { id: 'problem', label: tr('reportAProblem'), icon: MessageSquareWarning, shortcut: PROBLEM_SHORTCUT, onSelect: () => problems.open() },
+          ...(operator ? [{ id: 'moderation', label: tr('moderationQueue'), icon: ShieldAlert, onSelect: () => navigate('/operator') }] : []),
           { divider: true },
           {
             id: 'logout',
-            label: 'Log out',
+            label: tr('logOut'),
             icon: LogOut,
             onSelect: async () => {
               await logout();
@@ -361,7 +362,7 @@ function ProjectItem({
         <button type="button" className="fr-dash-proj__open" aria-current={active ? 'page' : undefined} onClick={onOpen}>
           <Icon size={17} aria-hidden />
           <span className="fr-dash-proj__name">{p.name}</span>
-          {p.access === 'private' ? <span className="fr-dash-proj__private">Private</span> : null}
+          {p.access === 'private' ? <span className="fr-dash-proj__private">{tr('private')}</span> : null}
         </button>
       </Tooltip>
       {p.canManage ? (
@@ -370,7 +371,7 @@ function ProjectItem({
             ref={moreRef}
             size={32}
             icon={Ellipsis}
-            label={`Project actions for ${p.name}`}
+            label={tr('projectActionsForName', { name: p.name })}
             tooltip={false}
             className="fr-dash-proj__more"
             aria-haspopup="menu"
@@ -382,11 +383,11 @@ function ProjectItem({
             onClose={() => setOpen(false)}
             anchor={moreRef.current}
             align="start"
-            aria-label={`Actions for ${p.name}`}
+            aria-label={tr('actionsForName', { name: p.name })}
             items={[
-              { id: 'manage', label: 'Rename, access and people…', icon: SlidersHorizontal, onSelect: onManage },
+              { id: 'manage', label: tr('renameAccessAndPeople'), icon: SlidersHorizontal, onSelect: onManage },
               { divider: true },
-              { id: 'delete', label: 'Delete project', icon: Trash2, danger: true, onSelect: onDelete },
+              { id: 'delete', label: tr('deleteProject'), icon: Trash2, danger: true, onSelect: onDelete },
             ]}
           />
         </>

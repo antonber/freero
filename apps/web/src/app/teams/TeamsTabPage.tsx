@@ -20,6 +20,7 @@ import { PublicEmbed, popupSignIn, type EmbedSignIn } from '../embed/PublicEmbed
 import type { ColorTheme } from '../lib/theme';
 import { canShareToStage, connectTeams, onTeamsTheme, shareToStage, teamsLoaded, teamsSignInWindow, type TeamsInfo } from './teamsSdk';
 
+import { t as tr } from '../messages';
 /** Sign in for one board through Teams' sign-in window (the embed's own sign-in page, Teams mode). */
 export function teamsBoardSignIn(client: string) {
   return async (boardId: string, readonly: boolean): Promise<EmbedSignIn> => {
@@ -62,14 +63,12 @@ export default function TeamsTabPage() {
 
   const share = useCallback(async () => {
     const ok = await shareToStage(`${window.location.origin}/teams/b/${encodeURIComponent(id)}`);
-    if (!ok) toast('Teams didn’t share the board to the stage. Only organisers and presenters can share.', 'error');
+    if (!ok) toast(tr('teamsDidnTShareThe'), 'error');
   }, [id, toast]);
 
-  if (teams === undefined) return <FullPageSpinner label="Opening board" />;
+  if (teams === undefined) return <FullPageSpinner label={tr('openingBoard')} />;
   const extra = mayShare ? (
-    <Button size="sm" variant="ghost" icon={MonitorUp} onClick={() => void share()}>
-      Share to stage
-    </Button>
+    <Button size="sm" variant="ghost" icon={MonitorUp} onClick={() => void share()}>{tr('shareToStage')}</Button>
   ) : null;
   return <PublicEmbed id={id} readonly={false} theme={theme} signIn={teams ? teamsBoardSignIn(teams.client) : popupSignIn} editDirectly={teams !== null} extra={extra} />;
 }

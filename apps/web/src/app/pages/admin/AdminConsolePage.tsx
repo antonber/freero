@@ -25,6 +25,7 @@ import { AdminTrash } from './AdminTrash';
 import { AdminBoards } from './AdminBoards';
 import { AdminGroups } from './AdminGroups';
 import { AdminTemplates } from './AdminTemplates';
+import { t as tr } from './messages';
 import './admin.css';
 
 // `scopes` (#151): the admin scopes that use the tab (any of them); none: every admin.
@@ -98,8 +99,7 @@ export function AdminConsolePage() {
     <div className="fr-admin">
       <header className="fr-admin__top">
         <Link to={back} className="fr-admin__back">
-          <ArrowLeft size={16} aria-hidden /> Back to boards
-        </Link>
+          <ArrowLeft size={16} aria-hidden />{' '}{tr('backToBoards')}</Link>
         <Logo size={26} withWordmark />
       </header>
       {workspace === undefined ? (
@@ -108,16 +108,15 @@ export function AdminConsolePage() {
         </div>
       ) : !workspace || workspace.kind !== 'team' || !manager ? (
         <div className="fr-admin__center">
-          <h1 className="fr-admin__title">Admin console</h1>
-          <p className="fr-admin__muted">Only owners and admins of a team workspace can open its admin console.</p>
+          <h1 className="fr-admin__title">{tr('adminConsole')}</h1>
+          <p className="fr-admin__muted">{tr('onlyOwnersAndAdminsOf')}</p>
         </div>
       ) : (
         <div className="fr-admin__body">
-          <nav className="fr-admin__tabs" aria-label="Admin console">
+          <nav className="fr-admin__tabs" aria-label={tr('adminConsole')}>
             <div className="fr-admin__ws">
               <span className="fr-admin__ws-name">{workspace.name}</span>
-              <span className="fr-admin__muted">
-                Admin console · you’re {workspace.role === 'owner' ? 'an owner' : mine.length === ADMIN_SCOPES.length ? 'an admin' : `a ${mine.join(' and ')} admin`}
+              <span className="fr-admin__muted">{tr('adminConsoleYouRe')}{' '}{workspace.role === 'owner' ? tr('anOwner') : mine.length === ADMIN_SCOPES.length ? tr('anAdmin') : `a ${mine.join(' and ')} admin`}
               </span>
             </div>
             {TABS.filter((t) => (t.id !== 'ai' || ai) && (t.id !== 'webhooks' || hooks) && usable(t, mine)).map((t) => (

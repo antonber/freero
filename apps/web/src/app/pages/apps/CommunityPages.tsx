@@ -29,16 +29,17 @@ import { NotFoundPage } from '../NotFoundPage';
 import { AppsFrame, CommunityChip } from './AppsPage';
 import { categoryLabel, COMMUNITY_ICON } from './catalog';
 
+import { t } from './messages';
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
 const isOwn = (l: CommunityListing | OwnListing): l is OwnListing => 'status' in l;
 /** Developers' links: never this page as opener, no referrer, and no ranking credit from us. */
 const UNTRUSTED_REL = 'noopener noreferrer nofollow ugc';
 
 const STATUS_TEXT: Record<OwnListing['status'], { label: string; tone: string; say: string }> = {
-  pending: { label: 'Waiting for review', tone: 'pending', say: 'Only you and Freero’s reviewers can see it until it is approved.' },
-  approved: { label: 'Live', tone: 'live', say: 'Everyone signed in to this Freero can find it on the Apps & agents page.' },
-  rejected: { label: 'Not approved', tone: 'off', say: 'Nobody else sees it. Withdraw it and submit it again once the reviewer’s points are addressed.' },
-  removed: { label: 'Removed', tone: 'off', say: 'Freero’s moderators removed it; nobody else sees it. The email they sent has a link to appeal.' },
+  pending: { label: t('waitingForReview'), tone: 'pending', say: t('onlyYouAndFreeroS') },
+  approved: { label: t('live'), tone: 'live', say: t('everyoneSignedInToThis') },
+  rejected: { label: t('notApproved'), tone: 'off', say: t('nobodyElseSeesItWithdraw') },
+  removed: { label: t('removed'), tone: 'off', say: 'Freero’s moderators removed it; nobody else sees it. The email they sent has a link to appeal.' },
 };
 
 function ListingStatus({ listing }: { listing: OwnListing }) {
@@ -46,7 +47,7 @@ function ListingStatus({ listing }: { listing: OwnListing }) {
   return (
     <div className={`fr-apps-status fr-apps-status--${s.tone}`} role="status" data-testid="listing-status">
       <strong>{s.label}</strong> <span>{s.say}</span>
-      {listing.statusNote ? <p className="fr-apps-status__note">Reviewer: {listing.statusNote}</p> : null}
+      {listing.statusNote ? <p className="fr-apps-status__note">{t('reviewerStatusnote', { statusNote: listing.statusNote })}</p> : null}
     </div>
   );
 }
@@ -65,13 +66,13 @@ export function CommunityListingPage() {
   useEffect(() => {
     if (listing) document.title = `${listing.name} · Apps & agents · Freero`;
   }, [listing]);
-  if (listing === undefined) return <AppsFrame back={{ to: '/apps', label: 'Apps & agents' }}><Spinner size={22} label="Loading" /></AppsFrame>;
+  if (listing === undefined) return <AppsFrame back={{ to: '/apps', label: t('appsAgents') }}><Spinner size={22} label={t('loading')} /></AppsFrame>;
   if (listing === null) return <NotFoundPage />;
   const own = isOwn(listing);
   const live = !own || listing.status === 'approved';
 
   return (
-    <AppsFrame back={{ to: own ? '/apps/submit' : '/apps?category=community', label: own ? 'Your listings' : 'Community listings' }}>
+    <AppsFrame back={{ to: own ? '/apps/submit' : '/apps?category=community', label: own ? t('yourListings') : t('communityListings') }}>
       <article className="fr-apps-detail">
         <header className="fr-apps-detail__head">
           <span className="fr-apps-detail__icon fr-apps-detail__icon--community" aria-hidden>
@@ -83,15 +84,15 @@ export function CommunityListingPage() {
             <p className="fr-apps-detail__line">{listing.tagline}</p>
             <span className="fr-apps-card__meta">
               <CommunityChip />
-              {listing.featured ? <span className="fr-apps-chip fr-apps-chip--featured">Featured</span> : null}
+              {listing.featured ? <span className="fr-apps-chip fr-apps-chip--featured">{t('featured')}</span> : null}
             </span>
           </div>
         </header>
         {own ? <ListingStatus listing={listing} /> : null}
         <section className="fr-acct-card" aria-labelledby="listing-connect">
           <header className="fr-acct-card__head">
-            <h2 id="listing-connect">How to connect</h2>
-            <p>Its developer built it on {builtOnText(listing.builtOn)}. Follow their instructions on their site.</p>
+            <h2 id="listing-connect">{t('howToConnect')}</h2>
+            <p>{t('itsDeveloperBuiltItOn', { builtOnText: builtOnText(listing.builtOn) })}</p>
           </header>
           <div className="fr-apps-detail__actions">
             <a className="fr-connect-install" href={listing.website} target="_blank" rel={UNTRUSTED_REL} data-testid="listing-website">
@@ -99,30 +100,28 @@ export function CommunityListingPage() {
             </a>
             {listing.docsUrl ? (
               <a className="fr-apps-btnlink" href={listing.docsUrl} target="_blank" rel={UNTRUSTED_REL}>
-                <BookOpen size={15} aria-hidden /> Their docs <ExternalLink size={13} aria-hidden />
+                <BookOpen size={15} aria-hidden />{' '}{t('theirDocs')}{' '}<ExternalLink size={13} aria-hidden />
               </a>
             ) : null}
           </div>
           <p className="fr-apps-note" role="note">
             <ShieldAlert size={15} aria-hidden />
             {listing.oauthApp
-              ? ` It signs in with its OAuth app “${listing.oauthApp.name}”: Freero’s consent screen shows what it asks for, and you can disconnect it any time in Settings → Connected apps.`
+              ? t('itSignsInWithIts', { name: listing.oauthApp.name })
               : ' Freero reviewed this listing, not the integration’s code. Give it only the permissions it needs; you can revoke them any time in Settings.'}
           </p>
         </section>
         {listing.description ? (
           <section className="fr-acct-card" aria-labelledby="listing-about">
             <header className="fr-acct-card__head">
-              <h2 id="listing-about">From the developer</h2>
+              <h2 id="listing-about">{t('fromTheDeveloper')}</h2>
             </header>
             <p className="fr-apps-untrusted">{listing.description}</p>
           </section>
         ) : null}
         {live && !own ? (
           <div className="fr-apps-detail__foot">
-            <Button size="sm" variant="ghost" icon={Flag} onClick={() => setReporting(true)}>
-              Report this listing
-            </Button>
+            <Button size="sm" variant="ghost" icon={Flag} onClick={() => setReporting(true)}>{t('reportThisListing')}</Button>
           </div>
         ) : null}
       </article>
@@ -131,7 +130,7 @@ export function CommunityListingPage() {
   );
 }
 
-const SURFACE_PHRASE: Record<ListingSurface, string> = { mcp: 'Freero’s MCP server', api: 'the REST API', webhooks: 'webhooks' };
+const SURFACE_PHRASE: Record<ListingSurface, string> = { mcp: t('freeroSMcpServer'), api: 'the REST API', webhooks: 'webhooks' };
 /** "Freero’s MCP server and webhooks". */
 const builtOnText = (on: ListingSurface[]) => {
   const parts = on.map((s) => SURFACE_PHRASE[s] ?? s);
@@ -159,10 +158,10 @@ function ReportListingDialog({ listing, onClose }: { listing: CommunityListing; 
     setError(null);
     try {
       await api.reportListing({ target: { kind: 'listing', id: listing.id }, reason, note: note.trim() });
-      notify('Thanks for your report. Freero’s moderators will review it.', 'success');
+      notify(t('thanksForYourReportFreero'), 'success');
       onClose();
     } catch (e) {
-      setError(errorText(e, 'Your report could not be sent. Try again.'));
+      setError(errorText(e, t('yourReportCouldNotBe')));
       setBusy(false);
     }
   };
@@ -170,22 +169,18 @@ function ReportListingDialog({ listing, onClose }: { listing: CommunityListing; 
     <Modal
       open
       onClose={onClose}
-      title="Report this listing"
-      description="Tell Freero’s moderators what is wrong. Its developer isn’t told who reported it."
+      title={t('reportThisListing')}
+      description={t('tellFreeroSModeratorsWhat')}
       width={460}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={send} disabled={!reason} loading={busy}>
-            Send report
-          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>{t('cancel')}</Button>
+          <Button variant="primary" onClick={send} disabled={!reason} loading={busy}>{t('sendReport')}</Button>
         </>
       }
     >
       <fieldset className="fr-apps-reasons">
-        <legend className="fr-apps-form__label">What’s the problem?</legend>
+        <legend className="fr-apps-form__label">{t('whatSTheProblem')}</legend>
         {REPORT_REASONS.map((r) => (
           <label key={r.id} className="fr-apps-reason">
             <input type="radio" name="fr-apps-report-reason" value={r.id} checked={reason === r.id} onChange={() => setReason(r.id)} />
@@ -193,7 +188,7 @@ function ReportListingDialog({ listing, onClose }: { listing: CommunityListing; 
           </label>
         ))}
       </fieldset>
-      <TextArea label="Details (optional)" value={note} maxLength={MAX_REPORT_NOTE} rows={3} onChange={(e) => setNote(e.target.value)} />
+      <TextArea label={t('detailsOptional')} value={note} maxLength={MAX_REPORT_NOTE} rows={3} onChange={(e) => setNote(e.target.value)} />
       {error ? (
         <p className="fr-acct__error" role="alert">
           {error}
@@ -236,9 +231,9 @@ export function SubmitListingPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!/^https:\/\/[^/\s]+\.[^/\s]/.test(website.trim())) return setError('The website must be an https:// link.');
-    if (docsUrl.trim() && !/^https:\/\//.test(docsUrl.trim())) return setError('The docs link must be an https:// link.');
-    if (!builtOn.length) return setError('Tick what it is built on.');
+    if (!/^https:\/\/[^/\s]+\.[^/\s]/.test(website.trim())) return setError(t('theWebsiteMustBeAn'));
+    if (docsUrl.trim() && !/^https:\/\//.test(docsUrl.trim())) return setError(t('theDocsLinkMustBe'));
+    if (!builtOn.length) return setError(t('tickWhatItIsBuilt'));
     setBusy(true);
     setError(null);
     try {
@@ -256,7 +251,7 @@ export function SubmitListingPage() {
       notify('Submitted. A reviewer will look at it; you’ll get an email with the decision.', 'success');
       navigate(`/apps/community/${encodeURIComponent(listing.id)}`);
     } catch (err) {
-      setError(errorText(err, 'Could not submit it. Try again.'));
+      setError(errorText(err, t('couldNotSubmitItTry')));
       setBusy(false);
     }
   };
@@ -264,17 +259,17 @@ export function SubmitListingPage() {
   const withdraw = async (l: OwnListing) => {
     try {
       await api.withdrawListing(l.id);
-      notify(`Withdrew “${l.name}”`, 'info');
+      notify(t('withdrewName', { name: l.name }), 'info');
       void load();
     } catch (err) {
-      notify(errorText(err, 'Could not withdraw it'), 'error');
+      notify(errorText(err, t('couldNotWithdrawIt')), 'error');
     }
   };
 
   return (
-    <AppsFrame back={{ to: '/apps?category=community', label: 'Apps & agents' }}>
+    <AppsFrame back={{ to: '/apps?category=community', label: t('appsAgents') }}>
       <div className="fr-apps__intro">
-        <h1 className="fr-acct__title">Submit an integration</h1>
+        <h1 className="fr-acct__title">{t('submitAnIntegration')}</h1>
         <p className="fr-apps__lead">
           Built something on Freero’s MCP server, REST API or webhooks? List it on the Apps &amp; agents page. A reviewer checks each submission first; until
           then only you see it. Approved listings carry a Community label.
@@ -283,42 +278,40 @@ export function SubmitListingPage() {
       <YourListings listings={mine} onWithdraw={withdraw} />
       <form className="fr-acct-card fr-apps-form" onSubmit={submit} noValidate aria-labelledby="submit-title">
         <header className="fr-acct-card__head">
-          <h2 id="submit-title">Your integration</h2>
-          <p>Write it as plain text: links and formatting aren’t shown. Everyone signed in to this Freero reads it once it is approved.</p>
+          <h2 id="submit-title">{t('yourIntegration')}</h2>
+          <p>{t('writeItAsPlainText')}</p>
         </header>
-        <Input label="Name" required maxLength={LISTING_LIMITS.name} value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label={t('name')} required maxLength={LISTING_LIMITS.name} value={name} onChange={(e) => setName(e.target.value)} />
         <Input
-          label="One line about it"
-          hint="What it does for someone, in one sentence."
+          label={t('oneLineAboutIt')}
+          hint={t('whatItDoesForSomeone')}
           required
           maxLength={LISTING_LIMITS.tagline}
           value={tagline}
           onChange={(e) => setTagline(e.target.value)}
         />
-        <TextArea label="Description" rows={5} maxLength={LISTING_LIMITS.description} value={description} onChange={(e) => setDescription(e.target.value)} />
+        <TextArea label={t('description')} rows={5} maxLength={LISTING_LIMITS.description} value={description} onChange={(e) => setDescription(e.target.value)} />
         <div className="fr-apps-form__grid">
-          <Input label="Website (https)" type="url" required maxLength={LISTING_LIMITS.url} value={website} onChange={(e) => setWebsite(e.target.value)} />
-          <Input label="Docs (https, optional)" type="url" maxLength={LISTING_LIMITS.url} value={docsUrl} onChange={(e) => setDocsUrl(e.target.value)} />
+          <Input label={t('websiteHttps')} type="url" required maxLength={LISTING_LIMITS.url} value={website} onChange={(e) => setWebsite(e.target.value)} />
+          <Input label={t('docsHttpsOptional')} type="url" maxLength={LISTING_LIMITS.url} value={docsUrl} onChange={(e) => setDocsUrl(e.target.value)} />
         </div>
         <div className="fr-apps-form__grid">
           <div className="fr-apps-form__field">
-            <span className="fr-apps-form__label" id="submit-category">
-              Category
-            </span>
-            <Select<IntegrationCategory> aria-label="Category" options={CATEGORY_OPTIONS} value={category} onChange={setCategory} />
+            <span className="fr-apps-form__label" id="submit-category">{t('category')}</span>
+            <Select<IntegrationCategory> aria-label={t('category')} options={CATEGORY_OPTIONS} value={category} onChange={setCategory} />
           </div>
           <div className="fr-apps-form__field">
-            <span className="fr-apps-form__label">Its OAuth app (optional)</span>
+            <span className="fr-apps-form__label">{t('itsOauthAppOptional')}</span>
             <Select<string>
-              aria-label="Its OAuth app"
-              options={[{ value: NO_APP, label: apps.length ? 'None' : 'None registered' }, ...apps.map((a) => ({ value: a.clientId, label: a.name }))]}
+              aria-label={t('itsOauthApp')}
+              options={[{ value: NO_APP, label: apps.length ? t('none') : t('noneRegistered') }, ...apps.map((a) => ({ value: a.clientId, label: a.name }))]}
               value={oauthClientId}
               onChange={setOauthClientId}
             />
           </div>
         </div>
         <fieldset className="fr-apps-form__surfaces">
-          <legend className="fr-apps-form__label">Built on</legend>
+          <legend className="fr-apps-form__label">{t('builtOn')}</legend>
           {LISTING_SURFACES.map((s) => (
             <label key={s.id} className="fr-apps-reason">
               <input type="checkbox" checked={builtOn.includes(s.id)} onChange={(e) => setBuiltOn((cur) => (e.target.checked ? [...cur, s.id] : cur.filter((x) => x !== s.id)))} />
@@ -327,8 +320,8 @@ export function SubmitListingPage() {
           ))}
         </fieldset>
         <Input
-          label="Contact email for reviewers"
-          hint="Only Freero’s reviewers see it."
+          label={t('contactEmailForReviewers')}
+          hint={t('onlyFreeroSReviewersSee')}
           type="email"
           maxLength={LISTING_LIMITS.email}
           value={contactEmail}
@@ -340,9 +333,7 @@ export function SubmitListingPage() {
           </p>
         ) : null}
         <div className="fr-acct-form__row">
-          <Button type="submit" variant="primary" icon={Send} loading={busy}>
-            Submit for review
-          </Button>
+          <Button type="submit" variant="primary" icon={Send} loading={busy}>{t('submitForReview')}</Button>
         </div>
       </form>
     </AppsFrame>
@@ -350,12 +341,12 @@ export function SubmitListingPage() {
 }
 
 function YourListings({ listings, onWithdraw }: { listings: OwnListing[] | null; onWithdraw: (l: OwnListing) => void }) {
-  if (listings === null) return <Spinner size={20} label="Loading your listings" />;
+  if (listings === null) return <Spinner size={20} label={t('loadingYourListings')} />;
   if (!listings.length) return null;
   return (
     <section className="fr-acct-card" aria-labelledby="mine-title">
       <header className="fr-acct-card__head">
-        <h2 id="mine-title">Your listings</h2>
+        <h2 id="mine-title">{t('yourListings')}</h2>
       </header>
       <ul className="fr-apps-mine">
         {listings.map((l) => (
@@ -365,11 +356,9 @@ function YourListings({ listings, onWithdraw }: { listings: OwnListing[] | null;
                 {l.name}
               </Link>
               <span className={`fr-apps-mine__status fr-apps-status--${STATUS_TEXT[l.status].tone}`}>{STATUS_TEXT[l.status].label}</span>
-              <span className="fr-apps-mine__meta">submitted {relativeTime(l.createdAt)}</span>
+              <span className="fr-apps-mine__meta">{t('submittedValue', { value: relativeTime(l.createdAt) })}</span>
             </span>
-            <Button size="sm" variant="ghost" icon={Trash2} onClick={() => onWithdraw(l)} aria-label={`Withdraw ${l.name}`}>
-              Withdraw
-            </Button>
+            <Button size="sm" variant="ghost" icon={Trash2} onClick={() => onWithdraw(l)} aria-label={t('withdrawName', { name: l.name })}>{t('withdraw')}</Button>
           </li>
         ))}
       </ul>

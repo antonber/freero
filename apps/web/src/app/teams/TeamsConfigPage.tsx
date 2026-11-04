@@ -13,6 +13,7 @@ import { api } from '../api/client';
 import { saveEmbedToken } from '../embed/embedToken';
 import { setThemeOverride } from '../lib/theme';
 import { connectTeams, onTeamsConfigSave, onTeamsTheme, setTeamsConfig, setTeamsConfigValid, teamsLoaded, teamsSignInWindow, type TeamsInfo } from './teamsSdk';
+import { t as tr } from '../messages';
 import '../board/BoardPage.css';
 import './teams.css';
 
@@ -107,32 +108,30 @@ export default function TeamsConfigPage() {
   const status = useMemo(() => {
     switch (check.state) {
       case 'checking':
-        return <Spinner size={18} label="Checking the board" />;
+        return <Spinner size={18} label={tr('checkingTheBoard')} />;
       case 'ok':
-        return <p className="fr-teams-ok">{check.pick.title ? `“${check.pick.title}” is ready. Press Save to add it.` : 'This board is ready. Press Save to add it.'}</p>;
+        return <p className="fr-teams-ok">{check.pick.title ? tr('titleIsReadyPressSave', { title: check.pick.title }) : tr('thisBoardIsReadyPress')}</p>;
       case 'off':
-        return <p className="fr-teams-warn">This board can’t be shown in Teams yet. Its owner can turn on Embed in the board’s Share dialog (if the team’s admin allows embeds).</p>;
+        return <p className="fr-teams-warn">{tr('thisBoardCanTBe2')}</p>;
       case 'bad':
-        return <p className="fr-teams-warn">That isn’t a link to a board on {window.location.host}.</p>;
+        return <p className="fr-teams-warn">{tr('thatIsnTALink', { host: window.location.host })}</p>;
       case 'error':
-        return <p className="fr-teams-warn">Freero couldn’t be reached. Check your connection and try again.</p>;
+        return <p className="fr-teams-warn">{tr('freeroCouldnTBeReached')}</p>;
       default:
         return null;
     }
   }, [check]);
 
-  if (teams === undefined) return <div className="fr-boarderror"><Spinner size={22} label="Connecting to Teams" /></div>;
+  if (teams === undefined) return <div className="fr-boarderror"><Spinner size={22} label={tr('connectingToTeams')} /></div>;
   if (teams === null)
     return (
       <div className="fr-boarderror">
         <div className="fr-boarderror__card">
           <Logo size={32} />
-          <h1>Add Freero in Microsoft Teams</h1>
-          <p>This page sets up a Freero tab inside Teams. Add the Freero app to a channel, a chat or a meeting there.</p>
+          <h1>{tr('addFreeroInMicrosoftTeams')}</h1>
+          <p>{tr('thisPageSetsUpA')}</p>
           <div className="fr-boarderror__actions">
-            <Button icon={ExternalLink} onClick={() => void window.open('/app', '_blank', 'noopener')}>
-              Open Freero
-            </Button>
+            <Button icon={ExternalLink} onClick={() => void window.open('/app', '_blank', 'noopener')}>{tr('openFreero')}</Button>
           </div>
         </div>
       </div>
@@ -141,14 +140,12 @@ export default function TeamsConfigPage() {
     <div className="fr-teams-config">
       <div className="fr-teams-config__head">
         <Logo size={28} />
-        <h1>Show a Freero board here</h1>
+        <h1>{tr('showAFreeroBoardHere')}</h1>
       </div>
       <p className="fr-teams-config__lead">Everyone here sees the board as Freero shares it with them: people it’s shared with sign in once to edit or comment; others see it only if anyone with the link may view it.</p>
-      <Button variant="primary" icon={LayoutGrid} onClick={() => void choose()}>
-        Choose from your boards
-      </Button>
-      <div className="fr-teams-config__or">or</div>
-      <Input label="Paste a board link" icon={Link2} placeholder={`${window.location.origin}/board/…`} value={link} onChange={(e) => onPaste(e.target.value)} />
+      <Button variant="primary" icon={LayoutGrid} onClick={() => void choose()}>{tr('chooseFromYourBoards')}</Button>
+      <div className="fr-teams-config__or">{tr('or')}</div>
+      <Input label={tr('pasteABoardLink')} icon={Link2} placeholder={tr('originBoard', { origin: window.location.origin })} value={link} onChange={(e) => onPaste(e.target.value)} />
       <div className="fr-teams-config__status" aria-live="polite">
         {status}
       </div>

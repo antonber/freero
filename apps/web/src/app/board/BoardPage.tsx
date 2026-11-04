@@ -17,6 +17,7 @@ import { features } from './features';
 import { createGuestHost, createLocalHost, createServerHost, toastNotify } from './host';
 import { LinkPassword } from './LinkPassword';
 import { RequestAccess } from './RequestAccess';
+import { t as tr } from '../messages';
 import './BoardPage.css';
 
 type Team = { id: string; name: string; company?: { id: string; name: string } | null } | null;
@@ -88,9 +89,7 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
   );
   const signUp = useMemo(
     () => (
-      <Button variant="secondary" size="sm" onClick={() => navigate(loginPath(next, 'signup'))}>
-        Sign up free
-      </Button>
+      <Button variant="secondary" size="sm" onClick={() => navigate(loginPath(next, 'signup'))}>{tr('signUpFree')}</Button>
     ),
     [navigate, next],
   );
@@ -105,21 +104,17 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
       <div className="fr-boarderror">
         <div className="fr-boarderror__card">
           <Logo size={36} />
-          <h1>{removed ? 'This board was removed for review' : ended ? 'Your guest visit has ended' : "We couldn't open this board"}</h1>
-          <p>{ended ? 'Guest visits last a few hours, and end when the board stops being shared by link.' : state.message}</p>
+          <h1>{removed ? tr('thisBoardWasRemovedFor') : ended ? tr('yourGuestVisitHasEnded') : tr('weCouldnTOpenThis')}</h1>
+          <p>{ended ? tr('guestVisitsLastAFew') : state.message}</p>
           <div className="fr-boarderror__actions">
-            <Button variant="primary" size="lg" onClick={onEnded}>
-              Join again
-            </Button>
-            <Button size="lg" onClick={() => navigate(loginPath(next))}>
-              Sign in
-            </Button>
+            <Button variant="primary" size="lg" onClick={onEnded}>{tr('joinAgain')}</Button>
+            <Button size="lg" onClick={() => navigate(loginPath(next))}>{tr('signIn')}</Button>
           </div>
         </div>
       </div>
     );
   }
-  if (!host) return <FullPageSpinner label="Opening board" />;
+  if (!host) return <FullPageSpinner label={tr('openingBoard')} />;
   return <BoardEngine host={host} features={features} topbarAccessory={signUp} location={location} />;
 }
 
@@ -220,7 +215,7 @@ function ServerBoard({ id }: { id: string }) {
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;
   if (state.status === 'error') return <BoardError boardId={id} code={state.code} message={state.message} />;
-  if (!host || !board) return <FullPageSpinner label="Opening board" />;
+  if (!host || !board) return <FullPageSpinner label={tr('openingBoard')} />;
   return (
     <>
       <BoardEngine host={host} features={features} topbarAccessory={bell} location={location} />
@@ -252,17 +247,15 @@ function ArchivedNotice({ board, onUnarchived }: { board: BoardSummary; onUnarch
       await api.setBoardArchived(board.id, false);
       onUnarchived();
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : 'Could not unarchive it', 'error');
+      notify(e instanceof ApiError ? e.message : tr('couldNotUnarchiveIt'), 'error');
       setBusy(false);
     }
   };
   return (
     <div className="fr-boardpage-archived" role="status">
-      <span>Archived — this board is read-only for everyone.</span>
+      <span>{tr('archivedThisBoardIsRead')}</span>
       {board.permissions.canArchive ? (
-        <Button size="sm" loading={busy} onClick={() => void unarchive()}>
-          Unarchive
-        </Button>
+        <Button size="sm" loading={busy} onClick={() => void unarchive()}>{tr('unarchive')}</Button>
       ) : null}
     </div>
   );
@@ -271,7 +264,7 @@ function ArchivedNotice({ board, onUnarchived }: { board: BoardSummary; onUnarch
 function LocalBoard() {
   const navigate = useNavigate();
   const notify = useToast();
-  const [title, setTitle] = useState(() => localStorage.getItem('freero:local-title') ?? 'Local sandbox');
+  const [title, setTitle] = useState(() => localStorage.getItem('freero:local-title') ?? tr('localSandbox'));
   const go = useCallback((path: string) => navigate(path), [navigate]);
   const toast = useMemo(() => toastNotify(notify), [notify]);
   const host = useMemo(
@@ -299,14 +292,14 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
   const copy =
     code === 451
       ? {
-          title: 'This board was removed for review',
-          body: 'Freero’s moderators took it down after a report. If it is your board, we emailed you the reason and how to appeal.',
+          title: tr('thisBoardWasRemovedFor'),
+          body: tr('freeroSModeratorsTookIt'),
         }
       : code === 403
-      ? { title: "You don't have access to this board", body: 'Ask the board owner to invite you, or switch to the account they shared it with.' }
+      ? { title: tr('youDonTHaveAccess'), body: tr('askTheBoardOwnerTo') }
       : code === 404
-        ? { title: 'This board does not exist', body: 'It may have been deleted, or the link is mistyped.' }
-        : { title: "We couldn't open this board", body: message || 'Check your connection and try again.' };
+        ? { title: tr('thisBoardDoesNotExist'), body: tr('itMayHaveBeenDeleted') }
+        : { title: tr('weCouldnTOpenThis'), body: message || tr('checkYourConnectionAndTry') };
   return (
     <div className="fr-boarderror">
       <div className="fr-boarderror__card">
@@ -314,23 +307,16 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
         {code === 403 && user ? (
-          <p className="fr-boarderror__account">
-            Signed in as <strong>{user.email}</strong>
+          <p className="fr-boarderror__account">{tr('signedInAs')}{' '}<strong>{user.email}</strong>
           </p>
         ) : null}
         <div className="fr-boarderror__actions">
-          <Button variant="primary" size="lg" onClick={() => navigate('/app')}>
-            Back to dashboard
-          </Button>
+          <Button variant="primary" size="lg" onClick={() => navigate('/app')}>{tr('backToDashboard')}</Button>
           {code === 403 && (
-            <Button size="lg" onClick={switchAccount}>
-              Switch account
-            </Button>
+            <Button size="lg" onClick={switchAccount}>{tr('switchAccount')}</Button>
           )}
           {code !== 403 && code !== 404 && code !== 451 && (
-            <Button size="lg" onClick={() => window.location.reload()}>
-              Try again
-            </Button>
+            <Button size="lg" onClick={() => window.location.reload()}>{tr('tryAgain')}</Button>
           )}
         </div>
       </div>

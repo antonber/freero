@@ -9,18 +9,19 @@ import { Button, Input, Select, Spinner, TextArea, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 
+import { t } from './messages';
 type Filter = ProblemStatus | 'all';
 const FILTERS: Array<{ value: Filter; label: string }> = [
-  { value: 'new', label: 'New' },
-  { value: 'triaged', label: 'Being looked at' },
-  { value: 'fixed', label: 'Fixed' },
-  { value: 'wontfix', label: 'Won’t fix' },
-  { value: 'duplicate', label: 'Duplicate' },
-  { value: 'all', label: 'All' },
+  { value: 'new', label: t('new') },
+  { value: 'triaged', label: t('beingLookedAt') },
+  { value: 'fixed', label: t('fixed') },
+  { value: 'wontfix', label: t('wonTFix') },
+  { value: 'duplicate', label: t('duplicate') },
+  { value: 'all', label: t('all') },
 ];
 const STATUS_OPTIONS = PROBLEM_STATUSES.map((s) => ({ value: s, label: PROBLEM_STATUS_LABEL[s] }));
 const TONE: Record<ProblemStatus, string> = { new: 'danger', triaged: 'warn', fixed: 'ok', wontfix: 'muted', duplicate: 'muted' };
-const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
+const message = (e: unknown) => (e instanceof ApiError ? e.message : t('somethingWentWrongTryAgain'));
 
 export function ProblemsView({ version }: { version: number }) {
   const notify = useToast();
@@ -47,23 +48,21 @@ export function ProblemsView({ version }: { version: number }) {
   useEffect(() => load(), [load, version]);
 
   return (
-    <main className="fr-op__queue" aria-label="Problem reports">
+    <main className="fr-op__queue" aria-label={t('problemReports')}>
       <div className="fr-op-listings__bar">
-        <Select<Filter> aria-label="Status" value={filter} onChange={setFilter} options={FILTERS} />
+        <Select<Filter> aria-label={t('status')} value={filter} onChange={setFilter} options={FILTERS} />
       </div>
       {problems === null ? (
-        <Spinner size={22} label="Loading problem reports" />
+        <Spinner size={22} label={t('loadingProblemReports')} />
       ) : problems.length === 0 ? (
-        <p className="fr-op__empty">{filter === 'new' ? 'No new problem reports.' : 'None.'}</p>
+        <p className="fr-op__empty">{filter === 'new' ? t('noNewProblemReports') : t('none')}</p>
       ) : (
         <>
           {problems.map((p) => (
             <ProblemCard key={p.id} problem={p} onChanged={(c) => setProblems((cur) => cur?.map((x) => (x.id === c.id ? c : x)) ?? cur)} />
           ))}
           {next ? (
-            <Button variant="ghost" onClick={() => load(next)}>
-              Older reports
-            </Button>
+            <Button variant="ghost" onClick={() => load(next)}>{t('olderReports')}</Button>
           ) : null}
         </>
       )}
@@ -85,7 +84,7 @@ function ProblemCard({ problem: p, onChanged }: { problem: ProblemReportDetail; 
     try {
       const { problem } = await api.updateProblem(p.id, { status, operatorNote: note, issueUrl: issueUrl.trim() || null });
       onChanged(problem);
-      notify(status === 'fixed' && p.status !== 'fixed' ? 'Saved. The reporter was told it’s fixed.' : 'Saved', 'success');
+      notify(status === 'fixed' && p.status !== 'fixed' ? t('savedTheReporterWasTold') : t('saved'), 'success');
     } catch (e) {
       notify(message(e), 'error');
     } finally {
@@ -105,45 +104,44 @@ function ProblemCard({ problem: p, onChanged }: { problem: ProblemReportDetail; 
       <blockquote className="fr-op-card__message">{p.note}</blockquote>
       {p.hasScreenshot ? (
         <a className="fr-op-problem__shot" href={api.problemScreenshotUrl(p.id)} target="_blank" rel="noreferrer noopener">
-          <img src={api.problemScreenshotUrl(p.id)} alt="What the reporter saw" loading="lazy" />
+          <img src={api.problemScreenshotUrl(p.id)} alt={t('whatTheReporterSaw')} loading="lazy" />
         </a>
       ) : null}
       <dl className="fr-op-card__facts">
-        <dt>Reported by</dt>
+        <dt>{t('reportedBy')}</dt>
         <dd>
           {p.reporter ? (
             <>
               {p.reporter.name} &lt;{p.reporter.email}&gt;
               {p.contactOk ? (
                 <a className="fr-op-problem__mail" href={`mailto:${p.reporter.email}`}>
-                  <Mail size={13} aria-hidden /> OK to contact
-                </a>
+                  <Mail size={13} aria-hidden />{' '}{t('okToContact')}</a>
               ) : (
-                ' · didn’t ask to be contacted'
+                t('didnTAskToBe')
               )}
             </>
           ) : (
-            'An account that is gone'
+            t('anAccountThatIsGone')
           )}
         </dd>
         {d.boardId ? (
           <>
-            <dt>Board</dt>
+            <dt>{t('board')}</dt>
             <dd>
               <code>{d.boardId}</code>
               {d.role ? ` · ${d.role}` : ''}
             </dd>
           </>
         ) : null}
-        <dt>Browser</dt>
+        <dt>{t('browser')}</dt>
         <dd title={d.userAgent}>
           {describeDevice(d.userAgent)} · {d.viewport.width}×{d.viewport.height} @{d.viewport.dpr}x{d.language ? ` · ${d.language}` : ''}
         </dd>
-        <dt>Release</dt>
-        <dd>{d.release ?? 'not set (FREERO_RELEASE)'}</dd>
+        <dt>{t('release')}</dt>
+        <dd>{d.release ?? t('notSetFreeroRelease')}</dd>
         {d.events.length ? (
           <>
-            <dt>Errors</dt>
+            <dt>{t('errors')}</dt>
             <dd>
               <ol className="fr-op-problem__events">
                 {d.events.map((e, i) => (
@@ -158,26 +156,23 @@ function ProblemCard({ problem: p, onChanged }: { problem: ProblemReportDetail; 
         ) : null}
         {p.deleteAfter ? (
           <>
-            <dt>Deleted</dt>
-            <dd>{new Date(p.deleteAfter).toLocaleDateString()} (PROBLEM_RETENTION_DAYS after closing)</dd>
+            <dt>{t('deleted')}</dt>
+            <dd>{t('tolocaledatestringProblemRetentionDaysAf', { toLocaleDateString: new Date(p.deleteAfter).toLocaleDateString() })}</dd>
           </>
         ) : null}
       </dl>
       <div className="fr-op-problem__form">
         <div className="fr-op-problem__row">
-          <Select<ProblemStatus> aria-label="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
-          <Input aria-label="Linked issue" placeholder="Linked issue (https://…)" value={issueUrl} maxLength={500} onChange={(e) => setIssueUrl(e.target.value)} />
+          <Select<ProblemStatus> aria-label={t('status')} value={status} onChange={setStatus} options={STATUS_OPTIONS} />
+          <Input aria-label={t('linkedIssue')} placeholder={t('linkedIssueHttps')} value={issueUrl} maxLength={500} onChange={(e) => setIssueUrl(e.target.value)} />
           {p.issueUrl ? (
             <a className="fr-op-btnlink" href={p.issueUrl} target="_blank" rel="noreferrer noopener">
-              <ExternalLink size={15} aria-hidden /> Issue
-            </a>
+              <ExternalLink size={15} aria-hidden />{' '}{t('issue')}</a>
           ) : null}
         </div>
-        <TextArea aria-label="Operator note" placeholder="Note for operators (the reporter never sees it)" rows={2} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} />
+        <TextArea aria-label={t('operatorNote')} placeholder={t('noteForOperatorsTheReporter')} rows={2} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} />
         <div className="fr-op-card__actions">
-          <Button size="sm" variant="primary" disabled={!dirty} loading={busy} onClick={save}>
-            Save
-          </Button>
+          <Button size="sm" variant="primary" disabled={!dirty} loading={busy} onClick={save}>{t('save')}</Button>
         </div>
       </div>
     </article>

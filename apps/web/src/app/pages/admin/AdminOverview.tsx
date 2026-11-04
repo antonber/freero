@@ -5,6 +5,7 @@ import type { WorkspaceSettings, WorkspaceSummary, WorkspaceUsage } from '@freer
 import { Spinner } from '@ui';
 import { api, ApiError } from '../../api/client';
 
+import { t } from './messages';
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];
@@ -32,7 +33,7 @@ export function AdminOverview({ workspace, onOpen }: { workspace: WorkspaceSumma
         setSettings(s.settings);
         setWithout2fa(m.members.filter((x) => !x.twoFactor && !x.deactivated).length);
       })
-      .catch((e) => live && setError(e instanceof ApiError ? e.message : 'Could not load the workspace’s usage'));
+      .catch((e) => live && setError(e instanceof ApiError ? e.message : t('couldNotLoadTheWorkspace')));
     return () => {
       live = false;
     };
@@ -44,47 +45,45 @@ export function AdminOverview({ workspace, onOpen }: { workspace: WorkspaceSumma
 
   return (
     <section aria-labelledby="admin-overview-title">
-      <h1 id="admin-overview-title" className="fr-admin__title">
-        Overview
-      </h1>
+      <h1 id="admin-overview-title" className="fr-admin__title">{t('overview')}</h1>
       <div className="fr-admin-stats">
         <Stat
-          label="Boards"
+          label={t('boards')}
           value={usage.boards}
-          note={[usage.archivedBoards ? `${usage.archivedBoards} archived` : null, usage.trashedBoards ? `${usage.trashedBoards} in the trash` : 'Trash is empty'].filter(Boolean).join(' · ')}
+          note={[usage.archivedBoards ? `${usage.archivedBoards} archived` : null, usage.trashedBoards ? `${usage.trashedBoards} in the trash` : t('trashIsEmpty')].filter(Boolean).join(' · ')}
         />
-        <Stat label="People" value={people} note={`${usage.members.owner + usage.members.admin} owners & admins · ${usage.members.guest} ${usage.members.guest === 1 ? 'guest' : 'guests'}`} />
-        <Stat label="Active, last 7 days" value={usage.activeUsers7d} note={`${usage.activeUsers30d} in the last 30 days`} />
-        <Stat label="Storage" value={formatBytes(usage.contentBytes + usage.fileBytes)} note={`${formatBytes(usage.fileBytes)} in files, ${formatBytes(usage.contentBytes)} board content`} />
-        <Stat label="Projects" value={usage.projects} note={usage.pendingInvites ? `${usage.pendingInvites} invites pending` : 'No pending invites'} />
+        <Stat label={t('people')} value={people} note={t('valueOwnersAdminsGuestGuests', { guest: usage.members.guest, value: usage.members.owner + usage.members.admin })} />
+        <Stat label={t('activeLast7Days')} value={usage.activeUsers7d} note={t('activeusers30dInTheLast30', { activeUsers30d: usage.activeUsers30d })} />
+        <Stat label={t('storage')} value={formatBytes(usage.contentBytes + usage.fileBytes)} note={t('valueInFilesValue2Board', { value: formatBytes(usage.fileBytes), value2: formatBytes(usage.contentBytes) })} />
+        <Stat label={t('projects')} value={usage.projects} note={usage.pendingInvites ? t('pendinginvitesInvitesPending', { pendingInvites: usage.pendingInvites }) : t('noPendingInvites')} />
       </div>
 
-      <h2 className="fr-admin__subtitle">Needs attention</h2>
+      <h2 className="fr-admin__subtitle">{t('needsAttention')}</h2>
       <ul className="fr-admin-checks">
         <Check
           ok={settings.requireTwoFactor || without2fa === 0}
           text={
             settings.requireTwoFactor
-              ? 'Two-step verification is required to open this workspace’s boards.'
+              ? t('twoStepVerificationIsRequired')
               : without2fa === 0
-                ? 'Every active member uses two-step verification.'
-                : `${without2fa} ${without2fa === 1 ? 'member doesn’t' : 'members don’t'} use two-step verification, and the workspace doesn’t require it.`
+                ? t('everyActiveMemberUsesTwo')
+                : t('without2faMembersDonTUse', { without2fa })
           }
-          action={settings.requireTwoFactor || without2fa === 0 ? null : { label: 'Security settings', run: () => onOpen('security') }}
+          action={settings.requireTwoFactor || without2fa === 0 ? null : { label: t('securitySettings'), run: () => onOpen('security') }}
         />
         <Check
           ok={usage.deactivated === 0}
-          text={usage.deactivated === 0 ? 'No deactivated members.' : `${usage.deactivated} deactivated ${usage.deactivated === 1 ? 'member keeps' : 'members keep'} their boards but can’t open anything here.`}
-          action={usage.deactivated === 0 ? null : { label: 'Review members', run: () => onOpen('members') }}
+          text={usage.deactivated === 0 ? t('noDeactivatedMembers') : t('deactivatedDeactivatedMembersKeepTheir', { deactivated: usage.deactivated })}
+          action={usage.deactivated === 0 ? null : { label: t('reviewMembers'), run: () => onOpen('members') }}
         />
         <Check
           ok={settings.sessionMaxHours !== null || settings.sessionIdleMinutes !== null}
           text={
             settings.sessionMaxHours !== null || settings.sessionIdleMinutes !== null
-              ? 'Sessions of members end under the workspace’s session policy.'
-              : 'Members stay signed in for up to 30 days, even when idle.'
+              ? t('sessionsOfMembersEndUnder')
+              : t('membersStaySignedInFor')
           }
-          action={settings.sessionMaxHours !== null || settings.sessionIdleMinutes !== null ? null : { label: 'Set a session policy', run: () => onOpen('security') }}
+          action={settings.sessionMaxHours !== null || settings.sessionIdleMinutes !== null ? null : { label: t('setASessionPolicy'), run: () => onOpen('security') }}
         />
       </ul>
     </section>

@@ -6,6 +6,7 @@ import { LayoutDashboard } from 'lucide-react';
 import { formatObjectUri, type Backlink, type ReferenceKind } from '@freero/shared';
 import { api } from '../api/client';
 
+import { t } from '../messages';
 const KIND_LABEL: Record<ReferenceKind, string> = { link: 'item link', embed: 'smart link', mention: 'mention', comment: 'comment', tracker: 'tracker issue' };
 
 /** One row per source board: how many places there point here, and how. */
@@ -37,10 +38,10 @@ export function LinkedFrom({ boardId, onOpen }: { boardId: string; onOpen: (path
   if (links === null) return null;
   const rows = bySourceBoard(links, boardId);
   return (
-    <section aria-label="Linked from" className="fr-share__linked">
-      <h3 className="fr-share__heading">Linked from</h3>
+    <section aria-label={t('linkedFrom')} className="fr-share__linked">
+      <h3 className="fr-share__heading">{t('linkedFrom')}</h3>
       {rows.length === 0 ? (
-        <p className="fr-share__linked-empty">No other board you can open links here yet.</p>
+        <p className="fr-share__linked-empty">{t('noOtherBoardYouCan')}</p>
       ) : (
         <ul className="fr-share__members">
           {rows.map((b) => (
@@ -52,7 +53,7 @@ export function LinkedFrom({ boardId, onOpen }: { boardId: string; onOpen: (path
                 <span className="fr-share__who">
                   <span className="fr-share__name">{b.title}</span>
                   <span className="fr-share__email-text">
-                    {b.count === 1 ? '1 place' : `${b.count} places`} · {[...b.kinds].map((k) => KIND_LABEL[k]).join(', ')}
+                    {t('countPlaces', { count: b.count })} · {[...b.kinds].map((k) => KIND_LABEL[k]).join(', ')}
                   </span>
                 </span>
               </button>

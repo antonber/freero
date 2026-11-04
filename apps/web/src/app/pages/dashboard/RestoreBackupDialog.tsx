@@ -9,6 +9,7 @@ import { Button, Modal, Select } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { workspaceLabel } from './useWorkspaces';
 
+import { t } from './messages';
 const NO_PROJECT = '';
 
 export function RestoreBackupDialog({
@@ -58,7 +59,7 @@ export function RestoreBackupDialog({
   const pick = (f: File | undefined) => {
     setError(null);
     if (!f) return;
-    if (!f.name.toLowerCase().endsWith(BACKUP_EXTENSION)) return setError('Choose a Freero board backup (a .freero file).');
+    if (!f.name.toLowerCase().endsWith(BACKUP_EXTENSION)) return setError(t('chooseAFreeroBoardBackup'));
     setFile(f);
   };
 
@@ -74,7 +75,7 @@ export function RestoreBackupDialog({
       ].filter(Boolean);
       onRestored(board.id, `Restored “${board.title}”${notes.length ? ` · ${notes.join(' · ')}` : ''}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not restore that backup');
+      setError(e instanceof ApiError ? e.message : t('couldNotRestoreThatBackup'));
     } finally {
       setBusy(false);
     }
@@ -84,44 +85,40 @@ export function RestoreBackupDialog({
     <Modal
       open={open}
       onClose={busy ? () => undefined : onClose}
-      title="Restore a board backup"
+      title={t('restoreABoardBackup')}
       description="A .freero file becomes a new board here, with its comments, tables and images. The board it came from is not changed."
       width={520}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={ArchiveRestore} loading={busy} disabled={!file || !ws} onClick={() => void restore()}>
-            Restore board
-          </Button>
+          <Button onClick={onClose} disabled={busy}>{t('cancel')}</Button>
+          <Button variant="primary" icon={ArchiveRestore} loading={busy} disabled={!file || !ws} onClick={() => void restore()}>{t('restoreBoard')}</Button>
         </>
       }
     >
       <div className="fr-dash-restore">
         <label className="fr-dash-restore__file">
           <ArchiveRestore size={18} aria-hidden />
-          <span>{file ? file.name : 'Choose a .freero file'}</span>
+          <span>{file ? file.name : t('chooseAFreeroFile')}</span>
           <input type="file" accept={`${BACKUP_EXTENSION},application/vnd.freero.board+zip`} onChange={(e) => pick(e.target.files?.[0])} />
         </label>
         {targets.length ? (
           <div className="fr-dash-restore__place">
             <label>
-              <span>Workspace</span>
-              <Select<string> aria-label="Workspace" options={targets.map((w) => ({ value: w.id, label: workspaceLabel(w) }))} value={ws} onChange={setWs} />
+              <span>{t('workspace')}</span>
+              <Select<string> aria-label={t('workspace')} options={targets.map((w) => ({ value: w.id, label: workspaceLabel(w) }))} value={ws} onChange={setWs} />
             </label>
             <label>
-              <span>Project</span>
+              <span>{t('project')}</span>
               <Select<string>
-                aria-label="Project"
-                options={[{ value: NO_PROJECT, label: 'No project' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+                aria-label={t('project')}
+                options={[{ value: NO_PROJECT, label: t('noProject') }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
                 value={project}
                 onChange={setProject}
               />
             </label>
           </div>
         ) : (
-          <p className="fr-dash-restore__error">You can’t create boards in any of your workspaces.</p>
+          <p className="fr-dash-restore__error">{t('youCanTCreateBoards')}</p>
         )}
         {error ? (
           <p className="fr-dash-restore__error" role="alert">

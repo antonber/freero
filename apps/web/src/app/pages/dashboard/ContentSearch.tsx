@@ -24,29 +24,30 @@ import {
 import type { SearchHit } from '@freero/shared';
 import { Button, Spinner } from '@ui';
 import { api } from '../../api/client';
+import { t } from './messages';
 import './search.css';
 
 const ITEM: Record<string, { label: string; icon: LucideIcon }> = {
-  sticky: { label: 'Sticky note', icon: StickyNote },
-  text: { label: 'Text', icon: Type },
-  shape: { label: 'Shape', icon: Shapes },
-  card: { label: 'Card', icon: SquareCheckBig },
-  frame: { label: 'Frame', icon: Frame },
-  table: { label: 'Table', icon: Table2 },
-  kanban: { label: 'Kanban', icon: Columns3 },
-  mindmap: { label: 'Mind map', icon: GitBranch },
-  connector: { label: 'Connector', icon: Workflow },
+  sticky: { label: t('stickyNote'), icon: StickyNote },
+  text: { label: t('text'), icon: Type },
+  shape: { label: t('shape'), icon: Shapes },
+  card: { label: t('card'), icon: SquareCheckBig },
+  frame: { label: t('frame'), icon: Frame },
+  table: { label: t('table'), icon: Table2 },
+  kanban: { label: t('kanban'), icon: Columns3 },
+  mindmap: { label: t('mindMap'), icon: GitBranch },
+  connector: { label: t('connector'), icon: Workflow },
 };
 const describe = (h: SearchHit): { label: string; icon: LucideIcon } =>
   h.kind === 'board'
     ? h.objectKind === 'doc'
-      ? { label: 'Doc name', icon: FileText }
-      : { label: 'Board name', icon: LayoutDashboard }
+      ? { label: t('docName'), icon: FileText }
+      : { label: t('boardName'), icon: LayoutDashboard }
     : h.kind === 'comment'
-      ? { label: 'Comment', icon: MessageSquare }
+      ? { label: t('comment'), icon: MessageSquare }
       : h.objectKind === 'doc'
-        ? { label: 'In the doc', icon: FileText }
-        : (ITEM[h.itemType ?? ''] ?? { label: 'Item', icon: Shapes });
+        ? { label: t('inTheDoc'), icon: FileText }
+        : (ITEM[h.itemType ?? ''] ?? { label: t('item'), icon: Shapes });
 
 /** The snippet with its matched words marked (React escapes the text: board content is untrusted). */
 function Snippet({ hit }: { hit: SearchHit }) {
@@ -101,11 +102,9 @@ export function ContentSearch({ q, search }: { q: string; search: ReturnType<typ
   if (failed)
     return (
       <div className="fr-empty">
-        <h2 className="fr-empty__title">Couldn’t search inside your boards</h2>
-        <p className="fr-empty__body">Check your connection and try again.</p>
-        <Button icon={RotateCw} onClick={search.retry}>
-          Try again
-        </Button>
+        <h2 className="fr-empty__title">{t('couldnTSearchInsideYour')}</h2>
+        <p className="fr-empty__body">{t('checkYourConnectionAndTry')}</p>
+        <Button icon={RotateCw} onClick={search.retry}>{t('tryAgain')}</Button>
       </div>
     );
   if (!hits.length)
@@ -114,8 +113,8 @@ export function ContentSearch({ q, search }: { q: string; search: ReturnType<typ
         <span className="fr-empty__badge">
           <Search size={22} />
         </span>
-        <h2 className="fr-empty__title">Nothing inside your boards says “{q}”</h2>
-        <p className="fr-empty__body">Search looks at board names, notes, text, cards, frames, tables, tags and comments of the boards you can open here.</p>
+        <h2 className="fr-empty__title">{t('nothingInsideYourBoardsSays', { q })}</h2>
+        <p className="fr-empty__body">{t('searchLooksAtBoardNames')}</p>
       </div>
     );
 
@@ -133,10 +132,10 @@ export function ContentSearch({ q, search }: { q: string; search: ReturnType<typ
         // A doc's hits (KAI-162) open the doc.
         const isDoc = g.hits.some((h) => h.objectKind === 'doc');
         return (
-        <section key={boardId} className="fr-dash-search__board" aria-label={g.title || (isDoc ? 'Untitled doc' : 'Untitled board')}>
+        <section key={boardId} className="fr-dash-search__board" aria-label={g.title || (isDoc ? t('untitledDoc') : t('untitledBoard'))}>
           <button type="button" className="fr-dash-search__board-head" onClick={() => navigate(`/${isDoc ? 'doc' : 'board'}/${encodeURIComponent(boardId)}`)}>
             {isDoc ? <FileText size={16} aria-hidden /> : <LayoutDashboard size={16} aria-hidden />}
-            <span className="fr-dash-search__board-title">{titleHit ? <Snippet hit={titleHit} /> : g.title || 'Untitled board'}</span>
+            <span className="fr-dash-search__board-title">{titleHit ? <Snippet hit={titleHit} /> : g.title || t('untitledBoard')}</span>
             <span className="fr-dash-search__count">
               {g.hits.length} {g.hits.length === 1 ? 'match' : 'matches'}
             </span>
@@ -164,9 +163,7 @@ export function ContentSearch({ q, search }: { q: string; search: ReturnType<typ
       })}
       {cursor ? (
         <div className="fr-dash-search__more">
-          <Button variant="secondary" loading={loadingMore} onClick={search.loadMore}>
-            Show more matches
-          </Button>
+          <Button variant="secondary" loading={loadingMore} onClick={search.loadMore}>{t('showMoreMatches')}</Button>
         </div>
       ) : null}
     </div>

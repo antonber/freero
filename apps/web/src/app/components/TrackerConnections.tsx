@@ -10,6 +10,7 @@ import { Button, Input, Select, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 import { relativeTime } from '../lib/time';
 import { TrackerFieldMap } from './TrackerFieldMap';
+import { t } from '../messages';
 import './TrackerConnections.css';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : e instanceof ApiError ? e.message || fallback : fallback);
@@ -24,7 +25,7 @@ const SITE_PLACEHOLDER: Record<TrackerProviderKind, string> = {
   asana: 'https://app.asana.com',
   monday: 'https://monday.com',
 };
-const TOKEN_LABEL: Record<TrackerProviderKind, string> = { jira: 'API token', linear: 'API key', github: 'Personal access token', azure: 'Personal access token (Work Items: read & write)', asana: 'Personal access token', monday: 'API token' };
+const TOKEN_LABEL: Record<TrackerProviderKind, string> = { jira: t('apiToken'), linear: t('apiKey'), github: t('personalAccessToken'), azure: t('personalAccessTokenWorkItems'), asana: t('personalAccessToken'), monday: t('apiToken') };
 /** Trackers where Freero registers its webhooks itself (nothing to paste there). */
 const SELF_HOOKED: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday']);
 type OAuthOffered = Partial<Record<TrackerProviderKind, boolean>>;
@@ -33,17 +34,11 @@ function Secret({ value, onDone }: { value: string; onDone: () => void }) {
   const notify = useToast();
   return (
     <div className="fr-trackerconn__secret" role="status">
-      <p>
-        Webhook secret — paste it into the tracker’s webhook settings with the address above. Copy it now: it won’t be shown again.
-      </p>
+      <p>{t('webhookSecretPasteItInto')}</p>
       <div className="fr-trackerconn__secret-row">
         <code data-testid="tracker-webhook-secret">{value}</code>
-        <Button size="sm" icon={Copy} onClick={() => void navigator.clipboard?.writeText(value).then(() => notify('Copied', 'success'))}>
-          Copy
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDone}>
-          Done
-        </Button>
+        <Button size="sm" icon={Copy} onClick={() => void navigator.clipboard?.writeText(value).then(() => notify(t('copied'), 'success'))}>{t('copy')}</Button>
+        <Button size="sm" variant="ghost" onClick={onDone}>{t('done')}</Button>
       </div>
     </div>
   );
@@ -81,9 +76,9 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
       const out = await api.createTrackerConnection(body);
       setToken('');
       onAdded(out.connection, out.webhookSecret);
-      notify(`Connected ${out.connection.name}${out.connection.account ? ` as ${out.connection.account}` : ''}`, 'success');
+      notify(t('connectedNameValue', { name: out.connection.name, value: out.connection.account ? t('asAccount', { account: out.connection.account }) : '' }), 'success');
     } catch (err) {
-      setError(errorText(err, 'Could not connect the tracker'));
+      setError(errorText(err, t('couldNotConnectTheTracker')));
     } finally {
       setBusy(false);
     }
@@ -92,20 +87,20 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
   const oauthUrl = `/api/trackers/oauth/${provider}/start?${new URLSearchParams({ ...(workspaceId ? { workspace: workspaceId } : {}), name: name.trim() || TRACKER_PROVIDERS[provider] })}`;
   const oauthOffered = provider === 'jira' ? deployment === 'cloud' && !!oauth.jira : !!oauth[provider];
   return (
-    <form className="fr-trackerconn__form" onSubmit={submit} aria-label="Connect a tracker">
+    <form className="fr-trackerconn__form" onSubmit={submit} aria-label={t('connectATracker')}>
       <div className="fr-trackerconn__grid">
         <label>
-          <span>Tracker</span>
-          <Select aria-label="Tracker" options={PROVIDER_OPTIONS} value={provider} onChange={setProvider} width="100%" />
+          <span>{t('tracker')}</span>
+          <Select aria-label={t('tracker')} options={PROVIDER_OPTIONS} value={provider} onChange={setProvider} width="100%" />
         </label>
         {provider === 'azure' && (
           <label>
-            <span>Azure DevOps</span>
+            <span>{t('azureDevops')}</span>
             <Select
-              aria-label="Azure DevOps deployment"
+              aria-label={t('azureDevopsDeployment')}
               options={[
-                { value: 'cloud', label: 'Services', description: 'dev.azure.com' },
-                { value: 'datacenter', label: 'Server', description: 'Your own address (2020 or later)' },
+                { value: 'cloud', label: t('services'), description: 'dev.azure.com' },
+                { value: 'datacenter', label: t('server'), description: t('yourOwnAddress2020Or') },
               ]}
               value={deployment}
               onChange={setDeployment}
@@ -117,10 +112,10 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
           <label>
             <span>Jira</span>
             <Select
-              aria-label="Jira deployment"
+              aria-label={t('jiraDeployment')}
               options={[
-                { value: 'cloud', label: 'Cloud', description: 'REST v3, API token' },
-                { value: 'datacenter', label: 'Data Center / Server', description: 'REST v2, personal access token' },
+                { value: 'cloud', label: t('cloud'), description: t('restV3ApiToken') },
+                { value: 'datacenter', label: t('dataCenterServer'), description: t('restV2PersonalAccessToken') },
               ]}
               value={deployment}
               onChange={setDeployment}
@@ -128,13 +123,13 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
             />
           </label>
         )}
-        <Input label="Name" value={name} placeholder={TRACKER_PROVIDERS[provider]} maxLength={80} onChange={(e) => setName(e.target.value)} />
-        <Input label="Address" value={site} placeholder={SITE_PLACEHOLDER[provider]} onChange={(e) => setSite(e.target.value)} required={provider === 'jira' || provider === 'azure'} />
+        <Input label={t('name')} value={name} placeholder={TRACKER_PROVIDERS[provider]} maxLength={80} onChange={(e) => setName(e.target.value)} />
+        <Input label={t('address')} value={site} placeholder={SITE_PLACEHOLDER[provider]} onChange={(e) => setSite(e.target.value)} required={provider === 'jira' || provider === 'azure'} />
         {provider === 'jira' && deployment === 'cloud' && (
-          <Input label="Account email" type="email" value={email} autoComplete="off" onChange={(e) => setEmail(e.target.value)} required />
+          <Input label={t('accountEmail')} type="email" value={email} autoComplete="off" onChange={(e) => setEmail(e.target.value)} required />
         )}
         <Input
-          label={provider === 'jira' && deployment === 'datacenter' ? 'Personal access token' : TOKEN_LABEL[provider]}
+          label={provider === 'jira' && deployment === 'datacenter' ? t('personalAccessToken') : TOKEN_LABEL[provider]}
           type="password"
           value={token}
           autoComplete="off"
@@ -144,27 +139,27 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
         <Input
           label={
             provider === 'github'
-              ? 'Default repository (owner/name)'
+              ? t('defaultRepositoryOwnerName')
               : provider === 'linear'
-                ? 'Default team key'
+                ? t('defaultTeamKey')
                 : provider === 'azure'
-                  ? 'Default project'
+                  ? t('defaultProject')
                   : provider === 'asana'
-                    ? 'Default project (its id or name)'
+                    ? t('defaultProjectItsIdOr')
                     : provider === 'monday'
-                      ? 'Default board (its id or name)'
-                      : 'Default project key'
+                      ? t('defaultBoardItsIdOr')
+                      : t('defaultProjectKey')
           }
           value={project}
           onChange={(e) => setProject(e.target.value)}
         />
         <label>
-          <span>Changes from the tracker</span>
+          <span>{t('changesFromTheTracker')}</span>
           <Select
-            aria-label="Changes from the tracker"
+            aria-label={t('changesFromTheTracker')}
             options={[
-              { value: 'webhook', label: 'Webhooks', description: SELF_HOOKED.has(provider) ? 'Instant; Freero registers them itself' : 'Instant; the tracker must reach this server' },
-              { value: 'polling', label: 'Polling', description: 'Every minute; for trackers that can’t reach Freero' },
+              { value: 'webhook', label: t('webhooks'), description: SELF_HOOKED.has(provider) ? 'Instant; Freero registers them itself' : 'Instant; the tracker must reach this server' },
+              { value: 'polling', label: t('polling'), description: 'Every minute; for trackers that can’t reach Freero' },
             ]}
             value={inbound}
             onChange={setInbound}
@@ -178,12 +173,10 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
         </p>
       )}
       <div className="fr-trackerconn__actions">
-        <Button type="submit" variant="primary" icon={Plug} loading={busy}>
-          Connect
-        </Button>
+        <Button type="submit" variant="primary" icon={Plug} loading={busy}>{t('connect')}</Button>
         {oauthOffered && (
           <Button type="button" icon={KeyRound} onClick={() => window.location.assign(oauthUrl)}>
-            {provider === 'jira' ? 'Connect with Atlassian instead' : `Connect with ${TRACKER_PROVIDERS[provider]} instead`}
+            {provider === 'jira' ? t('connectWithAtlassianInstead') : t('connectWithTrackerProvidersInstead', { tracker_providers: TRACKER_PROVIDERS[provider] })}
           </Button>
         )}
       </div>
@@ -208,7 +201,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
         setList(r.connections);
         setOauth(r.oauth);
       },
-      (e) => notify(errorText(e, 'Could not load tracker connections'), 'error'),
+      (e) => notify(errorText(e, t('couldNotLoadTrackerConnections')), 'error'),
     );
   }, [workspaceId, notify]);
   useEffect(load, [load]);
@@ -218,16 +211,16 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
     const q = new URLSearchParams(window.location.search);
     const err = q.get('tracker_error');
     if (err) notify(err, 'error');
-    else if (q.get('tracker_connected')) notify('Tracker connected', 'success');
+    else if (q.get('tracker_connected')) notify(t('trackerConnected'), 'success');
   }, [notify]);
 
   const test = async (c: TrackerConnectionInfo) => {
     try {
       const r = await api.testTrackerConnection(c.id);
       setList((l) => l?.map((x) => (x.id === c.id ? r.connection : x)) ?? null);
-      notify(`${c.name} works${r.account ? ` (as ${r.account})` : ''}`, 'success');
+      notify(t('nameWorksValue', { name: c.name, value: r.account ? t('asAccount2', { account: r.account }) : '' }), 'success');
     } catch (e) {
-      notify(errorText(e, `${c.name} didn’t answer`), 'error');
+      notify(errorText(e, t('nameDidnTAnswer', { name: c.name })), 'error');
       load();
     }
   };
@@ -235,7 +228,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
     try {
       setSecret({ id: c.id, value: (await api.rotateTrackerWebhookSecret(c.id)).webhookSecret });
     } catch (e) {
-      notify(errorText(e, 'Could not make a new secret'), 'error');
+      notify(errorText(e, t('couldNotMakeANew')), 'error');
     }
   };
   const remove = async (c: TrackerConnectionInfo) => {
@@ -243,64 +236,53 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
     try {
       await api.deleteTrackerConnection(c.id);
       setList((l) => l?.filter((x) => x.id !== c.id) ?? null);
-      notify(`Removed ${c.name}`, 'success');
+      notify(t('removedName', { name: c.name }), 'success');
     } catch (e) {
-      notify(errorText(e, 'Could not remove it'), 'error');
+      notify(errorText(e, t('couldNotRemoveIt')), 'error');
     }
   };
 
   if (!list) return <Spinner />;
   return (
     <div className="fr-trackerconn">
-      {list.length === 0 && !adding && <p className="fr-trackerconn__fine">No tracker connected yet.</p>}
+      {list.length === 0 && !adding && <p className="fr-trackerconn__fine">{t('noTrackerConnectedYet')}</p>}
       {list.map((c) => (
         <div key={c.id} className="fr-trackerconn__item" data-testid="tracker-connection">
           <div className="fr-trackerconn__head">
             <div>
               <div className="fr-trackerconn__name">
                 {c.name}
-                <span className={`fr-trackerconn__pill${c.status === 'active' ? '' : ' fr-trackerconn__pill--bad'}`}>{c.status === 'active' ? 'Active' : 'Needs attention'}</span>
+                <span className={`fr-trackerconn__pill${c.status === 'active' ? '' : ' fr-trackerconn__pill--bad'}`}>{c.status === 'active' ? t('active') : t('needsAttention')}</span>
               </div>
               <div className="fr-trackerconn__meta">
                 {TRACKER_PROVIDERS[c.provider]}
-                {c.deployment ? ` ${c.provider === 'azure' ? (c.deployment === 'cloud' ? 'Services' : 'Server') : c.deployment === 'cloud' ? 'Cloud' : 'Data Center'}` : ''} · {c.site} · {c.auth === 'oauth' ? 'OAuth' : 'token'}
-                {c.account ? ` · as ${c.account}` : ''} · {c.links} linked issue{c.links === 1 ? '' : 's'} · added {relativeTime(c.createdAt)}
-              </div>
+                {c.deployment ? ` ${c.provider === 'azure' ? (c.deployment === 'cloud' ? 'Services' : 'Server') : c.deployment === 'cloud' ? 'Cloud' : 'Data Center'}` : ''} · {c.site} · {c.auth === 'oauth' ? t('oauth') : 'token'}
+                {c.account ? t('asAccount3', { account: c.account }) : ''}{' '}{t('linksLinkedIssuesAddedValue', { links: c.links, value: relativeTime(c.createdAt) })}</div>
               {c.lastError && <div className="fr-trackerconn__error">{c.lastError}</div>}
             </div>
             <div className="fr-trackerconn__buttons">
-              <Button size="sm" icon={RefreshCw} onClick={() => void test(c)}>
-                Test
-              </Button>
+              <Button size="sm" icon={RefreshCw} onClick={() => void test(c)}>{t('test')}</Button>
               {c.fieldMap && c.provider !== 'linear' && c.provider !== 'github' && (
-                <Button size="sm" variant="ghost" icon={ListTree} aria-expanded={mapping === c.id} onClick={() => setMapping(mapping === c.id ? null : c.id)}>
-                  Field map
-                </Button>
+                <Button size="sm" variant="ghost" icon={ListTree} aria-expanded={mapping === c.id} onClick={() => setMapping(mapping === c.id ? null : c.id)}>{t('fieldMap')}</Button>
               )}
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void remove(c)} aria-label={`Remove ${c.name}`}>
-                Remove
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void remove(c)} aria-label={t('removeName', { name: c.name })}>{t('remove')}</Button>
             </div>
           </div>
           {SELF_HOOKED.has(c.provider) ? (
             <p className="fr-trackerconn__fine">
               {c.inbound === 'webhook'
-                ? `Freero registers its own webhooks in ${TRACKER_PROVIDERS[c.provider]} for each ${c.provider === 'monday' ? 'board' : 'project'} you send to or import from, and polls as a fallback.`
-                : `Polling every minute: nothing is registered in ${TRACKER_PROVIDERS[c.provider]}.`}
+                ? t('freeroRegistersItsOwnWebhooks', { tracker_providers: TRACKER_PROVIDERS[c.provider], value: c.provider === 'monday' ? t('board') : t('project') })
+                : t('pollingEveryMinuteNothingIs', { tracker_providers: TRACKER_PROVIDERS[c.provider] })}
             </p>
           ) : (
             <div className="fr-trackerconn__webhook">
-              <span>{c.inbound === 'webhook' ? 'Webhook address' : 'Polling every minute · webhook address (optional)'}</span>
+              <span>{c.inbound === 'webhook' ? t('webhookAddress') : t('pollingEveryMinuteWebhookAddress')}</span>
               <code>{c.webhookUrl}</code>
-              <Button size="sm" variant="ghost" onClick={() => void rotate(c)}>
-                New secret
-              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void rotate(c)}>{t('newSecret')}</Button>
             </div>
           )}
           {c.provider === 'azure' && (
-            <p className="fr-trackerconn__fine">
-              In Azure DevOps: Project settings → Service hooks → Web Hooks, event “Work item updated”, this address, basic authentication with any user name and the webhook secret as the password.
-            </p>
+            <p className="fr-trackerconn__fine">{t('inAzureDevopsProjectSettings')}</p>
           )}
           {secret?.id === c.id && <Secret value={secret.value} onDone={() => setSecret(null)} />}
           {mapping === c.id && (
@@ -327,9 +309,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
           }}
         />
       ) : (
-        <Button icon={Plug} onClick={() => setAdding(true)}>
-          Connect a tracker
-        </Button>
+        <Button icon={Plug} onClick={() => setAdding(true)}>{t('connectATracker')}</Button>
       )}
     </div>
   );

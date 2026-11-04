@@ -9,13 +9,14 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { inviteStatus } from '../../components/ShareDialog';
 
+import { t } from './messages';
 type Invitable = Exclude<WorkspaceRole, 'owner'>;
 
 const ROLE_OPTIONS: SelectOption<WorkspaceRole>[] = [
-  { value: 'owner', label: 'Owner', description: 'Everything, including policies and deleting the workspace' },
-  { value: 'admin', label: 'Admin', description: 'Manages members, projects and policies' },
-  { value: 'member', label: 'Member', description: 'Creates boards and edits the team’s boards' },
-  { value: 'guest', label: 'Guest', description: 'Only boards and projects shared with them' },
+  { value: 'owner', label: t('owner'), description: t('everythingIncludingPoliciesAndDeleting') },
+  { value: 'admin', label: t('admin'), description: t('managesMembersProjectsAndPolicies') },
+  { value: 'member', label: t('member'), description: t('createsBoardsAndEditsThe') },
+  { value: 'guest', label: t('guest'), description: t('onlyBoardsAndProjectsShared') },
 ];
 
 /** What `me` may set someone's role to (mirrors the server's rule; the server re-checks). */
@@ -51,7 +52,7 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
       setInvites(out.invites);
       setFailed(null);
     } catch (e) {
-      setFailed(e instanceof ApiError ? e.message : 'Could not load the members');
+      setFailed(e instanceof ApiError ? e.message : t('couldNotLoadTheMembers'));
     }
   }, [workspace.id]);
 
@@ -63,18 +64,18 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
   const invite = async (e: FormEvent) => {
     e.preventDefault();
     const addr = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) return setInviteError('Enter a valid email address');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) return setInviteError(t('enterAValidEmailAddress'));
     setInviting(true);
     setInviteError(null);
     try {
       const out = await api.inviteToWorkspace(workspace.id, addr, role);
-      if (out.member) notify(`${out.member.name} joined ${workspace.name}`, 'success');
-      else if (out.invite) notify(`Invite sent to ${out.invite.email}`, 'success');
+      if (out.member) notify(t('nameJoinedName2', { name: out.member.name, name2: workspace.name }), 'success');
+      else if (out.invite) notify(t('inviteSentToEmail', { email: out.invite.email }), 'success');
       setEmail('');
       await load();
       onChanged();
     } catch (err) {
-      setInviteError(err instanceof ApiError ? err.message : 'Could not send the invite');
+      setInviteError(err instanceof ApiError ? err.message : t('couldNotSendTheInvite'));
     } finally {
       setInviting(false);
     }
@@ -88,7 +89,7 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
       onChanged();
     } catch (err) {
       setMembers(prev);
-      notify(err instanceof ApiError ? err.message : 'Could not change the role', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotChangeTheRole'), 'error');
     }
   };
 
@@ -97,15 +98,15 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
     try {
       await api.removeWorkspaceMember(workspace.id, m.userId);
       if (self) {
-        notify(`You left ${workspace.name}`, 'info');
+        notify(t('youLeftName', { name: workspace.name }), 'info');
         onLeft();
         return;
       }
       setMembers((list) => list?.filter((x) => x.userId !== m.userId) ?? null);
-      notify(`${m.name} was removed. Boards they owned here are now yours.`, 'info');
+      notify(t('nameWasRemovedBoardsThey', { name: m.name }), 'info');
       onChanged();
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not remove that person', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotRemoveThatPerson'), 'error');
     }
   };
 
@@ -113,9 +114,9 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
     try {
       const { invite } = await api.resendWorkspaceInvite(workspace.id, inv.id);
       setInvites((list) => list.map((i) => (i.id === invite.id ? invite : i)));
-      notify(`Sent a new invite link to ${invite.email}`, 'success');
+      notify(t('sentANewInviteLink', { email: invite.email }), 'success');
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not resend the invite', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotResendTheInvite'), 'error');
     }
   };
 
@@ -124,28 +125,27 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
       await api.revokeWorkspaceInvite(workspace.id, inv.id);
       setInvites((list) => list.filter((i) => i.id !== inv.id));
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not revoke the invite', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotRevokeTheInvite'), 'error');
     }
   };
 
   return (
-    <section className="fr-dash-page" aria-label="Members">
+    <section className="fr-dash-page" aria-label={t('members')}>
       <header className="fr-dash-page__head">
-        <h1 className="fr-collection__title">
-          Members{members ? <span className="fr-collection__count">{members.length}</span> : null}
+        <h1 className="fr-collection__title">{t('members')}{members ? <span className="fr-collection__count">{members.length}</span> : null}
         </h1>
         <p className="fr-dash-page__lead">People in {workspace.name}. Members see every board the team shares; guests only what’s shared with them.</p>
       </header>
 
       {roles.length > 0 ? (
         user?.emailVerified === false ? (
-          <p className="fr-dash-page__note">Confirm your email address to invite people.</p>
+          <p className="fr-dash-page__note">{t('confirmYourEmailAddressTo')}</p>
         ) : (
           <form className="fr-dash-members__invite" onSubmit={invite} noValidate>
             <Input
               type="email"
-              placeholder="Invite by email"
-              aria-label="Email address to invite"
+              placeholder={t('inviteByEmail')}
+              aria-label={t('emailAddressToInvite')}
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -155,15 +155,13 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
               autoComplete="off"
             />
             <Select<Invitable>
-              aria-label="Invite as"
+              aria-label={t('inviteAs')}
               options={ROLE_OPTIONS.filter((o) => roles.includes(o.value as Invitable)) as SelectOption<Invitable>[]}
               value={role}
               onChange={setRole}
               width={140}
             />
-            <Button type="submit" variant="primary" loading={inviting} disabled={!email.trim()}>
-              Invite
-            </Button>
+            <Button type="submit" variant="primary" loading={inviting} disabled={!email.trim()}>{t('invite')}</Button>
           </form>
         )
       ) : null}
@@ -173,7 +171,7 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
           {failed}
         </p>
       ) : !members ? (
-        <Spinner size={22} label="Loading members" />
+        <Spinner size={22} label={t('loadingMembers')} />
       ) : (
         <ul className="fr-dash-members__list">
           {members.map((m) => {
@@ -188,14 +186,14 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
                 <div className="fr-dash-members__who">
                   <span className="fr-dash-members__name">
                     {m.name}
-                    {self ? <span className="fr-dash-members__you"> (you)</span> : null}
+                    {self ? <span className="fr-dash-members__you">{' '}{t('you')}</span> : null}
                   </span>
                   <span className="fr-dash-members__email">{m.email}</span>
                 </div>
                 <div className="fr-dash-members__actions">
                   {options.length > 1 && !self ? (
                     <Select<WorkspaceRole>
-                      aria-label={`Role for ${m.name}`}
+                      aria-label={t('roleForName', { name: m.name })}
                       size="sm"
                       variant="ghost"
                       options={ROLE_OPTIONS.filter((o) => options.includes(o.value))}
@@ -205,11 +203,9 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
                   ) : (
                     <span className="fr-dash-members__role">{ROLE_OPTIONS.find((o) => o.value === m.role)?.label}</span>
                   )}
-                  {mayRemove ? <IconButton size={32} icon={X} label={`Remove ${m.name}`} tooltipSide="top" onClick={() => remove(m)} /> : null}
+                  {mayRemove ? <IconButton size={32} icon={X} label={t('removeName', { name: m.name })} tooltipSide="top" onClick={() => remove(m)} /> : null}
                   {self && !soleOwner ? (
-                    <Button size="sm" variant="ghost" icon={LogOut} onClick={() => remove(m)}>
-                      Leave
-                    </Button>
+                    <Button size="sm" variant="ghost" icon={LogOut} onClick={() => remove(m)}>{t('leave')}</Button>
                   ) : null}
                 </div>
               </li>
@@ -228,8 +224,8 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
                 <span className="fr-dash-members__role">{ROLE_OPTIONS.find((o) => o.value === inv.role)?.label}</span>
                 {manager ? (
                   <>
-                    <IconButton size={32} icon={RotateCw} label={`Resend invite to ${inv.email}`} tooltipSide="top" onClick={() => resend(inv)} />
-                    <IconButton size={32} icon={X} label={`Revoke invite to ${inv.email}`} tooltipSide="top" onClick={() => revoke(inv)} />
+                    <IconButton size={32} icon={RotateCw} label={t('resendInviteToEmail', { email: inv.email })} tooltipSide="top" onClick={() => resend(inv)} />
+                    <IconButton size={32} icon={X} label={t('revokeInviteToEmail', { email: inv.email })} tooltipSide="top" onClick={() => revoke(inv)} />
                   </>
                 ) : null}
               </div>

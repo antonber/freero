@@ -20,6 +20,7 @@ import { Button, Input, Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
 import { NotFoundPage } from '../NotFoundPage';
 import { appLinkTargets, CATEGORY_ICON, categoryLabel, COMMUNITY_ICON, filterCatalog, filterListings, type AppsFilter } from './catalog';
+import { t as tr } from './messages';
 import '../account/account.css';
 import '../connect/connect.css';
 import './apps.css';
@@ -44,13 +45,13 @@ export function StatusChip({ status }: { status: IntegrationStatus }) {
 }
 
 export function CommunityChip() {
-  return <span className="fr-apps-chip fr-apps-chip--community">Community</span>;
+  return <span className="fr-apps-chip fr-apps-chip--community">{tr('community')}</span>;
 }
 
 const FILTERS: Array<{ id: AppsFilter; label: string }> = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: tr('all') },
   ...INTEGRATION_CATEGORIES.map((c) => ({ id: c.id as AppsFilter, label: c.label })),
-  { id: 'community', label: 'Community' },
+  { id: 'community', label: tr('community') },
 ];
 const isFilter = (v: string | null): v is AppsFilter => FILTERS.some((f) => f.id === v);
 
@@ -88,25 +89,22 @@ export function AppsPage() {
   const nothing = filter !== 'community' && entries.length === 0 && community.length === 0 && (listings !== null || listingsFailed);
 
   return (
-    <AppsFrame back={{ to: '/app', label: 'Back to boards' }}>
+    <AppsFrame back={{ to: '/app', label: tr('backToBoards') }}>
       <div className="fr-apps__intro">
-        <h1 className="fr-acct__title">Apps &amp; agents</h1>
-        <p className="fr-apps__lead">
-          Everything that works with Freero, and the one step that connects it. Any MCP client works with every board you can open, acting as you with only
-          the permissions you give it.
-        </p>
+        <h1 className="fr-acct__title">{tr('appsAgents')}</h1>
+        <p className="fr-apps__lead">{tr('everythingThatWorksWithFreero')}</p>
       </div>
       <div className="fr-apps__tools">
         <Input
           className="fr-apps__search"
           icon={Search}
           type="search"
-          aria-label="Search apps and agents"
-          placeholder="Search: Claude, Jira, Slack, SSO…"
+          aria-label={tr('searchAppsAndAgents')}
+          placeholder={tr('searchClaudeJiraSlackSso')}
           value={query}
           onChange={(e) => update({ q: e.target.value })}
         />
-        <div className="fr-apps__filters" role="group" aria-label="Category">
+        <div className="fr-apps__filters" role="group" aria-label={tr('category')}>
           {FILTERS.map((f) => (
             <button key={f.id} type="button" className="fr-apps__filter" aria-pressed={filter === f.id} onClick={() => update({ category: f.id })}>
               {f.label}
@@ -171,17 +169,16 @@ function CommunitySection({ listings, loading, failed }: { listings: CommunityLi
     <section className="fr-apps__group" aria-labelledby="apps-community">
       <header className="fr-apps__group-head fr-apps__group-head--row">
         <div>
-          <h2 id="apps-community">Community</h2>
-          <p>Integrations people built on Freero’s MCP server and API, listed after a review. Freero doesn’t run them: each signs in with the permissions you grant it.</p>
+          <h2 id="apps-community">{tr('community')}</h2>
+          <p>{tr('integrationsPeopleBuiltOnFreero')}</p>
         </div>
         <Link className="fr-apps-btnlink" to="/apps/submit">
-          <Send size={15} aria-hidden /> Submit yours
-        </Link>
+          <Send size={15} aria-hidden />{' '}{tr('submitYours')}</Link>
       </header>
       {loading ? (
-        <Spinner size={20} label="Loading community listings" />
+        <Spinner size={20} label={tr('loadingCommunityListings')} />
       ) : failed ? (
-        <p className="fr-acct__error">Could not load the community listings. Reload the page to try again.</p>
+        <p className="fr-acct__error">{tr('couldNotLoadTheCommunity')}</p>
       ) : listings.length ? (
         <ul className="fr-apps__grid">
           {listings.map((l) => (
@@ -195,7 +192,7 @@ function CommunitySection({ listings, loading, failed }: { listings: CommunityLi
                   <span className="fr-apps-card__line">{l.tagline}</span>
                   <span className="fr-apps-card__meta">
                     <CommunityChip />
-                    {l.featured ? <span className="fr-apps-chip fr-apps-chip--featured">Featured</span> : null}
+                    {l.featured ? <span className="fr-apps-chip fr-apps-chip--featured">{tr('featured')}</span> : null}
                     <span className="fr-apps-card__cat">{categoryLabel(l.category)}</span>
                   </span>
                 </span>
@@ -205,11 +202,8 @@ function CommunitySection({ listings, loading, failed }: { listings: CommunityLi
         </ul>
       ) : (
         <div className="fr-apps-empty fr-apps-empty--inline">
-          <p className="fr-apps-empty__title">No community listings yet</p>
-          <p>
-            Built a bot, a sync or an agent on Freero’s MCP server, REST API or webhooks? Submit it: once a reviewer approves it, everyone on this Freero finds it
-            here.
-          </p>
+          <p className="fr-apps-empty__title">{tr('noCommunityListingsYet')}</p>
+          <p>{tr('builtABotASync')}</p>
         </div>
       )}
     </section>
@@ -220,26 +214,21 @@ function CommunitySection({ listings, loading, failed }: { listings: CommunityLi
 function EmptyState({ query, filter, onClear }: { query: string; filter: AppsFilter; onClear: () => void }) {
   return (
     <div className="fr-apps-empty" role="status">
-      <p className="fr-apps-empty__title">{query ? `Nothing called “${query}” here yet` : 'Nothing here yet'}</p>
-      <p>
-        Freero works with any MCP client, so an assistant or coding agent that isn’t listed usually connects the same way, with your server’s MCP address. A
-        tool with webhooks or an API can use Freero’s REST API and webhooks.
-      </p>
+      <p className="fr-apps-empty__title">{query ? tr('nothingCalledQueryHereYet', { query }) : tr('nothingHereYet')}</p>
+      <p>{tr('freeroWorksWithAnyMcp')}</p>
       <ul className="fr-apps-empty__links">
         <li>
-          <Link to="/apps/mcp-client">Connect any MCP client</Link>
+          <Link to="/apps/mcp-client">{tr('connectAnyMcpClient')}</Link>
         </li>
         <li>
-          <Link to="/apps/rest-api">Use the REST API</Link>
+          <Link to="/apps/rest-api">{tr('useTheRestApi')}</Link>
         </li>
         <li>
-          <Link to="/apps/submit">Built an integration? Submit it</Link>
+          <Link to="/apps/submit">{tr('builtAnIntegrationSubmitIt')}</Link>
         </li>
       </ul>
       {query || filter !== 'all' ? (
-        <Button size="sm" variant="ghost" onClick={onClear}>
-          Show everything
-        </Button>
+        <Button size="sm" variant="ghost" onClick={onClear}>{tr('showEverything')}</Button>
       ) : null}
     </div>
   );
@@ -272,7 +261,7 @@ function IntegrationDetail({ entry }: { entry: Integration }) {
   const related = filterCatalog('', entry.category).filter((e) => e.id !== entry.id).slice(0, 6);
 
   return (
-    <AppsFrame back={{ to: '/apps', label: 'Apps & agents' }}>
+    <AppsFrame back={{ to: '/apps', label: tr('appsAgents') }}>
       <article className="fr-apps-detail">
         <header className="fr-apps-detail__head">
           <span className="fr-apps-detail__icon" aria-hidden>
@@ -287,7 +276,7 @@ function IntegrationDetail({ entry }: { entry: Integration }) {
         </header>
         <section className="fr-acct-card" aria-labelledby="connect-title" id="connect">
           <header className="fr-acct-card__head">
-            <h2 id="connect-title">How to connect</h2>
+            <h2 id="connect-title">{tr('howToConnect')}</h2>
           </header>
           <ol className="fr-connect-steps">
             {entry.connect.steps.map((s, i) => (
@@ -302,17 +291,14 @@ function IntegrationDetail({ entry }: { entry: Integration }) {
             </p>
           ) : null}
           <div className="fr-apps-detail__actions">
-            {entry.connect.app && workspaces === null ? <Spinner size={18} label="Loading your teams" /> : null}
+            {entry.connect.app && workspaces === null ? <Spinner size={18} label={tr('loadingYourTeams')} /> : null}
             {targets.map((t, i) => (
               <Button key={t.to} variant={i === 0 ? 'primary' : 'secondary'} icon={ArrowRight} onClick={() => navigate(t.to)} data-testid="connect-action">
                 {t.label}
               </Button>
             ))}
             {admin && workspaces && !targets.length ? (
-              <p className="fr-apps-note" data-testid="ask-admin">
-                This is set up by a team’s owner or admin in its admin console. You don’t administer a team here, so ask one of your team’s admins, or create a
-                team from your boards page.
-              </p>
+              <p className="fr-apps-note" data-testid="ask-admin">{tr('thisIsSetUpBy')}</p>
             ) : null}
             {entry.connect.docs ? (
               <a className="fr-apps-btnlink" href={integrationDocsUrl(entry.connect.docs)} target="_blank" rel="noopener noreferrer">
@@ -323,7 +309,7 @@ function IntegrationDetail({ entry }: { entry: Integration }) {
         </section>
         <section className="fr-acct-card" aria-labelledby="about-title">
           <header className="fr-acct-card__head">
-            <h2 id="about-title">What it does</h2>
+            <h2 id="about-title">{tr('whatItDoes')}</h2>
           </header>
           {entry.description.map((p, i) => (
             <p key={i} className="fr-acct__p">
@@ -332,8 +318,8 @@ function IntegrationDetail({ entry }: { entry: Integration }) {
           ))}
         </section>
         {related.length ? (
-          <nav className="fr-apps-related" aria-label={`More ${categoryLabel(entry.category)}`}>
-            <h2>More in {categoryLabel(entry.category)}</h2>
+          <nav className="fr-apps-related" aria-label={tr('moreCategorylabel', { categoryLabel: categoryLabel(entry.category) })}>
+            <h2>{tr('moreInCategorylabel', { categoryLabel: categoryLabel(entry.category) })}</h2>
             <ul>
               {related.map((r) => (
                 <li key={r.id}>

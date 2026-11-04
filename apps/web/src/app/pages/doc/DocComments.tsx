@@ -9,6 +9,7 @@ import { deleteRecord, newThread, replyRecord, setResolved, type CommentAuthor, 
 import { Avatar, Button, IconButton, Menu, TextArea } from '@ui';
 import { listMembers, lookupUsers } from '../../hostServices';
 
+import { t as tr } from './messages';
 interface Props {
   docId: string;
   store: ObjectDocStore;
@@ -71,7 +72,7 @@ function Composer({ docId, placeholder, onSend, onCancel, autoFocus }: { docId: 
         }}
       />
       <div className="fr-doccomments-composer__row">
-        <IconButton icon={AtSign} size={32} label="Mention someone" onClick={(e) => setAnchor(e.currentTarget)} />
+        <IconButton icon={AtSign} size={32} label={tr('mentionSomeone')} onClick={(e) => setAnchor(e.currentTarget)} />
         <Menu
           open={!!anchor}
           anchor={anchor}
@@ -86,18 +87,14 @@ function Composer({ docId, placeholder, onSend, onCancel, autoFocus }: { docId: 
                     setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@${m.name} `);
                   },
                 }))
-              : [{ id: 'none', label: 'Nobody else has access yet', disabled: true, onSelect: () => undefined }]
+              : [{ id: 'none', label: tr('nobodyElseHasAccessYet'), disabled: true, onSelect: () => undefined }]
           }
         />
         <div className="fr-docpage-spacer" />
         {onCancel && (
-          <Button size="sm" variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
+          <Button size="sm" variant="ghost" onClick={onCancel}>{tr('cancel')}</Button>
         )}
-        <Button size="sm" variant="primary" disabled={!text.trim()} onClick={send}>
-          Comment
-        </Button>
+        <Button size="sm" variant="primary" disabled={!text.trim()} onClick={send}>{tr('comment')}</Button>
       </div>
     </div>
   );
@@ -144,7 +141,7 @@ export function DocComments({ docId, store, threads, me, canComment, draftBlock,
               <strong>{names.get(m.authorId) ?? m.authorName}</strong>
               <time dateTime={new Date(m.createdAt).toISOString()}>{new Date(m.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
               {i > 0 && m.authorId === me.id && canComment && (
-                <IconButton icon={Trash2} size={32} label="Delete this reply" onClick={(e) => (e.stopPropagation(), write(deleteRecord(t.id, me.id, m.id)))} />
+                <IconButton icon={Trash2} size={32} label={tr('deleteThisReply')} onClick={(e) => (e.stopPropagation(), write(deleteRecord(t.id, me.id, m.id)))} />
               )}
             </div>
             <p>{show(m.text)}</p>
@@ -156,33 +153,33 @@ export function DocComments({ docId, store, threads, me, canComment, draftBlock,
           <IconButton
             icon={t.resolved ? RotateCcw : Check}
             size={32}
-            label={t.resolved ? 'Reopen' : 'Resolve'}
+            label={t.resolved ? tr('reopen') : tr('resolve')}
             onClick={() => write(setResolved(t.id, !t.resolved, me.id))}
           />
-          {t.createdBy === me.id && <IconButton icon={Trash2} size={32} label="Delete thread" onClick={() => write(deleteRecord(t.id, me.id))} />}
+          {t.createdBy === me.id && <IconButton icon={Trash2} size={32} label={tr('deleteThread')} onClick={() => write(deleteRecord(t.id, me.id))} />}
         </div>
       )}
       {canComment && t.id === active && !t.resolved && (
         <div onClick={(e) => e.stopPropagation()}>
-          <Composer docId={docId} placeholder="Reply" onSend={(text) => write(replyRecord(t.id, me, text))} />
+          <Composer docId={docId} placeholder={tr('reply')} onSend={(text) => write(replyRecord(t.id, me, text))} />
         </div>
       )}
-      {!t.blockId && <p className="fr-doccomments-orphan">On the whole doc</p>}
+      {!t.blockId && <p className="fr-doccomments-orphan">{tr('onTheWholeDoc')}</p>}
     </li>
   );
 
   return (
-    <aside className="fr-docpage-panel" aria-label="Comments">
+    <aside className="fr-docpage-panel" aria-label={tr('comments')}>
       <header className="fr-docpage-panel__head">
-        <h2>Comments</h2>
-        <IconButton icon={X} label="Close comments" onClick={onClose} />
+        <h2>{tr('comments')}</h2>
+        <IconButton icon={X} label={tr('closeComments')} onClick={onClose} />
       </header>
       <div className="fr-docpage-panel__body">
         {draftBlock !== undefined && canComment && (
           <Composer
             docId={docId}
             autoFocus
-            placeholder={draftBlock ? 'Comment on this block' : 'Comment on the doc'}
+            placeholder={draftBlock ? tr('commentOnThisBlock') : tr('commentOnTheDoc')}
             onCancel={onDraftDone}
             onSend={(text) => {
               const { threadId, records } = newThread(draftBlock, me, text);
@@ -193,12 +190,12 @@ export function DocComments({ docId, store, threads, me, canComment, draftBlock,
           />
         )}
         {!open.length && draftBlock === undefined && (
-          <p className="fr-docpage-empty">{canComment ? 'No open comments. Put the cursor in a block and choose “Comment on this block”.' : 'No open comments.'}</p>
+          <p className="fr-docpage-empty">{canComment ? tr('noOpenCommentsPutThe') : tr('noOpenComments')}</p>
         )}
         <ul className="fr-doccomments-list">{open.map(renderThread)}</ul>
         {resolved.length > 0 && (
           <Button size="sm" variant="ghost" onClick={() => setShowResolved((s) => !s)}>
-            {showResolved ? 'Hide resolved' : `Show resolved (${resolved.length})`}
+            {showResolved ? tr('hideResolved') : tr('showResolvedLength', { length: resolved.length })}
           </Button>
         )}
         {showResolved && <ul className="fr-doccomments-list fr-doccomments-list--resolved">{resolved.map(renderThread)}</ul>}

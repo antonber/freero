@@ -10,24 +10,25 @@ import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 import { formatBytes } from './AdminOverview';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 const PAGE = 50;
 
 const FILTERS: Array<{ id: AdminBoardFilter; label: string }> = [
-  { id: 'link', label: 'Link on' },
-  { id: 'public', label: 'Open to visitors' },
-  { id: 'guests', label: 'Guests' },
-  { id: 'outside', label: 'People from outside' },
-  { id: 'inactive', label: 'Unused' },
-  { id: 'archived', label: 'Archived' },
+  { id: 'link', label: t('linkOn') },
+  { id: 'public', label: t('openToVisitors') },
+  { id: 'guests', label: t('guests') },
+  { id: 'outside', label: t('peopleFromOutside') },
+  { id: 'inactive', label: t('unused') },
+  { id: 'archived', label: t('archived') },
 ];
 const SORTS: Array<{ value: AdminBoardSort; label: string }> = [
-  { value: 'activity', label: 'Last used' },
-  { value: 'title', label: 'Name' },
-  { value: 'owner', label: 'Owner' },
-  { value: 'size', label: 'Size' },
-  { value: 'members', label: 'People invited' },
-  { value: 'created', label: 'Created' },
+  { value: 'activity', label: t('lastUsed') },
+  { value: 'title', label: t('name') },
+  { value: 'owner', label: t('owner') },
+  { value: 'size', label: t('size') },
+  { value: 'members', label: t('peopleInvited') },
+  { value: 'created', label: t('created') },
 ];
 const LINK_TEXT = { none: 'Off', viewer: 'Can view', commenter: 'Can comment', editor: 'Can edit' } as const;
 
@@ -43,7 +44,7 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
   const [handing, setHanding] = useState<AdminBoardRow | null>(null);
 
   const load = useCallback(() => {
-    api.adminBoards(workspace.id, { filter: filters.join(','), inactiveDays, sort, q, offset, limit: PAGE }).then(setPage, (e) => notify(errorText(e, 'Could not load the boards'), 'error'));
+    api.adminBoards(workspace.id, { filter: filters.join(','), inactiveDays, sort, q, offset, limit: PAGE }).then(setPage, (e) => notify(errorText(e, t('couldNotLoadTheBoards')), 'error'));
   }, [workspace.id, filters, inactiveDays, sort, q, offset, notify]);
   useEffect(load, [load]);
 
@@ -60,7 +61,7 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
       notify(done, 'success');
       load();
     } catch (e) {
-      notify(errorText(e, 'Could not change it'), 'error');
+      notify(errorText(e, t('couldNotChangeIt')), 'error');
     } finally {
       setBusy(null);
     }
@@ -69,34 +70,28 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <section aria-labelledby="admin-boards-title">
       <div className="fr-admin__head">
-        <h1 id="admin-boards-title" className="fr-admin__title">
-          Boards
-        </h1>
-        <span className="fr-admin__muted">Every board in {workspace.name}: who owns it, how it is shared and when it was last used. You see details, not content.</span>
+        <h1 id="admin-boards-title" className="fr-admin__title">{t('boards')}</h1>
+        <span className="fr-admin__muted">{t('everyBoardInNameWho', { name: workspace.name })}</span>
       </div>
       <div className="fr-admin-inventory__bar">
-        <Input aria-label="Search boards" placeholder="Search by name or owner" value={q} onChange={(e) => (setOffset(0), setQ(e.target.value))} className="fr-admin__search" />
-        <Select<AdminBoardSort> aria-label="Sort by" options={SORTS} value={sort} onChange={(s) => (setOffset(0), setSort(s))} width={160} />
+        <Input aria-label={t('searchBoards')} placeholder={t('searchByNameOrOwner')} value={q} onChange={(e) => (setOffset(0), setQ(e.target.value))} className="fr-admin__search" />
+        <Select<AdminBoardSort> aria-label={t('sortBy')} options={SORTS} value={sort} onChange={(s) => (setOffset(0), setSort(s))} width={160} />
       </div>
-      <div className="fr-admin-inventory__filters" role="group" aria-label="Show only">
+      <div className="fr-admin-inventory__filters" role="group" aria-label={t('showOnly')}>
         {FILTERS.map((f) => (
           <label key={f.id} className="fr-admin-scopes__item">
             <input type="checkbox" checked={filters.includes(f.id)} onChange={() => toggle(f.id)} />
             {f.label}
             {f.id === 'inactive' ? (
-              <>
-                {' '}for
-                <input
+              <>{t('for')}<input
                   type="number"
                   className="fr-admin-inventory__days"
-                  aria-label="Days unused"
+                  aria-label={t('daysUnused')}
                   min={1}
                   max={3650}
                   value={inactiveDays}
                   onChange={(e) => setInactiveDays(Math.max(1, Math.min(3650, Number(e.target.value) || 1)))}
-                />{' '}
-                days
-              </>
+                />{t('days')}</>
             ) : null}
           </label>
         ))}
@@ -109,14 +104,14 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
             <table className="fr-admin-table">
               <thead>
                 <tr>
-                  <th scope="col">Board</th>
-                  <th scope="col">Owner</th>
-                  <th scope="col">Link</th>
-                  <th scope="col">Invited</th>
-                  <th scope="col">Size</th>
-                  <th scope="col">Last used</th>
+                  <th scope="col">{t('board')}</th>
+                  <th scope="col">{t('owner')}</th>
+                  <th scope="col">{t('link')}</th>
+                  <th scope="col">{t('invited')}</th>
+                  <th scope="col">{t('size')}</th>
+                  <th scope="col">{t('lastUsed')}</th>
                   <th scope="col">
-                    <span className="fr-admin__sr">Actions</span>
+                    <span className="fr-admin__sr">{t('actions')}</span>
                   </th>
                 </tr>
               </thead>
@@ -125,16 +120,16 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
                   <tr key={b.boardId}>
                     <td>
                       <div className="fr-admin-person__name">
-                        {b.title || (b.kind === 'doc' ? 'Untitled doc' : 'Untitled board')}
-                        {b.archivedAt ? <span className="fr-admin-pill">Archived</span> : null}
+                        {b.title || (b.kind === 'doc' ? t('untitledDoc') : t('untitledBoard'))}
+                        {b.archivedAt ? <span className="fr-admin-pill">{t('archived')}</span> : null}
                       </div>
-                      <div className="fr-admin__muted">{b.projectName ?? 'No project'}</div>
+                      <div className="fr-admin__muted">{b.projectName ?? t('noProject')}</div>
                     </td>
                     <td>{b.ownerName}</td>
                     <td>
                       {LINK_TEXT[b.linkAccess]}
-                      {b.publicLink ? <span className="fr-admin-pill fr-admin-pill--warn">Visitors</span> : null}
-                      {b.linkPassword ? <span className="fr-admin__muted"> · password</span> : null}
+                      {b.publicLink ? <span className="fr-admin-pill fr-admin-pill--warn">{t('visitors')}</span> : null}
+                      {b.linkPassword ? <span className="fr-admin__muted">{' '}{t('password')}</span> : null}
                     </td>
                     <td>
                       {b.members}
@@ -153,10 +148,8 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
                           variant="ghost"
                           icon={Link2Off}
                           loading={busy === `${b.boardId}:link-off`}
-                          onClick={() => void act(b, 'link-off', `The link to “${b.title}” is off`)}
-                        >
-                          Link off
-                        </Button>
+                          onClick={() => void act(b, 'link-off', t('theLinkToTitleIs', { title: b.title }))}
+                        >{t('linkOff')}</Button>
                       ) : null}
                       {b.outsiders ? (
                         <Button
@@ -164,22 +157,16 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
                           variant="ghost"
                           icon={UserMinus}
                           loading={busy === `${b.boardId}:remove-outsiders`}
-                          onClick={() => void act(b, 'remove-outsiders', `People from outside can no longer open “${b.title}”`)}
-                        >
-                          Remove outsiders
-                        </Button>
+                          onClick={() => void act(b, 'remove-outsiders', t('peopleFromOutsideCanNo', { title: b.title }))}
+                        >{t('removeOutsiders')}</Button>
                       ) : null}
-                      <Button size="sm" variant="ghost" icon={Crown} onClick={() => setHanding(b)}>
-                        Hand on
-                      </Button>
+                      <Button size="sm" variant="ghost" icon={Crown} onClick={() => setHanding(b)}>{t('handOn')}</Button>
                     </td>
                   </tr>
                 ))}
                 {page.boards.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="fr-admin__muted">
-                      No board matches.
-                    </td>
+                    <td colSpan={7} className="fr-admin__muted">{t('noBoardMatches')}</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -187,14 +174,10 @@ export function AdminBoards({ workspace }: { workspace: WorkspaceSummary }) {
           </div>
           <div className="fr-admin-inventory__pages">
             <span className="fr-admin__muted">
-              {page.total === 0 ? 'No boards' : `${offset + 1}–${Math.min(offset + PAGE, page.total)} of ${page.total}`}
+              {page.total === 0 ? t('noBoards') : t('valueMinOfTotal', { value: offset + 1, min: Math.min(offset + PAGE, page.total), total: page.total })}
             </span>
-            <Button size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
-              Previous
-            </Button>
-            <Button size="sm" disabled={offset + PAGE >= page.total} onClick={() => setOffset(offset + PAGE)}>
-              Next
-            </Button>
+            <Button size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>{t('previous')}</Button>
+            <Button size="sm" disabled={offset + PAGE >= page.total} onClick={() => setOffset(offset + PAGE)}>{t('next2')}</Button>
           </div>
         </>
       )}
@@ -219,11 +202,11 @@ function HandOn({ workspace, board, onClose, onDone }: { workspace: WorkspaceSum
     setBusy(true);
     try {
       await api.adminTransferBoard(workspace.id, board.boardId, to);
-      notify(`“${board.title}” now belongs to ${members?.find((m) => m.userId === to)?.name ?? 'them'}`, 'success');
+      notify(t('titleNowBelongsToValue', { title: board.title, value: members?.find((m) => m.userId === to)?.name ?? t('them') }), 'success');
       onDone();
       onClose();
     } catch (e) {
-      notify(errorText(e, 'Could not hand it on'), 'error');
+      notify(errorText(e, t('couldNotHandItOn')), 'error');
       setBusy(false);
     }
   };
@@ -231,14 +214,12 @@ function HandOn({ workspace, board, onClose, onDone }: { workspace: WorkspaceSum
     <Modal
       open
       onClose={onClose}
-      title={`Hand “${board.title || 'Untitled board'}” on`}
+      title={t('handValueOn', { value: board.title || t('untitledBoard') })}
       width={440}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" loading={busy} disabled={!to} onClick={() => void submit()}>
-            Hand on
-          </Button>
+          <Button onClick={onClose}>{t('cancel')}</Button>
+          <Button variant="primary" loading={busy} disabled={!to} onClick={() => void submit()}>{t('handOn')}</Button>
         </>
       }
     >
@@ -246,14 +227,14 @@ function HandOn({ workspace, board, onClose, onDone }: { workspace: WorkspaceSum
         <Spinner />
       ) : (
         <Select<string>
-          aria-label="New owner"
-          options={[{ value: '', label: 'Choose a member' }, ...members.map((m) => ({ value: m.userId, label: `${m.name} · ${m.email}` }))]}
+          aria-label={t('newOwner')}
+          options={[{ value: '', label: t('chooseAMember') }, ...members.map((m) => ({ value: m.userId, label: `${m.name} · ${m.email}` }))]}
           value={to}
           onChange={setTo}
           width={380}
         />
       )}
-      <p className="fr-admin__modal-text">{board.ownerName} keeps editing it. It stays where it is in the workspace.</p>
+      <p className="fr-admin__modal-text">{t('ownernameKeepsEditingItIt', { ownerName: board.ownerName })}</p>
     </Modal>
   );
 }

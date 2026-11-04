@@ -31,6 +31,7 @@ import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 import { NotFoundPage } from '../NotFoundPage';
 import { ProblemsView } from './ProblemsView';
+import { t as tr } from './messages';
 import './operator.css';
 
 const ACTION_LABEL: Record<ModerationActionKind, string> = {
@@ -57,13 +58,13 @@ const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down'
 const NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature'];
 type View = 'open' | 'closed' | 'listings' | 'problems';
 const LISTING_STATUSES: Array<{ value: ListingStatus; label: string }> = [
-  { value: 'pending', label: 'Waiting for review' },
-  { value: 'approved', label: 'Live' },
-  { value: 'rejected', label: 'Declined' },
-  { value: 'removed', label: 'Removed' },
+  { value: 'pending', label: tr('waitingForReview') },
+  { value: 'approved', label: tr('live') },
+  { value: 'rejected', label: tr('declined') },
+  { value: 'removed', label: tr('removed') },
 ];
 const reasonLabel = (r: ReportReason | null) => REPORT_REASONS.find((x) => x.id === r)?.label ?? '—';
-const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
+const message = (e: unknown) => (e instanceof ApiError ? e.message : tr('somethingWentWrongTryAgain'));
 
 interface PendingAction {
   action: ModerationActionKind;
@@ -126,39 +127,36 @@ export function OperatorPage() {
   const resolve = async (item: ModerationItem, outcome: 'actioned' | 'dismissed') => {
     try {
       await api.resolveModerationItem(item.id, outcome, '');
-      notify(outcome === 'dismissed' ? 'Dismissed' : 'Marked as handled', 'success');
+      notify(outcome === 'dismissed' ? tr('dismissed') : tr('markedAsHandled'), 'success');
       load();
     } catch (e) {
       notify(message(e), 'error');
     }
   };
 
-  if (allowed === null) return <div className="fr-op fr-op--center"><Spinner size={22} label="Loading" /></div>;
+  if (allowed === null) return <div className="fr-op fr-op--center"><Spinner size={22} label={tr('loading')} /></div>;
   if (!allowed) return <NotFoundPage />;
   return (
     <div className="fr-op">
       <header className="fr-op__bar">
-        <Link to="/app" className="fr-op__home" aria-label="Back to the dashboard">
+        <Link to="/app" className="fr-op__home" aria-label={tr('backToTheDashboard')}>
           <ArrowLeft size={16} aria-hidden />
           <Logo size={26} />
         </Link>
         <h1 className="fr-op__title">
-          <ShieldAlert size={18} aria-hidden /> Moderation
-        </h1>
+          <ShieldAlert size={18} aria-hidden />{' '}{tr('moderation')}</h1>
         <SegmentedControl<View>
-          aria-label="Queue"
+          aria-label={tr('queue')}
           value={view}
           onChange={setView}
           options={[
-            { value: 'open', label: 'Open' },
-            { value: 'closed', label: 'Closed' },
-            { value: 'listings', label: 'Listings' },
-            { value: 'problems', label: 'Problems' },
+            { value: 'open', label: tr('open') },
+            { value: 'closed', label: tr('closed') },
+            { value: 'listings', label: tr('listings') },
+            { value: 'problems', label: tr('problems') },
           ]}
         />
-        <Button variant="ghost" size="sm" icon={RefreshCw} onClick={load}>
-          Refresh
-        </Button>
+        <Button variant="ghost" size="sm" icon={RefreshCw} onClick={load}>{tr('refresh')}</Button>
       </header>
       {view === 'problems' ? (
         <div className="fr-op__body fr-op__body--single">
@@ -167,24 +165,24 @@ export function OperatorPage() {
       ) : (
       <div className="fr-op__body">
         {view === 'listings' ? (
-          <main className="fr-op__queue" aria-label="Community listings">
+          <main className="fr-op__queue" aria-label={tr('communityListings')}>
             <div className="fr-op-listings__bar">
-              <Select<ListingStatus> aria-label="Listings" value={listingStatus} onChange={setListingStatus} options={LISTING_STATUSES} />
+              <Select<ListingStatus> aria-label={tr('listings')} value={listingStatus} onChange={setListingStatus} options={LISTING_STATUSES} />
             </div>
             {listings === null ? (
-              <Spinner size={22} label="Loading listings" />
+              <Spinner size={22} label={tr('loadingListings')} />
             ) : listings.length === 0 ? (
-              <p className="fr-op__empty">{listingStatus === 'pending' ? 'No submission is waiting for review.' : 'None.'}</p>
+              <p className="fr-op__empty">{listingStatus === 'pending' ? tr('noSubmissionIsWaitingFor') : tr('none')}</p>
             ) : (
               listings.map((l) => <ListingCard key={l.id} listing={l} onAct={setPending} />)
             )}
           </main>
         ) : (
-        <main className="fr-op__queue" aria-label={status === 'open' ? 'Open items' : 'Closed items'}>
+        <main className="fr-op__queue" aria-label={status === 'open' ? tr('openItems') : tr('closedItems')}>
           {items === null ? (
-            <Spinner size={22} label="Loading the queue" />
+            <Spinner size={22} label={tr('loadingTheQueue')} />
           ) : items.length === 0 ? (
-            <p className="fr-op__empty">{status === 'open' ? 'Nothing waiting for review.' : 'Nothing closed yet.'}</p>
+            <p className="fr-op__empty">{status === 'open' ? tr('nothingWaitingForReview') : tr('nothingClosedYet')}</p>
           ) : (
             items.map((item) => (
               <ItemCard
@@ -198,7 +196,7 @@ export function OperatorPage() {
           )}
         </main>
         )}
-        <aside className="fr-op__tools" aria-label="Look up">
+        <aside className="fr-op__tools" aria-label={tr('lookUp')}>
           <AccountLookup onAct={setPending} />
           <FileLookup onAct={setPending} />
           <MicrosoftPackages />
@@ -211,7 +209,7 @@ export function OperatorPage() {
           onClose={() => setPending(null)}
           onDone={(a) => {
             setPending(null);
-            notify(`${ACTION_LABEL[a.action]}: done.${a.action === 'listing.feature' || a.action === 'listing.unfeature' ? '' : ' The person affected was emailed.'}`, 'success');
+            notify(tr('actionLabelDoneValue', { action_label: ACTION_LABEL[a.action], value: a.action === 'listing.feature' || a.action === 'listing.unfeature' ? '' : tr('thePersonAffectedWasEmailed') }), 'success');
             load();
           }}
         />
@@ -228,23 +226,23 @@ function Chip({ tone, children }: { tone: 'danger' | 'warn' | 'muted' | 'ok'; ch
 function BoardState({ board }: { board: ModeratedBoard }) {
   return (
     <span className="fr-op-chips">
-      {board.removedAt !== null && <Chip tone="danger">Taken down</Chip>}
-      {board.linkBlocked && <Chip tone="warn">Link blocked</Chip>}
-      {board.deletedAt !== null && <Chip tone="muted">In the owner’s trash</Chip>}
-      {!board.linkBlocked && board.linkAccess !== 'none' && <Chip tone="muted">Link: can {board.linkAccess === 'viewer' ? 'view' : board.linkAccess === 'commenter' ? 'comment' : 'edit'}</Chip>}
-      {board.owner?.suspended && <Chip tone="danger">Owner suspended</Chip>}
+      {board.removedAt !== null && <Chip tone="danger">{tr('takenDown')}</Chip>}
+      {board.linkBlocked && <Chip tone="warn">{tr('linkBlocked')}</Chip>}
+      {board.deletedAt !== null && <Chip tone="muted">{tr('inTheOwnerSTrash')}</Chip>}
+      {!board.linkBlocked && board.linkAccess !== 'none' && <Chip tone="muted">{tr('linkCan')}{' '}{board.linkAccess === 'viewer' ? 'view' : board.linkAccess === 'commenter' ? 'comment' : 'edit'}</Chip>}
+      {board.owner?.suspended && <Chip tone="danger">{tr('ownerSuspended')}</Chip>}
     </span>
   );
 }
 
 function targetText(item: ModerationItem): string {
   const t = item.target;
-  if (t.kind === 'board') return 'The whole board';
+  if (t.kind === 'board') return tr('theWholeBoard');
   if (t.kind === 'element') return `Item ${t.id}`;
   if (t.kind === 'upload') return `File ${t.id}`;
-  if (t.kind === 'comment') return `Comment ${t.id?.split(':')[1] ?? ''} in thread ${t.id?.split(':')[0] ?? ''}`;
-  if (t.kind === 'listing') return 'A community listing (Apps & agents)';
-  return 'Their account';
+  if (t.kind === 'comment') return tr('commentValueInThreadValue2', { value: t.id?.split(':')[1] ?? '', value2: t.id?.split(':')[0] ?? '' });
+  if (t.kind === 'listing') return tr('aCommunityListingAppsAgents');
+  return tr('theirAccount');
 }
 
 function previewPath(item: ModerationItem): string {
@@ -272,8 +270,8 @@ function ItemCard({
   return (
     <article className={`fr-op-card${item.kind === 'appeal' ? ' fr-op-card--appeal' : ''}`}>
       <div className="fr-op-card__head">
-        <Chip tone={item.kind === 'appeal' ? 'warn' : 'danger'}>{item.kind === 'appeal' ? 'Appeal' : reasonLabel(item.reason)}</Chip>
-        <h2 className="fr-op-card__board">{item.boardTitle || (item.target.kind === 'user' ? 'Account suspension' : item.target.kind === 'listing' ? 'A withdrawn listing' : 'Untitled board')}</h2>
+        <Chip tone={item.kind === 'appeal' ? 'warn' : 'danger'}>{item.kind === 'appeal' ? tr('appeal') : reasonLabel(item.reason)}</Chip>
+        <h2 className="fr-op-card__board">{item.boardTitle || (item.target.kind === 'user' ? tr('accountSuspension') : item.target.kind === 'listing' ? tr('aWithdrawnListing') : tr('untitledBoard'))}</h2>
         {b && <BoardState board={b} />}
         {item.listing && <ListingChips status={item.listing.status} featured={item.listing.featured} />}
         <span className="fr-op-card__when" title={new Date(item.createdAt).toLocaleString()}>
@@ -281,15 +279,15 @@ function ItemCard({
         </span>
       </div>
       <dl className="fr-op-card__facts">
-        <dt>About</dt>
+        <dt>{tr('about')}</dt>
         <dd>{targetText(item)}</dd>
-        <dt>{item.kind === 'appeal' ? 'From' : 'Reported by'}</dt>
+        <dt>{item.kind === 'appeal' ? tr('from') : tr('reportedBy')}</dt>
         <dd>
-          {item.reporter ? `${item.reporter.name} <${item.reporter.email}>` : item.contactEmail ? `Visitor <${item.contactEmail}>` : 'A visitor without an account'}
+          {item.reporter ? `${item.reporter.name} <${item.reporter.email}>` : item.contactEmail ? `Visitor <${item.contactEmail}>` : tr('aVisitorWithoutAnAccount')}
         </dd>
         {b?.owner && (
           <>
-            <dt>Board owner</dt>
+            <dt>{tr('boardOwner')}</dt>
             <dd>
               {b.owner.name} &lt;{b.owner.email}&gt;
             </dd>
@@ -297,18 +295,18 @@ function ItemCard({
         )}
         {item.action && (
           <>
-            <dt>Appealed</dt>
+            <dt>{tr('appealed')}</dt>
             <dd>
               {ACTION_LABEL[item.action.action]} · {reasonLabel(item.action.reason)} · {new Date(item.action.createdAt).toLocaleDateString()}
-              {item.action.operator ? ` · by ${item.action.operator.name}` : ''}
+              {item.action.operator ? tr('byName', { name: item.action.operator.name }) : ''}
             </dd>
           </>
         )}
         {!open && (
           <>
-            <dt>Outcome</dt>
+            <dt>{tr('outcome')}</dt>
             <dd>
-              {item.status === 'actioned' ? 'Actioned' : 'Dismissed'}
+              {item.status === 'actioned' ? tr('actioned') : tr('dismissed')}
               {item.resolutionNote ? ` — ${item.resolutionNote}` : ''}
             </dd>
           </>
@@ -319,73 +317,46 @@ function ItemCard({
         <span className="fr-op-card__files">
           {/* Attachments (file cards) are never served at /uploads: only the audited operator download. */}
           {!item.target.id.endsWith('.bin') && (
-            <a className="fr-op-card__file" href={`/uploads/${item.target.id}`} target="_blank" rel="noreferrer noopener">
-              Open the file in a new tab
-            </a>
+            <a className="fr-op-card__file" href={`/uploads/${item.target.id}`} target="_blank" rel="noreferrer noopener">{tr('openTheFileInA')}</a>
           )}
-          <a className="fr-op-card__file" href={api.moderationUploadFileUrl(item.target.id)} download>
-            Download to review
-          </a>
+          <a className="fr-op-card__file" href={api.moderationUploadFileUrl(item.target.id)} download>{tr('downloadToReview')}</a>
         </span>
       )}
       <div className="fr-op-card__actions">
         {item.boardId && b && (
           <>
             <Link className="fr-op-btnlink" to={previewPath(item)} target="_blank" rel="noopener">
-              <Eye size={15} aria-hidden /> Preview
-            </Link>
-            <Button size="sm" variant="ghost" icon={History} onClick={onHistory}>
-              History
-            </Button>
+              <Eye size={15} aria-hidden />{' '}{tr('preview')}</Link>
+            <Button size="sm" variant="ghost" icon={History} onClick={onHistory}>{tr('history')}</Button>
             {b.linkBlocked ? (
-              <Button size="sm" icon={ShieldCheck} onClick={() => act('board.restore_link', b.id, `“${b.title}”`)}>
-                Restore link
-              </Button>
+              <Button size="sm" icon={ShieldCheck} onClick={() => act('board.restore_link', b.id, `“${b.title}”`)}>{tr('restoreLink')}</Button>
             ) : (
-              <Button size="sm" icon={Link2Off} onClick={() => act('board.disable_link', b.id, `“${b.title}”`)}>
-                Turn off link
-              </Button>
+              <Button size="sm" icon={Link2Off} onClick={() => act('board.disable_link', b.id, `“${b.title}”`)}>{tr('turnOffLink')}</Button>
             )}
             {b.removedAt !== null ? (
               <>
-                <Button size="sm" icon={ShieldCheck} onClick={() => act('board.restore', b.id, `“${b.title}”`)}>
-                  Restore board
-                </Button>
-                <Button size="sm" variant="ghost" icon={Trash2} onClick={() => act('board.delete', b.id, `“${b.title}”`)}>
-                  Delete for good
-                </Button>
+                <Button size="sm" icon={ShieldCheck} onClick={() => act('board.restore', b.id, `“${b.title}”`)}>{tr('restoreBoard')}</Button>
+                <Button size="sm" variant="ghost" icon={Trash2} onClick={() => act('board.delete', b.id, `“${b.title}”`)}>{tr('deleteForGood')}</Button>
               </>
             ) : (
-              <Button size="sm" variant="danger" onClick={() => act('board.take_down', b.id, `“${b.title}”`)}>
-                Take down
-              </Button>
+              <Button size="sm" variant="danger" onClick={() => act('board.take_down', b.id, `“${b.title}”`)}>{tr('takeDown')}</Button>
             )}
           </>
         )}
         {item.target.kind === 'upload' && item.target.id &&
           (item.action?.action === 'upload.remove' ? (
-            <Button size="sm" icon={ShieldCheck} onClick={() => act('upload.restore', item.target.id!, `file ${item.target.id}`)}>
-              Restore file
-            </Button>
+            <Button size="sm" icon={ShieldCheck} onClick={() => act('upload.restore', item.target.id!, tr('fileId', { id: item.target.id }))}>{tr('restoreFile')}</Button>
           ) : (
-            <Button size="sm" icon={FileX2} onClick={() => act('upload.remove', item.target.id!, `file ${item.target.id}`, { boardId: item.boardId ?? undefined })}>
-              Remove file
-            </Button>
+            <Button size="sm" icon={FileX2} onClick={() => act('upload.remove', item.target.id!, tr('fileId', { id: item.target.id }), { boardId: item.boardId ?? undefined })}>{tr('removeFile')}</Button>
           ))}
         {item.target.kind === 'user' && item.target.id && (
-          <Button size="sm" icon={ShieldCheck} onClick={() => act('user.restore', item.target.id!, 'this account')}>
-            Lift suspension
-          </Button>
+          <Button size="sm" icon={ShieldCheck} onClick={() => act('user.restore', item.target.id!, tr('thisAccount'))}>{tr('liftSuspension')}</Button>
         )}
         {item.listing &&
           (item.listing.status === 'removed' ? (
-            <Button size="sm" icon={ShieldCheck} onClick={() => act('listing.restore', item.listing!.id, `the listing “${item.listing!.name}”`)}>
-              Restore listing
-            </Button>
+            <Button size="sm" icon={ShieldCheck} onClick={() => act('listing.restore', item.listing!.id, tr('theListingName', { name: item.listing!.name }))}>{tr('restoreListing')}</Button>
           ) : item.listing.status === 'approved' ? (
-            <Button size="sm" variant="danger" onClick={() => act('listing.remove', item.listing!.id, `the listing “${item.listing!.name}”`)}>
-              Remove listing
-            </Button>
+            <Button size="sm" variant="danger" onClick={() => act('listing.remove', item.listing!.id, tr('theListingName', { name: item.listing!.name }))}>{tr('removeListing')}</Button>
           ) : null)}
         {item.listing?.submitter && !item.listing.submitter.suspended && (
           <Button
@@ -393,23 +364,17 @@ function ItemCard({
             variant="ghost"
             icon={UserX}
             onClick={() => act('user.suspend', item.listing!.submitter!.id, `${item.listing!.submitter!.name} <${item.listing!.submitter!.email}>`)}
-          >
-            Suspend developer
-          </Button>
+          >{tr('suspendDeveloper')}</Button>
         )}
         {b?.owner && !b.owner.suspended && (
-          <Button size="sm" variant="ghost" icon={UserX} onClick={() => act('user.suspend', b.owner!.id, `${b.owner!.name} <${b.owner!.email}>`)}>
-            Suspend owner
-          </Button>
+          <Button size="sm" variant="ghost" icon={UserX} onClick={() => act('user.suspend', b.owner!.id, `${b.owner!.name} <${b.owner!.email}>`)}>{tr('suspendOwner')}</Button>
         )}
         {open && (
           <span className="fr-op-card__close">
             <Button size="sm" variant="ghost" onClick={() => onResolve('dismissed')}>
-              {item.kind === 'appeal' ? 'Keep decision' : 'Dismiss'}
+              {item.kind === 'appeal' ? tr('keepDecision') : tr('dismiss')}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => onResolve('actioned')}>
-              Mark handled
-            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onResolve('actioned')}>{tr('markHandled')}</Button>
           </span>
         )}
       </div>
@@ -418,17 +383,17 @@ function ItemCard({
 }
 
 const LISTING_STATUS_CHIP: Record<ListingStatus, { tone: 'danger' | 'warn' | 'muted' | 'ok'; label: string }> = {
-  pending: { tone: 'warn', label: 'Waiting for review' },
-  approved: { tone: 'ok', label: 'Live' },
-  rejected: { tone: 'muted', label: 'Declined' },
-  removed: { tone: 'danger', label: 'Removed' },
+  pending: { tone: 'warn', label: tr('waitingForReview') },
+  approved: { tone: 'ok', label: tr('live') },
+  rejected: { tone: 'muted', label: tr('declined') },
+  removed: { tone: 'danger', label: tr('removed') },
 };
 
 function ListingChips({ status, featured }: { status: ListingStatus; featured: boolean }) {
   return (
     <span className="fr-op-chips">
       <Chip tone={LISTING_STATUS_CHIP[status].tone}>{LISTING_STATUS_CHIP[status].label}</Chip>
-      {featured && <Chip tone="ok">Featured</Chip>}
+      {featured && <Chip tone="ok">{tr('featured')}</Chip>}
     </span>
   );
 }
@@ -442,22 +407,22 @@ function ListingCard({ listing: l, onAct }: { listing: ListingForReview; onAct: 
         <Chip tone="muted">{INTEGRATION_CATEGORIES.find((c) => c.id === l.category)?.label ?? l.category}</Chip>
         <h2 className="fr-op-card__board">{l.name}</h2>
         <ListingChips status={l.status} featured={l.featured} />
-        {l.openReports > 0 && <Chip tone="danger">{l.openReports === 1 ? '1 open report' : `${l.openReports} open reports`}</Chip>}
+        {l.openReports > 0 && <Chip tone="danger">{tr('openreportsOpenReports', { openReports: l.openReports })}</Chip>}
         <span className="fr-op-card__when" title={new Date(l.createdAt).toLocaleString()}>
           {relativeTime(l.createdAt, Date.now())}
         </span>
       </div>
       <p className="fr-op-listing__tagline">{l.tagline}</p>
       <dl className="fr-op-card__facts">
-        <dt>Submitted by</dt>
-        <dd>{l.submitter ? `${l.submitter.name} <${l.submitter.email}>` : 'A deleted account'}</dd>
+        <dt>{tr('submittedBy')}</dt>
+        <dd>{l.submitter ? `${l.submitter.name} <${l.submitter.email}>` : tr('aDeletedAccount')}</dd>
         {l.contactEmail && (
           <>
-            <dt>Contact</dt>
+            <dt>{tr('contact')}</dt>
             <dd>{l.contactEmail}</dd>
           </>
         )}
-        <dt>Website</dt>
+        <dt>{tr('website')}</dt>
         <dd>
           <a href={l.website} target="_blank" rel="noopener noreferrer nofollow">
             {l.website}
@@ -465,7 +430,7 @@ function ListingCard({ listing: l, onAct }: { listing: ListingForReview; onAct: 
         </dd>
         {l.docsUrl && (
           <>
-            <dt>Docs</dt>
+            <dt>{tr('docs')}</dt>
             <dd>
               <a href={l.docsUrl} target="_blank" rel="noopener noreferrer nofollow">
                 {l.docsUrl}
@@ -473,17 +438,17 @@ function ListingCard({ listing: l, onAct }: { listing: ListingForReview; onAct: 
             </dd>
           </>
         )}
-        <dt>Built on</dt>
+        <dt>{tr('builtOn')}</dt>
         <dd>{l.builtOn.map((b) => LISTING_SURFACES.find((s) => s.id === b)?.label ?? b).join(', ')}</dd>
-        <dt>OAuth app</dt>
+        <dt>{tr('oauthApp')}</dt>
         <dd>
           {l.oauthApp
-            ? `${l.oauthApp.name} (${l.oauthApp.clientId})${l.oauthApp.website ? ` · ${l.oauthApp.website}` : ''} · redirects to ${l.oauthApp.redirectUris.join(', ')}`
-            : 'None named'}
+            ? tr('nameClientidValueRedirectsTo', { name: l.oauthApp.name, clientId: l.oauthApp.clientId, value: l.oauthApp.website ? ` · ${l.oauthApp.website}` : '', redirectUris: l.oauthApp.redirectUris.join(', ') })
+            : tr('noneNamed')}
         </dd>
         {l.statusNote && (
           <>
-            <dt>Last decision</dt>
+            <dt>{tr('lastDecision')}</dt>
             <dd>{l.statusNote}</dd>
           </>
         )}
@@ -491,29 +456,21 @@ function ListingCard({ listing: l, onAct }: { listing: ListingForReview; onAct: 
       {l.description && <blockquote className="fr-op-card__message fr-op-listing__description">{l.description}</blockquote>}
       <div className="fr-op-card__actions">
         {(l.status === 'pending' || l.status === 'rejected') && (
-          <Button size="sm" variant="primary" icon={Check} onClick={() => act('listing.approve')}>
-            Approve
-          </Button>
+          <Button size="sm" variant="primary" icon={Check} onClick={() => act('listing.approve')}>{tr('approve')}</Button>
         )}
         {l.status === 'pending' && (
-          <Button size="sm" icon={X} onClick={() => act('listing.reject')}>
-            Decline
-          </Button>
+          <Button size="sm" icon={X} onClick={() => act('listing.reject')}>{tr('decline')}</Button>
         )}
         {l.status === 'approved' && (
           <>
             <Button size="sm" icon={Star} onClick={() => act(l.featured ? 'listing.unfeature' : 'listing.feature')}>
-              {l.featured ? 'Stop featuring' : 'Feature'}
+              {l.featured ? tr('stopFeaturing') : tr('feature')}
             </Button>
-            <Button size="sm" variant="danger" onClick={() => act('listing.remove')}>
-              Remove
-            </Button>
+            <Button size="sm" variant="danger" onClick={() => act('listing.remove')}>{tr('remove')}</Button>
           </>
         )}
         {l.status === 'removed' && (
-          <Button size="sm" icon={ShieldCheck} onClick={() => act('listing.restore')}>
-            Restore
-          </Button>
+          <Button size="sm" icon={ShieldCheck} onClick={() => act('listing.restore')}>{tr('restore')}</Button>
         )}
       </div>
     </article>
@@ -554,13 +511,11 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
       open
       onClose={onClose}
       title={ACTION_LABEL[pending.action]}
-      description={`For ${pending.targetLabel}.${pending.action === 'board.delete' ? ' Its content is deleted and can’t be brought back.' : ''} This is recorded with your name.`}
+      description={tr('forTargetlabelValueThisIs', { targetLabel: pending.targetLabel, value: pending.action === 'board.delete' ? tr('itsContentIsDeletedAnd') : '' })}
       width={500}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>{tr('cancel')}</Button>
           <Button variant={adverse ? 'danger' : 'primary'} onClick={run} loading={busy} disabled={adverse && !statement.trim()}>
             {ACTION_LABEL[pending.action]}
           </Button>
@@ -570,40 +525,36 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
       <div className="fr-op-form">
         {needsReason && (
           <>
-            <label className="fr-op-form__label" htmlFor="fr-op-reason">
-              Reason
-            </label>
-            <Select<ReportReason> id="fr-op-reason" aria-label="Reason" value={reason} onChange={setReason} options={REPORT_REASONS.map((r) => ({ value: r.id, label: r.label }))} />
+            <label className="fr-op-form__label" htmlFor="fr-op-reason">{tr('reason')}</label>
+            <Select<ReportReason> id="fr-op-reason" aria-label={tr('reason')} value={reason} onChange={setReason} options={REPORT_REASONS.map((r) => ({ value: r.id, label: r.label }))} />
           </>
         )}
         {pending.action === 'user.suspend' && (
           <>
-            <label className="fr-op-form__label" htmlFor="fr-op-boards">
-              Their boards
-            </label>
+            <label className="fr-op-form__label" htmlFor="fr-op-boards">{tr('theirBoards')}</label>
             <Select<SuspensionBoards | 'keep'>
               id="fr-op-boards"
-              aria-label="Their boards"
+              aria-label={tr('theirBoards')}
               value={boards}
               onChange={setBoards}
               options={[
-                { value: 'keep', label: 'Leave them as they are' },
-                { value: 'take_down', label: 'Take down every board they own' },
-                { value: 'disable_link', label: 'Turn off the link of every board they share' },
+                { value: 'keep', label: tr('leaveThemAsTheyAre') },
+                { value: 'take_down', label: tr('takeDownEveryBoardThey') },
+                { value: 'disable_link', label: tr('turnOffTheLinkOf') },
               ]}
             />
-            <p className="fr-op-form__hint">Each board is recorded as its own action. Lifting the suspension brings them all back.</p>
+            <p className="fr-op-form__hint">{tr('eachBoardIsRecordedAs')}</p>
           </>
         )}
         <TextArea
-          label={adverse ? 'Statement to the person affected (required)' : 'Message to the person affected (optional)'}
+          label={adverse ? tr('statementToThePersonAffected') : tr('messageToThePersonAffected')}
           hint="Sent by email with the decision. Say what was wrong and where; it is also what they appeal against."
           value={statement}
           rows={4}
           maxLength={2000}
           onChange={(e) => setStatement(e.target.value)}
         />
-        <TextArea label="Internal note (operators only)" value={note} rows={2} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
+        <TextArea label={tr('internalNoteOperatorsOnly')} value={note} rows={2} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
         {error && (
           <p className="fr-op-form__error" role="alert">
             {error}
@@ -621,16 +572,16 @@ function HistoryDialog({ boardId, onClose }: { boardId: string; onClose: () => v
     api.moderationBoard(boardId).then(setData, (e) => setError(message(e)));
   }, [boardId]);
   return (
-    <Modal open onClose={onClose} title={data ? `History of “${data.board.title}”` : 'History'} width={560}>
+    <Modal open onClose={onClose} title={data ? tr('historyOfTitle', { title: data.board.title }) : tr('history')} width={560}>
       {error ? (
         <p className="fr-op-form__error">{error}</p>
       ) : !data ? (
-        <Spinner size={20} label="Loading" />
+        <Spinner size={20} label={tr('loading')} />
       ) : (
         <div className="fr-op-history">
-          <h3>Actions</h3>
+          <h3>{tr('actions')}</h3>
           {data.actions.length === 0 ? (
-            <p className="fr-op__empty">No actions yet.</p>
+            <p className="fr-op__empty">{tr('noActionsYet')}</p>
           ) : (
             <ul>
               {data.actions.map((a) => (
@@ -639,16 +590,16 @@ function HistoryDialog({ boardId, onClose }: { boardId: string; onClose: () => v
                   {a.operator ? ` · ${a.operator.name}` : ''}
                   {a.subject && <div className="fr-op-history__note">About {a.subject.name} &lt;{a.subject.email}&gt;</div>}
                   {a.statement && <div className="fr-op-history__text">“{a.statement}”</div>}
-                  {a.note && <div className="fr-op-history__note">Note: {a.note}</div>}
+                  {a.note && <div className="fr-op-history__note">{tr('noteNote', { note: a.note })}</div>}
                 </li>
               ))}
             </ul>
           )}
-          <h3>Reports and appeals</h3>
+          <h3>{tr('reportsAndAppeals')}</h3>
           <ul>
             {data.items.map((i) => (
               <li key={i.id}>
-                <strong>{i.kind === 'appeal' ? 'Appeal' : reasonLabel(i.reason)}</strong> · {i.status} · {new Date(i.createdAt).toLocaleString()}
+                <strong>{i.kind === 'appeal' ? tr('appeal') : reasonLabel(i.reason)}</strong> · {i.status} · {new Date(i.createdAt).toLocaleString()}
                 {i.message && <div className="fr-op-history__text">“{i.message}”</div>}
               </li>
             ))}
@@ -674,7 +625,7 @@ function AccountLookup({ onAct }: { onAct: (p: PendingAction) => void }) {
   };
   return (
     <section className="fr-op-tool">
-      <h2>Account</h2>
+      <h2>{tr('account')}</h2>
       <form
         className="fr-op-tool__row"
         onSubmit={(e) => {
@@ -682,23 +633,21 @@ function AccountLookup({ onAct }: { onAct: (p: PendingAction) => void }) {
           void find();
         }}
       >
-        <Input aria-label="Email address" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <Button size="sm" icon={Search} type="submit" disabled={!email.trim()}>
-          Find
-        </Button>
+        <Input aria-label={tr('emailAddress')} placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Button size="sm" icon={Search} type="submit" disabled={!email.trim()}>{tr('find')}</Button>
       </form>
       {error && <p className="fr-op-form__error">{error}</p>}
       {user && (
         <div className="fr-op-tool__result">
           <span>
-            {user.name} &lt;{user.email}&gt; {user.suspended && <Chip tone="danger">Suspended</Chip>}
+            {user.name} &lt;{user.email}&gt; {user.suspended && <Chip tone="danger">{tr('suspended')}</Chip>}
           </span>
           <Button
             size="sm"
             variant={user.suspended ? 'secondary' : 'danger'}
             onClick={() => onAct({ action: user.suspended ? 'user.restore' : 'user.suspend', targetId: user.id, targetLabel: `${user.name} <${user.email}>`, reason: 'spam' })}
           >
-            {user.suspended ? 'Lift suspension' : 'Suspend'}
+            {user.suspended ? tr('liftSuspension') : tr('suspend')}
           </Button>
         </div>
       )}
@@ -712,26 +661,23 @@ function MicrosoftPackages() {
   useEffect(() => void api.microsoftIntegrations().then(setInfo, () => setInfo({ teams: null, copilot: null })), []);
   return (
     <section className="fr-op-tool">
-      <h2>Microsoft 365 apps</h2>
+      <h2>{tr('microsoft365Apps')}</h2>
       {!info ? (
-        <Spinner size={18} label="Loading" />
+        <Spinner size={18} label={tr('loading')} />
       ) : (
         <div className="fr-op-tool__result">
           {info.teams ? (
-            <a className="fr-op-card__file" href={info.teams.packageUrl} download>
-              Teams app package{info.teams.linkPreviews ? ' (with link previews)' : ''}
+            <a className="fr-op-card__file" href={info.teams.packageUrl} download>{tr('teamsAppPackage')}{info.teams.linkPreviews ? tr('withLinkPreviews') : ''}
             </a>
           ) : (
-            <span>Teams app: off (set TEAMS_APP_ID)</span>
+            <span>{tr('teamsAppOffSetTeams')}</span>
           )}
           {info.copilot ? (
-            <a className="fr-op-card__file" href={info.copilot.packageUrl} download>
-              Copilot agent package
-            </a>
+            <a className="fr-op-card__file" href={info.copilot.packageUrl} download>{tr('copilotAgentPackage')}</a>
           ) : (
-            <span>Copilot agent: off (set COPILOT_APP_ID and COPILOT_OAUTH_REFERENCE_ID)</span>
+            <span>{tr('copilotAgentOffSetCopilot')}</span>
           )}
-          <span>Upload them in the Teams admin center: see docs/integrations/teams.md.</span>
+          <span>{tr('uploadThemInTheTeams')}</span>
         </div>
       )}
     </section>
@@ -754,7 +700,7 @@ function FileLookup({ onAct }: { onAct: (p: PendingAction) => void }) {
   };
   return (
     <section className="fr-op-tool">
-      <h2>Uploaded file</h2>
+      <h2>{tr('uploadedFile')}</h2>
       <form
         className="fr-op-tool__row"
         onSubmit={(e) => {
@@ -762,35 +708,25 @@ function FileLookup({ onAct }: { onAct: (p: PendingAction) => void }) {
           void find();
         }}
       >
-        <Input aria-label="File URL or name" placeholder="/uploads/…" value={name} onChange={(e) => setName(e.target.value)} />
-        <Button size="sm" icon={Search} type="submit" disabled={!name.trim()}>
-          Find
-        </Button>
+        <Input aria-label={tr('fileUrlOrName')} placeholder="/uploads/…" value={name} onChange={(e) => setName(e.target.value)} />
+        <Button size="sm" icon={Search} type="submit" disabled={!name.trim()}>{tr('find')}</Button>
       </form>
       {error && <p className="fr-op-form__error">{error}</p>}
       {upload && (
         <div className="fr-op-tool__result">
           <span>
-            {upload.name} · {upload.owner ? upload.owner.email : 'no owner'} {upload.removedAt !== null && <Chip tone="danger">Removed</Chip>}
+            {upload.name} · {upload.owner ? upload.owner.email : tr('noOwner')} {upload.removedAt !== null && <Chip tone="danger">{tr('removed')}</Chip>}
           </span>
           {(upload.removedAt === null || upload.restorable) && (
-            <a className="fr-op-card__file" href={api.moderationUploadFileUrl(upload.name)} download>
-              Download to review
-            </a>
+            <a className="fr-op-card__file" href={api.moderationUploadFileUrl(upload.name)} download>{tr('downloadToReview')}</a>
           )}
           <span className="fr-op-chips">
             {upload.removedAt === null ? (
-              <Button size="sm" variant="danger" onClick={() => onAct({ action: 'upload.remove', targetId: upload.name, targetLabel: `file ${upload.name}`, reason: 'illegal' })}>
-                Remove
-              </Button>
+              <Button size="sm" variant="danger" onClick={() => onAct({ action: 'upload.remove', targetId: upload.name, targetLabel: `file ${upload.name}`, reason: 'illegal' })}>{tr('remove')}</Button>
             ) : upload.restorable ? (
               <>
-                <Button size="sm" onClick={() => onAct({ action: 'upload.restore', targetId: upload.name, targetLabel: `file ${upload.name}`, reason: 'other' })}>
-                  Restore
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onAct({ action: 'upload.purge', targetId: upload.name, targetLabel: `file ${upload.name}`, reason: 'illegal' })}>
-                  Delete kept copy
-                </Button>
+                <Button size="sm" onClick={() => onAct({ action: 'upload.restore', targetId: upload.name, targetLabel: `file ${upload.name}`, reason: 'other' })}>{tr('restore')}</Button>
+                <Button size="sm" variant="ghost" onClick={() => onAct({ action: 'upload.purge', targetId: upload.name, targetLabel: `file ${upload.name}`, reason: 'illegal' })}>{tr('deleteKeptCopy')}</Button>
               </>
             ) : null}
           </span>

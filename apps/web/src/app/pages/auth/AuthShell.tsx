@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Logo } from '@ui';
+import { t } from './messages';
 import './AuthPage.css';
 
 /** The centered card on the dotted canvas shared by every sign-in related page. */
@@ -11,12 +12,12 @@ export function AuthShell({ title, sub, docTitle, children }: { title: string; s
   return (
     <div className="fr-authpage">
       <div className="fr-authpage__deco" aria-hidden>
-        <span className="fr-authpage__sticky fr-authpage__sticky--a">plan the launch</span>
-        <span className="fr-authpage__sticky fr-authpage__sticky--b">ideas welcome</span>
+        <span className="fr-authpage__sticky fr-authpage__sticky--a">{t('planTheLaunch')}</span>
+        <span className="fr-authpage__sticky fr-authpage__sticky--b">{t('ideasWelcome')}</span>
         <span className="fr-authpage__blob" />
       </div>
       <main className="fr-authcard">
-        <a href="/" className="fr-authcard__logo" aria-label="Freero home">
+        <a href="/" className="fr-authcard__logo" aria-label={t('freeroHome')}>
           <Logo size={36} />
         </a>
         <h1 className="fr-authcard__title">{title}</h1>

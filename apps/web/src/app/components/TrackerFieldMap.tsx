@@ -8,12 +8,13 @@ import { type FieldMapEntry, type TrackerConnectionInfo, type TrackerFieldInfo, 
 import { Button, Input, Select, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 
+import { t as tr } from '../messages';
 const KIND_LABEL: Record<FieldMapEntry['type'], string> = {
-  select: 'Single select',
-  multiselect: 'Multi-select',
+  select: tr('singleSelect'),
+  multiselect: tr('multiSelect'),
   number: 'Number',
   date: 'Date',
-  text: 'Text',
+  text: tr('text'),
   person: 'Person',
 };
 
@@ -38,7 +39,7 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
     let live = true;
     api.trackerFields(connection.id).then(
       (r) => live && setFields(r.fields),
-      (e) => live && (setFields([]), setError(errorText(e, 'The tracker didn’t list its fields'))),
+      (e) => live && (setFields([]), setError(errorText(e, tr('theTrackerDidnTList')))),
     );
     return () => {
       live = false;
@@ -47,7 +48,7 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
 
   const mappable = (fields ?? []).filter((f) => f.type);
   const pick = (kind: FieldMapEntry['type'] | 'any', current: string) => [
-    { value: '', label: 'None' },
+    { value: '', label: tr('none') },
     ...mappable.filter((f) => kind === 'any' || f.type === kind).map((f) => ({ value: f.id, label: f.name, description: f.id })),
     ...(current && !mappable.some((f) => f.id === current) ? [{ value: current, label: current }] : []),
   ];
@@ -64,9 +65,9 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
         },
       });
       onSaved(out.connection);
-      notify('Field map saved', 'success');
+      notify(tr('fieldMapSaved'), 'success');
     } catch (e) {
-      setError(errorText(e, 'Could not save the field map'));
+      setError(errorText(e, tr('couldNotSaveTheField')));
     } finally {
       setBusy(false);
     }
@@ -74,41 +75,39 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
 
   if (!fields) return <Spinner />;
   return (
-    <div className="fr-trackerconn__map" aria-label={`Field map of ${connection.name}`}>
+    <div className="fr-trackerconn__map" aria-label={tr('fieldMapOfName', { name: connection.name })}>
       {typed && (
         <div className="fr-trackerconn__grid">
           <label>
-            <span>Story points (a card’s estimate)</span>
-            <Select aria-label="Story points field" options={pick('number', estimate)} value={estimate} onChange={setEstimate} width="100%" />
+            <span>{tr('storyPointsACardS')}</span>
+            <Select aria-label={tr('storyPointsField')} options={pick('number', estimate)} value={estimate} onChange={setEstimate} width="100%" />
           </label>
           <label>
-            <span>Start date</span>
-            <Select aria-label="Start date field" options={pick('date', start)} value={start} onChange={setStart} width="100%" />
+            <span>{tr('startDate')}</span>
+            <Select aria-label={tr('startDateField')} options={pick('date', start)} value={start} onChange={setStart} width="100%" />
           </label>
         </div>
       )}
       {typed && (
         <div className="fr-trackerconn__maprows">
-          <span className="fr-trackerconn__maphead">Issue type per project (else {connection.defaults.issueType ?? 'Task'})</span>
+          <span className="fr-trackerconn__maphead">{tr('issueTypePerProjectElse')}{' '}{connection.defaults.issueType ?? tr('task')})</span>
           {types.map((t, i) => (
             <div key={i} className="fr-trackerconn__maprow">
-              <Input aria-label="Project key" placeholder="Project key" value={t.project} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, project: e.target.value } : x)))} />
-              <Input aria-label="Issue type" placeholder="Story" value={t.type} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))} />
-              <Button size="sm" variant="ghost" icon={Trash2} aria-label="Remove" onClick={() => setTypes(types.filter((_, j) => j !== i))} />
+              <Input aria-label={tr('projectKey')} placeholder={tr('projectKey')} value={t.project} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, project: e.target.value } : x)))} />
+              <Input aria-label={tr('issueType')} placeholder={tr('story')} value={t.type} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))} />
+              <Button size="sm" variant="ghost" icon={Trash2} aria-label={tr('remove')} onClick={() => setTypes(types.filter((_, j) => j !== i))} />
             </div>
           ))}
-          <Button size="sm" variant="ghost" icon={Plus} onClick={() => setTypes([...types, { project: '', type: '' }])}>
-            Add a project
-          </Button>
+          <Button size="sm" variant="ghost" icon={Plus} onClick={() => setTypes([...types, { project: '', type: '' }])}>{tr('addAProject')}</Button>
         </div>
       )}
       {custom && (
         <div className="fr-trackerconn__maprows">
-          <span className="fr-trackerconn__maphead">Custom fields ↔ kanban fields (by the kanban field’s name)</span>
+          <span className="fr-trackerconn__maphead">{tr('customFieldsKanbanFieldsBy')}</span>
           {map.map((m, i) => (
             <div key={i} className="fr-trackerconn__maprow" data-testid="tracker-field-map-row">
               <Select
-                aria-label="Tracker field"
+                aria-label={tr('trackerField')}
                 options={pick('any', m.tracker).slice(1)}
                 value={m.tracker}
                 onChange={(id) => {
@@ -117,9 +116,9 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
                 }}
                 width="100%"
               />
-              <Input aria-label="Kanban field" placeholder="Kanban field name" value={m.board} maxLength={60} onChange={(e) => setMap(map.map((x, j) => (j === i ? { ...x, board: e.target.value } : x)))} />
+              <Input aria-label={tr('kanbanField')} placeholder={tr('kanbanFieldName')} value={m.board} maxLength={60} onChange={(e) => setMap(map.map((x, j) => (j === i ? { ...x, board: e.target.value } : x)))} />
               <span className="fr-trackerconn__fine">{KIND_LABEL[m.type]}</span>
-              <Button size="sm" variant="ghost" icon={Trash2} aria-label="Remove" onClick={() => setMap(map.filter((_, j) => j !== i))} />
+              <Button size="sm" variant="ghost" icon={Trash2} aria-label={tr('remove')} onClick={() => setMap(map.filter((_, j) => j !== i))} />
             </div>
           ))}
           {mappable.length > 0 ? (
@@ -131,11 +130,9 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
                 const f = mappable.find((x) => !map.some((m) => m.tracker === x.id)) ?? mappable[0];
                 setMap([...map, { tracker: f.id, trackerName: f.name, type: f.type!, board: f.name }]);
               }}
-            >
-              Map a field
-            </Button>
+            >{tr('mapAField')}</Button>
           ) : (
-            <p className="fr-trackerconn__fine">The tracker lists no custom fields Freero can map.</p>
+            <p className="fr-trackerconn__fine">{tr('theTrackerListsNoCustom')}</p>
           )}
         </div>
       )}
@@ -145,9 +142,7 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
         </p>
       )}
       <div className="fr-trackerconn__actions">
-        <Button size="sm" variant="primary" icon={Save} loading={busy} onClick={() => void save()}>
-          Save field map
-        </Button>
+        <Button size="sm" variant="primary" icon={Save} loading={busy} onClick={() => void save()}>{tr('saveFieldMap')}</Button>
       </div>
       <p className="fr-trackerconn__fine">
         A mapped field syncs on every kanban that has a field of that name and kind; importing into a kanban without one adds it. Renaming the kanban field pauses it (nothing is cleared) until the

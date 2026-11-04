@@ -1,0 +1,21 @@
+{
+  "couldnTReachFreeroCheck": "Couldn’t reach Freero. Check your connection and try again.",
+  "youDonTHaveAccess": "You don’t have access to this board. Ask its owner to share it with you.",
+  "thisActivityIsNoLonger": "This activity is no longer on the board.",
+  "updateFreeroSServerTo": "Update Freero’s server to answer from this page, or open the board.",
+  "signInToAnswerThis": "Sign in to answer this activity.",
+  "signIn": "Sign in",
+  "tryAgain": "Try again",
+  "openTheBoard": "Open the board",
+  "enterANameSoThe": "Enter a name so the host knows who answered",
+  "enterTheLinkSPassword": "Enter the link’s password",
+  "couldNotJoin": "Could not join",
+  "untitledBoard": "Untitled board",
+  "joinToAnswerNoAccount": "Join to answer — no account needed.",
+  "yourName": "Your name",
+  "linkPassword": "Link password",
+  "passwordAskTheHost": "Password (ask the host)",
+  "youLlBeGuestdisplaynameFor": "You’ll be “{guestDisplayName}” for a few hours.",
+  "joinAndAnswer": "Join and answer",
+  "haveAnAccount": "Have an account?"
+}

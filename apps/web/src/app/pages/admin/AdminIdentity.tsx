@@ -20,6 +20,7 @@ import type {
 } from '@freero/shared';
 import { Button, Input, Modal, SegmentedControl, Select, Spinner, TextArea, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
+import { t as tr } from './messages';
 import './identity.css';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
@@ -48,18 +49,16 @@ function CopyField({ label, value }: { label: string; value: string }) {
         size="sm"
         variant="ghost"
         icon={Copy}
-        onClick={() => void navigator.clipboard?.writeText(value).then(() => notify('Copied', 'success'), () => notify('Could not copy', 'error'))}
-      >
-        Copy
-      </Button>
+        onClick={() => void navigator.clipboard?.writeText(value).then(() => notify(tr('copied'), 'success'), () => notify(tr('couldNotCopy'), 'error'))}
+      >{tr('copy')}</Button>
     </div>
   );
 }
 
 const ROLE_OPTIONS: SelectOption<'member' | 'guest' | 'admin'>[] = [
-  { value: 'member', label: 'Member' },
-  { value: 'guest', label: 'Guest' },
-  { value: 'admin', label: 'Admin' },
+  { value: 'member', label: tr('member') },
+  { value: 'guest', label: tr('guest') },
+  { value: 'admin', label: tr('admin') },
 ];
 
 /** How the identity tabs name where people land: a team workspace, or an organisation's directory (#108). */
@@ -95,7 +94,7 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
   }, []);
 
   useEffect(() => {
-    api.ssoSettings(workspace.id).then(load, (e) => notify(errorText(e, 'Could not load single sign-on'), 'error'));
+    api.ssoSettings(workspace.id).then(load, (e) => notify(errorText(e, tr('couldNotLoadSingleSign')), 'error'));
     api.adminMembers(workspace.id).then(({ members }) => setOwners(members.filter((m) => m.role === 'owner')), () => setOwners([]));
   }, [workspace.id, load, notify]);
 
@@ -106,7 +105,7 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
       if (ok) notify(ok, 'success');
       return true;
     } catch (e) {
-      notify(errorText(e, 'That didn’t work'), 'error');
+      notify(errorText(e, tr('thatDidnTWork')), 'error');
       return false;
     } finally {
       setBusy(null);
@@ -130,7 +129,7 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
           // SAML without new metadata keeps the connected provider (the server keeps it).
           ...(protocol === 'saml' ? (metadata.trim() ? { samlMetadataXml: metadata } : {}) : { oidcIssuer: issuer, oidcClientId: clientId, oidcClientSecret: secret }),
         }),
-      'Identity provider saved',
+      tr('identityProviderSaved'),
     ).then((ok) => {
       if (!ok) return;
       setMetadata('');
@@ -140,44 +139,34 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
 
   return (
     <section aria-labelledby="admin-sso-title">
-      <h1 id="admin-sso-title" className="fr-admin__title">
-        Single sign-on
-      </h1>
-      <p className="fr-admin__intro">
-        People with an address at a verified domain sign in through your identity provider (SAML 2.0 or OpenID Connect). Their first sign-in adds them to{' '}
-        {placeOf(workspace)}
-        {workspace.kind === 'organisation' ? ', whichever of its workspaces they work in' : ''}. Their sessions follow the{' '}
-        <Link to={`?tab=security`}>session policy</Link>.
+      <h1 id="admin-sso-title" className="fr-admin__title">{tr('singleSignOn')}</h1>
+      <p className="fr-admin__intro">{tr('peopleWithAnAddressAt', { placeOf: placeOf(workspace) })}{workspace.kind === 'organisation' ? tr('whicheverOfItsWorkspacesThey') : ''}. Their sessions follow the{' '}
+        <Link to={`?tab=security`}>{tr('sessionPolicy')}</Link>.
       </p>
 
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">1. Verify your domains</h2>
+        <h2 className="fr-admin-card__title">{tr('n1VerifyYourDomains')}</h2>
         {s.domains.map((d) => (
           <div key={d.id} className="fr-admin-sso__domain">
             <div className="fr-admin-sso__domain-head">
               <strong>{d.domain}</strong>
               {d.verified ? (
                 <span className="fr-admin-pill fr-admin-pill--ok">
-                  <CheckCircle2 size={13} aria-hidden /> Verified
-                </span>
+                  <CheckCircle2 size={13} aria-hidden />{' '}{tr('verified')}</span>
               ) : (
-                <span className="fr-admin-pill fr-admin-pill--warn">Waiting for DNS</span>
+                <span className="fr-admin-pill fr-admin-pill--warn">{tr('waitingForDns')}</span>
               )}
               <span className="fr-admin-sso__spacer" />
               {!d.verified ? (
-                <Button size="sm" icon={RefreshCw} loading={busy === `verify-${d.id}`} onClick={() => void run(`verify-${d.id}`, () => api.verifySsoDomain(workspace.id, d.id), `${d.domain} is verified`)}>
-                  Verify
-                </Button>
+                <Button size="sm" icon={RefreshCw} loading={busy === `verify-${d.id}`} onClick={() => void run(`verify-${d.id}`, () => api.verifySsoDomain(workspace.id, d.id), `${d.domain} is verified`)}>{tr('verify')}</Button>
               ) : null}
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void run(`rm-${d.id}`, () => api.removeSsoDomain(workspace.id, d.id))}>
-                Remove
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void run(`rm-${d.id}`, () => api.removeSsoDomain(workspace.id, d.id))}>{tr('remove')}</Button>
             </div>
             {!d.verified ? (
               <div className="fr-admin-sso__stack">
-                <span className="fr-admin-row__hint">Add this TXT record at your DNS provider, then select Verify.</span>
-                <CopyField label="Name" value={d.txtName} />
-                <CopyField label="Value" value={d.txtValue} />
+                <span className="fr-admin-row__hint">{tr('addThisTxtRecordAt')}</span>
+                <CopyField label={tr('name')} value={d.txtName} />
+                <CopyField label={tr('value')} value={d.txtValue} />
               </div>
             ) : null}
           </div>
@@ -189,35 +178,33 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
             if (domain.trim()) void run('add', () => api.addSsoDomain(workspace.id, domain.trim())).then((ok) => ok && setDomain(''));
           }}
         >
-          <Input aria-label="Domain" placeholder="example.com" value={domain} onChange={(e) => setDomain(e.target.value)} />
-          <Button type="submit" loading={busy === 'add'} disabled={!domain.trim()}>
-            Add domain
-          </Button>
+          <Input aria-label={tr('domain')} placeholder="example.com" value={domain} onChange={(e) => setDomain(e.target.value)} />
+          <Button type="submit" loading={busy === 'add'} disabled={!domain.trim()}>{tr('addDomain')}</Button>
         </form>
       </div>
 
       {verified ? <AdminDomainControl workspace={workspace} key={s.domains.filter((d) => d.verified).map((d) => d.domain).join(',')} /> : null}
 
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">2. Connect your identity provider</h2>
+        <h2 className="fr-admin-card__title">{tr('n2ConnectYourIdentityProvider')}</h2>
         <div className="fr-admin-sso__stack">
-          <span className="fr-admin-row__hint">Give your identity provider these details for Freero:</span>
+          <span className="fr-admin-row__hint">{tr('giveYourIdentityProviderThese')}</span>
           {protocol === 'saml' ? (
             <>
-              <CopyField label="Entity ID / metadata" value={s.serviceProvider.entityId} />
-              <CopyField label="ACS (reply) URL" value={s.serviceProvider.acsUrl} />
-              <CopyField label="Sign-in URL (app tile)" value={s.serviceProvider.startUrl} />
+              <CopyField label={tr('entityIdMetadata')} value={s.serviceProvider.entityId} />
+              <CopyField label={tr('acsReplyUrl')} value={s.serviceProvider.acsUrl} />
+              <CopyField label={tr('signInUrlAppTile')} value={s.serviceProvider.startUrl} />
             </>
           ) : (
-            <CopyField label="Redirect URI" value={s.serviceProvider.oidcRedirectUri} />
+            <CopyField label={tr('redirectUri')} value={s.serviceProvider.oidcRedirectUri} />
           )}
         </div>
         <form className="fr-admin-sso__form" onSubmit={save}>
           <SegmentedControl<SsoProtocol>
-            aria-label="Protocol"
+            aria-label={tr('protocol')}
             options={[
-              { value: 'saml', label: 'SAML 2.0' },
-              { value: 'oidc', label: 'OpenID Connect' },
+              { value: 'saml', label: tr('saml20') },
+              { value: 'oidc', label: tr('openidConnect') },
             ]}
             value={protocol}
             onChange={setProtocol}
@@ -225,29 +212,26 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
           {protocol === 'saml' ? (
             <>
               {c?.saml ? (
-                <span className="fr-admin-row__hint">
-                  Connected to <code>{c.saml.entityId}</code> · certificate valid until {new Date(c.saml.certificates[0]?.validTo ?? 0).toLocaleDateString()}. Paste
-                  new metadata to replace it.
-                </span>
+                <span className="fr-admin-row__hint">{tr('connectedTo')}{' '}<code>{c.saml.entityId}</code>{' '}{tr('certificateValidUntilTolocaledatestringP', { toLocaleDateString: new Date(c.saml.certificates[0]?.validTo ?? 0).toLocaleDateString() })}</span>
               ) : null}
-              <TextArea label="Identity provider metadata (XML)" rows={5} value={metadata} onChange={(e) => setMetadata(e.target.value)} placeholder="<EntityDescriptor …>" />
+              <TextArea label={tr('identityProviderMetadataXml')} rows={5} value={metadata} onChange={(e) => setMetadata(e.target.value)} placeholder="<EntityDescriptor …>" />
             </>
           ) : (
             <>
-              <Input label="Issuer URL" value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="https://login.example.com" />
-              <Input label="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+              <Input label={tr('issuerUrl')} value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="https://login.example.com" />
+              <Input label={tr('clientId')} value={clientId} onChange={(e) => setClientId(e.target.value)} />
               <Input
-                label="Client secret"
+                label={tr('clientSecret')}
                 type="password"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                placeholder={c?.oidc?.hasClientSecret ? 'Stored — leave blank to keep it' : ''}
+                placeholder={c?.oidc?.hasClientSecret ? tr('storedLeaveBlankToKeep') : ''}
               />
             </>
           )}
-          <Row label="New people join as" hint={`Role of people whose first sign-in adds them to ${placeOf(workspace)}.`}>
+          <Row label={tr('newPeopleJoinAs')} hint={tr('roleOfPeopleWhoseFirst', { placeOf: placeOf(workspace) })}>
             <Select
-              aria-label="Default role"
+              aria-label={tr('defaultRole')}
               options={ROLE_OPTIONS.map((o) => ({ ...o, disabled: o.value === 'guest' && workspace.kind === 'organisation' }))}
               value={defaultRole}
               onChange={setDefaultRole}
@@ -255,27 +239,25 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
             />
           </Row>
           <div>
-            <Button type="submit" variant="primary" loading={busy === 'save'} disabled={protocol === 'saml' ? !metadata.trim() && !c?.saml : !issuer.trim() || !clientId.trim()}>
-              Save identity provider
-            </Button>
+            <Button type="submit" variant="primary" loading={busy === 'save'} disabled={protocol === 'saml' ? !metadata.trim() && !c?.saml : !issuer.trim() || !clientId.trim()}>{tr('saveIdentityProvider')}</Button>
           </div>
         </form>
       </div>
 
       {c ? (
         <div className="fr-admin-card">
-          <h2 className="fr-admin-card__title">3. Turn it on</h2>
+          <h2 className="fr-admin-card__title">{tr('n3TurnItOn')}</h2>
           <Row
-            label="Single sign-on"
+            label={tr('singleSignOn')}
             hint={
               <>
-                {verified ? 'People at your verified domains are sent to your identity provider when they log in.' : 'Verify a domain first.'}
-                {c.testedAt ? ` Last sign-in through it: ${when(c.testedAt)}.` : ' Sign in through it once to test it.'}
+                {verified ? tr('peopleAtYourVerifiedDomains') : tr('verifyADomainFirst')}
+                {c.testedAt ? tr('lastSignInThroughIt', { when: when(c.testedAt) }) : tr('signInThroughItOnce')}
               </>
             }
           >
             <Toggle
-              aria-label="Single sign-on"
+              aria-label={tr('singleSignOn')}
               checked={c.enabled}
               disabled={!verified}
               onChange={(on) => void run('enable', () => api.saveSsoConnection(workspace.id, { protocol: c.protocol, enabled: on, defaultRole: c.defaultRole }))}
@@ -283,17 +265,17 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
           </Row>
           {c.protocol === 'saml' ? (
             <Row
-              label="Allow sign-in from the identity provider"
-              hint="People can open Freero from its tile in your identity provider’s app list (Okta, Entra ID and others). Each sign-in is accepted once, only signed by your provider and addressed to this workspace. Leave it off if you don’t use app tiles: the tile can link to the sign-in URL above instead."
+              label={tr('allowSignInFromThe')}
+              hint={tr('peopleCanOpenFreeroFrom')}
             >
               <Toggle
-                aria-label="Allow sign-in from the identity provider"
+                aria-label={tr('allowSignInFromThe')}
                 checked={c.idpInitiated}
                 onChange={(on) =>
                   void run(
                     'idp',
                     () => api.saveSsoConnection(workspace.id, { protocol: c.protocol, enabled: c.enabled, defaultRole: c.defaultRole, idpInitiated: on }),
-                    on ? 'Sign-in from the identity provider is on' : 'Sign-in from the identity provider is off',
+                    on ? tr('signInFromTheIdentity') : tr('signInFromTheIdentity2'),
                   )
                 }
               />
@@ -302,16 +284,15 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
           <Row
             label={
               <>
-                <ShieldCheck size={14} aria-hidden /> Enforce single sign-on
-              </>
+                <ShieldCheck size={14} aria-hidden />{' '}{tr('enforceSingleSignOn')}</>
             }
             hint="Password, reset-link and personal Google/Microsoft sign-in stop working for your domains; signed-in browsers that didn’t use SSO are signed out. One owner keeps password sign-in to fix the connection if it ever breaks."
           >
             <Toggle
-              aria-label="Enforce single sign-on"
+              aria-label={tr('enforceSingleSignOn')}
               checked={c.enforced}
               disabled={!owner || !c.enabled || (!c.enforced && !c.testedAt)}
-              onChange={(on) => (on ? setConfirmEnforce(true) : void run('enforce', () => api.enforceSso(workspace.id, false, null), 'Single sign-on is no longer enforced'))}
+              onChange={(on) => (on ? setConfirmEnforce(true) : void run('enforce', () => api.enforceSso(workspace.id, false, null), tr('singleSignOnIsNo')))}
             />
           </Row>
         </div>
@@ -320,28 +301,24 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
       <Modal
         open={confirmEnforce}
         onClose={() => setConfirmEnforce(false)}
-        title="Enforce single sign-on?"
+        title={tr('enforceSingleSignOn2')}
         width={460}
         footer={
           <>
-            <Button onClick={() => setConfirmEnforce(false)}>Cancel</Button>
+            <Button onClick={() => setConfirmEnforce(false)}>{tr('cancel')}</Button>
             <Button
               variant="primary"
               disabled={!breakGlass}
               loading={busy === 'enforce'}
-              onClick={() => void run('enforce', () => api.enforceSso(workspace.id, true, breakGlass), 'Single sign-on is enforced').then((ok) => ok && setConfirmEnforce(false))}
-            >
-              Enforce
-            </Button>
+              onClick={() => void run('enforce', () => api.enforceSso(workspace.id, true, breakGlass), tr('singleSignOnIsEnforced')).then((ok) => ok && setConfirmEnforce(false))}
+            >{tr('enforce')}</Button>
           </>
         }
       >
-        <p className="fr-admin-sso__modal-text">
-          Everyone at your verified domains will have to sign in through your identity provider. Choose the owner who keeps password sign-in (break-glass):
-        </p>
+        <p className="fr-admin-sso__modal-text">{tr('everyoneAtYourVerifiedDomains')}</p>
         <Select<string>
-          aria-label="Break-glass owner"
-          options={[{ value: '', label: 'Choose an owner', disabled: true }, ...owners.map((m) => ({ value: m.userId, label: m.name, description: m.email }))]}
+          aria-label={tr('breakGlassOwner')}
+          options={[{ value: '', label: tr('chooseAnOwner'), disabled: true }, ...owners.map((m) => ({ value: m.userId, label: m.name, description: m.email }))]}
           value={breakGlass}
           onChange={setBreakGlass}
           width="100%"
@@ -353,7 +330,7 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
 
 // ---- Domain control (#64): accounts at the verified domains, with or without SSO ----
 
-const GRACE_OPTIONS: SelectOption<number>[] = DOMAIN_CAPTURE_GRACE_DAYS.map((d) => ({ value: d, label: `in ${d} days` }));
+const GRACE_OPTIONS: SelectOption<number>[] = DOMAIN_CAPTURE_GRACE_DAYS.map((d) => ({ value: d, label: tr('inDDays', { d }) }));
 
 function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
   const notify = useToast();
@@ -363,7 +340,7 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    api.domainControl(workspace.id).then(setS, (e) => notify(errorText(e, 'Could not load domain control'), 'error'));
+    api.domainControl(workspace.id).then(setS, (e) => notify(errorText(e, tr('couldNotLoadDomainControl')), 'error'));
   }, [workspace.id, notify]);
 
   const run = async (key: string, fn: () => Promise<DomainControlSettings>, ok?: string) => {
@@ -372,7 +349,7 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
       setS(await fn());
       if (ok) notify(ok, 'success');
     } catch (e) {
-      notify(errorText(e, 'That didn’t work'), 'error');
+      notify(errorText(e, tr('thatDidnTWork')), 'error');
     } finally {
       setBusy(null);
     }
@@ -391,36 +368,34 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
 
   return (
     <div className="fr-admin-card">
-      <h2 className="fr-admin-card__title">Domain control</h2>
-      <p className="fr-admin-row__hint">
-        For accounts at {domains}. Works with or without single sign-on. People keep their own boards: nothing moves into {placeOf(workspace)} unless they move it.
-      </p>
-      <Row label={`Add new sign-ups to ${placeOf(workspace)}`} hint={`Anyone who confirms an address at ${domains} joins ${placeOf(workspace)} right away, and gets an email saying so.`}>
+      <h2 className="fr-admin-card__title">{tr('domainControl')}</h2>
+      <p className="fr-admin-row__hint">{tr('forAccountsAtDomainsWorks', { domains, placeOf: placeOf(workspace) })}</p>
+      <Row label={tr('addNewSignUpsTo', { placeOf: placeOf(workspace) })} hint={tr('anyoneWhoConfirmsAnAddress', { domains, placeOf: placeOf(workspace) })}>
         <Toggle
-          aria-label={`Add new sign-ups to ${placeOf(workspace)}`}
+          aria-label={tr('addNewSignUpsTo', { placeOf: placeOf(workspace) })}
           checked={s.captureSignups}
           disabled={busy === 'capture'}
           onChange={(on) => void run('capture', () => api.setDomainControl(workspace.id, { captureSignups: on }))}
         />
       </Row>
-      <Row label="Block other team workspaces" hint={`People at ${domains} can’t create team workspaces of their own. They’re told to ask the admins of ${placeOf(workspace)}.`}>
+      <Row label={tr('blockOtherTeamWorkspaces')} hint={tr('peopleAtDomainsCanT', { domains, placeOf: placeOf(workspace) })}>
         <Toggle
-          aria-label="Block other team workspaces"
+          aria-label={tr('blockOtherTeamWorkspaces')}
           checked={s.blockWorkspaces}
           disabled={busy === 'block'}
           onChange={(on) => void run('block', () => api.setDomainControl(workspace.id, { blockWorkspaces: on }))}
         />
       </Row>
-      <h3 className="fr-admin-domain__heading">Accounts at your domains</h3>
+      <h3 className="fr-admin-domain__heading">{tr('accountsAtYourDomains')}</h3>
       {s.accounts.length === 0 ? (
-        <p className="fr-admin-row__hint">No Freero account has confirmed an address at {domains} yet.</p>
+        <p className="fr-admin-row__hint">{tr('noFreeroAccountHasConfirmed', { domains })}</p>
       ) : (
         <>
           <ul className="fr-admin-domain__list">
             {s.accounts.map((a) => (
               <li key={a.userId} className="fr-admin-domain__item">
                 {a.status === 'outside' ? (
-                  <input type="checkbox" aria-label={`Add ${a.name}`} checked={picked.has(a.userId)} onChange={() => toggle(a.userId)} />
+                  <input type="checkbox" aria-label={tr('addName', { name: a.name })} checked={picked.has(a.userId)} onChange={() => toggle(a.userId)} />
                 ) : (
                   <span className="fr-admin-domain__check" aria-hidden />
                 )}
@@ -429,16 +404,14 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
                   <span className="fr-admin-row__hint">{a.email}</span>
                 </span>
                 {a.status === 'member' ? (
-                  <span className="fr-admin-pill fr-admin-pill--ok">Member</span>
+                  <span className="fr-admin-pill fr-admin-pill--ok">{tr('member')}</span>
                 ) : a.status === 'pending' ? (
                   <>
-                    <span className="fr-admin-pill fr-admin-pill--warn">Joins {a.joinsAt ? new Date(a.joinsAt).toLocaleDateString() : 'soon'}</span>
-                    <Button size="sm" variant="ghost" loading={busy === `cancel-${a.userId}`} onClick={() => void run(`cancel-${a.userId}`, () => api.cancelDomainCapture(workspace.id, a.userId))}>
-                      Cancel
-                    </Button>
+                    <span className="fr-admin-pill fr-admin-pill--warn">{tr('joins')}{' '}{a.joinsAt ? new Date(a.joinsAt).toLocaleDateString() : 'soon'}</span>
+                    <Button size="sm" variant="ghost" loading={busy === `cancel-${a.userId}`} onClick={() => void run(`cancel-${a.userId}`, () => api.cancelDomainCapture(workspace.id, a.userId))}>{tr('cancel')}</Button>
                   </>
                 ) : (
-                  <span className="fr-admin-pill fr-admin-pill--off">Not in this workspace</span>
+                  <span className="fr-admin-pill fr-admin-pill--off">{tr('notInThisWorkspace')}</span>
                 )}
               </li>
             ))}
@@ -446,9 +419,9 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
           {outside.length ? (
             <div className="fr-admin-domain__actions">
               <Button size="sm" variant="ghost" onClick={() => setPicked(picked.size === outside.length ? new Set() : new Set(outside.map((a) => a.userId)))}>
-                {picked.size === outside.length ? 'Select none' : 'Select all'}
+                {picked.size === outside.length ? tr('selectNone') : tr('selectAll')}
               </Button>
-              <Select<number> aria-label="When they join" options={GRACE_OPTIONS} value={grace} onChange={setGrace} width={140} />
+              <Select<number> aria-label={tr('whenTheyJoin')} options={GRACE_OPTIONS} value={grace} onChange={setGrace} width={140} />
               <Button
                 variant="primary"
                 disabled={!picked.size}
@@ -457,19 +430,14 @@ function AdminDomainControl({ workspace }: { workspace: WorkspaceSummary }) {
                   void run('add', async () => {
                     const r = await api.captureDomainAccounts(workspace.id, [...picked], grace);
                     setPicked(new Set());
-                    notify(`${r.started} ${r.started === 1 ? 'person was' : 'people were'} emailed and will join in ${grace} days`, 'success');
+                    notify(tr('startedPeopleWereEmailedAnd', { started: r.started, grace }), 'success');
                     return r;
                   })
                 }
-              >
-                Add {picked.size || ''} to the workspace
-              </Button>
+              >{tr('add')}{' '}{picked.size || ''}{' '}{tr('toTheWorkspace')}</Button>
             </div>
           ) : null}
-          <p className="fr-admin-row__hint">
-            Each person is emailed. When the time is up they become members, unless they changed their account’s email address meanwhile (how someone whose
-            account isn’t a work account opts out).
-          </p>
+          <p className="fr-admin-row__hint">{tr('eachPersonIsEmailedWhen')}</p>
         </>
       )}
     </div>
@@ -489,21 +457,21 @@ export function AdminProvisioning({ workspace }: { workspace: WorkspaceSummary }
   const org = workspace.kind === 'organisation';
 
   useEffect(() => {
-    api.scimSettings(workspace.id).then(setS, (e) => notify(errorText(e, 'Could not load provisioning'), 'error'));
+    api.scimSettings(workspace.id).then(setS, (e) => notify(errorText(e, tr('couldNotLoadProvisioning')), 'error'));
     if (org) api.organisationWorkspaces(workspace.id).then(({ workspaces }) => setTeams(workspaces), () => setTeams([]));
     else api.listProjects(workspace.id).then(({ projects }) => setProjects(projects), () => setProjects([]));
   }, [workspace.id, notify, org]);
 
   if (!s) return <Spinner />;
   const mappingOptions: SelectOption<string>[] = [
-    { value: '', label: 'Nothing (just listed)' },
-    { value: 'role:admin', label: org ? 'Organisation admin' : 'Role: admin' },
-    { value: 'role:member', label: org ? 'Organisation member' : 'Role: member' },
-    ...(org ? [] : [{ value: 'role:guest', label: 'Role: guest' }]),
-    ...projects.map((p) => ({ value: `project:${p.id}`, label: `Project: ${p.name}` })),
+    { value: '', label: tr('nothingJustListed') },
+    { value: 'role:admin', label: org ? tr('organisationAdmin') : tr('roleAdmin') },
+    { value: 'role:member', label: org ? tr('organisationMember') : tr('roleMember') },
+    ...(org ? [] : [{ value: 'role:guest', label: tr('roleGuest') }]),
+    ...projects.map((p) => ({ value: `project:${p.id}`, label: tr('projectName', { name: p.name }) })),
     ...teams.flatMap((t) => [
-      { value: `workspace:${t.id}:member`, label: `${t.name}: member` },
-      { value: `workspace:${t.id}:admin`, label: `${t.name}: admin` },
+      { value: `workspace:${t.id}:member`, label: tr('nameMember', { name: t.name }) },
+      { value: `workspace:${t.id}:admin`, label: tr('nameAdmin', { name: t.name }) },
     ]),
   ];
   const mappingValue = (m: ScimGroupMapping | null) =>
@@ -522,7 +490,7 @@ export function AdminProvisioning({ workspace }: { workspace: WorkspaceSummary }
       setS(r.settings);
       setShown(r.token);
     } catch (e) {
-      notify(errorText(e, 'Could not make a token'), 'error');
+      notify(errorText(e, tr('couldNotMakeAToken')), 'error');
     } finally {
       setBusy(false);
     }
@@ -530,20 +498,13 @@ export function AdminProvisioning({ workspace }: { workspace: WorkspaceSummary }
 
   return (
     <section aria-labelledby="admin-scim-title">
-      <h1 id="admin-scim-title" className="fr-admin__title">
-        Provisioning
-      </h1>
-      <p className="fr-admin__intro">
-        Let Okta, Microsoft Entra ID or another directory add, update and remove people (SCIM 2.0). Deactivating someone there deactivates them here, like the
-        Members tab does, and signs them out.
-      </p>
+      <h1 id="admin-scim-title" className="fr-admin__title">{tr('provisioning')}</h1>
+      <p className="fr-admin__intro">{tr('letOktaMicrosoftEntraId')}</p>
 
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">Connection</h2>
-        <CopyField label="SCIM base URL" value={s.baseUrl} />
-        <p className="fr-admin-card__note">
-          {s.provisioned.active === 1 ? '1 person' : `${s.provisioned.active} people`} provisioned
-          {s.provisioned.deactivated ? ` · ${s.provisioned.deactivated} deactivated by the directory` : ''}.
+        <h2 className="fr-admin-card__title">{tr('connection')}</h2>
+        <CopyField label={tr('scimBaseUrl')} value={s.baseUrl} />
+        <p className="fr-admin-card__note">{tr('activePeopleProvisioned', { active: s.provisioned.active })}{s.provisioned.deactivated ? tr('deactivatedDeactivatedByTheDirectory', { deactivated: s.provisioned.deactivated }) : ''}.
         </p>
         <div className="fr-admin-sso__list">
           {s.tokens.map((t) => (
@@ -552,49 +513,41 @@ export function AdminProvisioning({ workspace }: { workspace: WorkspaceSummary }
               <span>
                 <strong>{t.label}</strong> <code>{t.prefix}…</code>
               </span>
-              <span className="fr-admin-row__hint fr-admin-sso__meta">Last used {when(t.lastUsedAt)}</span>
-              <Button size="sm" variant="ghost" icon={RotateCw} onClick={() => void issue(() => api.rotateScimToken(workspace.id, t.id))}>
-                Rotate
-              </Button>
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void api.revokeScimToken(workspace.id, t.id).then(setS, (e) => notify(errorText(e, 'Could not revoke'), 'error'))}>
-                Revoke
-              </Button>
+              <span className="fr-admin-row__hint fr-admin-sso__meta">{tr('lastUsedWhen', { when: when(t.lastUsedAt) })}</span>
+              <Button size="sm" variant="ghost" icon={RotateCw} onClick={() => void issue(() => api.rotateScimToken(workspace.id, t.id))}>{tr('rotate')}</Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void api.revokeScimToken(workspace.id, t.id).then(setS, (e) => notify(errorText(e, tr('couldNotRevoke')), 'error'))}>{tr('revoke')}</Button>
             </div>
           ))}
         </div>
         <div>
-          <Button icon={KeyRound} loading={busy} onClick={() => void issue(() => api.createScimToken(workspace.id, `Token ${s.tokens.length + 1}`))}>
-            Generate token
-          </Button>
+          <Button icon={KeyRound} loading={busy} onClick={() => void issue(() => api.createScimToken(workspace.id, `Token ${s.tokens.length + 1}`))}>{tr('generateToken')}</Button>
         </div>
       </div>
 
       {s.groups.length ? (
         <div className="fr-admin-card">
-          <h2 className="fr-admin-card__title">Directory groups</h2>
+          <h2 className="fr-admin-card__title">{tr('directoryGroups')}</h2>
           {s.groups.map((g) => (
-            <Row key={g.id} label={g.displayName} hint={g.memberCount === 1 ? '1 member' : `${g.memberCount} members`}>
+            <Row key={g.id} label={g.displayName} hint={tr('membercountMembers', { memberCount: g.memberCount })}>
               <Select<string>
-                aria-label={`What ${g.displayName} grants`}
+                aria-label={tr('whatDisplaynameGrants', { displayName: g.displayName })}
                 options={mappingOptions}
                 value={mappingValue(g.mapping)}
-                onChange={(v) => void api.mapScimGroup(workspace.id, g.id, toMapping(v)).then(setS, (e) => notify(errorText(e, 'Could not change the group'), 'error'))}
+                onChange={(v) => void api.mapScimGroup(workspace.id, g.id, toMapping(v)).then(setS, (e) => notify(errorText(e, tr('couldNotChangeTheGroup')), 'error'))}
                 width={230}
               />
             </Row>
           ))}
-          <p className="fr-admin-card__note">
-            Once a group grants a role, the directory decides the roles of the people it provisioned (owners excepted).
-            {org
-              ? ' A group that grants a workspace makes its members members there, and leaving the group takes them out again (owners stay).'
+          <p className="fr-admin-card__note">{tr('onceAGroupGrantsA')}{org
+              ? tr('aGroupThatGrantsA')
               : ''}
           </p>
         </div>
       ) : null}
 
-      <Modal open={shown !== null} onClose={() => setShown(null)} title="Your new provisioning token" width={480} footer={<Button variant="primary" onClick={() => setShown(null)}>Done</Button>}>
-        <p className="fr-admin-sso__modal-text">Copy it into your directory now. It won’t be shown again.</p>
-        {shown ? <CopyField label="Token" value={shown} /> : null}
+      <Modal open={shown !== null} onClose={() => setShown(null)} title={tr('yourNewProvisioningToken')} width={480} footer={<Button variant="primary" onClick={() => setShown(null)}>{tr('done')}</Button>}>
+        <p className="fr-admin-sso__modal-text">{tr('copyItIntoYourDirectory')}</p>
+        {shown ? <CopyField label={tr('token')} value={shown} /> : null}
       </Modal>
     </section>
   );
@@ -611,17 +564,16 @@ export function ExportList({ exports }: { exports: DataExportInfo[] }) {
           <span>{new Date(e.createdAt).toLocaleString()}</span>
           <span className="fr-admin-row__hint fr-admin-sso__meta">
             {e.status === 'ready'
-              ? `Ready · ${size(e.bytes)} · until ${new Date(e.expiresAt ?? 0).toLocaleDateString()}`
+              ? tr('readySizeUntilTolocaledatestring', { size: size(e.bytes), toLocaleDateString: new Date(e.expiresAt ?? 0).toLocaleDateString() })
               : e.status === 'pending' || e.status === 'running'
-                ? 'Preparing…'
+                ? tr('preparing')
                 : e.status === 'expired'
-                  ? 'Expired'
-                  : 'Failed'}
+                  ? tr('expired')
+                  : tr('failed')}
           </span>
           {e.status === 'ready' ? (
             <a className="fr-admin-sso__download" href={`/api/exports/${encodeURIComponent(e.id)}/download`} download>
-              <Download size={15} aria-hidden /> Download
-            </a>
+              <Download size={15} aria-hidden />{' '}{tr('download')}</a>
           ) : null}
         </div>
       ))}
@@ -639,25 +591,21 @@ export function AdminDataExport({ workspace }: { workspace: WorkspaceSummary }) 
     setBusy(true);
     try {
       await api.requestWorkspaceExport(workspace.id);
-      notify('Preparing the export. We’ll email you a link when it’s ready.', 'success');
+      notify(tr('preparingTheExportWeLl'), 'success');
       void refresh();
     } catch (e) {
-      notify(errorText(e, 'Could not start the export'), 'error');
+      notify(errorText(e, tr('couldNotStartTheExport')), 'error');
     } finally {
       setBusy(false);
     }
   };
   return (
     <div className="fr-admin-card" id="data">
-      <h2 className="fr-admin-card__title">Export workspace data</h2>
-      <p className="fr-admin-card__note">
-        A ZIP of every board (as JSON and in Freero’s own format, with its images), the members, projects and settings. Only you can download it, for 7 days.
-      </p>
+      <h2 className="fr-admin-card__title">{tr('exportWorkspaceData')}</h2>
+      <p className="fr-admin-card__note">{tr('aZipOfEveryBoard')}</p>
       <ExportList exports={exports} />
       <div>
-        <Button icon={Download} loading={busy} onClick={() => void ask()}>
-          Export workspace
-        </Button>
+        <Button icon={Download} loading={busy} onClick={() => void ask()}>{tr('exportWorkspace')}</Button>
       </div>
     </div>
   );

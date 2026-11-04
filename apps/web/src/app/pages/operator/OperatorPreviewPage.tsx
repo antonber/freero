@@ -12,6 +12,7 @@ import { FullPageSpinner } from '../../components/FullPageSpinner';
 import { features } from '../../board/features';
 import { createPreviewHost, toastNotify } from '../../board/host';
 import { NotFoundPage } from '../NotFoundPage';
+import { t } from './messages';
 import './operator.css';
 
 export default function OperatorPreviewPage() {
@@ -45,16 +46,14 @@ export default function OperatorPreviewPage() {
   const badge = useMemo(
     () => (
       <span className="fr-op-preview__badge">
-        <ShieldAlert size={14} aria-hidden /> Read-only snapshot
-        <Link to="/operator" className="fr-op-preview__back">
-          <ArrowLeft size={14} aria-hidden /> Queue
-        </Link>
+        <ShieldAlert size={14} aria-hidden />{' '}{t('readOnlySnapshot')}<Link to="/operator" className="fr-op-preview__back">
+          <ArrowLeft size={14} aria-hidden />{' '}{t('queue')}</Link>
       </span>
     ),
     [],
   );
 
-  if (state && 'error' in state) return state.error === 404 ? <NotFoundPage /> : <FullPageSpinner label="Could not load the board" />;
-  if (!state || !host) return <FullPageSpinner label="Loading the board" />;
+  if (state && 'error' in state) return state.error === 404 ? <NotFoundPage /> : <FullPageSpinner label={t('couldNotLoadTheBoard')} />;
+  if (!state || !host) return <FullPageSpinner label={t('loadingTheBoard')} />;
   return <BoardEngine host={host} features={features} initialState={state.bytes} topbarAccessory={badge} location={location} />;
 }

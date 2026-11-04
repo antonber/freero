@@ -11,6 +11,7 @@ import type { OrganisationSummary, OrganisationWorkspace, OrganisationWorkspaceM
 import { Button, Input, Modal, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 const runs = (o: { role: string }) => o.role === 'owner' || o.role === 'admin';
 const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
@@ -37,10 +38,10 @@ export function WorkspaceOrganisation({ workspace, onChanged }: { workspace: Wor
     setBusy(true);
     try {
       await api.attachToOrganisation(organisationId, workspace.id);
-      notify(`${workspace.name} is now part of the organisation`, 'success');
+      notify(t('nameIsNowPartOf', { name: workspace.name }), 'success');
       onChanged();
     } catch (e) {
-      notify(errorText(e, 'Could not attach the workspace'), 'error');
+      notify(errorText(e, t('couldNotAttachTheWorkspace')), 'error');
     } finally {
       setBusy(false);
     }
@@ -52,10 +53,10 @@ export function WorkspaceOrganisation({ workspace, onChanged }: { workspace: Wor
     try {
       const { organisation } = await api.createOrganisation(name.trim());
       await api.attachToOrganisation(organisation.id, workspace.id);
-      notify(`${organisation.name} is set up, with ${workspace.name} in it`, 'success');
+      notify(t('nameIsSetUpWith', { name: organisation.name, name2: workspace.name }), 'success');
       onChanged();
     } catch (err) {
-      notify(errorText(err, 'Could not create the organisation'), 'error');
+      notify(errorText(err, t('couldNotCreateTheOrganisation')), 'error');
     } finally {
       setBusy(false);
     }
@@ -64,48 +65,38 @@ export function WorkspaceOrganisation({ workspace, onChanged }: { workspace: Wor
   return (
     <div className="fr-admin-card fr-admin-org">
       <h2 className="fr-admin-card__title">
-        <Building2 size={16} aria-hidden /> Organisation
-      </h2>
+        <Building2 size={16} aria-hidden />{' '}{t('organisation')}</h2>
       {org ? (
-        <p className="fr-admin-org__text">
-          Part of <strong>{org.name}</strong> since {day(org.attachedAt)}. Its single sign-on, provisioning and domains apply to this workspace’s people, its
-          audit log also records what happens here, and its policies are the least this workspace gets (see <Link to="?tab=security">Security</Link>).
+        <p className="fr-admin-org__text">{t('partOf')}{' '}<strong>{org.name}</strong>{' '}{t('sinceDayItsSingleSign', { day: day(org.attachedAt) })}{' '}<Link to="?tab=security">{t('security')}</Link>).
           {org.yourRole === 'owner' || org.yourRole === 'admin' ? (
             <>
               {' '}
-              <Link to={`/org/${encodeURIComponent(org.id)}`}>Open the organisation console</Link>
+              <Link to={`/org/${encodeURIComponent(org.id)}`}>{t('openTheOrganisationConsole')}</Link>
             </>
           ) : null}
         </p>
       ) : !owner ? (
-        <p className="fr-admin-org__text">This workspace is on its own. Its owners can make it part of an organisation, to share single sign-on, provisioning, policies and audit with other teams.</p>
+        <p className="fr-admin-org__text">{t('thisWorkspaceIsOnIts')}</p>
       ) : mine === null ? (
         <Spinner />
       ) : (
         <>
-          <p className="fr-admin-org__text">
-            On its own. In an organisation, single sign-on, provisioning, verified domains, baseline policies and the audit trail are set once for many teams.
-            Its admins see who is in each workspace, not what’s on its boards.
-          </p>
+          <p className="fr-admin-org__text">{t('onItsOwnInAn')}</p>
           {mine.length ? (
             <div className="fr-admin-org__row">
               <Select<string>
-                aria-label="Organisation to join"
-                options={[{ value: '', label: 'Choose an organisation' }, ...mine.map((o): SelectOption<string> => ({ value: o.id, label: o.name }))]}
+                aria-label={t('organisationToJoin')}
+                options={[{ value: '', label: t('chooseAnOrganisation') }, ...mine.map((o): SelectOption<string> => ({ value: o.id, label: o.name }))]}
                 value={chosen}
                 onChange={setChosen}
                 width={240}
               />
-              <Button loading={busy} disabled={!chosen} onClick={() => void attach(chosen)}>
-                Attach
-              </Button>
+              <Button loading={busy} disabled={!chosen} onClick={() => void attach(chosen)}>{t('attach')}</Button>
             </div>
           ) : null}
           <form className="fr-admin-org__row" onSubmit={create}>
-            <Input aria-label="New organisation’s name" placeholder="Your company’s name" value={name} onChange={(e) => setName(e.target.value)} />
-            <Button type="submit" variant={mine.length ? 'secondary' : 'primary'} loading={busy} disabled={!name.trim()}>
-              Create organisation
-            </Button>
+            <Input aria-label={t('newOrganisationSName')} placeholder={t('yourCompanySName')} value={name} onChange={(e) => setName(e.target.value)} />
+            <Button type="submit" variant={mine.length ? 'secondary' : 'primary'} loading={busy} disabled={!name.trim()}>{t('createOrganisation')}</Button>
           </form>
         </>
       )}
@@ -129,7 +120,7 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
   const load = useCallback(() => {
     api.organisationWorkspaces(organisation.id).then(
       ({ workspaces }) => setList(workspaces),
-      (e) => notify(errorText(e, 'Could not load the workspaces'), 'error'),
+      (e) => notify(errorText(e, t('couldNotLoadTheWorkspaces')), 'error'),
     );
     api.listWorkspaces().then(
       ({ workspaces }) => setOwnTeams(workspaces.filter((w) => w.kind === 'team' && w.role === 'owner' && !w.organisation)),
@@ -146,7 +137,7 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
         const r = await api.organisationWorkspaceMembers(organisation.id, w.id);
         setMembers((m) => ({ ...m, [w.id]: r.members }));
       } catch (e) {
-        notify(errorText(e, 'Could not load its members'), 'error');
+        notify(errorText(e, t('couldNotLoadItsMembers')), 'error');
       }
   };
 
@@ -161,7 +152,7 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
       onChanged();
       return true;
     } catch (e) {
-      notify(errorText(e, 'That didn’t work'), 'error');
+      notify(errorText(e, t('thatDidnTWork')), 'error');
       return false;
     } finally {
       setBusy(false);
@@ -172,12 +163,8 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
   return (
     <section aria-labelledby="org-workspaces-title">
       <div className="fr-admin__head">
-        <h1 id="org-workspaces-title" className="fr-admin__title">
-          Workspaces
-        </h1>
-        <span className="fr-admin__muted">
-          {list.length} {list.length === 1 ? 'team workspace' : 'team workspaces'} in {organisation.name}
-        </span>
+        <h1 id="org-workspaces-title" className="fr-admin__title">{t('workspaces')}</h1>
+        <span className="fr-admin__muted">{t('lengthTeamWorkspacesInName', { length: list.length, name: organisation.name })}</span>
       </div>
       <p className="fr-admin__intro">
         Every workspace here uses the organisation’s single sign-on, provisioning and domains, gets at least its policies, and records its audit events in
@@ -188,12 +175,12 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
         <table className="fr-admin-table">
           <thead>
             <tr>
-              <th scope="col">Workspace</th>
-              <th scope="col">Owners</th>
-              <th scope="col">People</th>
-              <th scope="col">Since</th>
+              <th scope="col">{t('workspace')}</th>
+              <th scope="col">{t('owners')}</th>
+              <th scope="col">{t('people')}</th>
+              <th scope="col">{t('since')}</th>
               <th scope="col">
-                <span className="fr-admin__sr">Actions</span>
+                <span className="fr-admin__sr">{t('actions')}</span>
               </th>
             </tr>
           </thead>
@@ -203,9 +190,7 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
             ))}
             {list.length === 0 ? (
               <tr>
-                <td colSpan={5} className="fr-admin__muted">
-                  No workspace is in the organisation yet.
-                </td>
+                <td colSpan={5} className="fr-admin__muted">{t('noWorkspaceIsInThe')}</td>
               </tr>
             ) : null}
           </tbody>
@@ -213,40 +198,32 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
       </div>
 
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">Add a workspace</h2>
-        <p className="fr-admin-card__note">
-          You can add a team workspace you own. Someone else’s workspace joins when its owner, as an admin of {organisation.name}, adds it.
-        </p>
+        <h2 className="fr-admin-card__title">{t('addAWorkspace')}</h2>
+        <p className="fr-admin-card__note">{t('youCanAddATeam', { name: organisation.name })}</p>
         <div className="fr-admin-org__row fr-admin-org__row--last">
           <Select<string>
-            aria-label="Workspace to add"
+            aria-label={t('workspaceToAdd')}
             options={[
-              { value: '', label: ownTeams.length ? 'Choose one of your workspaces' : 'You own no other team workspace' },
+              { value: '', label: ownTeams.length ? t('chooseOneOfYourWorkspaces') : t('youOwnNoOtherTeam') },
               ...ownTeams.map((w): SelectOption<string> => ({ value: w.id, label: w.name })),
             ]}
             value={chosen}
             onChange={setChosen}
             width={280}
           />
-          <Button loading={busy} disabled={!chosen} onClick={() => void act(() => api.attachToOrganisation(organisation.id, chosen), 'Workspace added')}>
-            Add to {organisation.name}
-          </Button>
+          <Button loading={busy} disabled={!chosen} onClick={() => void act(() => api.attachToOrganisation(organisation.id, chosen), t('workspaceAdded'))}>{t('addToName', { name: organisation.name })}</Button>
         </div>
       </div>
 
       {organisation.role === 'owner' ? (
         <div className="fr-admin-card">
-          <h2 className="fr-admin-card__title">Delete the organisation</h2>
+          <h2 className="fr-admin-card__title">{t('deleteTheOrganisation')}</h2>
           <div className="fr-admin-row">
             <div className="fr-admin-row__text">
-              <span className="fr-admin-row__hint">
-                Its single sign-on, provisioning and audit streams go with it. Remove its workspaces first: they and their boards are never deleted with it.
-              </span>
+              <span className="fr-admin-row__hint">{t('itsSingleSignOnProvisioning')}</span>
             </div>
             <div className="fr-admin-row__control">
-              <Button variant="danger" disabled={list.length > 0} onClick={() => setDeleting(true)}>
-                Delete…
-              </Button>
+              <Button variant="danger" disabled={list.length > 0} onClick={() => setDeleting(true)}>{t('delete')}</Button>
             </div>
           </div>
         </div>
@@ -255,36 +232,31 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
       <Modal
         open={detach !== null}
         onClose={() => setDetach(null)}
-        title={`Remove ${detach?.name ?? ''} from ${organisation.name}?`}
+        title={t('removeValueFromName', { value: detach?.name ?? '', name: organisation.name })}
         width={460}
         footer={
           <>
-            <Button onClick={() => setDetach(null)}>Cancel</Button>
-            <Button variant="danger" loading={busy} onClick={() => detach && void act(() => api.detachFromOrganisation(organisation.id, detach.id), `${detach.name} is on its own again`)}>
-              Remove
-            </Button>
+            <Button onClick={() => setDetach(null)}>{t('cancel')}</Button>
+            <Button variant="danger" loading={busy} onClick={() => detach && void act(() => api.detachFromOrganisation(organisation.id, detach.id), t('nameIsOnItsOwn', { name: detach.name }))}>{t('remove')}</Button>
           </>
         }
       >
-        <p className="fr-admin__modal-text">
-          It keeps its people and boards. The organisation’s policies stop applying to it at once — its own settings apply again — and its events stop reaching
-          the organisation’s log. Its people at your domains still sign in through the organisation’s single sign-on.
-        </p>
+        <p className="fr-admin__modal-text">{t('itKeepsItsPeopleAnd')}</p>
       </Modal>
       <Modal
         open={deleting}
         onClose={() => setDeleting(false)}
-        title={`Delete ${organisation.name}?`}
+        title={t('deleteName', { name: organisation.name })}
         width={440}
         footer={
           <>
-            <Button onClick={() => setDeleting(false)}>Cancel</Button>
+            <Button onClick={() => setDeleting(false)}>{t('cancel')}</Button>
             <Button
               variant="danger"
               loading={busy}
               disabled={confirm.trim() !== organisation.name}
               onClick={() =>
-                void act(() => api.deleteOrganisation(organisation.id, confirm), `${organisation.name} was deleted`).then((ok) => {
+                void act(() => api.deleteOrganisation(organisation.id, confirm), t('nameWasDeleted', { name: organisation.name })).then((ok) => {
                   if (ok) window.location.assign('/app');
                 })
               }
@@ -294,8 +266,8 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
           </>
         }
       >
-        <p className="fr-admin__modal-text">Type its name to confirm. This can’t be undone.</p>
-        <Input aria-label="Organisation name" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={organisation.name} />
+        <p className="fr-admin__modal-text">{t('typeItsNameToConfirm')}</p>
+        <Input aria-label={t('organisationName')} value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={organisation.name} />
       </Modal>
     </section>
   );
@@ -322,7 +294,7 @@ function WorkspaceRow({
             {open ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
             <span className="fr-admin-person__name">{w.name}</span>
           </button>
-          {w.yourRole ? <div className="fr-admin__muted fr-admin-org__you">You’re {w.yourRole === 'owner' || w.yourRole === 'admin' ? 'an' : 'a'} {w.yourRole} here</div> : null}
+          {w.yourRole ? <div className="fr-admin__muted fr-admin-org__you">{t('youRe')}{' '}{w.yourRole === 'owner' || w.yourRole === 'admin' ? 'an' : 'a'}{' '}{t('yourroleHere', { yourRole: w.yourRole })}</div> : null}
         </td>
         <td>
           {w.owners.map((o) => (
@@ -334,9 +306,7 @@ function WorkspaceRow({
         <td>{w.memberCount}</td>
         <td className="fr-admin__muted fr-admin__nowrap">{day(w.attachedAt)}</td>
         <td className="fr-admin-table__actions">
-          <Button size="sm" variant="ghost" icon={Unlink} onClick={onDetach}>
-            Remove
-          </Button>
+          <Button size="sm" variant="ghost" icon={Unlink} onClick={onDetach}>{t('remove')}</Button>
         </td>
       </tr>
       {open ? (
@@ -350,7 +320,7 @@ function WorkspaceRow({
                   <li key={m.userId}>
                     <span className="fr-admin-person__name">{m.name}</span> <span className="fr-admin__muted">{m.email}</span>{' '}
                     <span className="fr-admin-role">{m.role}</span>
-                    {m.deactivated ? <span className="fr-admin-pill fr-admin-pill--off">Deactivated</span> : null}
+                    {m.deactivated ? <span className="fr-admin-pill fr-admin-pill--off">{t('deactivated')}</span> : null}
                   </li>
                 ))}
               </ul>

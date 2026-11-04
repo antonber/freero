@@ -1,0 +1,17 @@
+{
+  "couldNotReachFreeroTry": "Could not reach Freero. Try again.",
+  "couldNotJoinTheNoun": "Could not join the {noun}. Try again.",
+  "invite": "Invite",
+  "thisInviteCanTBe": "This invite can’t be used",
+  "goToYourBoards": "Go to your boards",
+  "logIn": "Log in",
+  "openingYourInvite": "Opening your invite…",
+  "loadingTheInvite": "Loading the invite",
+  "youReInvited": "You're invited",
+  "inviternameInvitedYou": "{inviterName} invited you",
+  "sentToEmail": "Sent to {email}",
+  "youReSignedInAs": "You're signed in as {email}. Joining adds this account to the {noun}.",
+  "joinNoun": "Join {noun}",
+  "createAFreeAccount": "Create a free account",
+  "iAlreadyHaveAnAccount": "I already have an account"
+}

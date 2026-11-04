@@ -4,13 +4,14 @@ import { REPORT_REASONS, type AppealInfo, type ModerationActionKind } from '@fre
 import { Button, Spinner, TextArea } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { AuthNotice, AuthShell } from '../auth/AuthShell';
+import { t } from './messages';
 import './appeal.css';
 
 const WHAT: Partial<Record<ModerationActionKind, (board: string) => string>> = {
-  'board.disable_link': (b) => `Link sharing was turned off for ${b}.`,
+  'board.disable_link': (b) => t('linkSharingWasTurnedOff', { b }),
   'board.take_down': (b) => `${b} was removed for review.`,
-  'upload.remove': () => 'A file you uploaded was removed.',
-  'user.suspend': () => 'Your account was suspended.',
+  'upload.remove': () => t('aFileYouUploadedWas'),
+  'user.suspend': () => t('yourAccountWasSuspended'),
 };
 
 const MAX_APPEAL = 4000;
@@ -33,7 +34,7 @@ export function AppealPage() {
     let live = true;
     api.appeal(token).then(
       (r) => live && setInfo(r.appeal),
-      (e) => live && setError(e instanceof ApiError ? e.message : 'Could not reach Freero. Try again.'),
+      (e) => live && setError(e instanceof ApiError ? e.message : t('couldNotReachFreeroTry')),
     );
     return () => {
       live = false;
@@ -47,7 +48,7 @@ export function AppealPage() {
       await api.submitAppeal(token, message.trim());
       setSent(true);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Your appeal could not be sent. Try again.');
+      setError(e instanceof ApiError ? e.message : t('yourAppealCouldNotBe'));
     } finally {
       setBusy(false);
     }
@@ -55,45 +56,43 @@ export function AppealPage() {
 
   if (!info)
     return (
-      <AuthShell docTitle="Appeal" title={error ? 'That link didn’t work' : 'Loading…'}>
-        {error ? <AuthNotice kind="error">{error}</AuthNotice> : <Spinner size={22} label="Loading" />}
+      <AuthShell docTitle={t('appeal')} title={error ? t('thatLinkDidnTWork') : t('loading')}>
+        {error ? <AuthNotice kind="error">{error}</AuthNotice> : <Spinner size={22} label={t('loading2')} />}
       </AuthShell>
     );
 
-  const board = info.boardTitle ? `“${info.boardTitle}”` : 'Your board';
+  const board = info.boardTitle ? `“${info.boardTitle}”` : t('yourBoard');
   const reason = REPORT_REASONS.find((r) => r.id === info.reason)?.label ?? 'Other';
   return (
-    <AuthShell docTitle="Appeal" title="Appeal a moderation decision">
+    <AuthShell docTitle={t('appeal')} title={t('appealAModerationDecision')}>
       <div className="fr-appeal__decision">
-        <p className="fr-appeal__what">{WHAT[info.action]?.(board) ?? 'Freero’s moderators acted on something of yours.'}</p>
+        <p className="fr-appeal__what">{WHAT[info.action]?.(board) ?? t('freeroSModeratorsActedOn')}</p>
         <dl className="fr-appeal__facts">
-          <dt>Reason</dt>
+          <dt>{t('reason')}</dt>
           <dd>{reason}</dd>
-          <dt>When</dt>
+          <dt>{t('when')}</dt>
           <dd>{new Date(info.createdAt).toLocaleString()}</dd>
         </dl>
         {info.statement && <blockquote className="fr-appeal__statement">{info.statement}</blockquote>}
       </div>
       {info.reversed ? (
-        <AuthNotice kind="success">This decision was reversed. There is nothing to appeal.</AuthNotice>
+        <AuthNotice kind="success">{t('thisDecisionWasReversedThere')}</AuthNotice>
       ) : sent || info.pending ? (
         <AuthNotice kind="success">
-          {sent ? 'Thanks. A moderator will review your appeal and email you the outcome.' : 'Your appeal is waiting for a moderator. We’ll email you the outcome.'}
+          {sent ? t('thanksAModeratorWillReview') : t('yourAppealIsWaitingFor')}
         </AuthNotice>
       ) : (
         <>
           <TextArea
-            label="Why is this a mistake?"
+            label={t('whyIsThisAMistake')}
             value={message}
             maxLength={MAX_APPEAL}
             rows={5}
-            placeholder="Explain what the content is and why it doesn’t break the rules"
+            placeholder={t('explainWhatTheContentIs')}
             onChange={(e) => setMessage(e.target.value)}
           />
           {error && <AuthNotice kind="error">{error}</AuthNotice>}
-          <Button variant="primary" size="lg" className="fr-appeal__send" onClick={send} disabled={!message.trim()} loading={busy}>
-            Send appeal
-          </Button>
+          <Button variant="primary" size="lg" className="fr-appeal__send" onClick={send} disabled={!message.trim()} loading={busy}>{t('sendAppeal')}</Button>
         </>
       )}
     </AuthShell>

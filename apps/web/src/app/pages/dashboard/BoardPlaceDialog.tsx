@@ -9,6 +9,7 @@ import { Button, Modal, Select } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { workspaceLabel } from './useWorkspaces';
 
+import { t } from './messages';
 const NO_PROJECT = '';
 
 /** What a move turned off, in words for the toast (empty: nothing). */
@@ -22,7 +23,7 @@ export function adjustmentText(adjusted: MoveAdjustment[]): string {
           ? 'embedding on other sites was turned off'
           : `${a.count} linked ${a.count === 1 ? 'issue stopped' : 'issues stopped'} syncing`,
   );
-  return parts.length ? ` The new workspace’s policies apply: ${parts.join(', ')}.` : '';
+  return parts.length ? t('theNewWorkspaceSPolicies', { parts: parts.join(', ') }) : '';
 }
 
 export function BoardPlaceDialog({
@@ -63,7 +64,7 @@ export function BoardPlaceDialog({
     };
   }, [ws]);
 
-  const title = board.title || 'Untitled board';
+  const title = board.title || t('untitledBoard');
   const go = async () => {
     if (!ws) return;
     setBusy(true);
@@ -75,10 +76,10 @@ export function BoardPlaceDialog({
       } else {
         const { board: moved, adjusted } = await api.moveBoard(board.id, { workspaceId: ws, projectId: project || null });
         const name = workspaceLabel(targets.find((w) => w.id === ws)!);
-        onDone(moved, `Moved “${title}” to ${name}.${adjustmentText(adjusted)}`);
+        onDone(moved, t('movedTitleToNameAdjustmenttext', { title, name, adjustmentText: adjustmentText(adjusted) }));
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : mode === 'duplicate' ? 'Could not duplicate the board' : 'Could not move the board');
+      setError(e instanceof ApiError ? e.message : mode === 'duplicate' ? t('couldNotDuplicateTheBoard') : t('couldNotMoveTheBoard'));
     } finally {
       setBusy(false);
     }
@@ -88,20 +89,18 @@ export function BoardPlaceDialog({
     <Modal
       open
       onClose={busy ? () => undefined : onClose}
-      title={mode === 'duplicate' ? `Duplicate “${title}”` : `Move “${title}” to another workspace`}
+      title={mode === 'duplicate' ? t('duplicateTitle', { title }) : t('moveTitleToAnotherWorkspace', { title })}
       description={
         mode === 'duplicate'
-          ? 'The copy is yours, with the board’s content as it is now. Its sharing starts private.'
+          ? t('theCopyIsYoursWith')
           : 'It keeps its link, comments, files and history. People who had access through its current workspace lose it; people invited to the board keep their access as the new workspace allows.'
       }
       width={520}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
+          <Button onClick={onClose} disabled={busy}>{t('cancel')}</Button>
           <Button variant="primary" icon={mode === 'duplicate' ? Copy : FolderInput} loading={busy} disabled={!ws} onClick={() => void go()}>
-            {mode === 'duplicate' ? 'Duplicate' : 'Move board'}
+            {mode === 'duplicate' ? t('duplicate2') : t('moveBoard')}
           </Button>
         </>
       }
@@ -110,21 +109,21 @@ export function BoardPlaceDialog({
         {targets.length ? (
           <div className="fr-dash-restore__place">
             <label>
-              <span>Workspace</span>
-              <Select<string> aria-label="Workspace" options={targets.map((w) => ({ value: w.id, label: workspaceLabel(w) }))} value={ws} onChange={setWs} />
+              <span>{t('workspace')}</span>
+              <Select<string> aria-label={t('workspace')} options={targets.map((w) => ({ value: w.id, label: workspaceLabel(w) }))} value={ws} onChange={setWs} />
             </label>
             <label>
-              <span>Project</span>
+              <span>{t('project')}</span>
               <Select<string>
-                aria-label="Project"
-                options={[{ value: NO_PROJECT, label: 'No project' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+                aria-label={t('project')}
+                options={[{ value: NO_PROJECT, label: t('noProject') }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
                 value={project}
                 onChange={setProject}
               />
             </label>
           </div>
         ) : (
-          <p className="fr-dash-restore__error">{mode === 'duplicate' ? 'You can’t create boards in any of your workspaces.' : 'You’re not a member of another workspace where you can create boards.'}</p>
+          <p className="fr-dash-restore__error">{mode === 'duplicate' ? t('youCanTCreateBoards') : t('youReNotAMember')}</p>
         )}
         {error ? (
           <p className="fr-dash-restore__error" role="alert">

@@ -9,6 +9,7 @@
 import { useEffect } from 'react';
 import { useToast } from '@ui';
 
+import { t } from '../messages';
 /** How often an open tab asks whether a new version was deployed (ms). */
 const UPDATE_CHECK_MS = 30 * 60 * 1000;
 const RELOADED_KEY = 'freero:reloaded-for-update';
@@ -52,10 +53,10 @@ export function AppUpdates() {
     const offer = (worker: ServiceWorker) => {
       if (stopped || offers.has(worker) || !navigator.serviceWorker.controller) return; // first install: nothing to replace
       offers.add(worker);
-      notify('A new version of Freero is ready.', 'info', {
+      notify(t('aNewVersionOfFreero'), 'info', {
         duration: 0,
         action: {
-          label: 'Reload',
+          label: t('reload'),
           onClick: () => {
             navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), { once: true });
             worker.postMessage({ type: 'SKIP_WAITING' });

@@ -5,6 +5,7 @@ import { IconButton, Menu } from '@ui';
 import { openCookieSettings, useAnalyticsEnabled } from '../analytics/bridge';
 import { PROBLEM_SHORTCUT, useProblemReport } from './ProblemReport';
 
+import { t } from '../messages';
 export function HelpMenu({ size = 40, className }: { size?: 32 | 40; className?: string }) {
   const { open, available } = useProblemReport();
   const ref = useRef<HTMLButtonElement>(null);
@@ -12,19 +13,19 @@ export function HelpMenu({ size = 40, className }: { size?: 32 | 40; className?:
   const analytics = useAnalyticsEnabled();
   return (
     <>
-      <IconButton ref={ref} className={className} size={size} icon={CircleHelp} label="Help" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((o) => !o)} />
+      <IconButton ref={ref} className={className} size={size} icon={CircleHelp} label={t('help')} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((o) => !o)} />
       <Menu
         open={menu}
         onClose={() => setMenu(false)}
         anchor={ref.current}
         align="end"
         minWidth={230}
-        aria-label="Help"
+        aria-label={t('help')}
         items={[
-          ...(available ? [{ id: 'problem', label: 'Report a problem…', icon: MessageSquareWarning, shortcut: PROBLEM_SHORTCUT, onSelect: () => open() }] : []),
-          { id: 'support', label: 'Help and support', icon: LifeBuoy, onSelect: () => window.open('/support', '_blank', 'noopener') },
+          ...(available ? [{ id: 'problem', label: t('reportAProblem2'), icon: MessageSquareWarning, shortcut: PROBLEM_SHORTCUT, onSelect: () => open() }] : []),
+          { id: 'support', label: t('helpAndSupport'), icon: LifeBuoy, onSelect: () => window.open('/support', '_blank', 'noopener') },
           // Where Google Analytics is on: change the consent choice (the banner, focused).
-          ...(analytics ? [{ id: 'cookies', label: 'Cookie settings', icon: Cookie, onSelect: () => openCookieSettings(ref.current) }] : []),
+          ...(analytics ? [{ id: 'cookies', label: t('cookieSettings'), icon: Cookie, onSelect: () => openCookieSettings(ref.current) }] : []),
         ]}
       />
     </>

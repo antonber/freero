@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { loginPath } from '../../lib/nav';
 import { AuthNotice, AuthShell } from '../auth/AuthShell';
 
+import { t } from './messages';
 /** /unsubscribe?token= — the link at the bottom of notification emails. Works signed out too. */
 export function UnsubscribePage() {
   const [params] = useSearchParams();
@@ -14,7 +15,7 @@ export function UnsubscribePage() {
   const list = params.get('list') ?? undefined;
   const { user } = useAuth();
   const [state, setState] = useState<{ status: 'working' } | { status: 'done'; email: string } | { status: 'failed'; message: string }>(
-    token ? { status: 'working' } : { status: 'failed', message: 'This link is incomplete. Open the link from the email again.' },
+    token ? { status: 'working' } : { status: 'failed', message: t('thisLinkIsIncompleteOpen') },
   );
 
   useEffect(() => {
@@ -23,7 +24,7 @@ export function UnsubscribePage() {
     // Idempotent on the server, so a re-run effect (StrictMode) is harmless.
     api.unsubscribe(token, list).then(
       (r) => live && setState({ status: 'done', email: r.email }),
-      (err) => live && setState({ status: 'failed', message: err instanceof ApiError ? err.message : 'Could not reach Freero. Try again.' }),
+      (err) => live && setState({ status: 'failed', message: err instanceof ApiError ? err.message : t('couldNotReachFreeroTry') }),
     );
     return () => {
       live = false;
@@ -32,23 +33,23 @@ export function UnsubscribePage() {
 
   if (state.status === 'working')
     return (
-      <AuthShell docTitle="Unsubscribe" title="Unsubscribing…">
-        <Spinner size={22} label="Unsubscribing" />
+      <AuthShell docTitle={t('unsubscribe')} title={t('unsubscribing')}>
+        <Spinner size={22} label={t('unsubscribing2')} />
       </AuthShell>
     );
   return (
-    <AuthShell docTitle="Unsubscribe" title={state.status === 'done' ? 'You’re unsubscribed' : 'That link didn’t work'}>
+    <AuthShell docTitle={t('unsubscribe')} title={state.status === 'done' ? t('youReUnsubscribed') : t('thatLinkDidnTWork')}>
       {state.status === 'done' ? (
         <AuthNotice kind="success">
           {list === 'board-changes'
-            ? `${state.email} won’t get the “changes on your boards” summary any more. Other emails are unchanged.`
-            : `${state.email} won’t get notification emails any more. You’ll still see mentions and replies in Freero.`}
+            ? t('emailWonTGetThe', { email: state.email })
+            : t('emailWonTGetNotification', { email: state.email })}
         </AuthNotice>
       ) : (
         <AuthNotice kind="error">{state.message}</AuthNotice>
       )}
       <p className="fr-authcard__switch">
-        {user ? <Link to="/settings#notifications">Choose which emails you get</Link> : <Link to={loginPath('/settings')}>Log in to choose which emails you get</Link>}
+        {user ? <Link to="/settings#notifications">{t('chooseWhichEmailsYouGet')}</Link> : <Link to={loginPath('/settings')}>{t('logInToChooseWhich')}</Link>}
       </p>
     </AuthShell>
   );

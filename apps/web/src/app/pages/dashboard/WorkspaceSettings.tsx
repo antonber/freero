@@ -7,6 +7,7 @@ import type { WorkspaceMember, WorkspaceSummary } from '@freero/shared';
 import { Button, Input, Modal, Select, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 
+import { t } from './messages';
 export function WorkspaceSettings({
   workspace,
   onChanged,
@@ -45,9 +46,9 @@ export function WorkspaceSettings({
     setSaving(true);
     try {
       onChanged((await api.updateWorkspace(workspace.id, { name: name.trim() })).workspace);
-      notify('Workspace renamed', 'success');
+      notify(t('workspaceRenamed'), 'success');
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not rename the workspace', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotRenameTheWorkspace'), 'error');
     } finally {
       setSaving(false);
     }
@@ -59,9 +60,9 @@ export function WorkspaceSettings({
     try {
       onChanged((await api.transferWorkspace(workspace.id, heir)).workspace);
       setConfirmTransfer(false);
-      notify('Ownership transferred. You are now an admin.', 'success');
+      notify(t('ownershipTransferredYouAreNow'), 'success');
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not transfer the workspace', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotTransferTheWorkspace'), 'error');
     } finally {
       setBusy(false);
     }
@@ -71,10 +72,10 @@ export function WorkspaceSettings({
     setBusy(true);
     try {
       await api.deleteWorkspace(workspace.id, confirmName);
-      notify(`Deleted ${workspace.name}`, 'info');
+      notify(t('deletedName', { name: workspace.name }), 'info');
       onDeleted();
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not delete the workspace', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotDeleteTheWorkspace'), 'error');
       setBusy(false);
     }
   };
@@ -83,61 +84,51 @@ export function WorkspaceSettings({
   const heirName = heirs.find((m) => m.userId === heir)?.name;
 
   return (
-    <section className="fr-dash-page" aria-label="Workspace settings">
+    <section className="fr-dash-page" aria-label={t('workspaceSettings')}>
       <header className="fr-dash-page__head">
-        <h1 className="fr-collection__title">Workspace settings</h1>
+        <h1 className="fr-collection__title">{t('workspaceSettings')}</h1>
       </header>
 
       <form className="fr-dash-settings__block" onSubmit={rename}>
-        <h2 className="fr-dash-settings__title">Name</h2>
+        <h2 className="fr-dash-settings__title">{t('name')}</h2>
         <div className="fr-dash-settings__row">
-          <Input aria-label="Workspace name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
-          <Button type="submit" loading={saving} disabled={!name.trim() || name.trim() === workspace.name}>
-            Save
-          </Button>
+          <Input aria-label={t('workspaceName')} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+          <Button type="submit" loading={saving} disabled={!name.trim() || name.trim() === workspace.name}>{t('save')}</Button>
         </div>
       </form>
 
       <div className="fr-dash-settings__block">
-        <h2 className="fr-dash-settings__title">Security, sharing and retention</h2>
-        <p className="fr-dash-settings__hint">
-          Sharing policies, two-step verification, session limits, single sign-on, provisioning, data retention and export, and the audit log live in the
-          admin console.
-        </p>
+        <h2 className="fr-dash-settings__title">{t('securitySharingAndRetention')}</h2>
+        <p className="fr-dash-settings__hint">{t('sharingPoliciesTwoStepVerification')}</p>
         <div className="fr-dash-settings__row">
           <Link to={`/admin/${encodeURIComponent(workspace.id)}?tab=security`} className="fr-dash-settings__link">
-            <ShieldCheck size={16} aria-hidden /> Open the admin console
-          </Link>
+            <ShieldCheck size={16} aria-hidden />{' '}{t('openTheAdminConsole')}</Link>
         </div>
       </div>
 
       {owner ? (
         <>
           <div className="fr-dash-settings__block">
-            <h2 className="fr-dash-settings__title">Ownership</h2>
+            <h2 className="fr-dash-settings__title">{t('ownership')}</h2>
             <p className="fr-dash-settings__hint">Hand the workspace to another member. They become an owner; you stay on as an admin.</p>
             <div className="fr-dash-settings__row">
               <Select<string>
-                aria-label="New owner"
-                options={[{ value: '', label: heirs.length ? 'Choose a member' : 'No members yet', disabled: true }, ...heirs.map((m) => ({ value: m.userId, label: m.name, description: m.email }))]}
+                aria-label={t('newOwner')}
+                options={[{ value: '', label: heirs.length ? t('chooseAMember') : t('noMembersYet'), disabled: true }, ...heirs.map((m) => ({ value: m.userId, label: m.name, description: m.email }))]}
                 value={heir}
                 onChange={setHeir}
                 width={260}
               />
-              <Button icon={Crown} disabled={!heir} onClick={() => setConfirmTransfer(true)}>
-                Transfer ownership
-              </Button>
+              <Button icon={Crown} disabled={!heir} onClick={() => setConfirmTransfer(true)}>{t('transferOwnership')}</Button>
             </div>
           </div>
 
           <div className="fr-dash-settings__block fr-dash-settings__block--danger">
-            <h2 className="fr-dash-settings__title">Delete workspace</h2>
+            <h2 className="fr-dash-settings__title">{t('deleteWorkspace')}</h2>
             <p className="fr-dash-settings__hint">
               Deletes the workspace and every board in it, for everyone. This can’t be undone. Export it first if you need a copy; every owner gets a receipt.
             </p>
-            <Button variant="danger" icon={Trash2} onClick={() => setDeleting(true)}>
-              Delete workspace…
-            </Button>
+            <Button variant="danger" icon={Trash2} onClick={() => setDeleting(true)}>{t('deleteWorkspace2')}</Button>
           </div>
         </>
       ) : null}
@@ -145,36 +136,32 @@ export function WorkspaceSettings({
       <Modal
         open={confirmTransfer}
         onClose={() => setConfirmTransfer(false)}
-        title={`Make ${heirName ?? 'them'} the owner?`}
+        title={t('makeValueTheOwner', { value: heirName ?? t('them') })}
         width={420}
         footer={
           <>
-            <Button onClick={() => setConfirmTransfer(false)}>Cancel</Button>
-            <Button variant="primary" loading={busy} onClick={transfer}>
-              Transfer
-            </Button>
+            <Button onClick={() => setConfirmTransfer(false)}>{t('cancel')}</Button>
+            <Button variant="primary" loading={busy} onClick={transfer}>{t('transfer')}</Button>
           </>
         }
       >
-        <p style={{ margin: 0, color: 'var(--fr-ink-2)' }}>You’ll become an admin of {workspace.name}. Only an owner can make you owner again.</p>
+        <p style={{ margin: 0, color: 'var(--fr-ink-2)' }}>{t('youLlBecomeAnAdmin', { name: workspace.name })}</p>
       </Modal>
 
       <Modal
         open={deleting}
         onClose={() => setDeleting(false)}
-        title={`Delete ${workspace.name}?`}
+        title={t('deleteName', { name: workspace.name })}
         width={440}
         footer={
           <>
-            <Button onClick={() => setDeleting(false)}>Cancel</Button>
-            <Button variant="danger" loading={busy} disabled={confirmName.trim() !== workspace.name} onClick={remove}>
-              Delete forever
-            </Button>
+            <Button onClick={() => setDeleting(false)}>{t('cancel')}</Button>
+            <Button variant="danger" loading={busy} disabled={confirmName.trim() !== workspace.name} onClick={remove}>{t('deleteForever')}</Button>
           </>
         }
       >
-        <p style={{ margin: '0 0 12px', color: 'var(--fr-ink-2)' }}>Every board in it is deleted for everyone. Type the workspace name to confirm.</p>
-        <Input aria-label="Workspace name to confirm" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={workspace.name} />
+        <p style={{ margin: '0 0 12px', color: 'var(--fr-ink-2)' }}>{t('everyBoardInItIs')}</p>
+        <Input aria-label={t('workspaceNameToConfirm')} value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={workspace.name} />
       </Modal>
     </section>
   );

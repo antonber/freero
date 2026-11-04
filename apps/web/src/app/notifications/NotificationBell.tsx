@@ -15,6 +15,7 @@ import {
   retainLiveConnection,
   useNotifications,
 } from './store';
+import { t } from '../messages';
 import './notifications.css';
 
 const TYPE_ICON: Record<NotificationType, typeof Bell> = {
@@ -37,12 +38,12 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
 
 type GrantRole = Exclude<Role, 'owner'>;
 const GRANT_OPTIONS: SelectOption<GrantRole>[] = [
-  { value: 'editor', label: 'Can edit' },
-  { value: 'commenter', label: 'Can comment' },
-  { value: 'viewer', label: 'Can view' },
+  { value: 'editor', label: t('canEdit') },
+  { value: 'commenter', label: t('canComment') },
+  { value: 'viewer', label: t('canView') },
 ];
-const GRANT_LABEL: Record<GrantRole, string> = { editor: 'can edit', commenter: 'can comment', viewer: 'can view' };
-const OUTCOME: Record<string, string> = { approved: 'Approved', denied: 'Declined', withdrawn: 'No longer waiting' };
+const GRANT_LABEL: Record<GrantRole, string> = { editor: t('canEdit2'), commenter: t('canComment2'), viewer: t('canView2') };
+const OUTCOME: Record<string, string> = { approved: 'Approved', denied: 'Declined', withdrawn: t('noLongerWaiting') };
 
 const badgeText = (n: number) => (n > 99 ? '99+' : String(n));
 
@@ -59,7 +60,7 @@ export function NotificationBell({ size = 40, side = 'bottom' }: { size?: 32 | 4
   }, [open]);
 
   if (!user) return null;
-  const label = unread ? `Notifications (${unread} unread)` : 'Notifications';
+  const label = unread ? t('notificationsUnreadUnread', { unread }) : 'Notifications';
   return (
     <>
       <IconButton ref={ref} icon={Bell} label={label} size={size} active={open} onClick={() => setOpen((o) => !o)} className="fr-notif-bell">
@@ -69,7 +70,7 @@ export function NotificationBell({ size = 40, side = 'bottom' }: { size?: 32 | 4
           </span>
         )}
       </IconButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side={side} align="end" width={380} aria-label="Notifications">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side={side} align="end" width={380} aria-label={t('notifications')}>
         <Inbox onNavigate={() => setOpen(false)} />
       </Popover>
     </>
@@ -90,17 +91,15 @@ function Inbox({ onNavigate }: { onNavigate: () => void }) {
   return (
     <div className="fr-notif">
       <div className="fr-notif__head">
-        <h2 className="fr-notif__title">Notifications</h2>
+        <h2 className="fr-notif__title">{t('notifications')}</h2>
         {unread > 0 && (
-          <Button size="sm" variant="ghost" icon={CheckCheck} onClick={() => void markNotificationsRead()}>
-            Mark all as read
-          </Button>
+          <Button size="sm" variant="ghost" icon={CheckCheck} onClick={() => void markNotificationsRead()}>{t('markAllAsRead')}</Button>
         )}
       </div>
       <div className="fr-notif__list" role="list">
         {items === null ? (
           error ? (
-            <p className="fr-notif__empty">Notifications couldn’t be loaded. Try again in a moment.</p>
+            <p className="fr-notif__empty">{t('notificationsCouldnTBeLoaded')}</p>
           ) : (
             <div className="fr-notif__loading">
               <Spinner size={20} />
@@ -109,23 +108,20 @@ function Inbox({ onNavigate }: { onNavigate: () => void }) {
         ) : items.length === 0 ? (
           <div className="fr-notif__empty">
             <Bell size={22} aria-hidden />
-            <p>Nothing new. Mentions, replies to your comments, boards shared with you and access requests show up here.</p>
+            <p>{t('nothingNewMentionsRepliesTo')}</p>
           </div>
         ) : (
           items.map((n) => <Item key={n.id} n={n} now={now} onOpen={() => openItem(n)} />)
         )}
         {hasMore && (
           <div className="fr-notif__more">
-            <Button size="sm" variant="ghost" loading={loading} onClick={() => void loadMoreNotifications()}>
-              Show older
-            </Button>
+            <Button size="sm" variant="ghost" loading={loading} onClick={() => void loadMoreNotifications()}>{t('showOlder')}</Button>
           </div>
         )}
       </div>
       <div className="fr-notif__foot">
         <Link to="/settings#notifications" className="fr-notif__settings" onClick={onNavigate}>
-          <Settings size={14} aria-hidden /> Email settings
-        </Link>
+          <Settings size={14} aria-hidden />{' '}{t('emailSettings')}</Link>
       </div>
     </div>
   );
@@ -146,7 +142,7 @@ function Item({ n, now, onOpen }: { n: AppNotification; now: number; onOpen: () 
         {n.body ? <span className="fr-notif-item__body">{n.body}</span> : null}
         <span className="fr-notif-item__time">{relativeTime(n.createdAt, now)}</span>
       </span>
-      {!n.readAt && <span className="fr-notif-item__dot" aria-label="Unread" />}
+      {!n.readAt && <span className="fr-notif-item__dot" aria-label={t('unread')} />}
     </button>
   );
   if (!n.accessRequest || !n.boardId || !n.actor) return button;
@@ -181,12 +177,12 @@ function RequestActions({
     setBusy(decision);
     try {
       await api.decideAccessRequest(boardId, requester.id, decision, decision === 'approve' ? role : undefined);
-      setDone(decision === 'approve' ? `Approved · ${GRANT_LABEL[role]}` : 'Declined');
+      setDone(decision === 'approve' ? t('approvedGrantLabel', { grant_label: GRANT_LABEL[role] }) : t('declined'));
       // Answered: nothing left to look at.
       if (unread) await markNotificationsRead([id]);
       void loadNotifications();
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not answer the request', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotAnswerTheRequest'), 'error');
       void loadNotifications();
     } finally {
       setBusy(null);
@@ -199,19 +195,15 @@ function RequestActions({
       (request.status === 'approved' && request.decidedRole
         ? `Approved · ${GRANT_LABEL[request.decidedRole]}`
         : request.status === 'pending'
-          ? 'Waiting for the board’s owner'
+          ? t('waitingForTheBoardS')
           : OUTCOME[request.status]);
     return <div className="fr-notif-req__outcome">{label}</div>;
   }
   return (
     <div className="fr-notif-req__actions">
-      <Select<GrantRole> aria-label={`Let ${requester.name} in as`} size="sm" options={GRANT_OPTIONS} value={role} onChange={setRole} width={136} />
-      <Button size="sm" variant="primary" loading={busy === 'approve'} disabled={busy !== null} onClick={() => void decide('approve')}>
-        Approve
-      </Button>
-      <Button size="sm" variant="ghost" loading={busy === 'deny'} disabled={busy !== null} onClick={() => void decide('deny')}>
-        Decline
-      </Button>
+      <Select<GrantRole> aria-label={t('letNameInAs', { name: requester.name })} size="sm" options={GRANT_OPTIONS} value={role} onChange={setRole} width={136} />
+      <Button size="sm" variant="primary" loading={busy === 'approve'} disabled={busy !== null} onClick={() => void decide('approve')}>{t('approve')}</Button>
+      <Button size="sm" variant="ghost" loading={busy === 'deny'} disabled={busy !== null} onClick={() => void decide('deny')}>{t('decline')}</Button>
     </div>
   );
 }

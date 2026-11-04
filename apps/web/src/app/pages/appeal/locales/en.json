@@ -1,0 +1,22 @@
+{
+  "linkSharingWasTurnedOff": "Link sharing was turned off for {b}.",
+  "aFileYouUploadedWas": "A file you uploaded was removed.",
+  "yourAccountWasSuspended": "Your account was suspended.",
+  "couldNotReachFreeroTry": "Could not reach Freero. Try again.",
+  "yourAppealCouldNotBe": "Your appeal could not be sent. Try again.",
+  "appeal": "Appeal",
+  "thatLinkDidnTWork": "That link didn’t work",
+  "loading": "Loading…",
+  "loading2": "Loading",
+  "yourBoard": "Your board",
+  "appealAModerationDecision": "Appeal a moderation decision",
+  "freeroSModeratorsActedOn": "Freero’s moderators acted on something of yours.",
+  "reason": "Reason",
+  "when": "When",
+  "thisDecisionWasReversedThere": "This decision was reversed. There is nothing to appeal.",
+  "thanksAModeratorWillReview": "Thanks. A moderator will review your appeal and email you the outcome.",
+  "yourAppealIsWaitingFor": "Your appeal is waiting for a moderator. We’ll email you the outcome.",
+  "whyIsThisAMistake": "Why is this a mistake?",
+  "explainWhatTheContentIs": "Explain what the content is and why it doesn’t break the rules",
+  "sendAppeal": "Send appeal"
+}

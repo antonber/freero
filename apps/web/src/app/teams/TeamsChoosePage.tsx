@@ -14,6 +14,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { signInFromWindow } from '../embed/EmbedConnectPage';
 import { connectTeams, finishTeamsSignIn, type TeamsInfo } from './teamsSdk';
+import { t as tr } from '../messages';
 import '../board/BoardPage.css';
 import './teams.css';
 
@@ -87,7 +88,7 @@ export default function TeamsChoosePage() {
       await api.updateBoard(picked.id, { embeddable: true });
       setEmbedding('on');
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not reach Freero.');
+      setError(e instanceof ApiError ? e.message : tr('couldNotReachFreero'));
     } finally {
       setBusy(false);
     }
@@ -102,29 +103,27 @@ export default function TeamsChoosePage() {
       const result: TeamsChooseResult = { boardId: picked.id, title: picked.title, token, expiresAt };
       finishTeamsSignIn(JSON.stringify(result));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not reach Freero.');
+      setError(e instanceof ApiError ? e.message : tr('couldNotReachFreero'));
       setBusy(false);
     }
   }, [picked]);
 
   const options = useMemo(() => workspaces.map((w) => ({ value: w.id, label: w.name })), [workspaces]);
 
-  if (teams === undefined || loading) return <Shell><Spinner size={22} label="Connecting to Teams" /></Shell>;
+  if (teams === undefined || loading) return <Shell><Spinner size={22} label={tr('connectingToTeams')} /></Shell>;
   if (teams === null)
     return (
-      <Shell title="Open this from Microsoft Teams">
-        <p>This window picks a Freero board for a Teams tab. Use “Choose from your boards” when you add Freero in Teams.</p>
+      <Shell title={tr('openThisFromMicrosoftTeams')}>
+        <p>{tr('thisWindowPicksAFreero')}</p>
       </Shell>
     );
   if (!user)
     return (
-      <Shell title="Sign in to Freero">
-        <p>Sign in to choose one of your boards for Teams.{signInHere ? '' : ' A new tab opens; come back here when you’re signed in.'}</p>
+      <Shell title={tr('signInToFreero')}>
+        <p>{tr('signInToChooseOne')}{signInHere ? '' : ' A new tab opens; come back here when you’re signed in.'}</p>
         <div className="fr-boarderror__actions">
-          <Button variant="primary" onClick={() => signInFromWindow('login', signInHere)}>
-            Sign in
-          </Button>
-          <Button onClick={() => signInFromWindow('signup', signInHere)}>Create an account</Button>
+          <Button variant="primary" onClick={() => signInFromWindow('login', signInHere)}>{tr('signIn')}</Button>
+          <Button onClick={() => signInFromWindow('signup', signInHere)}>{tr('createAnAccount')}</Button>
         </div>
       </Shell>
     );
@@ -134,24 +133,24 @@ export default function TeamsChoosePage() {
     <div className="fr-teams-choose">
       <div className="fr-teams-config__head">
         <Logo size={28} />
-        <h1>Choose a board for Teams</h1>
+        <h1>{tr('chooseABoardForTeams')}</h1>
       </div>
       <div className="fr-teams-choose__filters">
-        {options.length > 1 ? <Select value={workspace} options={options} onChange={(v) => setWorkspace(v)} aria-label="Workspace" /> : null}
-        <Input icon={Search} placeholder="Search your boards" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search your boards" />
+        {options.length > 1 ? <Select value={workspace} options={options} onChange={(v) => setWorkspace(v)} aria-label={tr('workspace')} /> : null}
+        <Input icon={Search} placeholder={tr('searchYourBoards')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={tr('searchYourBoards')} />
       </div>
-      <ul className="fr-teams-choose__list" aria-label="Your boards">
+      <ul className="fr-teams-choose__list" aria-label={tr('yourBoards')}>
         {boards === null ? (
           <li className="fr-teams-choose__empty">
-            <Spinner size={18} label="Loading your boards" />
+            <Spinner size={18} label={tr('loadingYourBoards')} />
           </li>
         ) : boards.length === 0 ? (
-          <li className="fr-teams-choose__empty">{q ? 'No boards match.' : 'No boards here yet.'}</li>
+          <li className="fr-teams-choose__empty">{q ? tr('noBoardsMatch') : tr('noBoardsHereYet')}</li>
         ) : (
           boards.map((b) => (
             <li key={b.id}>
               <button type="button" className={`fr-teams-choose__item${picked?.id === b.id ? ' is-picked' : ''}`} aria-pressed={picked?.id === b.id} onClick={() => void pick(b)}>
-                <span className="fr-teams-choose__title">{b.title || 'Untitled board'}</span>
+                <span className="fr-teams-choose__title">{b.title || tr('untitledBoard')}</span>
                 <span className="fr-teams-choose__meta">{b.ownerName}</span>
                 {picked?.id === b.id ? <Check size={16} aria-hidden /> : null}
               </button>
@@ -160,23 +159,19 @@ export default function TeamsChoosePage() {
         )}
       </ul>
       <div className="fr-teams-choose__foot" aria-live="polite">
-        {picked && embedding === 'checking' ? <Spinner size={18} label="Checking the board" /> : null}
+        {picked && embedding === 'checking' ? <Spinner size={18} label={tr('checkingTheBoard')} /> : null}
         {picked && embedding === 'off' ? (
           <p className="fr-teams-warn">
-            {owner ? 'Teams shows a board through its embed, which is off for this board. Turn it on? What people see still follows the board’s sharing.' : 'Its owner hasn’t turned on Embed for this board, so it can’t be shown in Teams. Ask them to turn it on in the board’s Share dialog.'}
+            {owner ? tr('teamsShowsABoardThrough') : tr('itsOwnerHasnTTurned2')}
           </p>
         ) : null}
-        {picked && embedding === 'error' ? <p className="fr-teams-warn">Freero couldn’t be reached. Try again.</p> : null}
+        {picked && embedding === 'error' ? <p className="fr-teams-warn">{tr('freeroCouldnTBeReached2')}</p> : null}
         {error ? <p className="fr-teams-warn">{error}</p> : null}
         <div className="fr-boarderror__actions">
           {picked && embedding === 'off' && owner ? (
-            <Button loading={busy} onClick={() => void turnOnEmbedding()}>
-              Turn on embedding
-            </Button>
+            <Button loading={busy} onClick={() => void turnOnEmbedding()}>{tr('turnOnEmbedding')}</Button>
           ) : null}
-          <Button variant="primary" loading={busy && embedding === 'on'} disabled={!picked || embedding !== 'on'} onClick={() => void done()}>
-            Use this board
-          </Button>
+          <Button variant="primary" loading={busy && embedding === 'on'} disabled={!picked || embedding !== 'on'} onClick={() => void done()}>{tr('useThisBoard')}</Button>
         </div>
       </div>
     </div>

@@ -11,19 +11,20 @@ import { LinkedFrom } from './LinkedFrom';
 import { LinkProtection } from './LinkProtection';
 import { ShareGroups } from './ShareGroups';
 import { SharingSettings } from './SharingSettings';
+import { t } from '../messages';
 import './ShareDialog.css';
 
 type InviteRole = Exclude<Role, 'owner'>;
 
 const ROLE_OPTIONS: SelectOption<InviteRole>[] = [
-  { value: 'editor', label: 'Can edit', description: 'Add and change anything on the board' },
-  { value: 'commenter', label: 'Can comment', description: 'View and leave comments' },
-  { value: 'viewer', label: 'Can view', description: 'Look around, no changes' },
+  { value: 'editor', label: t('canEdit'), description: t('addAndChangeAnythingOn') },
+  { value: 'commenter', label: t('canComment'), description: t('viewAndLeaveComments') },
+  { value: 'viewer', label: t('canView'), description: t('lookAroundNoChanges') },
 ];
 
 /** What a member can be made (#122): a co-owner too — an editor who also manages sharing. */
 const MEMBER_ROLE_OPTIONS: SelectOption<BoardMemberRole>[] = [
-  { value: 'coowner', label: 'Co-owner', description: 'Edit, and manage sharing like the owner' },
+  { value: 'coowner', label: t('coOwner'), description: t('editAndManageSharingLike') },
   ...ROLE_OPTIONS,
 ];
 
@@ -31,10 +32,10 @@ const MEMBER_ROLE_OPTIONS: SelectOption<BoardMemberRole>[] = [
 const memberRole = (m: BoardMember): BoardMemberRole | 'owner' => (m.coOwner && m.role === 'editor' ? 'coowner' : m.role);
 
 const LINK_OPTIONS: SelectOption<LinkAccess>[] = [
-  { value: 'none', label: 'No access' },
-  { value: 'viewer', label: 'Can view' },
-  { value: 'commenter', label: 'Can comment' },
-  { value: 'editor', label: 'Can edit' },
+  { value: 'none', label: t('noAccess') },
+  { value: 'viewer', label: t('canView') },
+  { value: 'commenter', label: t('canComment') },
+  { value: 'editor', label: t('canEdit') },
 ];
 
 const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2, editor: 3 };
@@ -48,21 +49,21 @@ export function linkOptions(board: Pick<BoardSummary, 'permissions' | 'linkAcces
   }));
 }
 
-const ROLE_LABEL: Record<Role | 'coowner', string> = { owner: 'Owner', coowner: 'Co-owner', editor: 'Can edit', commenter: 'Can comment', viewer: 'Can view' };
+const ROLE_LABEL: Record<Role | 'coowner', string> = { owner: t('owner'), coowner: t('coOwner'), editor: t('canEdit'), commenter: t('canComment'), viewer: t('canView') };
 
 const DAY = 24 * 60 * 60 * 1000;
 
 /** What the workspace's link policy (#39) asks of this board's link, in a sentence. */
 export function linkPolicyText(p: NonNullable<BoardSummary['permissions']['linkPolicy']>): string {
   const parts = [p.passwordRequired ? 'a password' : null, p.maxDays !== null ? `an expiry within ${p.maxDays === 1 ? '1 day' : `${p.maxDays} days`}` : null].filter(Boolean);
-  return `This workspace requires board links to have ${parts.join(' and ')}. Set ${parts.length > 1 ? 'them' : 'it'} below, then turn the link on.`;
+  return t('thisWorkspaceRequiresBoardLinks', { length: parts.length, parts: parts.join(' and ') });
 }
 
 /** "Invited by Ada · expires in 13 days" / "Link expired — resend it". */
 export function inviteStatus(inv: Pick<PendingInvite, 'expiresAt' | 'invitedByName'>, now = Date.now()): string {
-  if (inv.expiresAt <= now) return 'Link expired — resend it';
+  if (inv.expiresAt <= now) return t('linkExpiredResendIt');
   const days = Math.ceil((inv.expiresAt - now) / DAY);
-  return `Invited by ${inv.invitedByName} · expires in ${days === 1 ? '1 day' : `${days} days`}`;
+  return t('invitedByInvitedbynameExpiresIn', { days, invitedByName: inv.invitedByName });
 }
 
 export interface ShareDialogProps {
@@ -129,7 +130,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
         }
       })
       .catch((e) => {
-        if (!cancelled) setLoadError(e instanceof ApiError ? e.message : 'Could not load sharing settings');
+        if (!cancelled) setLoadError(e instanceof ApiError ? e.message : t('couldNotLoadSharingSettings'));
       });
     return () => {
       cancelled = true;
@@ -159,7 +160,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     e.preventDefault();
     const addr = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
-      setInviteError('Enter a valid email address');
+      setInviteError(t('enterAValidEmailAddress'));
       return;
     }
     setInviting(true);
@@ -169,15 +170,15 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
       if (out.member) {
         const member = out.member;
         setMembers((list) => [...(list ?? []).filter((m) => m.userId !== member.userId), member]);
-        notify(`${member.name} can now access this board`, 'success');
+        notify(t('nameCanNowAccessThis', { name: member.name }), 'success');
       } else {
         const invite = out.invite;
         setInvites((list) => [...list.filter((i) => i.id !== invite.id), invite]);
-        notify(`Invite sent to ${invite.email}`, 'success');
+        notify(t('inviteSentToEmail', { email: invite.email }), 'success');
       }
       setEmail('');
     } catch (err) {
-      setInviteError(err instanceof ApiError ? err.message : 'Could not send the invite');
+      setInviteError(err instanceof ApiError ? err.message : t('couldNotSendTheInvite'));
     } finally {
       setInviting(false);
     }
@@ -189,10 +190,10 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setMembers((list) => list?.map((x) => (x.userId === m.userId ? { ...x, ...shown } : x)) ?? null);
     try {
       await api.setMemberRole(boardId, m.userId, role);
-      if (role === 'coowner') notify(`${m.name} is now a co-owner: they can manage sharing, but not delete or transfer the board`, 'success');
+      if (role === 'coowner') notify(t('nameIsNowACo', { name: m.name }), 'success');
     } catch (err) {
       setMembers(prev);
-      notify(err instanceof ApiError ? err.message : 'Could not change the role', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotChangeTheRole'), 'error');
     }
   };
 
@@ -201,10 +202,10 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setMembers((list) => list?.filter((x) => x.userId !== m.userId) ?? null);
     try {
       await api.removeMember(boardId, m.userId);
-      notify(`Removed ${m.name}`, 'info');
+      notify(t('removedName', { name: m.name }), 'info');
     } catch (err) {
       setMembers(prev);
-      notify(err instanceof ApiError ? err.message : 'Could not remove that person', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotRemoveThatPerson'), 'error');
     }
   };
 
@@ -212,9 +213,9 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     try {
       const { invite } = await api.resendInvite(boardId, inv.id);
       setInvites((list) => list.map((i) => (i.id === invite.id ? invite : i)));
-      notify(`Sent a new invite link to ${invite.email}`, 'success');
+      notify(t('sentANewInviteLink', { email: invite.email }), 'success');
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not resend the invite', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotResendTheInvite'), 'error');
     }
   };
 
@@ -223,10 +224,10 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setInvites((list) => list.filter((i) => i.id !== inv.id));
     try {
       await api.revokeInvite(boardId, inv.id);
-      notify(`Invite to ${inv.email} revoked`, 'info');
+      notify(t('inviteToEmailRevoked', { email: inv.email }), 'info');
     } catch (err) {
       setInvites(prev);
-      notify(err instanceof ApiError ? err.message : 'Could not revoke the invite', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotRevokeTheInvite'), 'error');
     }
   };
 
@@ -235,10 +236,10 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setRequests((list) => list.filter((x) => x.userId !== r.userId));
     try {
       await api.decideAccessRequest(boardId, r.userId, decision, decision === 'approve' ? role : undefined);
-      notify(decision === 'approve' ? `${r.name} now has access (${ROLE_LABEL[role].toLowerCase()})` : `Declined ${r.name}’s request`, decision === 'approve' ? 'success' : 'info');
+      notify(decision === 'approve' ? t('nameNowHasAccessRole', { name: r.name, role: ROLE_LABEL[role].toLowerCase() }) : t('declinedNameSRequest', { name: r.name }), decision === 'approve' ? 'success' : 'info');
       if (decision === 'approve') setMembers((await api.listMembers(boardId)).members);
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not answer the request', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotAnswerTheRequest'), 'error');
       setRequests((await api.listAccessRequests(boardId).catch(() => ({ requests: [] }))).requests);
     }
   };
@@ -246,9 +247,9 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
   const resendVerification = async () => {
     try {
       await api.resendVerification();
-      notify(`Check ${user?.email ?? 'your inbox'} for the confirmation link`, 'success');
+      notify(t('checkValueForTheConfirmation', { value: user?.email ?? t('yourInbox') }), 'success');
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not send the link', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotSendTheLink'), 'error');
     }
   };
 
@@ -259,11 +260,11 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
       await api.removeMember(boardId, user.id);
       setConfirmLeave(false);
       onClose();
-      notify('You left the board', 'info');
+      notify(t('youLeftTheBoard'), 'info');
       if (onLeft) onLeft();
       else navigate('/app');
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not leave the board', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotLeaveTheBoard'), 'error');
     } finally {
       setLeaving(false);
     }
@@ -279,13 +280,13 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
       onBoardChange?.(updated);
     } catch (err) {
       setBoard(prev);
-      notify(err instanceof ApiError ? err.message : 'Could not update link access', 'error');
+      notify(err instanceof ApiError ? err.message : t('couldNotUpdateLinkAccess'), 'error');
     }
   };
 
   const copy = async () => {
     const ok = await copyText(boardUrl(boardId));
-    notify(ok ? 'Board link copied' : 'Could not copy the link', ok ? 'success' : 'error');
+    notify(ok ? t('boardLinkCopied') : t('couldNotCopyTheLink'), ok ? 'success' : 'error');
   };
 
   const linkAccess = board?.linkAccess ?? 'none';
@@ -295,16 +296,12 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
       <Modal
         open={open}
         onClose={onClose}
-        title={board ? `Share “${board.title || 'Untitled board'}”` : 'Share board'}
+        title={board ? t('shareValue', { value: board.title || t('untitledBoard') }) : t('shareBoard')}
         width={520}
         footer={
           <div className="fr-share__footer">
-            <Button icon={Link2} onClick={copy}>
-              Copy link
-            </Button>
-            <Button variant="primary" onClick={onClose}>
-              Done
-            </Button>
+            <Button icon={Link2} onClick={copy}>{t('copyLink')}</Button>
+            <Button variant="primary" onClick={onClose}>{t('done')}</Button>
           </div>
         }
       >
@@ -314,24 +311,20 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
           </div>
         ) : !members || !board ? (
           <div className="fr-share__loading">
-            <Spinner size={22} label="Loading sharing settings" />
+            <Spinner size={22} label={t('loadingSharingSettings')} />
           </div>
         ) : (
           <div className="fr-share">
             {canInvite && !verified ? (
-              <div className="fr-share__note fr-share__note--verify" role="status">
-                Confirm your email address to invite people and share by link.
-                <Button variant="ghost" size="sm" icon={Mail} onClick={resendVerification}>
-                  Resend link
-                </Button>
+              <div className="fr-share__note fr-share__note--verify" role="status">{t('confirmYourEmailAddressTo')}<Button variant="ghost" size="sm" icon={Mail} onClick={resendVerification}>{t('resendLink')}</Button>
               </div>
             ) : canInvite ? (
               <form className="fr-share__invite" onSubmit={invite} noValidate>
                 <Input
                   className="fr-share__email"
                   type="email"
-                  placeholder="Invite by email"
-                  aria-label="Email address to invite"
+                  placeholder={t('inviteByEmail')}
+                  aria-label={t('emailAddressToInvite')}
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
@@ -340,23 +333,21 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                   error={inviteError ?? undefined}
                   autoComplete="off"
                 />
-                <Select<InviteRole> aria-label="Invite as" options={ROLE_OPTIONS} value={inviteRole} onChange={setInviteRole} width={140} />
-                <Button type="submit" variant="primary" loading={inviting} disabled={!email.trim()}>
-                  Invite
-                </Button>
+                <Select<InviteRole> aria-label={t('inviteAs')} options={ROLE_OPTIONS} value={inviteRole} onChange={setInviteRole} width={140} />
+                <Button type="submit" variant="primary" loading={inviting} disabled={!email.trim()}>{t('invite')}</Button>
               </form>
             ) : editorKeptOut ? (
-              <p className="fr-share__note">The board’s owner lets only owners and co-owners invite people to this board.</p>
+              <p className="fr-share__note">{t('theBoardSOwnerLets')}</p>
             ) : (
-              <p className="fr-share__note">Only the owner, co-owners and editors can invite people.</p>
+              <p className="fr-share__note">{t('onlyTheOwnerCoOwners')}</p>
             )}
             {canInvite && !board.permissions.canShareExternally ? (
-              <p className="fr-share__note">This workspace’s policy: only people in the workspace can be invited.</p>
+              <p className="fr-share__note">{t('thisWorkspaceSPolicyOnly')}</p>
             ) : null}
 
             {requests.length > 0 ? (
-              <section aria-label="Access requests" className="fr-share__requests">
-                <h3 className="fr-share__heading">Asking for access</h3>
+              <section aria-label={t('accessRequests')} className="fr-share__requests">
+                <h3 className="fr-share__heading">{t('askingForAccess')}</h3>
                 <ul className="fr-share__members">
                   {requests.map((r) => (
                     <li key={r.userId} className="fr-share__member fr-share__request">
@@ -368,17 +359,15 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                       </div>
                       <div className="fr-share__member-actions">
                         <Select<InviteRole>
-                          aria-label={`Let ${r.name} in as`}
+                          aria-label={t('letNameInAs', { name: r.name })}
                           size="sm"
                           variant="ghost"
                           options={ROLE_OPTIONS}
                           value={grantAs[r.userId] ?? r.role}
                           onChange={(role) => setGrantAs((g) => ({ ...g, [r.userId]: role }))}
                         />
-                        <Button size="sm" variant="primary" onClick={() => void decide(r, 'approve')}>
-                          Approve
-                        </Button>
-                        <IconButton size={32} icon={X} label={`Decline ${r.name}’s request`} tooltipSide="top" onClick={() => void decide(r, 'deny')} />
+                        <Button size="sm" variant="primary" onClick={() => void decide(r, 'approve')}>{t('approve')}</Button>
+                        <IconButton size={32} icon={X} label={t('declineNameSRequest', { name: r.name })} tooltipSide="top" onClick={() => void decide(r, 'deny')} />
                       </div>
                     </li>
                   ))}
@@ -386,8 +375,8 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
               </section>
             ) : null}
 
-            <section aria-label="People with access">
-              <h3 className="fr-share__heading">People with access</h3>
+            <section aria-label={t('peopleWithAccess')}>
+              <h3 className="fr-share__heading">{t('peopleWithAccess')}</h3>
               <ul className="fr-share__members">
                 {sorted.map((m) => {
                   const isMe = m.userId === user?.id;
@@ -397,7 +386,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                       <div className="fr-share__who">
                         <span className="fr-share__name">
                           {m.name}
-                          {isMe ? <span className="fr-share__you"> (you)</span> : null}
+                          {isMe ? <span className="fr-share__you">{' '}{t('you')}</span> : null}
                         </span>
                         {m.email ? <span className="fr-share__email-text">{m.email}</span> : null}
                       </div>
@@ -405,14 +394,14 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                         {manages && m.role !== 'owner' ? (
                           <>
                             <Select<BoardMemberRole>
-                              aria-label={`Role for ${m.name}`}
+                              aria-label={t('roleForName', { name: m.name })}
                               size="sm"
                               variant="ghost"
                               options={MEMBER_ROLE_OPTIONS}
                               value={memberRole(m) as BoardMemberRole}
                               onChange={(r) => changeRole(m, r)}
                             />
-                            <IconButton size={32} icon={X} label={`Remove ${m.name}`} tooltipSide="top" onClick={() => remove(m)} />
+                            <IconButton size={32} icon={X} label={t('removeName', { name: m.name })} tooltipSide="top" onClick={() => remove(m)} />
                           </>
                         ) : (
                           <span className="fr-share__role">{ROLE_LABEL[memberRole(m)]}</span>
@@ -435,9 +424,9 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                       </div>
                       <div className="fr-share__member-actions">
                         <span className="fr-share__role">{ROLE_LABEL[inv.role]}</span>
-                        <IconButton size={32} icon={RotateCw} label={`Resend invite to ${inv.email}`} tooltipSide="top" onClick={() => resend(inv)} />
+                        <IconButton size={32} icon={RotateCw} label={t('resendInviteToEmail', { email: inv.email })} tooltipSide="top" onClick={() => resend(inv)} />
                         {mayRevoke ? (
-                          <IconButton size={32} icon={X} label={`Revoke invite to ${inv.email}`} tooltipSide="top" onClick={() => revoke(inv)} />
+                          <IconButton size={32} icon={X} label={t('revokeInviteToEmail', { email: inv.email })} tooltipSide="top" onClick={() => revoke(inv)} />
                         ) : null}
                       </div>
                     </li>
@@ -449,40 +438,40 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
             {board.team ? <ShareGroups board={board} /> : null}
 
             {board.team ? (
-              <section className="fr-share__link" aria-label="Team access">
+              <section className="fr-share__link" aria-label={t('teamAccess')}>
                 <span className="fr-share__link-icon fr-share__link-icon--open">
                   <Users size={17} aria-hidden />
                 </span>
                 <div className="fr-share__who">
-                  <span className="fr-share__name">{board.team.private ? 'People in its private project' : `Everyone in ${board.team.name}`}</span>
+                  <span className="fr-share__name">{board.team.private ? t('peopleInItsPrivateProject') : t('everyoneInName', { name: board.team.name })}</span>
                   <span className="fr-share__email-text">
-                    {board.team.private ? `Plus the admins of ${board.team.name}` : 'Guests only see boards shared with them'}
+                    {board.team.private ? t('plusTheAdminsOfName', { name: board.team.name }) : t('guestsOnlySeeBoardsShared')}
                   </span>
                 </div>
                 <span className="fr-share__role">{ROLE_LABEL[board.team.access]}</span>
               </section>
             ) : null}
 
-            <section className="fr-share__link" aria-label="Link access">
+            <section className="fr-share__link" aria-label={t('linkAccess')}>
               <span className={`fr-share__link-icon${linkAccess === 'none' ? '' : ' fr-share__link-icon--open'}`}>
                 {linkAccess === 'none' ? <Lock size={17} aria-hidden /> : <Globe size={17} aria-hidden />}
               </span>
               <div className="fr-share__who">
-                <span className="fr-share__name">Anyone with the link</span>
+                <span className="fr-share__name">{t('anyoneWithTheLink')}</span>
                 <span className="fr-share__email-text">
                   {board.linkBlocked
-                    ? 'Turned off by Freero’s moderators'
+                    ? t('turnedOffByFreeroS')
                     : board.permissions.maxLinkAccess === 'none' && linkAccess === 'none'
-                    ? 'Links are turned off in this workspace'
+                    ? t('linksAreTurnedOffIn')
                     : linkAccess === 'none'
-                      ? 'Only people added above can open it'
+                      ? t('onlyPeopleAddedAboveCan')
                       : board.permissions.guestLinks
-                        ? `Also without an account, as a guest who can ${linkAccess === 'viewer' ? 'view' : 'view and comment'}`
-                        : 'Must be signed in to Freero'}
+                        ? t('alsoWithoutAnAccountAs', { value: linkAccess === 'viewer' ? t('view') : t('viewAndComment') })
+                        : t('mustBeSignedInTo')}
                 </span>
               </div>
               {manages && !board.linkBlocked ? (
-                <Select<LinkAccess> aria-label="Link access" size="sm" options={linkOptions(board)} value={linkAccess} onChange={changeLinkAccess} width={136} />
+                <Select<LinkAccess> aria-label={t('linkAccess')} size="sm" options={linkOptions(board)} value={linkAccess} onChange={changeLinkAccess} width={136} />
               ) : (
                 <span className="fr-share__role">{LINK_OPTIONS.find((o) => o.value === linkAccess)?.label}</span>
               )}
@@ -530,9 +519,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
 
             {!isOwner && isMember ? (
               <div className="fr-share__leave">
-                <Button variant="ghost" size="sm" icon={LogOut} onClick={() => setConfirmLeave(true)}>
-                  Leave board
-                </Button>
+                <Button variant="ghost" size="sm" icon={LogOut} onClick={() => setConfirmLeave(true)}>{t('leaveBoard')}</Button>
               </div>
             ) : null}
           </div>
@@ -542,19 +529,15 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
       <Modal
         open={confirmLeave}
         onClose={() => setConfirmLeave(false)}
-        title="Leave this board?"
+        title={t('leaveThisBoard')}
         width={400}
         footer={
           <>
-            <Button onClick={() => setConfirmLeave(false)}>Cancel</Button>
-            <Button variant="danger" loading={leaving} onClick={leave}>
-              Leave board
-            </Button>
+            <Button onClick={() => setConfirmLeave(false)}>{t('cancel')}</Button>
+            <Button variant="danger" loading={leaving} onClick={leave}>{t('leaveBoard')}</Button>
           </>
         }
-      >
-        You'll lose access until someone invites you again.
-      </Modal>
+      >{t('youLlLoseAccessUntil')}</Modal>
     </>
   );
 }
