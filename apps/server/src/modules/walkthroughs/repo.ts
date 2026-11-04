@@ -1,5 +1,5 @@
 // The only writer of `walkthroughs`, `walkthrough_views`, `walkthrough_comments` (KAI-133) and
-// `walkthrough_reactions` (#127).
+// `walkthrough_reactions` (#127) and `walkthrough_voices` (#128).
 import type { WalkthroughChapter, WalkthroughCue, WalkthroughTimeline } from '@freero/shared';
 import { one, query } from '../../platform/db';
 
@@ -17,6 +17,8 @@ export interface WalkthroughRow {
   createdAt: number;
   summary?: string | null;
   chapters?: WalkthroughChapter[] | null;
+  /** [#128] The recording session other presenters joined. */
+  sessionId?: string | null;
 }
 
 /** A row with its counts. */
@@ -24,6 +26,8 @@ export interface WalkthroughWithCounts extends WalkthroughRow {
   views: number;
   comments: number;
   reactions: number;
+  /** [#128] Other presenters' voices. */
+  voices: number;
 }
 
 interface Raw {
@@ -43,6 +47,8 @@ interface Raw {
   views?: number | string;
   comments?: number | string;
   reactions?: number | string;
+  voices?: number | string;
+  session_id?: string | null;
 }
 
 const json = <T>(v: T | string): T => (typeof v === 'string' ? (JSON.parse(v) as T) : v);
@@ -63,19 +69,22 @@ const toRow = (r: Raw): WalkthroughWithCounts => ({
   views: Number(r.views ?? 0),
   comments: Number(r.comments ?? 0),
   reactions: Number(r.reactions ?? 0),
+  sessionId: r.session_id ?? null,
+  voices: Number(r.voices ?? 0),
 });
 
 const SELECT = `SELECT w.*,
   (SELECT count(*) FROM walkthrough_views v WHERE v.walkthrough_id = w.id) AS views,
   (SELECT count(*) FROM walkthrough_comments c WHERE c.walkthrough_id = w.id) AS comments,
-  (SELECT count(*) FROM walkthrough_reactions x WHERE x.walkthrough_id = w.id) AS reactions
+  (SELECT count(*) FROM walkthrough_reactions x WHERE x.walkthrough_id = w.id) AS reactions,
+  (SELECT count(*) FROM walkthrough_voices o WHERE w.session_id IS NOT NULL AND o.board_id = w.board_id AND o.session_id = w.session_id) AS voices
   FROM walkthroughs w`;
 
 export async function insert(w: WalkthroughRow): Promise<void> {
   await query(
-    `INSERT INTO walkthroughs (id, board_id, author_id, title, media_url, media_kind, duration_ms, timeline, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [w.id, w.boardId, w.authorId, w.title, w.mediaUrl, w.media, w.durationMs, JSON.stringify(w.timeline), new Date(w.createdAt)],
+    `INSERT INTO walkthroughs (id, board_id, author_id, title, media_url, media_kind, duration_ms, timeline, created_at, session_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [w.id, w.boardId, w.authorId, w.title, w.mediaUrl, w.media, w.durationMs, JSON.stringify(w.timeline), new Date(w.createdAt), w.sessionId ?? null],
   );
 }
 
@@ -217,9 +226,96 @@ export async function viewsBy(userId: string): Promise<Array<{ walkthroughId: st
 /** Recordings' upload URLs (all, or those among `urls`): the uploads sweep keeps these files. */
 export async function mediaUrls(urls: readonly string[] | null): Promise<string[]> {
   const rows = urls
-    ? await query<{ media_url: string }>(`SELECT DISTINCT media_url FROM walkthroughs WHERE media_url = ANY($1::text[])`, [urls])
-    : await query<{ media_url: string }>(`SELECT DISTINCT media_url FROM walkthroughs`);
+    ? await query<{ media_url: string }>(
+        `SELECT media_url FROM walkthroughs WHERE media_url = ANY($1::text[]) UNION SELECT media_url FROM walkthrough_voices WHERE media_url = ANY($1::text[])`,
+        [urls],
+      )
+    : await query<{ media_url: string }>(`SELECT media_url FROM walkthroughs UNION SELECT media_url FROM walkthrough_voices`);
   return rows.map((r) => r.media_url);
+}
+
+// ---- other presenters' voices (#128) ----
+
+export interface VoiceRow {
+  id: string;
+  boardId: string;
+  sessionId: string;
+  authorId: string;
+  mediaUrl: string;
+  media: 'audio' | 'video';
+  offsetMs: number;
+  durationMs: number;
+  timeline: WalkthroughTimeline;
+  createdAt: number;
+}
+
+interface RawVoice {
+  id: string;
+  board_id: string;
+  session_id: string;
+  author_id: string;
+  media_url: string;
+  media_kind: 'audio' | 'video';
+  offset_ms: number;
+  duration_ms: number;
+  timeline: WalkthroughTimeline | string;
+  created_at: Date;
+}
+
+const toVoice = (r: RawVoice): VoiceRow => ({
+  id: r.id,
+  boardId: r.board_id,
+  sessionId: r.session_id,
+  authorId: r.author_id,
+  mediaUrl: r.media_url,
+  media: r.media_kind,
+  offsetMs: Number(r.offset_ms),
+  durationMs: Number(r.duration_ms),
+  timeline: json(r.timeline),
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+export async function insertVoice(v: VoiceRow): Promise<void> {
+  await query(
+    `INSERT INTO walkthrough_voices (id, board_id, session_id, author_id, media_url, media_kind, offset_ms, duration_ms, timeline, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [v.id, v.boardId, v.sessionId, v.authorId, v.mediaUrl, v.media, v.offsetMs, v.durationMs, JSON.stringify(v.timeline), new Date(v.createdAt)],
+  );
+}
+
+/** A session's voices, in the order they arrived. */
+export async function voicesOf(boardId: string, sessionId: string): Promise<VoiceRow[]> {
+  return (await query<RawVoice>(`SELECT * FROM walkthrough_voices WHERE board_id = $1 AND session_id = $2 ORDER BY created_at, id`, [boardId, sessionId])).map(toVoice);
+}
+
+export async function countVoices(boardId: string, sessionId: string): Promise<number> {
+  const r = await one<{ n: number | string }>(`SELECT count(*) AS n FROM walkthrough_voices WHERE board_id = $1 AND session_id = $2`, [boardId, sessionId]);
+  return Number(r?.n ?? 0);
+}
+
+/** The walkthrough a session became (null: its host hasn't saved, or discarded it). */
+export async function bySession(boardId: string, sessionId: string): Promise<WalkthroughWithCounts | null> {
+  const r = await one<Raw>(`${SELECT} WHERE w.board_id = $1 AND w.session_id = $2`, [boardId, sessionId]);
+  return r ? toRow(r) : null;
+}
+
+/** Voices of sessions no walkthrough was made from (the host discarded it, or never saved), older than `before`. */
+export async function removeOrphanVoices(boardId: string, before: number): Promise<number> {
+  return (
+    await query(
+      `DELETE FROM walkthrough_voices o WHERE o.board_id = $1 AND o.created_at < $2
+         AND NOT EXISTS (SELECT 1 FROM walkthroughs w WHERE w.board_id = o.board_id AND w.session_id = o.session_id) RETURNING id`,
+      [boardId, new Date(before)],
+    )
+  ).length;
+}
+
+export async function removeVoicesOf(boardId: string, sessionId: string): Promise<void> {
+  await query(`DELETE FROM walkthrough_voices WHERE board_id = $1 AND session_id = $2`, [boardId, sessionId]);
+}
+
+export async function voicesBy(userId: string): Promise<VoiceRow[]> {
+  return (await query<RawVoice>(`SELECT * FROM walkthrough_voices WHERE author_id = $1 ORDER BY created_at`, [userId])).map(toVoice);
 }
 
 // ---- reactions (#127) ----

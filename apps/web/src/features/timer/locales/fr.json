@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "Démarrer le minuteur",
   "stopTheTimer": "Arrêter le minuteur",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "Le temps est écoulé. Cliquez pour fermer",
   "timeSUp": "Le temps est écoulé",
   "paused2": ", en pause",
-  "timerValueValue2": "Minuteur {value}{value2}"
+  "timerValueValue2": "Minuteur {value}{value2}",
+  "backgroundMusic": "Musique de fond",
+  "musicNone": "Aucune",
+  "musicDrift": "Dérive",
+  "musicDriftHint": "Accords lents et chaleureux",
+  "musicPulse": "Pulsation",
+  "musicPulseHint": "Un arpège doux et régulier",
+  "musicRain": "Pluie",
+  "musicRainHint": "Pluie douce et nappe grave",
+  "musicOnForYou": "Musique activée pour vous ({track})",
+  "musicOffForYou": "Musique coupée pour vous ({track})",
+  "musicVolume": "Volume de la musique"
 }

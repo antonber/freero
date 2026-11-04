@@ -842,5 +842,9 @@
   "create": "Create",
   "thereIsAlreadyALabel": "There is already a label with that name",
   "asTheWorkspaceAllows": "As the workspace allows",
-  "linksExpireWithinDays": "Links expire within (days)"
+  "linksExpireWithinDays": "Links expire within (days)",
+  "gifSearch": "GIF search",
+  "gifSearchHint": "Searching for GIFs in the sticker panel, where this server offers it, and the highest rating results may have.",
+  "gifRatedG": "Rated G only",
+  "gifRatedPg13": "Up to PG-13"
 }

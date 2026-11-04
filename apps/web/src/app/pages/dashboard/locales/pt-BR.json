@@ -12,7 +12,6 @@
     "member",
     "guest",
     "freeroHome",
-    "workspaceWorkspacelabelSwitchWorkspace",
     "justYou",
     "workspaces",
     "newTeamWorkspace",
@@ -355,7 +354,8 @@
     "couldNotPinTheProject",
     "nameEncryptsItsBoardsWith",
     "thisWorkspaceSKeyIsn",
-    "itsBoardsAreEncryptedWith"
+    "itsBoardsAreEncryptedWith",
+    "switchWorkspaceFrom"
   ],
   "home": "Início",
   "recent": "Recentes",
@@ -369,7 +369,6 @@
   "member": "Membro",
   "guest": "Convidado",
   "freeroHome": "Início do Freero",
-  "workspaceWorkspacelabelSwitchWorkspace": "Espaço de trabalho: {workspaceLabel}. Trocar de espaço de trabalho",
   "justYou": "Só você",
   "workspaces": "Espaços de trabalho",
   "newTeamWorkspace": "Novo espaço de trabalho da equipe…",
@@ -712,5 +711,6 @@
   "couldNotPinTheProject": "Não foi possível fixar o projeto",
   "nameEncryptsItsBoardsWith": "{name} criptografa os quadros com uma chave própria, e essa chave não pode ser usada agora (os administradores a suspenderam, ou o serviço de chaves recusou ou não respondeu). Os quadros continuam fechados até a chave estar disponível de novo.",
   "thisWorkspaceSKeyIsn": "A chave deste espaço de trabalho não está disponível",
-  "itsBoardsAreEncryptedWith": "Os quadros dele são criptografados com a chave própria do espaço de trabalho, que não pode ser usada agora. Eles voltam a abrir assim que os administradores a restaurarem."
+  "itsBoardsAreEncryptedWith": "Os quadros dele são criptografados com a chave própria do espaço de trabalho, que não pode ser usada agora. Eles voltam a abrir assim que os administradores a restaurarem.",
+  "switchWorkspaceFrom": "Trocar de espaço de trabalho, atual:"
 }

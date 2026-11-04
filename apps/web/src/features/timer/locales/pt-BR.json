@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "Iniciar o cronômetro",
   "stopTheTimer": "Parar o cronômetro",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "O tempo acabou. Clique para dispensar",
   "timeSUp": "O tempo acabou",
   "paused2": ", pausado",
-  "timerValueValue2": "Cronômetro {value}{value2}"
+  "timerValueValue2": "Cronômetro {value}{value2}",
+  "backgroundMusic": "Música de fundo",
+  "musicNone": "Nenhuma",
+  "musicDrift": "Deriva",
+  "musicDriftHint": "Acordes lentos e calorosos",
+  "musicPulse": "Pulso",
+  "musicPulseHint": "Um arpejo suave e constante",
+  "musicRain": "Chuva",
+  "musicRainHint": "Chuva suave e um zumbido grave",
+  "musicOnForYou": "Música ativada para você ({track})",
+  "musicOffForYou": "Música silenciada para você ({track})",
+  "musicVolume": "Volume da música"
 }

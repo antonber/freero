@@ -166,13 +166,14 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
+import type { GifPlaceResponse, GifSearchResponse, ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
 import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
   CreateWalkthroughRequest,
+  AddWalkthroughVoiceRequest,
   Decision,
   DecisionChanges,
   DecisionResponse,
@@ -899,6 +900,10 @@ export const api = {
   removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
   removeSticker: (setId: string, stickerId: string) =>
     request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),
+  // GIF search through the server (#139)
+  searchGifs: (boardId: string, q: string, pos: string | null) =>
+    request<GifSearchResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/gifs?q=${encodeURIComponent(q)}${pos ? `&pos=${encodeURIComponent(pos)}` : ''}`),
+  placeGif: (boardId: string, media: string) => request<GifPlaceResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/gifs/place`, { media }),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });
@@ -923,6 +928,7 @@ export const api = {
   listWalkthroughs: (boardId: string) => request<{ walkthroughs: WalkthroughSummary[] }>('GET', `${walkthroughsPath(boardId)}`),
   getWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('GET', walkthroughsPath(boardId, id)),
   createWalkthrough: (boardId: string, body: CreateWalkthroughRequest) => request<{ walkthrough: Walkthrough }>('POST', walkthroughsPath(boardId), body),
+  addWalkthroughVoice: (boardId: string, body: AddWalkthroughVoiceRequest) => request<{ ok: true }>('POST', `${walkthroughsPath(boardId)}/voices`, body),
   renameWalkthrough: (boardId: string, id: string, title: string) => request<{ walkthrough: Walkthrough }>('PATCH', walkthroughsPath(boardId, id), { title }),
   async deleteWalkthrough(boardId: string, id: string): Promise<void> {
     const res = await fetch(walkthroughsPath(boardId, id), { method: 'DELETE', credentials: 'same-origin' });

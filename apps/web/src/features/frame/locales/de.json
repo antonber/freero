@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "Folien",
   "classicSlides": "Klassische Folien",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "Rahmen machen Bereiche des Boards zu Folien, die Sie in dieser Reihenfolge präsentieren können.",
   "addFrame": "Rahmen hinzufügen",
   "eachFrameIsASlide": "Jeder Rahmen ist eine Folie. Fügen Sie einen mit Layout hinzu, um einen Foliensatz zu beginnen; Präsentation und PDF-Export folgen dieser Reihenfolge.",
-  "viewersAndCommentersSeeThis": "Betrachter und Kommentierende sehen diesen Rahmen leer; sein Inhalt erreicht sie nie"
+  "viewersAndCommentersSeeThis": "Betrachter und Kommentierende sehen diesen Rahmen leer; sein Inhalt erreicht sie nie",
+  "moveSlideEarlier": "Folie nach vorne verschieben",
+  "moveSlideLater": "Folie nach hinten verschieben"
 }

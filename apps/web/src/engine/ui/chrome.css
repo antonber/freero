@@ -117,6 +117,12 @@ button.fr-title:hover {
   display: flex;
   flex-direction: column;
   padding: 6px;
+  overflow-y: auto;
+}
+
+/* A long menu scrolls; its items never shrink below their height (WCAG 2.5.8 target size). */
+.fr-boardmenu > * {
+  flex-shrink: 0;
 }
 
 .fr-boardmenu__item {
@@ -549,7 +555,14 @@ button.fr-title:hover {
     max-width: 140px;
   }
   .fr-topright > .fr-btn .fr-btn__label {
-    display: none;
+    /* Out of sight but still the button's name (WCAG 4.1.2): an icon-only Share button. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }
 
@@ -743,7 +756,13 @@ button.fr-title:hover {
   scrollbar-width: none;
 }
 .fr-board[data-fr-layout^='phone'] .fr-topright > .fr-btn .fr-btn__label {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 .fr-board[data-fr-layout^='phone'] .fr-topcenter {
   top: 124px;
@@ -843,4 +862,9 @@ button.fr-title:hover {
   color: var(--fr-ink-3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* The format toolbar's landmark (#141): no box of its own. */
+.fr-format-region {
+  display: contents;
 }

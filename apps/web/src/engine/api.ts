@@ -44,6 +44,8 @@ import type {
   Sticker,
   StickerSet,
   StickersResponse,
+  GifPlaceResponse,
+  GifSearchResponse,
   ShapePack,
   ShapePackCreated,
   ShapePacksResponse,
@@ -62,6 +64,7 @@ import type {
   VerticalAlign,
   CreateDecisionRequest,
   CreateWalkthroughRequest,
+  AddWalkthroughVoiceRequest,
   Decision,
   Walkthrough,
   WalkthroughChaptersInput,
@@ -146,6 +149,14 @@ export interface HostStickers {
   add(setId: string, file: Blob, name: string): Promise<Sticker>;
   removeSet(setId: string): Promise<void>;
   remove(setId: string, stickerId: string): Promise<void>;
+}
+
+/** [additive, #139] See `Host.gifs` (wire: @freero/shared `GifSearchResponse`, `GifPlaceResponse`). */
+export interface HostGifs {
+  /** Words to search for ('' for what's trending); `pos` from the previous page's `next`. */
+  search(q: string, pos: string | null): Promise<GifSearchResponse>;
+  /** Copies a result (its `media`) into the person's uploads: `{ url: '/uploads/…', w, h }`. */
+  place(media: string): Promise<GifPlaceResponse>;
 }
 
 /** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
@@ -244,6 +255,12 @@ export interface Host {
    * message that can be shown (too large, not an image, not allowed).
    */
   stickers?: HostStickers;
+  /**
+   * [additive, #139] GIF search in the sticker panel, through the server (the browser never talks
+   * to the provider). Absent where the operator configured no GIF provider, the workspace turned it
+   * off, and in the sandbox, embeds and for guests without an account: no GIF tab.
+   */
+  gifs?: HostGifs;
   /**
    * [additive, #4] The board's workspace's own shape packs (server modules/shapepacks): uploaded
    * SVG icon sets, placed as icon elements that hold their drawing. Absent (offline sandbox, guests
@@ -579,6 +596,8 @@ export interface HostWalkthroughs {
   get(id: string): Promise<Walkthrough>;
   /** Stores the recording (an upload of this user's: quota, size cap) and the walkthrough over it. */
   create(recording: Blob, request: Omit<CreateWalkthroughRequest, 'mediaUrl'>): Promise<Walkthrough>;
+  /** [additive, #128] Stores this person's recording as their voice in someone else's recording session. */
+  addVoice?(recording: Blob, request: Omit<AddWalkthroughVoiceRequest, 'mediaUrl'>): Promise<void>;
   rename(id: string, title: string): Promise<Walkthrough>;
   remove(id: string): Promise<void>;
   /** "I watched it" (counted once per person; visitors without an account aren't counted). */

@@ -215,3 +215,95 @@ export function reactionMarks(reactions: readonly WalkthroughReaction[], duratio
   }
   return marks.map((m) => ({ atMs: m.atMs, mine: m.mine, counts: [...m.counts].map(([emoji, n]) => ({ emoji, n })).sort((a, b) => b.n - a.n) }));
 }
+
+// ---- several presenters (#128) ----
+
+/** Louder than this (RMS of the microphone, 0..1) counts as talking. */
+const SPEECH_LEVEL = 0.02;
+/** A pause shorter than this doesn't end a turn (breaths between words). */
+const SPEECH_HOLD_MS = 700;
+/** Shorter bursts (a cough, a click) aren't a turn. */
+const SPEECH_MIN_MS = 300;
+
+/**
+ * Turns microphone levels into when this person talked ([start, end] ms): what playback follows
+ * when several people present together. Fed a level every ~100 ms while recording.
+ */
+export class SpeechTracker {
+  private turns: Array<[number, number]> = [];
+  private open: { start: number; last: number } | null = null;
+
+  level(t: number, rms: number): void {
+    if (rms >= SPEECH_LEVEL) {
+      if (this.open && t - this.open.last <= SPEECH_HOLD_MS) this.open.last = t;
+      else {
+        this.close();
+        this.open = { start: t, last: t };
+      }
+    } else if (this.open && t - this.open.last > SPEECH_HOLD_MS) this.close();
+  }
+
+  private close(): void {
+    const o = this.open;
+    this.open = null;
+    if (o && o.last - o.start >= SPEECH_MIN_MS) this.turns.push([Math.round(o.start), Math.round(o.last)]);
+  }
+
+  finish(endMs: number): Array<[number, number]> {
+    this.close();
+    return thin(this.turns.filter(([s]) => s <= endMs).map(([s, e]): [number, number] => [s, Math.min(e, endMs)]));
+  }
+}
+
+/** A presenter's track on the walkthrough's clock (the host's at offset 0). */
+export interface PresenterTrack {
+  offsetMs: number;
+  durationMs: number;
+  timeline: WalkthroughTimeline;
+}
+
+/** The start (walkthrough clock) of the turn this track is talking in at `t`, or null. */
+function talkingSince(track: PresenterTrack, t: number): number | null {
+  const local = t - track.offsetMs;
+  if (local < 0 || local > track.durationMs) return null;
+  for (const [s, e] of track.timeline.speech ?? []) if (s <= local && local <= e) return s + track.offsetMs;
+  return null;
+}
+
+/** When this track last stopped talking at or before `t` (walkthrough clock), or null. */
+function lastSpokeBefore(track: PresenterTrack, t: number): number | null {
+  let best: number | null = null;
+  for (const [s, e] of track.timeline.speech ?? []) {
+    if (s + track.offsetMs > t) break;
+    best = Math.min(e, t - track.offsetMs) + track.offsetMs;
+  }
+  return best;
+}
+
+/**
+ * Whose view playback follows at `t` when it follows the speaker: whoever is talking (the one who
+ * started most recently when several talk at once); in a silence, whoever spoke last, as long as
+ * they're still in the recording; before anyone spoke, the host (index 0).
+ */
+export function speakerAt(tracks: readonly PresenterTrack[], t: number): number {
+  let best = -1;
+  let since = -Infinity;
+  tracks.forEach((tr, i) => {
+    const s = talkingSince(tr, t);
+    if (s !== null && s >= since) {
+      best = i;
+      since = s;
+    }
+  });
+  if (best >= 0) return best;
+  let lastEnd = -Infinity;
+  tracks.forEach((tr, i) => {
+    const inRecording = t >= tr.offsetMs && t <= tr.offsetMs + tr.durationMs;
+    const e = inRecording ? lastSpokeBefore(tr, t) : null;
+    if (e !== null && e > lastEnd) {
+      best = i;
+      lastEnd = e;
+    }
+  });
+  return best >= 0 ? best : 0;
+}

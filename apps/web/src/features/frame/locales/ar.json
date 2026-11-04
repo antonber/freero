@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "شرائح",
   "classicSlides": "شرائح كلاسيكية",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "تحوّل الإطارات مناطق من اللوحة إلى شرائح يمكنك تقديمها، بهذا الترتيب.",
   "addFrame": "إضافة إطار",
   "eachFrameIsASlide": "كل إطار شريحة. أضف إطارًا بتخطيط لبدء مجموعة شرائح؛ يتبع التقديم والتصدير بتنسيق PDF هذا الترتيب.",
-  "viewersAndCommentersSeeThis": "يرى المشاهدون والمعلّقون هذا الإطار فارغًا؛ ولا يصل محتواه إليهم أبدًا"
+  "viewersAndCommentersSeeThis": "يرى المشاهدون والمعلّقون هذا الإطار فارغًا؛ ولا يصل محتواه إليهم أبدًا",
+  "moveSlideEarlier": "نقل الشريحة إلى الأمام",
+  "moveSlideLater": "نقل الشريحة إلى الخلف"
 }

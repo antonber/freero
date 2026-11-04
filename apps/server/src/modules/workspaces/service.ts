@@ -316,6 +316,7 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('boardEmbeds', ['on', 'off']);
   pick('linkPassword', ['optional', 'required']);
   pick('templatePublishing', ['members', 'admins']);
+  pick('gifs', ['off', 'g', 'pg-13']);
   pick('offlineCopies', ['all', 'unkeyed', 'off']);
   if (p.linkMaxDays !== undefined) {
     const d = p.linkMaxDays;
@@ -378,6 +379,7 @@ const POLICY_LABELS: Record<(typeof FLOOR_POLICY_KEYS)[number], string> = {
   linkPassword: 'Password on board links',
   linkMaxDays: 'Board links expire within',
   templatePublishing: 'Who shares templates',
+  gifs: 'GIF search',
   offlineCopies: 'Offline copies on devices',
 };
 const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {

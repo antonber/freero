@@ -843,7 +843,11 @@
     "offlineCopiesOnDevices",
     "whetherPeopleMayKeepCopies",
     "allowedUnlessEncryptedWithKey",
-    "allowedAlsoUnderKey"
+    "allowedAlsoUnderKey",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "Copiar",
   "copied": "Copiado",
@@ -1688,5 +1692,9 @@
   "create": "Crear",
   "thereIsAlreadyALabel": "Ya existe una etiqueta con ese nombre",
   "asTheWorkspaceAllows": "Según lo permita el espacio de trabajo",
-  "linksExpireWithinDays": "Los enlaces caducan en (días)"
+  "linksExpireWithinDays": "Los enlaces caducan en (días)",
+  "gifSearch": "Búsqueda de GIF",
+  "gifSearchHint": "La búsqueda de GIF en el panel de stickers, si este servidor la ofrece, y la clasificación máxima de los resultados.",
+  "gifRatedG": "Solo clasificación G",
+  "gifRatedPg13": "Hasta PG-13"
 }

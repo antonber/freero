@@ -529,7 +529,10 @@
     "errors.shape_pack_limit",
     "errors.shape_pack_workspace_full",
     "errors.assistant_question",
-    "errors.assistant_question_long"
+    "errors.assistant_question_long",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "Moldura sem título",
   "couldNotChangeEmbedding": "Não foi possível alterar a incorporação",
@@ -1060,5 +1063,8 @@
   "errors.shape_pack_limit": "Um workspace pode ter no máximo {max} pacotes de formas. Remova primeiro um que você não usa mais.",
   "errors.shape_pack_workspace_full": "Os pacotes de formas deste workspace estão cheios. Remova primeiro um pacote que você não usa mais.",
   "errors.assistant_question": "Pergunte algo ao assistente",
-  "errors.assistant_question_long": "Uma pergunta pode ter no máximo {max} caracteres"
+  "errors.assistant_question_long": "Uma pergunta pode ter no máximo {max} caracteres",
+  "errors.gifs_off": "A busca de GIFs está desativada neste espaço de trabalho",
+  "errors.gifs_unavailable": "O serviço de GIFs não respondeu. Tente de novo em instantes.",
+  "errors.gifs_copy_failed": "Não foi possível copiar esse GIF. Tente outro."
 }

@@ -14,7 +14,7 @@ import { notificationsExportOf } from '../notifications/index';
 import { readBoardView } from '../realtime/index';
 import { saveUpload } from '../uploads/index';
 import { addComment, createWalkthrough, recordView, walkthroughUploadReferences } from './index';
-import { addReaction, deleteWalkthrough, listReactions, setChapters } from './service';
+import { addReaction, addVoice, deleteWalkthrough, getWalkthrough, listReactions, mergeVoiceCues, setChapters } from './service';
 
 let dir = '';
 beforeAll(async () => {
@@ -138,4 +138,51 @@ it('saved chapters keep only moments of the recording, one per moment, in time o
     { atMs: 1500, title: 'Next' },
   ]);
   expect(saved.summary).toBe('What we plan');
+});
+
+it('several presenters (#128): voices sent before and after the host saves both join it, someone who left early still counts, and deleting it lets every recording go', async () => {
+  const [host, early, late, viewer] = await Promise.all([user('Host'), user('Early'), user('Late'), user('Viewer')]);
+  const b = await createBoard(host.id, 'Group review', '', 'none');
+  for (const p of [early, late]) await inviteBoardMember(null, b.id, host, { email: p.email, role: 'editor' });
+  await inviteBoardMember(null, b.id, host, { email: viewer.email, role: 'viewer' });
+  const session = 'sess-abc12345';
+  const voice = async (who: Account, offsetMs: number, durationMs: number) =>
+    addVoice(b.id, who.id, { session, mediaUrl: await saveUpload(webm(), 'audio/webm', who.id), media: 'audio', offsetMs, durationMs, timeline: { ...timeline, speech: [[0, 800]] } });
+
+  // Someone who dropped out after a second sends what they had, before the host has saved.
+  await voice(early, 200, 1000);
+  // A viewer can't add their voice to someone's recording.
+  await expect(addVoice(b.id, viewer.id, { session, mediaUrl: await saveUpload(webm(), 'audio/webm', viewer.id), media: 'audio', offsetMs: 0, durationMs: 1000, timeline })).rejects.toMatchObject({ status: 403 });
+
+  const hostUrl = await saveUpload(webm(), 'audio/webm', host.id);
+  const w = await createWalkthrough(b.id, host.id, { title: 'Together', mediaUrl: hostUrl, media: 'audio', durationMs: 2000, timeline, session });
+  await voice(late, 500, 1500); // uploads slower than the host
+  // Another walkthrough can't take the same session's voices.
+  await expect(createWalkthrough(b.id, host.id, { title: 'Again', mediaUrl: hostUrl, media: 'audio', durationMs: 2000, timeline, session })).rejects.toMatchObject({ status: 409 });
+
+  const seen = await getWalkthrough(b.id, w.id, viewer.id);
+  expect(seen.voices?.map((v) => [v.author?.name, v.offsetMs])).toEqual([['Early', 200], ['Late', 500]]);
+  expect(seen.voices?.[0].timeline.speech).toEqual([[0, 800]]);
+  const onBoard = (await readBoardView(b.id, { userId: viewer.id, role: 'viewer' })).collection(WALKTHROUGHS_COLLECTION).get(w.id) as WalkthroughSummary;
+  expect(onBoard.presenters).toBe(3);
+
+  const names = [hostUrl, ...(seen.voices ?? []).map((v) => v.mediaUrl)].map((u) => u.slice('/uploads/'.length));
+  expect((await walkthroughUploadReferences(names)).sort()).toEqual([...names].sort());
+  await deleteWalkthrough(b.id, w.id, host.id);
+  expect(await walkthroughUploadReferences(names)).toEqual([]);
+});
+
+it('AI captions of several presenters sit at the right moment on the walkthrough and name who said them', () => {
+  const cues = mergeVoiceCues(
+    [
+      { speaker: 'Ana', offsetMs: 0, cues: [{ start: 0, end: 1500, text: 'Welcome' }, { start: 4000, end: 5000, text: 'Thanks Ben' }] },
+      { speaker: 'Ben', offsetMs: 1200, cues: [{ start: 500, end: 2500, text: 'Here is the plan' }, { start: 9000, end: 9500, text: 'after the end' }] },
+    ],
+    6000,
+  );
+  expect(cues).toEqual([
+    { start: 0, end: 1500, text: 'Welcome', speaker: 'Ana' },
+    { start: 1700, end: 3700, text: 'Here is the plan', speaker: 'Ben' },
+    { start: 4000, end: 5000, text: 'Thanks Ben', speaker: 'Ana' },
+  ]);
 });

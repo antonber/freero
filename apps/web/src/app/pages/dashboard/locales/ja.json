@@ -12,7 +12,6 @@
     "member",
     "guest",
     "freeroHome",
-    "workspaceWorkspacelabelSwitchWorkspace",
     "justYou",
     "workspaces",
     "newTeamWorkspace",
@@ -355,7 +354,8 @@
     "couldNotPinTheProject",
     "nameEncryptsItsBoardsWith",
     "thisWorkspaceSKeyIsn",
-    "itsBoardsAreEncryptedWith"
+    "itsBoardsAreEncryptedWith",
+    "switchWorkspaceFrom"
   ],
   "home": "ホーム",
   "recent": "最近",
@@ -369,7 +369,6 @@
   "member": "メンバー",
   "guest": "ゲスト",
   "freeroHome": "Freero ホーム",
-  "workspaceWorkspacelabelSwitchWorkspace": "ワークスペース: {workspaceLabel}。ワークスペースを切り替える",
   "justYou": "自分のみ",
   "workspaces": "ワークスペース",
   "newTeamWorkspace": "新しいチームワークスペース…",
@@ -712,5 +711,6 @@
   "couldNotPinTheProject": "プロジェクトをピン留めできませんでした",
   "nameEncryptsItsBoardsWith": "{name}は独自のキーでボードを暗号化していますが、そのキーは現在使用できません（管理者が一時停止したか、キーサービスが拒否したか応答しませんでした）。キーが再び利用できるようになるまで、ボードは閉じられたままです。",
   "thisWorkspaceSKeyIsn": "このワークスペースのキーを利用できません",
-  "itsBoardsAreEncryptedWith": "ボードはワークスペース独自のキーで暗号化されていますが、そのキーは現在使用できません。管理者がキーを復元すると、再び開けるようになります。"
+  "itsBoardsAreEncryptedWith": "ボードはワークスペース独自のキーで暗号化されていますが、そのキーは現在使用できません。管理者がキーを復元すると、再び開けるようになります。",
+  "switchWorkspaceFrom": "ワークスペースを切り替え、現在:"
 }

@@ -529,7 +529,10 @@
     "errors.shape_pack_limit",
     "errors.shape_pack_workspace_full",
     "errors.assistant_question",
-    "errors.assistant_question_long"
+    "errors.assistant_question_long",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "Cadre sans titre",
   "couldNotChangeEmbedding": "Impossible de modifier l’intégration",
@@ -1060,5 +1063,8 @@
   "errors.shape_pack_limit": "Un espace de travail peut avoir au plus {max} packs de formes. Supprimez d’abord celui dont vous n’avez plus besoin.",
   "errors.shape_pack_workspace_full": "Les packs de formes de cet espace de travail sont pleins. Supprimez d’abord un pack dont vous n’avez plus besoin.",
   "errors.assistant_question": "Posez une question à l’assistant",
-  "errors.assistant_question_long": "Une question peut faire au plus {max} caractères"
+  "errors.assistant_question_long": "Une question peut faire au plus {max} caractères",
+  "errors.gifs_off": "La recherche de GIF est désactivée dans cet espace de travail",
+  "errors.gifs_unavailable": "Le service de GIF n'a pas répondu. Réessayez dans un moment.",
+  "errors.gifs_copy_failed": "Ce GIF n'a pas pu être copié. Essayez-en un autre."
 }

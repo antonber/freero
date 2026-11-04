@@ -9,5 +9,7 @@ export interface EmojiToolOptions {
   currentName?: string;
   /** What a click places: an emoji grapheme or `stamp:<id>`. */
   current?: string;
+  /** [#139] Width ÷ height of the GIF `current` places (a GIF keeps its proportions). */
+  currentAspect?: number;
   recent?: string[];
 }

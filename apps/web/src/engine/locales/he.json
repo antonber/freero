@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -193,7 +192,8 @@
     "tabAndShiftTabMove",
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
-    "youReOfflineKeepThisTabOpen"
+    "youReOfflineKeepThisTabOpen",
+    "zoomPercentPresets"
   ],
   "dots": "נקודות",
   "lines": "קווים",
@@ -317,7 +317,6 @@
   "share": "שיתוף",
   "hideMinimap": "הסתרת המפה הממוזערת",
   "showMinimap": "הצגת המפה הממוזערת",
-  "zoomPresets": "הגדרות זום קבועות",
   "fitToScreen": "התאמה למסך",
   "boardOverview": "סקירת הלוח",
   "view": "תצוגה",
@@ -388,5 +387,6 @@
   "noVersionHistoryInTests": "אין היסטוריית גרסאות בבדיקות",
   "frame": "מסגרת",
   "tabAndShiftTabMove": "Tab ו-Shift+Tab עוברים בין הפריטים לפי סדר הקריאה, ופריטי מסגרת מיד אחריה; Alt+מקשי החיצים קופצים לפריט הקרוב ביותר בכיוון הזה. Enter עורך את הפריט שנבחר, מקשי החיצים מזיזים אותו ו-Alt+Shift+מקשי החיצים משנים את גודלו. Shift+F10 פותח את התפריט שלו, Alt+F10 את סרגל העיצוב, ו-F6 עובר בין הקנבס לסרגלי הכלים. כשכלי יצירה נבחר, Enter מציב פריט חדש ליד הבחירה. Alt+Shift+L מציג את הלוח כטקסט.",
-  "xAndYMoveThe": "X ו-Y מזיזים את כל הבחירה; גודל וסיבוב חלים על כל פריט."
+  "xAndYMoveThe": "X ו-Y מזיזים את כל הבחירה; גודל וסיבוב חלים על כל פריט.",
+  "zoomPercentPresets": "{pct}% זום: הגדרות קבועות"
 }

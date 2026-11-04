@@ -6,6 +6,6 @@ import { defineFeature } from '@engine';
 export default defineFeature({
   name: 'walkthrough',
   description:
-    'Async walkthroughs: record your voice (and camera) while you move around the board; others play it back on the live board, which follows your view and pointer, with captions, a summary and chapters to jump between (drafted from the captions where AI is on), comments and emoji reactions at moments, and view counts.',
+    'Async walkthroughs: record your voice (and camera) while you move around the board, alone or with people you invite (each records their own voice, view and pointer); others play it back on the live board, which follows your view and pointer, with captions, a summary and chapters to jump between (drafted from the captions where AI is on), comments and emoji reactions at moments, and view counts.',
   owns: ['walkthroughs'],
 });

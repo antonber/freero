@@ -101,7 +101,9 @@
     "framesTurnAreasOfThe",
     "addFrame",
     "eachFrameIsASlide",
-    "viewersAndCommentersSeeThis"
+    "viewersAndCommentersSeeThis",
+    "moveSlideEarlier",
+    "moveSlideLater"
   ],
   "slides": "שקופיות",
   "classicSlides": "שקופיות קלאסיות",
@@ -204,5 +206,7 @@
   "framesTurnAreasOfThe": "מסגרות הופכות אזורים בלוח לשקופיות שאפשר להציג, בסדר הזה.",
   "addFrame": "הוספת מסגרת",
   "eachFrameIsASlide": "כל מסגרת היא שקופית. הוספת מסגרת עם פריסה מתחילה מצגת; ההצגה וייצוא ה-PDF עוקבים אחרי הסדר הזה.",
-  "viewersAndCommentersSeeThis": "צופים ומגיבים רואים את המסגרת הזו ריקה; התוכן שלה לעולם לא מגיע אליהם"
+  "viewersAndCommentersSeeThis": "צופים ומגיבים רואים את המסגרת הזו ריקה; התוכן שלה לעולם לא מגיע אליהם",
+  "moveSlideEarlier": "הזזת השקופית קדימה",
+  "moveSlideLater": "הזזת השקופית אחורה"
 }

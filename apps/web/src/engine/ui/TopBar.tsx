@@ -131,7 +131,7 @@ function BoardMenu() {
   return (
     <>
       <IconButton ref={ref} icon={Ellipsis} label={t('boardMenu')} size={32} active={open} onClick={() => setOpen((o) => !o)} />
-      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" align="start" width={280} className="fr-boardmenu">
+      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" align="start" width={280} className="fr-boardmenu" aria-label={t('boardMenu')}>
         {canEdit && (
           <>
             <button

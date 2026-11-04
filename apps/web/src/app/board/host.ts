@@ -178,6 +178,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     ...(deps.onAccessLost ? { onConnectionEnded: (end: { code: number }) => void (end.code === WS_CLOSE_NO_ACCESS && deps.onAccessLost?.()) } : {}),
     personalViews: personalViewsOf(board.id),
     stickers: stickersOf(board.id),
+    ...(board.permissions.gifs ? { gifs: { search: (q: string, pos: string | null) => api.searchGifs(board.id, q, pos), place: (media: string) => api.placeGif(board.id, media) } } : {}),
     shapePacks: shapePacksOf(board.id),
     uploadImage,
     uploadFile,

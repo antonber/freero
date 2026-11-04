@@ -843,7 +843,11 @@
     "offlineCopiesOnDevices",
     "whetherPeopleMayKeepCopies",
     "allowedUnlessEncryptedWithKey",
-    "allowedAlsoUnderKey"
+    "allowedAlsoUnderKey",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "העתקה",
   "copied": "הועתק",
@@ -1688,5 +1692,9 @@
   "create": "יצירה",
   "thereIsAlreadyALabel": "כבר קיימת תווית בשם הזה",
   "asTheWorkspaceAllows": "כפי שסביבת העבודה מאפשרת",
-  "linksExpireWithinDays": "תוקף קישורים פג בתוך (ימים)"
+  "linksExpireWithinDays": "תוקף קישורים פג בתוך (ימים)",
+  "gifSearch": "חיפוש GIF",
+  "gifSearchHint": "חיפוש קובצי GIF בחלונית המדבקות, כשהשרת הזה מציע אותו, והסיווג הגבוה ביותר שמותר לתוצאות.",
+  "gifRatedG": "סיווג G בלבד",
+  "gifRatedPg13": "עד PG-13"
 }

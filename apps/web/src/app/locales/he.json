@@ -529,7 +529,10 @@
     "errors.shape_pack_limit",
     "errors.shape_pack_workspace_full",
     "errors.assistant_question",
-    "errors.assistant_question_long"
+    "errors.assistant_question_long",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -1060,5 +1063,8 @@
   "errors.shape_pack_limit": "בסביבת עבודה יכולות להיות עד {max} חבילות צורות. קודם יש להסיר חבילה שכבר לא בשימוש.",
   "errors.shape_pack_workspace_full": "חבילות הצורות של סביבת העבודה הזו מלאות. קודם יש להסיר חבילה שכבר לא בשימוש.",
   "errors.assistant_question": "אפשר לשאול את העוזר משהו",
-  "errors.assistant_question_long": "שאלה יכולה להכיל עד {max} תווים"
+  "errors.assistant_question_long": "שאלה יכולה להכיל עד {max} תווים",
+  "errors.gifs_off": "חיפוש GIF כבוי בסביבת העבודה הזו",
+  "errors.gifs_unavailable": "שירות ה-GIF לא ענה. נסו שוב בעוד רגע.",
+  "errors.gifs_copy_failed": "לא ניתן היה להעתיק את ה-GIF הזה. נסו אחר."
 }

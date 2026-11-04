@@ -54,7 +54,8 @@ export type RateLimitName =
   | 'zoomMeetingBoard'
   | 'listingSubmit'
   | 'problemReport'
-  | 'boardRender';
+  | 'boardRender'
+  | 'gifSearch';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -388,6 +389,11 @@ export interface Config {
    * room of their own (KAI-134), or null: only meeting links people paste.
    */
   jitsiBaseUrl: string | null;
+  /**
+   * GIF search in the sticker panel (#139): the operator's GIF provider and API key, or null (no
+   * GIF search anywhere). Every request goes through the server; the key never reaches a browser.
+   */
+  gifs: { provider: 'giphy' | 'tenor'; apiKey: string; clientKey: string } | null;
   /** The event stream (modules/events, KAI-150). */
   events: {
     /** A board's item and comment events wait until its saved content was quiet this long (a drag is one update). */
@@ -550,6 +556,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
   problemReport: '10/1h', // per person: problem reports sent with "Report a problem" (each may carry a screenshot)
   boardRender: '30/10m', // per person: boards drawn as PNG / SVG / PDF on the server (the API, MCP export_board; #33)
+  gifSearch: '60/1m', // per person: GIF searches (each one calls the operator's GIF provider, #139)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -599,6 +606,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
   problemReport: 'RATE_LIMIT_PROBLEM_REPORT',
   boardRender: 'RATE_LIMIT_BOARD_RENDER',
+  gifSearch: 'RATE_LIMIT_GIF_SEARCH',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -662,6 +670,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (['0', 'false', 'no', 'off'].includes(v)) return false;
     problems.push(`${name} must be true or false (got "${v}")`);
     return def;
+  };
+
+  const gifs = (): Config['gifs'] => {
+    const provider = str('GIF_PROVIDER')?.toLowerCase() ?? null;
+    const apiKey = str('GIF_API_KEY');
+    if (!provider && !apiKey) return null;
+    if (provider !== 'giphy' && provider !== 'tenor') {
+      problems.push('GIF_PROVIDER must be giphy or tenor (with GIF_API_KEY)');
+      return null;
+    }
+    if (!apiKey) {
+      problems.push('GIF_API_KEY is required with GIF_PROVIDER');
+      return null;
+    }
+    return { provider, apiKey, clientKey: str('GIF_CLIENT_KEY') ?? 'freero' };
   };
 
   const awsKms = (): Config['workspaceKeys']['awsKms'] => {
@@ -1085,6 +1108,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       legal: siteLegal,
     },
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
+    gifs: gifs(),
     events: {
       settleMs: int('EVENTS_SETTLE_SECONDS', 3, 0, 600) * 1000,
       retentionDays: int('EVENTS_RETENTION_DAYS', 30, 1, 3650),

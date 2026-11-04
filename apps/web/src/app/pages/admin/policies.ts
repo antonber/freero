@@ -99,6 +99,16 @@ export const POLICY_FIELDS: Array<{
     ],
   },
   {
+    key: 'gifs',
+    label: t('gifSearch'),
+    hint: t('gifSearchHint'),
+    options: [
+      { value: 'g', label: t('gifRatedG') },
+      { value: 'pg-13', label: t('gifRatedPg13') },
+      { value: 'off', label: t('off') },
+    ],
+  },
+  {
     key: 'downloads',
     label: t('exportDownloadAndCopy'),
     hint: t('whoMayExportBoardsAs'),

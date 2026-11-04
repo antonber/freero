@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -193,7 +192,8 @@
     "tabAndShiftTabMove",
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
-    "youReOfflineKeepThisTabOpen"
+    "youReOfflineKeepThisTabOpen",
+    "zoomPercentPresets"
   ],
   "dots": "点",
   "lines": "线",
@@ -317,7 +317,6 @@
   "share": "分享",
   "hideMinimap": "隐藏小地图",
   "showMinimap": "显示小地图",
-  "zoomPresets": "缩放预设",
   "fitToScreen": "适应屏幕",
   "boardOverview": "白板概览",
   "view": "视图",
@@ -388,5 +387,6 @@
   "noVersionHistoryInTests": "测试中没有版本历史",
   "frame": "框架",
   "tabAndShiftTabMove": "Tab 和 Shift+Tab 按阅读顺序在项目之间移动，框架中的项目紧随框架之后；Alt+方向键跳到该方向上最近的项目。Enter 编辑所选项目，方向键移动它，Alt+Shift+方向键调整其大小。Shift+F10 打开其菜单，Alt+F10 打开格式工具栏，F6 在画布和工具栏之间切换。选中创建工具时，Enter 会在所选内容旁放置一个新项目。Alt+Shift+L 以文本形式列出白板内容。",
-  "xAndYMoveThe": "X 和 Y 移动整个所选内容；大小和旋转应用于每个项目。"
+  "xAndYMoveThe": "X 和 Y 移动整个所选内容；大小和旋转应用于每个项目。",
+  "zoomPercentPresets": "{pct}% 缩放：预设"
 }

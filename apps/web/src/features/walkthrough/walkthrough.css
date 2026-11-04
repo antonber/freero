@@ -657,4 +657,90 @@
     max-width: calc(100% - 32px);
     bottom: 172px;
   }
+  .fr-walkthrough-voices {
+    bottom: 172px;
+  }
+}
+
+/* ---- several presenters (#128) ---- */
+.fr-walkthrough-voices {
+  position: absolute;
+  /* Above the host's bubble. */
+  inset-inline-start: 76px;
+  bottom: 160px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: auto;
+  z-index: var(--fr-z-toolbar);
+}
+
+.fr-walkthrough-voice {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--fr-surface);
+  box-shadow:
+    0 0 0 3px var(--fr-walkthrough-color, var(--fr-primary)),
+    var(--fr-shadow);
+}
+
+.fr-walkthrough-voice.is-speaking {
+  box-shadow:
+    0 0 0 6px var(--fr-walkthrough-color, var(--fr-primary)),
+    var(--fr-shadow);
+}
+
+.fr-walkthrough-caption__speaker {
+  font-weight: 700;
+  margin-inline-end: 6px;
+}
+
+.fr-walkthrough-bar__presenters {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.fr-walkthrough-invite {
+  position: absolute;
+  inset-inline-end: 16px;
+  top: 72px;
+  display: flex;
+  gap: 12px;
+  width: min(360px, calc(100% - 32px));
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  box-shadow: var(--fr-shadow-lg);
+  pointer-events: auto;
+  z-index: var(--fr-z-toolbar);
+}
+
+.fr-walkthrough-invite__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.fr-walkthrough-invite__text {
+  margin: 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.fr-walkthrough-invite__note {
+  margin: 0;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+
+.fr-walkthrough-invite__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }

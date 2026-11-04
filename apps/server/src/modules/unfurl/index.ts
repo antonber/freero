@@ -4,4 +4,6 @@
 export { unfurl } from './service';
 // Items the public API makes from a URL (#170): an image copied into the caller's uploads, a link card's preview.
 export { importImageFromUrl, embedPreview, imageSize } from './boardItems';
+// A remote image's checked bytes without storing them (GIF previews, #139).
+export { fetchRemoteImage } from './image';
 export { isBlockedAddress, checkUrl, safeFetch, UnfurlError, type FetchFailure, type FetchOptions, type Fetched, type Resolver } from './fetch';

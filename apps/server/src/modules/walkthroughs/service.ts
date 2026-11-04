@@ -22,10 +22,12 @@ import {
   MAX_WALKTHROUGH_COMMENT,
   MAX_WALKTHROUGH_MS,
   MAX_WALKTHROUGH_TITLE,
+  MAX_WALKTHROUGH_VOICES,
   mentionedUserIds,
   mentionsAsNames,
   WALKTHROUGH_REACTIONS,
   WALKTHROUGHS_COLLECTION,
+  WALKTHROUGH_SESSION_RE,
   type Role,
   type Walkthrough,
   type WalkthroughChapter,
@@ -35,6 +37,7 @@ import {
   type WalkthroughReaction,
   type WalkthroughSummary,
   type WalkthroughTimeline,
+  type WalkthroughVoice,
 } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -65,6 +68,7 @@ const summaryOf = (w: repo.WalkthroughWithCounts): WalkthroughSummary => ({
   comments: w.comments,
   captions: !!w.transcript?.length,
   reactions: w.reactions,
+  presenters: 1 + w.voices,
 });
 
 /** Tells every open copy of the board (live, every instance). Never fails the request that changed it. */
@@ -119,7 +123,16 @@ export function cleanTimeline(raw: unknown, durationMs: number): WalkthroughTime
   if (!view.length) throw badRequest('The timeline has no view of the board');
   view.sort((a, b) => a[0] - b[0]);
   pointer.sort((a, b) => a[0] - b[0]);
-  return { v: 1, view, pointer };
+  // #128: when this voice talked (who the view follows in a recording with several presenters).
+  if (t.speech === undefined) return { v: 1, view, pointer };
+  if (!Array.isArray(t.speech) || t.speech.length > MAX_TIMELINE_SAMPLES) throw badRequest('Bad speech in the timeline');
+  const speech: Array<[number, number]> = [];
+  for (const s of t.speech) {
+    if (!Array.isArray(s) || s.length !== 2 || !inTime(s[0]) || !inTime(s[1]) || s[1] <= s[0]) throw badRequest('Bad speech in the timeline');
+    speech.push([s[0], s[1]]);
+  }
+  speech.sort((a, b) => a[0] - b[0]);
+  return { v: 1, view, pointer, speech };
 }
 
 /** Captions as stored: in time order, within the recording, short texts. */
@@ -131,7 +144,8 @@ export function cleanCues(raw: unknown, durationMs: number): WalkthroughCue[] {
     const start = Math.max(0, Math.round(c.start));
     const end = Math.min(durationMs, Math.round(c.end));
     const text = c.text.replace(/\s+/g, ' ').trim().slice(0, MAX_CUE_TEXT);
-    if (text && end > start) out.push({ start, end, text });
+    const speaker = typeof c.speaker === 'string' ? c.speaker.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    if (text && end > start) out.push({ start, end, text, ...(speaker ? { speaker } : {}) });
   }
   return out.sort((a, b) => a.start - b.start);
 }
@@ -170,6 +184,9 @@ export async function createWalkthrough(boardId: string, userId: string, body: u
   if (!name || !info || info.ownerId !== userId || !/^(video|audio)\//.test(info.contentType)) throw badRequest('mediaUrl must be a video or audio file you uploaded');
   if (info.removed) throw new HttpError(410, 'This file was removed by Freero’s moderators');
   const media = b.media === 'video' ? 'video' : b.media === 'audio' ? 'audio' : info.contentType.startsWith('audio/') ? 'audio' : 'video';
+  // #128: the session others recorded in; their voices (sent before or after) become part of it.
+  const sessionId = b.session === undefined || b.session === null ? null : cleanSession(b.session);
+  if (sessionId && (await repo.bySession(boardId, sessionId))) throw new HttpError(409, 'That recording was saved already');
   const row: repo.WalkthroughRow = {
     id: newId(12),
     boardId,
@@ -182,6 +199,7 @@ export async function createWalkthrough(boardId: string, userId: string, body: u
     transcript: null,
     transcriptSource: null,
     createdAt: Date.now(),
+    sessionId,
   };
   await repo.insert(row);
   await recordAuditQuietly({
@@ -203,11 +221,26 @@ export async function listWalkthroughs(boardId: string, actorId: string): Promis
 export async function getWalkthrough(boardId: string, id: string, actorId: string): Promise<Walkthrough> {
   await boardFor(boardId, actorId);
   const w = await found(boardId, id);
-  const [names, viewed, info] = await Promise.all([
-    nameMap([w.authorId]),
+  const [voiceRows, viewed, info] = await Promise.all([
+    w.sessionId ? repo.voicesOf(boardId, w.sessionId) : Promise.resolve([]),
     isGuestId(actorId) ? Promise.resolve(false) : repo.hasViewed(w.id, actorId),
     uploadInfo(uploadName(w.mediaUrl) ?? ''),
   ]);
+  const names = await nameMap([w.authorId, ...voiceRows.map((v) => v.authorId)]);
+  const voices = await Promise.all(
+    voiceRows.map(
+      async (v): Promise<WalkthroughVoice> => ({
+        id: v.id,
+        author: names.get(v.authorId) ?? null,
+        mediaUrl: v.mediaUrl,
+        media: v.media,
+        mediaRemoved: (await uploadInfo(uploadName(v.mediaUrl) ?? ''))?.removed ?? true,
+        offsetMs: v.offsetMs,
+        durationMs: v.durationMs,
+        timeline: v.timeline,
+      }),
+    ),
+  );
   return {
     ...summaryOf(w),
     boardId,
@@ -220,6 +253,7 @@ export async function getWalkthrough(boardId: string, id: string, actorId: strin
     summary: w.summary ?? null,
     chapters: w.chapters ?? [],
     viewed,
+    voices,
   };
 }
 
@@ -235,6 +269,7 @@ export async function deleteWalkthrough(boardId: string, id: string, userId: str
   const w = await found(boardId, id);
   const board = await requireManage(boardId, w, userId);
   if (!(await repo.remove(boardId, id))) return;
+  if (w.sessionId) await repo.removeVoicesOf(boardId, w.sessionId);
   await recordAuditQuietly({
     action: 'walkthrough.deleted',
     actorId: userId,
@@ -244,6 +279,51 @@ export async function deleteWalkthrough(boardId: string, id: string, userId: str
   });
   // The recording is now referenced by nothing: the uploads sweep deletes it after its grace period.
   await publish(boardId, id);
+}
+
+// ---- other presenters (#128) ----
+
+/** Voices of sessions that never became a walkthrough are dropped after this long. */
+const ORPHAN_VOICE_MS = 24 * 60 * 60 * 1000;
+
+function cleanSession(v: unknown): string {
+  if (typeof v !== 'string' || !WALKTHROUGH_SESSION_RE.test(v)) throw badRequest('session must be a recording session id');
+  return v;
+}
+
+/**
+ * A presenter's own recording for a session (editors; their own upload). It joins the walkthrough
+ * the session's host saves, before or after this arrives; someone who left early sends what they
+ * had, and the recording went on without them.
+ */
+export async function addVoice(boardId: string, userId: string, body: unknown): Promise<void> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  await boardFor(boardId, userId, 'editor');
+  const sessionId = cleanSession(b.session);
+  if (!finite(b.durationMs) || b.durationMs <= 0 || b.durationMs > MAX_WALKTHROUGH_MS + 5000) throw badRequest('durationMs must be the recording’s length');
+  if (!finite(b.offsetMs) || b.offsetMs < 0 || b.offsetMs > MAX_WALKTHROUGH_MS) throw badRequest('offsetMs must be where it starts in the walkthrough');
+  const durationMs = Math.round(b.durationMs);
+  const timeline = cleanTimeline(b.timeline, durationMs);
+  const name = typeof b.mediaUrl === 'string' && b.mediaUrl.startsWith('/uploads/') ? uploadName(b.mediaUrl) : null;
+  const info = name ? await uploadInfo(name) : null;
+  if (!name || !info || info.ownerId !== userId || !/^(video|audio)\//.test(info.contentType)) throw badRequest('mediaUrl must be a video or audio file you uploaded');
+  if (info.removed) throw new HttpError(410, 'This file was removed by Freero’s moderators');
+  await repo.removeOrphanVoices(boardId, Date.now() - ORPHAN_VOICE_MS);
+  if ((await repo.countVoices(boardId, sessionId)) >= MAX_WALKTHROUGH_VOICES) throw new HttpError(409, 'This recording has as many presenters as it can hold', 'walkthrough_voices_full');
+  await repo.insertVoice({
+    id: newId(12),
+    boardId,
+    sessionId,
+    authorId: userId,
+    mediaUrl: `/uploads/${name}`,
+    media: b.media === 'video' ? 'video' : b.media === 'audio' ? 'audio' : info.contentType.startsWith('audio/') ? 'audio' : 'video',
+    offsetMs: Math.round(b.offsetMs),
+    durationMs,
+    timeline,
+    createdAt: Date.now(),
+  });
+  const w = await repo.bySession(boardId, sessionId);
+  if (w) await publish(boardId, w.id);
 }
 
 /** Counts the person once; visitors without an account watch uncounted. Returns the count. */
@@ -327,6 +407,28 @@ export async function deleteComment(boardId: string, id: string, commentId: stri
 
 // ---- captions ----
 
+export interface VoiceCues {
+  speaker: string;
+  /** Where this voice starts on the walkthrough's clock. */
+  offsetMs: number;
+  cues: WalkthroughCue[];
+}
+
+/**
+ * Captions of several presenters as one list on the walkthrough's clock: each voice's captions moved
+ * by its offset, cut to the walkthrough's length, named after who said them, in time order.
+ */
+export function mergeVoiceCues(parts: readonly VoiceCues[], durationMs: number): WalkthroughCue[] {
+  const out: WalkthroughCue[] = [];
+  for (const p of parts)
+    for (const c of p.cues) {
+      const start = c.start + p.offsetMs;
+      const end = Math.min(durationMs, c.end + p.offsetMs);
+      if (end > start) out.push({ start, end, text: c.text, ...(p.speaker ? { speaker: p.speaker } : {}) });
+    }
+  return out.sort((a, b) => a.start - b.start || a.end - b.end).slice(0, MAX_TRANSCRIPT_CUES);
+}
+
 /** Captions typed (or pasted) by the author or an editor; an empty list removes them. */
 export async function setCaptions(boardId: string, id: string, userId: string, body: unknown): Promise<Walkthrough> {
   const w = await found(boardId, id);
@@ -352,7 +454,23 @@ export async function transcribeWalkthrough(boardId: string, id: string, userId:
   const info = await uploadInfo(uploadName(w.mediaUrl) ?? '');
   if (info?.removed) throw new HttpError(410, 'This file was removed by Freero’s moderators');
   const ext = w.mediaUrl.split('.').pop() ?? 'webm';
-  const cues = await transcribeRecording(boardId, userId, { bytes, contentType: info?.contentType ?? 'application/octet-stream', fileName: `walkthrough.${ext}` }, w.durationMs);
+  const own = await transcribeRecording(boardId, userId, { bytes, contentType: info?.contentType ?? 'application/octet-stream', fileName: `walkthrough.${ext}` }, w.durationMs);
+  // #128: with several presenters each voice is transcribed on its own, and every caption names its speaker.
+  const voices = w.sessionId ? await repo.voicesOf(boardId, w.sessionId) : [];
+  let cues = own;
+  if (voices.length) {
+    const names = await nameMap([w.authorId, ...voices.map((v) => v.authorId)]);
+    const parts: VoiceCues[] = [{ speaker: names.get(w.authorId)?.name ?? '', offsetMs: 0, cues: own }];
+    for (const v of voices) {
+      const vInfo = await uploadInfo(uploadName(v.mediaUrl) ?? '');
+      const vBytes = vInfo && !vInfo.removed ? await readUpload(v.mediaUrl) : null;
+      if (!vBytes || !vInfo) continue; // a voice removed by moderators stays uncaptioned
+      const vExt = v.mediaUrl.split('.').pop() ?? 'webm';
+      const vCues = await transcribeRecording(boardId, userId, { bytes: vBytes, contentType: vInfo.contentType, fileName: `voice.${vExt}` }, v.durationMs);
+      parts.push({ speaker: names.get(v.authorId)?.name ?? '', offsetMs: v.offsetMs, cues: vCues });
+    }
+    cues = mergeVoiceCues(parts, w.durationMs);
+  }
   await repo.setTranscript(boardId, id, cues, 'ai');
   await recordAuditQuietly({
     action: 'walkthrough.transcribed',
@@ -481,7 +599,13 @@ export async function walkthroughUploadReferences(among?: readonly string[]): Pr
 
 /** A person's walkthroughs, comments and views (their data export; recordings are in their uploads). */
 export async function walkthroughsExportOf(userId: string) {
-  const [made, comments, views, reactions] = await Promise.all([repo.authoredBy(userId), repo.commentsBy(userId), repo.viewsBy(userId), repo.reactionsBy(userId)]);
+  const [made, comments, views, reactions, voices] = await Promise.all([
+    repo.authoredBy(userId),
+    repo.commentsBy(userId),
+    repo.viewsBy(userId),
+    repo.reactionsBy(userId),
+    repo.voicesBy(userId),
+  ]);
   return {
     walkthroughs: made.map((w) => ({
       id: w.id,
@@ -498,6 +622,8 @@ export async function walkthroughsExportOf(userId: string) {
     comments: comments.map((c) => ({ walkthroughId: c.walkthroughId, walkthroughTitle: c.title, boardId: c.boardId, atMs: c.atMs, text: c.text, createdAt: new Date(c.createdAt).toISOString() })),
     watched: views.map((v) => ({ walkthroughId: v.walkthroughId, at: new Date(v.viewedAt).toISOString() })),
     reactions: reactions.map((r) => ({ walkthroughId: r.walkthroughId, boardId: r.boardId, atMs: r.atMs, emoji: r.emoji, createdAt: new Date(r.createdAt).toISOString() })),
+    // #128: their voice in walkthroughs someone else hosted.
+    voices: voices.map((v) => ({ boardId: v.boardId, session: v.sessionId, recording: v.mediaUrl, offsetMs: v.offsetMs, durationMs: v.durationMs, createdAt: new Date(v.createdAt).toISOString(), timeline: v.timeline })),
   };
 }
 

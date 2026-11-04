@@ -1424,7 +1424,11 @@ protocol + role filter + update log; version history + snapshot retention), `unf
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
 templates; content is opaque engine JSON), `blueprints` (blueprints, blueprint_items: a project's boards and docs saved for reuse, #161; see "Blueprints"), `stickers` (sticker_sets, stickers: a workspace's own
-sticker sets, #138), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
+sticker sets, #138), `gifs` (no table: GIF search in the sticker panel through the server, #139 —
+the operator's provider (`GIF_PROVIDER`, `GIF_API_KEY`) is asked for results no more mature than
+the workspace's `gifs` policy; previews come through `GET /gifs/media` and a placed GIF is copied
+into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provider links the
+server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
 packs, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -1882,7 +1886,9 @@ members with roles owner / admin / member / guest (separate from board roles).
   sharing settings and moving boards"), `offlineCopies` (#178: may its boards be kept on devices
   for offline work — 'all', 'unkeyed' (default: not while the workspace has its own encryption
   key), 'off'; told to devices by `BoardPermissions.offline` and `POST /boards/offline-check`, a
-  label may cap it; see "Offline copies"). All other
+  label may cap it; see "Offline copies"), `gifs` (#139: GIF search off, or the highest content
+  rating its results may have, G by default or PG-13; enforced by `modules/gifs` on every search
+  and placement, and sent to the provider with each search). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
@@ -2935,6 +2941,21 @@ a native range. No third-party recording service, no screen capture. Overlay con
   commenters and up with an account; deleted with the reactor's account). Marks on the track group
   a burst into one mark with counts (`reactionMarks`); who reacted isn't shown, only `mine`. The
   author is notified (`walkthrough.reaction`) once per person per walkthrough.
+- Several presenters (#128): every recording is a SESSION (an id the host's browser makes). The host
+  invites people on the board through presence (`ext.walkthrough`: session, title, the server-clock
+  start, who is invited, and for a few seconds after stopping whether it was kept); an invited
+  editor who joins records their OWN voice (and camera), view and pointer in their own browser, on
+  the walkthrough's clock (server time minus the host's start), and sends it with
+  `POST …/walkthroughs/voices` (`walkthrough_voices`, their own upload, kept by session: it may
+  arrive before or after the host saves, and joins the walkthrough whose `session_id` matches).
+  Nobody's audio travels between browsers. A guest stops with the host (keeping their part only if
+  the host kept theirs), or leaves early and sends what they have; the recording goes on. Each
+  recorder also stores when its person talked (`timeline.speech`, from microphone levels:
+  `SpeechTracker`). Playback keeps the other voices' media in step with the host's clock, shows
+  every presenter's pointer in their colour, and follows whoever is speaking (`speakerAt`) or the
+  host's view; AI captions transcribe each voice and name the speaker (`mergeVoiceCues`). Voices
+  are in the uploads sweep's references, deleted with the walkthrough, and with their author's
+  account; a session nobody saved loses its voices after a day.
 - Open boards learn about changes through the server-written `walkthroughs` collection
   (`SERVER_WRITTEN_COLLECTIONS`, `Y_KEPT_ON_RESTORE`): a summary per walkthrough (title, length,
   counts), never the media URL or the timeline. An object: `freero://walkthrough/<id>`, with the
@@ -4073,6 +4094,12 @@ the board, deletions. A suggestion is not board content until someone who can ed
   "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
   depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
+- Accessibility: `npm run a11y` (#141) runs axe-core (WCAG 2.0 / 2.1 / 2.2 A and AA, a dev
+  dependency) against a production build on a real server in headless Chromium, in 17 states (the
+  dashboard, settings, admin console, a board and its dialogs and menus, presenting, the dark theme,
+  phone width) plus a few keyboard checks; it fails on serious or critical violations. Not in
+  `npm run check` (it builds the app and starts a browser). What it can't see, and the manual
+  passes, are in docs/accessibility.md; the conformance report is the site's `/accessibility`.
 - Performance: `npm run bench:board` (#130) opens a seeded 10,000-item board in the real app
   (headless Chromium, real server, a real collaborator socket) and measures load, frame times
   (pan and zoom at fit and 100%, select all, dragging 500, a collaborator's edits) and memory;

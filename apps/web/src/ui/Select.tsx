@@ -52,6 +52,8 @@ export function Select<T extends string | number = string>({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const nameId = useId();
+  const valueId = useId();
   const opts = options.map(norm);
   const current = opts.find((o) => o.value === value);
 
@@ -82,14 +84,21 @@ export function Select<T extends string | number = string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
+        // Named by its label AND the value it shows, so what people see is what speech input can say (WCAG 2.5.3).
+        aria-labelledby={aria['aria-label'] ? `${nameId} ${valueId}` : undefined}
         aria-label={aria['aria-label']}
         className={`fr-select fr-select--${size} fr-select--${variant}${open ? ' fr-select--open' : ''}${className ? ` ${className}` : ''}`}
         style={{ width }}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onTriggerKey}
       >
+        {aria['aria-label'] ? (
+          <span id={nameId} hidden>
+            {aria['aria-label']}
+          </span>
+        ) : null}
         {current?.icon ? <span className="fr-icon fr-select__icon">{renderIcon(current.icon, 16)}</span> : null}
-        <span className={`fr-select__value${current ? '' : ' fr-select__value--placeholder'}`}>{current ? current.label : placeholder}</span>
+        <span id={valueId} className={`fr-select__value${current ? '' : ' fr-select__value--placeholder'}`}>{current ? current.label : placeholder}</span>
         <ChevronDown className="fr-select__chevron" size={size === 'sm' ? 14 : 16} aria-hidden />
       </button>
       <Popover

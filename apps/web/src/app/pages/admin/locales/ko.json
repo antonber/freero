@@ -843,7 +843,11 @@
     "offlineCopiesOnDevices",
     "whetherPeopleMayKeepCopies",
     "allowedUnlessEncryptedWithKey",
-    "allowedAlsoUnderKey"
+    "allowedAlsoUnderKey",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "복사",
   "copied": "복사됨",
@@ -1688,5 +1692,9 @@
   "create": "만들기",
   "thereIsAlreadyALabel": "같은 이름의 레이블이 이미 있어요",
   "asTheWorkspaceAllows": "워크스페이스 설정대로",
-  "linksExpireWithinDays": "링크 만료 기한(일)"
+  "linksExpireWithinDays": "링크 만료 기한(일)",
+  "gifSearch": "GIF 검색",
+  "gifSearchHint": "스티커 패널의 GIF 검색(이 서버에서 제공하는 경우)과 결과에 허용되는 최고 등급입니다.",
+  "gifRatedG": "G 등급만",
+  "gifRatedPg13": "PG-13까지"
 }

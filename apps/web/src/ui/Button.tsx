@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useId, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { renderIcon, type IconProp } from './icon';
 import { Spinner } from './misc';
 import { Tooltip } from './Tooltip';
@@ -123,16 +123,25 @@ export const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(f
   { label, shortcut, tooltipSide = 'bottom', wide, className, type = 'button', children, ...rest },
   ref,
 ) {
+  const nameId = useId();
+  const valueId = useId();
   return (
     <Tooltip content={label} shortcut={shortcut} side={tooltipSide}>
       <button
         ref={ref}
         type={type}
+        // Its name says what it is and the value it shows ("Font Inter"): what people see is in it (WCAG 2.5.3).
+        aria-labelledby={`${nameId} ${valueId}`}
         aria-label={label}
         className={['fr-tbbtn', wide ? 'fr-tbbtn--wide' : '', className ?? ''].filter(Boolean).join(' ')}
         {...rest}
       >
-        {children}
+        <span id={nameId} hidden>
+          {label}
+        </span>
+        <span id={valueId} className="fr-tbbtn__face">
+          {children}
+        </span>
       </button>
     </Tooltip>
   );

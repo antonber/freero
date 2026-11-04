@@ -529,7 +529,10 @@
     "errors.shape_pack_limit",
     "errors.shape_pack_workspace_full",
     "errors.assistant_question",
-    "errors.assistant_question_long"
+    "errors.assistant_question_long",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -1060,5 +1063,8 @@
   "errors.shape_pack_limit": "يمكن أن تحتوي مساحة العمل على {max} حزمة أشكال كحد أقصى. أزل أولًا حزمة لم تعد تستخدمها.",
   "errors.shape_pack_workspace_full": "امتلأت حزم الأشكال في مساحة العمل هذه. أزل أولًا حزمة لم تعد تستخدمها.",
   "errors.assistant_question": "اسأل المساعد شيئًا",
-  "errors.assistant_question_long": "يمكن أن يتكون السؤال من {max} حرف كحد أقصى"
+  "errors.assistant_question_long": "يمكن أن يتكون السؤال من {max} حرف كحد أقصى",
+  "errors.gifs_off": "البحث عن صور GIF متوقف في مساحة العمل هذه",
+  "errors.gifs_unavailable": "لم تستجب خدمة صور GIF. حاول مرة أخرى بعد قليل.",
+  "errors.gifs_copy_failed": "تعذّر نسخ صورة GIF هذه. جرّب صورة أخرى."
 }

@@ -49,7 +49,15 @@
     "stickersOrEmoji",
     "stickers",
     "searchStickersAndEmoji",
-    "stickersEmoji"
+    "stickersEmoji",
+    "gifs",
+    "gif",
+    "searchGifs",
+    "gifsForQuery",
+    "trendingGifs",
+    "gifsUnavailable",
+    "moreGifs",
+    "gifsFromProvider"
   ],
   "approved": "Aprobado",
   "star": "Estrella",
@@ -100,5 +108,13 @@
   "stickersOrEmoji": "Stickers o emoji",
   "stickers": "Stickers",
   "searchStickersAndEmoji": "Buscar stickers y emoji",
-  "stickersEmoji": "Stickers y emoji"
+  "stickersEmoji": "Stickers y emoji",
+  "gifs": "GIF",
+  "gif": "GIF",
+  "searchGifs": "Buscar GIF",
+  "gifsForQuery": "GIF de «{query}»",
+  "trendingGifs": "GIF en tendencia",
+  "gifsUnavailable": "No se pueden cargar los GIF ahora. Inténtalo de nuevo en un momento.",
+  "moreGifs": "Más GIF",
+  "gifsFromProvider": "GIF de {provider}"
 }

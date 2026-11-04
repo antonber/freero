@@ -181,6 +181,11 @@ export interface BoardPermissions {
    */
   linkPolicy?: { passwordRequired: boolean; maxDays: number | null };
   /**
+   * [additive, #139] GIF search is offered on this board: the operator configured a GIF provider
+   * and the workspace's `gifs` policy isn't 'off'. Absent: no GIF search.
+   */
+  gifs?: boolean;
+  /**
    * [additive, #178] You may keep a copy of this board on your devices to open and edit it offline:
    * the workspace's `offlineCopies` policy allows it (a workspace under its own encryption key only
    * with 'all'). Absent or false: nothing is kept on the device, and a copy already there is deleted.
@@ -448,6 +453,12 @@ export interface WorkspacePolicies {
    */
   templatePublishing: 'members' | 'admins';
   /**
+   * [additive, #139] GIF search in the sticker panel (only where the operator configured a GIF
+   * provider): 'off', or the highest content rating results may have — 'g' (the default) or
+   * 'pg-13'.
+   */
+  gifs: 'off' | 'g' | 'pg-13';
+  /**
    * [additive, #178] May people keep copies of its boards on their devices to work offline? 'all':
    * yes, also while the workspace keeps its boards under its own encryption key (#159); 'unkeyed'
    * (default): yes, unless it does; 'off': no (copies already on devices are deleted the next time
@@ -516,6 +527,7 @@ export const POLICY_STRICTNESS: { [K in OrderedPolicyKey]: ReadonlyArray<Workspa
   boardEmbeds: ['on', 'off'],
   linkPassword: ['optional', 'required'],
   templatePublishing: ['members', 'admins'],
+  gifs: ['pg-13', 'g', 'off'],
   offlineCopies: ['all', 'unkeyed', 'off'],
 };
 /** The floored policies whose values are an ordered choice (all but the numeric `linkMaxDays`). */
@@ -1303,6 +1315,43 @@ export const MAX_STICKER_SETS = 30;
 export const MAX_STICKERS_PER_SET = 120;
 export const MAX_STICKER_BYTES = 512 * 1024;
 export const MAX_STICKER_NAME = 60;
+
+// ---- GIF search (#139; modules/gifs) ----
+// Offered only where the operator configured a GIF provider (GIF_PROVIDER + GIF_API_KEY) and the
+// board's workspace policy `gifs` isn't 'off' (`BoardPermissions.gifs`). The browser never talks
+// to the provider: searches, previews and the chosen GIF all go through Freero's server, which
+// asks the provider for results rated no higher than the workspace allows.
+// GET  /api/boards/:id/gifs?q=<words>&pos=<next>  -> GifSearchResponse  (editors of the board;
+//                                                     no q: the provider's trending GIFs)
+// GET  /api/gifs/media?m=<token>                    -> a preview's bytes (only links the server
+//                                                     itself handed out in a search)
+// POST /api/boards/:id/gifs/place  body { media }   -> 201 GifPlaceResponse: the GIF copied into
+//                                                     the caller's uploads, so the board never
+//                                                     loads it from the provider
+export interface GifResult {
+  id: string;
+  /** The provider's description (may be empty). */
+  title: string;
+  /** A small animated preview, served through Freero ("/api/gifs/media?m=…"). */
+  preview: { url: string; w: number; h: number };
+  /** Hand back to `place` to store the GIF (opaque, signed by the server). */
+  media: string;
+  w: number;
+  h: number;
+}
+export interface GifSearchResponse {
+  results: GifResult[];
+  /** Pass as `pos` for more; null: no more. */
+  next: string | null;
+  /** Who the results come from, to credit them (e.g. "GIPHY"). */
+  provider: string;
+}
+export interface GifPlaceResponse {
+  /** "/uploads/<name>" */
+  url: string;
+  w: number;
+  h: number;
+}
 
 // ---- Shape packs (#4; server modules/shapepacks) ----
 // A workspace's own icon and shape sets: SVGs its admins upload (their design system's icons, the

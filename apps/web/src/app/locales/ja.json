@@ -529,7 +529,10 @@
     "errors.shape_pack_limit",
     "errors.shape_pack_workspace_full",
     "errors.assistant_question",
-    "errors.assistant_question_long"
+    "errors.assistant_question_long",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "無題のフレーム",
   "couldNotChangeEmbedding": "埋め込み設定を変更できませんでした",
@@ -1060,5 +1063,8 @@
   "errors.shape_pack_limit": "ワークスペースに置ける図形パックは最大 {max} 個です。使っていないパックを先に削除してください。",
   "errors.shape_pack_workspace_full": "このワークスペースの図形パックの容量がいっぱいです。使っていないパックを先に削除してください。",
   "errors.assistant_question": "アシスタントに質問を入力してください",
-  "errors.assistant_question_long": "質問は最大 {max} 文字までです"
+  "errors.assistant_question_long": "質問は最大 {max} 文字までです",
+  "errors.gifs_off": "このワークスペースでは GIF 検索がオフになっています",
+  "errors.gifs_unavailable": "GIF サービスが応答しませんでした。しばらくしてからもう一度お試しください。",
+  "errors.gifs_copy_failed": "その GIF をコピーできませんでした。別の GIF をお試しください。"
 }

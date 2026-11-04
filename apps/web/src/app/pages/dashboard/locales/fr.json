@@ -12,7 +12,6 @@
     "member",
     "guest",
     "freeroHome",
-    "workspaceWorkspacelabelSwitchWorkspace",
     "justYou",
     "workspaces",
     "newTeamWorkspace",
@@ -355,7 +354,8 @@
     "couldNotPinTheProject",
     "nameEncryptsItsBoardsWith",
     "thisWorkspaceSKeyIsn",
-    "itsBoardsAreEncryptedWith"
+    "itsBoardsAreEncryptedWith",
+    "switchWorkspaceFrom"
   ],
   "home": "Accueil",
   "recent": "Récents",
@@ -369,7 +369,6 @@
   "member": "Membre",
   "guest": "Invité",
   "freeroHome": "Accueil Freero",
-  "workspaceWorkspacelabelSwitchWorkspace": "Espace de travail : {workspaceLabel}. Changer d’espace de travail",
   "justYou": "Vous seul",
   "workspaces": "Espaces de travail",
   "newTeamWorkspace": "Nouvel espace de travail d’équipe…",
@@ -712,5 +711,6 @@
   "couldNotPinTheProject": "Impossible d’épingler le projet",
   "nameEncryptsItsBoardsWith": "{name} chiffre ses tableaux avec sa propre clé, et cette clé ne peut pas être utilisée pour le moment (ses admins l’ont suspendue, ou son service de clés a refusé ou n’a pas répondu). Ses tableaux restent fermés jusqu’à ce que la clé soit de nouveau disponible.",
   "thisWorkspaceSKeyIsn": "La clé de cet espace de travail n’est pas disponible",
-  "itsBoardsAreEncryptedWith": "Ses tableaux sont chiffrés avec la propre clé de l’espace de travail, qui ne peut pas être utilisée pour le moment. Ils s’ouvriront de nouveau dès que ses admins l’auront rétablie."
+  "itsBoardsAreEncryptedWith": "Ses tableaux sont chiffrés avec la propre clé de l’espace de travail, qui ne peut pas être utilisée pour le moment. Ils s’ouvriront de nouveau dès que ses admins l’auront rétablie.",
+  "switchWorkspaceFrom": "Changer d'espace de travail, actuel :"
 }

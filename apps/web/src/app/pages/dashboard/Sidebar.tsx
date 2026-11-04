@@ -166,10 +166,11 @@ export function Sidebar(props: SidebarProps) {
               className={`fr-dash-ws${switcherOpen ? ' fr-dash-ws--open' : ''}`}
               aria-haspopup="menu"
               aria-expanded={switcherOpen}
-              aria-label={tr('workspaceWorkspacelabelSwitchWorkspace', { workspaceLabel: workspaceLabel(current) })}
               onClick={() => setSwitcherOpen((o) => !o)}
             >
               <WorkspaceBadge workspace={current} />
+              {/* Named by what it shows (WCAG 2.5.3), then what it does. */}
+              <span className="fr-sr-only">{tr('switchWorkspaceFrom')}</span>
               <span className="fr-dash-ws__text">
                 <span className="fr-dash-ws__name">{workspaceLabel(current)}</span>
                 <span className="fr-dash-ws__meta">
@@ -291,9 +292,9 @@ export function Sidebar(props: SidebarProps) {
         className={`fr-account${menuOpen ? ' fr-account--open' : ''}`}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        aria-label={tr('accountMenu')}
         onClick={() => setMenuOpen((o) => !o)}
       >
+        <span className="fr-sr-only">{tr('accountMenu')}</span>
         <Avatar name={user.name} color={user.color} src={user.avatarUrl} size={32} />
         <span className="fr-account__text">
           <span className="fr-account__name">{user.name}</span>

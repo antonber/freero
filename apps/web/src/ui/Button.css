@@ -224,6 +224,11 @@
   justify-content: space-between;
 }
 
+/* The face only names the button (with its label); its content lays out as the button's own. */
+.fr-tbbtn__face {
+  display: contents;
+}
+
 /* Forced colours: a primary / danger button keeps a system-coloured fill and its own label colour
    (without this the browser paints a Canvas backplate behind HighlightText, hiding the label). */
 @media (forced-colors: active) {

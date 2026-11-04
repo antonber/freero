@@ -12,7 +12,6 @@
     "member",
     "guest",
     "freeroHome",
-    "workspaceWorkspacelabelSwitchWorkspace",
     "justYou",
     "workspaces",
     "newTeamWorkspace",
@@ -355,7 +354,8 @@
     "couldNotPinTheProject",
     "nameEncryptsItsBoardsWith",
     "thisWorkspaceSKeyIsn",
-    "itsBoardsAreEncryptedWith"
+    "itsBoardsAreEncryptedWith",
+    "switchWorkspaceFrom"
   ],
   "home": "Inicio",
   "recent": "Recientes",
@@ -369,7 +369,6 @@
   "member": "Miembro",
   "guest": "Invitado",
   "freeroHome": "Inicio de Freero",
-  "workspaceWorkspacelabelSwitchWorkspace": "Espacio de trabajo: {workspaceLabel}. Cambiar de espacio de trabajo",
   "justYou": "Solo tú",
   "workspaces": "Espacios de trabajo",
   "newTeamWorkspace": "Nuevo espacio de trabajo de equipo…",
@@ -712,5 +711,6 @@
   "couldNotPinTheProject": "No se pudo fijar el proyecto",
   "nameEncryptsItsBoardsWith": "{name} cifra sus tableros con su propia clave, y esa clave no se puede usar ahora mismo (sus administradores la suspendieron, o su servicio de claves la rechazó o no respondió). Sus tableros siguen cerrados hasta que la clave vuelva a estar disponible.",
   "thisWorkspaceSKeyIsn": "La clave de este espacio de trabajo no está disponible",
-  "itsBoardsAreEncryptedWith": "Sus tableros están cifrados con la clave propia del espacio de trabajo, que no se puede usar ahora mismo. Se abrirán de nuevo en cuanto sus administradores la restablezcan."
+  "itsBoardsAreEncryptedWith": "Sus tableros están cifrados con la clave propia del espacio de trabajo, que no se puede usar ahora mismo. Se abrirán de nuevo en cuanto sus administradores la restablezcan.",
+  "switchWorkspaceFrom": "Cambiar de espacio de trabajo, actual:"
 }

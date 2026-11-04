@@ -211,7 +211,6 @@ function AvatarsPanel({ editor }: { editor: Editor }) {
             type="button"
             className={`fr-presence-stack__item${following?.userId === p.userId ? ' is-followed' : ''}`}
             style={{ ['--fr-presence-color' as string]: p.color }}
-            aria-label={p.isMe ? tr('nameYou', { name: p.name }) : p.name}
             aria-expanded={open?.userId === p.userId}
             onClick={(e) => {
               const el = e.currentTarget;
@@ -220,7 +219,9 @@ function AvatarsPanel({ editor }: { editor: Editor }) {
               setOpen({ userId: p.userId, el });
             }}
           >
+            {/* Named by the avatar (the person's name), not over the initials it shows (WCAG 2.5.3). */}
             <Avatar name={p.name} color={p.color} src={p.avatarUrl} size={30} ring />
+            {p.isMe && <span className="fr-sr-only">{tr('you')}</span>}
           </button>
         </Tooltip>
       ))}

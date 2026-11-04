@@ -195,46 +195,50 @@ export function FormatToolbar() {
   ];
 
   return (
-    <div
-      ref={ref}
-      className="fr-format"
-      style={{ left: Math.round(left), top: Math.round(top) }}
-      data-fr-format-toolbar=""
-      data-fr-region="format"
-      data-fr-chrome=""
-      role="toolbar"
-      aria-label={tr('format')}
-      onMouseDown={(e) => {
-        // Keep the text editor's selection: clicks here must not steal focus.
-        const t = e.target as HTMLElement;
-        if (!t.closest('input, textarea, select')) e.preventDefault();
-      }}
-    >
-      <ToolbarBody
-        core={core}
-        role={role}
-        textVersion={textVersion}
-        els={els}
-        ids={ids}
-        mixed={mixed}
-        sections={sections}
-        arrangeRef={arrangeRef}
-        moreRef={moreRef}
-        arrangeOpen={arrangeOpen}
-        moreOpen={moreOpen}
-        setArrangeOpen={setArrangeOpen}
-        setMoreOpen={setMoreOpen}
-      />
-      <Menu open={arrangeOpen} onClose={() => setArrangeOpen(false)} anchor={arrangeRef.current} items={arrangeItems} side="bottom" align="center" />
-      <Menu
-        open={moreOpen}
-        onClose={() => setMoreOpen(false)}
-        anchor={moreRef.current}
-        items={moreOpen ? contextCommandItems(core, { withZOrder: false }) : []}
-        side="bottom"
-        align="end"
-        minWidth={220}
-      />
+    // A landmark around the floating toolbar, so its content is in one like the rest of the chrome
+    // (screen-reader region navigation finds it). `display: contents`: it adds no box.
+    <div className="fr-format-region" role="region" aria-label={tr('format')}>
+      <div
+        ref={ref}
+        className="fr-format"
+        style={{ left: Math.round(left), top: Math.round(top) }}
+        data-fr-format-toolbar=""
+        data-fr-region="format"
+        data-fr-chrome=""
+        role="toolbar"
+        aria-label={tr('format')}
+        onMouseDown={(e) => {
+          // Keep the text editor's selection: clicks here must not steal focus.
+          const t = e.target as HTMLElement;
+          if (!t.closest('input, textarea, select')) e.preventDefault();
+        }}
+      >
+        <ToolbarBody
+          core={core}
+          role={role}
+          textVersion={textVersion}
+          els={els}
+          ids={ids}
+          mixed={mixed}
+          sections={sections}
+          arrangeRef={arrangeRef}
+          moreRef={moreRef}
+          arrangeOpen={arrangeOpen}
+          moreOpen={moreOpen}
+          setArrangeOpen={setArrangeOpen}
+          setMoreOpen={setMoreOpen}
+        />
+        <Menu open={arrangeOpen} onClose={() => setArrangeOpen(false)} anchor={arrangeRef.current} items={arrangeItems} side="bottom" align="center" />
+        <Menu
+          open={moreOpen}
+          onClose={() => setMoreOpen(false)}
+          anchor={moreRef.current}
+          items={moreOpen ? contextCommandItems(core, { withZOrder: false }) : []}
+          side="bottom"
+          align="end"
+          minWidth={220}
+        />
+      </div>
     </div>
   );
 }

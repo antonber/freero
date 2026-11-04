@@ -1,5 +1,52 @@
 import { describe, expect, it } from 'vitest';
-import { addTime, MINUTE, parseDuration, pauseTimer, phaseOf, remainingMs, resumeTimer, startTimer } from './lib/timer';
+import { addTime, elapsedMs, MINUTE, parseDuration, pauseTimer, phaseOf, remainingMs, resumeTimer, startTimer } from './lib/timer';
+import { MUSIC_TRACKS, notesBetween, type NoteEvent } from './lib/music';
+import { hearsMusic } from './lib/prefs';
+
+describe('timer music (#145)', () => {
+  it('a scheduler asking in uneven windows plays every note exactly once, none doubled or dropped at the edges', () => {
+    for (const track of MUSIC_TRACKS) {
+      const whole = notesBetween(track, 0, 40_000);
+      const pieces: NoteEvent[] = [];
+      // Windows as a look-ahead scheduler asks for them: uneven, crossing bar lines.
+      for (let from = 0, i = 0; from < 40_000; i++) {
+        const to = Math.min(40_000, from + [1500, 300, 2700, 950][i % 4]);
+        pieces.push(...notesBetween(track, from, to));
+        from = to;
+      }
+      expect(pieces).toEqual(whole);
+      expect(whole.length).toBeGreaterThan(10);
+    }
+  });
+
+  it('someone who joins mid-chord hears that chord at once and then exactly what everyone else hears', () => {
+    const joinAt = 13_100; // inside a bar of every track
+    for (const track of MUSIC_TRACKS) {
+      const early = notesBetween(track, 0, 30_000); // a client that was there from the start
+      const late = notesBetween(track, joinAt, 30_000, true);
+      expect(early.some((n) => n.at < joinAt && n.at + n.dur > joinAt)).toBe(true);
+      expect(late).toEqual(early.filter((n) => n.at >= joinAt || n.at + n.dur > joinAt));
+    }
+  });
+
+  it('+1 min and a pause carry the music on from where it was instead of jumping', () => {
+    const t0 = 2_000_000;
+    let s = startTimer(5 * MINUTE, t0, 'u');
+    s = addTime(s, t0 + 40_000);
+    expect(elapsedMs(s, t0 + 40_000)).toBe(40_000);
+    s = pauseTimer(s, t0 + 50_000);
+    expect(elapsedMs(s, t0 + 9 * MINUTE)).toBe(50_000);
+    s = resumeTimer(s, t0 + 9 * MINUTE);
+    expect(elapsedMs(s, t0 + 9 * MINUTE + 1000)).toBe(51_000);
+  });
+
+  it('the music is muted for everyone but the person who chose it until they turn it on', () => {
+    expect(hearsMusic(null, 'facilitator', 'facilitator')).toBe(true);
+    expect(hearsMusic(null, 'facilitator', 'participant')).toBe(false);
+    expect(hearsMusic(true, 'facilitator', 'participant')).toBe(true);
+    expect(hearsMusic(false, 'facilitator', 'facilitator')).toBe(false);
+  });
+});
 
 describe('shared countdown', () => {
   it('pause then resume keeps the remaining time, however long the pause lasted', () => {

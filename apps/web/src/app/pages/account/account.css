@@ -73,6 +73,8 @@
 .fr-acct-avatar {
   display: flex;
   align-items: center;
+  /* At 320 px the upload button goes under the preview instead of out of the card (WCAG 1.4.10). */
+  flex-wrap: wrap;
   gap: 18px;
 }
 
@@ -566,11 +568,13 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  /* A long address breaks rather than running out of the box at 320 px (WCAG 1.4.10). */
+  overflow-wrap: anywhere;
   gap: 10px;
   margin: 0 0 16px;
   padding: 10px 14px;
   font-size: 13.5px;
-  color: #6b4400;
+  color: var(--fr-warning-ink);
   background: var(--fr-warning-soft);
   border-radius: var(--fr-radius);
 }

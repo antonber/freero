@@ -528,5 +528,8 @@
   "errors.shape_pack_limit": "A workspace can have at most {max} shape packs. Remove one you no longer use first.",
   "errors.shape_pack_workspace_full": "This workspace’s shape packs are full. Remove a pack you no longer use first.",
   "errors.assistant_question": "Ask the assistant something",
-  "errors.assistant_question_long": "A question may be at most {max} characters"
+  "errors.assistant_question_long": "A question may be at most {max} characters",
+  "errors.gifs_off": "GIF search is turned off in this workspace",
+  "errors.gifs_unavailable": "The GIF service didn’t answer. Try again in a moment.",
+  "errors.gifs_copy_failed": "That GIF could not be copied. Try another one."
 }

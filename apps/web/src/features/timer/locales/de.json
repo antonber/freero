@@ -21,7 +21,18 @@
     "timeSUpClickTo",
     "timeSUp",
     "paused2",
-    "timerValueValue2"
+    "timerValueValue2",
+    "backgroundMusic",
+    "musicNone",
+    "musicDrift",
+    "musicDriftHint",
+    "musicPulse",
+    "musicPulseHint",
+    "musicRain",
+    "musicRainHint",
+    "musicOnForYou",
+    "musicOffForYou",
+    "musicVolume"
   ],
   "startTheTimer": "Timer starten",
   "stopTheTimer": "Timer stoppen",
@@ -44,5 +55,16 @@
   "timeSUpClickTo": "Die Zeit ist um. Zum Schließen klicken",
   "timeSUp": "Die Zeit ist um",
   "paused2": ", pausiert",
-  "timerValueValue2": "Timer {value}{value2}"
+  "timerValueValue2": "Timer {value}{value2}",
+  "backgroundMusic": "Hintergrundmusik",
+  "musicNone": "Keine",
+  "musicDrift": "Treiben",
+  "musicDriftHint": "Langsame, warme Akkorde",
+  "musicPulse": "Puls",
+  "musicPulseHint": "Ein sanftes, gleichmäßiges Arpeggio",
+  "musicRain": "Regen",
+  "musicRainHint": "Leiser Regen und ein tiefer Klangteppich",
+  "musicOnForYou": "Musik für Sie an ({track})",
+  "musicOffForYou": "Musik für Sie stummgeschaltet ({track})",
+  "musicVolume": "Musiklautstärke"
 }

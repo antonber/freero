@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -193,7 +192,8 @@
     "tabAndShiftTabMove",
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
-    "youReOfflineKeepThisTabOpen"
+    "youReOfflineKeepThisTabOpen",
+    "zoomPercentPresets"
   ],
   "dots": "ドット",
   "lines": "線",
@@ -317,7 +317,6 @@
   "share": "共有",
   "hideMinimap": "ミニマップを非表示",
   "showMinimap": "ミニマップを表示",
-  "zoomPresets": "ズームのプリセット",
   "fitToScreen": "画面に合わせる",
   "boardOverview": "ボードの概要",
   "view": "表示",
@@ -388,5 +387,6 @@
   "noVersionHistoryInTests": "テストではバージョン履歴はありません",
   "frame": "フレーム",
   "tabAndShiftTabMove": "Tab と Shift+Tab で項目を読み順に移動します（フレームの項目はそのフレームの直後）。Alt+矢印キーでその方向の最も近い項目に移動します。Enter で選択した項目を編集し、矢印キーで移動、Alt+Shift+矢印キーでサイズを変更します。Shift+F10 でメニュー、Alt+F10 で書式ツールバーを開き、F6 でキャンバスとツールバーの間を移動します。作成ツールを選んでいるときは、Enter で選択範囲の隣に新しい項目を配置します。Alt+Shift+L でボードをテキストとして一覧表示します。",
-  "xAndYMoveThe": "X と Y は選択範囲全体を移動し、サイズと回転は各項目に適用されます。"
+  "xAndYMoveThe": "X と Y は選択範囲全体を移動し、サイズと回転は各項目に適用されます。",
+  "zoomPercentPresets": "{pct}% ズーム: プリセット"
 }

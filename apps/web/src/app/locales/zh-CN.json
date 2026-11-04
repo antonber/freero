@@ -529,7 +529,10 @@
     "errors.shape_pack_limit",
     "errors.shape_pack_workspace_full",
     "errors.assistant_question",
-    "errors.assistant_question_long"
+    "errors.assistant_question_long",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -1060,5 +1063,8 @@
   "errors.shape_pack_limit": "一个工作区最多有 {max} 个图形包。请先删除不再使用的图形包。",
   "errors.shape_pack_workspace_full": "此工作区的图形包空间已满。请先删除不再使用的图形包。",
   "errors.assistant_question": "请向助手提问",
-  "errors.assistant_question_long": "问题最多 {max} 个字符"
+  "errors.assistant_question_long": "问题最多 {max} 个字符",
+  "errors.gifs_off": "此工作区已关闭 GIF 搜索",
+  "errors.gifs_unavailable": "GIF 服务没有响应，请稍后再试。",
+  "errors.gifs_copy_failed": "无法复制该 GIF，请换一个试试。"
 }

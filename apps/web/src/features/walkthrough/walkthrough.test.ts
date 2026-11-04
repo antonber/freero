@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraShowing, parseCaptionLines, pointerAt, reactionMarks, TimelineRecorder, viewAt, type ViewRect } from './lib/timeline';
+import { cameraShowing, parseCaptionLines, pointerAt, reactionMarks, speakerAt, SpeechTracker, TimelineRecorder, viewAt, type PresenterTrack, type ViewRect } from './lib/timeline';
 
 const rect = (x: number, y = 0): ViewRect => ({ x, y, w: 1600, h: 900 });
 
@@ -64,4 +64,40 @@ it('a burst of reactions at one moment is one mark on the timeline with its coun
     { atMs: 60_000, mine: 'c', counts: [{ emoji: '🎉', n: 2 }, { emoji: '👍', n: 1 }] },
     { atMs: 300_000, mine: null, counts: [{ emoji: '🤔', n: 1 }] },
   ]);
+});
+
+describe('several presenters (#128)', () => {
+  const track = (offsetMs: number, durationMs: number, speech: Array<[number, number]>): PresenterTrack => ({
+    offsetMs,
+    durationMs,
+    timeline: { v: 1, view: [[0, 0, 0, 100, 100]], pointer: [], speech },
+  });
+
+  it('the view follows whoever is talking, stays on the last speaker through a silence, and starts on the host', () => {
+    const host = track(0, 60_000, [[2_000, 8_000], [30_000, 35_000]]);
+    // Joined 5 s in: talks 10–20 s and 33–40 s on the walkthrough's clock; left at 45 s.
+    const guest = track(5_000, 40_000, [[5_000, 15_000], [28_000, 35_000]]);
+    const tracks = [host, guest];
+    expect(speakerAt(tracks, 500)).toBe(0); // nobody has spoken yet
+    expect(speakerAt(tracks, 12_000)).toBe(1);
+    expect(speakerAt(tracks, 25_000)).toBe(1); // silence: still the last one who spoke
+    expect(speakerAt(tracks, 34_000)).toBe(1); // both talk: the one who started last (the interruption)
+    expect(speakerAt(tracks, 36_000)).toBe(1);
+    expect(speakerAt(tracks, 50_000)).toBe(0); // the guest has left: back to the host, who spoke last
+  });
+
+  it('a breath between words doesn’t split someone’s turn, and a cough isn’t a turn', () => {
+    const speech = new SpeechTracker();
+    const level = (from: number, to: number, rms: number) => {
+      for (let t = from; t < to; t += 100) speech.level(t, rms);
+    };
+    level(0, 1_000, 0.001);
+    level(1_000, 3_000, 0.1); // talking
+    level(3_000, 3_400, 0.001); // a breath
+    level(3_400, 5_000, 0.1);
+    level(5_000, 8_000, 0.001);
+    level(8_000, 8_100, 0.3); // a cough
+    level(8_100, 10_000, 0.001);
+    expect(speech.finish(10_000)).toEqual([[1_000, 4_900]]);
+  });
 });

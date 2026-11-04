@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -193,7 +192,8 @@
     "tabAndShiftTabMove",
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
-    "youReOfflineKeepThisTabOpen"
+    "youReOfflineKeepThisTabOpen",
+    "zoomPercentPresets"
   ],
   "dots": "Puntos",
   "lines": "Líneas",
@@ -317,7 +317,6 @@
   "share": "Compartir",
   "hideMinimap": "Ocultar minimapa",
   "showMinimap": "Mostrar minimapa",
-  "zoomPresets": "Niveles de zoom",
   "fitToScreen": "Ajustar a la pantalla",
   "boardOverview": "Vista general del tablero",
   "view": "Ver",
@@ -388,5 +387,6 @@
   "noVersionHistoryInTests": "No hay historial de versiones en las pruebas",
   "frame": "Marco",
   "tabAndShiftTabMove": "Tab y Shift+Tab recorren los elementos en orden de lectura, los de un marco justo después de él; Alt+flechas salta al elemento más cercano en esa dirección. Enter edita el elemento seleccionado, las flechas lo mueven y Alt+Shift+flechas cambian su tamaño. Shift+F10 abre su menú, Alt+F10 la barra de formato y F6 alterna entre el lienzo y las barras de herramientas. Con una herramienta de creación elegida, Enter coloca un elemento nuevo junto a la selección. Alt+Shift+L muestra el tablero como texto.",
-  "xAndYMoveThe": "X e Y mueven toda la selección; el tamaño y la rotación se aplican a cada elemento."
+  "xAndYMoveThe": "X e Y mueven toda la selección; el tamaño y la rotación se aplican a cada elemento.",
+  "zoomPercentPresets": "Zoom al {pct}%: ajustes predefinidos"
 }

@@ -122,7 +122,6 @@
     "share",
     "hideMinimap",
     "showMinimap",
-    "zoomPresets",
     "fitToScreen",
     "boardOverview",
     "view",
@@ -193,7 +192,8 @@
     "tabAndShiftTabMove",
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
-    "youReOfflineKeepThisTabOpen"
+    "youReOfflineKeepThisTabOpen",
+    "zoomPercentPresets"
   ],
   "dots": "Pontos",
   "lines": "Linhas",
@@ -317,7 +317,6 @@
   "share": "Compartilhar",
   "hideMinimap": "Ocultar minimapa",
   "showMinimap": "Mostrar minimapa",
-  "zoomPresets": "Predefinições de zoom",
   "fitToScreen": "Ajustar à tela",
   "boardOverview": "Visão geral do quadro",
   "view": "Exibir",
@@ -388,5 +387,6 @@
   "noVersionHistoryInTests": "Sem histórico de versões nos testes",
   "frame": "Moldura",
   "tabAndShiftTabMove": "Tab e Shift+Tab percorrem os itens na ordem de leitura, com os itens de uma moldura logo depois dela; Alt+setas pulam para o item mais próximo nessa direção. Enter edita o item selecionado, as setas o movem e Alt+Shift+setas o redimensionam. Shift+F10 abre o menu dele, Alt+F10 a barra de formatação, e F6 alterna entre a tela e as barras de ferramentas. Com uma ferramenta de criação escolhida, Enter coloca um novo item ao lado da seleção. Alt+Shift+L lista o quadro como texto.",
-  "xAndYMoveThe": "X e Y movem a seleção inteira; tamanho e rotação se aplicam a cada item."
+  "xAndYMoveThe": "X e Y movem a seleção inteira; tamanho e rotação se aplicam a cada item.",
+  "zoomPercentPresets": "Zoom de {pct}%: predefinições"
 }

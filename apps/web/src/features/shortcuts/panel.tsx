@@ -28,7 +28,8 @@ function Sheet({ editor }: PanelProps) {
       {sections.length === 0 ? (
         <p className="fr-shortcuts__empty">{t('noShortcutsMatchQuery', { query: query.trim() })}</p>
       ) : (
-        <div className="fr-shortcuts__grid">
+        // Scrolls on its own: focusable, so the keyboard can scroll it too (WCAG 2.1.1).
+        <div className="fr-shortcuts__grid" tabIndex={0} role="region" aria-label={t('keyboardShortcuts')}>
           {sections.map((s) => (
             <section key={s.title} className="fr-shortcuts__section" aria-label={s.title}>
               <h3 className="fr-shortcuts__title">{s.title}</h3>

@@ -219,3 +219,52 @@
 .fr-emoji-team__add:hover {
   color: var(--fr-primary);
 }
+
+/* GIF search (#139): previews come through Freero's server. */
+.fr-emoji-gifs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.fr-emoji-gifs__item {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  overflow: hidden;
+  background: var(--fr-surface-3);
+  cursor: pointer;
+}
+
+.fr-emoji-gifs__item img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.fr-emoji-gifs__item:hover,
+.fr-emoji-gifs__item:focus-visible {
+  outline: 2px solid var(--fr-primary);
+  outline-offset: -2px;
+}
+
+.fr-emoji-gifs__item:disabled {
+  cursor: progress;
+}
+
+.fr-emoji-gifs__busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--fr-surface) 60%, transparent);
+}
+
+.fr-emoji-gifs__credit {
+  font-size: 11px;
+  color: var(--fr-ink-3);
+  text-align: end;
+}

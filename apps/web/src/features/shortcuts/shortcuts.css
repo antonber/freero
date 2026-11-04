@@ -15,6 +15,12 @@
   padding-inline-end: 4px;
 }
 
+.fr-shortcuts__grid:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+  border-radius: var(--fr-radius-sm);
+}
+
 .fr-shortcuts__section {
   break-inside: avoid;
   margin-bottom: 20px;
