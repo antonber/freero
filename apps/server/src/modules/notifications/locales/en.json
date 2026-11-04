@@ -88,5 +88,9 @@
   "digest.more": "Here are the latest {shown}; {more} more are waiting in Freero.",
   "digest.action": "Open Freero",
   "digest.outro": "You get these emails for activity you haven’t seen in Freero yet. Choose which ones in your account settings.",
-  "digest.unsubscribe": "Unsubscribe from notification emails"
+  "digest.unsubscribe": "Unsubscribe from notification emails",
+  "comment.thread.label": "New comments on your boards",
+  "comment.thread.description": "Someone starts a comment thread on a board you own or starred (once you turn these on).",
+  "comment.thread.title": "{actor} commented on {board}",
+  "comment.thread.link": "Open the comment"
 }

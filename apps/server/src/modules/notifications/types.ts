@@ -134,6 +134,15 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     link: threadPath,
     slackByDefault: true,
   },
+  // #104: sent only to people who turned on "New comments on your boards" (prefs `boardComments`).
+  'comment.thread': {
+    label: (l) => t(l, 'comment.thread.label'),
+    description: (l) => t(l, 'comment.thread.description'),
+    linkLabel: (l) => t(l, 'comment.thread.link'),
+    title: (l, actor, d) => t(l, 'comment.thread.title', { actor, board: board(l, d) }),
+    link: threadPath,
+    slackByDefault: true,
+  },
   'board.invite': {
     label: (l) => t(l, 'board.invite.label'),
     description: (l) => t(l, 'board.invite.description'),

@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "Texte",
   "number": "Nombre",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length, plural, one {# carte} other {# cartes}} dans {length2, plural, one {# colonne} other {# colonnes}} :  {join}",
   "whatTheOtherColumnsBecome": "Ce que deviennent les autres colonnes",
   "nameofHasLengthDifferentValues": "« {nameOf} » a {length} valeurs différentes ; un kanban a au maximum {max_kanban_columns} colonnes. Choisissez une autre colonne.",
-  "eachRowBecomesACard": "Chaque ligne devient une carte. Le kanban prend la place du tableau de données ; l’annulation le fait revenir."
+  "eachRowBecomesACard": "Chaque ligne devient une carte. Le kanban prend la place du tableau de données ; l’annulation le fait revenir.",
+  "addADateColumnTo": "Ajoutez une colonne de date pour voir les lignes sur une frise chronologique.",
+  "noDates": "Aucune date",
+  "timelineRowsAsBarsBetween": "Chronologie : les lignes en barres entre deux colonnes de date",
+  "groupRowsBy": "Grouper les lignes par",
+  "noGroups": "Aucun groupe",
+  "groupColumnname": "Groupe : {columnName}",
+  "barsStartAt": "Les barres commencent à",
+  "barsEndAt": "Les barres finissent à"
 }

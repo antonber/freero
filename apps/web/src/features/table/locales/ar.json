@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "نص",
   "number": "رقم",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length, plural, zero {# بطاقة} one {بطاقة واحدة} two {بطاقتان} few {# بطاقات} many {# بطاقة} other {# بطاقة}} في {length2, plural, zero {# عمود} one {عمود واحد} two {عمودين} few {# أعمدة} many {# عمودًا} other {# عمود}}: {join}",
   "whatTheOtherColumnsBecome": "ما تصبح عليه الأعمدة الأخرى",
   "nameofHasLengthDifferentValues": "يحتوي «{nameOf}» على {length} قيمة مختلفة؛ ولوحة كانبان تضم {max_kanban_columns} عمودًا كحد أقصى. اختر عمودًا آخر.",
-  "eachRowBecomesACard": "يصبح كل صف بطاقة. تحل لوحة كانبان محل الجدول؛ والتراجع يعيد الجدول."
+  "eachRowBecomesACard": "يصبح كل صف بطاقة. تحل لوحة كانبان محل الجدول؛ والتراجع يعيد الجدول.",
+  "addADateColumnTo": "أضف عمود تاريخ لرؤية الصفوف على خط زمني.",
+  "noDates": "لا تواريخ",
+  "timelineRowsAsBarsBetween": "خط زمني: الصفوف كأشرطة بين عمودي تاريخ",
+  "groupRowsBy": "تجميع الصفوف حسب",
+  "noGroups": "بلا مجموعات",
+  "groupColumnname": "المجموعة: {columnName}",
+  "barsStartAt": "تبدأ الأشرطة عند",
+  "barsEndAt": "تنتهي الأشرطة عند"
 }

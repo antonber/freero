@@ -89,7 +89,11 @@
     "digest.more",
     "digest.action",
     "digest.outro",
-    "digest.unsubscribe"
+    "digest.unsubscribe",
+    "comment.thread.label",
+    "comment.thread.description",
+    "comment.thread.title",
+    "comment.thread.link"
   ],
   "someone": "شخص ما",
   "quoted": "«{title}»",
@@ -180,5 +184,9 @@
   "digest.more": "إليك أحدث {shown}؛ وهناك {more} أخرى بانتظارك في Freero.",
   "digest.action": "فتح Freero",
   "digest.outro": "تصلك هذه الرسائل بشأن النشاط الذي لم تره بعد في Freero. اختر ما تريد تلقيه في إعدادات حسابك.",
-  "digest.unsubscribe": "إلغاء الاشتراك في رسائل الإشعارات"
+  "digest.unsubscribe": "إلغاء الاشتراك في رسائل الإشعارات",
+  "comment.thread.label": "تعليقات جديدة على لوحاتك",
+  "comment.thread.description": "يبدأ شخص سلسلة تعليقات على لوحة تملكها أو ميّزتها بنجمة (بعد تفعيل ذلك).",
+  "comment.thread.title": "علّق {actor} على {board}",
+  "comment.thread.link": "فتح التعليق"
 }

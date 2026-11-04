@@ -26,6 +26,8 @@ export interface CommentMessageEvent {
   previousText: string | null;
   /** Everyone else who wrote a (not deleted) message in the thread, and its creator. */
   participantIds: string[];
+  /** [#104] The message is new and the first of its thread: someone started a thread. */
+  newThread?: boolean;
   /** The app or token that wrote it for the author, on a request (the API, MCP; KAI-168). */
   via?: ActingApp;
   /**
@@ -81,6 +83,13 @@ function participants(comments: Y.Map<unknown>, threadId: string): Set<string> {
   return out;
 }
 
+/** No message of the thread is stored but `key` (deleted ones count: a thread that had messages isn't new). */
+function onlyMessage(comments: Y.Map<unknown>, threadId: string, key: string): boolean {
+  const prefix = `m:${threadId}:`;
+  for (const k of comments.keys()) if (k !== key && k.startsWith(prefix)) return false;
+  return true;
+}
+
 /**
  * The message events in one applied change of the comments map. `authorId` is the user whose
  * socket made it; a message stored under anyone else's id is not theirs and yields nothing.
@@ -105,6 +114,7 @@ export function messageEvents(
     if (before === null && typeof value.createdAt === 'number' && value.createdAt < now - STALE_MS) continue;
     const others = participants(comments, value.threadId);
     others.delete(authorId);
+    const newThread = before === null && onlyMessage(comments, value.threadId, key);
     out.push({
       boardId,
       authorId,
@@ -113,6 +123,7 @@ export function messageEvents(
       text: value.text,
       previousText: before,
       participantIds: [...others],
+      ...(newThread ? { newThread } : {}),
       layer,
     });
   }

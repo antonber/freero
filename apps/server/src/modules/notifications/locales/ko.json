@@ -89,7 +89,11 @@
     "digest.more",
     "digest.action",
     "digest.outro",
-    "digest.unsubscribe"
+    "digest.unsubscribe",
+    "comment.thread.label",
+    "comment.thread.description",
+    "comment.thread.title",
+    "comment.thread.link"
   ],
   "someone": "누군가",
   "quoted": "“{title}”",
@@ -180,5 +184,9 @@
   "digest.more": "최근 {shown}개를 보여 드려요. Freero에서 {more}개가 더 기다리고 있어요.",
   "digest.action": "Freero 열기",
   "digest.outro": "Freero에서 아직 확인하지 않은 활동이 있으면 이 이메일을 보내 드려요. 받을 이메일은 계정 설정에서 선택하세요.",
-  "digest.unsubscribe": "알림 이메일 수신 거부"
+  "digest.unsubscribe": "알림 이메일 수신 거부",
+  "comment.thread.label": "내 보드의 새 댓글",
+  "comment.thread.description": "내가 소유하거나 별표한 보드에서 누군가 댓글 스레드를 시작할 때(켜 둔 경우).",
+  "comment.thread.title": "{actor}님이 {board}에 댓글을 남겼습니다",
+  "comment.thread.link": "댓글 열기"
 }

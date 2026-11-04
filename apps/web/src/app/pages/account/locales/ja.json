@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "Freero に接続できませんでした。もう一度お試しください。",
   "restoreAccount": "アカウントを復元",
@@ -498,5 +500,7 @@
   "email": "メール",
   "emailLabel": "メール: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "削除"
+  "delete": "削除",
+  "newCommentsOnYourBoards": "自分のボードへの新しいコメント",
+  "tellMeWhenSomeoneStarts": "自分が所有またはスターを付けたボードで誰かがコメントスレッドを始めたら通知：ベルに表示し、下で選んだとおりメールまたは Slack でも。"
 }

@@ -1,6 +1,6 @@
 // World layer: one transformed container; each element is a memoized view that subscribes to
 // its own element. The list itself only re-renders when the set/order of visible ids changes.
-import { createContext, memo, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { EyeOff } from 'lucide-react';
 import type { BoardElement } from '@freero/shared';
@@ -36,7 +36,7 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
     let prev: string[] = [];
     let disposed = false;
     const compute = (forceList: boolean) => {
-      const { camera, viewport, selection, editingId } = ui.getState();
+      const { camera, viewport, editingId } = ui.getState();
       const view = viewportRect(camera, viewport);
       let moved = false;
       if (
@@ -50,11 +50,12 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
         moved = true;
       }
       if (!moved && !forceList) return;
-      const keep = new Set(selection);
-      if (editingId) keep.add(editingId);
+      // Only the item being edited is kept drawn wherever it is (its text editor holds the focus).
+      // Selected items mount like any other (#182): their outlines, the keyboard and the toolbar
+      // work from the doc, so selecting everything and zooming in mounts only what is near the view.
       const next: string[] = [];
       for (const el of core.editor.getVisibleElements()) {
-        if (keep.has(el.id) || rectsIntersect(elementAABB(el), cullRect)) next.push(el.id);
+        if (el.id === editingId || rectsIntersect(elementAABB(el), cullRect)) next.push(el.id);
       }
       const changed = !sameIds(next, prev);
       if (changed) prev = next;
@@ -77,7 +78,7 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
     const offMine = core.emitter.on('personal-views', schedule);
     const offUi = ui.subscribe((s, p) => {
       // `dragging`: items folded into a container stay drawn while dragged, and fold when dropped.
-      if (s.selection !== p.selection || s.editingId !== p.editingId || s.viewHidden !== p.viewHidden || s.dragging !== p.dragging) compute(true);
+      if (s.editingId !== p.editingId || s.viewHidden !== p.viewHidden || s.dragging !== p.dragging) compute(true);
 
       else if (s.camera !== p.camera || s.viewport !== p.viewport) compute(false);
     });
@@ -94,45 +95,139 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
 export function WorldElements() {
   const core = useCore();
   const { ids, cull } = useVisibleIds();
-  // Switching between low and full detail mounts or unmounts most of the view: done as a
-  // transition (React renders it in slices; the view shows the old drawing, scaled, meanwhile).
-  const lowDetail = useDeferredValue(useStore(core.ui, (s) => s.lowDetail));
+  // Into low detail at once (#183): the new, zoomed-out view is never mounted in full first.
+  const lowDetail = useStore(core.ui, (s) => s.lowDetail);
   const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
+  // Out of it a frame's worth at a time, nearest the pointer first (#184).
+  const leavingNow = useLeavingLowDetail(core, lowDetail, ids, zoom);
+  const leaving = leavingNow?.still ?? null;
   const editingId = useStore(core.ui, (s) => s.editingId);
   const preview = useStore(core.ui, (s) => s.dragPreview);
   // [additive, #131] Zoomed out: runs of items that paint in low detail go on canvases between the
   // items drawn in full, so render order is kept (canvas/LowDetailLayer.tsx).
-  const parts = useMemo(() => (lowDetail ? lowDetailRuns(core, ids, zoom, editingId, preview?.moves ?? null) : null), [core, ids, lowDetail, zoom, editingId, preview]);
+  const parts = useMemo(
+    () => (lowDetail || leaving ? lowDetailRuns(core, ids, zoom, editingId, preview?.moves ?? null, lowDetail ? null : leaving) : null),
+    [core, ids, lowDetail, leaving, zoom, editingId, preview],
+  );
   return (
     <WorldViewProvider>
       {parts
-        ? parts.map((p) => (typeof p === 'string' ? <ElementView key={p} id={p} /> : <LowDetailLayer key={`low:${p[0]}`} ids={p} cull={cull} zoom={zoom} />))
+        ? parts.flatMap((p) =>
+            typeof p === 'string'
+              ? [<ElementView key={p} id={p} />]
+              : [
+                  <LowDetailLayer key={`low:${p.ids[0]}`} ids={p.painted ?? p.ids} cull={cull} zoom={leavingNow?.zoom ?? zoom} />,
+                  // Leaving low detail: what this run's canvas no longer paints is drawn in full
+                  // right after it (for a few frames, above the run's other items).
+                  ...(p.painted ? p.ids.filter((id) => !leaving?.has(id)).map((id) => <ElementView key={id} id={id} />) : []),
+                ],
+          )
         : ids.map((id) => <ElementView key={id} id={id} />)}
     </WorldViewProvider>
   );
 }
 
+/** Leaving low detail: items mounted in the first frame, and the bounds the batch adapts within. */
+const LEAVE_BATCH = { first: 60, min: 40, max: 400 } as const;
+/** The frame time batches aim at (ms): each is sized by how long the last frame took. */
+const LEAVE_FRAME_MS = 20;
+
 /**
- * `ids` (render order) split into items drawn in full (their id) and runs of items painted in
- * low detail (arrays): those whose type paints itself (ElementDefinition.lowDetail), small on
- * screen, not edited, not making room for a drag and not in my private layer (its dashed mark is
- * the item's own DOM).
+ * [#184] Leaving low detail mounts every item in view: instead of all at once, the items the
+ * canvas painted keep being painted and mount a frame's worth at a time, nearest the pointer (or
+ * the middle of the view) first, each batch sized by how long the last frame took. Returns the
+ * items still painted (null once none is, or while in low detail) and the zoom low detail was left
+ * at: the canvases keep that resolution meanwhile, so leaving repaints none of them in full.
+ * Derived during the render that leaves low detail, so no frame mounts them all.
  */
-function lowDetailRuns(core: EngineCore, ids: string[], zoom: number, editingId: string | null, moves: ReadonlyMap<string, unknown> | null): Array<string | string[]> {
-  const out: Array<string | string[]> = [];
-  let run: string[] | null = null;
+function useLeavingLowDetail(core: EngineCore, lowDetail: boolean, ids: string[], zoom: number): { still: ReadonlySet<string>; zoom: number } | null {
+  const [state, setState] = useState<{ low: boolean; queue: string[] | null; done: number; zoom: number }>(() => ({ low: lowDetail, queue: null, done: 0, zoom }));
+  const lowZoom = useRef(zoom);
+  let s = state;
+  if (s.low !== lowDetail) {
+    s = { low: lowDetail, queue: lowDetail ? null : nearestFirst(core, ids), done: 0, zoom: lowZoom.current };
+    setState(s);
+  }
+  if (lowDetail) lowZoom.current = zoom;
+  const { queue, done } = s;
+  useEffect(() => {
+    if (!queue) return;
+    let batch: number = LEAVE_BATCH.first;
+    let last = 0;
+    let frame = 0;
+    const step = (now: number) => {
+      if (last) batch = Math.max(LEAVE_BATCH.min, Math.min(LEAVE_BATCH.max, batch * 2, (batch * LEAVE_FRAME_MS) / Math.max(1, now - last)));
+      last = now;
+      setState((p) => {
+        if (p.queue !== queue) return p;
+        const next = p.done + Math.round(batch);
+        return next >= queue.length ? { ...p, queue: null, done: 0 } : { ...p, done: next };
+      });
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [queue]);
+  return useMemo(() => (queue && done < queue.length ? { still: new Set(queue.slice(done)), zoom: s.zoom } : null), [queue, done, s.zoom]);
+}
+
+/** The items of `ids` a canvas can paint, nearest first to the pointer (or the middle of the view). */
+function nearestFirst(core: EngineCore, ids: readonly string[]): string[] {
+  const { camera, viewport } = core.ui.getState();
+  const p = core.pointer.getState();
+  const view = viewportRect(camera, viewport);
+  const at = (p.inside && p.world) || { x: view.x + view.w / 2, y: view.y + view.h / 2 };
+  const out: Array<{ id: string; d: number }> = [];
   for (const id of ids) {
     const el = core.store.getElement(id);
+    if (!el || !core.registry.elements.get(el.type)?.def.lowDetail) continue;
+    const dx = el.x + el.w / 2 - at.x;
+    const dy = el.y + el.h / 2 - at.y;
+    out.push({ id, d: dx * dx + dy * dy });
+  }
+  return out.sort((a, b) => a.d - b.d).map((x) => x.id);
+}
+
+/** Items next to each other in render order that one canvas paints (`painted`: leaving low detail, those it still paints). */
+interface LowDetailRun {
+  ids: string[];
+  painted?: string[];
+}
+
+/**
+ * `ids` (render order) split into items drawn in full (their id) and runs of items painted in
+ * low detail: those whose type paints itself (ElementDefinition.lowDetail), small on screen, not
+ * edited, not making room for a drag and not in my private layer (its dashed mark is the item's
+ * own DOM). `leaving` (#184): leaving low detail, only these are still painted, and the runs keep
+ * the shape they had, so their canvases stay put while the rest mount.
+ */
+function lowDetailRuns(
+  core: EngineCore,
+  ids: string[],
+  zoom: number,
+  editingId: string | null,
+  moves: ReadonlyMap<string, unknown> | null,
+  leaving: ReadonlySet<string> | null,
+): Array<string | LowDetailRun> {
+  const out: Array<string | LowDetailRun> = [];
+  let run: LowDetailRun | null = null;
+  for (const id of ids) {
+    const el = core.store.getElement(id);
+    const def = el && core.registry.elements.get(el.type)?.def;
+    const max = def?.lowDetailMaxPx;
     const low =
       !!el &&
-      !!core.registry.elements.get(el.type)?.def.lowDetail &&
+      // Leaving: an item mounted already only joins a run that something still painted started.
+      (!leaving || leaving.has(id) || !!run) &&
+      !!def?.lowDetail &&
       id !== editingId &&
       !moves?.has(id) &&
-      drawsLowDetail(true, el.w, el.h, zoom) &&
+      drawsLowDetail(true, el.w, el.h, zoom, typeof max === 'function' ? max(el as never) : max) &&
       core.store.layerOf(id) !== 'private';
     if (low) {
-      if (!run) out.push((run = []));
-      run.push(id);
+      if (!run) out.push((run = leaving ? { ids: [], painted: [] } : { ids: [] }));
+      run.ids.push(id);
+      if (leaving?.has(id)) run.painted!.push(id);
     } else {
       run = null;
       out.push(id);

@@ -2117,6 +2117,21 @@ async function notificationChecks() {
       assert((await list(B)).notifications.every((n) => n.type !== 'comment.reply'), 'B was notified of their own reply');
     });
 
+    await check('a thread started through a board socket alerts the owner who turned on “New comments on your boards”; a reply in it does not (#104)', async () => {
+      assert((await A.req('PUT', '/api/notifications/prefs', { boardComments: true })).json.boardComments === true, 'turn the alerts on');
+      const b = clients[1];
+      const now = Date.now();
+      b.doc.transact(() => {
+        b.doc.getMap('comments').set('t:t9', { kind: 'thread', id: 't9', x: 90, y: 90, createdAt: now, createdBy: B.id });
+        b.doc.getMap('comments').set('m:t9:1', { kind: 'message', threadId: 't9', id: '1', authorId: B.id, authorName: B.name, text: 'what about the launch date?', createdAt: now });
+      });
+      await waitFor(async () => (await list(A)).notifications.some((n) => n.type === 'comment.thread' && n.link === `/board/${board.id}?thread=t9`), 5000, 'A to hear about the new thread');
+      const before = await handled();
+      b.doc.getMap('comments').set('m:t9:2', { kind: 'message', threadId: 't9', id: '2', authorId: B.id, authorName: B.name, text: 'or the week after', createdAt: Date.now() });
+      await waitFor(async () => (await handled()) > before, 10_000, 'the second message to be handled');
+      assert((await list(A)).notifications.filter((n) => n.type === 'comment.thread').length === 1, 'a second message was taken for a new thread');
+    });
+
     await check('a comment naming the address of someone invited without an account becomes their mention once they join (through the invite link, or by verifying that address)', async () => {
       const Z = new User('NotifyInvitee', port); // joins through the invite link
       const W = new User('NotifyVerifier', port); // joins by verifying the invited address

@@ -15,9 +15,13 @@ export const CELL_PAD = 8;
 /** Cell border width (table.css), plus a pixel of rounding slack. */
 export const CELL_BORDER = 2;
 export const HEADER_FILL = '#ECE9FB';
+/** A group's band in a grouped grid (#51). */
+export const BAND_H = 30;
+/** The timeline view (#51): its label column, axis band and row heights. */
+export const TIMELINE = { labelW: 180, head: 40, rowH: 36, minDayW: 6, maxDayW: 40 } as const;
 
 type Track = { id: string; w?: number; h?: number };
-type Structure = Pick<TableElement, 'rows' | 'cols'>;
+type Structure = Pick<TableElement, 'rows' | 'cols'> & Partial<Pick<TableElement, 'filter' | 'hiddenRows' | 'groupRows' | 'bands'>>;
 
 export const sumW = (cols: TableElement['cols']) => cols.reduce((s, c) => s + c.w, 0);
 export const sumH = (rows: TableElement['rows']) => rows.reduce((s, r) => s + r.h, 0);
@@ -58,7 +62,7 @@ export function insertRow(el: Structure, index: number, newId: () => string = na
   const i = Math.max(0, Math.min(el.rows.length, index));
   const like = el.rows[Math.min(i, el.rows.length - 1)];
   const rows = [...el.rows.slice(0, i), { id: newId(), h: like ? Math.max(ROW_H, Math.min(like.h, ROW_H * 2)) : ROW_H }, ...el.rows.slice(i)];
-  return { rows, h: sumH(rows) };
+  return { rows, h: gridHeight({ ...el, rows }) };
 }
 
 export function insertCol(el: Structure, index: number, newId: () => string = nanoid): ElementPatch<TableElement> {
@@ -72,7 +76,7 @@ export function insertCol(el: Structure, index: number, newId: () => string = na
 export function removeRow(el: Structure, rowId: string): ElementPatch<TableElement> | null {
   if (el.rows.length <= 1 || !el.rows.some((r) => r.id === rowId)) return null;
   const rows = el.rows.filter((r) => r.id !== rowId);
-  return { rows, h: sumH(rows) };
+  return { rows, h: gridHeight({ ...el, rows }) };
 }
 
 export function removeCol(el: Structure, colId: string): ElementPatch<TableElement> | null {
@@ -89,7 +93,7 @@ export function resizeCol(el: Structure, colId: string, w: number): ElementPatch
 
 export function resizeRow(el: Structure, rowId: string, h: number): ElementPatch<TableElement> {
   const rows = el.rows.map((r) => (r.id === rowId ? { ...r, h: Math.round(Math.max(MIN_ROW_H, h)) } : r));
-  return { rows, h: sumH(rows) };
+  return { rows, h: gridHeight({ ...el, rows }) };
 }
 
 /** Sizes scaled proportionally so they add up to `total` (each at least `min`). */
@@ -104,21 +108,54 @@ function scaleTracks<T extends Track>(tracks: T[], key: 'w' | 'h', total: number
   return out;
 }
 
+type RowLayout = Pick<TableElement, 'rows'> & Partial<Pick<TableElement, 'filter' | 'hiddenRows' | 'groupRows' | 'bands' | 'header'>>;
+
+/** The rows a filter hides, by the table's derived cache (`hiddenRows`; none without a filter). */
+const hiddenOf = (el: RowLayout): ReadonlySet<string> | null => (el.filter && el.hiddenRows?.length ? new Set(el.hiddenRows) : null);
+
+/** The grid's height (#51): the rows it shows — a filter reclaims what it hides — plus its group bands. */
+export function gridHeight(el: RowLayout): number {
+  const hidden = hiddenOf(el);
+  let h = 0;
+  for (const r of el.rows) if (!hidden?.has(r.id)) h += r.h;
+  return h + (el.groupRows ? (el.bands ?? 0) * BAND_H : 0);
+}
+
+/** The timeline view's height (#51): its axis band and a row per shown body row (the header row titles the columns). */
+export function timelineHeight(el: RowLayout): number {
+  const hidden = hiddenOf(el);
+  const body = el.rows.filter((r, i) => !(el.header && i === 0) && !hidden?.has(r.id)).length;
+  return TIMELINE.head + Math.max(1, body) * TIMELINE.rowH;
+}
+
 /**
  * normalize: resizing the whole table with the engine's handles scales its columns / rows
- * proportionally; otherwise w / h follow the columns / rows.
+ * proportionally; otherwise w / h follow the columns / the rows it shows (#51: a filter's hidden
+ * rows take no room, a grouped grid's bands do).
  */
 export function layoutTable(el: TableElement, prev?: TableElement): ElementPatch<TableElement> | null {
   // The board view (KAI-123) has its own size; the grid's tracks are left as they are.
   if (el.view === 'board') return null;
+  // The timeline keeps the width it was given; its height follows its rows.
+  if (el.view === 'timeline') {
+    const h = timelineHeight(el);
+    return h !== el.h ? { h } : null;
+  }
   let { cols, rows } = el;
   if (prev && el.w !== prev.w && Math.abs(el.w - sumW(cols)) > 0.5) cols = scaleTracks(cols, 'w', el.w, MIN_COL_W);
-  if (prev && el.h !== prev.h && Math.abs(el.h - sumH(rows)) > 0.5) rows = scaleTracks(rows, 'h', el.h, MIN_ROW_H);
+  if (prev && el.h !== prev.h && Math.abs(el.h - gridHeight(el)) > 0.5) {
+    // Only the rows it shows share the new height; hidden ones keep theirs for when they show.
+    const hidden = hiddenOf(el);
+    const bands = gridHeight({ ...el, rows: [] });
+    const scaled = new Map(scaleTracks(rows.filter((r) => !hidden?.has(r.id)), 'h', Math.max(MIN_ROW_H, el.h - bands), MIN_ROW_H).map((r) => [r.id, r]));
+    rows = rows.map((r) => scaled.get(r.id) ?? r);
+  }
+  const h = gridHeight({ ...el, rows });
   const patch: ElementPatch<TableElement> = {};
   if (cols !== el.cols) patch.cols = cols;
   if (rows !== el.rows) patch.rows = rows;
   if (sumW(cols) !== el.w) patch.w = sumW(cols);
-  if (sumH(rows) !== el.h) patch.h = sumH(rows);
+  if (h !== el.h) patch.h = h;
   return Object.keys(patch).length ? patch : null;
 }
 

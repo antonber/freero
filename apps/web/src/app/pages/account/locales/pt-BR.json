@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "Não foi possível conectar ao Freero. Tente novamente.",
   "restoreAccount": "Restaurar conta",
@@ -498,5 +500,7 @@
   "email": "E-mail",
   "emailLabel": "E-mail: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "Excluir"
+  "delete": "Excluir",
+  "newCommentsOnYourBoards": "Novos comentários nos seus quadros",
+  "tellMeWhenSomeoneStarts": "Avisar quando alguém iniciar uma conversa de comentários em um quadro meu ou que marquei com estrela: no sino e depois por e-mail ou Slack, conforme escolhido abaixo."
 }

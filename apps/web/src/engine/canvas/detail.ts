@@ -25,7 +25,7 @@ export function nextLowDetail(was: boolean, zoom: number): boolean {
   return was ? zoom < LOW_DETAIL_ZOOM.exit : zoom < LOW_DETAIL_ZOOM.enter;
 }
 
-/** Whether an item `w` × `h` paints in low detail while the canvas is in low detail at quantized `zoom`. */
-export function drawsLowDetail(lowDetail: boolean, w: number, h: number, zoom: number): boolean {
-  return lowDetail && Math.max(w, h) * zoom < LOW_DETAIL_MAX_PX;
+/** Whether an item `w` × `h` paints in low detail while the canvas is in low detail at quantized `zoom` (below `maxPx` on screen). */
+export function drawsLowDetail(lowDetail: boolean, w: number, h: number, zoom: number, maxPx: number = LOW_DETAIL_MAX_PX): boolean {
+  return lowDetail && Math.max(w, h) * zoom < maxPx;
 }

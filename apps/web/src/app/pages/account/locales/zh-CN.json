@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "无法连接到 Freero，请重试。",
   "restoreAccount": "恢复账户",
@@ -498,5 +500,7 @@
   "email": "邮件",
   "emailLabel": "邮件：{label}",
   "slackLabel": "Slack：{label}",
-  "delete": "删除"
+  "delete": "删除",
+  "newCommentsOnYourBoards": "你的白板上的新评论",
+  "tellMeWhenSomeoneStarts": "有人在我拥有或加星标的白板上发起评论时通知我：显示在铃铛中，然后按下方的选择通过邮件或 Slack 发送。"
 }

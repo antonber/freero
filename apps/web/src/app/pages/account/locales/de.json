@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "Freero ist nicht erreichbar. Bitte versuchen Sie es erneut.",
   "restoreAccount": "Konto wiederherstellen",
@@ -498,5 +500,7 @@
   "email": "E-Mail",
   "emailLabel": "E-Mail: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "Löschen"
+  "delete": "Löschen",
+  "newCommentsOnYourBoards": "Neue Kommentare auf Ihren Boards",
+  "tellMeWhenSomeoneStarts": "Benachrichtigen, wenn jemand einen Kommentar-Thread auf einem Board beginnt, das mir gehört oder das ich markiert habe: unter der Glocke, dann per E-Mail oder Slack wie unten gewählt."
 }

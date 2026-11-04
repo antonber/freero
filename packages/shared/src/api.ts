@@ -1672,7 +1672,7 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 // POST /api/notifications/read   body { ids?: string[] } -> { unread }  (no ids: mark all read)
 // GET  /api/notifications/prefs  -> NotificationPrefs
 // PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, slack?: { [type]: boolean },
-//      emailAll?: boolean, boardChanges?: BoardChangesFrequency } -> NotificationPrefs
+//      emailAll?: boolean, boardChanges?: BoardChangesFrequency, boardComments?: boolean } -> NotificationPrefs
 // POST /api/notifications/unsubscribe?token=<t>[&list=board-changes]  (no session needed: the signed
 //      link from a digest email, also its RFC 8058 one-click target) -> { ok: true, email, list } | 400
 //      (list 'board-changes': the "changes on your boards" email only; else every notification email)
@@ -1685,6 +1685,7 @@ export type NotificationType =
   | 'board.invite'
   | 'comment.mention'
   | 'comment.reply'
+  | 'comment.thread'
   | 'workspace.invite'
   | 'access.request'
   | 'access.response'
@@ -1742,6 +1743,12 @@ export interface NotificationPrefs {
    * your time zone). Its own unsubscribe link turns only it off; `emailAll` off stops it too.
    */
   boardChanges: BoardChangesFrequency;
+  /**
+   * [additive, #104] "New comments on your boards": each comment thread someone else starts on a
+   * board you own or starred notifies you (type 'comment.thread': the bell, then email or Slack by
+   * that type's switches). Off unless you turn it on.
+   */
+  boardComments?: boolean;
   /**
    * [additive, #105] Personal Slack: null when this server offers no "Connect Slack"; `linked`: the
    * person connected a Slack account, so the types' `slack` switches apply.

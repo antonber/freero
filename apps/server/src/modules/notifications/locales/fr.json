@@ -89,7 +89,11 @@
     "digest.more",
     "digest.action",
     "digest.outro",
-    "digest.unsubscribe"
+    "digest.unsubscribe",
+    "comment.thread.label",
+    "comment.thread.description",
+    "comment.thread.title",
+    "comment.thread.link"
   ],
   "someone": "Quelqu’un",
   "quoted": "« {title} »",
@@ -180,5 +184,9 @@
   "digest.more": "Voici les {shown} plus récentes ; {more} autres vous attendent dans Freero.",
   "digest.action": "Ouvrir Freero",
   "digest.outro": "Vous recevez ces e-mails pour l’activité que vous n’avez pas encore vue dans Freero. Choisissez lesquels dans les paramètres de votre compte.",
-  "digest.unsubscribe": "Se désabonner des e-mails de notification"
+  "digest.unsubscribe": "Se désabonner des e-mails de notification",
+  "comment.thread.label": "Nouveaux commentaires sur vos tableaux",
+  "comment.thread.description": "Quelqu’un ouvre un fil de commentaires sur un tableau qui vous appartient ou que vous avez mis en favori (une fois l’option activée).",
+  "comment.thread.title": "{actor} a commenté {board}",
+  "comment.thread.link": "Ouvrir le commentaire"
 }

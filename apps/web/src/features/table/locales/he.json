@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "טקסט",
   "number": "מספר",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length, plural, one {כרטיס אחד} two {# כרטיסים} other {# כרטיסים}} ב־{length2, plural, one {עמודה אחת} two {# עמודות} other {# עמודות}}: {join}",
   "whatTheOtherColumnsBecome": "למה יהפכו שאר העמודות",
   "nameofHasLengthDifferentValues": "ל־”{nameOf}“ יש {length} ערכים שונים; בקנבן יש לכל היותר {max_kanban_columns} עמודות. יש לבחור עמודה אחרת.",
-  "eachRowBecomesACard": "כל שורה הופכת לכרטיס. הקנבן תופס את מקום הטבלה; ביטול מחזיר את הטבלה."
+  "eachRowBecomesACard": "כל שורה הופכת לכרטיס. הקנבן תופס את מקום הטבלה; ביטול מחזיר את הטבלה.",
+  "addADateColumnTo": "הוסיפו עמודת תאריך כדי לראות את השורות על ציר זמן.",
+  "noDates": "אין תאריכים",
+  "timelineRowsAsBarsBetween": "ציר זמן: השורות כפסים בין שתי עמודות תאריך",
+  "groupRowsBy": "קיבוץ שורות לפי",
+  "noGroups": "ללא קבוצות",
+  "groupColumnname": "קבוצה: {columnName}",
+  "barsStartAt": "הפסים מתחילים ב",
+  "barsEndAt": "הפסים מסתיימים ב"
 }

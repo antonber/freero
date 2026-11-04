@@ -734,11 +734,19 @@ export interface LowDetailPaint {
   readonly selectionColor: string;
   /** How the item's container wants it shown (a kanban's colour-by accent), as `Component` gets it. */
   readonly presentation: ChildPresentation | null;
+  /** [additive, #185] The zoom the canvas paints at: a line `1 / zoom` wide is one screen pixel (a hairline). */
+  readonly zoom: number;
   /**
    * Fills and/or outlines the item's box (the outline inside it, like a CSS border). `radius`
-   * rounds the corners; `round` makes it the ellipse in the box. `alpha` fades the fill only.
+   * rounds the corners; `round` makes it the ellipse in the box. `alpha` fades the fill only,
+   * [additive, #185] `strokeAlpha` the outline.
    */
-  box(o: { fill?: string | null; stroke?: string | null; strokeWidth?: number; radius?: number; round?: boolean; alpha?: number }): void;
+  box(o: { fill?: string | null; stroke?: string | null; strokeWidth?: number; radius?: number; round?: boolean; alpha?: number; strokeAlpha?: number }): void;
+  /**
+   * [additive, #185] A surface colour (a frame's fill) as this page shows it: a light one dark on a
+   * dark page, as the full drawing's `fr-canvas-surface` does (engine/canvas/theme.ts).
+   */
+  surface(color: string): string;
   /** Fills a rectangle (bars standing for lines of text). */
   rect(x: number, y: number, w: number, h: number, color: string, alpha?: number): void;
   /** Fills a polygon given in fractions of the box (0–1): a diamond's silhouette. */
@@ -822,6 +830,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * may use `zoom` itself).
    */
   lowDetail?(element: ElementOf<T>, paint: LowDetailPaint): void;
+  /**
+   * [additive, #185] Paints in low detail only while its longer side is below this many screen px
+   * (default 160, `LOW_DETAIL_MAX_PX`): a frame keeps its title, which you drag it by, until the
+   * title is too small to show. 0: not this one (a hidden frame's cover for viewers).
+   */
+  lowDetailMaxPx?: number | ((element: ElementOf<T>) => number);
   /** Defaults merged under user-provided fields on create (tools usually call this). */
   defaults(): Omit<NewElement<T>, 'x' | 'y'>;
   resize: ResizeMode;
