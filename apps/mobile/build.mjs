@@ -23,6 +23,8 @@ const [mode = 'sync', variant = 'debug'] = process.argv.slice(2);
 
 function run(cmd, args, cwd = NATIVE) {
   const r = spawnSync(cmd, args, { cwd, stdio: 'inherit', shell: WIN });
+  // A command that never started (not found, not executable) has no status: say why.
+  if (r.error) console.error(`Could not run ${cmd}: ${r.error.message}`);
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 

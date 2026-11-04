@@ -1,9 +1,9 @@
 name: mobile
 
-# Freero's phone and tablet apps (#177, apps/mobile, docs/mobile.md): a debug APK and an unsigned
-# release bundle for Android, an unsigned simulator build for iOS / iPadOS, on every change to the
-# shell. Store signing switches on when the owner adds the secrets listed in docs/mobile.md (Android:
-# the upload keystore); the App Store archive is made from Xcode or the owner's signing step.
+# Freero's phone and tablet apps (#177, apps/mobile, docs/mobile.md): a debug APK for Android and an
+# unsigned simulator build for iOS / iPadOS on every change to the shell, with no secrets needed.
+# The signed Android release bundle (.aab) is built once the owner adds the upload keystore listed in
+# docs/mobile.md; the App Store archive is made from Xcode or the owner's signing step.
 
 on:
   pull_request:
@@ -49,6 +49,7 @@ jobs:
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then echo "$GOOGLE_SERVICES_JSON" > apps/mobile/native/android/app/google-services.json; fi
       - run: node apps/mobile/build.mjs android
+      # The release bundle only with the owner's upload key: an unsigned .aab can't go to Play.
       - name: Upload keystore
         env:
           KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
@@ -56,8 +57,11 @@ jobs:
           if [ -n "$KEYSTORE" ]; then
             echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.jks"
             echo "FREERO_ANDROID_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          else
+            echo 'No ANDROID_UPLOAD_KEYSTORE_BASE64: debug APK only.'
           fi
-      - run: node apps/mobile/build.mjs android release
+      - if: env.FREERO_ANDROID_KEYSTORE != ''
+        run: node apps/mobile/build.mjs android release
         env:
           FREERO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
           FREERO_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
