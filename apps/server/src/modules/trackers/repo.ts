@@ -31,6 +31,8 @@ export interface ConnectionSettings {
   workspace?: string | null;
   /** monday.com: the account's address ("https://acme.monday.com"), for item links. */
   accountUrl?: string | null;
+  /** The tracker login the account uses (Trello username, GitHub login), from the last test. */
+  login?: string | null;
 }
 
 export interface StoredConnection {
@@ -145,6 +147,18 @@ export async function listConnections(owner: { workspaceId: string } | { ownerId
       ? await query<ConnectionRow>(`SELECT * FROM tracker_connections WHERE workspace_id = $1 ORDER BY created_at`, [owner.workspaceId])
       : await query<ConnectionRow>(`SELECT * FROM tracker_connections WHERE owner_id = $1 ORDER BY created_at`, [owner.ownerId]);
   return rows.map(toConnection);
+}
+
+/**
+ * People's own connections to a tracker site with the login each was tested as (who a Trello or
+ * GitHub account is in Freero, when the tracker hides addresses).
+ */
+export async function personalLogins(provider: TrackerProviderKind, site: string): Promise<Array<{ ownerId: string; login: string }>> {
+  const rows = await query<{ owner_id: string; login: string | null }>(
+    `SELECT owner_id, settings->>'login' AS login FROM tracker_connections WHERE provider = $1 AND site = $2 AND owner_id IS NOT NULL AND credentials_sealed IS NOT NULL`,
+    [provider, site],
+  );
+  return rows.filter((r) => r.login).map((r) => ({ ownerId: r.owner_id, login: r.login! }));
 }
 
 /** Every connection that has linked issues (the poll job). */

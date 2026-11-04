@@ -7209,6 +7209,7 @@ async function trackerChecks() {
   const { startMockAsana } = await import('./lib/mock-asana.mjs');
   const { startMockMonday } = await import('./lib/mock-monday.mjs');
   const { startMockClickUp } = await import('./lib/mock-clickup.mjs');
+  const { startMockTrello } = await import('./lib/mock-trello.mjs');
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-trackers-'));
@@ -7223,7 +7224,8 @@ async function trackerChecks() {
   const asanaMock = await startMockAsana();
   const mondayMock = await startMockMonday();
   const clickupMock = await startMockClickUp();
-  const mocks = [cloud, dc, atlassian, lin, gh, az, azServer, asanaMock, mondayMock, clickupMock];
+  const trelloMock = await startMockTrello();
+  const mocks = [cloud, dc, atlassian, lin, gh, az, azServer, asanaMock, mondayMock, clickupMock, trelloMock];
   let proc = null;
   const live = [];
   const mcpClients = [];
@@ -7243,6 +7245,10 @@ async function trackerChecks() {
       TRACKER_CLICKUP_CLIENT_SECRET: clickupMock.oauth.clientSecret,
       TRACKER_CLICKUP_URL: clickupMock.url,
       TRACKER_CLICKUP_API_URL: clickupMock.url,
+      TRACKER_TRELLO_KEY: trelloMock.key,
+      TRACKER_TRELLO_SECRET: trelloMock.secret,
+      TRACKER_TRELLO_URL: trelloMock.url,
+      TRACKER_TRELLO_API_URL: trelloMock.url,
       RATE_LIMIT_TRACKER_SEND: '500/10m',
     };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
@@ -8059,6 +8065,73 @@ async function trackerChecks() {
       assert(projects.status === 200 && projects.json.projects.some((p) => p.name === 'Product / Web / Sprint board'), `Lists through OAuth: ${projects.status} ${projects.text.slice(0, 300)}`);
     });
 
+    // ---- Trello (#181): webhooks Freero registers itself (Trello checks the address with HEAD) ----
+
+    let trelloConn = null;
+    await check('trackers (Trello, #181): a token for the operator’s API key; a board imported into a new kanban has its lists as columns; Freero registers the board’s webhook (Trello’s HEAD check of the address), and a card moved to another list in Trello moves the card by a signed delivery', async () => {
+      const offer = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.trello;
+      assert(offer?.key === trelloMock.key && offer.authorizeUrl.startsWith(`${trelloMock.url}/1/authorize?`) && !JSON.stringify(offer).includes(trelloMock.secret), `the Trello offer: ${JSON.stringify(offer)}`);
+      const body = { provider: 'trello', name: 'Trello', workspaceId: team.id, site: trelloMock.site, token: trelloMock.token, defaults: { project: trelloMock.board } };
+      const wrong = await O.req('POST', '/api/trackers/connections', { ...body, token: 'ATTA-nope' });
+      assert(wrong.status === 400 && /refused the credentials/.test(wrong.json?.error ?? ''), `wrong token: ${wrong.status} ${wrong.text}`);
+      const otherKey = await O.req('POST', '/api/trackers/connections', { ...body, apiKey: 'someone-elses-key' });
+      assert(otherKey.status === 400, `a token with another key was kept: ${otherKey.status}`);
+      const made = await O.req('POST', '/api/trackers/connections', body);
+      assert(made.status === 201 && made.json.connection.account === 'bot@trello.test' && made.json.connection.inbound === 'webhook' && !made.text.includes(trelloMock.token), `trello connection: ${made.status} ${made.text}`);
+      trelloConn = made.json.connection;
+      const pricing = trelloMock.create({ name: 'Pricing page' });
+      const copy = trelloMock.create({ name: 'Launch copy', list: 'Doing', due: '2026-12-01T17:00:00.000Z' });
+      const shipped = trelloMock.create({ name: 'Logo refresh', list: 'Done' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: trelloConn.id, scope: { project: trelloMock.board }, placement: { newKanban: 'Trello launch' } });
+      assert(r.status === 201 && r.json.containerId && r.json.cards.length === 3, `import a whole board: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      await waitFor(() => E.get(kid) && r.json.cards.every((x) => E.get(x.id)), 8000, 'the Trello launch kanban and its cards');
+      const titles = E.get(kid).columns.map((c) => plain(c.title));
+      assert(JSON.stringify(titles) === JSON.stringify(['To Do', 'Doing', 'Done']), `columns: ${titles}`);
+      const card = (id) => E.get(r.json.cards.find((x) => trelloMock.cardIdOf(x.url) === id).id);
+      assert(columnTitle(kid, card(copy.id)) === 'Doing' && columnTitle(kid, card(shipped.id)) === 'Done' && card(copy.id).dueDate === '2026-12-01', 'the cards’ columns and dates');
+      await waitFor(() => trelloMock.webhooks.length === 1 && trelloMock.webhooks[0].idModel === trelloMock.board, 10_000, 'a webhook on the Launch board');
+      await waitFor(() => trelloMock.card(pricing.id).attachments.length === 1, 10_000, 'the first sync (a link back to the card)');
+      const statuses = await trelloMock.edit(pricing.id, { list: 'Doing' });
+      assert(JSON.stringify(statuses) === '[202]', `the signed delivery: ${statuses}`);
+      await waitFor(() => columnTitle(kid, card(pricing.id)) === 'Doing', 10_000, 'the card in Doing');
+      const c = card(copy.id);
+      E.set(c.id, { ...c, x: xInColumn(kid, c, 'Done'), status: 'done' });
+      await waitFor(() => trelloMock.card(copy.id).listName === 'Done', 15_000, 'Done in Trello');
+    });
+
+    await check('trackers (Trello, #181): a forged delivery, an address without its key and a HEAD check of an address Freero isn’t registering are refused; a card renamed on the board while someone edits its description in Trello keeps their description; members match people through their own Trello connection', async () => {
+      const target = trelloMock.webhooks[0]?.callbackURL;
+      assert(target && /[?&]h=/.test(target) && /[?&]k=/.test(target), `the registered address: ${target}`);
+      const id = trelloMock.create({ name: 'Forged' }).id;
+      assert((await trelloMock.forge(target, id)) === 401, 'a delivery signed with another secret was accepted');
+      assert((await trelloMock.forge(target.replace(/k=[^&]+/, 'k=guess'), id)) === 401, 'an address with a guessed key was accepted');
+      assert((await fetch(target, { method: 'HEAD' })).status === 401, 'a HEAD check after the registration was answered');
+      // M connects their own Trello: Freero now knows which member they are.
+      const mine = trelloMock.addMember('member-m', M.email);
+      const own = await M.req('POST', '/api/trackers/connections', { provider: 'trello', name: 'My Trello', site: trelloMock.site, token: mine.token });
+      assert(own.status === 201 && own.json.connection.scope === 'personal', `M's own Trello: ${own.status} ${own.text}`);
+      E.set('tr1', { ...base, id: 'tr1', type: 'card', x: 0, y: 23000, w: 260, h: 120, title: '<p>Partner logos</p>', description: '', color: '#5B3FF0', status: 'todo', tags: ['t-ux'], assigneeId: M.id, dueDate: '2026-12-12' });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: trelloConn.id, project: trelloMock.board, itemIds: ['tr1'] });
+      assert(sent.status === 201, `trello send: ${sent.status} ${sent.text}`);
+      const cardId = trelloMock.cardIdOf(sent.json.issues[0].url);
+      assert(cardId, `the card's address: ${sent.json.issues[0].url}`);
+      const tc = trelloMock.card(cardId);
+      assert(tc.name === 'Partner logos' && JSON.stringify(tc.memberNames) === '["member-m"]' && tc.due?.startsWith('2026-12-12') && JSON.stringify(tc.labelNames) === '["ux"]' && tc.listName === 'To Do', `the card: ${JSON.stringify(tc)}`);
+      assert(tc.attachments.length === 1 && tc.attachments[0].url.includes('item=tr1'), 'no link back to the board card');
+      // Someone edits the description in Trello between Freero's read and its write of the new name.
+      trelloMock.editBeforeNextWrite(cardId, { desc: 'Use the **spring** palette' });
+      E.set('tr1', { ...E.get('tr1'), title: '<p>Partner logos, final</p>' });
+      await waitFor(() => trelloMock.card(cardId).name === 'Partner logos, final', 15_000, 'the new name in Trello');
+      assert(trelloMock.card(cardId).desc.includes('spring'), `Freero wrote over the description: ${trelloMock.card(cardId).desc}`);
+      await waitFor(() => plain(E.get('tr1').description).includes('spring'), 15_000, 'the description from Trello on the card');
+      // A member taken off in Trello: the card has nobody.
+      await trelloMock.edit(cardId, { member: null });
+      await waitFor(() => E.get('tr1').assigneeId === null, 10_000, 'nobody on the card');
+      await trelloMock.edit(cardId, { member: 'member-m' });
+      await waitFor(() => E.get('tr1').assigneeId === M.id, 10_000, 'M on the card again, matched through their own connection');
+    });
+
     await check('trackers: Linear — a cluster becomes one issue with an attachment per sticky, and a signed webhook moves the card', async () => {
       const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
       assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
@@ -8098,7 +8171,7 @@ async function trackerChecks() {
       const actions = new Set(events.map((e) => e.action));
       for (const a of ['tracker.connection_created', 'tracker.issue_created', 'tracker.synced', 'tracker.issues_imported']) assert(actions.has(a), `audit lacks ${a}`);
       const all = JSON.stringify(events) + proc.log.join('');
-      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token, az.token, azServer.token, asanaMock.token, mondayMock.token, clickupMock.token, ...asanaMock.webhooks.map((w) => w.secret), ...clickupMock.webhooks.map((w) => w.secret)]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
+      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token, az.token, azServer.token, asanaMock.token, mondayMock.token, clickupMock.token, trelloMock.token, trelloMock.secret, ...asanaMock.webhooks.map((w) => w.secret), ...clickupMock.webhooks.map((w) => w.secret)]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
 
       const failures = proc.log
         .join('')

@@ -21,6 +21,7 @@ export const TRACKER_PROVIDERS = {
   asana: 'Asana',
   monday: 'monday.com',
   clickup: 'ClickUp',
+  trello: 'Trello',
 } as const;
 export type TrackerProviderKind = keyof typeof TRACKER_PROVIDERS;
 
@@ -500,7 +501,8 @@ export function estimateNumber(v: unknown): number | null {
 // GET    /api/trackers/connections/:id/fields         -> { fields: TrackerFieldInfo[] } (managers: the field map's picker, #43)
 // GET    /api/trackers/oauth/:provider/start?workspace=<id>|personal=1  -> 302 to the tracker's consent page
 // POST   /api/trackers/webhooks/:connectionId         (the tracker; signed with the connection's secret)
-// POST   /api/trackers/webhooks/:connectionId?h=&k=   (Asana, monday.com: a webhook Freero registered itself;
+// POST   /api/trackers/webhooks/:connectionId?h=&k=   (Asana, monday.com, ClickUp, Trello: a webhook Freero registered itself;
+// HEAD   /api/trackers/webhooks/:connectionId?h=&k=   (Trello's check of an address: 200 only while Freero registers it)
 //                                                      `k` binds the address to the connection's secret, and
 //                                                      the handshake — Asana's X-Hook-Secret, monday's
 //                                                      challenge — is answered only while Freero registers it)
@@ -557,6 +559,13 @@ export interface TrackerConnectionInput {
   email?: string;
   /** API token / personal access token. Never sent back. */
   token?: string;
+  /**
+   * [additive] Trello (#181): the API key the token was made for (left out: the operator's key,
+   * TRACKER_TRELLO_KEY), and optionally that key's secret, so webhook deliveries are verified by
+   * their signature. Never sent back.
+   */
+  apiKey?: string;
+  apiSecret?: string;
   inbound?: 'webhook' | 'polling';
   defaults?: { project?: string | null; issueType?: string | null };
   /** [additive] PATCH only (managers). */

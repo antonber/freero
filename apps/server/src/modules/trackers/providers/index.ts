@@ -8,6 +8,7 @@ import { github } from './github';
 import { jira, jiraOAuth } from './jira';
 import { linear } from './linear';
 import { monday, mondayOAuth } from './monday';
+import { trello } from './trello';
 import type { OAuthProvider, TrackerProvider } from './types';
 
 const PROVIDERS: Record<TrackerProviderKind, TrackerProvider> = {
@@ -18,6 +19,7 @@ const PROVIDERS: Record<TrackerProviderKind, TrackerProvider> = {
   asana,
   monday,
   clickup,
+  trello,
 };
 const OAUTH: Partial<Record<TrackerProviderKind, OAuthProvider>> = {
   jira: jiraOAuth,

@@ -437,6 +437,30 @@ const TRACKERS: Integration[] = [
       description: 'Turn sticky notes and cards into ClickUp tasks and import a List onto a kanban, statuses as columns, kept in sync both ways.',
     },
   },
+  {
+    id: 'trello',
+    name: 'Trello',
+    category: 'trackers',
+    oneLiner: 'Board items become Trello cards, and a Trello board comes onto a kanban with its lists as columns.',
+    description: [
+      'Send notes, clusters or cards to a Trello board as cards, or import a board (or a filter of it: a list, a label, a member) as linked cards: into a kanban, each card lands in the column named after its list. Name, description, list, start and due dates, labels, members and mapped custom fields stay in step both ways.',
+      'Freero registers its own webhooks on the boards you use, verifies their signature when it knows the API key’s secret, and polls as a fallback.',
+    ],
+    status: 'settings',
+    connect: {
+      ...trackerConnect('Trello', 'a token (and your API key, unless this server has its own)'),
+      steps: [
+        'In Settings → Your issue trackers (or your team’s admin console → Issue trackers), add a Trello connection with a token. Freero tests it before keeping it.',
+        'On a board, select notes or cards and choose Send to tracker…, or use Import issues… to bring in a Trello board. Freero asks Trello for webhooks itself.',
+        'Trello hides members’ addresses: to be matched to your Trello account, connect your own Trello in Settings too.',
+      ],
+    },
+    keywords: ['trello', 'cards', 'lists', 'boards', 'labels', 'kanban', 'sync'],
+    seo: {
+      title: 'Trello integration: whiteboard notes to Trello cards',
+      description: 'Turn sticky notes into Trello cards and bring a Trello board onto a kanban, lists as columns, kept in sync both ways.',
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------

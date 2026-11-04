@@ -80,6 +80,16 @@ export interface TrackersConfig {
   /** ClickUp's app (its consent page: <url>/api) and API host (<url>/api/v2); overridden only to test against a mock. */
   clickupUrl: string;
   clickupApiUrl: string;
+  /**
+   * Trello (#181): the operator's API key (a Power-Up's, trello.com/power-ups/admin) and its secret,
+   * or null — people then give their own key with their token. With it, connecting needs only a token
+   * (the connect form links to Trello's authorize page for one) and the secret verifies deliveries.
+   */
+  trelloKey: string | null;
+  trelloSecret: string | null;
+  /** Trello's site (its authorize page: <url>/1/authorize) and API host (<url>/1); overridden only to test against a mock. */
+  trelloUrl: string;
+  trelloApiUrl: string;
 }
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
@@ -872,7 +882,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     clickupOAuth: pair('TRACKER_CLICKUP_CLIENT_ID', 'TRACKER_CLICKUP_CLIENT_SECRET', 'the ClickUp OAuth app'),
     clickupUrl: (url('TRACKER_CLICKUP_URL', ['https:', 'http:']) ?? 'https://app.clickup.com').replace(/\/+$/, ''),
     clickupApiUrl: (url('TRACKER_CLICKUP_API_URL', ['https:', 'http:']) ?? 'https://api.clickup.com').replace(/\/+$/, ''),
+    trelloKey: str('TRACKER_TRELLO_KEY'),
+    trelloSecret: str('TRACKER_TRELLO_SECRET'),
+    trelloUrl: (url('TRACKER_TRELLO_URL', ['https:', 'http:']) ?? 'https://trello.com').replace(/\/+$/, ''),
+    trelloApiUrl: (url('TRACKER_TRELLO_API_URL', ['https:', 'http:']) ?? 'https://api.trello.com').replace(/\/+$/, ''),
   };
+  if (trackers.trelloSecret && !trackers.trelloKey) problems.push('TRACKER_TRELLO_SECRET goes with TRACKER_TRELLO_KEY (the Trello Power-Up’s API key)');
   // Slack link unfurls: both halves of the operator's Slack app, or off. One without the other is a
   // mistake worth saying out loud rather than a silently missing feature.
   const slackApp = () => {

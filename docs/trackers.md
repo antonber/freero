@@ -1,12 +1,12 @@
-# Issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp)
+# Issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp, Trello)
 
 Freero links board items to issues in the tracker a team already uses, and keeps both in step:
 select sticky notes, a cluster or cards → **Send to tracker…** → one issue (or one per item) with
 every field kept and a link back to each item; each item then shows the issue's key, status and
 assignee, live. **Import issues…** (board menu) turns a JQL / search query into linked cards, or
 — without writing a query — a project's current (or a chosen) sprint, Linear cycle or Azure DevOps
-iteration, or an epic's issues (#119, #43) — or a whole Asana project, monday.com board or ClickUp
-List (#120, #121, #180).
+iteration, or an epic's issues (#119, #43) — or a whole Asana project, monday.com board, ClickUp
+List or Trello board (#120, #121, #180, #181).
 Agents do the same through the MCP tool `sync_to_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/send`, #84), and import with `import_from_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/import`) — the same rules as *Import issues…*, placed into a
@@ -41,11 +41,12 @@ nobody can link an item to an issue by editing the board.
 | Azure DevOps Server 2020 or later | the collection's address (`https://tfs.acme.internal/tfs/DefaultCollection`) | personal access token | service hooks as above where the server can reach Freero, otherwise polling (`System.ChangedDate`) |
 | Asana (#120) | `https://app.asana.com` (the default) | personal access token, or OAuth (when the operator registered an app: `TRACKER_ASANA_CLIENT_ID`) | webhooks Freero registers itself, one per project you send to or import from (nothing to paste in Asana), and polling (`modified_at`, ten tasks per batch call) as the fallback |
 | monday.com (#121) | `https://monday.com` (the default) | API token (Developers → My access tokens), or OAuth (`TRACKER_MONDAY_CLIENT_ID`) | webhooks Freero registers itself on each board you send to or import from, and polling (`updated_at`) as the fallback |
+| Trello (#181) | `https://trello.com` (the default) | a token, with the API key it was made for — the operator's (`TRACKER_TRELLO_KEY`: then the form links to Trello's page that issues one) or the person's own (and optionally its secret) | webhooks Freero registers itself on each board you send to or import from (Trello checks the address with a HEAD request first), and polling (`dateLastActivity`, ten cards per batch call) as the fallback |
 | ClickUp (#180) | `https://app.clickup.com` (the default) | personal token (`pk_…`: ClickUp → Settings → Apps → API Token), or OAuth (`TRACKER_CLICKUP_CLIENT_ID`) | webhooks Freero registers itself, one per List you send to or import from (ClickUp names the secret it signs them with when it makes one), and polling (the Workspace's tasks updated since, `date_updated_gt`) as the fallback |
 
 Freero tests every new connection before keeping it. The webhook secret is shown once (a new one
-can be made at any time; the old one stops working at once — for Asana, monday.com and ClickUp, where Freero
-registered the webhooks, it registers them again with the new secret). Switching an Asana, ClickUp or
+can be made at any time; the old one stops working at once — for Asana, monday.com, ClickUp and Trello, where Freero
+registered the webhooks, it registers them again with the new secret). Switching an Asana, ClickUp, Trello or
 monday.com connection to polling removes the webhooks Freero registered there; switching back
 registers them again. A self-hosted tracker on a private
 network needs `TRACKER_PRIVATE_ENDPOINTS=true` ([configuration.md](configuration.md)).
@@ -118,6 +119,20 @@ changed (a PUT of just those; assignees as add / remove; a tag or custom field i
 imports a whole List. The links back to the board are one comment by Freero, edited as items come
 and go. The import query is a filter of a List: `list:"Sprint board" status:"in review"
 assignee:me tag:web done:no words`.
+
+**Trello (#181).** Cards are the issues, boards the projects. A kanban card's column is the card's
+**list**, by name (a list's name says where a card stands: Doing, Review… → in progress; Done… →
+done; else to do), and a card moved on the kanban moves to the list of that name (else the first
+list of its kind). The description is Trello's Markdown (`desc`), labels are labels (made on the
+board when missing), start and due dates are the card's, and custom fields (text, number, date,
+drop-down) map by id in the field map (listed from the connection's default board). **Members:**
+Trello never shows other members' addresses, so the card's first member is matched to a Freero
+person only through that person's OWN Trello connection (Settings → Your issue trackers), which
+Freero tested as that Trello username: a card assigned to them gets that member, a member added in
+Trello assigns the card to them; anyone else shows as `~username` and is never guessed. No
+priority, estimate, sprint or parent of Trello's own (map a custom field for those). The links back
+are URL attachments, one per board item. The import query is a filter of a board:
+`board:Launch list:"Doing" member:me label:web done:no words`; **A board** imports a whole board.
 
 ## The field map (#43)
 
@@ -213,7 +228,11 @@ columns): what someone else changed meanwhile in another field is never written 
   with the secret Asana issued); monday.com doesn't sign deliveries of webhooks made with a token,
   so its address's key is the credential. ClickUp names the secret its deliveries are signed with
   in its answer when Freero makes a webhook (kept sealed, only while that registration is
-  pending); deliveries carry `X-Signature` (HMAC-SHA256 hex of the body). A verified delivery only says WHICH
+  pending); deliveries carry `X-Signature` (HMAC-SHA256 hex of the body). Trello checks an
+  address with a HEAD request before it makes a webhook: answered 200 only for an address Freero
+  made while it is registering it. With the API key's secret known (the operator's, or one given
+  with the connection) every Trello delivery must carry `X-Trello-Webhook`, base64 HMAC-SHA1 of the
+  body followed by the registered address; without it, the address's key is the credential. A verified delivery only says WHICH
   issue changed: Freero reads the issue back with the connection's own credentials, so even a
   valid replay changes nothing by itself.
 - Data exports: a person's own connections (tracker, name, address, account, field map) and the
@@ -248,9 +267,10 @@ custom field, external attachments, OAuth and webhooks with Asana's handshake an
 `mock-monday.mjs` — Status / People / Date / Timeline columns, groups, updates, subitems, webhooks
 with the challenge, a spent complexity budget — and `mock-clickup.mjs` — Spaces, Folders and Lists
 with statuses, members with addresses, a drop-down custom field, comments, OAuth and webhooks that
-name their signing secret). They also run standalone for the UI (`node
+name their signing secret — and `mock-trello.mjs` — lists, labels, hidden member addresses, a
+drop-down custom field, URL attachments, the HEAD check and signed webhooks). They also run standalone for the UI (`node
 scripts/lib/mock-jira.mjs --port 4482`, `node scripts/lib/mock-azure.mjs --port 4484`, `node
-scripts/lib/mock-asana.mjs --port 4485`, `node scripts/lib/mock-monday.mjs --port 4486`, `node scripts/lib/mock-clickup.mjs --port 4487`, with
+scripts/lib/mock-asana.mjs --port 4485`, `node scripts/lib/mock-monday.mjs --port 4486`, `node scripts/lib/mock-clickup.mjs --port 4487`, `node scripts/lib/mock-trello.mjs --port 4488`, with
 `TRACKER_PRIVATE_ENDPOINTS=true`).
 
 Not done yet: Microsoft Entra OAuth for Azure DevOps Services (needs the operator's Entra app
@@ -258,8 +278,8 @@ registration; PATs work on both Services and Server), GitHub Projects iterations
 manual checks against real trackers (a Jira Cloud site with Jira Software, a Linear workspace, an
 Azure DevOps organization, an Asana workspace, a monday.com account) that #43, #119, #6, #120 and
 #121 ask to record in their PRs, and the operator's Asana, monday.com and ClickUp OAuth apps (off
-until registered: tokens work without them); a real ClickUp Workspace check (#180) is still to be
-recorded. monday.com subitems sync their name, people and dates on
+until registered: tokens work without them); real ClickUp Workspace and Trello board checks (#180, #181)
+are still to be recorded. monday.com subitems sync their name, people and dates on
 their own board (its columns); a whole project imported into a new kanban gets columns for the
 sections / statuses its tasks have (an empty section gets none).
 

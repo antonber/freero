@@ -6,6 +6,6 @@ import { defineFeature } from '@engine';
 export default defineFeature({
   name: 'trackers',
   description:
-    'Issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp): send sticky notes, a cluster or cards to a tracker as one issue, see each linked item’s issue key, status and assignee live, and import issues as linked cards.',
+    'Issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp, Trello): send sticky notes, a cluster or cards to a tracker as one issue, see each linked item’s issue key, status and assignee live, and import issues as linked cards.',
   owns: ['trackers'],
 });

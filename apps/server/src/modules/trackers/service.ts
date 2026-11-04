@@ -98,7 +98,7 @@ import {
   unmappedOf,
 } from './board';
 import { noteOutcome, openConnection, requireUsable, usableConnections, webhookSecretOf } from './connections';
-import { ensureWebhooks, hookOfAddress, keepHandshakeSecret, retryWebhooks } from './hooks';
+import { ensureWebhooks, hookAddress, hookOfAddress, keepHandshakeSecret, retryWebhooks } from './hooks';
 import { emitTrackerActivity } from './events';
 import { dayNumber } from './board';
 import { planRoadmapImport } from './roadmap';
@@ -581,7 +581,7 @@ export const trackersConsumer: OutboxConsumer = {
 export async function pollOnce(now = Date.now()): Promise<number> {
   const cfg = getConfig().trackers;
   const queued = new Set(await repo.claimRetries(now));
-  // Webhooks Freero registers itself (Asana, monday.com) that failed a while ago are tried again.
+  // Webhooks Freero registers itself (Asana, monday.com, ClickUp, Trello) that failed a while ago are tried again.
   await retryWebhooks(now).catch((e) => logError('trackers: registering webhooks again failed', e));
   for (const conn of await repo.connectionsWithLinks()) {
     if (conn.status === 'needs_auth' || !conn.credentialsSealed) continue;
@@ -638,7 +638,7 @@ export async function receiveWebhook(
     rawBody: body ?? Buffer.alloc(0),
     secret,
     now: Date.now(),
-    ...(hook ? { hook: { pending: hook.pending, secret: hook.secret } } : {}),
+    ...(hook ? { hook: { pending: hook.pending, secret: hook.secret, address: hookAddress(hook.row.appOrigin, conn.id, hook.row.id, secret) } } : {}),
   });
   if (!delivery) throw refused();
   if (delivery.handshake) {
@@ -648,6 +648,14 @@ export async function receiveWebhook(
   const links = await repo.linksToIssues(conn.id, delivery.issues);
   await enqueueSync(links.map((l) => l.id));
   return { queued: links.length };
+}
+
+/** Whether an address names a webhook Freero is registering right now (Trello's HEAD check). */
+export async function webhookAddressPending(connectionId: string, query: Record<string, unknown>): Promise<boolean> {
+  const conn = await repo.getConnection(connectionId);
+  const secret = conn ? webhookSecretOf(conn) : null;
+  if (!conn || !secret || !providerOf(conn.provider).webhooks) return false;
+  return (await hookOfAddress(conn, secret, query))?.pending ?? false;
 }
 
 // ---- send, preview, import, unlink ----
@@ -1157,7 +1165,7 @@ export async function importIssues(
   }
   // The issues' links back to their cards are added by a sync each (they may take a while).
   await enqueueSync(inserted.map((l) => l.id));
-  // A tracker that takes Freero's own webhooks (Asana, monday.com) is told about these projects.
+  // A tracker that takes Freero's own webhooks (Asana, monday.com, ClickUp, Trello) is told about these projects.
   void ensureWebhooks(conn, fresh.map((i) => i.project), origin);
   await recordAudit({
     action: 'tracker.issues_imported',

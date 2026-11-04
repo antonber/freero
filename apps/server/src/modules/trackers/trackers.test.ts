@@ -41,6 +41,7 @@ import { adfToMarkdown, asanaHtmlToMarkdown, htmlToMarkdown, markdownToAdf, mark
 import { asana } from './providers/asana';
 import { azure } from './providers/azure';
 import { clickup } from './providers/clickup';
+import { trello } from './providers/trello';
 
 import { github, managedPart, withManagedPart } from './providers/github';
 import { jira } from './providers/jira';
@@ -691,4 +692,20 @@ it('a spent monday.com complexity budget is waited out when it resets in a momen
   expect(err).toBeInstanceOf(TrackerError);
   expect(err).toMatchObject({ kind: 'rate', retryAfterMs: 40_000 });
   expect(later.sent).toHaveLength(1);
+});
+
+it('a Trello delivery is taken only from an address Freero registered, and with the API key’s secret known, only when signed over its body and that address', () => {
+  const now = Date.now();
+  const address = 'https://freero.example/api/trackers/webhooks/c1?h=abc&k=key';
+  const body = Buffer.from(JSON.stringify({ action: { type: 'updateCard', data: { card: { id: '5f1a2b3c4d5e6f7a8b9c0d1e' } } } }));
+  const sig = (s: string, b = body, a = address) => createHmac('sha1', s).update(Buffer.concat([b, Buffer.from(a)])).digest('base64');
+  const hook = { pending: false, secret: 'api-key-secret', address };
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret') }, rawBody: body, secret: 's', now, hook })).toEqual({ issues: ['5f1a2b3c4d5e6f7a8b9c0d1e'] });
+  // Another secret, another address (a delivery replayed to a different registration), altered, unsigned: refused.
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('guess') }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret', body, `${address}x`) }, rawBody: body, secret: 's', now, hook })).toBeNull();
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret') }, rawBody: Buffer.from(body.toString().replace('5f1a', '6f1a')), secret: 's', now, hook })).toBeNull();
+  expect(trello.webhook({ headers: {}, rawBody: body, secret: 's', now, hook })).toBeNull();
+  // Not an address Freero registered (the service found no registration): refused whatever it carries.
+  expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret') }, rawBody: body, secret: 's', now })).toBeNull();
 });

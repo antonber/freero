@@ -24,6 +24,7 @@ const SITE_PLACEHOLDER: Record<TrackerProviderKind, string> = {
   asana: 'https://app.asana.com',
   monday: 'https://monday.com',
   clickup: 'https://app.clickup.com',
+  trello: 'https://trello.com',
 };
 const TOKEN_LABEL: Record<TrackerProviderKind, string> = {
   jira: 'API token',
@@ -33,12 +34,15 @@ const TOKEN_LABEL: Record<TrackerProviderKind, string> = {
   asana: 'Personal access token',
   monday: 'API token',
   clickup: 'Personal token (pk_…)',
+  trello: 'Token',
 };
 /** Trackers where Freero registers its webhooks itself (nothing to paste there). */
-const SELF_HOOKED: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday', 'clickup']);
+const SELF_HOOKED: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday', 'clickup', 'trello']);
 /** What each tracker calls the place issues live, for "Default …" and the webhook note. */
-const PLACE: Partial<Record<TrackerProviderKind, string>> = { monday: 'board', clickup: 'List' };
+const PLACE: Partial<Record<TrackerProviderKind, string>> = { monday: 'board', clickup: 'List', trello: 'board' };
 type OAuthOffered = Partial<Record<TrackerProviderKind, boolean>>;
+/** The operator's Trello API key, when there is one: then a person only pastes a token for it. */
+type TrelloOffer = { key: string | null; authorizeUrl: string | null };
 
 function Secret({ value, onDone }: { value: string; onDone: () => void }) {
   const notify = useToast();
@@ -60,7 +64,7 @@ function Secret({ value, onDone }: { value: string; onDone: () => void }) {
   );
 }
 
-function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | null; oauth: OAuthOffered; onAdded: (c: TrackerConnectionInfo, secret: string) => void }) {
+function AddConnection({ workspaceId, oauth, trello, onAdded }: { workspaceId: string | null; oauth: OAuthOffered; trello: TrelloOffer; onAdded: (c: TrackerConnectionInfo, secret: string) => void }) {
   const notify = useToast();
   const [provider, setProvider] = useState<TrackerProviderKind>('jira');
   const [deployment, setDeployment] = useState<'cloud' | 'datacenter'>('cloud');
@@ -68,6 +72,8 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
   const [site, setSite] = useState('');
   const [email, setEmail] = useState('');
   const [token, setToken] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
   const [inbound, setInbound] = useState<'webhook' | 'polling'>('webhook');
   const [project, setProject] = useState('');
   const [busy, setBusy] = useState(false);
@@ -87,10 +93,13 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
       ...(provider === 'jira' || provider === 'azure' ? { deployment } : {}),
       ...(provider === 'jira' && deployment === 'cloud' ? { email: email.trim() } : {}),
       ...(project.trim() ? { defaults: { project: project.trim() } } : {}),
+      // Trello: the person's own API key (and its secret) when the server has none of its own.
+      ...(provider === 'trello' && !trello.key ? { apiKey: apiKey.trim(), ...(apiSecret.trim() ? { apiSecret: apiSecret.trim() } : {}) } : {}),
     };
     try {
       const out = await api.createTrackerConnection(body);
       setToken('');
+      setApiSecret('');
       onAdded(out.connection, out.webhookSecret);
       notify(`Connected ${out.connection.name}${out.connection.account ? ` as ${out.connection.account}` : ''}`, 'success');
     } catch (err) {
@@ -144,6 +153,9 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
         {provider === 'jira' && deployment === 'cloud' && (
           <Input label="Account email" type="email" value={email} autoComplete="off" onChange={(e) => setEmail(e.target.value)} required />
         )}
+        {provider === 'trello' && !trello.key && (
+          <Input label="API key (trello.com/power-ups/admin)" value={apiKey} autoComplete="off" onChange={(e) => setApiKey(e.target.value)} required />
+        )}
         <Input
           label={provider === 'jira' && deployment === 'datacenter' ? 'Personal access token' : TOKEN_LABEL[provider]}
           type="password"
@@ -152,6 +164,9 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
           onChange={(e) => setToken(e.target.value)}
           required
         />
+        {provider === 'trello' && !trello.key && (
+          <Input label="API secret (optional: verifies Trello’s webhooks)" type="password" value={apiSecret} autoComplete="off" onChange={(e) => setApiSecret(e.target.value)} />
+        )}
         <Input
           label={
             provider === 'github'
@@ -166,7 +181,9 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
                       ? 'Default board (its id or name)'
                       : provider === 'clickup'
                         ? 'Default List (its id or name)'
-                        : 'Default project key'
+                        : provider === 'trello'
+                          ? 'Default board (its id)'
+                          : 'Default project key'
           }
           value={project}
           onChange={(e) => setProject(e.target.value)}
@@ -200,6 +217,14 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
           </Button>
         )}
       </div>
+      {provider === 'trello' && trello.authorizeUrl && (
+        <p className="fr-trackerconn__fine">
+          <a href={trello.authorizeUrl} target="_blank" rel="noopener noreferrer">
+            Get a token from Trello
+          </a>{' '}
+          (allow Freero there, then paste the token it shows above).
+        </p>
+      )}
       <p className="fr-trackerconn__fine">
         Freero tests the token right away and keeps it encrypted; it is never shown again. Issues are created as that account.
       </p>
@@ -211,6 +236,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
   const notify = useToast();
   const [list, setList] = useState<TrackerConnectionInfo[] | null>(null);
   const [oauth, setOauth] = useState<OAuthOffered>({});
+  const [trello, setTrello] = useState<TrelloOffer>({ key: null, authorizeUrl: null });
   const [secret, setSecret] = useState<{ id: string; value: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [mapping, setMapping] = useState<string | null>(null);
@@ -220,6 +246,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
       (r) => {
         setList(r.connections);
         setOauth(r.oauth);
+        if (r.trello) setTrello(r.trello);
       },
       (e) => notify(errorText(e, 'Could not load tracker connections'), 'error'),
     );
@@ -332,6 +359,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
         <AddConnection
           workspaceId={workspaceId}
           oauth={oauth}
+          trello={trello}
           onAdded={(c, s) => {
             setList((l) => [...(l ?? []), c]);
             // Nothing to paste where Freero registers its webhooks itself.

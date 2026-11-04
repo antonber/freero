@@ -32,11 +32,11 @@ const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprin
 /** What a tracker calls the issue others go under (#43); none: not from Freero (GitHub). */
 const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: 'Parent issue', azure: 'Parent work item', asana: 'Parent task', monday: 'Parent item', clickup: 'Parent task' };
 /** What a tracker's project is called where it isn't one (#120, #121). */
-const PROJECT_NAME: Partial<Record<TrackerProviderKind, string>> = { github: 'Repository', linear: 'Team', monday: 'Board', clickup: 'List' };
+const PROJECT_NAME: Partial<Record<TrackerProviderKind, string>> = { github: 'Repository', linear: 'Team', monday: 'Board', clickup: 'List', trello: 'Board' };
 /** A parent's key, as people find it in each tracker. */
 const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: 'Task id or link', monday: 'Item id', clickup: 'Task id or link' };
 /** Trackers whose whole project (board, List) can be imported without a query (#120, #121, #180). */
-const WHOLE_PROJECT: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday', 'clickup']);
+const WHOLE_PROJECT: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday', 'clickup', 'trello']);
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 /** The connection picker and its projects, shared by both dialogs. */
@@ -364,6 +364,7 @@ const QUERY_HINT: Record<string, string> = {
   asana: 'e.g. project:Launch section:"In progress" assignee:me',
   monday: 'e.g. board:Roadmap group:"This week" status:"Working on it"',
   clickup: 'e.g. list:Sprint status:"in review" assignee:me tag:web',
+  trello: 'e.g. board:Launch list:"Doing" member:me label:web',
 };
 
 const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
@@ -494,7 +495,7 @@ function ImportDialog({ editor, props }: PanelProps) {
               value={by}
               options={[
                 { value: 'query', label: c.queryLanguage || 'Query' },
-                ...(provider && WHOLE_PROJECT.has(provider) ? [{ value: 'project' as const, label: provider === 'monday' ? 'A board' : provider === 'clickup' ? 'A List' : 'A project' }] : []),
+                ...(provider && WHOLE_PROJECT.has(provider) ? [{ value: 'project' as const, label: provider === 'monday' || provider === 'trello' ? 'A board' : provider === 'clickup' ? 'A List' : 'A project' }] : []),
                 ...(sprintName ? [{ value: 'sprint' as const, label: `A ${sprintName.toLowerCase()}` }] : []),
                 ...(parentName ? [{ value: 'epic' as const, label: parentName === 'Epic' ? 'An epic' : `A ${parentName.toLowerCase()}` }] : []),
               ]}

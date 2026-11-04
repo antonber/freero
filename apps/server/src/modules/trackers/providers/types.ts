@@ -8,8 +8,12 @@ import type { ConnectionSettings } from '../repo';
 
 /** Opened credentials (never stored like this: sealed in the connection row). */
 export type Credentials =
-  /** API token (Jira Cloud with `email`), personal access token (Jira DC, GitHub), API key (Linear). */
-  | { kind: 'token'; token: string; email?: string }
+  /**
+   * API token (Jira Cloud with `email`), personal access token (Jira DC, GitHub), API key (Linear),
+   * a Trello token with the API `key` it was made for (and, optionally, that key's `secret`, which
+   * Trello signs webhook deliveries with).
+   */
+  | { kind: 'token'; token: string; email?: string; key?: string; secret?: string }
   | {
       kind: 'oauth';
       accessToken: string;
@@ -27,6 +31,15 @@ export interface ProviderConnection {
   apiBase: string;
   deployment: 'cloud' | 'datacenter' | null;
   settings: ConnectionSettings;
+  /** The secret the tracker signs webhook deliveries with, when the connection knows it (Trello: its API key's). */
+  signingSecret?: string | null;
+  /**
+   * People in Freero matched to tracker accounts that hide their addresses (Trello, GitHub without a
+   * public email): a login is a person's when they connected their OWN account on that tracker
+   * (a personal connection to the same site, tested as that login), and the address is their
+   * verified one. Null: nobody is known by it.
+   */
+  people?: { emailOf(login: string): Promise<string | null>; loginOf(email: string): Promise<string | null> };
   /**
    * One authenticated API call (`path` relative to `apiBase`, or an absolute URL on it), with the
    * connection's credentials, rate-limit handling and retries. Resolves with any status.
@@ -95,9 +108,11 @@ export interface WebhookDelivery {
    * A webhook Freero registered itself (`TrackerProvider.webhooks`: Asana, monday.com, ClickUp), its address
    * already checked (it names the registration and carries a key made with the connection's
    * secret): whether Freero is registering it right now — the only time a handshake is answered —
-   * and the secret the tracker issued in its handshake (Asana) or when it made the webhook (ClickUp).
+   * and the secret the tracker issued in its handshake (Asana) or when it made the webhook (ClickUp),
+   * or the connection's signing secret (Trello); `address`: the address it was registered with
+   * (Trello signs the body together with it).
    */
-  hook?: { pending: boolean; secret: string | null };
+  hook?: { pending: boolean; secret: string | null; address?: string };
 }
 
 export interface WebhookResult {

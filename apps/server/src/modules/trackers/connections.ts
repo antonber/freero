@@ -31,6 +31,7 @@ import { appUrl } from '../../platform/mail';
 import { seal, unseal } from '../../platform/secrets';
 import { requireAdmin } from '../admin/index';
 import { recordAudit } from '../audit/index';
+import { findUserByEmail, getAccount, getUser } from '../auth/index';
 import { workspaceRole } from '../workspaces/index';
 import { checkTrackerUrl, trackerRequest, TrackerError } from './http';
 import { oauthProviderOf, providerOf, type Credentials, type ProviderConnection } from './providers/index';
@@ -120,11 +121,49 @@ async function refreshed(c: StoredConnection, creds: Extract<Credentials, { kind
   return next;
 }
 
+/** A verified address of this person, else null. */
+async function verifiedEmailOf(userId: string): Promise<string | null> {
+  const [u, account] = await Promise.all([getUser(userId), getAccount(userId).catch(() => null)]);
+  return u && account?.emailVerified ? u.email.toLowerCase() : null;
+}
+
+/**
+ * Who a tracker login is in Freero and back, for trackers that hide addresses (Trello; GitHub
+ * without a public email): only through a person's OWN connection to the same site, which Freero
+ * tested as that login — nobody can claim someone else's account by typing its name.
+ */
+export function peopleOf(c: Pick<StoredConnection, 'provider' | 'site'>): NonNullable<ProviderConnection['people']> {
+  let all: Promise<Array<{ ownerId: string; login: string }>> | null = null;
+  const logins = () => (all ??= repo.personalLogins(c.provider, c.site));
+  return {
+    async emailOf(login) {
+      const owners = [...new Set((await logins()).filter((l) => l.login.toLowerCase() === login.toLowerCase()).map((l) => l.ownerId))];
+      // Two people who tested the same login: neither is it for sure.
+      return owners.length === 1 ? verifiedEmailOf(owners[0]) : null;
+    },
+    async loginOf(email) {
+      const u = await findUserByEmail(email);
+      if (!u || (await verifiedEmailOf(u.id)) !== email.toLowerCase()) return null;
+      const mine = [...new Set((await logins()).filter((l) => l.ownerId === u.id).map((l) => l.login.toLowerCase()))];
+      return mine.length === 1 ? mine[0] : null;
+    },
+  };
+}
+
 /** The connection as its provider uses it: every call authenticated, rate limited and retried. */
 export function openConnection(c: StoredConnection): ProviderConnection {
   const provider = providerOf(c.provider);
   let creds: Credentials | null = null;
   const base = c.apiBase.replace(/\/+$/, '');
+  const signing = (() => {
+    if (c.provider !== 'trello' || !c.credentialsSealed) return null;
+    try {
+      const opened = openCredentials(c);
+      return opened.kind === 'token' ? (opened.secret ?? null) : null;
+    } catch {
+      return null;
+    }
+  })();
   return {
     id: c.id,
     provider: c.provider,
@@ -132,6 +171,8 @@ export function openConnection(c: StoredConnection): ProviderConnection {
     apiBase: base,
     deployment: c.deployment,
     settings: c.settings,
+    signingSecret: signing,
+    people: peopleOf(c),
     async call(req) {
       if (c.cooldownUntil && c.cooldownUntil > Date.now())
         throw new TrackerError(`${TRACKER_PROVIDERS[c.provider]} asked Freero to slow down; the sync will try again shortly.`, 'rate', 429, c.cooldownUntil - Date.now());
@@ -191,6 +232,7 @@ export function apiBaseOf(provider: TrackerProviderKind, site: string): string {
   if (provider === 'monday') return /^https:\/\/([a-z0-9-]+\.)?monday\.com$/i.test(s) ? getConfig().trackers.mondayApiUrl : s;
   // ClickUp's API is on its own host for every Workspace (a mock serves both under one address).
   if (provider === 'clickup') return /^https:\/\/(app\.)?clickup\.com$/i.test(s) ? `${getConfig().trackers.clickupApiUrl}/api/v2` : `${s}/api/v2`;
+  if (provider === 'trello') return /^https:\/\/(www\.)?trello\.com$/i.test(s) ? `${getConfig().trackers.trelloApiUrl}/1` : `${s}/1`;
   return s;
 }
 
@@ -200,6 +242,7 @@ const defaultSite: Partial<Record<TrackerProviderKind, string>> = {
   asana: 'https://app.asana.com',
   monday: 'https://monday.com',
   clickup: 'https://app.clickup.com',
+  trello: 'https://trello.com',
 };
 
 export function info(c: StoredConnection, links: number, req: Request | null, manager: boolean): TrackerConnectionInfo {
@@ -344,6 +387,21 @@ function defaultsOf(v: unknown): {
   };
 }
 
+/**
+ * The API key a Trello token goes with: the person's own (with its secret, if they gave it), else
+ * the operator's (TRACKER_TRELLO_KEY, with TRACKER_TRELLO_SECRET).
+ */
+function trelloKeysOf(b: Record<string, unknown>): { key: string; secret?: string } {
+  const own = typeof b.apiKey === 'string' && b.apiKey.trim() ? str(b.apiKey, 'apiKey', 200) : null;
+  const t = getConfig().trackers;
+  if (!own) {
+    if (!t.trelloKey) throw badRequest('apiKey is required: the Trello API key the token was made for (trello.com/power-ups/admin)');
+    return { key: t.trelloKey, ...(t.trelloSecret ? { secret: t.trelloSecret } : {}) };
+  }
+  const secret = typeof b.apiSecret === 'string' && b.apiSecret.trim() ? str(b.apiSecret, 'apiSecret', 200) : null;
+  return { key: own, ...(secret ? { secret } : {}) };
+}
+
 export async function createConnection(userId: string, body: unknown, req: Request | null): Promise<{ connection: TrackerConnectionInfo; webhookSecret: string }> {
   const b = (body ?? {}) as Partial<TrackerConnectionInput> & Record<string, unknown>;
   if (!PROVIDERS.includes(b.provider as TrackerProviderKind)) throw badRequest(`provider must be ${PROVIDERS.join(', ')}`);
@@ -374,6 +432,7 @@ export async function createConnection(userId: string, body: unknown, req: Reque
     throw badRequest('site must be the organization’s address: https://dev.azure.com/<organization>');
   const token = str(b.token, 'token', 4000);
   const email = provider === 'jira' && deployment === 'cloud' ? str(b.email, 'email (the Jira account the API token belongs to)', 254) : undefined;
+  const trelloKeys = provider === 'trello' ? trelloKeysOf(b) : {};
   const inbound = b.inbound === 'polling' ? 'polling' : 'webhook';
   const webhookSecret = newWebhookSecret();
   const stored: StoredConnection = {
@@ -390,6 +449,7 @@ export async function createConnection(userId: string, body: unknown, req: Reque
       kind: 'token',
       token,
       ...(email ? { email } : {}),
+      ...trelloKeys,
     }),
     webhookSecretSealed: seal(WEBHOOK_PURPOSE, webhookSecret),
     inbound,
@@ -522,10 +582,13 @@ export async function updateConnection(id: string, userId: string, body: unknown
       }
     })();
     const email = b.email !== undefined ? str(b.email, 'email', 254) : prev?.kind === 'token' ? prev.email : undefined;
+    // Trello: a new token keeps the key (and secret) it had unless new ones come with it.
+    const keys = c.provider !== 'trello' ? {} : b.apiKey !== undefined ? trelloKeysOf(b) : prev?.kind === 'token' ? { ...(prev.key ? { key: prev.key } : {}), ...(prev.secret ? { secret: prev.secret } : {}) } : trelloKeysOf(b);
     patch.credentialsSealed = sealCredentials({
       kind: 'token',
       token,
       ...(email ? { email } : {}),
+      ...keys,
     });
     patch.status = 'active';
     patch.lastError = null;
