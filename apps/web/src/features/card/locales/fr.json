@@ -51,7 +51,8 @@
     "thisCardIsNoLonger",
     "viewOnly",
     "noDescription",
-    "selectOneCard"
+    "selectOneCard",
+    "markdownHint"
   ],
   "toDo": "À faire",
   "doing": "En cours",
@@ -104,5 +105,6 @@
   "thisCardIsNoLonger": "Cette carte n’est plus sur le tableau.",
   "viewOnly": "Lecture seule",
   "noDescription": "Aucune description",
-  "selectOneCard": "Sélectionnez une carte"
+  "selectOneCard": "Sélectionnez une carte",
+  "markdownHint": "Tapez 1. ou - pour commencer une liste ; **gras**, *italique*, `code` et adresses web se mettent en forme pendant la saisie."
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardDraft, type CardElement } from '@freero/shared';
@@ -44,19 +44,22 @@ function boardWithCard(description = NOTES) {
   return { ann, vic, id, card: () => ann.getElement<CardElement>(id)! };
 }
 
+/** Rendered as the app renders (StrictMode: effects run, are cleaned up and run again). */
 function render(el: Parameters<Root['render']>[0]) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
-  act(() => root!.render(el));
+  act(() => root!.render(<StrictMode>{el}</StrictMode>));
 }
 
-const descriptionArea = () => document.querySelector('textarea[aria-label="Card description"]') as HTMLTextAreaElement;
+/** The description in the details: the editor (a rich-text textbox) or, read-only, the formatted text. */
+const description = () => document.querySelector('[aria-label="Card description"]') as HTMLElement;
 
-function type(area: HTMLTextAreaElement, value: string) {
+/** What typing does to the editor: its content changes, then an input event. */
+function type(editorEl: HTMLElement, change: (el: HTMLElement) => void) {
   act(() => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(area, value);
-    area.dispatchEvent(new Event('input', { bubbles: true }));
+    change(editorEl);
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 
@@ -117,23 +120,25 @@ describe('opening a card', () => {
     }
   });
 
-  it('a viewer reads the whole description and the fields in the details but cannot change them', () => {
+  it('a viewer reads the description formatted (its numbered steps, links opening in a new tab) and the fields, but has nothing to edit them with', () => {
     board = createTestBoard({ users: ['ann', 'vic'], roles: ['owner', 'viewer'], features: [bundle] });
     const [ann, vic] = board.editors('card');
     const prio = { id: 'f_prio', name: 'Priority', type: 'select', options: [{ id: 'o_p1', label: 'P1', color: '#F5A524' }] };
     const kid = ann.create({ type: 'kanban', x: 0, y: 0, w: 304, h: 300, title: 'Sprint', colW: 280, columns: [{ id: 'c1', title: 'To do', status: 'todo', color: '#8A89A3' }], fields: [prio] } as never);
-    const id = ann.create({ type: 'card', x: 22, y: 110, w: 260, h: 90, title: 'Fix login', description: NOTES.replace(/\n/g, '<br>'), color: '#5B3FF0', status: 'todo', frameId: kid } as never);
+    const steps = '<ol><li>Open <a href="https://example.com/runbook">the runbook</a></li><li>Run <code>npm test</code></li></ol>';
+    const id = ann.create({ type: 'card', x: 22, y: 110, w: 260, h: 90, title: 'Fix login', description: steps, color: '#5B3FF0', status: 'todo', frameId: kid } as never);
     board.sync();
     render(board.panel(1, DETAILS_PANEL, { id }));
-    const area = descriptionArea();
-    expect(area.value).toBe(NOTES);
-    expect(area.readOnly).toBe(true);
+    const shown = description();
+    expect([...shown.querySelectorAll('ol > li')].map((li) => li.textContent)).toEqual(['Open the runbook', 'Run npm test']);
+    const link = shown.querySelector('a')!;
+    expect([link.getAttribute('href'), link.target, link.rel]).toEqual(['https://example.com/runbook', '_blank', 'noopener noreferrer']);
+    expect(document.querySelector('[contenteditable], textarea, [role="textbox"]')).toBeNull();
     const label = [...document.querySelectorAll('label')].find((l) => l.textContent === 'Priority')!;
     expect((document.getElementById(label.htmlFor) as HTMLButtonElement).disabled).toBe(true);
-    type(area, `${NOTES}\nRisk: legal`);
     act(() => root!.unmount());
     root = null;
-    expect(vic.getElement<CardElement>(id)!.description).toBe(NOTES.replace(/\n/g, '<br>'));
+    expect(vic.getElement<CardElement>(id)!.description).toBe(steps);
   });
 });
 
@@ -169,9 +174,8 @@ describe('card notes survive the details', () => {
     const { ann, id, card } = boardWithCard();
     ann.update<CardElement>(id, { description: 'Owner: <b>Dana</b><br>Next: send term sheet' });
     render(board!.panel(0, DETAILS_PANEL, { id }));
-    expect(descriptionArea().value).toBe('Owner: Dana\nNext: send term sheet');
-    act(() => descriptionArea().focus());
-    act(() => descriptionArea().blur());
+    act(() => description().focus());
+    act(() => description().blur());
     act(() => root!.unmount());
     root = null;
     expect(card().description).toBe('Owner: <b>Dana</b><br>Next: send term sheet');
@@ -180,10 +184,24 @@ describe('card notes survive the details', () => {
   it('notes typed in the details are kept when the dialog closes mid-edit', () => {
     const { id, card } = boardWithCard();
     render(board!.panel(0, DETAILS_PANEL, { id }));
-    expect(descriptionArea().value).toBe(NOTES);
-    type(descriptionArea(), `${NOTES}\nRisk: legal`);
+    type(description(), (el) => el.append(document.createElement('br'), 'Risk: legal'));
     act(() => root!.unmount());
     root = null;
     expect(card().description).toBe('Owner: Dana<br>Lead: Sam<br>Next: send term sheet<br>Risk: legal');
+  });
+
+  it('editing a formatted description keeps its lists, bold and links (one undo step for the sitting)', () => {
+    const { ann, id, card } = boardWithCard();
+    const steps = '<p>Steps:</p><ol><li>Open <a href="https://example.com/runbook">the runbook</a></li><li><b>Run</b> it</li></ol>';
+    ann.update<CardElement>(id, { description: steps });
+    render(board!.panel(0, DETAILS_PANEL, { id }));
+    const el = description();
+    act(() => el.focus());
+    type(el, (e) => e.querySelector('ol')!.append(Object.assign(document.createElement('li'), { textContent: 'Report back' })));
+    type(el, (e) => e.querySelector('li:last-child')!.append(' to Dana'));
+    act(() => el.blur());
+    expect(card().description).toBe(steps.replace('</ol>', '<li>Report back to Dana</li></ol>'));
+    act(() => ann.undo());
+    expect(card().description).toBe(steps);
   });
 });

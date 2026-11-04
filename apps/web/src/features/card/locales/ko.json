@@ -51,7 +51,8 @@
     "thisCardIsNoLonger",
     "viewOnly",
     "noDescription",
-    "selectOneCard"
+    "selectOneCard",
+    "markdownHint"
   ],
   "toDo": "할 일",
   "doing": "진행 중",
@@ -104,5 +105,6 @@
   "thisCardIsNoLonger": "이 카드는 더 이상 보드에 없습니다.",
   "viewOnly": "보기 전용",
   "noDescription": "설명 없음",
-  "selectOneCard": "카드를 하나 선택하세요"
+  "selectOneCard": "카드를 하나 선택하세요",
+  "markdownHint": "1. 또는 -를 입력하면 목록이 시작됩니다. **굵게**, *기울임*, `코드`, 웹 주소는 입력하는 대로 서식이 적용됩니다."
 }

@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CardElement } from '@freero/shared';
-import { definePanel, richTextToPlain, useElement, useRole, type Editor, type PanelProps } from '@engine';
-import { Modal, TextArea } from '@ui';
+import { definePanel, richTextToPlain, RichTextEditor, RichTextView, useElement, useRole, type Editor, type PanelProps } from '@engine';
+import { Modal } from '@ui';
 import { DETAILS_PANEL } from './lib/constants';
 import { detailsSession, type DetailsSession } from './lib/details';
 import { CardFields } from './lib/FieldsEditor';
 import { t } from './messages';
 
 /**
- * The card's description being edited. Typing in one sitting is one undo step. Writes go through
- * a session (lib/details.ts), so only an editor that was opened ever writes, and only its card.
+ * The card's description being edited, formatted (lists, bold, code, links), in place. Typing in
+ * one sitting is one undo step. Writes go through a session (lib/details.ts), so only an editor
+ * that was opened ever writes, and only its card.
  */
 function DescriptionEditor({ editor, card }: { editor: Editor; card: CardElement }) {
   const session = useRef<DetailsSession | null>(null);
   session.current ??= detailsSession(editor);
-  const [text, setText] = useState(() => session.current!.open(card.id));
+  const [initial] = useState(() => card.description ?? '');
   const gesture = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -23,7 +24,7 @@ function DescriptionEditor({ editor, card }: { editor: Editor; card: CardElement
     timer.current = null;
     session.current!.flush();
   };
-  /** The text area lost focus: write, and end the undo step (the dialog stays open). */
+  /** The editor lost focus: write, and end the undo step (the dialog stays open). */
   const end = () => {
     flush();
     if (gesture.current) {
@@ -32,38 +33,43 @@ function DescriptionEditor({ editor, card }: { editor: Editor; card: CardElement
     }
   };
   // The dialog closes (Escape, the close button, another card's details): keep what was typed.
+  // The session opens with the effect, not the first render: an effect run twice (StrictMode)
+  // closes it once in between, and a session opened only while rendering would stay closed.
   const endRef = useRef(end);
   endRef.current = end;
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    session.current!.open(card.id);
+    return () => {
       endRef.current();
       session.current!.close();
-    },
-    [],
-  );
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <TextArea
-      data-autofocus
-      rows={12}
-      value={text}
-      placeholder={t('addDetailsLinksAcceptanceCriteria')}
-      aria-label={t('cardDescription')}
-      onFocus={() => {
-        if (!gesture.current) {
-          gesture.current = true;
-          editor.beginGesture();
-        }
-      }}
-      onBlur={end}
-      onChange={(e) => {
-        const v = e.target.value;
-        setText(v);
-        session.current!.type(v);
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(flush, 250);
-      }}
-    />
+    <>
+      <RichTextEditor
+        autoFocus
+        markdownShortcuts
+        className="fr-card-details__desc"
+        html={initial}
+        placeholder={t('addDetailsLinksAcceptanceCriteria')}
+        aria-label={t('cardDescription')}
+        onFocus={() => {
+          if (!gesture.current) {
+            gesture.current = true;
+            editor.beginGesture();
+          }
+        }}
+        onBlur={end}
+        onChange={(html) => {
+          session.current!.type(html);
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(flush, 250);
+        }}
+      />
+      <p className="fr-card-details__hint">{t('markdownHint')}</p>
+    </>
   );
 }
 
@@ -88,7 +94,7 @@ function CardDetails({ editor, id }: { editor: Editor; id: string }) {
         {editable ? (
           <DescriptionEditor editor={editor} card={card} />
         ) : (
-          <TextArea data-autofocus readOnly rows={12} value={richTextToPlain(card.description ?? '')} placeholder={t('noDescription')} aria-label={t('cardDescription')} />
+          <RichTextView autoFocus className="fr-card-details__desc" html={card.description ?? ''} placeholder={t('noDescription')} aria-label={t('cardDescription')} />
         )}
       </div>
     </Modal>

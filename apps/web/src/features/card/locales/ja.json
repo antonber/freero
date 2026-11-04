@@ -51,7 +51,8 @@
     "thisCardIsNoLonger",
     "viewOnly",
     "noDescription",
-    "selectOneCard"
+    "selectOneCard",
+    "markdownHint"
   ],
   "toDo": "未着手",
   "doing": "進行中",
@@ -104,5 +105,6 @@
   "thisCardIsNoLonger": "このカードはもうボード上にありません。",
   "viewOnly": "閲覧のみ",
   "noDescription": "説明はありません",
-  "selectOneCard": "カードを1枚選択してください"
+  "selectOneCard": "カードを1枚選択してください",
+  "markdownHint": "1. または - でリストを開始。**太字**、*斜体*、`コード`、Web アドレスは入力すると書式が付きます。"
 }

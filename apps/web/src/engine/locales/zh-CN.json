@@ -200,7 +200,8 @@
     "guestLimitBoard",
     "guestLimitRate",
     "guestChangeUndone",
-    "guestCanEditOwn"
+    "guestCanEditOwn",
+    "openLinkInNewTab"
   ],
   "dots": "点",
   "lines": "线",
@@ -402,5 +403,6 @@
   "guestLimitBoard": "访客添加的内容已达到此白板的上限。",
   "guestLimitRate": "你的更改速度超过了访客允许的速度，请放慢一点。",
   "guestChangeUndone": "访客不能进行此更改，已撤销。",
-  "guestCanEditOwn": "可添加和编辑自己的内容"
+  "guestCanEditOwn": "可添加和编辑自己的内容",
+  "openLinkInNewTab": "在新标签页中打开链接"
 }

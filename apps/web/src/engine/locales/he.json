@@ -200,7 +200,8 @@
     "guestLimitBoard",
     "guestLimitRate",
     "guestChangeUndone",
-    "guestCanEditOwn"
+    "guestCanEditOwn",
+    "openLinkInNewTab"
   ],
   "dots": "נקודות",
   "lines": "קווים",
@@ -402,5 +403,6 @@
   "guestLimitBoard": "האורחים הוסיפו את המקסימום שהלוח הזה מקבל מאורחים.",
   "guestLimitRate": "אתם משנים דברים מהר יותר ממה שאורח יכול. האטו מעט.",
   "guestChangeUndone": "השינוי הזה אינו מותר לאורחים ובוטל.",
-  "guestCanEditOwn": "אפשר להוסיף ולערוך משלך"
+  "guestCanEditOwn": "אפשר להוסיף ולערוך משלך",
+  "openLinkInNewTab": "פתיחת הקישור בכרטיסייה חדשה"
 }
