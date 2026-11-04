@@ -11,6 +11,7 @@ import {
   WORKSPACE_CREATION_BLOCKED,
   WORKSPACE_SETTING_LIMITS,
   type AdminScope,
+  type BoardLabelSummary,
   type LinkAccess,
   type OrganisationSummary,
   type Role,
@@ -33,6 +34,7 @@ import { recordAudit } from '../audit/index';
 import { getUser, getUsers, hasTwoFactor } from '../auth/index';
 import { creationRefusal } from './creation';
 import { deletionHoldOn } from './holds';
+import { labelsForPlaces, UNKNOWN_LABEL_CAPS, withLabelCaps } from './labels';
 import {
   boardIdsInWorkspace,
   cleanUpDeletedBoards,
@@ -797,11 +799,17 @@ export interface BoardWorkspaceAccess {
   blocked: WorkspaceBlock | null;
   /** Days a trashed board of this workspace is kept. */
   trashRetentionDays: number;
+  /**
+   * #158: the board's classification label, whose caps are already in `policies` (and so in
+   * `maxLink`, `anonymousLinks`, `outsidersBlocked`); `viewerExports` is read by boards' download check.
+   */
+  label: BoardLabelSummary | null;
 }
 
 const DEFAULT_TRASH_DAYS = 30;
 
-type BoardPlace = { workspaceId: string; projectId: string | null };
+/** Where a board is, and (#158) the label it carries. */
+type BoardPlace = { workspaceId: string; projectId: string | null; labelId?: string | null };
 
 /**
  * Loads what's needed to decide access to boards of `workspaceIds` for one user (one round of
@@ -817,10 +825,16 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
   ]);
   const wsById = new Map(workspaces.map((w) => [w.id, w]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
-  const blocks = await blockInputs(userId, workspaces);
+  const [blocks, labels] = await Promise.all([
+    blockInputs(userId, workspaces),
+    labelsForPlaces([...ids, ...workspaces.flatMap((w) => (w.organisation ? [w.organisation.id] : []))]),
+  ]);
+  // A label none of these places defines (an organisation's, after a detach) caps everything.
+  const labelOf = (id: string | null | undefined): BoardLabelSummary | null => (id ? (labels.get(id) ?? STALE_LABEL(id)) : null);
   return (b) => {
     const ws = wsById.get(b.workspaceId);
-    const policies = ws?.policies ?? DEFAULT_POLICIES;
+    const label = labelOf(b.labelId);
+    const policies = label ? withLabelCaps(ws?.policies ?? DEFAULT_POLICIES, label.caps) : (ws?.policies ?? DEFAULT_POLICIES);
     const role = roles.get(b.workspaceId) ?? null;
     const project = b.projectId ? (projectById.get(b.projectId) ?? null) : null;
     const level = teamAccessOf(policies, project);
@@ -835,9 +849,13 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
       anonymousLinks: policies.publicLinks === 'anyone',
       blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor, blocks.ipExempt),
       trashRetentionDays: ws?.settings.trashRetentionDays ?? DEFAULT_TRASH_DAYS,
+      label,
     };
   };
 }
+
+/** A label id nothing the loader read defines: it caps everything (fail closed) until the board is relabelled. */
+const STALE_LABEL = (id: string): BoardLabelSummary => ({ id, name: 'Unknown label', color: '#868e96', caps: UNKNOWN_LABEL_CAPS });
 
 export async function boardAccess(userId: string, board: BoardPlace): Promise<BoardWorkspaceAccess> {
   return (await boardAccessLoader(userId, [board.workspaceId]))(board);
