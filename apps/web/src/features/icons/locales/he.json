@@ -41,7 +41,13 @@
     "removePack",
     "removeName",
     "iconsAlreadyOnBoardsStay",
-    "remove"
+    "remove",
+    "svgIconsOnlyYou",
+    "whoCanUseIt",
+    "everyoneInThisWorkspace",
+    "onlyMe",
+    "onlyYouSeeThisPack",
+    "myPackNameCount"
   ],
   "openTheIconLibrary": "פתיחת ספריית הסמלים",
   "icon": "סמל",
@@ -84,5 +90,11 @@
   "removePack": "הסרת החבילה",
   "removeName": "להסיר את „{name}”?",
   "iconsAlreadyOnBoardsStay": "סמלים שכבר מוקמו על לוחות נשארים כמו שהם. אי אפשר יהיה להוסיף סמלים חדשים מהחבילה הזו.",
-  "remove": "הסרה"
+  "remove": "הסרה",
+  "svgIconsOnlyYou": "סמלי SVG שרק אתה יכול לחפש ולמקם, בכל לוח שתפתח.",
+  "whoCanUseIt": "מי יכול להשתמש בה",
+  "everyoneInThisWorkspace": "כל מי שבסביבת העבודה הזו",
+  "onlyMe": "רק אני",
+  "onlyYouSeeThisPack": "החבילה שלך: רק אתה רואה אותה",
+  "myPackNameCount": "{name} · שלך ({count, number})"
 }

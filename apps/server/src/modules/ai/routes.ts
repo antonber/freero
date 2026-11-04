@@ -2,7 +2,7 @@
 // and no workspace keys) every route answers 404 — except the board status the board page loads on
 // every open, which answers `{ ai: null }` so a server without AI logs no error on each board load.
 import { Router } from 'express';
-import type { AiActionResponse, AssistantConversation, AssistantTurn, BoardAiStatus, WorkspaceAiAdmin } from '@freero/shared';
+import type { AiActionResponse, AiWorkflow, AiWorkflowList, AiWorkflowResult, AssistantConversation, AssistantTurn, BoardAiStatus, WorkspaceAiAdmin } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
@@ -11,6 +11,7 @@ import { aiOffered, decideAi, requireAiOffered, statusOf } from './access';
 import { askAssistant, assistantConversation, clearAssistantConversation } from './assistant';
 import { runAiAction } from './service';
 import { getAiAdmin, testAiSettings, updateAiSettings } from './settings';
+import { createWorkflow, deleteWorkflow, listWorkflows, runWorkflow, updateWorkflow } from './workflows';
 
 export default function aiRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -82,6 +83,52 @@ export default function aiRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       await clearAssistantConversation(req.params.id, currentUser(req).id);
       res.json({ ok: true });
+    }),
+  );
+
+  // Saved workflows (#1): yours and your workspace's. Running one is an assistant turn (its checks
+  // and limits) whose result is always pending suggestions.
+  r.get(
+    '/boards/:id/ai/workflows',
+    requireUser,
+    offered,
+    handle(async (req, res) => {
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json((await listWorkflows(req.params.id, currentUser(req).id)) satisfies AiWorkflowList);
+    }),
+  );
+  r.post(
+    '/boards/:id/ai/workflows',
+    requireUser,
+    offered,
+    handle(async (req, res) => {
+      res.status(201).json({ workflow: await createWorkflow(req.params.id, currentUser(req).id, req.body) } satisfies { workflow: AiWorkflow });
+    }),
+  );
+  r.patch(
+    '/boards/:id/ai/workflows/:wid',
+    requireUser,
+    offered,
+    handle(async (req, res) => {
+      res.json({ workflow: await updateWorkflow(req.params.id, req.params.wid, currentUser(req).id, req.body) } satisfies { workflow: AiWorkflow });
+    }),
+  );
+  r.delete(
+    '/boards/:id/ai/workflows/:wid',
+    requireUser,
+    offered,
+    handle(async (req, res) => {
+      await deleteWorkflow(req.params.id, req.params.wid, currentUser(req).id);
+      res.json({ ok: true });
+    }),
+  );
+  r.post(
+    '/boards/:id/ai/workflows/:wid/run',
+    requireUser,
+    offered,
+    rateLimit('ai', 'user'),
+    handle(async (req, res) => {
+      res.json((await runWorkflow(req.params.id, req.params.wid, currentUser(req).id, req.body)) satisfies AiWorkflowResult);
     }),
   );
 

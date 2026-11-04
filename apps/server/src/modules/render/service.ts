@@ -56,14 +56,14 @@ function insideFrame(all: readonly BoardElement[], frame: BoardElement): BoardEl
 }
 
 /** Data URLs of the uploaded pictures these elements show (others are drawn as placeholders), within a byte budget. */
-async function pictures(els: readonly BoardElement[]): Promise<Map<string, string>> {
+async function pictures(els: readonly BoardElement[], maxBytes: number = RENDER_LIMITS.maxImageBytes): Promise<Map<string, string>> {
   const srcs = new Set<string>();
   for (const el of els) {
     const src = el.type === 'image' ? (el as { src?: unknown }).src : el.type === 'embed' ? (el as { image?: unknown }).image : stickerSrc(el);
     if (typeof src === 'string' && (src.startsWith('/uploads/') || /^data:image\/(png|jpeg|gif|webp);base64,/.test(src))) srcs.add(src);
   }
   const out = new Map<string, string>();
-  let budget: number = RENDER_LIMITS.maxImageBytes;
+  let budget: number = maxBytes;
   for (const src of srcs) {
     if (src.startsWith('data:')) {
       if (src.length > budget) continue;
@@ -79,6 +79,20 @@ async function pictures(els: readonly BoardElement[]): Promise<Map<string, strin
     out.set(src, `data:${type};base64,${bytes.toString('base64')}`);
   }
   return out;
+}
+
+/**
+ * Content that is on no board — a community template (#162) — drawn as SVG, with its uploaded
+ * pictures inlined within `maxImageBytes` (others drawn as placeholders). The caller decides who may
+ * see it; this only draws.
+ */
+export async function renderContentSvg(
+  elements: readonly BoardElement[],
+  collection: (name: string) => ReadonlyMap<string, unknown>,
+  opts: { maxImageBytes?: number } = {},
+): Promise<{ svg: string; width: number; height: number }> {
+  const images = opts.maxImageBytes === 0 ? new Map<string, string>() : await pictures(elements, opts.maxImageBytes);
+  return boardSvg({ elements, collection, imageData: (src) => images.get(src) ?? null });
 }
 
 export interface Rendered {

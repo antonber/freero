@@ -134,9 +134,9 @@ export function stickersOf(boardId: string): NonNullable<Host['stickers']> {
 export function shapePacksOf(boardId: string): NonNullable<Host['shapePacks']> {
   return {
     list: () => api.shapePacks(boardId),
-    async create(name, zip) {
+    async create(name, zip, opts) {
       const { url } = await api.uploadAttachment(zip);
-      return api.createShapePack(boardId, name, url);
+      return api.createShapePack(boardId, name, url, !!opts?.personal);
     },
     rename: async (packId, name) => (await api.renameShapePack(packId, name)).pack,
     remove: async (packId) => void (await api.removeShapePack(packId)),
@@ -193,6 +193,12 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
         }
       : {}),
     shapePacks: shapePacksOf(board.id),
+    // #162: publish this board to the community template gallery (reviewed before it is public).
+    gallery: {
+      submit: async (request) => (await api.submitGalleryTemplate({ ...request, boardId: board.id })).template,
+      mine: async () => (await api.myGalleryTemplates()).templates,
+      withdraw: async (id) => void (await api.withdrawGalleryTemplate(id)),
+    },
     uploadImage,
     uploadFile,
     uploadAttachment,
@@ -257,6 +263,13 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
             conversation: async () => (await api.assistant(board.id)).messages,
             ask: (body) => api.askAssistant(board.id, body),
             clear: async () => void (await api.clearAssistant(board.id)),
+            workflows: {
+              list: () => api.aiWorkflows(board.id),
+              create: async (input) => (await api.createAiWorkflow(board.id, input)).workflow,
+              update: async (id, patch) => (await api.updateAiWorkflow(board.id, id, patch)).workflow,
+              remove: async (id) => void (await api.deleteAiWorkflow(board.id, id)),
+              run: (id, ids) => api.runAiWorkflow(board.id, id, ids),
+            },
           },
         }
       : {}),

@@ -483,6 +483,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_APPEAL` | `10/1h` | Appeals against moderation decisions per IP. |
 | `RATE_LIMIT_PROBLEM_REPORT` | `10/1h` | Problem reports (“Report a problem”) per signed-in person. |
 | `RATE_LIMIT_LISTING_SUBMIT` | `5/1d` | Community listings submitted to Apps & agents for review, per person (each mails the operators; at most 10 waiting or live per person at once). |
+| `RATE_LIMIT_GALLERY_SUBMIT` | `10/1d` | Boards submitted to the community template gallery for review, per person (each copies the board and mails the operators; at most 20 waiting or public per person at once). |
 | `RATE_LIMIT_LINK_PASSWORD` | `10/15m` | Attempts at a board link's password, per IP and, separately, per board and person (or, before a visitor joins as a guest, per board and IP). The password is stored with the account passwords' slow hash. |
 | `RATE_LIMIT_ENGAGE` | `120/1m` | Answers, questions and upvotes in live activities (polls, word clouds, rankings, ratings, Q&A) per person or guest. |
 | `RATE_LIMIT_SEARCH` | `120/1m` | Searches of board content per person (the dashboard's "Inside boards") and, separately, per API token or authorised app (`/api/v1/search`, MCP `search`). |

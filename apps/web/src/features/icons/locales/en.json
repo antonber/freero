@@ -40,5 +40,11 @@
   "removePack": "Remove pack",
   "removeName": "Remove “{name}”?",
   "iconsAlreadyOnBoardsStay": "Icons already placed on boards stay as they are. Nobody can add new ones from this pack.",
-  "remove": "Remove"
+  "remove": "Remove",
+  "svgIconsOnlyYou": "SVG icons only you can search and place, on any board you open.",
+  "whoCanUseIt": "Who can use it",
+  "everyoneInThisWorkspace": "Everyone in this workspace",
+  "onlyMe": "Only me",
+  "onlyYouSeeThisPack": "Your own pack: only you see it",
+  "myPackNameCount": "{name} · yours ({count, number})"
 }

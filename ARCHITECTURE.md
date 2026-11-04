@@ -131,6 +131,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
 | A doc's document (Yjs fragment `document-store`, KAI-162) | the doc editor (`engine/docs`, through `engine/store/ObjectDocStore`); on requests, realtime's `docContent.ts` (`appendDocBlocks`, `initDocContent`) | the editor, or `modules/docs` / the public API |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
+| Community templates (`gallery_templates`, #162): a cleaned copy of a board's shared content, its preview, title, description, category, licence, credit, and review status | server `modules/gallery` (`submitTemplate`: an editor who may share outside the workspace and copy content out; the copy is made ONCE by `gallery/content.ts` from the shared doc only — no comments, votes, hidden frames, drafts, links to other boards, files or anyone's ids; withdraw); the status is moderation's decision, applied through `decideGalleryTemplate` | its routes; operators' actions (`gallery.approve` / `reject` / `remove` / `restore`); installing makes a board through boards' `createBoardWithState` |
 | Community listings (`marketplace_listings`) and their review status | server `modules/marketplace`; decisions are moderation's, applied through `decideListing` | `submitListing` / withdraw (its routes); operators' actions (`modules/moderation`) |
 | API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
 | A board's "allow embedding on other sites" (`boards.embeddable`) and the workspace's `boardEmbeds` policy | server `modules/boards` (the share dialog's PATCH `embeddable`, `setBoardEmbeddable`: owner only) and `modules/workspaces` (policies) | boards' `boardEmbedding(id)` is the one read of "may other sites frame it now, and what may a visitor do" |
@@ -151,7 +152,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
 | A table's views and derived row layout (#51: `TableElement.view` grid / board / timeline, `groupRows`, `timeline` start / end date columns; derived `hiddenRows` and `bands`, from which normalize sizes the grid — a filter reclaims what it hides, a grouped grid's bands take room) | `features/table` (format toolbar; `refreshRows` in the transaction of every cell, filter or grouping change; timeline bars write the date cells through `setRowSpan`, @freero/shared `spanValues` / `spanOfDates` / `timelineRange` as a kanban's timeline tab) | its format toolbar; never edit `hiddenRows` / `bands` by hand (server `render/svg.ts` only reads `hiddenRows`) |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
-| A workspace's shape packs (`shape_packs`, `shape_pack_icons`, #4): names, each icon's sanitised drawing | server `modules/shapepacks` (the workspace's owners / admins upload, rename, remove; the upload is the caller's own ZIP of SVGs through modules/uploads — its size cap, quota, rate limit — read once and deleted; every SVG reduced by `@freero/shared` `sanitizeSvg`) | `Host.shapePacks` (the icons feature's library: a pack switcher, search by name; the shape library lists matching packs); a PLACED icon is an ordinary `icon` element holding its drawing (`nodes`, `viewBox`, `art`), so it outlives its pack. Every reader (board, exports, the server's SVG render) draws only what `cleanIconNodes` keeps |
+| A workspace's shape packs and a person's own library (`shape_packs` — `workspace_id` or `owner_id`, exactly one — and `shape_pack_icons`, #4): names, each icon's sanitised drawing | server `modules/shapepacks` (the workspace's owners / admins upload, rename, remove; anyone signed in keeps packs of their own (`personal: true`, `SHAPE_PACK_LIMITS.personalPacks`), listed after the workspace's on every board they open, invisible and unreachable (404) for everyone else, the workspace's admins included; both are in the data exports — the workspace's in its export, with its sticker sets and their images (`stickers/`), a person's own in theirs; the upload is the caller's own ZIP of SVGs through modules/uploads — its size cap, quota, rate limit — read once and deleted; every SVG reduced by `@freero/shared` `sanitizeSvg`) | `Host.shapePacks` (the icons feature's library: a pack switcher, search by name; the shape library lists matching packs); a PLACED icon is an ordinary `icon` element holding its drawing (`nodes`, `viewBox`, `art`), so it outlives its pack. Every reader (board, exports, the server's SVG render) draws only what `cleanIconNodes` keeps |
 | Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
@@ -1203,6 +1204,10 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   from data. Each entry brings its own title / description (the length and uniqueness checks apply),
   a HowTo of its connect steps, a link to its connect step in the app (`/apps/<id>`) and links to
   its category's other entries. Community listings never appear on the site (below).
+- **Community templates** (`/gallery`, `/gallery/<id>`, #162) are the one place the site shows a
+  server's own data: the build makes the hub page with a slot and a page shell, and the server's
+  `modules/gallery` fills them per request with templates its operators approved (see "Community
+  template gallery"). Only reviewed templates, only as plain text, never a link a submitter wrote.
 - **Templates** (`/templates`, `/templates/<id>`, #74) are generated from the app's built-in catalog
   (`features/templates`), read by path at build time like `modules/outline` reads the features'
   `outline.ts` (`src/lib/templates.tsx`; the site doesn't type-check the web app, so it declares
@@ -1432,7 +1437,7 @@ into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provid
 server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `figma`
 (figma_accounts, figma_oauth_flows, figma_recent_files: "Place from Figma", #171; figma_plugin_codes: the Figma plugin's sign-in, #172 — see "Figma" below), `mobile` (push_devices: push notifications to the phone and tablet apps, and the
 /.well-known files that let https links open them, #177 — see "Phone and tablet apps" below), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
-packs, #4), `outline` (no table: the semantic board read model,
+packs and each person's own library of them, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
@@ -1448,7 +1453,7 @@ and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed
 SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
 admin console of team workspaces; see "Audit log, admin console and workspace
 policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
-(ai_workspace_settings, ai_usage, ai_assistant_messages: AI board actions and the board assistant
+(ai_workspace_settings, ai_usage, ai_assistant_messages, ai_workflows: AI board actions, the board assistant and its saved workflows
 with a provider the operator or a workspace configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
@@ -1477,7 +1482,8 @@ meeting opened for everyone, by the hash of its UUID, for a day), `meet` (no tab
 manifest, its pages framed by Meet) — see "Apps that run on other platforms" below, `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
-agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
+agents; see "Apps & agents" below), `gallery` (gallery_templates: the community template gallery,
+#162; see "Community template gallery" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
 encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports: “Report a problem”, see "Problem
 reports" below).
@@ -1728,6 +1734,11 @@ reports" below).
   (`GET /api/moderation/listings`) and reports about them (`target.kind: 'listing'`, no board;
   signed in, live listings only, else 404). marketplace imports nothing from moderation (it mails
   operators about a new submission itself), so the dependency goes one way.
+- Community templates (#162, `modules/gallery`): the same pattern as listings — their status is
+  gallery's, written only through `decideGalleryTemplate`; moderation owns the decisions
+  (`gallery.approve` / `reject` / `remove` / `restore`; a removal is appealable), the console's
+  Templates view (`GET /api/moderation/gallery`) and reports (`target.kind: 'gallery'`, signed in,
+  public templates only, else 404). gallery imports nothing from moderation.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
@@ -1803,6 +1814,41 @@ rendered as text (never markup) and linked with `rel="noopener noreferrer nofoll
 while listings are one server's data approved by that server's operator, and developers' words and
 links on indexable pages under Freero's name would invite link spam. Featuring lists a listing
 first in the app.
+
+### Community template gallery (`modules/gallery`, `features/gallery`; #162)
+
+People publish boards as public templates; this server's operators review them first.
+
+- **Submitting** (board menu "Publish to the community gallery…", `Host.gallery`): a verified
+  account that can EDIT the board, whose workspace lets it share outside (`canShareExternally`) and
+  copy content out (downloads policy, audited `gallery.submitted` in the board's workspace).
+  `gallery/content.ts` copies the board ONCE from realtime's `boardBackupContent` without layers —
+  so private drafts and hidden frames' contents (layers) never arrive — and keeps only: items that
+  aren't hidden frames, things inside or attached to them, links to other boards / docs, files,
+  embeds, live activities or icebreakers; no field naming a person (`createdBy`, `createdVia`,
+  `suggestedBy`, `assigneeId`, person-field values, protected locks, tracker links); collections
+  only as item content of kept items (table / chart cells), tags, kept diagrams' sources and the
+  board settings — never comments, votes, notes, results or badges. The preview SVG is drawn once
+  from that copy by render's `renderContentSvg`. Pending until approved; operators are mailed.
+  `RATE_LIMIT_GALLERY_SUBMIT`, at most `MAX_GALLERY_PER_USER` waiting or public. A submission goes
+  with its submitter's account (cascade) and is in their data export (`gallery.json`); the uploads
+  sweep keeps the files its copy uses (`galleryUploadReferences`).
+- **Public** (approved only; everything else is the same 404 everywhere): `/gallery` (the site's
+  page, its `data-freero-slot="gallery"` filled with search, categories and cards; a search or a
+  filter is `noindex`), `/gallery/:id` (the site build's `gallery-template` shell filled by
+  modules/site's `fillShell`: title, description, canonical and JSON-LD escaped per context),
+  `/gallery/:id/preview.svg` (sandbox CSP, nosniff, `max-age=300` so a takedown is quick),
+  `/sitemap-community.xml` (named in robots.txt) and `GET /api/gallery`. Nothing a submitter wrote
+  becomes a link. "Use this template" → sign-up / in → `/app?gallery=<id>`: the dashboard's
+  `GalleryDialog` shows it and installs a copy (`POST /api/gallery/:id/install`: a new board in the
+  workspace open there, through `createBoardWithState`, every item created by the installer, the
+  credit and licence in its description); `&report=1` opens its report form.
+- **Moderation**: see "Moderation" (Templates view; `gallery.*` actions).
+- **modules/site** exposes `fillShell`, `fillSlot`, `sitePageText`, `siteShellText`,
+  `sendSiteHtml`, `sendSiteNotFound` (site/index.ts) so another module's public page goes out with
+  the site's head, CSP, analytics and legal state (`site/served.ts` is the one place that reads the
+  build and fills origin / legal tokens). The build writes shells to `dist/shells/` and lists them
+  in the manifest's `shells`.
 
 ### Workspaces (`modules/workspaces`)
 
@@ -2371,6 +2417,14 @@ board and builds `Host.ai` only when it says yes.
   conversation is the asker's alone (`ai_assistant_messages`, single writer `ai/repo.ts`, newest
   `ASSISTANT_LIMITS.kept`; the body sealed with the workspace key when it has one, #159; cascades
   with the board and the account; DELETE clears it; in the personal data export).
+- **Saved workflows** (#1; `ai/workflows.ts`, table `ai_workflows`, single writer `ai/repo.ts`): a named
+  assistant instruction with a scope (`board` | `selection`), its owner's, optionally shared with the
+  team workspace of the board it is saved on (full members; unshared by an outbox consumer when the
+  owner leaves or becomes a guest, or by that workspace's owners / admins). Running one
+  (`POST /boards/:id/ai/workflows/:wid/run`) is `assistantTurn` with the instruction, no history and
+  `ai_workflow_edit_only` for anyone who can't edit: the same checks, budgets and audit (task
+  `workflow`), and its result is ALWAYS one group of pending suggestions, never a write. In both data
+  exports. Web: `features/ai` board menu "Saved AI workflows…" (`Host.assistant.workflows`).
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited

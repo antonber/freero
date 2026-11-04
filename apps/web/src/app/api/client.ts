@@ -56,6 +56,10 @@ import type {
   AssistantAsk,
   AssistantConversation,
   AssistantTurn,
+  AiWorkflow,
+  AiWorkflowInput,
+  AiWorkflowList,
+  AiWorkflowResult,
   BoardAiStatus,
   WorkspaceAiAdmin,
   WorkspaceAiPatch,
@@ -107,6 +111,12 @@ import type {
   ReportRequest,
   CommunityListing,
   ListingForReview,
+  GalleryForReview,
+  GallerySubmitRequest,
+  GalleryStatus,
+  GalleryTemplate,
+  OwnGalleryTemplate,
+  ReportReason,
   ListingReportRequest,
   ListingStatus,
   ListingSubmission,
@@ -648,6 +658,14 @@ export const api = {
   assistant: (boardId: string) => request<AssistantConversation>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
   askAssistant: (boardId: string, body: AssistantAsk) => request<AssistantTurn>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`, body),
   clearAssistant: (boardId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
+  // saved AI workflows (#1): yours and the board's workspace's; a run's result is pending suggestions
+  aiWorkflows: (boardId: string) => request<AiWorkflowList>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows`),
+  createAiWorkflow: (boardId: string, body: AiWorkflowInput) => request<{ workflow: AiWorkflow }>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows`, body),
+  updateAiWorkflow: (boardId: string, id: string, body: Partial<AiWorkflowInput>) =>
+    request<{ workflow: AiWorkflow }>('PATCH', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows/${encodeURIComponent(id)}`, body),
+  deleteAiWorkflow: (boardId: string, id: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows/${encodeURIComponent(id)}`),
+  runAiWorkflow: (boardId: string, id: string, ids: string[]) =>
+    request<AiWorkflowResult>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/workflows/${encodeURIComponent(id)}/run`, { ids }),
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
   testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),
@@ -891,10 +909,18 @@ export const api = {
     }
     return ((await res.json()) as { sticker: Sticker }).sticker;
   },
-  // shape packs (#4): the board's workspace's own icon sets
+  // the community template gallery (#162): public templates people submitted, reviewed by operators
+  galleryTemplate: (id: string) => request<{ template: GalleryTemplate }>('GET', `/api/gallery/${encodeURIComponent(id)}`),
+  myGalleryTemplates: () => request<{ templates: OwnGalleryTemplate[] }>('GET', '/api/gallery/mine'),
+  submitGalleryTemplate: (body: GallerySubmitRequest) => request<{ template: OwnGalleryTemplate }>('POST', '/api/gallery', body),
+  withdrawGalleryTemplate: (id: string) => request<{ ok: true }>('DELETE', `/api/gallery/${encodeURIComponent(id)}`),
+  installGalleryTemplate: (id: string, workspaceId: string) => request<{ boardId: string }>('POST', `/api/gallery/${encodeURIComponent(id)}/install`, { workspaceId }),
+  reportGalleryTemplate: (id: string, reason: ReportReason, note: string) => request<{ ok: true }>('POST', '/api/reports', { target: { kind: 'gallery', id }, reason, note }),
+  moderationGallery: (status: GalleryStatus) => request<{ templates: GalleryForReview[] }>('GET', `/api/moderation/gallery?status=${status}`),
+  // shape packs (#4): the board's workspace's own icon sets, and the person's own library
   shapePacks: (boardId: string) => request<ShapePacksResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`),
-  createShapePack: (boardId: string, name: string, upload: string) =>
-    request<ShapePackCreated>('POST', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`, { name, upload }),
+  createShapePack: (boardId: string, name: string, upload: string, personal = false) =>
+    request<ShapePackCreated>('POST', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`, { name, upload, ...(personal ? { personal: true } : {}) }),
   renameShapePack: (packId: string, name: string) => request<{ pack: ShapePack }>('PATCH', `/api/shape-packs/${encodeURIComponent(packId)}`, { name }),
   removeShapePack: (packId: string) => request<{ ok: true }>('DELETE', `/api/shape-packs/${encodeURIComponent(packId)}`),
   removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),

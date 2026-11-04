@@ -4,6 +4,8 @@
 export { aiUsageExportOf, aiWorkspaceExportOf } from './settings';
 // The board assistant (#1): a person's own conversations, for their data export.
 export { assistantExportOf as aiAssistantExportOf } from './assistant';
+// Saved AI workflows (#1): a person's own, or those shared with a workspace, for data exports.
+export { workflowsExportOf as aiWorkflowsExportOf } from './workflows';
 // Walkthrough captions (KAI-133): speech to text through the board's own AI provider, never another.
 export { transcribeRecording, transcriptionUnavailable } from './transcribe';
 // Walkthrough summary and chapters (#127): a draft from the captions, through the board's AI provider.

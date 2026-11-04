@@ -2,17 +2,20 @@
 // other module's tables). Layout — personal:
 //   README.txt, account.json, api.json, listings.json, memberships.json, activity.json, comments.json, notifications.json, slack.json, figma.json,
 //   problems/index.json + problems/<id>.<ext> (screenshots),
-//   templates/<name>-<id>.json, uploads/index.json + uploads/<file>,
+//   templates/<name>-<id>.json, shape-packs/<name>-<id>.json (your own library, #4),
+//   uploads/index.json + uploads/<file>,
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
 //   (a doc, KAI-162: the same folder, plus doc.md — its document as Markdown)
-// workspace: README.txt, workspace.json, templates/…, boards/… (the same board layout).
+// workspace: README.txt, workspace.json, templates/…, shape-packs/<name>-<id>.json,
+//   stickers/index.json + stickers/<file> (#4, #138), boards/… (the same board layout).
 import { strToU8, zipSync, type Zippable } from 'fflate';
-import { aiAssistantExportOf, aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
+import { aiAssistantExportOf, aiUsageExportOf, aiWorkflowsExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { apiDataOf } from '../apiauth/index';
 import { exportAccountData, getUser } from '../auth/index';
 import { decisionsExportOf } from '../decisions/index';
 import { engageExportOf } from '../engage/index';
 import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, getBoardAccess, type BoardRecord } from '../boards/index';
+import { galleryExportOf } from '../gallery/index';
 import { listingsExportOf } from '../marketplace/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
@@ -22,7 +25,9 @@ import { personalViewsExportOf } from '../personalviews/index';
 import { problemsExportOf } from '../problems/index';
 import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
 import { scimExportOf, scimRecordsOf } from '../scim/index';
+import { shapePacksExportOf } from '../shapepacks/index';
 import { ssoExportOf, ssoRolesOf } from '../sso/index';
+import { stickerSetsExportOf } from '../stickers/index';
 import { templatesExportOf } from '../templates/index';
 import { trackersExportOf, trackersWorkspaceExportOf } from '../trackers/index';
 import { readUpload, uploadNamesIn, uploadsOwnedBy } from '../uploads/index';
@@ -92,7 +97,8 @@ const README_USER = (name: string, at: string) => `Freero data export for ${name
 account.json        your profile, sign-in methods and signed-in devices (no passwords or secrets)
 api.json            your API tokens, the apps you authorised and the apps you registered (no secrets)
 memberships.json    workspaces, projects and boards you are a member of; what workspaces' directories (SSO/SCIM) hold about you
-activity.json       boards you starred and when you last opened boards; your AI usage (counts only)
+activity.json       boards you starred and when you last opened boards; your AI usage (counts only),
+                    your board assistant conversations and the AI workflows you saved
 comments.json       every comment you wrote, by board, with the thread and item it is attached to
 notifications.json  your notifications, email and Slack settings
 slack.json          the Slack account you connected (workspace and user ids, names; never a token)
@@ -103,10 +109,13 @@ decisions.json      decision snapshots you made (title, note, board)
 trackers.json       your own issue-tracker connections (tracker, name, address, account, field map;
                     never tokens or secrets) and the issues you linked to board items
 listings.json       community listings you submitted to Apps & agents, with their review status
+gallery.json        boards you submitted to the community template gallery, with their review status
 problems/           problems you reported with "Report a problem": index.json (your note, the
                     diagnostics sent with it, its status) and the screenshots you attached
 templates/          templates you saved (Freero's own JSON; insertable again)
-uploads/            files you uploaded (images, PDFs, video, audio, recordings), with index.json
+shape-packs/        the shape packs of your own library: each icon's name and drawing (the
+                    sanitised SVG shapes Freero keeps; the files you uploaded were not kept)
+uploads/           files you uploaded (images, PDFs, video, audio, recordings), with index.json
 boards/             boards you own: board.json (readable JSON of every item, comment and setting,
                     plus your private drafts and hidden frames' contents), board.yjs (the board's
                     complete Yjs document, lossless) and the images the board uses; docs the same,
@@ -118,10 +127,15 @@ const README_WORKSPACE = (name: string, at: string) => `Freero export of the wor
 
 workspace.json  the workspace, its sharing policies, members (with email addresses), invitations,
                 projects, single sign-on settings (no secrets), provisioned directory data and
-                AI settings (no key) with AI usage per person and month, and the issue-tracker
+                AI settings (no key) with AI usage per person and month, the AI workflows shared
+                with it, and the issue-tracker
                 connections (tracker, name, address, account, field map; never tokens or secrets)
 templates/      templates shared with the workspace
-boards/         every board in the workspace (trash included): board.json (readable JSON of every
+shape-packs/    the workspace's shape packs: each icon's name and drawing (the sanitised SVG shapes
+                Freero keeps; the uploaded files were not kept)
+stickers/       the workspace's sticker sets: index.json (sets, stickers, who added them) and each
+                sticker's image
+boards/        every board in the workspace (trash included): board.json (readable JSON of every
                 item, comment and setting, and hidden frames' contents — never anyone's private
                 drafts), board.yjs (the complete Yjs document) and the images each board uses;
                 docs too, with doc.md (the document as Markdown)
@@ -136,6 +150,8 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   a.addJson('account.json', account);
   a.addJson('api.json', await apiDataOf(userId));
   a.addJson('listings.json', await listingsExportOf(userId));
+  // Boards they submitted to the community template gallery (#162), with their review status.
+  a.addJson('gallery.json', await galleryExportOf(userId));
 
   const [workspaces, boardRoles, sso, scim] = await Promise.all([exportMembershipsOf(userId), membershipsOf(userId), ssoRolesOf(userId), scimRecordsOf(userId)]);
   const invited = await boardRecords([...boardRoles.keys()]);
@@ -151,6 +167,8 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
     aiUsage: await aiUsageExportOf(userId),
     // Their own conversations with the board assistant (#1), as kept.
     aiAssistant: await aiAssistantExportOf(userId),
+    // The AI workflows they saved (#1): name, instruction, scope, where shared.
+    aiWorkflows: await aiWorkflowsExportOf({ ownerId: userId }),
   });
 
   // Comments: on every board they could have written on (owned, invited, opened, their teams').
@@ -183,6 +201,7 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   for (const p of problems) if (p.screenshot) await a.addFile(`problems/${p.screenshot.name}`, p.screenshot.read);
 
   for (const t of await templatesExportOf({ ownerId: userId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
+  for (const p of await shapePacksExportOf({ ownerId: userId })) a.addJson(`shape-packs/${slug(p.name)}-${p.id}.json`, p);
 
   const uploads = await uploadsOwnedBy(userId);
   a.addJson('uploads/index.json', uploads.map((u) => ({ ...u, createdAt: new Date(u.createdAt).toISOString(), url: `${appOrigin}/uploads/${u.name}` })));
@@ -202,11 +221,19 @@ export async function buildWorkspaceArchive(workspaceId: string, appOrigin: stri
     singleSignOn: await ssoExportOf(workspaceId),
     provisioning: await scimExportOf(workspaceId),
     ai: await aiWorkspaceExportOf(workspaceId),
+    // AI workflows members shared with the workspace (#1).
+    aiWorkflows: await aiWorkflowsExportOf({ workspaceId }),
     trackers: await trackersWorkspaceExportOf(workspaceId),
     // What each webhook sends where (#48): shortened URL, events, format, scope — never its secret.
     webhooks: await webhooksWorkspaceExportOf(workspaceId),
   });
   for (const t of await templatesExportOf({ workspaceId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
+  for (const p of await shapePacksExportOf({ workspaceId })) a.addJson(`shape-packs/${slug(p.name)}-${p.id}.json`, p);
+  const stickerSets = await stickerSetsExportOf(workspaceId);
+  if (stickerSets.length) {
+    a.addJson('stickers/index.json', stickerSets);
+    for (const s of stickerSets) for (const k of s.stickers) await a.addUpload(`stickers/${k.uploadName}`, k.uploadName);
+  }
   for (const b of await boardRecords(await boardIdsInWorkspace(workspaceId))) await addBoard(a, b, appOrigin, { editorsLayer: true, privateLayerOf: null });
   return a.zip();
 }

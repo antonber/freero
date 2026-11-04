@@ -354,5 +354,20 @@
   "nameEncryptsItsBoardsWith": "{name} encrypts its boards with its own key, and that key can’t be used right now (its admins suspended it, or its key service refused or didn’t answer). Its boards stay closed until the key is available again.",
   "thisWorkspaceSKeyIsn": "This workspace’s key isn’t available",
   "itsBoardsAreEncryptedWith": "Its boards are encrypted with the workspace’s own key, which can’t be used right now. They open again once its admins restore it.",
-  "switchWorkspaceFrom": "Switch workspace, now:"
+  "switchWorkspaceFrom": "Switch workspace, now:",
+  "gallerySomethingWentWrong": "Something went wrong. Try again.",
+  "galleryNotAvailable": "That community template isn’t available any more.",
+  "galleryReportSent": "Thanks: Freero’s moderators will look at it.",
+  "galleryReportTitle": "Report this template",
+  "galleryCommunityTemplate": "Community template",
+  "galleryCancel": "Cancel",
+  "gallerySendReport": "Send report",
+  "galleryReport": "Report",
+  "galleryAddTo": "Add to {workspace}",
+  "galleryWhatIsWrong": "What is wrong with it?",
+  "galleryDetails": "Details (optional)",
+  "galleryPreviewOf": "Preview of {title}",
+  "galleryByAuthor": "By {author} · {licence}",
+  "galleryCcBy": "Shared under CC BY 4.0: use and adapt it for anything, crediting {author}. Your copy is your own board.",
+  "galleryCc0": "Dedicated to the public domain (CC0): use it for anything, no credit needed. Your copy is your own board."
 }

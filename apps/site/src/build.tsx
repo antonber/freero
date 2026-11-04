@@ -23,6 +23,8 @@ const require = createRequire(import.meta.url);
 export const DEFAULT_OUT = path.resolve(SRC_DIR, '../dist');
 /** URL prefixes that belong to the site: a missing page under them is the site's 404. */
 export const SITE_PREFIXES = ['/vs/', '/features/', '/use-cases/', '/templates/', '/integrations/'];
+/** What a shell is built with; the server's modules/site index.ts `SHELL` replaces them. */
+export const SHELL_PLACEHOLDERS = { title: '__freero_shell_title__', description: '__freero_shell_description__', name: '__freero_shell_name__', path: '/__freero_shell_path__' } as const;
 
 function walk(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
@@ -114,6 +116,27 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
     if (page.path !== '/404') manifestPages.push({ path: page.path, file });
   }
 
+  // Shells: whole documents another server module fills per request (#162: one community
+  // template's page, server modules/gallery). Built like any page, with placeholders the server
+  // replaces (modules/site index.ts SHELL), never in the manifest's pages or a sitemap.
+  const shells: Record<string, string> = {};
+  const hub = byPath.get('/gallery');
+  if (hub) {
+    const shell: PageDef = {
+      path: SHELL_PLACEHOLDERS.path,
+      title: SHELL_PLACEHOLDERS.title,
+      description: SHELL_PLACEHOLDERS.description,
+      name: SHELL_PLACEHOLDERS.name,
+      updated: hub.updated,
+      sharedOg: { key: 'gallery', kicker: 'Community template', title: 'Made by people who use Freero' },
+      body: () => <div data-freero-slot="body" />,
+    };
+    const crumbs = [{ name: 'Home', path: '/' }, { name: hub.name, path: hub.path }, { name: shell.name, path: shell.path }];
+    const og = await ogOf(shell);
+    write('shells/gallery-template.html', `<!doctype html>${renderToStaticMarkup(<Document page={shell} pages={pages} crumbs={crumbs} jsonLd={jsonLdFor(shell, crumbs, og)} assets={{ css, ogImage: og, favicon, appleIcon, preloadFonts: [fonts[700]] }} />)}`);
+    shells['gallery-template'] = 'shells/gallery-template.html';
+  }
+
   const files: Array<{ path: string; file: string; type: string }> = [];
   for (const s of sitemaps(pages.filter((p) => p.path !== '/404'))) {
     write(s.path.slice(1), s.xml);
@@ -144,6 +167,7 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
         assetsPrefix: ASSETS_PREFIX,
         legal: pages.filter((p) => p.legal).map((p) => p.path),
         underReview: pages.filter((p) => p.underReview).map((p) => p.path),
+        shells,
       },
       null,
       2,

@@ -24,6 +24,12 @@ interface Manifest {
   legal?: string[];
   /** Drafts the operator hasn't approved (apps/site `underReview`): noindex whatever the legal settings. */
   underReview?: string[];
+  /**
+   * Page shells other modules fill with their data (#162: a community template's page), by name:
+   * a whole document whose `__freero_shell_*__` placeholders and `data-freero-slot` element the
+   * filling module replaces (site/index.ts `fillShell`).
+   */
+  shells?: Record<string, string>;
 }
 
 export interface Site {
@@ -36,6 +42,7 @@ export interface Site {
   assetsDir: string;
   legal: Set<string>;
   underReview: Set<string>;
+  shells: Map<string, string>;
 }
 
 /** Reads a built site, or null when there is none (dev without `npm run build -w @freero/site`). */
@@ -54,6 +61,7 @@ export function loadSite(dist: string): Site | null {
     assetsDir: path.join(dist, m.assetsPrefix.replace(/^\/+|\/+$/g, '')),
     legal: new Set(m.legal ?? []),
     underReview: new Set(m.underReview ?? []),
+    shells: new Map(Object.entries(m.shells ?? {}).map(([name, file]) => [name, read(file)])),
   };
 }
 

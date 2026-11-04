@@ -41,7 +41,13 @@
     "removePack",
     "removeName",
     "iconsAlreadyOnBoardsStay",
-    "remove"
+    "remove",
+    "svgIconsOnlyYou",
+    "whoCanUseIt",
+    "everyoneInThisWorkspace",
+    "onlyMe",
+    "onlyYouSeeThisPack",
+    "myPackNameCount"
   ],
   "openTheIconLibrary": "Abrir a biblioteca de ícones",
   "icon": "Ícone",
@@ -84,5 +90,11 @@
   "removePack": "Remover pacote",
   "removeName": "Remover “{name}”?",
   "iconsAlreadyOnBoardsStay": "Os ícones já colocados em quadros continuam como estão. Ninguém mais poderá adicionar novos a partir deste pacote.",
-  "remove": "Remover"
+  "remove": "Remover",
+  "svgIconsOnlyYou": "Ícones SVG que só você pode pesquisar e colocar, em qualquer quadro que abrir.",
+  "whoCanUseIt": "Quem pode usar",
+  "everyoneInThisWorkspace": "Todos neste espaço de trabalho",
+  "onlyMe": "Só eu",
+  "onlyYouSeeThisPack": "Seu próprio pacote: só você o vê",
+  "myPackNameCount": "{name} · seu ({count, number})"
 }

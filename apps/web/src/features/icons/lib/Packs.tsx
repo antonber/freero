@@ -1,22 +1,30 @@
-// Uploading and managing the workspace's shape packs (#4), for its owners and admins. The files go
-// up as ONE ZIP through the server's upload checks; the server keeps only the sanitised drawings.
+// Uploading and managing shape packs (#4): the workspace's, for its owners and admins, and anyone's
+// own library. The files go up as ONE ZIP through the server's upload checks; the server keeps only
+// the sanitised drawings.
 import { useRef, useState } from 'react';
 import { Pencil, Trash2, Upload } from 'lucide-react';
 import { SHAPE_PACK_LIMITS, type ShapePack } from '@freero/shared';
 import type { HostShapePacks, Host } from '@engine';
-import { Button, IconButton, Input, Modal } from '@ui';
+import { Button, IconButton, Input, Modal, SegmentedControl } from '@ui';
 import { packFileOf } from './zip';
 import { t } from '../messages';
 
 const message = (e: unknown) => (e instanceof Error && e.message ? e.message : t('somethingWentWrong'));
 
-/** "Upload a pack": a name and the SVGs (several files, a folder or a ZIP). */
-export function UploadPack({ host, notify, onCreated }: { host: HostShapePacks; notify: Host['notify']; onCreated(id: string): void }) {
+type Audience = 'workspace' | 'personal';
+
+/**
+ * "Upload a pack": a name and the SVGs (several files, a folder or a ZIP). Workspace owners and
+ * admins (`canShare`) choose who may use it; everyone else adds it to their own library.
+ */
+export function UploadPack({ host, notify, canShare, onCreated }: { host: HostShapePacks; notify: Host['notify']; canShare: boolean; onCreated(id: string): void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [audience, setAudience] = useState<Audience>(canShare ? 'workspace' : 'personal');
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const personal = !canShare || audience === 'personal';
   const close = () => {
     setOpen(false);
     setName('');
@@ -28,7 +36,7 @@ export function UploadPack({ host, notify, onCreated }: { host: HostShapePacks; 
     try {
       const zip = await packFileOf(files);
       if (!zip) throw new Error(t('pickSvgFilesOrA'));
-      const { pack, skipped } = await host.create(name.trim(), zip);
+      const { pack, skipped } = await host.create(name.trim(), zip, { personal });
       close();
       onCreated(pack.id);
       notify(skipped.length ? t('packAddedSomeSkipped', { name: pack.name, count: pack.icons.length, skipped: skipped.length }) : t('packAdded', { name: pack.name, count: pack.icons.length }), 'success');
@@ -48,7 +56,7 @@ export function UploadPack({ host, notify, onCreated }: { host: HostShapePacks; 
           open
           onClose={close}
           title={t('uploadAShapePack')}
-          description={t('svgIconsYourTeamMay')}
+          description={personal ? t('svgIconsOnlyYou') : t('svgIconsYourTeamMay')}
           footer={
             <>
               <Button variant="ghost" onClick={close} disabled={busy}>
@@ -62,6 +70,18 @@ export function UploadPack({ host, notify, onCreated }: { host: HostShapePacks; 
         >
           <div className="fr-icons-upload">
             <Input label={t('packName')} value={name} maxLength={SHAPE_PACK_LIMITS.name} placeholder={t('packNamePlaceholder')} onChange={(e) => setName(e.target.value)} />
+            {canShare && (
+              <SegmentedControl<Audience>
+                aria-label={t('whoCanUseIt')}
+                size="sm"
+                value={audience}
+                onChange={setAudience}
+                options={[
+                  { value: 'workspace', label: t('everyoneInThisWorkspace') },
+                  { value: 'personal', label: t('onlyMe') },
+                ]}
+              />
+            )}
             <input
               ref={input}
               type="file"
@@ -120,7 +140,7 @@ export function PackManager({ host, notify, pack, onChanged, onRemoved }: { host
         </form>
       ) : (
         <>
-          <span className="fr-icons-pack__by">{pack.createdBy ? t('uploadedByName', { name: pack.createdBy }) : null}</span>
+          <span className="fr-icons-pack__by">{pack.personal ? t('onlyYouSeeThisPack') : pack.createdBy ? t('uploadedByName', { name: pack.createdBy }) : null}</span>
           <IconButton size={32} icon={Pencil} label={t('renamePack')} onClick={() => setRenaming(pack.name)} />
           <IconButton size={32} icon={Trash2} label={t('removePack')} onClick={() => setConfirm(true)} />
         </>

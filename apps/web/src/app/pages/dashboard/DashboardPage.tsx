@@ -17,6 +17,7 @@ import { ContentSearch, useContentSearch } from './ContentSearch';
 import { RecentActivity } from './RecentActivity';
 import { BoardPlaceDialog } from './BoardPlaceDialog';
 import { RestoreBackupDialog } from './RestoreBackupDialog';
+import { GalleryDialog } from './GalleryDialog';
 import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
 import { CreateWorkspaceDialog, DeleteProjectDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
@@ -143,6 +144,25 @@ export function DashboardPage() {
       },
     );
   }, [templateLink, workspace, navigate, notify, setParams]);
+
+  // A community template (#162): the public gallery's "Use this template" / "Report this template"
+  // lead here with ?gallery=<id> (&report=1); the dialog adds a copy to this workspace or reports it.
+  const galleryLink = params.get('gallery');
+  const galleryId = galleryLink && /^[A-Za-z0-9_-]{6,32}$/.test(galleryLink) ? galleryLink : null;
+  const galleryReport = params.get('report') === '1';
+  const closeGallery = useCallback(
+    () =>
+      setParams(
+        (p) => {
+          const next = new URLSearchParams(p);
+          next.delete('gallery');
+          next.delete('report');
+          return next;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
 
   useEffect(() => {
     document.title = workspace ? `${workspaceLabel(workspace)} · Freero` : 'Boards · Freero';
@@ -688,6 +708,15 @@ export function DashboardPage() {
             else if (b.workspaceId === workspaceId && (!projectId || b.projectId === projectId)) setBoards((list) => (list ? [b, ...list] : [b]));
             notify(note, 'success', { action: { label: tr('open'), onClick: () => navigate(objectHref(b)) } });
           }}
+        />
+      ) : null}
+      {galleryId && workspace ? (
+        <GalleryDialog
+          id={galleryId}
+          startReporting={galleryReport}
+          workspace={{ id: workspace.id, label: workspaceLabel(workspace) }}
+          onClose={closeGallery}
+          onInstalled={(id) => navigate(`/board/${id}`, { replace: true })}
         />
       ) : null}
       {restoring ? (

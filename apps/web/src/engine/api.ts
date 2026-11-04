@@ -25,6 +25,12 @@ import type {
   AssistantAsk,
   AssistantMessage,
   AssistantTurn,
+  GallerySubmitRequest,
+  OwnGalleryTemplate,
+  AiWorkflow,
+  AiWorkflowInput,
+  AiWorkflowList,
+  AiWorkflowResult,
   BoardElement,
   BoardOutline,
   BoardLayer,
@@ -177,11 +183,27 @@ export interface HostFigma {
 
 /** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
 export interface HostShapePacks {
+  /** The workspace's packs (for its members), then the person's own library (`personal`). */
   list(): Promise<ShapePacksResponse>;
-  /** Uploads `zip` (a ZIP of SVG files) through the server's upload checks and makes it a pack. */
-  create(name: string, zip: Blob): Promise<ShapePackCreated>;
+  /**
+   * Uploads `zip` (a ZIP of SVG files) through the server's upload checks and makes it a pack: the
+   * workspace's (its owners / admins), or with `personal` one of the person's own, shown to them on
+   * every board.
+   */
+  create(name: string, zip: Blob, opts?: { personal?: boolean }): Promise<ShapePackCreated>;
   rename(packId: string, name: string): Promise<ShapePack>;
   remove(packId: string): Promise<void>;
+}
+
+/**
+ * [additive, #162] The community template gallery (wire: @freero/shared "Community template
+ * gallery"): submit this board as a public template (the server copies only its shared content and
+ * holds it for review), and see or withdraw your submissions. Rejections carry a message to show.
+ */
+export interface HostGallery {
+  submit(request: Omit<GallerySubmitRequest, 'boardId'>): Promise<OwnGalleryTemplate>;
+  mine(): Promise<OwnGalleryTemplate[]>;
+  withdraw(id: string): Promise<void>;
 }
 
 /** [additive] Light, dark, or whatever the device uses. */
@@ -289,6 +311,8 @@ export interface Host {
    * without an account, embeds): no packs. Rejections carry a message that can be shown.
    */
   shapePacks?: HostShapePacks;
+  /** [additive, #162] Absent for guests without an account, embeds and the offline sandbox: nothing to publish. */
+  gallery?: HostGallery;
   /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).
@@ -716,6 +740,22 @@ export interface HostAssistant {
   ask(request: AssistantAsk): Promise<AssistantTurn>;
   /** Forgets their conversation on this board. */
   clear(): Promise<void>;
+  /** [additive, #1] Saved workflows: absent from older apps' hosts. */
+  workflows?: HostAiWorkflows;
+}
+
+/**
+ * [additive, #1] Saved AI workflows (wire: @freero/shared "Saved AI workflows"): the person's own and
+ * those shared with the board's workspace. `run` is an assistant turn with the workflow's
+ * instruction, for people who can edit; what it changes arrives ONLY as pending suggestions.
+ */
+export interface HostAiWorkflows {
+  list(): Promise<AiWorkflowList>;
+  create(input: AiWorkflowInput): Promise<AiWorkflow>;
+  update(id: string, patch: Partial<AiWorkflowInput>): Promise<AiWorkflow>;
+  remove(id: string): Promise<void>;
+  /** `ids`: the items selected (used by workflows that run on the selection). */
+  run(id: string, ids: string[]): Promise<AiWorkflowResult>;
 }
 
 /** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */

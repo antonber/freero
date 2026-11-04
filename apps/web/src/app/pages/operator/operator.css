@@ -330,6 +330,17 @@
   }
 }
 
+/* Community templates (#162): the preview the server drew from the template's copy. */
+.fr-op-gallery__preview {
+  display: block;
+  inline-size: 100%;
+  max-block-size: 260px;
+  object-fit: contain;
+  border: 1px solid var(--fr-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
 /* Community listings (#87): the developer's words, as typed. */
 .fr-op-listings__bar {
   display: flex;

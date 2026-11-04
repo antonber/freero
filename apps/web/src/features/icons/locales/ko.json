@@ -41,7 +41,13 @@
     "removePack",
     "removeName",
     "iconsAlreadyOnBoardsStay",
-    "remove"
+    "remove",
+    "svgIconsOnlyYou",
+    "whoCanUseIt",
+    "everyoneInThisWorkspace",
+    "onlyMe",
+    "onlyYouSeeThisPack",
+    "myPackNameCount"
   ],
   "openTheIconLibrary": "아이콘 라이브러리 열기",
   "icon": "아이콘",
@@ -84,5 +90,11 @@
   "removePack": "팩 삭제",
   "removeName": "‘{name}’을(를) 삭제할까요?",
   "iconsAlreadyOnBoardsStay": "이미 보드에 놓인 아이콘은 그대로 남습니다. 이 팩에서 새 아이콘은 더 이상 추가할 수 없습니다.",
-  "remove": "삭제"
+  "remove": "삭제",
+  "svgIconsOnlyYou": "나만 검색하고 배치할 수 있는 SVG 아이콘입니다. 여는 모든 보드에서 사용할 수 있습니다.",
+  "whoCanUseIt": "사용할 수 있는 사람",
+  "everyoneInThisWorkspace": "이 워크스페이스의 모든 사람",
+  "onlyMe": "나만",
+  "onlyYouSeeThisPack": "나만의 팩: 나에게만 보입니다",
+  "myPackNameCount": "{name} · 내 팩 ({count, number})"
 }

@@ -1304,3 +1304,56 @@ tbody th code {
     border: 1px solid CanvasText;
   }
 }
+
+/* The community template gallery (#162): filled by the server (modules/gallery pages.ts). */
+.gal-search {
+  display: flex;
+  gap: 8px;
+  margin-block: 0 16px;
+  max-width: 560px;
+}
+.gal-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding-block: 8px;
+  padding-inline: 14px;
+  font: inherit;
+  border: 1px solid var(--fr-line-strong, var(--fr-line));
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+}
+.gal-search input:focus-visible {
+  outline: 2px solid var(--fr-primary);
+  outline-offset: 2px;
+}
+.gal-search + nav {
+  margin-block-end: 24px;
+}
+.tpl-cats a[aria-current='page'] {
+  border-color: var(--fr-primary);
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+.gal-card__by {
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+.gal-empty {
+  color: var(--fr-ink-2);
+}
+.gal-hero .tpl-preview {
+  max-height: 520px;
+  object-fit: contain;
+  background: #fff;
+}
+.gal-about {
+  max-width: 720px;
+  margin-block-start: 24px;
+}
+.gal-licence,
+.gal-meta {
+  color: var(--fr-ink-2);
+  font-size: 14px;
+}

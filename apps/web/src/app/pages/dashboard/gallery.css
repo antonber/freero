@@ -1,0 +1,53 @@
+/* A community template opened from the public gallery (#162, GalleryDialog). */
+.fr-dash-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fr-dash-gallery__loading {
+  display: flex;
+  justify-content: center;
+  padding-block: 24px;
+}
+
+.fr-dash-gallery__preview {
+  display: block;
+  inline-size: 100%;
+  max-block-size: 280px;
+  object-fit: contain;
+  border: 1px solid var(--fr-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.fr-dash-gallery__by {
+  margin: 0;
+  font-weight: 600;
+}
+
+.fr-dash-gallery__description {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fr-ink);
+}
+
+.fr-dash-gallery__fine {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-gallery__reasons {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fr-dash-gallery__reasons legend {
+  margin-block-end: 4px;
+  font-weight: 600;
+}
