@@ -132,6 +132,13 @@ export interface HostColorTheme {
   set(theme: ColorThemeChoice): void;
 }
 
+/** [#143] One file of a comment message: the thread, the message and its place in the message's list. */
+export interface CommentFileRef {
+  threadId: string;
+  messageId: string;
+  index: number;
+}
+
 export interface Host {
   user: HostUser;
   board: {
@@ -238,6 +245,16 @@ export interface Host {
    * allowed, removed by moderators, gone). Absent where nothing can be downloaded.
    */
   downloadFile?(item: { id: string; src: string; name: string }): Promise<void>;
+  /**
+   * [additive, #143] Files on comment messages (uploaded with `uploadAttachment`): served only from
+   * THIS board to someone who can read the message. `imageUrl`: a same-origin URL that shows an
+   * image attachment inline (any role); `download` saves a file under its name (the downloads
+   * policy applies, audited). Absent where comment files can't be fetched (offline sandbox, embeds).
+   */
+  commentFile?: {
+    imageUrl(ref: CommentFileRef): string;
+    download(ref: CommentFileRef & { name: string }): Promise<void>;
+  };
   renameBoard(title: string): Promise<void>;
   /**
    * [additive, KAI-137] Saves this board as a `.freero` backup file: built by the SERVER from what
@@ -705,6 +722,34 @@ export interface ElementRenderProps<T extends BoardElement = BoardElement> {
 }
 
 /**
+ * [additive, #131] What `ElementDefinition.lowDetail` paints with: a canvas the engine shares
+ * between every item drawn in low detail, in the item's own units (0, 0 at its top left; the
+ * engine places, scales and turns it). Colours are CSS colours, `transparent`, or `canvasInk(…)`
+ * values (the engine resolves them for the page's theme, as the full drawing's CSS would).
+ */
+export interface LowDetailPaint {
+  /** The item is selected: paint what has no box of its own (a line) in the selection colour. */
+  readonly selected: boolean;
+  /** The selection colour, for that. */
+  readonly selectionColor: string;
+  /** How the item's container wants it shown (a kanban's colour-by accent), as `Component` gets it. */
+  readonly presentation: ChildPresentation | null;
+  /**
+   * Fills and/or outlines the item's box (the outline inside it, like a CSS border). `radius`
+   * rounds the corners; `round` makes it the ellipse in the box. `alpha` fades the fill only.
+   */
+  box(o: { fill?: string | null; stroke?: string | null; strokeWidth?: number; radius?: number; round?: boolean; alpha?: number }): void;
+  /** Fills a rectangle (bars standing for lines of text). */
+  rect(x: number, y: number, w: number, h: number, color: string, alpha?: number): void;
+  /** Fills a polygon given in fractions of the box (0–1): a diamond's silhouette. */
+  polygon(points: ReadonlyArray<readonly [number, number]>, color: string, alpha?: number): void;
+  /** Straight runs through `points`. */
+  line(points: ReadonlyArray<{ x: number; y: number }>, color: string, width: number): void;
+  /** Fills the box with the colour the picture at `src` reads as (worked out once in the background; `fallback` until then, or if it can't be read). */
+  picture(src: string, fallback: string): void;
+}
+
+/**
  * [additive] What a container tells a child about how to show it (a kanban's view settings for its
  * cards): drawn by the CHILD's own component, so the container never draws or imports the child.
  */
@@ -766,6 +811,17 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   icon?: IconComponent;
   /** World-space renderer. Must be pure and cheap; the engine memoizes per element. */
   Component: ComponentType<ElementRenderProps<ElementOf<T>>>;
+  /**
+   * [additive, #131] How the live canvas paints this type while zoomed out to low detail
+   * (engine/canvas/detail.ts): fill and outline in its box, no text layout, on one canvas shared
+   * by every such item (in render order) instead of DOM per item. Painted the way `Component`
+   * paints on a dark page. Never used by exports or thumbnails, never while the item is edited,
+   * making room for a drag or big on screen; hit-testing and selection stay geometric and the
+   * box is the element's own, so switching back never moves anything. Pure and quick: it runs
+   * for every such item on each repaint. Without it the type always draws `Component` (which
+   * may use `zoom` itself).
+   */
+  lowDetail?(element: ElementOf<T>, paint: LowDetailPaint): void;
   /** Defaults merged under user-provided fields on create (tools usually call this). */
   defaults(): Omit<NewElement<T>, 'x' | 'y'>;
   resize: ResizeMode;

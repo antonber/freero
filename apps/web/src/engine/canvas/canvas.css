@@ -69,10 +69,13 @@
   will-change: transform;
 }
 
+/* Placed with left / top (WorldLayer.tsx); z-index makes each item its own stacking context, as a
+   transform used to, so nothing inside one item paints over the items above it. */
 .fr-el {
   position: absolute;
   left: 0;
   top: 0;
+  z-index: 0;
   transform-origin: center center;
 }
 
@@ -80,10 +83,18 @@
   pointer-events: auto;
 }
 
+/* Low detail (#131): runs of items painted on one canvas (LowDetailLayer.tsx), placed in world units. */
+.fr-lod-layer {
+  position: absolute;
+  pointer-events: none;
+}
+
 /* Items making room for a drag into their container (ElementDefinition.dragPreview) slide there.
    Only while the drag lasts: the drop writes the same spots and drops the class in one frame. */
 .fr-el--sliding {
-  transition: transform 160ms cubic-bezier(0.2, 0, 0, 1);
+  transition:
+    left 160ms cubic-bezier(0.2, 0, 0, 1),
+    top 160ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

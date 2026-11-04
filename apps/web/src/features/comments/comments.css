@@ -571,3 +571,68 @@
   box-shadow: 0 0 0 2px var(--fr-surface);
   pointer-events: none;
 }
+
+/* ---- #143: areas of the board, files on messages ---- */
+.fr-cm-area {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  border: solid var(--fr-primary);
+  background: color-mix(in srgb, var(--fr-primary) 8%, transparent);
+  pointer-events: none;
+}
+
+.fr-cm-area.is-drawing {
+  border-style: dashed;
+}
+
+.fr-cm-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-cm-files--pending {
+  margin: 6px 10px 0 14px;
+}
+
+.fr-cm-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 2px 2px 8px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+  font-size: 12.5px;
+  color: var(--fr-ink-2);
+}
+
+.fr-cm-file__img {
+  display: block;
+  flex-basis: 100%;
+  max-width: 100%;
+  max-height: 180px;
+  margin: 4px 0 2px;
+  border-radius: var(--fr-radius-sm);
+  object-fit: contain;
+  object-position: left center;
+}
+
+.fr-cm-file__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-cm-file__size {
+  flex: none;
+  color: var(--fr-ink-3);
+}

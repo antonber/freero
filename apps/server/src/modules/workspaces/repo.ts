@@ -1,6 +1,6 @@
 // The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects`,
-// `project_members`, (#63) `workspace_groups`, `workspace_group_members`, `project_groups` and (#158)
-// `workspace_labels`, `workspace_label_settings` [S4].
+// `project_members`, `project_pins` (#129), (#63) `workspace_groups`, `workspace_group_members`, `project_groups` and
+// (#158) `workspace_labels`, `workspace_label_settings` [S4].
 import type { AdminScope, InactiveBoardAction, LabelCaps, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
 import { isForeignKeyViolation, isUniqueViolation, one, query, tx } from '../../platform/db';
 import { NO_FLOOR_POLICIES, strictestPolicies, strictestSettings, type InvitableWorkspaceRole, type PolicyFloor, type SettingsFloor } from './roles';
@@ -744,6 +744,11 @@ export interface Project {
   access: ProjectAccess;
   /** The project's own team access level (null: the workspace's). */
   teamAccess: TeamAccess | null;
+  /** The project it sits in (#129), or null at the top of the workspace. */
+  parentId: string | null;
+  description: string;
+  /** Boards its managers pinned on the project page, in order (may name boards since moved away). */
+  pinnedBoards: string[];
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
@@ -754,6 +759,9 @@ interface PRow {
   name: string;
   access: ProjectAccess;
   team_access: TeamAccess | null;
+  parent_id: string | null;
+  description: string | null;
+  pinned_boards: string[] | null;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
@@ -764,6 +772,9 @@ const toProject = (r: PRow): Project => ({
   name: r.name,
   access: r.access,
   teamAccess: r.team_access ?? null,
+  parentId: r.parent_id ?? null,
+  description: r.description ?? '',
+  pinnedBoards: r.pinned_boards ?? [],
   createdBy: r.created_by,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
@@ -773,9 +784,9 @@ const toProject = (r: PRow): Project => ({
 export async function insertProject(p: Project): Promise<boolean> {
   try {
     await query(
-      `INSERT INTO projects (id, workspace_id, name, access, created_by, created_at, updated_at, team_access)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [p.id, p.workspaceId, p.name, p.access, p.createdBy, new Date(p.createdAt), new Date(p.updatedAt), p.teamAccess],
+      `INSERT INTO projects (id, workspace_id, name, access, created_by, created_at, updated_at, team_access, parent_id, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [p.id, p.workspaceId, p.name, p.access, p.createdBy, new Date(p.createdAt), new Date(p.updatedAt), p.teamAccess, p.parentId, p.description],
     );
     if (p.createdBy) await query(`INSERT INTO project_members (project_id, user_id, created_at) VALUES ($1, $2, $3)`, [p.id, p.createdBy, new Date(p.createdAt)]);
     return true;
@@ -800,20 +811,57 @@ export async function projectsIn(workspaceIds: string[]): Promise<Project[]> {
   return (await query<PRow>(`SELECT * FROM projects WHERE workspace_id = ANY($1::text[]) ORDER BY lower(name), id`, [workspaceIds])).map(toProject);
 }
 
-/** Changes only the given fields (`teamAccess: null`: back to the workspace's level). */
+/** Changes only the given fields (`teamAccess: null`: back to the workspace's level; `parentId: null`: to the top). */
 export async function updateProject(
   id: string,
-  patch: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null },
+  patch: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null; description?: string; pinnedBoards?: string[]; parentId?: string | null },
   now: number,
 ): Promise<boolean> {
   return (
     await query(
       `UPDATE projects SET name = COALESCE($2, name), access = COALESCE($3, access), updated_at = $4,
-         team_access = CASE WHEN $5::boolean THEN $6 ELSE team_access END
+         team_access = CASE WHEN $5::boolean THEN $6 ELSE team_access END,
+         description = COALESCE($7, description), pinned_boards = COALESCE($8::text[], pinned_boards),
+         parent_id = CASE WHEN $9::boolean THEN $10 ELSE parent_id END
        WHERE id = $1 RETURNING 1`,
-      [id, patch.name ?? null, patch.access ?? null, new Date(now), patch.teamAccess !== undefined, patch.teamAccess ?? null],
+      [
+        id,
+        patch.name ?? null,
+        patch.access ?? null,
+        new Date(now),
+        patch.teamAccess !== undefined,
+        patch.teamAccess ?? null,
+        patch.description ?? null,
+        patch.pinnedBoards ?? null,
+        patch.parentId !== undefined,
+        patch.parentId ?? null,
+      ],
     )
   ).length > 0;
+}
+
+/** Ids of the projects directly inside `id` (#129). */
+export async function childProjectIds(id: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM projects WHERE parent_id = $1 ORDER BY id`, [id])).map((r) => r.id);
+}
+
+// ---- pinned projects (#129, per person) ----
+
+export async function setProjectPin(userId: string, projectId: string, pinned: boolean, now: number): Promise<void> {
+  if (pinned)
+    await query(`INSERT INTO project_pins (user_id, project_id, pinned_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [userId, projectId, new Date(now)]);
+  else await query(`DELETE FROM project_pins WHERE user_id = $1 AND project_id = $2`, [userId, projectId]);
+}
+
+/** projectId -> when the user pinned it, among `workspaceIds`. */
+export async function projectPinsOf(userId: string, workspaceIds: string[]): Promise<Map<string, number>> {
+  if (workspaceIds.length === 0) return new Map();
+  const rows = await query<{ project_id: string; pinned_at: Date }>(
+    `SELECT pp.project_id, pp.pinned_at FROM project_pins pp JOIN projects p ON p.id = pp.project_id
+     WHERE pp.user_id = $1 AND p.workspace_id = ANY($2::text[])`,
+    [userId, workspaceIds],
+  );
+  return new Map(rows.map((r) => [r.project_id, r.pinned_at.getTime()]));
 }
 
 export async function deleteProject(id: string): Promise<boolean> {

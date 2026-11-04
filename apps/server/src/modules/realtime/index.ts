@@ -96,3 +96,5 @@ export { BOARD_CONTENT_TOPIC } from './repo';
 export { boardsNeedingReseal, resealBoard } from './reseal';
 // The uploads board documents reference (the uploads sweep keeps those files).
 export { boardUploadReferences, storedBoardContent, storedBoardSizes } from './uploadRefs';
+// Blueprints (#161): a board's content as a blueprint keeps it, and links pointed at the copies.
+export { blueprintState, rewriteObjectLinks } from './rewriteLinks';

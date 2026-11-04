@@ -22,6 +22,7 @@
 import { storage } from '../../platform/storage';
 import { runExclusive } from '../../platform/jobs';
 import { avatarUploadReferences } from '../auth/index';
+import { blueprintUploadReferences } from '../blueprints/index';
 import { thumbnailUploadReferences } from '../boards/index';
 import { boardUploadReferences } from '../realtime/index';
 import { stickerUploadReferences } from '../stickers/index';
@@ -43,7 +44,15 @@ export type ReferenceScan = (among?: readonly string[]) => Promise<Iterable<stri
  * Every kind of stored content that can hold an /uploads URL. Content of a new kind that stores
  * upload URLs outside board documents (which are already scanned) adds its module's scan here.
  */
-const SCANS: ReferenceScan[] = [boardUploadReferences, templateUploadReferences, avatarUploadReferences, thumbnailUploadReferences, walkthroughUploadReferences, stickerUploadReferences];
+const SCANS: ReferenceScan[] = [
+  boardUploadReferences,
+  templateUploadReferences,
+  avatarUploadReferences,
+  thumbnailUploadReferences,
+  walkthroughUploadReferences,
+  stickerUploadReferences,
+  blueprintUploadReferences,
+];
 
 export async function referencedUploads(among?: readonly string[]): Promise<Set<string>> {
   const found = new Set<string>();

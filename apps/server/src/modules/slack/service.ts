@@ -2,16 +2,20 @@
 // for links to this instance's host; Freero answers with `chat.unfurl`
 // (docs.slack.dev/reference/methods/chat.unfurl). What a preview may say is decided by boards'
 // `publicLinkPreview`: a board ANYONE with the link may view (no account) shows its title, a short
-// description and its thumbnail; everything else — private boards, docs, boards that don't exist —
-// gets the same generic card with no title, so a preview never tells whether a board exists or
-// what it is called.
+// description and its thumbnail. A link posted by someone who connected their Slack account (#105)
+// to a board or doc THEY can open shows its title (and a board's description and thumbnail) too —
+// they chose to share it. Everything else — private boards, docs, boards that don't exist — gets
+// the same generic card with no title, so a preview never tells whether a board exists or what it
+// is called.
 import { getConfig } from '../../platform/config';
 import { logger, logError } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
 import { counter } from '../../platform/metrics';
 import { checkRateLimit } from '../../platform/rateLimit';
-import { publicLinkPreview } from '../boards/index';
+import { boardSummaryFor, publicLinkPreview } from '../boards/index';
 import { isUploadRemoved } from '../uploads/index';
+import { callSlack, mrkdwn, oneLine } from './api';
+import { actingAsSlackFor, botTokenFor, linkedUserOf, slackReach } from './links';
 
 const outcomes = counter('freero_slack_unfurls_total', 'Slack link_shared events by outcome', ['outcome'] as const);
 
@@ -24,14 +28,9 @@ export interface LinkSharedEvent {
   links: Array<{ domain?: string; url: string }>;
   unfurl_id?: string;
   source?: string;
+  /** The Slack user who posted the link. */
+  user?: string;
 }
-
-/** Slack mrkdwn: `&`, `<` and `>` are its only control characters (docs.slack.dev, "Formatting text"). */
-const mrkdwn = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const oneLine = (s: string, n: number) => {
-  const t = s.replace(/\s+/g, ' ').trim();
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
-};
 
 /** The id of the board or doc a link of this instance opens, or null for any other link. */
 export function linkTarget(url: string): { kind: 'board' | 'doc'; id: string } | null {
@@ -54,20 +53,41 @@ const GENERIC = {
   ],
 };
 
-/** The unfurl for one link (blocks), or null when it isn't a Freero board or doc link. */
-export async function unfurlFor(url: string): Promise<{ blocks: unknown[] } | null> {
+/**
+ * What the poster may see of a board or doc they can open (#105), or null — also when its workspace
+ * keeps apps out (API access off, the app blocked, an IP allowlist without an exemption for it).
+ */
+async function previewFor(target: { kind: 'board' | 'doc'; id: string }, userId: string, reach: (workspaceId: string) => Promise<boolean>) {
+  try {
+    const b = await actingAsSlackFor(userId, () => boardSummaryFor(target.id, userId, target.kind));
+    if (!(await reach(b.workspaceId))) return null;
+    return { title: b.title, description: target.kind === 'board' ? b.description : '', thumbnail: target.kind === 'board' ? b.thumbnail : null };
+  } catch {
+    return null; // no such board, no access, taken down: the generic card
+  }
+}
+
+/**
+ * The unfurl for one link (blocks), or null when it isn't a Freero board or doc link. `posterId`:
+ * the Freero account of the Slack user who posted it, when they connected Slack.
+ */
+export async function unfurlFor(url: string, posterId: string | null = null, reach = posterId ? slackReach(posterId) : null): Promise<{ blocks: unknown[] } | null> {
   const target = linkTarget(url);
   if (!target) return null;
-  const preview = target.kind === 'board' ? await publicLinkPreview(target.id) : null;
+  const pub = target.kind === 'board' ? await publicLinkPreview(target.id) : null;
+  const preview = pub ?? (posterId && reach ? await previewFor(target, posterId, reach) : null);
   if (!preview) return GENERIC;
-  const title = oneLine(preview.title || 'Untitled board', 150);
-  const description = oneLine(preview.description, 300) || 'A board on Freero';
+  const what = target.kind === 'doc' ? 'doc' : 'board';
+  const title = oneLine(preview.title || `Untitled ${what}`, 150);
+  const description = oneLine(preview.description, 300) || `A ${what} on Freero`;
   // The picture is served without a session (an unguessable upload name); Slack fetches it itself,
   // so only from an https address, and never one an operator removed.
-  const image = preview.thumbnail && !(await isUploadRemoved(preview.thumbnail.replace(/^\/uploads\//, ''))) ? appUrl(null, preview.thumbnail) : null;
+  const thumb = preview.thumbnail?.startsWith('/uploads/') ? preview.thumbnail : null;
+  const image = thumb && !(await isUploadRemoved(thumb.replace(/^\/uploads\//, ''))) ? appUrl(null, thumb) : null;
   const section: Record<string, unknown> = { type: 'section', text: { type: 'mrkdwn', text: `*<${url}|${mrkdwn(title)}>*\n${mrkdwn(description)}` } };
   if (image?.startsWith('https://')) section.accessory = { type: 'image', image_url: image, alt_text: 'Board preview' };
-  return { blocks: [section, { type: 'context', elements: [{ type: 'mrkdwn', text: 'Freero board · anyone with the link can view' }] }] };
+  const who = pub ? 'anyone with the link can view' : 'only people with access can open it';
+  return { blocks: [section, { type: 'context', elements: [{ type: 'mrkdwn', text: `Freero ${what} · ${who}` }] }] };
 }
 
 // Slack retries an event it thinks we missed (X-Slack-Retry-Num); one answer per event id is enough.
@@ -93,23 +113,19 @@ export async function answerLinkShared(teamId: string, eventId: string | undefin
     if (!slack) return done('failed', { reason: 'not configured' });
     if (!firstTime(eventId, now)) return done('duplicate');
     const unfurls: Record<string, unknown> = {};
+    const posterId = await linkedUserOf(teamId, event.user);
+    const reach = posterId ? slackReach(posterId) : null;
     for (const l of (event.links ?? []).slice(0, 10)) {
       if (typeof l?.url !== 'string') continue;
-      const u = await unfurlFor(l.url);
+      const u = await unfurlFor(l.url, posterId, reach);
       if (u) unfurls[l.url] = u;
     }
     if (!Object.keys(unfurls).length) return done('no_links');
     const limit = await checkRateLimit('slackUnfurl', teamId);
     if (!limit.allowed) return done('rate_limited');
-    const res = await fetch(`${slack.apiUrl}/chat.unfurl`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${slack.botToken}`, 'content-type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ channel: event.channel, ts: event.message_ts, unfurls }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    const body = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-    if (!res.ok || !body?.ok) return done('slack_error', { status: res.status, error: body?.error ?? null });
-    return done('unfurled', { unfurled: Object.keys(unfurls).length });
+    const r = await callSlack('chat.unfurl', await botTokenFor(teamId), { channel: event.channel, ts: event.message_ts, unfurls });
+    if (!r.ok) return done(r.error === 'request_failed' ? 'failed' : 'slack_error', { error: r.error ?? null });
+    return done('unfurled', { unfurled: Object.keys(unfurls).length, ...(posterId ? { linked: true } : {}) });
   } catch (e) {
     logError('slack unfurl failed', e);
     return done('failed');

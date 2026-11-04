@@ -27,6 +27,7 @@ import {
   listProjectMembers,
   listProjects,
   removeProjectMember,
+  setProjectPinned,
   updateProject,
 } from './projects';
 import {
@@ -259,7 +260,25 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
     '/projects/:id',
     requireUser,
     handle(async (req, res) => {
-      await deleteProject(req.params.id, currentUser(req).id);
+      await deleteProject(req.params.id, currentUser(req).id, { boards: req.query.boards });
+      res.json({ ok: true });
+    }),
+  );
+
+  // Pinned to the top of your own sidebar (#129).
+  r.put(
+    '/projects/:id/pin',
+    requireUser,
+    handle(async (req, res) => {
+      await setProjectPinned(req.params.id, currentUser(req).id, true);
+      res.json({ ok: true });
+    }),
+  );
+  r.delete(
+    '/projects/:id/pin',
+    requireUser,
+    handle(async (req, res) => {
+      await setProjectPinned(req.params.id, currentUser(req).id, false);
       res.json({ ok: true });
     }),
   );

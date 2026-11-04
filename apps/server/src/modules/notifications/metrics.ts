@@ -11,3 +11,8 @@ export const cardChangesSettled = counter(
   'freero_notifications_card_changes_settled_total',
   'Task-card assignment / due-date changes this instance settled and turned into notifications (KAI-135; failed ones included)',
 );
+export const slackDeliveries = counter(
+  'freero_notifications_slack_total',
+  'New notifications this instance finished handing to Slack (#105), by outcome: sent (a direct message), failed (left to the email digest), skipped (off for that type, no Slack connected)',
+  ['outcome'] as const,
+);

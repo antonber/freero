@@ -1,5 +1,5 @@
 // Pure workspace rules: roles, what a workspace grants on its boards, and the sharing policies.
-import { ADMIN_SCOPES, looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
+import { ADMIN_SCOPES, looserPolicy, POLICY_STRICTNESS, PROJECT_MAX_DEPTH } from '@freero/shared';
 import type {
   AdminScope,
   InactiveBoardAction,
@@ -66,9 +66,48 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   templatePublishing: 'members',
 };
 
-/** The team access level of a board: its project's own level, else the workspace's. */
-export function teamAccessOf(policies: WorkspacePolicies, project: { teamAccess: TeamAccess | null } | null): TeamAccess {
-  return project?.teamAccess ?? policies.teamAccess;
+/**
+ * One project on the way from a board's project up to the workspace (#129: projects nest): its
+ * access, the person's membership in it and its own team access level.
+ */
+export interface ProjectGate {
+  access: ProjectAccess;
+  member: boolean;
+  teamAccess?: TeamAccess | null;
+}
+
+const LEVEL_RANK: Record<TeamAccess, number> = { viewer: 0, commenter: 1, editor: 2 };
+
+/**
+ * The team access level of a board: the STRICTEST level set by its project or any project above
+ * it (a sub-project may be stricter than its parent, never looser — #129), else the workspace's.
+ * A single project's own level still wins over the workspace's, as before nesting (KAI-93).
+ * `chain`: the board's project first, then its parent, and so on; null for none.
+ */
+export function teamAccessOf(policies: WorkspacePolicies, chain: ReadonlyArray<{ teamAccess?: TeamAccess | null }> | null): TeamAccess {
+  let level: TeamAccess | null = null;
+  for (const p of chain ?? []) if (p.teamAccess && (level === null || LEVEL_RANK[p.teamAccess] < LEVEL_RANK[level])) level = p.teamAccess;
+  return level ?? policies.teamAccess;
+}
+
+/**
+ * A project and the projects above it, nearest first (`[project, parent, grandparent…]`), from a
+ * map of the workspace's projects. A parent that is missing ends the chain as an unknown project
+ * would: `null` (fails closed — callers treat it like a project nobody may see through). Cycles
+ * cannot be stored (moves are checked under lock) but are cut off here too.
+ */
+export function projectChain<P extends { id: string; parentId: string | null }>(id: string, byId: ReadonlyMap<string, P>): P[] | null {
+  const out: P[] = [];
+  const seen = new Set<string>();
+  let cur: string | null = id;
+  while (cur) {
+    const p = byId.get(cur);
+    if (!p || seen.has(cur) || out.length > PROJECT_MAX_DEPTH + 1) return null;
+    seen.add(cur);
+    out.push(p);
+    cur = p.parentId;
+  }
+  return out;
 }
 
 const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2, editor: 3 };
@@ -82,21 +121,28 @@ export function capLink(link: LinkAccess, max: LinkAccess): LinkAccess {
 /**
  * What the workspace itself grants `role` on one of its boards (team access), or null.
  * - owners/admins: edit every board, private projects included (they administer the content);
- * - a private project's boards: only its members;
- * - other boards: every full member; a guest only if added to the board's project.
+ * - a board in projects: only someone who passes EVERY project from the board's up to the top
+ *   (#129: a sub-project never grants more than its parent) — a private one lets in its members,
+ *   an open one every full member; a guest only projects they were added to;
+ * - other boards: every full member, never a guest.
  * Everyone but owners/admins gets `level`, the board's team access level (`teamAccessOf`).
+ * `projects`: the board's project chain (projectChain), a lone project, or null for none.
  * Direct board memberships and link access come on top of this (members/roles.ts).
  */
-export function teamRole(
-  role: WorkspaceRole | null,
-  project: { access: ProjectAccess; member: boolean } | null,
-  level: TeamAccess,
-): Role | null {
+export function teamRole(role: WorkspaceRole | null, projects: ProjectGate | ReadonlyArray<ProjectGate> | null, level: TeamAccess): Role | null {
   if (!role) return null;
   if (isManager(role)) return MANAGER_BOARD_ROLE;
-  if (project?.access === 'private') return project.member ? level : null;
-  if (role === 'guest') return project?.member ? level : null;
+  const chain: ReadonlyArray<ProjectGate> = projects === null ? [] : Array.isArray(projects) ? projects : [projects as ProjectGate];
+  if (chain.length === 0) return role === 'guest' ? null : level;
+  for (const p of chain) if (!passesProject(role, p)) return null;
   return level;
+}
+
+/** Whether someone with workspace `role` gets through one project (see teamRole and projects.ts canSee). */
+export function passesProject(role: WorkspaceRole | null, p: ProjectGate): boolean {
+  if (isManager(role)) return true;
+  if (p.member) return role !== null;
+  return p.access === 'workspace' && isFullMember(role);
 }
 
 /** The "downloads" policy: may this person export / download / duplicate the workspace's boards? */

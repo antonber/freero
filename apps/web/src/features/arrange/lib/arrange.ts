@@ -186,12 +186,20 @@ export function planTidy(units: Unit[]): Move[] {
 }
 
 // ---------------------------------------------------------------- editor glue
+// The menus ask for these on every render (the format toolbar re-renders as the camera moves):
+// kept until the selection or the board changes, so ten thousand selected items cost one pass,
+// not one per frame per command (docs/performance.md).
+const unitsCache = new WeakMap<Editor, { selection: readonly string[]; elements: readonly BoardElement[]; units: Unit[] }>();
+
 export function selectedUnits(editor: Editor): Unit[] {
-  const sel = editor
-    .getSelection()
-    .map((id) => editor.getElement(id))
-    .filter((el): el is BoardElement => !!el);
-  return unitsOf(sel, (el) => editor.getBounds([el.id]));
+  const selection = editor.getSelection();
+  const elements = editor.getElements();
+  const hit = unitsCache.get(editor);
+  if (hit && hit.selection === selection && hit.elements === elements) return hit.units;
+  const sel = selection.map((id) => editor.getElement(id)).filter((el): el is BoardElement => !!el);
+  const units = unitsOf(sel, (el) => editor.getBounds([el.id]));
+  unitsCache.set(editor, { selection, elements, units });
+  return units;
 }
 
 /** Movable units in the selection (what align/tidy need at least two of, distribute three). */

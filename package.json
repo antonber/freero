@@ -20,6 +20,7 @@
     "check": "npm run check:dune && npm run check:licenses && npm run typecheck && npm run test",
     "verify": "node scripts/verify.mjs",
     "bench:kanban": "node scripts/bench-kanban.mjs",
+    "bench:board": "node --import tsx scripts/bench-board.mjs",
     "bench:line-jumps": "npm exec -w @freero/web -- vite-node ../../scripts/bench/line-jumps-web.ts",
     "admin": "node --import tsx apps/server/src/admin.ts",
     "db:import-sqlite": "tsx scripts/migrate-sqlite-to-pg.mjs",

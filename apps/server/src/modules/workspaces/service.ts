@@ -65,8 +65,10 @@ import {
   looserSetting,
   mayChangeRole,
   mayRemove,
+  projectChain,
   scopesOf,
   teamAccessOf,
+  type ProjectGate,
   TEAM_ACCESS_VALUES,
   teamRole,
 } from './roles';
@@ -151,6 +153,15 @@ type IpExemptions = (credentialId: string, workspaceIds: string[]) => Promise<Se
 let ipExemptions: IpExemptions = async () => new Set();
 export function setIpExemptionReader(fn: IpExemptions): void {
   ipExemptions = fn;
+}
+
+/**
+ * Whether the workspace (or its organisation) limits where its boards are opened from (#156). For
+ * integrations whose requests come from a chat app's servers rather than the person (#105).
+ */
+export async function hasIpAllowlist(workspaceId: string): Promise<boolean> {
+  const w = await repo.getWorkspace(workspaceId);
+  return !!w && w.kind === 'team' && ipListsOf(w).length > 0;
 }
 
 /** May a request from `ip` reach the workspace's boards (#156)? For apiauth's per-workspace check. */
@@ -826,6 +837,20 @@ const DEFAULT_TRASH_DAYS = 30;
 /** Where a board is, and (#158) the label it carries. */
 type BoardPlace = { workspaceId: string; projectId: string | null; labelId?: string | null };
 
+/** A project nobody gets through: where a board's project chain is broken (a project that isn't there). */
+const CLOSED_GATE: ProjectGate = { access: 'private', member: false };
+
+/**
+ * The gates a board in `projectId` sits behind (#129): its project and every project above it,
+ * with whether the person is in each — null without a project; a broken chain fails closed.
+ */
+function projectGates(projectId: string | null, byId: ReadonlyMap<string, repo.Project>, mine: ReadonlySet<string>): ProjectGate[] | null {
+  if (!projectId) return null;
+  const chain = projectChain(projectId, byId);
+  if (!chain) return [CLOSED_GATE];
+  return chain.map((p) => ({ access: p.access, member: mine.has(p.id), teamAccess: p.teamAccess }));
+}
+
 /**
  * Loads what's needed to decide access to boards of `workspaceIds` for one user (one round of
  * queries), and returns the per-board function. For lists; single boards use `boardAccess`.
@@ -851,13 +876,13 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
     const label = labelOf(b.labelId);
     const policies = label ? withLabelCaps(ws?.policies ?? DEFAULT_POLICIES, label.caps) : (ws?.policies ?? DEFAULT_POLICIES);
     const role = roles.get(b.workspaceId) ?? null;
-    const project = b.projectId ? (projectById.get(b.projectId) ?? null) : null;
-    const level = teamAccessOf(policies, project);
+    const gates = projectGates(b.projectId, projectById, myProjects);
+    const level = teamAccessOf(policies, gates);
     return {
-      team: ws?.kind === 'team' ? { name: ws.name, private: project?.access === 'private', access: level } : null,
+      team: ws?.kind === 'team' ? { name: ws.name, private: gates?.some((g) => g.access === 'private') ?? false, access: level } : null,
       workspaceRole: role,
       policies,
-      teamRole: teamRole(role, project ? { access: project.access, member: myProjects.has(project.id) } : null, level),
+      teamRole: teamRole(role, gates, level),
       inWorkspace: role !== null,
       outsidersBlocked: policies.externalSharing === 'none',
       maxLink: policies.linkSharing,
@@ -890,9 +915,9 @@ export async function openToWholeTeam(places: BoardPlace[]): Promise<boolean[]> 
   return places.map((p) => {
     const ws = wsById.get(p.workspaceId);
     if (!ws || ws.kind !== 'team') return false;
-    const project = p.projectId ? (projectById.get(p.projectId) ?? null) : null;
-    if (p.projectId && !project) return false;
-    return teamRole('member', project ? { access: project.access, member: false } : null, teamAccessOf(ws.policies, project)) !== null;
+    if (p.projectId && !projectById.has(p.projectId)) return false;
+    const gates = projectGates(p.projectId, projectById, new Set());
+    return teamRole('member', gates, teamAccessOf(ws.policies, gates)) !== null;
   });
 }
 
@@ -905,21 +930,24 @@ export async function openToWholeTeam(places: BoardPlace[]): Promise<boolean[]> 
 export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: string; role: Role; workspaceRole: WorkspaceRole }>> {
   const ws = await repo.getWorkspace(place.workspaceId);
   if (!ws || ws.kind !== 'team') return [];
-  const [members, project, inProject, orgMembers] = await Promise.all([
+  const [members, projects, orgMembers] = await Promise.all([
     repo.listMembers(ws.id),
-    place.projectId ? repo.getProject(place.projectId) : Promise.resolve(null),
-    place.projectId ? repo.projectPeopleIds(place.projectId) : Promise.resolve([] as string[]),
+    place.projectId ? repo.projectsIn([ws.id]) : Promise.resolve([] as repo.Project[]),
     ws.organisation ? repo.listMembers(ws.organisation.id) : Promise.resolve([] as repo.MemberRow[]),
   ]);
-  const inP = new Set(inProject);
+  // The board's project and every project above it (#129), with who is in each.
+  const chain = place.projectId ? projectChain(place.projectId, new Map(projects.map((p) => [p.id, p]))) : [];
+  const people = new Map<string, Set<string>>();
+  for (const p of chain ?? []) people.set(p.id, new Set(await repo.projectPeopleIds(p.id)));
   // Deactivated across the organisation counts as deactivated here (blockOf).
   const offInOrg = new Set(orgMembers.filter((m) => m.deactivatedAt !== null).map((m) => m.userId));
-  const level = teamAccessOf(ws.policies, project);
+  const level = teamAccessOf(ws.policies, chain ?? []);
   const out: Array<{ userId: string; role: Role; workspaceRole: WorkspaceRole }> = [];
   for (const m of members) {
     if (m.deactivatedAt !== null || offInOrg.has(m.userId)) continue;
     const wsRole = contentRole(m.role, m.adminScopes)!;
-    const role = teamRole(wsRole, project ? { access: project.access, member: inP.has(m.userId) } : null, level);
+    const gates: ProjectGate[] | null = chain === null ? [CLOSED_GATE] : chain.map((p) => ({ access: p.access, member: people.get(p.id)!.has(m.userId), teamAccess: p.teamAccess }));
+    const role = teamRole(wsRole, gates, level);
     if (role) out.push({ userId: m.userId, role, workspaceRole: wsRole });
   }
   return out;
@@ -935,18 +963,22 @@ export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: st
 export async function boardGatekeepers(place: BoardPlace): Promise<{ deciders: string[]; notify: string[] }> {
   const ws = await repo.getWorkspace(place.workspaceId);
   if (!ws || ws.kind !== 'team') return { deciders: [], notify: [] };
-  const [members, project] = await Promise.all([
+  const [members, project, projects] = await Promise.all([
     repo.listMembers(ws.id),
     place.projectId ? repo.getProject(place.projectId) : Promise.resolve(null),
+    place.projectId ? repo.projectsIn([ws.id]) : Promise.resolve([] as repo.Project[]),
   ]);
+  // Private here or anywhere above it (#129): the board's project runs who joins it.
+  const chain = place.projectId ? projectChain(place.projectId, new Map(projects.map((p) => [p.id, p]))) : null;
+  const closed = !!chain?.some((p) => p.access === 'private');
   // #151: an admin who doesn't administer content doesn't decide who opens boards.
   const admins = members.filter((m) => isManager(contentRole(m.role, m.adminScopes))).map((m) => m.userId);
   const lead =
-    project?.access === 'private' && project.createdBy && members.some((m) => m.userId === project.createdBy && isFullMember(m.role))
+    closed && project?.createdBy && members.some((m) => m.userId === project.createdBy && isFullMember(m.role))
       ? project.createdBy
       : null;
   const deciders = lead && !admins.includes(lead) ? [...admins, lead] : admins;
-  return { deciders, notify: project?.access === 'private' && lead ? [lead] : admins };
+  return { deciders, notify: closed && lead ? [lead] : admins };
 }
 
 export async function teamMemberIds(place: BoardPlace): Promise<string[]> {

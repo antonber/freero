@@ -252,15 +252,20 @@ A team workspace's security admins turn on an encryption key in the admin consol
 | `KMS_AWS_SESSION_TOKEN` | — | For temporary credentials. |
 | `KMS_AWS_ENDPOINT` | `https://kms.<the key's region>.amazonaws.com/` | Another KMS endpoint (a VPC endpoint, FIPS endpoint, or a test double). |
 
-## Slack link unfurls
+## Slack link unfurls, direct messages and /freero
 
-Previews of Freero board links in Slack, through a Slack app you create: [integrations/slack.md](integrations/slack.md). Off unless both are set.
+Previews of Freero board links in Slack, and "Connect Slack" (notifications as direct messages,
+previews of private boards for the people who can open them, `/freero`), through a Slack app you
+create: [integrations/slack.md](integrations/slack.md). Previews are off unless the first two are
+set; Connect Slack needs the client id and secret as well.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SLACK_SIGNING_SECRET` | — | Your Slack app's signing secret (Basic Information → App Credentials). Every request to `/api/integrations/slack/events` must carry a valid signature from the last five minutes. |
-| `SLACK_BOT_TOKEN` | — | Your Slack app's bot token (`xoxb-…`, OAuth & Permissions), used for `chat.unfurl`. One without the other refuses to start. |
-| `SLACK_API_URL` | `https://slack.com/api` | Slack's Web API (tests point it at a stand-in). |
+| `SLACK_SIGNING_SECRET` | — | Your Slack app's signing secret (Basic Information → App Credentials). Every request to `/api/integrations/slack/events` and `/api/integrations/slack/commands` must carry a valid signature from the last five minutes. |
+| `SLACK_BOT_TOKEN` | — | Your Slack app's bot token (`xoxb-…`, OAuth & Permissions), used for `chat.unfurl` in your workspace. One without the other refuses to start. |
+| `SLACK_CLIENT_ID` | — | Your Slack app's client id (Basic Information → App Credentials). With `SLACK_CLIENT_SECRET`, turns on Connect Slack in everyone's settings (#105). Needs the two above; one without the other refuses to start. |
+| `SLACK_CLIENT_SECRET` | — | Your Slack app's client secret, used only to redeem the code Slack sends people back with (`oauth.v2.access`). |
+| `SLACK_API_URL` | `https://slack.com/api` | Slack's Web API (tests point it at a stand-in). Slack's consent page is taken from the same origin (`/oauth/v2/authorize`). |
 
 ## Microsoft Teams and Microsoft 365 Copilot
 

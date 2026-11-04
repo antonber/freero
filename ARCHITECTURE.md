@@ -139,6 +139,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
+| Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
@@ -197,6 +198,27 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   editors or selection.
 - The world layer ignores pointer events: hit-testing is geometric (`hitTest`, rotation-aware).
   Mark a node inside an element with `data-fr-interactive` to receive native pointer events.
+- **Low detail** (#131, `engine/canvas/detail.ts`, `LowDetailLayer.tsx`): below zoom 0.18 (back
+  above 0.22: hysteresis, so a zoom resting near it never flickers; `UiState.lowDetail`, derived
+  from the camera in `runtime/core.ts`), items whose type has `lowDetail(el, paint)` and that are
+  small on screen (< 160 px), not edited, not making room for a drag and not in my private layer
+  are painted onto canvases in the world instead of mounting their components — sticky paper with
+  faint lines, a shape's fill and outline, a text's bars, a connector's straight run, a picture's
+  average colour (`canvas/pictureColor.ts`). Consecutive such items share one canvas, items drawn
+  in full sit between canvases, so render order holds. A canvas moves with the world (a pan
+  repaints nothing), covers its items within the cull rect at the zoom's resolution, repaints
+  only the part a change touched (drag, a collaborator's edit) and all of it on selection, focus,
+  theme or zoom changes. Paint only: the doc, hit-testing, selection overlays, exports and
+  thumbnails (`ElementFrame` in export mode) and the live regions / Board as list (they read the
+  doc) never see it; canvases are `aria-hidden`.
+- Items are placed with `left` / `top` (a transform only when rotated) and are each a stacking
+  context (`z-index: 0`). Each item's selected / edited / drag-preview state comes from one ui
+  subscription per editor (`ItemStates` in `WorldLayer.tsx`) that notifies only the items whose
+  state changed; zoom and focus come through `WorldViewProvider` context. A camera move costs the
+  items nothing, and selecting everything is one pass. The selection overlay draws a multiple
+  selection's member outlines as one world-space SVG path (`MemberOutlines`), and the format
+  toolbar keeps its selection-wide work (sections, mixed style, bounds, its controls) out of the
+  per-frame repositioning. Measured: `npm run bench:board`, docs/performance.md.
 
 ### Gestures and undo
 
@@ -647,6 +669,16 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   too small on the picture to show detail (and all but the 150 biggest) as boxes of it, so a
   2,000-card board's thumbnail costs milliseconds; null leaves it out (lines). Default: fill /
   color / stroke (`engine/editor/paintPlan.ts`).
+- `lowDetail(el, paint: LowDetailPaint)` (#131): how the live canvas paints the type zoomed out to
+  low detail ("Rendering"), in the item's own units: `box({ fill, stroke, strokeWidth, radius,
+  round, alpha })`, `rect`, `polygon` (fractions of the box), `line`, `picture(src, fallback)`;
+  `paint.selected` / `selectionColor` for what has no box of its own, `paint.presentation` (the
+  container's `presentChild`, as the component gets it: a kanban's colour-by). Colours may be
+  `canvasInk(…)` values (resolved for the theme, like the full drawing's CSS). Sticky, sticky pad,
+  shape, text, connector, image, card (the side that shows) and chart have one; types without it
+  (frames, kanbans, diagrams, icebreakers…) always draw `Component`. Tests:
+  `TestBoard.world(user)` renders a replica's world layer (culling and low detail as on screen),
+  `TestBoard.exported(user, id)` an item as exports draw it.
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
   feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
   where the format toolbar is (never query the chrome's DOM).
@@ -1339,7 +1371,7 @@ workspace_invites, projects, project_members; workspace_labels, workspace_label_
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
-templates; content is opaque engine JSON), `stickers` (sticker_sets, stickers: a workspace's own
+templates; content is opaque engine JSON), `blueprints` (blueprints, blueprint_items: a project's boards and docs saved for reuse, #161; see "Blueprints"), `stickers` (sticker_sets, stickers: a workspace's own
 sticker sets, #138), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -1377,7 +1409,7 @@ marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Anal
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
-"Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+"Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (slack_teams, slack_user_links, slack_oauth_flows: the operator's Slack app — link unfurls, and personal Slack: people's linked Slack accounts, direct messages, `/freero`; see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
 Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
@@ -1429,6 +1461,13 @@ reports" below).
   `NOTIFY_EMAIL_DELAY_SECONDS` as ONE digest (claim-then-send; a failed send is handed back),
   only to verified addresses, honoring per-type opt-outs and the master switch that the signed,
   session-less unsubscribe link (`List-Unsubscribe` one-click too) turns off.
+  Slack (#105): `notify` hands each NEW notification, once committed (`repo.afterCommit`), to
+  slack's `sendSlackDm` when the person connected Slack and wants that type there
+  (`notification_prefs.slack`, else the type's `slackByDefault`; `direct` types never; not when
+  the board's team workspace keeps apps out — `slackMayReach`). It is
+  claimed first (`slacked_at`, only while `emailed_at` is null too), so it is one direct message
+  at most and the digest leaves it out; a refused message is unclaimed (both columns) and goes into
+  the next digest. A notification is delivered by Slack or by email, never both.
   "Changes on your boards" (`notifications/boardChanges.ts`, #46): opt-in per person, daily or
   weekly (Monday), sent from 08:00 in their time zone (`next_at` is worked out when the window
   moves; `nextDigestAt` steps by quarter hours so half-hour zones work). It summarises what OTHERS
@@ -1554,6 +1593,22 @@ reports" below).
   Size caps are per kind (`MAX_UPLOAD_MB` images / PDF, `MAX_MEDIA_UPLOAD_MB`,
   `MAX_ATTACHMENT_UPLOAD_MB`), refused before the body is read when `Content-Length` says so; every
   kind counts toward the one per-account quota. Moderation removal answers 410 on both paths.
+- Files on comments (#143; `uploads/commentFiles.ts`, `GET /api/boards/:id/comment-files/:threadId/:messageId/:index`):
+  a comment message's `attachments` (`@freero/shared` `CommentAttachment`, at most
+  `COMMENT_MAX_ATTACHMENTS`) are ATTACHMENT uploads of the message's author, so nothing serves them
+  at `/uploads/`. The route reads the message in the board AS THAT PERSON SEES IT (a thread in a
+  hidden frame or someone's draft isn't theirs; tombstoned threads / messages are gone), requires
+  a `.bin` that is its author's OWN upload (a message can't point at another person's file and
+  launder it out of the board it belongs to), and then: `?inline=1` shows a picture to anyone who
+  can open the board, only when its first bytes are PNG / JPEG / GIF / WebP (`Content-Disposition:
+  inline`, the sandbox CSP, `nosniff`); otherwise it is a download — the downloads policy applies
+  and it is audited (`board.file_downloaded`), like a file card. The uploads sweep keeps them
+  through the board-doc scan (the `/uploads/` URL is in the comments collection). On the web,
+  `Host.commentFile` (`imageUrl`, `download`) is the only way the comments feature reaches them.
+  Thread AREAS (#143, `CommentThreadRecord.area`): a drag with the comment tool stores the world
+  rectangle and pins the thread at its top-right corner (x, y), which is all older clients read —
+  they show it as a point thread there. The comments list filters by author too, combined with
+  Open / Unread / @Me / Resolved / Mine.
 
 ### Moderation (`modules/moderation`, KAI-142)
 
@@ -1681,7 +1736,7 @@ first in the app.
 ### Workspaces (`modules/workspaces`)
 
 Every board belongs to a workspace (`boards.workspace_id`) and optionally a project in it
-(`boards.project_id`). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
+(`boards.project_id`; projects nest, #129). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
 first use by `ensurePersonalWorkspace`, so signup — or any future sign-in path — needs no hook;
 deleted with the account row) that only ever holds its owner's boards. TEAM workspaces have
 members with roles owner / admin / member / guest (separate from board roles).
@@ -1709,6 +1764,32 @@ members with roles owner / admin / member / guest (separate from board roles).
   transfers) re-resolves the live sockets of the affected boards on every instance through
   realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
   that workspace and hands boards they owned there to the remover.
+- **Nested projects** (#129; `projects.parent_id`, `description`, `pinned_boards`, `project_pins`;
+  `workspaces/projects.ts`, `roles.ts` `projectChain` / `passesProject` / `teamAccessOf`): a project
+  may sit in another, `PROJECT_MAX_DEPTH` (3) levels at most. **Access only narrows on the way down**:
+  a project — and every board in it — reaches only someone who gets through EVERY project from it up
+  to the top (a private one: its members and groups; an open one: every full member; a guest: only
+  projects they were added to; owners / content admins: all). So a private sub-project narrows an
+  open parent, an "open" sub-project of a private parent is open only to the parent's people, and the
+  team access level is the strictest set on the way up (a lone project still overrides the
+  workspace's, as before). One resolver serves it all: `boardAccessLoader`, `teamMembers`,
+  `openToWholeTeam`, `boardGatekeepers`, the object registry and the project list walk the chain; a
+  broken chain (a parent that isn't there) fails closed. Adding someone to a sub-project whom its
+  parent shuts out is refused with the reason. **Moving** a project (`PATCH /projects/:id
+  { parentId }`) needs its manager, who also manages the project it LEAVES (or a content admin) —
+  leaving can open it wider — and who sees the one it enters; never into itself or below itself,
+  never deeper than the limit counting what it carries; both rows locked (moved: update, target:
+  share; creating a sub-project shares the parent's lock), so cycles can't race in. **Deleting**
+  refuses while it holds sub-projects (no `ON DELETE` action on `parent_id`: nothing may lift a
+  child to the top); its boards — without `?boards=` still 409 — move to the parent (`parent`; the
+  trash's boards too, so a restore never lands wider than the project was) or go to the trash
+  (`trash`: only boards the caller owns, unless a content admin). Every change re-resolves the boards
+  of the whole subtree (`boardIdsUnderProject`, also for groups and directory mappings). Pins are
+  per person (`PUT/DELETE /projects/:id/pin`, anyone who sees it); the project page (dashboard
+  `ProjectOverview`: path, description, sub-projects, the boards its managers pinned — ids, read
+  against the list the reader already gets — and `GET /workspaces/:id/activity?project=`). Public
+  API: `GET /api/v1/workspaces/:workspaceId/projects` (nested, `parentId`). Older clients list
+  sub-projects flat and keep working; the access rule is the server's.
 - **User groups** (#63; `workspaces/groups.ts`, tables `workspace_groups`, `workspace_group_members`,
   `project_groups`; members' `board_group_grants`): members admins make groups of the workspace's
   members (leaving the workspace leaves its groups, in `repo.removeMember`); directory (SCIM) groups
@@ -1741,6 +1822,24 @@ members with roles owner / admin / member / guest (separate from board roles).
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
   role change) makes everything someone shared with a workspace personal again when they leave it
   or become a guest there (`templates/init.ts`).
+- **Blueprints** (#161; `modules/blueprints`, tables `blueprints`, `blueprint_items`; dashboard
+  `BlueprintDialogs`): a project's boards and docs saved as a reusable setup with a description and
+  steps (`POST /projects/:id/blueprints`). What is saved is what the saver may take out: the boards
+  and docs of the project they can open, each through the downloads policy (`requireBoardDownload`
+  'template'), only the SHARED content (no layers: hidden frames, drafts, ballots), with comments and
+  session collections emptied (realtime `blueprintState`; `Y_LEFT_OUT_OF_BACKUPS`), at most
+  `BLUEPRINT_MAX_ITEMS`. Shared like a team template: personal, or with one team workspace its full
+  members see (the workspace's `templatePublishing` decides who may share), unshared by its owner or
+  that team's owners / content admins, made personal again when its owner leaves or becomes a guest
+  (`blueprints/init.ts`, the membership outbox topic). **Using one** (`POST /blueprints/:id/use`,
+  the public API's `POST /workspaces/:id/projects { blueprintId }`) is ONE transaction:
+  `createProject` (its page carries the description and the steps; a `parentId` must be a project
+  they can see) and, per item, boards' `createBoardWithState` (createBoard's checks and quota) —
+  first every copy (so every new id is known), then each copy's content with links among the items
+  rewritten to the copies (realtime `rewriteObjectLinks`: `/board/`, `/doc/`, `freero://` addresses
+  in collections and a doc's fragment; links elsewhere stay). If any copy can't be made, nothing is
+  left; lifecycle events follow the commit. A blueprint outlives its boards, so the uploads sweep
+  scans its items (`blueprintUploadReferences`). Audited: `blueprint.shared`, `blueprint.used`.
 - Company templates (#155; `templates.organisation_id`, `locked`, `retired_at`): its owner
   publishes a template to the organisation of one of their workspaces (`PATCH /templates/:id
   { organisationId }`); it then reaches the full members of every attached workspace (the one
@@ -2566,7 +2665,7 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   team can open" rule; a new chat app is a `WEBHOOK_FORMATS` value plus a renderer, never more
   content than the `json` event. Mattermost has its own renderer (Slack's body isn't safe there:
   Mattermost ignores `blocks` and pings on a plain `@channel`). Matrix has no standard incoming hook.
-- **Slack link unfurls** (`modules/slack`, no table, off unless `SLACK_SIGNING_SECRET` +
+- **Slack link unfurls** (`modules/slack`, off unless `SLACK_SIGNING_SECRET` +
   `SLACK_BOT_TOKEN`): `POST /api/integrations/slack/events` (cross-site POST: Slack's servers, proven
   by the v0 signature only — five-minute window, constant-time compare; the URL challenge too).
   `link_shared` is acknowledged at once and answered with `chat.unfurl`, deduplicated per event id,
@@ -2575,6 +2674,29 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   account may open by its link (no password, guests allowed); everything else, including "no such
   board", is one generic card, so previews never reveal a private board's name or existence. The app
   manifest is built by `slack/manifest.ts` (`npm run admin -- slack:manifest`; deploy/ ships it).
+- **Personal Slack** (`modules/slack`, #105; off unless `SLACK_CLIENT_ID` + `SLACK_CLIENT_SECRET` on
+  top of the above — `slackConnectOffered()` gates every piece, so removing them turns it all off
+  and keeps the links). `oauth.ts`: Slack OAuth v2 with bot scopes only (no user token); the state
+  is single use, ten minutes, hashed in `slack_oauth_flows` and bound to the account and an HttpOnly
+  cookie (trackers' pattern); `oauth.v2.access`'s answer names the Slack team and user that the
+  link (`slack_user_links`, one per Freero account and per Slack account) stores, its bot token is
+  sealed per Slack team in `slack_teams` (`links.ts` `botTokenFor`: that, else `SLACK_BOT_TOKEN`).
+  Unlinking the last person of a team deletes and `auth.revoke`s that team's token unless it is
+  `SLACK_BOT_TOKEN`; `app_uninstalled` / `tokens_revoked` forget the team. `dm.ts` writes in the
+  DM channel `conversations.open` gave at connect time; modules/notifications decides what and
+  when. `commands.ts`: `POST /api/integrations/slack/commands` (cross-site, form body read raw and
+  v0-verified over its exact bytes) acts only as the Freero account linked to that Slack user:
+  `new` → boards' `createBoardFor` (personal workspace), words → `listBoardsIn` over their
+  workspaces. Unfurls: a link posted by a linked Slack user (`link_shared.user`) to a board they
+  can open (`boardSummaryFor`) shows its title / description / thumbnail; for everyone else
+  `publicLinkPreview`'s rule stands. Untrusted text is mrkdwn-escaped everywhere. Team workspace
+  policies: search results and private previews only from workspaces where apiauth's
+  `integrationMayReach` says yes — the Slack app counts as an app the person connected
+  ('slack:<userId>' in the workspace's API list: API switch, the organisation's as a floor, block,
+  and an IP allowlist only with that credential exempted, since Slack's servers ask); the work runs
+  in a request context carrying that credential id, so board access applies the same exemptions.
+  DMs too: notifications' `toSlack` asks slack's `slackMayReach` for the workspace of the
+  notification's board / doc (or `data.workspaceId`) before claiming; refused → left to the email.
 - **Meeting notes** are a structure kind, `meeting` (`@freero/shared` `layout/meeting.ts`: a pure
   reader of Markdown / text / WebVTT / SRT — headings, bullets, check boxes, owner and due phrases,
   speaker labels, cue times; no AI — and its one-frame layout). So the web (`features/meeting-notes`:
@@ -3713,6 +3835,13 @@ the board, deletions. A suggestion is not board content until someone who can ed
   "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
   depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
+- Performance: `npm run bench:board` (#130) opens a seeded 10,000-item board in the real app
+  (headless Chromium, real server, a real collaborator socket) and measures load, frame times
+  (pan and zoom at fit and 100%, select all, dragging 500, a collaborator's edits) and memory;
+  JSON per run under `bench-results/` (gitignored), `--compare` for a column per run, `--profile`
+  / `--trace` for what is hot. Results and how to read them: docs/performance.md. Engine-session
+  benches: `bench:kanban`, `bench:line-jumps`. Benches are scripts, not tests: they check only
+  that each scenario did what it says.
 
 ### What a test is for
 

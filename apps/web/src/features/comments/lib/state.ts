@@ -4,7 +4,7 @@
 // overwrite each other and nothing needs re-applying.
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { nanoid } from 'nanoid';
-import type { CommentMessageRecord, CommentRecord, CommentThread, CommentThreadRecord } from '@freero/shared';
+import { COMMENT_MAX_ATTACHMENTS, type CommentArea, type CommentAttachment, type CommentMessageRecord, type CommentRecord, type CommentThread, type CommentThreadRecord } from '@freero/shared';
 import type { Collection, Editor, Point } from '@engine';
 import { replaceOutsideMentions } from './mentions';
 import { assembleThreads, keys, reactionKeys, threadKeys, threadPoint, upgradeLegacy, type ThreadFilter } from './model';
@@ -19,6 +19,8 @@ export interface Draft {
   elementId: string | null;
   corner: 'top-right' | null;
   origin: Point;
+  /** #143: the area of the board it is about (a drag with the comment tool). */
+  area?: CommentArea | null;
 }
 
 export interface CommentsUi {
@@ -28,6 +30,10 @@ export interface CommentsUi {
   quietId: string | null;
   showResolved: boolean;
   filter: ThreadFilter;
+  /** #143: only threads this person wrote in (null: anyone); combines with `filter`. */
+  author: string | null;
+  /** #143: the area being dragged out with the comment tool (world), shown until released. */
+  dragArea: CommentArea | null;
   /** threadId -> latest activity timestamp you've seen. */
   seen: Record<string, number>;
 }
@@ -68,6 +74,8 @@ export function session(editor: Editor): Session {
       quietId: null,
       showResolved: loadJson(prefsKey, false),
       filter: 'open',
+      author: null,
+      dragArea: null,
       seen: typeof localStorage === 'undefined' ? {} : loadJson(seenKey(editor), {}),
     }));
     // Another tab of yours marked something read.
@@ -141,8 +149,9 @@ function upgradeLegacyThreads(editor: Editor, coll: Collection<CommentRecord>) {
 // ---------------------------------------------------------------------------
 // Actions (all writes go through these)
 // ---------------------------------------------------------------------------
-function newMessage(editor: Editor, threadId: string, text: string): CommentMessageRecord {
+function newMessage(editor: Editor, threadId: string, text: string, attachments: CommentAttachment[] = []): CommentMessageRecord {
   return {
+    ...(attachments.length ? { attachments: attachments.slice(0, COMMENT_MAX_ATTACHMENTS) } : {}),
     kind: 'message',
     threadId,
     id: nanoid(10),
@@ -155,19 +164,19 @@ function newMessage(editor: Editor, threadId: string, text: string): CommentMess
   };
 }
 
-export function startDraft(editor: Editor, at: { x: number; y: number; elementId: string | null; corner?: 'top-right' | null }) {
+export function startDraft(editor: Editor, at: { x: number; y: number; elementId: string | null; corner?: 'top-right' | null; area?: CommentArea | null }) {
   const el = at.elementId ? editor.getElement(at.elementId) : undefined;
-  const draft = { ...at, corner: at.corner ?? null };
+  const draft = { ...at, corner: at.corner ?? null, area: at.elementId ? null : (at.area ?? null) };
   setUi(editor, { draft: { ...draft, origin: threadPoint(draft, el) }, openId: null });
 }
 
 /** Persists a thread only now that it has its first message. Returns the new id. */
-export function submitDraft(editor: Editor, text: string): string | null {
+export function submitDraft(editor: Editor, text: string, attachments: CommentAttachment[] = []): string | null {
   const draft = session(editor).ui.getState().draft;
   const body = text.trim();
-  if (!draft || !body || !editor.can('commenter')) return null;
+  if (!draft || (!body && !attachments.length) || !editor.can('commenter')) return null;
   const id = nanoid(12);
-  const msg = newMessage(editor, id, body);
+  const msg = newMessage(editor, id, body, attachments);
   const thread: CommentThreadRecord = {
     kind: 'thread',
     id,
@@ -176,6 +185,7 @@ export function submitDraft(editor: Editor, text: string): string | null {
     elementId: draft.elementId,
     corner: draft.corner,
     origin: draft.origin,
+    ...(draft.area ? { area: draft.area } : {}),
     createdAt: msg.createdAt,
     createdBy: editor.user.id,
   };
@@ -189,10 +199,10 @@ export function submitDraft(editor: Editor, text: string): string | null {
   return id;
 }
 
-export function reply(editor: Editor, threadId: string, text: string) {
+export function reply(editor: Editor, threadId: string, text: string, attachments: CommentAttachment[] = []) {
   const body = text.trim();
-  if (!body) return;
-  const msg = newMessage(editor, threadId, body);
+  if (!body && !attachments.length) return;
+  const msg = newMessage(editor, threadId, body, attachments);
   records(editor).set(keys.message(threadId, msg.id), msg);
 }
 
