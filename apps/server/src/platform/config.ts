@@ -391,6 +391,15 @@ export interface Config {
     /** Failed attempts in a row after which Freero turns an endpoint off (and tells who made it). */
     disableAfterFailures: number;
   };
+  /** Workspace encryption keys (modules/keys, #159; docs/design/compliance.md §3). */
+  workspaceKeys: {
+    /** Off: no workspace can turn a key on (keys already on keep working). */
+    enabled: boolean;
+    /** How long an instance keeps an unwrapped data key in memory (also how soon a key revoked at the KMS takes effect). */
+    cacheMs: number;
+    /** AWS KMS: the operator's principal that customers' key policies grant (null: 'aws-kms' is not offered). */
+    awsKms: { accessKeyId: string; secretAccessKey: string; sessionToken: string | null; endpoint: string | null } | null;
+  };
   /** Audit log streaming to workspaces' SIEMs (modules/siem, #17). */
   siem: {
     /** Off: no stream can be added and nothing is sent (the instance-wide switch). */
@@ -617,6 +626,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (['0', 'false', 'no', 'off'].includes(v)) return false;
     problems.push(`${name} must be true or false (got "${v}")`);
     return def;
+  };
+
+  const awsKms = (): Config['workspaceKeys']['awsKms'] => {
+    const id = str('KMS_AWS_ACCESS_KEY_ID');
+    const secret = str('KMS_AWS_SECRET_ACCESS_KEY');
+    if (!id && !secret) return null;
+    if (!id || !secret) {
+      problems.push('KMS_AWS_ACCESS_KEY_ID and KMS_AWS_SECRET_ACCESS_KEY go together');
+      return null;
+    }
+    return { accessKeyId: id, secretAccessKey: secret, sessionToken: str('KMS_AWS_SESSION_TOKEN'), endpoint: url('KMS_AWS_ENDPOINT', ['https:', 'http:']) };
   };
 
   const production = env.NODE_ENV === 'production';
@@ -1004,6 +1024,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       retryBaseMs: int('WEBHOOK_RETRY_BASE_MS', 10_000, 10, 3_600_000),
       maxAttempts: int('WEBHOOK_MAX_ATTEMPTS', 7, 1, 20),
       disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
+    },
+    workspaceKeys: {
+      enabled: bool('WORKSPACE_KEYS', false),
+      cacheMs: int('WORKSPACE_KEY_CACHE_SECONDS', 300, 5, 3600) * 1000,
+      awsKms: awsKms(),
     },
     siem: {
       enabled: bool('SIEM', true),

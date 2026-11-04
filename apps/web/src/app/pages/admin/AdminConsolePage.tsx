@@ -5,7 +5,7 @@
 // can't do.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, LayoutGrid, LayoutTemplate, UsersRound, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, Trash2, UserCog, Users, Webhook } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Gavel, Hourglass, LayoutGrid, LayoutTemplate, UsersRound, KeyRound, Lock, Plug, ScrollText, Sparkles, Tag, Ticket, Trash2, UserCog, Users, Webhook } from 'lucide-react';
 import { ADMIN_SCOPES, type AdminScope, type WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
@@ -22,6 +22,8 @@ import { AdminSiem, siemOffered } from './AdminSiem';
 import { AdminWebhooks, webhooksOffered } from './AdminWebhooks';
 import { AdminTrackers } from './AdminTrackers';
 import { AdminTrash } from './AdminTrash';
+import { AdminLegalHolds } from './AdminLegalHolds';
+import { AdminLabels } from './AdminLabels';
 import { AdminBoards } from './AdminBoards';
 import { AdminGroups } from './AdminGroups';
 import { AdminTemplates } from './AdminTemplates';
@@ -36,10 +38,13 @@ const TABS = [
   { id: 'boards', label: 'Boards', icon: LayoutGrid, scopes: ['content'] },
   { id: 'trash', label: 'Trash', icon: Trash2, scopes: ['content'] },
   { id: 'templates', label: 'Templates', icon: LayoutTemplate, scopes: ['content'] },
+  { id: 'labels', label: 'Classification', icon: Tag, scopes: ['content'] },
   { id: 'sso', label: 'Single sign-on', icon: KeyRound, scopes: ['security'] },
   { id: 'provisioning', label: 'Provisioning', icon: UserCog, scopes: ['security'] },
   { id: 'ai', label: 'AI', icon: Sparkles, scopes: ['security'] },
   { id: 'retention', label: 'Data', icon: Hourglass, scopes: ['content', 'security'] },
+  // A case reveals and exports all of its boards: both scopes (#157).
+  { id: 'holds', label: 'Legal holds', icon: Gavel, scopes: ['security', 'content'], all: true },
   { id: 'api', label: 'API & apps', icon: Plug, scopes: ['security'] },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, scopes: ['security'] },
   { id: 'trackers', label: 'Issue trackers', icon: Ticket, scopes: ['security'] },
@@ -48,7 +53,8 @@ const TABS = [
 
 /** What the caller administers (a server from before #151 sends nothing: everything). */
 export const scopesOf = (w: Pick<WorkspaceSummary, 'adminScopes'>): readonly AdminScope[] => w.adminScopes ?? ADMIN_SCOPES;
-const usable = (t: { scopes: readonly AdminScope[] }, mine: readonly AdminScope[]) => t.scopes.length === 0 || t.scopes.some((s) => mine.includes(s));
+const usable = (t: { scopes: readonly AdminScope[]; all?: boolean }, mine: readonly AdminScope[]) =>
+  t.scopes.length === 0 || (t.all ? t.scopes.every((s) => mine.includes(s)) : t.scopes.some((s) => mine.includes(s)));
 type Tab = (typeof TABS)[number]['id'];
 
 export function AdminConsolePage() {
@@ -146,7 +152,9 @@ export function AdminConsolePage() {
             {tab === 'groups' ? <AdminGroups workspace={workspace} /> : null}
             {tab === 'boards' ? <AdminBoards workspace={workspace} /> : null}
             {tab === 'trash' ? <AdminTrash workspace={workspace} /> : null}
+            {tab === 'holds' ? <AdminLegalHolds workspace={workspace} /> : null}
             {tab === 'templates' ? <AdminTemplates workspace={workspace} /> : null}
+            {tab === 'labels' ? <AdminLabels workspace={workspace} /> : null}
             {tab === 'sso' ? <AdminSso workspace={workspace} /> : null}
             {tab === 'provisioning' ? <AdminProvisioning workspace={workspace} /> : null}
             {tab === 'ai' ? <AdminAi workspace={workspace} /> : null}

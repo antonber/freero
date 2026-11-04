@@ -2,6 +2,7 @@
 // All REST endpoints live under /api, send/receive JSON, and authenticate via
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
+import type { BoardLabelSummary } from './compliance';
 import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
 import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
@@ -66,6 +67,8 @@ export interface BoardSummary {
    * reads at most 'viewer') and out of the default lists until someone unarchives it. Absent: live.
    */
   archivedAt?: number;
+  /** [additive, #158] Its classification label: its caps are already in `permissions` (the server enforces them). */
+  label?: BoardLabelSummary;
   /** The workspace the board belongs to, and its project (folder) there, if any. */
   workspaceId: string;
   projectId: string | null;
@@ -680,7 +683,7 @@ export interface BoardMember {
 // ---- Auth ----
 // POST /api/auth/signup   body SignupRequest -> AuthResponse  (sets cookie; emails a verification link)
 // POST /api/auth/login    body LoginRequest  -> AuthResponse  (sets cookie)
-// POST /api/auth/logout   -> { ok: true }                     (clears cookie)
+// POST /api/auth/logout   -> { ok: true, redirect? }          (clears cookie; redirect: the IdP's single logout, #13)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
 // PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone?, theme? } -> AuthResponse
@@ -902,6 +905,15 @@ export const ACCOUNT_SUSPENDED = 'account_suspended';
 // same ACS only while the connection's `idpInitiated` is on (off by default; refused with
 // /login?error=sso_unsolicited otherwise); its RelayState is honoured only as a same-origin path.
 // With it off, a tile can link to /start instead (SP-initiated).
+// [additive, #13] SAML service-provider keys, encrypted assertions, signed requests, single logout:
+// POST   /api/workspaces/:id/sso/sp-keys                 -> SsoSettings (a new key pair; the first is current, a second waits as "next")
+// POST   /api/workspaces/:id/sso/sp-keys/:keyId/promote  -> SsoSettings (sign with it from now on; both still decrypt)
+// DELETE /api/workspaces/:id/sso/sp-keys/:keyId          -> SsoSettings (not the current one while it is in use)
+// GET|POST /api/sso/:workspaceId/saml/slo                <- the IdP's LogoutRequest (ends the SAML sessions of
+//                                                           that NameID here; answers a LogoutResponse) or its
+//                                                           LogoutResponse to ours (lands on /login)
+// POST /api/auth/logout -> { ok: true, redirect?: string }: after the session ended here, the
+//                          browser goes on to `redirect` (the IdP's single logout) when it is set.
 export interface SsoDomain {
   id: string;
   domain: string;
@@ -919,7 +931,17 @@ export interface SsoConnectionInfo {
   breakGlassUserId: string | null;
   /** Role of people who join through their first SSO sign-in. */
   defaultRole: Exclude<WorkspaceRole, 'owner'>;
-  saml: { entityId: string; ssoUrl: string; certificates: Array<{ subject: string; validTo: string; fingerprint: string }> } | null;
+  saml: {
+    entityId: string;
+    ssoUrl: string;
+    certificates: Array<{ subject: string; validTo: string; fingerprint: string }>;
+    /** [additive, #13] The IdP's SingleLogoutService (HTTP-Redirect); null: no single logout. */
+    sloUrl?: string | null;
+    /** [additive, #13] Assertions must arrive encrypted to one of the service provider's keys. */
+    requireEncryptedAssertions?: boolean;
+    /** [additive, #13] AuthnRequests and logout messages are signed with the current key. */
+    signRequests?: boolean;
+  } | null;
   oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
   /** When a sign-in last went through it (enforcing needs one). */
   testedAt: number | null;
@@ -932,6 +954,11 @@ export interface SsoConnectionInput {
   defaultRole?: Exclude<WorkspaceRole, 'owner'>;
   /** SAML: accept sign-ins started at the identity provider. Omitted: unchanged. */
   idpInitiated?: boolean;
+  /** [additive, #13] SAML: require encrypted assertions / sign requests (need a key). Omitted: unchanged. */
+  requireEncryptedAssertions?: boolean;
+  signRequests?: boolean;
+  /** [additive, #13] SAML: the IdP's single logout URL ('' clears it). Omitted: unchanged, or from the metadata. */
+  samlSloUrl?: string;
   /** SAML: the IdP's metadata XML, or its parts. */
   samlMetadataXml?: string;
   samlEntityId?: string;
@@ -945,8 +972,22 @@ export interface SsoConnectionInput {
 export interface SsoSettings {
   domains: SsoDomain[];
   connection: SsoConnectionInfo | null;
-  /** What to configure at the identity provider. */
-  serviceProvider: { entityId: string; acsUrl: string; metadataUrl: string; oidcRedirectUri: string; startUrl: string };
+  /** What to configure at the identity provider. `sloUrl` [additive, #13]: its single logout endpoint. */
+  serviceProvider: { entityId: string; acsUrl: string; metadataUrl: string; oidcRedirectUri: string; startUrl: string; sloUrl?: string };
+  /** [additive, #13] The SAML service provider's key pairs (certificates are public; private keys never leave the server). */
+  spKeys?: SsoSpKey[];
+}
+/** A SAML service-provider key pair: published in the metadata (signing + encryption) while it exists. */
+export interface SsoSpKey {
+  id: string;
+  /** Signs requests; the others only decrypt (rotation). */
+  current: boolean;
+  createdAt: number;
+  subject: string;
+  validTo: string;
+  fingerprint: string;
+  /** PEM, to give the identity provider. */
+  certificate: string;
 }
 export interface SsoDiscovery {
   sso: { workspaceName: string; startUrl: string; enforced: boolean } | null;
@@ -2506,6 +2547,12 @@ export const AUDIT_ACTIONS = {
   'sso.login': 'Signed in with single sign-on',
   'sso.login_refused': 'Single sign-on refused',
   'sso.member_provisioned': 'Joined through single sign-on (just in time)',
+  // SAML service-provider keys and single logout (#13).
+  'sso.sp_key_created': 'Created a SAML service-provider key',
+  'sso.sp_key_rotated': 'Made a SAML service-provider key current',
+  'sso.sp_key_removed': 'Removed a SAML service-provider key',
+  'sso.logout': 'Signed out through single logout',
+  'sso.logout_refused': 'Single logout refused',
   // Domain control (#64): accounts at a verified domain.
   'sso.domain_control_changed': 'Changed domain control',
   'sso.domain_capture_started': 'Told someone at a verified domain they will join the workspace',
@@ -2526,6 +2573,17 @@ export const AUDIT_ACTIONS = {
   'account.export_downloaded': 'Downloaded a copy of their data',
   'workspace.export_requested': 'Asked for an export of the workspace',
   'workspace.export_downloaded': 'Downloaded an export of the workspace',
+  // Legal holds and eDiscovery cases (modules/ediscovery, #157).
+  'legal_hold.created': 'Placed a legal hold',
+  'legal_hold.scope_changed': 'Changed what a legal hold covers',
+  'legal_hold.released': 'Released a legal hold',
+  'legal_hold.export_requested': 'Asked for an export of a legal case',
+  'legal_hold.export_downloaded': 'Downloaded an export of a legal case',
+  // Classification labels (#158).
+  'label.created': 'Created a classification label',
+  'label.updated': 'Changed a classification label',
+  'label.deleted': 'Deleted a classification label',
+  'board.label_changed': 'Changed a board’s classification label',
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
@@ -2552,6 +2610,14 @@ export const AUDIT_ACTIONS = {
   'tracker.synced': 'Synced a tracker issue',
   'tracker.sync_failed': 'A tracker sync failed',
   'tracker.unlinked': 'Unlinked a tracker issue',
+  // Workspace encryption keys (modules/keys, #159). Never key material: provider, key ARN, versions.
+  'key.created': 'Turned on a workspace encryption key',
+  'key.rotated': 'Rotated the workspace encryption key',
+  'key.suspended': 'Suspended the workspace encryption key',
+  'key.resumed': 'Resumed the workspace encryption key',
+  'key.destroyed': 'Destroyed the workspace encryption key',
+  'key.unavailable': 'The workspace encryption key became unusable',
+  'key.available': 'The workspace encryption key is usable again',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];
@@ -2752,7 +2818,33 @@ export const WORKSPACE_SETTING_LIMITS = {
 } as const;
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 /** Why the workspace's boards are closed to you right now (see WorkspaceSummary.blocked). */
-export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed';
+/** `key_unavailable` (#159): the workspace's encryption key is suspended, destroyed or unreachable at its KMS. */
+export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed' | 'key_unavailable';
+
+// ---- Workspace encryption keys (#159; docs/design/compliance.md §3) ----
+export type WorkspaceKeyProvider = 'instance' | 'aws-kms';
+/** active: content is sealed and opened; suspended: an owner or security admin stopped it (reversible);
+ * unavailable: the KMS refused or could not be reached (back to active once it answers); destroyed: the data keys are gone for good. */
+export type WorkspaceKeyState = 'active' | 'suspended' | 'unavailable' | 'destroyed';
+export interface WorkspaceKeyStatus {
+  /** Whether this server offers workspace keys at all, and which providers it can use. */
+  providers: WorkspaceKeyProvider[];
+  key: {
+    provider: WorkspaceKeyProvider;
+    /** The AWS KMS key (ARN) for 'aws-kms'. */
+    kmsKeyId: string | null;
+    state: WorkspaceKeyState;
+    /** Why it is unavailable (the KMS's answer), when it is. */
+    reason: string | null;
+    /** The data-key version new content is sealed with. */
+    dataKeyVersion: number;
+    createdAt: number;
+    stateChangedAt: number;
+    kekRotatedAt: number | null;
+    /** Stored board content not yet sealed with the current data key (sealed in the background). */
+    pendingBoards: number;
+  } | null;
+}
 export interface AdminMember extends WorkspaceMember {
   deactivated: boolean;
   twoFactor: boolean;

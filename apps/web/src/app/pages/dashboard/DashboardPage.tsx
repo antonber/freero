@@ -834,7 +834,9 @@ function EmptyState({
         ? { title: 'Turn on two-step verification to work here', body: 'This workspace requires it. Once it’s on, you can open and create its boards.' }
         : blocked === 'ip_not_allowed'
           ? { title: 'Not from this network', body: 'This workspace opens its boards only from its own networks. Connect from the office or the company VPN.' }
-          : { title: 'Your access here is paused', body: 'An admin of this workspace deactivated you. Ask them to reactivate you to open and create its boards.' }
+          : blocked === 'key_unavailable'
+            ? { title: 'This workspace’s key isn’t available', body: 'Its boards are encrypted with the workspace’s own key, which can’t be used right now. They open again once its admins restore it.' }
+            : { title: 'Your access here is paused', body: 'An admin of this workspace deactivated you. Ask them to reactivate you to open and create its boards.' }
     : filtered
       ? { title: 'No boards here', body: 'Nothing matches this owner filter. Try “All”.' }
       : guest && (view === 'home' || view === 'project')

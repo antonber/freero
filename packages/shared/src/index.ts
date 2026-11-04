@@ -29,3 +29,4 @@ export * from './problems';
 export * from './analytics';
 export * from './embedCode';
 export * from './participation';
+export * from './compliance';

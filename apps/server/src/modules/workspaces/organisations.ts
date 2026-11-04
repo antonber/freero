@@ -25,6 +25,7 @@ import { badRequest, forbidden, HttpError, notFound } from '../../platform/http'
 import { newId } from '../../platform/ids';
 import { recordAudit } from '../audit/index';
 import { findUserByEmail, getUsers, normalizeEmail } from '../auth/index';
+import { replaceBoardLabels } from '../boards/index';
 import { creationRefusal } from './creation';
 import * as repo from './repo';
 import type { Workspace } from './repo';
@@ -194,6 +195,11 @@ export async function detachWorkspace(organisationId: string, workspaceId: strin
       metadata: { organisationId, organisation: w.organisation.name },
     });
     await repo.setOrganisation(workspaceId, null, Date.now());
+    // #158: the organisation's labels go with its floors; its boards carrying one get the
+    // workspace's own default label (or none).
+    const orgLabels = (await repo.labelsOf([organisationId])).map((l) => l.id);
+    const ownDefault = (await repo.labelSettingsOf([workspaceId])).get(workspaceId)?.defaultLabelId ?? null;
+    await replaceBoardLabels(workspaceId, orgLabels, ownDefault && !orgLabels.includes(ownDefault) ? ownDefault : null);
   });
   await refreshWorkspaceBoards(workspaceId);
 }

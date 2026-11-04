@@ -1,6 +1,6 @@
 // Why a workspace's boards are closed to you (WorkspaceSummary.blocked) and what to do about it.
 import { Link } from 'react-router-dom';
-import { Network, ShieldAlert, UserX } from 'lucide-react';
+import { KeyRound, Network, ShieldAlert, UserX } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 
 export function WorkspaceBlockedNotice({ workspace }: { workspace: WorkspaceSummary }) {
@@ -19,6 +19,16 @@ export function WorkspaceBlockedNotice({ workspace }: { workspace: WorkspaceSumm
       <div className="fr-dash-blocked" role="status">
         <Network size={18} aria-hidden />
         <span>{workspace.name} opens its boards only from its own networks. Connect from the office or the company VPN to work here.</span>
+      </div>
+    );
+  if (workspace.blocked === 'key_unavailable')
+    return (
+      <div className="fr-dash-blocked" role="status">
+        <KeyRound size={18} aria-hidden />
+        <span>
+          {workspace.name} encrypts its boards with its own key, and that key can’t be used right now (its admins suspended it, or its key service refused or
+          didn’t answer). Its boards stay closed until the key is available again.
+        </span>
       </div>
     );
   if (workspace.blocked === 'deactivated')

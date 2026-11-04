@@ -31,6 +31,11 @@ export async function ssoExportOf(workspaceId: string): Promise<unknown> {
       samlEntityId: c.samlEntityId,
       samlSsoUrl: c.samlSsoUrl,
       idpInitiated: c.idpInitiated,
+      samlSloUrl: c.samlSloUrl,
+      requireEncryptedAssertions: c.requireEncrypted,
+      signRequests: c.signRequests,
+      // The SP's certificates (public); never its private keys.
+      spCertificates: (await repo.listSpKeys(workspaceId)).map((k) => ({ certificate: k.certificate, current: k.current })),
       oidcIssuer: c.oidcIssuer,
       oidcClientId: c.oidcClientId,
     },

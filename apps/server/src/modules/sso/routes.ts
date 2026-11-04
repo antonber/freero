@@ -1,5 +1,4 @@
 import express, { Router, type Request } from 'express';
-import { generateServiceProviderMetadata } from '@node-saml/node-saml';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
@@ -9,14 +8,22 @@ import { requireWorkspaceRole } from '../workspaces/index';
 import { removeConnection, saveConnection, serviceProviderUrls, setEnforcement, ssoSettings } from './connections';
 import { cancelCapture, domainControlSettings, setDomainControl, startCaptures } from './domainControl';
 import { addDomain, removeDomain, verifyDomain } from './domains';
+import { samlSlo } from './logout';
 import { discover } from './policy';
+import * as repo from './repo';
+import { serviceProviderMetadata } from './saml';
 import { oidcCallback, samlAcs, samlFinish, startSso } from './signIn';
+import { createSpKey, promoteSpKey, removeSpKey } from './spKeys';
 
 // The identity provider's page posts the signed response here from its own origin. The response is
 // the credential (signature, audience, InResponseTo, replay are checked) and the sign-in completes
 // only on a same-site GET from the browser that started it, so the cross-site POST can't ride
 // anyone's cookies.
 allowCrossSitePost(/^\/api\/sso\/[^/]+\/saml\/acs$/, 'SAML HTTP-POST binding: the IdP page posts the signed response cross-site');
+// Single logout (#13) over HTTP-POST: the IdP's page posts its signed LogoutRequest (or its
+// LogoutResponse to ours) cross-site. Only a message whose signature, issuer, Destination, age
+// and one-time ID check out ends anything, and only the SAML sessions of the NameID it names.
+allowCrossSitePost(/^\/api\/sso\/[^/]+\/saml\/slo$/, 'SAML single logout, HTTP-POST binding: the IdP page posts the signed logout message cross-site');
 
 /** Owners/admins of a TEAM workspace, or of an organisation (#108: for all its workspaces), manage its single sign-on. */
 async function manager(req: Request) {
@@ -65,6 +72,23 @@ export default function ssoRoutes(_ctx: ServerContext): Router {
     res.json({ ...(await ssoSettings(req, req.params.id)), sessionsEnded });
   }));
 
+  // ---- the SAML service provider's key pairs (#13): certificates are public, private keys never leave ----
+  r.post('/workspaces/:id/sso/sp-keys', requireUser, rateLimit('sso', 'user'), handle(async (req, res) => {
+    await manager(req);
+    await createSpKey(req.params.id, currentUser(req).id);
+    res.status(201).json(await ssoSettings(req, req.params.id));
+  }));
+  r.post('/workspaces/:id/sso/sp-keys/:keyId/promote', requireUser, handle(async (req, res) => {
+    await manager(req);
+    await promoteSpKey(req.params.id, req.params.keyId, currentUser(req).id);
+    res.json(await ssoSettings(req, req.params.id));
+  }));
+  r.delete('/workspaces/:id/sso/sp-keys/:keyId', requireUser, handle(async (req, res) => {
+    await manager(req);
+    await removeSpKey(req.params.id, req.params.keyId, currentUser(req).id);
+    res.json(await ssoSettings(req, req.params.id));
+  }));
+
   // ---- domain control (#64): verified domains, with or without SSO ----
   r.get('/workspaces/:id/sso/domain-control', requireUser, handle(async (req, res) => {
     await manager(req);
@@ -94,10 +118,19 @@ export default function ssoRoutes(_ctx: ServerContext): Router {
   r.post('/sso/:workspaceId/saml/acs', rateLimit('sso'), express.urlencoded({ extended: false, limit: '1mb' }), handle(samlAcs));
   r.get('/sso/:workspaceId/saml/finish', rateLimit('sso'), handle(samlFinish));
   r.get('/sso/:workspaceId/oidc/callback', rateLimit('sso'), handle(oidcCallback));
+  r.get('/sso/:workspaceId/saml/slo', rateLimit('sso'), handle(samlSlo));
+  r.post('/sso/:workspaceId/saml/slo', rateLimit('sso'), express.urlencoded({ extended: false, limit: '1mb' }), handle(samlSlo));
   r.get('/sso/:workspaceId/saml/metadata', handle(async (req, res) => {
     const sp = serviceProviderUrls(req, req.params.workspaceId);
+    const [keys, c] = await Promise.all([repo.listSpKeys(req.params.workspaceId), repo.getConnection(req.params.workspaceId)]);
     res.type('application/samlmetadata+xml').send(
-      generateServiceProviderMetadata({ issuer: sp.entityId, callbackUrl: sp.acsUrl, wantAssertionsSigned: true, identifierFormat: null }),
+      serviceProviderMetadata({
+        entityId: sp.entityId,
+        acsUrl: sp.acsUrl,
+        sloUrl: sp.sloUrl,
+        certificates: keys.map((k) => k.certificate),
+        signsRequests: !!c?.signRequests && keys.some((k) => k.current),
+      }),
     );
   }));
 

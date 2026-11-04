@@ -65,6 +65,8 @@ export async function requireWorkspaceRole(
   const { workspace, role } = await requireWorkspace(workspaceId, userId, min, opts);
   return { id: workspace.id, name: workspace.name, kind: workspace.kind, role };
 }
+// Classification labels (#158): what a board in a workspace may carry, and what new boards get.
+export { availableLabels as labelsAvailableIn, labelRequirement, listLabels, createLabel, updateLabel, deleteLabel, setLabelPolicy } from './labels';
 // Organisations above team workspaces (#108): audit's fan-out to an organisation's log, the
 // workspaces an organisation's directory may grant (SCIM groups), and the organisation itself.
 export { organisationsOfWorkspaces, attachedWorkspaceIds } from './service';
@@ -72,6 +74,8 @@ export { createOrganisation, attachWorkspace, detachWorkspace, requireOrganisati
 // The admin console (modules/admin): the role check, members, security / retention settings.
 export {
   requireWorkspace,
+  // #159: a workspace key's state changed (modules/keys): everyone connected to its boards re-checked.
+  refreshWorkspaceBoards,
   requireScope,
   listMembers as listWorkspaceMembers,
   setMemberDeactivated,

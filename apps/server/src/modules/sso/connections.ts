@@ -11,6 +11,7 @@ import { txtName, txtValue } from './dns';
 import { verifiedDomainsOf } from './domains';
 import * as repo from './repo';
 import { certificateInfo, checkHttpsUrl, normalizeCertificate, parseIdpMetadata, splitCertificates } from './saml';
+import { spKeysOf } from './spKeys';
 
 /** The HKDF purpose sealing OIDC client secrets at rest (platform/secrets). */
 export const CLIENT_SECRET_PURPOSE = 'sso-oidc-client-secret-v1';
@@ -26,6 +27,8 @@ export function serviceProviderUrls(req: Request | null, workspaceId: string) {
     acsUrl: `${base}/saml/acs`,
     oidcRedirectUri: `${base}/oidc/callback`,
     startUrl: `${base}/start`,
+    // Single logout (#13): the IdP's LogoutRequest / LogoutResponse, HTTP-Redirect or HTTP-POST.
+    sloUrl: `${base}/saml/slo`,
   };
 }
 
@@ -33,7 +36,7 @@ export function serviceProviderUrls(req: Request | null, workspaceId: string) {
 export const ssoMethod = (workspaceId: string) => `sso:${workspaceId}`;
 
 export async function ssoSettings(req: Request | null, workspaceId: string): Promise<SsoSettings> {
-  const [domains, c] = await Promise.all([repo.listDomains(workspaceId), repo.getConnection(workspaceId)]);
+  const [domains, c, spKeys] = await Promise.all([repo.listDomains(workspaceId), repo.getConnection(workspaceId), spKeysOf(workspaceId)]);
   return {
     domains: domains.map((d) => ({
       id: d.id,
@@ -51,13 +54,21 @@ export async function ssoSettings(req: Request | null, workspaceId: string): Pro
       defaultRole: c.defaultRole,
       saml:
         c.protocol === 'saml' && c.samlEntityId && c.samlSsoUrl
-          ? { entityId: c.samlEntityId, ssoUrl: c.samlSsoUrl, certificates: splitCertificates(c.samlCerts).map(certificateInfo) }
+          ? {
+              entityId: c.samlEntityId,
+              ssoUrl: c.samlSsoUrl,
+              certificates: splitCertificates(c.samlCerts).map(certificateInfo),
+              sloUrl: c.samlSloUrl,
+              requireEncryptedAssertions: c.requireEncrypted,
+              signRequests: c.signRequests,
+            }
           : null,
       oidc: c.protocol === 'oidc' && c.oidcIssuer && c.oidcClientId ? { issuer: c.oidcIssuer, clientId: c.oidcClientId, hasClientSecret: !!c.oidcClientSecret } : null,
       testedAt: c.testedAt,
       idpInitiated: c.protocol === 'saml' && c.idpInitiated,
     },
     serviceProvider: serviceProviderUrls(req, workspaceId),
+    spKeys,
   };
 }
 
@@ -81,23 +92,32 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
   // Omitted (enable/disable, default role): unchanged. Only SAML has IdP-initiated sign-in.
   if (body.idpInitiated !== undefined && typeof body.idpInitiated !== 'boolean') throw badRequest('idpInitiated must be true or false');
   const idpInitiated = protocol === 'saml' && (body.idpInitiated ?? (prev?.protocol === 'saml' && prev.idpInitiated));
+  // #13: encrypted assertions and signed requests need a key pair of our own (spKeys.ts).
+  for (const k of ['requireEncryptedAssertions', 'signRequests'] as const)
+    if (body[k] !== undefined && typeof body[k] !== 'boolean') throw badRequest(`${k} must be true or false`);
+  const wasSaml = prev?.protocol === 'saml';
+  const requireEncrypted = protocol === 'saml' && (body.requireEncryptedAssertions ?? (wasSaml && prev.requireEncrypted));
+  const signRequests = protocol === 'saml' && (body.signRequests ?? (wasSaml && prev.signRequests));
+  if ((requireEncrypted || signRequests) && !(await spKeysOf(workspaceId)).length)
+    throw badRequest('Create a service-provider key first: encrypted assertions and signed requests use it');
 
-  let saml = { entityId: null as string | null, ssoUrl: null as string | null, certs: null as string | null };
+  let saml = { entityId: null as string | null, ssoUrl: null as string | null, certs: null as string | null, sloUrl: null as string | null };
   let oidc = { issuer: null as string | null, clientId: null as string | null, secret: null as string | null };
   // Settings changed without new provider details (enable, default role) keep the provider.
   const keepProvider = prev?.protocol === protocol && !body.samlMetadataXml && !body.samlEntityId && !body.samlSsoUrl && !body.samlCertificate && !body.oidcIssuer && !body.oidcClientId && !body.oidcClientSecret;
   if (keepProvider && prev) {
-    saml = { entityId: prev.samlEntityId, ssoUrl: prev.samlSsoUrl, certs: prev.samlCerts };
+    saml = { entityId: prev.samlEntityId, ssoUrl: prev.samlSsoUrl, certs: prev.samlCerts, sloUrl: prev.samlSloUrl };
     oidc = { issuer: prev.oidcIssuer, clientId: prev.oidcClientId, secret: prev.oidcClientSecret };
   } else if (protocol === 'saml') {
     if (typeof body.samlMetadataXml === 'string' && body.samlMetadataXml.trim()) {
       const m = parseIdpMetadata(body.samlMetadataXml);
-      saml = { entityId: m.entityId, ssoUrl: m.ssoUrl, certs: m.certs.join('\n') };
+      saml = { entityId: m.entityId, ssoUrl: m.ssoUrl, certs: m.certs.join('\n'), sloUrl: m.sloUrl ?? null };
     } else {
       saml = {
         entityId: str(body.samlEntityId, 'The identity provider’s entity ID', 1024),
         ssoUrl: checkHttpsUrl(str(body.samlSsoUrl, 'The identity provider’s SSO URL'), 'The SSO URL'),
         certs: normalizeCertificate(str(body.samlCertificate, 'The identity provider’s signing certificate', 64 * 1024)),
+        sloUrl: wasSaml ? prev.samlSloUrl : null,
       };
     }
   } else {
@@ -108,6 +128,11 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
     const secret = secretIn ? seal(CLIENT_SECRET_PURPOSE, secretIn) : keep;
     if (!secret) throw badRequest('The client secret is required');
     oidc = { issuer, clientId, secret };
+  }
+  // The IdP's single logout URL typed in (#13): '' clears it; omitted keeps it (or the metadata's).
+  if (protocol === 'saml' && body.samlSloUrl !== undefined) {
+    if (typeof body.samlSloUrl !== 'string' || body.samlSloUrl.length > 2048) throw badRequest('samlSloUrl must be a URL');
+    saml.sloUrl = body.samlSloUrl.trim() ? checkHttpsUrl(body.samlSloUrl.trim(), 'The single logout URL') : null;
   }
   const providerChanged =
     !prev ||
@@ -127,6 +152,9 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
         oidcClientId: oidc.clientId,
         oidcClientSecret: oidc.secret,
         idpInitiated,
+        samlSloUrl: protocol === 'saml' ? saml.sloUrl : null,
+        requireEncrypted,
+        signRequests,
       },
       providerChanged,
       Date.now(),
@@ -141,6 +169,9 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
         enabled,
         defaultRole,
         idpInitiated,
+        requireEncryptedAssertions: requireEncrypted,
+        signRequests,
+        singleLogout: protocol === 'saml' && !!saml.sloUrl,
         providerChanged,
         // A new provider turns enforcement off until a sign-in proves it.
         enforcementDropped: providerChanged && !!prev?.enforced,
