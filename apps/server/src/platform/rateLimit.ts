@@ -109,7 +109,7 @@ export async function checkRateLimit(name: RateLimitName, key: string): Promise<
 
 export class RateLimitError extends HttpError {
   constructor(readonly retryAfter: number) {
-    super(429, `Too many requests. Please try again in ${retryAfter < 120 ? `${retryAfter} seconds` : `${Math.ceil(retryAfter / 60)} minutes`}.`);
+    super(429, `Too many requests. Please try again in ${retryAfter < 120 ? `${retryAfter} seconds` : `${Math.ceil(retryAfter / 60)} minutes`}.`, 'rate_limited', retryAfter < 120 ? { unit: 'seconds', count: retryAfter } : { unit: 'minutes', count: Math.ceil(retryAfter / 60) });
   }
 }
 

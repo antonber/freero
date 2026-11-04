@@ -627,7 +627,7 @@ export interface BoardMember {
 // POST /api/auth/logout   -> { ok: true }                     (clears cookie)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
-// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone?, theme? } -> AuthResponse
+// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone?, theme?, locale? } -> AuthResponse
 // PUT  /api/auth/me/avatar raw image body (PNG/JPEG/GIF/WebP) -> AuthResponse (resized server-side)
 // DELETE /api/auth/me/avatar -> AuthResponse
 //
@@ -691,7 +691,8 @@ export interface BoardMember {
 // POST /api/auth/two-factor/recovery/cancel-link body { token } -> { ok: true } (the link in the recovery mails)
 // POST /api/auth/two-factor/recovery/cancel -> SecurityInfo (signed in)
 // Any accepted second-factor code also cancels a recovery in progress.
-export interface SignupRequest { name: string; email: string; password: string }
+/** `locale` [additive, #5]: the language the sign-up page is in (the account's language from the start). */
+export interface SignupRequest { name: string; email: string; password: string; locale?: string }
 export interface LoginRequest { email: string; password: string }
 export type LoginResponse = AuthResponse | { twoFactorRequired: true };
 
@@ -791,6 +792,11 @@ export interface Account extends User {
   emailVerified: boolean;
   /** [additive] Their app theme, kept with the account so it follows them to every device (absent: 'system'). */
   theme?: ColorThemePreference;
+  /**
+   * [additive, #5] Their interface language (an entry of LOCALES): the app's language on every
+   * device and the language of their emails. Null until chosen or set once by the app.
+   */
+  locale?: string | null;
   /**
    * IANA time zone ("Europe/Berlin"): due-date reminders, the "changes on your boards" email and
    * dates in emails follow it. Null until the app detects it from the browser (or you pick one).
