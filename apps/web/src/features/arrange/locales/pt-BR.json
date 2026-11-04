@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "Sem etiqueta",
+  "selectTwoOrMoreUnlocked": "Selecione dois ou mais itens desbloqueados",
+  "selectThreeOrMoreUnlocked": "Selecione três ou mais itens desbloqueados",
+  "autoLayout": "Layout automático",
+  "selectTwoOrMoreUnlocked2": "Selecione dois ou mais itens desbloqueados unidos por conectores",
+  "alignAndDistribute": "Alinhar e distribuir",
+  "clusterStickies": "Agrupar notas adesivas"
+}

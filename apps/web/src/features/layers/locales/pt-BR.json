@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "Camadas",
+  "unlock": "Desbloquear",
+  "lock": "Bloquear",
+  "hiddenWithItsFrameOr": "Oculto junto com a moldura ou com o item ao qual está anexado",
+  "showHiddenForYouOnly": "Mostrar (oculto só para você)",
+  "hideForMeOthersStill": "Ocultar para mim (os outros continuam vendo)",
+  "collapse": "Recolher",
+  "expand": "Expandir",
+  "untitledFrame": "Moldura sem título",
+  "notInAFrame": "Fora de molduras",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} ocultos só para você",
+  "showAll": "Mostrar tudo",
+  "nothingOnTheBoardYet": "Nada no quadro ainda.",
+  "dragToRestackTheTop": "Arraste para reordenar: o topo de cada lista fica na frente."
+}
