@@ -295,6 +295,15 @@ await scenario('pan at 100%', async () => {
   return { ...r, detail: `${n.total} items drawn at the end (${n.painted} on low-detail canvases)` };
 });
 await scenario('zoom out from 100% to fit', async () => frames({ kind: 'zoom', to: fit.zoom, at: seeded.denseSpot, step: 1 / 1.06 }));
+// #184: out of low detail in one step (0.17 → 0.26, about the frame of interest), then the frames
+// while the items it painted mount.
+await scenario('leave low detail', async () => {
+  await frames({ kind: 'zoom', to: 0.17, at: seeded.denseSpot, step: 1.06 });
+  await sleep(300);
+  const r = await frames({ kind: 'zoom', to: 0.26, at: seeded.denseSpot, step: 1.53, settle: 60 });
+  const n = await page.evaluate(() => window.__bench.drawnItems());
+  return { ...r, detail: `${n.dom} items mounted at the end (${n.painted} still painted)` };
+});
 // Back to the board's fit, so the next scenarios start where people land.
 await page.keyboard.press('Shift+1');
 await sleep(800);
@@ -606,7 +615,7 @@ function benchRuntime() {
         prev = now;
       }
       // What a gesture leaves behind (the settle after the camera stops) counts too.
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < (spec.settle ?? 10); i++) {
         const now = await raf();
         deltas.push(now - prev);
         prev = now;

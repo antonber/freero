@@ -228,8 +228,14 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
     canvas.dataset.paints = String(Number(canvas.dataset.paints ?? 0) + 1);
   };
 
-  // Its items, the area or the zoom changed (React), or the theme: paint it all, before the frame.
-  useLayoutEffect(() => draw.current(true), [ids, cull, zoom, theme]);
+  // The area, the zoom or the theme changed (React): paint it all, before the frame. Only its set
+  // of items (one mounting in full as low detail is left, #184): the part they covered.
+  const drawnWith = useRef<{ cull: Rect; zoom: number; theme: string } | null>(null);
+  useLayoutEffect(() => {
+    const was = drawnWith.current;
+    drawnWith.current = { cull, zoom, theme };
+    draw.current(!was || was.cull !== cull || was.zoom !== zoom || was.theme !== theme);
+  }, [ids, cull, zoom, theme]);
   // Some of its items changed: paint their part, once per task. The selection or the focus: all.
   useEffect(() => {
     let queued: boolean | null = null;
