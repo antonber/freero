@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "로그인되었습니다",
+  "plugin.signedIn.body": "Figma로 돌아가세요. Freero 플러그인이 알아서 로그인을 마칩니다. 이 탭은 닫아도 됩니다.",
+  "plugin.failed.title": "로그인이 완료되지 않았습니다",
+  "plugin.failed.body": "Figma로 돌아가 Freero에 로그인을 다시 선택하세요."
+}

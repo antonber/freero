@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 import type { NotificationTypePref } from '@freero/shared';
 import { Toggle } from '@ui';
 import { api } from '../../api/client';
-import { askDevicePermission, deviceNotificationsAvailable, devicePrefs, isDesktopApp, setDevicePrefs, type DevicePrefs } from '../../notifications/device';
+import { askDevicePermission, deviceNotificationsAvailable, devicePrefs, isDesktopApp, isMobileApp, setDevicePrefs, type DevicePrefs } from '../../notifications/device';
+import { syncPush } from '../../notifications/push';
 import { Section } from './Section';
 import { t as tr } from './messages';
 
@@ -13,6 +14,7 @@ export function DeviceNotificationsSection() {
   const [prefs, setPrefs] = useState<DevicePrefs>(devicePrefs);
   const [types, setTypes] = useState<NotificationTypePref[]>([]);
   const [blocked, setBlocked] = useState(false);
+  const [noPush, setNoPush] = useState(false);
   useEffect(() => {
     let live = true;
     api.notificationPrefs().then(
@@ -28,21 +30,32 @@ export function DeviceNotificationsSection() {
   const change = (next: DevicePrefs) => {
     setPrefs(next);
     setDevicePrefs(next);
+    // #177: the apps' choice lives on the server too, which sends the push notifications.
+    if (isMobileApp())
+      void syncPush(next).then((s) => {
+        setBlocked(s === 'blocked');
+        setNoPush(s === 'unavailable');
+        if (s === 'blocked') {
+          setPrefs({ ...next, on: false });
+          setDevicePrefs({ ...next, on: false });
+        }
+      });
   };
   const turn = async (on: boolean) => {
-    if (on && !(await askDevicePermission())) return setBlocked(true);
+    if (on && !isMobileApp() && !(await askDevicePermission())) return setBlocked(true);
     setBlocked(false);
     change({ ...prefs, on });
   };
   return (
     <Section
       id="device-notifications"
-      title={isDesktopApp() ? tr('notificationsOnThisComputer') : tr('notificationsInThisBrowser')}
+      title={isDesktopApp() ? tr('notificationsOnThisComputer') : isMobileApp() ? tr('notificationsOnThisDevice') : tr('notificationsInThisBrowser')}
       description={tr('popUpsForNewActivity')}
     >
       <div className="fr-acct-prefs">
         <Toggle label={<span className="fr-acct-prefs__label">{tr('showNotificationsOnThisDevice')}</span>} checked={prefs.on} onChange={(on) => void turn(on)} />
         {blocked ? <p className="fr-acct__hint">{tr('notificationsAreBlockedForFreero')}</p> : null}
+        {noPush && prefs.on ? <p className="fr-acct__hint">{tr('serverSendsNoPush')}</p> : null}
         <ul className="fr-acct-prefs__types" aria-label={tr('showMeNotificationsAbout')}>
           {types.map((t) => (
             <li key={t.type} className={prefs.on ? undefined : 'is-off'}>

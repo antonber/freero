@@ -4,6 +4,7 @@
 // (on / off, and which types) lives in this browser's storage. The texts are the inbox's, already
 // worded by the server in the person's language.
 import type { AppNotification, NotificationType } from '@freero/shared';
+import { mobilePlatform } from '../mobile/native';
 
 export interface DevicePrefs {
   on: boolean;
@@ -23,8 +24,11 @@ const tauri = (): TauriInternals | null => (typeof window !== 'undefined' && (wi
 /** Running inside Freero's desktop app (apps/desktop). */
 export const isDesktopApp = (): boolean => tauri() !== null;
 
-/** This device can show notifications at all (desktop app, or a browser with the Notification API). */
-export const deviceNotificationsAvailable = (): boolean => isDesktopApp() || (typeof window !== 'undefined' && 'Notification' in window);
+/** Running inside Freero's phone and tablet apps (apps/mobile, #177): the server pushes notifications there (push.ts). */
+export const isMobileApp = (): boolean => mobilePlatform() !== null;
+
+/** This device can show notifications at all (desktop or mobile app, or a browser with the Notification API). */
+export const deviceNotificationsAvailable = (): boolean => isDesktopApp() || isMobileApp() || (typeof window !== 'undefined' && 'Notification' in window);
 
 export function devicePrefs(): DevicePrefs {
   try {
@@ -33,8 +37,8 @@ export function devicePrefs(): DevicePrefs {
   } catch {
     // unreadable: the default
   }
-  // The desktop app is installed to be notified; a browser asks first.
-  return { on: isDesktopApp(), off: [] };
+  // The desktop and mobile apps are installed to be notified; a browser asks first.
+  return { on: isDesktopApp() || isMobileApp(), off: [] };
 }
 
 export function setDevicePrefs(p: DevicePrefs): void {
@@ -75,7 +79,8 @@ export function toShow(items: readonly AppNotification[], prefs: DevicePrefs, sh
 /** Shows the inbox's new items as the device's notifications (see toShow). */
 export async function announceOnDevice(items: readonly AppNotification[]): Promise<void> {
   const prefs = devicePrefs();
-  if (!prefs.on || !deviceNotificationsAvailable()) return;
+  // The mobile apps get them as push notifications from the server, also while closed.
+  if (!prefs.on || !deviceNotificationsAvailable() || isMobileApp()) return;
   let shownUntil = Number(localStorage.getItem(SHOWN_KEY) ?? 0);
   if (!shownUntil) {
     shownUntil = Date.now();

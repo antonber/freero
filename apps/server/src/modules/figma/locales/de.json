@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "Du bist angemeldet",
+  "plugin.signedIn.body": "Kehre zu Figma zurück: Das Freero-Plugin schließt die Anmeldung selbst ab. Du kannst diesen Tab schließen.",
+  "plugin.failed.title": "Die Anmeldung wurde nicht abgeschlossen",
+  "plugin.failed.body": "Kehre zu Figma zurück und wähle erneut „Bei Freero anmelden“."
+}

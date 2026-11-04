@@ -30,7 +30,10 @@
     "db:import-sqlite": "tsx scripts/migrate-sqlite-to-pg.mjs",
     "gen:power-automate": "node --import tsx scripts/gen-power-automate.mjs",
     "desktop:dev": "node apps/desktop/build.mjs dev",
-    "desktop:build": "node apps/desktop/build.mjs build"
+    "desktop:build": "node apps/desktop/build.mjs build",
+    "mobile:sync": "node apps/mobile/build.mjs sync",
+    "mobile:android": "node apps/mobile/build.mjs android",
+    "mobile:ios": "node apps/mobile/build.mjs ios"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

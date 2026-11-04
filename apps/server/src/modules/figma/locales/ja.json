@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "サインインしました",
+  "plugin.signedIn.body": "Figmaに戻ってください。Freeroプラグインが自動的にサインインを完了します。このタブは閉じてかまいません。",
+  "plugin.failed.title": "サインインが完了しませんでした",
+  "plugin.failed.body": "Figmaに戻り、もう一度「Freeroにサインイン」を選んでください。"
+}

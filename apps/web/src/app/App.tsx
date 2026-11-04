@@ -8,6 +8,7 @@ import { GuestGate } from './board/GuestGate';
 import { FrameGuard } from './embed/FrameGuard';
 import { FullPageSpinner } from './components/FullPageSpinner';
 import { AppUpdates } from './pwa/AppUpdates';
+import { MobileApp } from './mobile/MobileApp';
 import { AuthPage } from './pages/auth/AuthPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -63,6 +64,7 @@ export function App() {
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ToastProvider>
         <AppUpdates />
+        <MobileApp />
         <AuthProvider>
           {/* Google Analytics where the server has it on (GA_MEASUREMENT_ID): consent first, redacted pages. */}
           <AppAnalytics />

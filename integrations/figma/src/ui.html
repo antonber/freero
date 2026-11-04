@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { margin: 0; padding: 12px; font: 12px/1.45 Inter, system-ui, sans-serif; color: var(--figma-color-text, #17162b); background: var(--figma-color-bg, #fff); }
+      h1 { margin: 0 0 4px; font-size: 14px; }
+      p { margin: 0 0 8px; color: var(--figma-color-text-secondary, #4b4a63); }
+      label { display: block; margin: 10px 0 4px; font-weight: 600; }
+      input, select { box-sizing: border-box; width: 100%; padding: 6px 8px; font: inherit; color: inherit; background: var(--figma-color-bg, #fff); border: 1px solid var(--figma-color-border, #cfcde0); border-radius: 6px; }
+      select { height: 150px; }
+      button { margin-top: 10px; padding: 7px 12px; font: inherit; font-weight: 600; border-radius: 6px; border: 1px solid var(--figma-color-border, #cfcde0); background: var(--figma-color-bg, #fff); color: inherit; cursor: pointer; }
+      button.primary { color: #fff; background: #5b3ff0; border-color: #5b3ff0; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+      .muted { color: var(--figma-color-text-secondary, #686783); }
+      .error { color: #c9353a; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <h1>Send frames to Freero</h1>
+    <p>Selected frames go to a Freero board as pictures that link back here. Sending a frame again updates its picture.</p>
+
+    <section id="signin">
+      <label for="server">Freero server</label>
+      <input id="server" autocomplete="url" />
+      <button id="oauth" class="primary">Sign in to Freero</button>
+      <p id="waiting" class="muted" hidden>Finish signing in in your browser, then come back here.</p>
+      <label for="token">Or use an API token</label>
+      <input id="token" placeholder="frp_…" autocomplete="off" />
+      <button id="useToken">Use token</button>
+    </section>
+
+    <section id="send" hidden>
+      <div class="row"><span id="who" class="muted"></span><button id="signout">Sign out</button></div>
+      <label for="search">Board</label>
+      <input id="search" placeholder="Search your boards" />
+      <select id="boards" size="6"></select>
+      <div id="filekey" hidden>
+        <label for="filelink">This file’s link (for links back to frames)</label>
+        <input id="filelink" placeholder="Copy link in Figma’s Share menu, paste here" />
+      </div>
+      <p id="selected" class="muted"></p>
+      <button id="go" class="primary">Send to board</button>
+      <button id="openBoard" hidden>Open board</button>
+    </section>
+    <p id="status" class="muted" role="status"></p>
+    <script>
+/*FREERO_JS*/
+/*UI_JS*/
+    </script>
+  </body>
+</html>

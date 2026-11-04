@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "Vous êtes connecté",
+  "plugin.signedIn.body": "Revenez dans Figma : le plugin Freero termine la connexion tout seul. Vous pouvez fermer cet onglet.",
+  "plugin.failed.title": "La connexion n’a pas abouti",
+  "plugin.failed.body": "Revenez dans Figma et choisissez à nouveau Se connecter à Freero."
+}

@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "התחברתם",
+  "plugin.signedIn.body": "חזרו ל-Figma: התוסף של Freero משלים את ההתחברות בעצמו. אפשר לסגור את הכרטיסייה.",
+  "plugin.failed.title": "ההתחברות לא הושלמה",
+  "plugin.failed.body": "חזרו ל-Figma ובחרו שוב התחברות ל-Freero."
+}

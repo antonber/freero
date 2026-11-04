@@ -1,0 +1,21 @@
+{
+  "name": "Freero",
+  "id": "set-by-figma-on-first-publish",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/ui.html",
+  "editorType": [
+    "figma"
+  ],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": [
+      "https://freero.app"
+    ],
+    "devAllowedDomains": [
+      "http://localhost:4000",
+      "http://localhost:5173"
+    ],
+    "reasoning": "The plugin sends the frames you choose to your Freero board through Freero’s REST API, at the Freero address you sign in to."
+  }
+}

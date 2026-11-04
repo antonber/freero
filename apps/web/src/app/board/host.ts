@@ -179,6 +179,19 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     personalViews: personalViewsOf(board.id),
     stickers: stickersOf(board.id),
     ...(board.permissions.gifs ? { gifs: { search: (q: string, pos: string | null) => api.searchGifs(board.id, q, pos), place: (media: string) => api.placeGif(board.id, media) } } : {}),
+    // #171: Figma's consent leaves the board and comes back to it with ?figma=connected.
+    ...(board.permissions.figma
+      ? {
+          figma: {
+            status: () => api.figmaStatus(),
+            connect: () => window.location.assign(api.figmaConnectUrl(`${window.location.pathname}?figma=1`)),
+            disconnect: () => api.figmaDisconnect().then(() => undefined),
+            recentFiles: () => api.figmaFiles(),
+            frames: (fileKey: string) => api.figmaFrames(fileKey),
+            place: (fileKey: string, nodeId: string) => api.placeFigmaFrame(board.id, fileKey, nodeId),
+          },
+        }
+      : {}),
     shapePacks: shapePacksOf(board.id),
     uploadImage,
     uploadFile,

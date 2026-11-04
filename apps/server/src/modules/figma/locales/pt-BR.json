@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "Você entrou",
+  "plugin.signedIn.body": "Volte ao Figma: o plugin do Freero termina de entrar sozinho. Você pode fechar esta aba.",
+  "plugin.failed.title": "A entrada não foi concluída",
+  "plugin.failed.body": "Volte ao Figma e escolha Entrar no Freero de novo."
+}

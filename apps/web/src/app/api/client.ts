@@ -166,7 +166,7 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { GifPlaceResponse, GifSearchResponse, ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
+import type { MobilePushDevice, MobilePushStatus, FigmaFilesResponse, FigmaFramesResponse, FigmaPlaceResponse, FigmaStatus, GifPlaceResponse, GifSearchResponse, ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -904,6 +904,18 @@ export const api = {
   searchGifs: (boardId: string, q: string, pos: string | null) =>
     request<GifSearchResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/gifs?q=${encodeURIComponent(q)}${pos ? `&pos=${encodeURIComponent(pos)}` : ''}`),
   placeGif: (boardId: string, media: string) => request<GifPlaceResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/gifs/place`, { media }),
+  // Push notifications in the phone and tablet apps (#177)
+  mobilePushStatus: () => request<MobilePushStatus>('GET', '/api/mobile/push'),
+  registerPushDevice: (device: MobilePushDevice) => request<{ ok: true }>('PUT', '/api/mobile/push/devices', device),
+  unregisterPushDevice: (token: string) => request<{ ok: true }>('DELETE', '/api/mobile/push/devices', { token }),
+  // Place from Figma (#171)
+  figmaStatus: () => request<FigmaStatus>('GET', '/api/integrations/figma/me'),
+  figmaConnectUrl: (returnPath: string) => `/api/integrations/figma/oauth/start?return=${encodeURIComponent(returnPath)}`,
+  figmaDisconnect: () => request<{ ok: true }>('DELETE', '/api/integrations/figma/me'),
+  figmaFiles: () => request<FigmaFilesResponse>('GET', '/api/integrations/figma/files'),
+  figmaFrames: (fileKey: string) => request<FigmaFramesResponse>('GET', `/api/integrations/figma/files/${encodeURIComponent(fileKey)}/frames`),
+  placeFigmaFrame: (boardId: string, fileKey: string, nodeId: string) =>
+    request<FigmaPlaceResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/figma/place`, { fileKey, nodeId }),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });

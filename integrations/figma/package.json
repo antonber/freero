@@ -1,0 +1,10 @@
+{
+  "name": "freero-figma-plugin",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "The Freero plugin for Figma: send frames to a Freero board. Not an npm workspace; built with `node build.mjs`.",
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

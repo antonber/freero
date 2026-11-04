@@ -1,0 +1,17 @@
+{
+  "name": "freero-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Freero's iOS / iPadOS and Android apps: a Capacitor shell around a Freero server's web app (#177, docs/mobile.md). Not an npm workspace: apps/mobile/build.mjs installs these pinned versions here.",
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/push-notifications": "8.1.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

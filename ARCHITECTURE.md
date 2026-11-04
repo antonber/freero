@@ -145,6 +145,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A diagram (#117, #118; `DiagramElement`, type `diagram`: title, layout, layers, `laidOut`, its box) and its members' layout — positions, `diagramPinned`, `diagramLayer` on join, layer locks (`locked` + `layerLocked`), stacking, lines between members joining it — read through `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `memberLayerId`, `hiddenByLayer`, `diagramSignature`) | `features/diagram`: its element's `arrange` (`planDiagram`, the one writer of members' positions: it reflows only when `laidOut`, the structure's signature, changes; a member moved by hand is pinned) and its commands (layout, Lay out again, unpin, layers); server `modules/structure` / `modules/api` through `withDiagramLayout` in the same change; `layoutStructure` wraps graph-like structures in one (`wrapInDiagram`) | `runCommand('diagram.setLayout' / 'diagram.relayout' / 'diagram.unpin' / 'diagram.wrap' / 'diagram.focus')`. Features that write member positions of a diagram (from-text's source edits) leave them to it. Focus is engine UI state (`Editor.setFocus`); the layer a person adds to is a personal view (`_layer`). See docs/design/diagrams.md |
 | A board's copy on a device (#178: IndexedDB `freero-offline` — the board's Yjs state, its summary, the account card, the key that seals them) | the engine's `BoardStore` writes a copy's content through `Host.offline`; `app/offline/copies.ts` decides which boards are kept and deletes them (sign-out, session gone, another person, access lost, policy); only `app/offline/vault.ts` touches the database | the server's `BoardPermissions.offline` and `POST /boards/offline-check`; see "Offline copies" |
+| A device's push registration (`push_devices`, #177: its APNs / FCM token, the account and session it belongs to, the types turned off there) | server `modules/mobile` (registered from the device's own session; deleted when that session ends — auth's `onSessionEnd` — or the push service reports the token dead) | `PUT` / `DELETE /api/mobile/push/devices` from the apps (`app/notifications/push.ts`); see "Phone and tablet apps" |
 | A person's interface language (`users.locale`, `Account.locale`, #5) and the page's `<html lang dir>` | server `modules/auth` (`PATCH /api/auth/me` `{ locale }`, sign-up's `locale`); in the browser `app/i18n/locale.ts` is the only writer of `lang` / `dir` and of the language this browser remembers — decided once before the app loads (`?lang=` for the tab > the account's > this browser's > `navigator.languages` > English), a change saves and reloads | `LanguagePicker` (`app/components`): account settings → Language, under the sign-in card |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
@@ -1428,7 +1429,9 @@ sticker sets, #138), `gifs` (no table: GIF search in the sticker panel through t
 the operator's provider (`GIF_PROVIDER`, `GIF_API_KEY`) is asked for results no more mature than
 the workspace's `gifs` policy; previews come through `GET /gifs/media` and a placed GIF is copied
 into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provider links the
-server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
+server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `figma`
+(figma_accounts, figma_oauth_flows, figma_recent_files: "Place from Figma", #171; figma_plugin_codes: the Figma plugin's sign-in, #172 — see "Figma" below), `mobile` (push_devices: push notifications to the phone and tablet apps, and the
+/.well-known files that let https links open them, #177 — see "Phone and tablet apps" below), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
 packs, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -2859,6 +2862,34 @@ exactly those paths render framed.
   Freero frame without a session opens; it posts `EmbedChooseMessage` (the board and its member token)
   to `window.opener` with targetOrigin = Freero's origin, like `/embed/connect`.
 
+### Figma (`modules/figma`, `features/figma`, `integrations/figma`; #171, #172; docs/integrations/figma.md)
+
+- **Place from Figma** (off unless `FIGMA_CLIENT_ID` + `FIGMA_CLIENT_SECRET`; `BoardPermissions.figma`,
+  `Host.figma`). Each person connects their own Figma account through the operator's Figma app
+  (`oauth.ts`: Slack's state-bound-to-the-browser pattern, read-only scopes); its tokens are sealed
+  in `figma_accounts` (`tokens.ts` `withFigmaToken`: refreshed before expiry, a 401 refreshed once,
+  a refused refresh drops the connection — `figma_reconnect`). The picker lists a file's top-level
+  frames (`GET /v1/files/:key?depth=2`) with Figma's small renders as previews; placing renders the
+  frame at 2x (`GET /v1/images`), downloads it (https only, unfurl's SSRF-safe fetch; a stand-in at
+  `FIGMA_API_URL`'s own origin is fetched directly) and stores it through uploads' `saveUpload` —
+  the bytes must be a PNG, within the size cap and the placer's quota.
+- A placed frame is an ordinary `image` whose item `link` is the frame's Figma link
+  (`@freero/shared` `figma.ts`: `figmaFrameLink`, `parseFigmaFrameLink`, `sameFigmaFrame`), so no
+  element field is added and older clients see a linked picture. *Refresh from Figma*
+  (`features/figma`: format toolbar, context menu) reads the link, places again and swaps `src`
+  (same width and centre, the new proportions). The feature creates image elements itself; it
+  never imports the image feature.
+- **The Figma plugin** (#172, `integrations/figma`: plain JS, no dependencies; `build.mjs` inlines
+  `src/freero.js` + `src/ui.js` into the plugin's page). It reaches Freero only as any API client:
+  dynamic client registration + PKCE with `/api/integrations/figma/plugin/callback` as its redirect
+  (the page keeps the code sealed in `figma_plugin_codes` under the plugin's state; the plugin picks
+  it up once with `POST …/plugin/pickup`, the module's only cross-site route), or a personal token.
+  Frames go to `POST /api/v1/boards/{boardId}/images` (api `images.ts`): the bytes — read raw, only
+  with an Authorization header, at most `MAX_UPLOAD_MB` — are typed by their content and stored with
+  uploads' `saveUpload`; `replace=<itemId>`, else an image whose link is `sameFigmaFrame`, gets the
+  new picture in one change instead of a new item. `apps/server/src/integrations/figma.test.ts` runs
+  the plugin's client unchanged against the real server.
+
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 
 Off unless the operator sets the ids (`config.teams`: `TEAMS_APP_ID`, `TEAMS_BOT_ID`;
@@ -3241,6 +3272,35 @@ Not an npm workspace: the Tauri CLI is fetched at a pinned version (`npm run des
   kept in this browser's storage, written only there — and only while Freero isn't in front.
 - Updates: tauri-plugin-updater against a signed manifest (default: the latest GitHub release's
   `latest.json`); without the owner's public key baked in, the app never updates itself.
+
+### Phone and tablet apps (`apps/mobile`, `modules/mobile`, `app/mobile/`; #177; docs/mobile.md)
+
+A Capacitor shell (MIT) in `apps/mobile/native` — committed Android and Xcode projects, Capacitor
+installed there at its lockfile's versions by `apps/mobile/build.mjs` (not an npm workspace, like
+`apps/desktop`) — whose one web view loads the server's web app (`server.url`; `FREERO_INSTANCE_URL`
+at build time). CI (`.github/workflows/mobile.yml`) builds a debug APK, an unsigned (or upload-key
+signed) release bundle and an unsigned iOS simulator build; store signing and listings are the
+owner's (docs/mobile.md). `apps/mobile/icons.mjs` paints Freero's mark over Capacitor's template art.
+- The web app reaches the shell only through its injected bridge (`window.Capacitor`,
+  `app/mobile/native.ts`; nothing of Capacitor is bundled). `appPathFor` decides which opened links
+  (`freero://board|doc|app`, https links to this origin's `/board/` and `/doc/`) navigate inside the
+  app — anything else never does (tested); a tapped push opens its `path`.
+- Push: the device's choice is the desktop app's "Notifications on this device" (`device.ts`, on by
+  default in the apps); `app/notifications/push.ts` `syncPush` registers the APNs / FCM token with
+  `PUT /api/mobile/push/devices` (the types turned off on this device) whenever the signed-in account
+  changes (`retainLiveConnection`) or the choice does, and forgets it when turned off.
+  `modules/mobile` keeps one `push_devices` row per token, bound to the account and the SESSION it was
+  registered in: auth's `onSessionEnd` (every instance) deletes the session's devices, and a session
+  found gone at send time is dropped too — so signing out stops a device's notifications.
+  `notifications.notify` hands every new notification, once committed, to `pushToUser` (beside
+  Slack's DM): its headline in the recipient's language and its app path — never the comment text.
+  Transports (`transports.ts`, no SDKs): APNs over HTTP/2 with an ES256 provider token,
+  FCM HTTP v1 with the service account's own OAuth token; tokens reported dead are forgotten.
+  Off unless `PUSH_APNS_*` / `PUSH_FCM_SERVICE_ACCOUNT`.
+- Universal Links / App Links: `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`
+  (`modules/mobile`, mounted at `/`) only when `MOBILE_APPLE_APP_ID` / `MOBILE_ANDROID_CERT_SHA256`
+  name the signed apps; the projects declare `applinks:` / an auto-verified intent filter for the
+  build's host. Framing and the web CSP are unchanged.
 
 ### Offline copies (#178; `app/offline/`, `engine/store/BoardStore` persistence)
 

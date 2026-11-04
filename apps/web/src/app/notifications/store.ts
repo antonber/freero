@@ -4,6 +4,7 @@ import { createStore, useStore } from 'zustand';
 import type { AppNotification, NotificationsLiveMessage } from '@freero/shared';
 import { api, wsBase } from '../api/client';
 import { announceOnDevice, devicePrefs } from './device';
+import { syncPush } from './push';
 
 export interface NotificationsState {
   unread: number;
@@ -123,6 +124,9 @@ export function retainLiveConnection(userId: string): () => void {
     disconnect();
     notificationsStore.setState(initial);
     account = userId;
+    // #177: in the phone and tablet apps, this device's push registration follows whoever signed in
+    // here (the server ties it to this session).
+    void syncPush(devicePrefs());
   }
   users++;
   if (closing) clearTimeout(closing);
