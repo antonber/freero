@@ -2,9 +2,9 @@
 // the camera is set from the recording's own clock every frame, so the view can never drift from
 // the voice. The viewer's own pan or zoom takes the camera back (the bar offers "Back to their
 // view"); pausing leaves the camera alone; playing again returns to the recorded path.
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Captions, CaptionsOff, Download, Flag, ListOrdered, LocateFixed, MessageSquareText, Pause, PenLine, Play, X } from 'lucide-react';
-import { formatWalkthroughTime, WALKTHROUGHS_COLLECTION, type Walkthrough, type WalkthroughSummary } from '@freero/shared';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type SyntheticEvent } from 'react';
+import { Captions, CaptionsOff, Download, Flag, ListOrdered, LocateFixed, MessageSquareText, Mic, Pause, PenLine, Play, UserRound, X } from 'lucide-react';
+import { formatWalkthroughTime, WALKTHROUGHS_COLLECTION, type Walkthrough, type WalkthroughSummary, type WalkthroughTimeline } from '@freero/shared';
 import { useCamera, useCollection, usePeople, type Editor, type PanelProps } from '@engine';
 import { Avatar, IconButton, Spinner } from '@ui';
 import { ChaptersList } from './Chapters';
@@ -12,7 +12,7 @@ import { Comments, useWalkthroughComments } from './Comments';
 import { CAPTIONS_ID, CHAPTERS_ID } from './ids';
 import { closeWalkthrough, usePlayer } from './playback';
 import { ReactButton, useWalkthroughReactions } from './Reactions';
-import { cameraShowing, chapterAt, cueAt, pointerAt, reactionMarks, viewAt } from './timeline';
+import { cameraShowing, chapterAt, cueAt, pointerAt, reactionMarks, speakerAt, viewAt, type PresenterTrack } from './timeline';
 
 import { t as tr } from '../messages';
 const STEP_MS = 5000;
@@ -31,6 +31,53 @@ export function PlayerOverlay({ editor }: PanelProps) {
 
 const canManage = (editor: Editor, w: Walkthrough) => w.authorId === editor.user.id || editor.can('editor');
 
+/** #128: every presenter's track on the walkthrough's clock — the host's first. */
+interface Track extends PresenterTrack {
+  key: string;
+  userId: string | null;
+  name: string;
+  mediaUrl: string;
+  media: 'audio' | 'video';
+  removed: boolean;
+}
+
+function tracksOf(w: Walkthrough): Track[] {
+  const host: Track = { key: 'host', userId: w.authorId, name: w.author?.name ?? 'Narrator', offsetMs: 0, durationMs: w.durationMs, timeline: w.timeline, mediaUrl: w.mediaUrl, media: w.media, removed: w.mediaRemoved };
+  return [
+    host,
+    ...(w.voices ?? []).map((v): Track => ({ key: v.id, userId: v.author?.id ?? null, name: v.author?.name ?? 'Presenter', offsetMs: v.offsetMs, durationMs: v.durationMs, timeline: v.timeline, mediaUrl: v.mediaUrl, media: v.media, removed: v.mediaRemoved })),
+  ];
+}
+
+const talking = (tl: WalkthroughTimeline, local: number) => (tl.speech ?? []).some(([s, e]) => s <= local && local <= e);
+
+/** MediaRecorder's WebM files don't say how long they are: asking for the very end makes the browser find out (so seeking works), then go to `ms`. */
+function primeDuration(el: HTMLMediaElement, ms: number) {
+  if (Number.isFinite(el.duration)) {
+    el.currentTime = ms / 1000;
+    return;
+  }
+  const back = () => {
+    el.removeEventListener('timeupdate', back);
+    el.currentTime = ms / 1000;
+  };
+  el.addEventListener('timeupdate', back);
+  el.currentTime = 1e101;
+}
+
+/** Keeps another presenter's recording at the walkthrough's moment `ms` (plays, pauses and seeks with it). */
+function syncVoice(el: HTMLMediaElement, track: Track, ms: number, playing: boolean) {
+  const local = ms - track.offsetMs;
+  const inside = local >= 0 && local < track.durationMs;
+  if (!playing || !inside) {
+    if (!el.paused) el.pause();
+    if (!playing && inside && Math.abs(el.currentTime * 1000 - local) > 250) el.currentTime = local / 1000;
+    return;
+  }
+  if (Math.abs(el.currentTime * 1000 - local) > 300) el.currentTime = local / 1000;
+  if (el.paused) void el.play().catch(() => undefined);
+}
+
 function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startAt: number }) {
   const media = useRef<HTMLMediaElement | null>(null);
   const [t, setT] = useState(startAt);
@@ -44,8 +91,16 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
   const counted = useRef(false);
   const lastApplied = useRef<number | null>(null);
   const playButton = useRef<HTMLButtonElement>(null);
-  const people = usePeople(w.authorId ? [w.authorId] : []);
+  const tracks = tracksOf(w);
+  const group = tracks.length > 1;
+  const voiceEls = useRef(new Map<string, HTMLMediaElement>());
+  // Whose view to follow with several presenters: whoever is speaking, or always the host.
+  const [followWho, setFollowWho] = useState<'speaker' | 'host'>('speaker');
+  const followWhoRef = useRef(followWho);
+  followWhoRef.current = followWho;
+  const people = usePeople(tracks.flatMap((x) => (x.userId ? [x.userId] : [])));
   const author = (w.authorId && people[w.authorId]) || null;
+  const colorOf = (x: Track) => (x.userId && people[x.userId]?.color) || '#5b3ff0';
   const summary = new Map(useCollection<WalkthroughSummary>(WALKTHROUGHS_COLLECTION)).get(w.id);
   const comments = useWalkthroughComments(editor, w.id, summary?.comments ?? w.comments);
   const reactions = useWalkthroughReactions(editor, w.id, summary?.reactions ?? w.reactions ?? 0);
@@ -62,10 +117,12 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
       if (!followingRef.current) return;
       if (!force && lastApplied.current !== null && Math.abs(ms - lastApplied.current) < 1) return;
       lastApplied.current = ms;
-      const r = viewAt(w.timeline, ms);
+      const all = tracksOf(w);
+      const who = all.length > 1 && followWhoRef.current === 'speaker' ? all[speakerAt(all, ms)] : all[0];
+      const r = viewAt(who.timeline, Math.max(0, Math.min(who.durationMs, ms - who.offsetMs)));
       if (r) editor.setCamera(cameraShowing(r, editor.getViewportSize()));
     },
-    [editor, w.timeline],
+    [editor, w],
   );
 
   // The viewer's own pan / zoom takes the camera back from the recording.
@@ -81,11 +138,17 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
         setT(ms);
         apply(ms);
       }
+      // The other presenters' recordings follow the host's (the walkthrough's clock).
+      if (el)
+        for (const x of tracksOf(w).slice(1)) {
+          const v = voiceEls.current.get(x.key);
+          if (v && !x.removed) syncVoice(v, x, el.currentTime * 1000, !el.paused);
+        }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [apply, w.durationMs]);
+  }, [apply, w]);
 
   useEffect(() => {
     if (editor.getFollowing() && !editor.getFollowing()?.locked) editor.follow(null);
@@ -131,18 +194,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
   // MediaRecorder's WebM files don't say how long they are: asking for the very end makes the
   // browser find out, then we go to where playback starts.
   const onLoadedMetadata = () => {
-    const el = media.current;
-    if (!el) return;
-    if (Number.isFinite(el.duration)) {
-      el.currentTime = startAt / 1000;
-      return;
-    }
-    const back = () => {
-      el.removeEventListener('timeupdate', back);
-      el.currentTime = startAt / 1000;
-    };
-    el.addEventListener('timeupdate', back);
-    el.currentTime = 1e101;
+    if (media.current) primeDuration(media.current, startAt);
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -166,10 +218,16 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
   };
 
   const cue = captionsOn ? cueAt(w.transcript, t) : null;
-  const pointer = pointerAt(w.timeline, t);
-  const at = pointer ? editor.worldToScreen(pointer) : null;
   const name = w.author?.name ?? 'Narrator';
   const color = author?.color ?? '#5b3ff0';
+  // Every presenter's pointer, in their colour.
+  const pointers = tracks.flatMap((x) => {
+    const local = t - x.offsetMs;
+    if (local < 0 || local > x.durationMs) return [];
+    const p = pointerAt(x.timeline, local);
+    return p ? [{ x, at: editor.worldToScreen(p) }] : [];
+  });
+  const followed = group && followWho === 'speaker' ? tracks[speakerAt(tracks, t)] : tracks[0];
   const hasCaptions = !!w.transcript?.length;
   const markers = comments.list ?? [];
   const marks = reactionMarks(reactions.list, w.durationMs);
@@ -178,14 +236,40 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
 
   return (
     <>
-      {at && (
-        <div className="fr-walkthrough-pointer" style={{ transform: `translate(${at.x}px, ${at.y}px)`, ['--fr-walkthrough-color' as string]: color }} aria-hidden>
+      {pointers.map(({ x, at }) => (
+        <div key={x.key} className="fr-walkthrough-pointer" style={{ transform: `translate(${at.x}px, ${at.y}px)`, ['--fr-walkthrough-color' as string]: colorOf(x) }} aria-hidden>
           <span className="fr-walkthrough-pointer__dot" />
-          <span className="fr-walkthrough-pointer__name">{name}</span>
+          <span className="fr-walkthrough-pointer__name">{x.name}</span>
+        </div>
+      ))}
+
+      {group && (
+        <div className="fr-walkthrough-voices" data-fr-occludes="" data-fr-interactive="" role="group" aria-label={tr('presentersNames', { names: tracks.map((x) => x.name).join(', ') })}>
+          {tracks.slice(1).map((v) => {
+            const local = t - v.offsetMs;
+            const speaking = playing && local >= 0 && local <= v.durationMs && talking(v.timeline, local);
+            const ref = (el: HTMLMediaElement | null) => {
+              if (el) voiceEls.current.set(v.key, el);
+              else voiceEls.current.delete(v.key);
+            };
+            const prime = (e: SyntheticEvent<HTMLMediaElement>) => primeDuration(e.currentTarget, Math.max(0, t - v.offsetMs));
+            return (
+              <div key={v.key} className={`fr-walkthrough-voice${speaking ? ' is-speaking' : ''}`} style={{ ['--fr-walkthrough-color' as string]: colorOf(v) }} title={v.name}>
+                {v.media === 'video' && !v.removed ? (
+                  <video ref={ref} className="fr-walkthrough-bubble__video" src={v.mediaUrl} preload="metadata" playsInline onLoadedMetadata={prime} aria-label={tr('nameSCamera', { name: v.name })} />
+                ) : (
+                  <>
+                    <Avatar name={v.name} color={colorOf(v)} src={(v.userId && people[v.userId]?.avatarUrl) || null} size={44} />
+                    {!v.removed && <audio ref={ref} src={v.mediaUrl} preload="metadata" onLoadedMetadata={prime} />}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      <div className={`fr-walkthrough-bubble${playing ? ' is-speaking' : ''}`} style={{ ['--fr-walkthrough-color' as string]: color }} data-fr-occludes="" data-fr-interactive="">
+      <div className={`fr-walkthrough-bubble${playing && (!group || talking(w.timeline, t)) ? ' is-speaking' : ''}`} style={{ ['--fr-walkthrough-color' as string]: color }} data-fr-occludes="" data-fr-interactive="">
         {w.media === 'video' ? (
           <video
             ref={(el) => void (media.current = el)}
@@ -225,6 +309,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
 
       {cue && (
         <div className="fr-walkthrough-caption" lang="">
+          {cue.speaker && <span className="fr-walkthrough-caption__speaker">{tr('speakerSays', { name: cue.speaker })}</span>}
           {cue.text}
         </div>
       )}
@@ -302,7 +387,21 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
         <span className="fr-walkthrough-bar__time fr-walkthrough-bar__total">{formatWalkthroughTime(w.durationMs)}</span>
         {!following && (
           <button type="button" className="fr-walkthrough-bar__back" onClick={backToView} title={tr('backToTheNarratorS')}>
-            <LocateFixed size={15} aria-hidden />{' '}{tr('backToValueSView', { value: name.split(' ')[0] })}</button>
+            <LocateFixed size={15} aria-hidden />{' '}{tr('backToValueSView', { value: followed.name.split(' ')[0] })}</button>
+        )}
+        {group && (
+          <IconButton
+            icon={followWho === 'speaker' ? Mic : UserRound}
+            label={followWho === 'speaker' ? tr('followingWhoeverSpeaks', { name }) : tr('followingName', { name })}
+            active={followWho === 'speaker'}
+            onClick={() => {
+              const next = followWho === 'speaker' ? 'host' : 'speaker';
+              followWhoRef.current = next;
+              setFollowWho(next);
+              setFollowing(true);
+              apply(t, true);
+            }}
+          />
         )}
         <span className="fr-walkthrough-bar__sep" aria-hidden />
         {hasCaptions && (

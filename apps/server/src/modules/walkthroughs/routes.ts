@@ -9,6 +9,7 @@ import { attachmentDisposition } from '../uploads/index';
 import {
   addComment,
   addReaction,
+  addVoice,
   captionsUnavailable,
   createWalkthrough,
   deleteComment,
@@ -48,6 +49,17 @@ export default function walkthroughRoutes(_ctx: ServerContext): Router {
     rateLimit('upload', 'user'),
     handle(async (req, res) => {
       res.status(201).json({ walkthrough: await createWalkthrough(req.params.id, currentUser(req).id, req.body) } satisfies { walkthrough: Walkthrough });
+    }),
+  );
+
+  // #128: a presenter's own recording for a session someone else hosts.
+  r.post(
+    `${base}/voices`,
+    requireUser,
+    rateLimit('upload', 'user'),
+    handle(async (req, res) => {
+      await addVoice(req.params.id, currentUser(req).id, req.body);
+      res.status(201).json({ ok: true } satisfies { ok: true });
     }),
   );
 

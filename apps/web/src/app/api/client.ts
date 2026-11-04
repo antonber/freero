@@ -167,6 +167,7 @@ import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
   CreateWalkthroughRequest,
+  AddWalkthroughVoiceRequest,
   Decision,
   DecisionChanges,
   DecisionResponse,
@@ -903,6 +904,7 @@ export const api = {
   listWalkthroughs: (boardId: string) => request<{ walkthroughs: WalkthroughSummary[] }>('GET', `${walkthroughsPath(boardId)}`),
   getWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('GET', walkthroughsPath(boardId, id)),
   createWalkthrough: (boardId: string, body: CreateWalkthroughRequest) => request<{ walkthrough: Walkthrough }>('POST', walkthroughsPath(boardId), body),
+  addWalkthroughVoice: (boardId: string, body: AddWalkthroughVoiceRequest) => request<{ ok: true }>('POST', `${walkthroughsPath(boardId)}/voices`, body),
   renameWalkthrough: (boardId: string, id: string, title: string) => request<{ walkthrough: Walkthrough }>('PATCH', walkthroughsPath(boardId, id), { title }),
   async deleteWalkthrough(boardId: string, id: string): Promise<void> {
     const res = await fetch(walkthroughsPath(boardId, id), { method: 'DELETE', credentials: 'same-origin' });

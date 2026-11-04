@@ -29,6 +29,13 @@
 // GET    /api/boards/:id/walkthroughs/:wid/reactions      -> { reactions: WalkthroughReaction[] }
 // POST   /api/boards/:id/walkthroughs/:wid/reactions      body { atMs, emoji } -> { reaction }  (commenters and up, with an account)
 // DELETE /api/boards/:id/walkthroughs/:wid/reactions/:rid -> 204  (its author, owners, editors)
+// [#128] Several presenters in one recording. The host records as before and invites people on the
+// board (presence); each who joins records their OWN voice, view and pointer in their own browser
+// against the same server clock, and sends it as a voice of the session:
+// POST   /api/boards/:id/walkthroughs/voices              body AddWalkthroughVoiceRequest -> 201 { ok: true }
+//        (editors; their own upload). The host's POST /walkthroughs with the same `session` makes
+//        the walkthrough; voices sent before or after it join it. Someone who leaves early sends
+//        what they recorded; the recording goes on without them.
 
 /** Server-written board collection: walkthrough id -> WalkthroughSummary. */
 export const WALKTHROUGHS_COLLECTION = 'walkthroughs';
@@ -59,6 +66,8 @@ export interface WalkthroughTimeline {
   v: 1;
   view: Array<[number, number, number, number, number]>;
   pointer: Array<[number, number, number] | [number]>;
+  /** [additive, #128] When this voice was talking: [start, end] ms, sorted, not overlapping. */
+  speech?: Array<[number, number]>;
 }
 
 /** One caption: from `start` to `end` ms, what was said. */
@@ -66,6 +75,8 @@ export interface WalkthroughCue {
   start: number;
   end: number;
   text: string;
+  /** [additive, #128] Who said it, in a recording with several presenters. */
+  speaker?: string;
 }
 
 export interface WalkthroughSummary {
@@ -84,6 +95,8 @@ export interface WalkthroughSummary {
   captions: boolean;
   /** [additive, #127] Emoji reactions at moments (open boards re-read them when it changes). */
   reactions?: number;
+  /** [additive, #128] People who presented in it (1: the author alone). */
+  presenters?: number;
 }
 
 /** [additive, #127] A chapter: where it starts and what it is called. */
@@ -124,7 +137,38 @@ export interface Walkthrough extends WalkthroughSummary {
   chapters?: WalkthroughChapter[];
   /** The reader has watched it before. */
   viewed: boolean;
+  /** [additive, #128] The other presenters' voices, each on the walkthrough's clock from `offsetMs`. */
+  voices?: WalkthroughVoice[];
 }
+
+/** [additive, #128] One more presenter in a walkthrough: their recording, view and pointer. */
+export interface WalkthroughVoice {
+  id: string;
+  author: { id: string; name: string } | null;
+  /** `/uploads/<name>` */
+  mediaUrl: string;
+  media: 'audio' | 'video';
+  mediaRemoved: boolean;
+  /** Where on the walkthrough's clock their recording starts. */
+  offsetMs: number;
+  durationMs: number;
+  timeline: WalkthroughTimeline;
+}
+
+/** [#128] A presenter's recording sent for a session (their own upload: video/* or audio/*). */
+export interface AddWalkthroughVoiceRequest {
+  session: string;
+  mediaUrl: string;
+  media: 'audio' | 'video';
+  offsetMs: number;
+  durationMs: number;
+  timeline: WalkthroughTimeline;
+}
+
+/** [#128] A recording session's id (made by the host's browser). */
+export const WALKTHROUGH_SESSION_RE = /^[A-Za-z0-9_-]{8,40}$/;
+/** [#128] Most voices one session keeps besides the host's (someone who rejoins adds one more). */
+export const MAX_WALKTHROUGH_VOICES = 12;
 
 export interface CreateWalkthroughRequest {
   title: string;
@@ -134,6 +178,8 @@ export interface CreateWalkthroughRequest {
   media: 'audio' | 'video';
   durationMs: number;
   timeline: WalkthroughTimeline;
+  /** [additive, #128] The recording session others joined: their voices become part of it. */
+  session?: string;
 }
 
 /** A comment pinned to a moment of a walkthrough. Mentions are `<@userId>` tokens (MENTION_RE). */

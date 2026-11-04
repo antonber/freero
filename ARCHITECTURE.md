@@ -2832,6 +2832,21 @@ a native range. No third-party recording service, no screen capture. Overlay con
   commenters and up with an account; deleted with the reactor's account). Marks on the track group
   a burst into one mark with counts (`reactionMarks`); who reacted isn't shown, only `mine`. The
   author is notified (`walkthrough.reaction`) once per person per walkthrough.
+- Several presenters (#128): every recording is a SESSION (an id the host's browser makes). The host
+  invites people on the board through presence (`ext.walkthrough`: session, title, the server-clock
+  start, who is invited, and for a few seconds after stopping whether it was kept); an invited
+  editor who joins records their OWN voice (and camera), view and pointer in their own browser, on
+  the walkthrough's clock (server time minus the host's start), and sends it with
+  `POST …/walkthroughs/voices` (`walkthrough_voices`, their own upload, kept by session: it may
+  arrive before or after the host saves, and joins the walkthrough whose `session_id` matches).
+  Nobody's audio travels between browsers. A guest stops with the host (keeping their part only if
+  the host kept theirs), or leaves early and sends what they have; the recording goes on. Each
+  recorder also stores when its person talked (`timeline.speech`, from microphone levels:
+  `SpeechTracker`). Playback keeps the other voices' media in step with the host's clock, shows
+  every presenter's pointer in their colour, and follows whoever is speaking (`speakerAt`) or the
+  host's view; AI captions transcribe each voice and name the speaker (`mergeVoiceCues`). Voices
+  are in the uploads sweep's references, deleted with the walkthrough, and with their author's
+  account; a session nobody saved loses its voices after a day.
 - Open boards learn about changes through the server-written `walkthroughs` collection
   (`SERVER_WRITTEN_COLLECTIONS`, `Y_KEPT_ON_RESTORE`): a summary per walkthrough (title, length,
   counts), never the media URL or the timeline. An object: `freero://walkthrough/<id>`, with the

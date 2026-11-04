@@ -1,6 +1,6 @@
 // Thin wrappers over the REST client for building the engine's `Host`
 // (see Host in engine/api.ts). Used from app/board/.
-import type { ResolvedObject, SavedTemplateSummary } from '@freero/shared';
+import type { AddWalkthroughVoiceRequest, ResolvedObject, SavedTemplateSummary } from '@freero/shared';
 import type { ElementsSnapshot, Host, HostUser, LinkPreview, SavedTemplateInfo, VersionHistory } from '@engine';
 import { api, wsBase } from './api/client';
 
@@ -120,6 +120,14 @@ export function walkthroughsOf(boardId: string, opts: { canDownload: boolean; si
           return (await api.createWalkthrough(boardId, { ...request, mediaUrl: url })).walkthrough;
         }
       : no('Recording a walkthrough'),
+    ...(opts.signedIn
+      ? {
+          addVoice: async (recording: Blob, request: Omit<AddWalkthroughVoiceRequest, 'mediaUrl'>) => {
+            const { url } = await api.uploadImage(recording);
+            await api.addWalkthroughVoice(boardId, { ...request, mediaUrl: url });
+          },
+        }
+      : {}),
     rename: async (id, title) => (await api.renameWalkthrough(boardId, id, title)).walkthrough,
     remove: (id) => api.deleteWalkthrough(boardId, id),
     viewed: async (id) => void (await api.viewedWalkthrough(boardId, id)),

@@ -58,6 +58,7 @@ import type {
   VerticalAlign,
   CreateDecisionRequest,
   CreateWalkthroughRequest,
+  AddWalkthroughVoiceRequest,
   Decision,
   Walkthrough,
   WalkthroughChaptersInput,
@@ -540,6 +541,8 @@ export interface HostWalkthroughs {
   get(id: string): Promise<Walkthrough>;
   /** Stores the recording (an upload of this user's: quota, size cap) and the walkthrough over it. */
   create(recording: Blob, request: Omit<CreateWalkthroughRequest, 'mediaUrl'>): Promise<Walkthrough>;
+  /** [additive, #128] Stores this person's recording as their voice in someone else's recording session. */
+  addVoice?(recording: Blob, request: Omit<AddWalkthroughVoiceRequest, 'mediaUrl'>): Promise<void>;
   rename(id: string, title: string): Promise<Walkthrough>;
   remove(id: string): Promise<void>;
   /** "I watched it" (counted once per person; visitors without an account aren't counted). */
