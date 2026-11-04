@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!accountId) return;
     adoptAccountLocale(accountLocale, (locale) => {
-      api.updateMe({ locale }).then(
+      Promise.resolve(locale).then((l) => api.updateMe({ locale: l })).then(
         ({ user: next }) => setUser((cur) => (cur && cur.id === next.id ? next : cur)),
         () => undefined, // tried again next time the app loads
       );
