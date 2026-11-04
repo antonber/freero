@@ -18,7 +18,9 @@ import { LOCALES, messageArguments, validateMessage } from '../packages/shared/s
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+// --root <dir> checks another tree laid out like this repo (the checker's own tests use it).
+const rootArg = process.argv.indexOf('--root');
+const ROOT = rootArg > 0 ? path.resolve(process.argv[rootArg + 1]) : path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const WEB = path.join(ROOT, 'apps/web/src');
 const SERVER = path.join(ROOT, 'apps/server/src');
 const BASELINE = path.join(ROOT, 'i18n.baseline.json');
