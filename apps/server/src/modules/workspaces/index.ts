@@ -72,6 +72,8 @@ export { createOrganisation, attachWorkspace, detachWorkspace, requireOrganisati
 // The admin console (modules/admin): the role check, members, security / retention settings.
 export {
   requireWorkspace,
+  // #159: a workspace key's state changed (modules/keys): everyone connected to its boards re-checked.
+  refreshWorkspaceBoards,
   requireScope,
   listMembers as listWorkspaceMembers,
   setMemberDeactivated,
