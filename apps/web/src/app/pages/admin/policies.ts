@@ -118,6 +118,16 @@ export const POLICY_FIELDS: Array<{
       { value: 'admins', label: t('ownersAndAdminsOnly') },
     ],
   },
+  {
+    key: 'offlineCopies',
+    label: t('offlineCopiesOnDevices'),
+    hint: t('whetherPeopleMayKeepCopies'),
+    options: [
+      { value: 'unkeyed', label: t('allowedUnlessEncryptedWithKey') },
+      { value: 'all', label: t('allowedAlsoUnderKey') },
+      { value: 'off', label: t('off') },
+    ],
+  },
 ];
 
 /** `linkMaxDays` (#39): '' stands for no limit. */

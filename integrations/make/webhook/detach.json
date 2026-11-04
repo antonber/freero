@@ -1,0 +1,4 @@
+{
+    "url": "/workspaces/{{webhook.workspace}}/webhooks/{{webhook.externalHookId}}",
+    "method": "DELETE"
+}

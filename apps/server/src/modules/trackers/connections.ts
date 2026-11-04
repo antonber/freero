@@ -31,6 +31,7 @@ import { appUrl } from '../../platform/mail';
 import { seal, unseal } from '../../platform/secrets';
 import { requireAdmin } from '../admin/index';
 import { recordAudit } from '../audit/index';
+import { findUserByEmail, getAccount, getUser } from '../auth/index';
 import { workspaceRole } from '../workspaces/index';
 import { checkTrackerUrl, trackerRequest, TrackerError } from './http';
 import { oauthProviderOf, providerOf, type Credentials, type ProviderConnection } from './providers/index';
@@ -97,10 +98,10 @@ const sealCredentials = (creds: Credentials) => seal(CREDENTIALS_PURPOSE, JSON.s
  * hand too, which may not be stored yet (a connection is tested before it is saved) — and a pair
  * someone else stored meanwhile (another instance's refresh) is used instead of refreshing again.
  */
-/** The OAuth app the operator registered for a tracker (Jira Cloud, Asana, monday.com), or null. */
+/** The OAuth app the operator registered for a tracker (Jira Cloud, Asana, monday.com, ClickUp), or null. */
 export function oauthAppOf(provider: TrackerProviderKind): { clientId: string; clientSecret: string } | null {
   const t = getConfig().trackers;
-  return provider === 'jira' ? t.jiraOAuth : provider === 'asana' ? t.asanaOAuth : provider === 'monday' ? t.mondayOAuth : null;
+  return provider === 'jira' ? t.jiraOAuth : provider === 'asana' ? t.asanaOAuth : provider === 'monday' ? t.mondayOAuth : provider === 'clickup' ? t.clickupOAuth : null;
 }
 
 async function refreshed(c: StoredConnection, creds: Extract<Credentials, { kind: 'oauth' }>, force: boolean): Promise<Credentials> {
@@ -120,11 +121,49 @@ async function refreshed(c: StoredConnection, creds: Extract<Credentials, { kind
   return next;
 }
 
+/** A verified address of this person, else null. */
+async function verifiedEmailOf(userId: string): Promise<string | null> {
+  const [u, account] = await Promise.all([getUser(userId), getAccount(userId).catch(() => null)]);
+  return u && account?.emailVerified ? u.email.toLowerCase() : null;
+}
+
+/**
+ * Who a tracker login is in Freero and back, for trackers that hide addresses (Trello; GitHub
+ * without a public email): only through a person's OWN connection to the same site, which Freero
+ * tested as that login — nobody can claim someone else's account by typing its name.
+ */
+export function peopleOf(c: Pick<StoredConnection, 'provider' | 'site'>): NonNullable<ProviderConnection['people']> {
+  let all: Promise<Array<{ ownerId: string; login: string }>> | null = null;
+  const logins = () => (all ??= repo.personalLogins(c.provider, c.site));
+  return {
+    async emailOf(login) {
+      const owners = [...new Set((await logins()).filter((l) => l.login.toLowerCase() === login.toLowerCase()).map((l) => l.ownerId))];
+      // Two people who tested the same login: neither is it for sure.
+      return owners.length === 1 ? verifiedEmailOf(owners[0]) : null;
+    },
+    async loginOf(email) {
+      const u = await findUserByEmail(email);
+      if (!u || (await verifiedEmailOf(u.id)) !== email.toLowerCase()) return null;
+      const mine = [...new Set((await logins()).filter((l) => l.ownerId === u.id).map((l) => l.login.toLowerCase()))];
+      return mine.length === 1 ? mine[0] : null;
+    },
+  };
+}
+
 /** The connection as its provider uses it: every call authenticated, rate limited and retried. */
 export function openConnection(c: StoredConnection): ProviderConnection {
   const provider = providerOf(c.provider);
   let creds: Credentials | null = null;
   const base = c.apiBase.replace(/\/+$/, '');
+  const signing = (() => {
+    if (c.provider !== 'trello' || !c.credentialsSealed) return null;
+    try {
+      const opened = openCredentials(c);
+      return opened.kind === 'token' ? (opened.secret ?? null) : null;
+    } catch {
+      return null;
+    }
+  })();
   return {
     id: c.id,
     provider: c.provider,
@@ -132,13 +171,15 @@ export function openConnection(c: StoredConnection): ProviderConnection {
     apiBase: base,
     deployment: c.deployment,
     settings: c.settings,
+    signingSecret: signing,
+    people: peopleOf(c),
     async call(req) {
       if (c.cooldownUntil && c.cooldownUntil > Date.now())
         throw new TrackerError(`${TRACKER_PROVIDERS[c.provider]} asked Freero to slow down; the sync will try again shortly.`, 'rate', 429, c.cooldownUntil - Date.now());
       creds ??= openCredentials(c);
       if (creds.kind === 'oauth' && creds.expiresAt !== null && creds.expiresAt < Date.now() + 60_000) creds = await refreshed(c, creds, false);
       const url = req.path.startsWith('http') ? req.path : `${base}${req.path}`;
-      if (!url.startsWith(base)) throw new TrackerError('Freero only calls the connection’s own address.', 'refused');
+      if (!url.startsWith(base) && !(provider.endpoints?.(base) ?? []).includes(url)) throw new TrackerError('Freero only calls the connection’s own address.', 'refused');
       const send = (cr: Credentials) =>
         trackerRequest(
           {
@@ -189,6 +230,9 @@ export function apiBaseOf(provider: TrackerProviderKind, site: string): string {
   // Asana's API lives under its app; monday.com's at one address for every account.
   if (provider === 'asana') return `${s}/api/1.0`;
   if (provider === 'monday') return /^https:\/\/([a-z0-9-]+\.)?monday\.com$/i.test(s) ? getConfig().trackers.mondayApiUrl : s;
+  // ClickUp's API is on its own host for every Workspace (a mock serves both under one address).
+  if (provider === 'clickup') return /^https:\/\/(app\.)?clickup\.com$/i.test(s) ? `${getConfig().trackers.clickupApiUrl}/api/v2` : `${s}/api/v2`;
+  if (provider === 'trello') return /^https:\/\/(www\.)?trello\.com$/i.test(s) ? `${getConfig().trackers.trelloApiUrl}/1` : `${s}/1`;
   return s;
 }
 
@@ -197,6 +241,8 @@ const defaultSite: Partial<Record<TrackerProviderKind, string>> = {
   linear: 'https://linear.app',
   asana: 'https://app.asana.com',
   monday: 'https://monday.com',
+  clickup: 'https://app.clickup.com',
+  trello: 'https://trello.com',
 };
 
 export function info(c: StoredConnection, links: number, req: Request | null, manager: boolean): TrackerConnectionInfo {
@@ -223,18 +269,20 @@ export function info(c: StoredConnection, links: number, req: Request | null, ma
           fieldMap: fieldMapSettingsOf(c),
         }
       : {}),
+    ...(providerOf(c.provider).dependencies ? { syncDependencies: c.settings.dependencies === true } : {}),
     links,
     createdAt: c.createdAt,
   };
 }
 
 /** The field map part of a connection's settings, as managers see it (#43). */
-export function fieldMapSettingsOf(c: Pick<StoredConnection, 'settings'>): TrackerFieldMapSettings {
+export function fieldMapSettingsOf(c: Pick<StoredConnection, 'settings' | 'provider'>): TrackerFieldMapSettings {
   return {
     estimateField: c.settings.estimateField ?? null,
     startDateField: c.settings.startDateField ?? null,
     issueTypes: c.settings.issueTypes ?? {},
     fields: c.settings.fieldMap ?? [],
+    ...(c.provider === 'github' ? { planningProject: c.settings.planningProject ?? null } : {}),
   };
 }
 
@@ -260,6 +308,12 @@ function fieldMapPatch(c: StoredConnection, v: unknown): Partial<repo.Connection
   if (b.estimateField !== undefined) out.estimateField = fieldId(b.estimateField, 'fieldMap.estimateField');
   if (b.startDateField !== undefined) out.startDateField = fieldId(b.startDateField, 'fieldMap.startDateField');
   if (out.estimateField !== undefined || out.startDateField !== undefined) out.fieldsPicked = true;
+  if (b.planningProject !== undefined) {
+    if (c.provider !== 'github') throw badRequest('Only GitHub connections have a planning Project', 'tracker_planning_project_github_only');
+    if (b.planningProject !== null && b.planningProject !== '' && (typeof b.planningProject !== 'string' || !/^[\w.-]{1,100}\/\d{1,9}$/.test(b.planningProject.trim())))
+      throw badRequest('fieldMap.planningProject must be a GitHub Project as owner/number (acme/3)', 'tracker_planning_project_invalid');
+    out.planningProject = typeof b.planningProject === 'string' && b.planningProject.trim() ? b.planningProject.trim() : null;
+  }
   if (b.issueTypes !== undefined) {
     if (!b.issueTypes || typeof b.issueTypes !== 'object' || Array.isArray(b.issueTypes)) throw badRequest('fieldMap.issueTypes must map project keys to issue types');
     const entries = Object.entries(b.issueTypes as Record<string, unknown>);
@@ -341,6 +395,21 @@ function defaultsOf(v: unknown): {
   };
 }
 
+/**
+ * The API key a Trello token goes with: the person's own (with its secret, if they gave it), else
+ * the operator's (TRACKER_TRELLO_KEY, with TRACKER_TRELLO_SECRET).
+ */
+function trelloKeysOf(b: Record<string, unknown>): { key: string; secret?: string } {
+  const own = typeof b.apiKey === 'string' && b.apiKey.trim() ? str(b.apiKey, 'apiKey', 200) : null;
+  const t = getConfig().trackers;
+  if (!own) {
+    if (!t.trelloKey) throw badRequest('apiKey is required: the Trello API key the token was made for (trello.com/power-ups/admin)', 'tracker_trello_key_required');
+    return { key: t.trelloKey, ...(t.trelloSecret ? { secret: t.trelloSecret } : {}) };
+  }
+  const secret = typeof b.apiSecret === 'string' && b.apiSecret.trim() ? str(b.apiSecret, 'apiSecret', 200) : null;
+  return { key: own, ...(secret ? { secret } : {}) };
+}
+
 export async function createConnection(userId: string, body: unknown, req: Request | null): Promise<{ connection: TrackerConnectionInfo; webhookSecret: string }> {
   const b = (body ?? {}) as Partial<TrackerConnectionInput> & Record<string, unknown>;
   if (!PROVIDERS.includes(b.provider as TrackerProviderKind)) throw badRequest(`provider must be ${PROVIDERS.join(', ')}`);
@@ -371,6 +440,7 @@ export async function createConnection(userId: string, body: unknown, req: Reque
     throw badRequest('site must be the organization’s address: https://dev.azure.com/<organization>');
   const token = str(b.token, 'token', 4000);
   const email = provider === 'jira' && deployment === 'cloud' ? str(b.email, 'email (the Jira account the API token belongs to)', 254) : undefined;
+  const trelloKeys = provider === 'trello' ? trelloKeysOf(b) : {};
   const inbound = b.inbound === 'polling' ? 'polling' : 'webhook';
   const webhookSecret = newWebhookSecret();
   const stored: StoredConnection = {
@@ -387,10 +457,12 @@ export async function createConnection(userId: string, body: unknown, req: Reque
       kind: 'token',
       token,
       ...(email ? { email } : {}),
+      ...trelloKeys,
     }),
     webhookSecretSealed: seal(WEBHOOK_PURPOSE, webhookSecret),
     inbound,
-    settings: defaultsOf(b.defaults),
+    // #50: new connections sync dependencies; older ones only once a manager turns it on.
+    settings: { ...defaultsOf(b.defaults), ...(providerOf(provider).dependencies ? { dependencies: true as const } : {}) },
     status: 'active',
     lastError: null,
     cooldownUntil: null,
@@ -465,7 +537,7 @@ export async function createOAuthConnection(
     updatedAt: Date.now(),
   };
   const me = await providerOf(p.provider).whoAmI(openConnection(stored));
-  stored.settings = { ...me.settings, account: me.account };
+  stored.settings = { ...me.settings, account: me.account, ...(providerOf(p.provider).dependencies ? { dependencies: true as const } : {}) };
   await repo.transaction(async () => {
     await repo.insertConnection(stored);
     await recordAudit({
@@ -504,6 +576,13 @@ export async function updateConnection(id: string, userId: string, body: unknown
     };
     changed.push('defaults');
   }
+  if (b.syncDependencies !== undefined) {
+    if (typeof b.syncDependencies !== 'boolean') throw badRequest('syncDependencies must be true or false');
+    if (!providerOf(c.provider).dependencies) throw badRequest(`${TRACKER_PROVIDERS[c.provider]} has no blocking links Freero syncs`, 'tracker_dependencies_unsupported');
+    const { dependencies: _d, ...rest } = patch.settings ?? c.settings;
+    patch.settings = { ...rest, ...(b.syncDependencies ? { dependencies: true as const } : {}) };
+    changed.push('dependencies');
+  }
   if (b.fieldMap !== undefined) {
     patch.settings = { ...(patch.settings ?? c.settings), ...fieldMapPatch(c, b.fieldMap) };
     changed.push('field map');
@@ -519,10 +598,13 @@ export async function updateConnection(id: string, userId: string, body: unknown
       }
     })();
     const email = b.email !== undefined ? str(b.email, 'email', 254) : prev?.kind === 'token' ? prev.email : undefined;
+    // Trello: a new token keeps the key (and secret) it had unless new ones come with it.
+    const keys = c.provider !== 'trello' ? {} : b.apiKey !== undefined ? trelloKeysOf(b) : prev?.kind === 'token' ? { ...(prev.key ? { key: prev.key } : {}), ...(prev.secret ? { secret: prev.secret } : {}) } : trelloKeysOf(b);
     patch.credentialsSealed = sealCredentials({
       kind: 'token',
       token,
       ...(email ? { email } : {}),
+      ...keys,
     });
     patch.status = 'active';
     patch.lastError = null;

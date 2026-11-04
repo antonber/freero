@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "Le tracker n’a pas répondu. Réessayez.",
   "sendToTracker": "Envoyer au tracker…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "Chaque ticket devient une carte de tâche liée à lui (jusqu’à 50 à la fois). Les tickets déjà présents sur ce tableau sont ignorés.",
   "countIssue": "{count, plural, one {# ticket} other {# tickets}}",
   "countItem": "{count, plural, one {# élément} other {# éléments}}",
-  "countSelectedItem": "{count, plural, one {# élément sélectionné} other {# éléments sélectionnés}}"
+  "countSelectedItem": "{count, plural, one {# élément sélectionné} other {# éléments sélectionnés}}",
+  "quarter": "Trimestre",
+  "aList": "Une liste"
 }

@@ -17,6 +17,7 @@ import { MyProblems } from '../../problems/MyProblems';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import { t as tr } from './messages';
 import { SlackSection } from './SlackSection';
+import { DeviceNotificationsSection } from './DeviceNotificationsSection';
 import './account.css';
 
 // Same palette the server assigns at signup: saturated enough to read on the canvas.
@@ -74,6 +75,7 @@ export function AccountSettingsPage() {
         </Section>
         <EmailSection security={security} />
         <NotificationsSection version={slackVersion} />
+        <DeviceNotificationsSection />
         <SlackSection onChange={() => setSlackVersion((v) => v + 1)} />
         <SignInMethodsSection security={security} onChange={setSecurity} />
         <PasswordSection security={security} onChanged={securityChanged} />
@@ -341,6 +343,16 @@ function NotificationsSection({ version }: { version: number }) {
                 aria-label={tr('emailASummaryOfChanges')}
               />
             </div>
+            <Toggle
+              label={
+                <span className="fr-acct-prefs__type">
+                  <span className="fr-acct-prefs__label">{tr('newCommentsOnYourBoards')}</span>
+                  <span className="fr-acct__hint">{tr('tellMeWhenSomeoneStarts')}</span>
+                </span>
+              }
+              checked={prefs.boardComments === true}
+              onChange={(on) => save({ boardComments: on }, { ...prefs, boardComments: on })}
+            />
             {slack ? (
               <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label={tr('notifyMeAbout')}>
                 <li className="fr-acct-prefs__channels-head" aria-hidden>

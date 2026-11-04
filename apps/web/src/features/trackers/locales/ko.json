@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "트래커가 응답하지 않았어요. 다시 시도하세요.",
   "sendToTracker": "트래커로 보내기…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "각 이슈는 이슈와 연결된 작업 카드가 돼요(한 번에 최대 50개). 이미 이 보드에 있는 이슈는 제외돼요.",
   "countIssue": "{count, plural, other {이슈 #개}}",
   "countItem": "{count, plural, other {항목 #개}}",
-  "countSelectedItem": "{count, plural, other {선택한 항목 #개}}"
+  "countSelectedItem": "{count, plural, other {선택한 항목 #개}}",
+  "quarter": "분기",
+  "aList": "목록"
 }

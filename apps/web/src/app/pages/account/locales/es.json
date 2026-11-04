@@ -248,7 +248,15 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "No se pudo conectar con Freero. Inténtalo de nuevo.",
   "restoreAccount": "Restaurar cuenta",
@@ -387,7 +395,7 @@
   "connectAnAgent": "Conectar un agente",
   "appsAgents": "Apps y agentes",
   "yourIssueTrackers": "Tus gestores de incidencias",
-  "yourOwnJiraLinearGithub": "Tus propias conexiones de Jira, Linear, GitHub, Azure DevOps, Asana o monday.com, para enviar elementos como incidencias desde cualquier tablero que puedas editar. Las conexiones de tu equipo se configuran en su consola de administración.",
+  "yourOwnJiraLinearGithub": "Tus propias conexiones de Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp o Trello, para enviar elementos como incidencias desde cualquier tablero que puedas editar. Las conexiones de tu equipo se configuran en su consola de administración.",
   "problemsYouReported": "Problemas que informaste",
   "yourNameCanTBe": "Tu nombre no puede estar vacío",
   "keepItUnder80Characters": "Usa menos de 80 caracteres",
@@ -498,5 +506,13 @@
   "email": "Correo",
   "emailLabel": "Correo: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "Eliminar"
+  "delete": "Eliminar",
+  "newCommentsOnYourBoards": "Comentarios nuevos en tus tableros",
+  "tellMeWhenSomeoneStarts": "Avisarme cuando alguien inicie un hilo de comentarios en un tablero mío o que marqué con estrella: en la campana y luego por correo o Slack según lo elegido abajo.",
+  "notificationsOnThisComputer": "Notificaciones en este ordenador",
+  "notificationsInThisBrowser": "Notificaciones en este navegador",
+  "popUpsForNewActivity": "Las notificaciones de tu sistema sobre la nueva actividad de tu bandeja de entrada, cuando Freero no es la ventana en primer plano. Solo para este dispositivo.",
+  "showNotificationsOnThisDevice": "Mostrar notificaciones en este dispositivo",
+  "notificationsAreBlockedForFreero": "Las notificaciones están bloqueadas para Freero. Permítelas en los ajustes del sistema o del navegador y vuelve a intentarlo.",
+  "showMeNotificationsAbout": "Mostrarme notificaciones sobre"
 }

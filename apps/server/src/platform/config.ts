@@ -51,6 +51,7 @@ export type RateLimitName =
   | 'walkthroughComment'
   | 'slackUnfurl'
   | 'teamsUnfurl'
+  | 'zoomMeetingBoard'
   | 'listingSubmit'
   | 'problemReport'
   | 'boardRender'
@@ -76,6 +77,21 @@ export interface TrackersConfig {
   asanaUrl: string;
   mondayAuthUrl: string;
   mondayApiUrl: string;
+  /** ClickUp's OAuth app the operator registered (#180), or null: personal tokens only. */
+  clickupOAuth: { clientId: string; clientSecret: string } | null;
+  /** ClickUp's app (its consent page: <url>/api) and API host (<url>/api/v2); overridden only to test against a mock. */
+  clickupUrl: string;
+  clickupApiUrl: string;
+  /**
+   * Trello (#181): the operator's API key (a Power-Up's, trello.com/power-ups/admin) and its secret,
+   * or null — people then give their own key with their token. With it, connecting needs only a token
+   * (the connect form links to Trello's authorize page for one) and the secret verifies deliveries.
+   */
+  trelloKey: string | null;
+  trelloSecret: string | null;
+  /** Trello's site (its authorize page: <url>/1/authorize) and API host (<url>/1); overridden only to test against a mock. */
+  trelloUrl: string;
+  trelloApiUrl: string;
 }
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
@@ -438,6 +454,24 @@ export interface Config {
    */
   copilot: { appId: string; oauthReferenceId: string } | null;
   /**
+   * The operator's Atlassian Forge app (modules/atlassian, #166, #167; docs/integrations/atlassian.md):
+   * a Confluence macro and a Jira issue panel showing boards through the public embed. Off (null)
+   * unless ATLASSIAN_APP_ID (the Forge app's id, `ari:cloud:ecosystem::app/<uuid>`) is set: then
+   * the app's source is offered and /atlassian/b/:id may be framed by Atlassian's hosts.
+   */
+  atlassian: { appId: string } | null;
+  /**
+   * The operator's Zoom App (modules/zoom, #168; docs/integrations/zoom.md): a board in a Zoom
+   * meeting's app panel. Off (null) unless ZOOM_CLIENT_ID (the Zoom app's client ID) is set.
+   */
+  zoom: { clientId: string } | null;
+  /**
+   * The operator's Google Meet add-on (modules/meet, #169; docs/integrations/google-meet.md): a board
+   * in a Meet call's side panel and main stage. Off (null) unless GOOGLE_MEET_CLOUD_PROJECT_NUMBER
+   * (the Google Cloud project the add-on is deployed from) is set.
+   */
+  meet: { cloudProjectNumber: string } | null;
+  /**
    * Further https origins boards may frame as live embeds (KAI-127), besides the built-in providers
    * (`EMBED_PROVIDERS` in @freero/shared): a link on one of them is framed as given, sandboxed.
    * Added to the CSP `frame-src`.
@@ -518,6 +552,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
   slackUnfurl: '50/1m', // per Slack workspace: link previews Freero posts there (chat.unfurl is Slack's tier 3, about 50 a minute; #88)
   teamsUnfurl: '120/1m', // per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes; #113)
+  zoomMeetingBoard: '120/10m', // per IP: a Zoom meeting's board set or looked up (the Zoom app opens it once per participant; #168)
   listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
   problemReport: '10/1h', // per person: problem reports sent with "Report a problem" (each may carry a screenshot)
   boardRender: '30/10m', // per person: boards drawn as PNG / SVG / PDF on the server (the API, MCP export_board; #33)
@@ -567,6 +602,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
   slackUnfurl: 'RATE_LIMIT_SLACK_UNFURL',
   teamsUnfurl: 'RATE_LIMIT_TEAMS_UNFURL',
+  zoomMeetingBoard: 'RATE_LIMIT_ZOOM_MEETING_BOARD',
   listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
   problemReport: 'RATE_LIMIT_PROBLEM_REPORT',
   boardRender: 'RATE_LIMIT_BOARD_RENDER',
@@ -907,7 +943,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     asanaUrl: (url('TRACKER_ASANA_URL', ['https:', 'http:']) ?? 'https://app.asana.com').replace(/\/+$/, ''),
     mondayAuthUrl: (url('TRACKER_MONDAY_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.monday.com').replace(/\/+$/, ''),
     mondayApiUrl: (url('TRACKER_MONDAY_API_URL', ['https:', 'http:']) ?? 'https://api.monday.com').replace(/\/+$/, ''),
+    clickupOAuth: pair('TRACKER_CLICKUP_CLIENT_ID', 'TRACKER_CLICKUP_CLIENT_SECRET', 'the ClickUp OAuth app'),
+    clickupUrl: (url('TRACKER_CLICKUP_URL', ['https:', 'http:']) ?? 'https://app.clickup.com').replace(/\/+$/, ''),
+    clickupApiUrl: (url('TRACKER_CLICKUP_API_URL', ['https:', 'http:']) ?? 'https://api.clickup.com').replace(/\/+$/, ''),
+    trelloKey: str('TRACKER_TRELLO_KEY'),
+    trelloSecret: str('TRACKER_TRELLO_SECRET'),
+    trelloUrl: (url('TRACKER_TRELLO_URL', ['https:', 'http:']) ?? 'https://trello.com').replace(/\/+$/, ''),
+    trelloApiUrl: (url('TRACKER_TRELLO_API_URL', ['https:', 'http:']) ?? 'https://api.trello.com').replace(/\/+$/, ''),
   };
+  if (trackers.trelloSecret && !trackers.trelloKey) problems.push('TRACKER_TRELLO_SECRET goes with TRACKER_TRELLO_KEY (the Trello Power-Up’s API key)');
   // Slack link unfurls: both halves of the operator's Slack app, or off. One without the other is a
   // mistake worth saying out loud rather than a silently missing feature.
   const slackApp = () => {
@@ -947,6 +991,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!appId !== !oauthReferenceId) problems.push('COPILOT_APP_ID and COPILOT_OAUTH_REFERENCE_ID go together (the Copilot agent needs both)');
     if (oauthReferenceId && !/^[A-Za-z0-9+/=_.-]{8,512}$/.test(oauthReferenceId)) problems.push('COPILOT_OAUTH_REFERENCE_ID must be the OAuth client registration id from the Teams Developer Portal');
     return appId && oauthReferenceId ? { appId, oauthReferenceId } : null;
+  };
+  const atlassianApp = (): Config['atlassian'] => {
+    const v = str('ATLASSIAN_APP_ID');
+    if (v === null) return null;
+    const m = /^(?:ari:cloud:ecosystem::app\/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(v);
+    if (!m) {
+      problems.push('ATLASSIAN_APP_ID must be the Forge app id, ari:cloud:ecosystem::app/<uuid> (developer console → your app → Overview)');
+      return null;
+    }
+    return { appId: `ari:cloud:ecosystem::app/${m[1].toLowerCase()}` };
+  };
+  const zoomApp = (): Config['zoom'] => {
+    const v = str('ZOOM_CLIENT_ID');
+    if (v === null) return null;
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(v)) {
+      problems.push('ZOOM_CLIENT_ID must be the Zoom app’s Client ID (Zoom App Marketplace → your app → App Credentials)');
+      return null;
+    }
+    return { clientId: v };
+  };
+  const meetAddOn = (): Config['meet'] => {
+    const v = str('GOOGLE_MEET_CLOUD_PROJECT_NUMBER');
+    if (v === null) return null;
+    if (!/^\d{6,20}$/.test(v)) {
+      problems.push('GOOGLE_MEET_CLOUD_PROJECT_NUMBER must be the Google Cloud project NUMBER (digits; Cloud console → project settings), not its id');
+      return null;
+    }
+    return { cloudProjectNumber: v };
   };
   const ai: AiConfig = {
     instance: aiInstance,
@@ -1064,6 +1136,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     slack: slackApp(),
     teams: teamsApp(),
     copilot: copilotApp(),
+    atlassian: atlassianApp(),
+    zoom: zoomApp(),
+    meet: meetAddOn(),
     embedExtraOrigins,
     appFrameAncestors,
   };

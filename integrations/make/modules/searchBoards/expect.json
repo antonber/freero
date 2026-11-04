@@ -1,0 +1,14 @@
+[
+    {
+        "name": "q",
+        "label": "Title",
+        "type": "text",
+        "required": true
+    },
+    {
+        "name": "limit",
+        "label": "Limit",
+        "type": "uinteger",
+        "default": 10
+    }
+]

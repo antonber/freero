@@ -83,5 +83,7 @@
   "eachIssueBecomesATask": "Each issue becomes a task card linked to it (up to 50 at a time). Issues already on this board are left out.",
   "countIssue": "{count, plural, one {# issue} other {# issues}}",
   "countItem": "{count, plural, one {# item} other {# items}}",
-  "countSelectedItem": "{count, plural, one {# selected item} other {# selected items}}"
+  "countSelectedItem": "{count, plural, one {# selected item} other {# selected items}}",
+  "quarter": "Quarter",
+  "aList": "A List"
 }

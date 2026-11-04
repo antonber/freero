@@ -284,3 +284,11 @@ it('the SP private key is stored sealed and no answer â€” settings or metadata â
   }
   for (const a of answers) expect(a).not.toMatch(/PRIVATE KEY|privateKey/);
 });
+
+it('an SP certificate whose random serial starts with a zero byte still parses (about 1 key in 128 failed with "illegal padding")', async () => {
+  const { derInteger } = await import('./spKeys');
+  // 00 12 ... must encode minimally as 02 01 12 ..., never keep the leading zero; 00 92 keeps it (top bit set).
+  expect([...derInteger(Buffer.from([0x00, 0x12, 0x34]))]).toEqual([0x02, 0x02, 0x12, 0x34]);
+  expect([...derInteger(Buffer.from([0x00, 0x92]))]).toEqual([0x02, 0x02, 0x00, 0x92]);
+  expect([...derInteger(Buffer.from([0x92]))]).toEqual([0x02, 0x02, 0x00, 0x92]);
+});

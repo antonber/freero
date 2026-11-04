@@ -12,7 +12,7 @@ import { proposeSuggestions, readBoardView, SUGGESTION_WITHDRAWALS_CONSUMER, sug
 import { createTeamWorkspace, ensurePersonalWorkspace } from '../workspaces/index';
 import { authenticate, createPersonalToken, registerProtectedResource, revokePersonalToken, setTokenPaused, useInWorkspace } from './credentials';
 import initApiAuth from './init';
-import { authorizationServerMetadata, checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, registerDynamicClient, revokeApp, tokenRequest } from './oauth';
+import { authorizationServerMetadata, checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, registerClient, registerDynamicClient, revokeApp, tokenRequest } from './oauth';
 import { setCredentialBlocked, setWorkspaceApiAccess } from './workspacePolicy';
 
 const R = '/api/v1';
@@ -215,4 +215,24 @@ it('revoking a token or an app withdraws what it suggested on every board — ne
   await revokeApp(carol.id, app.clientId);
   await drainOutbox(SUGGESTION_WITHDRAWALS_CONSUMER);
   for (const b of boards) expect(await pending(b)).toEqual(['dan:Agent']);
+});
+
+it('only a confidential app may skip PKCE, and its code then needs the client secret and no verifier (no downgrade)', async () => {
+  const redirect = 'https://flows.example/cb';
+  const confidential = await registerClient(alice.id, { name: 'Flows', redirectUris: [redirect], confidential: true });
+  const publicApp = await registerClient(alice.id, { name: 'Phone app', redirectUris: [redirect] });
+  const ask = (clientId: string) => checkAuthorizeRequest({ response_type: 'code', client_id: clientId, redirect_uri: redirect, scope: 'boards:read' }, AT);
+  const refusedPublic = await ask(publicApp.client.clientId);
+  expect('redirect' in refusedPublic && new URL(refusedPublic.redirect).searchParams.get('error')).toBe('invalid_request');
+
+  const id = confidential.client.clientId;
+  const codeFor = async () => {
+    const checked = await ask(id);
+    if (!('ok' in checked)) throw new Error(JSON.stringify(checked));
+    return new URL(await decide(alice.id, 'password', checked.ok, true)).searchParams.get('code')!;
+  };
+  await expect(exchange({ grant_type: 'authorization_code', client_id: id, code: await codeFor() })).rejects.toMatchObject({ error: 'invalid_client' });
+  await expect(exchange({ grant_type: 'authorization_code', client_id: id, client_secret: confidential.clientSecret, code: await codeFor(), code_verifier: 'v'.repeat(43) })).rejects.toMatchObject({ error: 'invalid_grant' });
+  const ok = await exchange({ grant_type: 'authorization_code', client_id: id, client_secret: confidential.clientSecret, code: await codeFor() });
+  expect(await refusal(ok.access_token)).toBeNull();
 });

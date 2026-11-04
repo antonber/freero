@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "文本",
   "number": "数字",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length, plural, other {# 张卡片}}，分布在 {length2, plural, other {# 列}}中：{join}",
   "whatTheOtherColumnsBecome": "其他列将变为",
   "nameofHasLengthDifferentValues": "「{nameOf}」有 {length} 个不同的值；看板最多只能有 {max_kanban_columns} 列。请选择其他列。",
-  "eachRowBecomesACard": "每一行都会成为一张卡片。看板将取代表格；撤销可恢复表格。"
+  "eachRowBecomesACard": "每一行都会成为一张卡片。看板将取代表格；撤销可恢复表格。",
+  "addADateColumnTo": "添加一个日期列，即可在时间线上查看各行。",
+  "noDates": "无日期",
+  "timelineRowsAsBarsBetween": "时间线：以两个日期列之间的条形显示各行",
+  "groupRowsBy": "行分组依据",
+  "noGroups": "不分组",
+  "groupColumnname": "分组：{columnName}",
+  "barsStartAt": "条形起点",
+  "barsEndAt": "条形终点"
 }

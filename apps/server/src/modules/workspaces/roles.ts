@@ -65,6 +65,7 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   linkMaxDays: null,
   templatePublishing: 'members',
   gifs: 'g',
+  offlineCopies: 'unkeyed',
 };
 
 /**

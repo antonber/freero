@@ -22,6 +22,9 @@ import type {
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
+  AssistantAsk,
+  AssistantMessage,
+  AssistantTurn,
   BoardElement,
   BoardOutline,
   BoardLayer,
@@ -43,6 +46,9 @@ import type {
   StickersResponse,
   GifPlaceResponse,
   GifSearchResponse,
+  ShapePack,
+  ShapePackCreated,
+  ShapePacksResponse,
   StrokeStyle,
   SuggestionRecord,
   SuggestionState,
@@ -110,6 +116,24 @@ export interface Camera { x: number; y: number; zoom: number } // world point at
 // ---------------------------------------------------------------------------
 export interface HostUser { id: string; name: string; color: string; avatarUrl: string | null }
 
+/**
+ * [additive, #178] A board's state as kept on this device: the shared doc and this person's layers
+ * (Yjs state updates). `editors` only for someone who reads the board as an owner / editor.
+ */
+export interface OfflineCopy {
+  shared: Uint8Array;
+  private?: Uint8Array;
+  editors?: Uint8Array;
+}
+/** [additive, #178] Where the device copy of a board is kept (see `Host.offline`). */
+export interface HostOffline {
+  /** The copy kept on this device, or null. */
+  load(): Promise<OfflineCopy | null>;
+  save(copy: OfflineCopy): Promise<void>;
+  /** Access ended for good (or the board was removed): delete the copy. */
+  forget(): Promise<void>;
+}
+
 /** [additive] A person's own view settings on one board (see `Host.personalViews`). */
 export interface HostPersonalViews {
   list(): Promise<Array<{ itemId: string; viewId: string; settings: Record<string, unknown> }>>;
@@ -133,6 +157,15 @@ export interface HostGifs {
   search(q: string, pos: string | null): Promise<GifSearchResponse>;
   /** Copies a result (its `media`) into the person's uploads: `{ url: '/uploads/…', w, h }`. */
   place(media: string): Promise<GifPlaceResponse>;
+}
+
+/** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
+export interface HostShapePacks {
+  list(): Promise<ShapePacksResponse>;
+  /** Uploads `zip` (a ZIP of SVG files) through the server's upload checks and makes it a pack. */
+  create(name: string, zip: Blob): Promise<ShapePackCreated>;
+  rename(packId: string, name: string): Promise<ShapePack>;
+  remove(packId: string): Promise<void>;
 }
 
 /** [additive] Light, dark, or whatever the device uses. */
@@ -229,6 +262,12 @@ export interface Host {
    */
   gifs?: HostGifs;
   /**
+   * [additive, #4] The board's workspace's own shape packs (server modules/shapepacks): uploaded
+   * SVG icon sets, placed as icon elements that hold their drawing. Absent (offline sandbox, guests
+   * without an account, embeds): no packs. Rejections carry a message that can be shown.
+   */
+  shapePacks?: HostShapePacks;
+  /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).
    */
@@ -240,6 +279,15 @@ export interface Host {
    * more (an embed: sign in again, open in Freero) does it here. Called once per board load.
    */
   onConnectionEnded?(end: { code: number; reason: string }): void;
+  /**
+   * [additive, #178] A copy of this board kept on this device, so it opens and can be edited
+   * offline and syncs on reconnect. Absent: nothing is kept (guests, embeds, a workspace whose
+   * policy forbids offline copies). The engine reads it before connecting, saves after the first
+   * sync and after changes, keeps the editors layer only while this person reads it as an
+   * owner / editor, and forgets the copy when the server ends access for good. Bytes are opaque to
+   * the host (it encrypts them at rest).
+   */
+  offline?: HostOffline;
   uploadImage(file: Blob): Promise<{ url: string }>;
   /**
    * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota
@@ -449,6 +497,13 @@ export interface Host {
    */
   ai?: HostAi;
   /**
+   * [additive, #1] The board assistant, present when the server says this person may ask it here
+   * (also viewers and commenters: it reads the board as they see it). It never writes the board:
+   * what it proposes arrives as suggestions (`canPropose`: only for people who can edit). Calls
+   * reject with a message fit for the panel (budget used up, rate limit, the model's answer unusable).
+   */
+  assistant?: HostAssistant;
+  /**
    * [additive] Why AI can't be used here by this person, in words fit for the UI ("AI is off for
    * this workspace…", "…need edit access"): set when the server offers AI on this instance but not
    * to them on this board, so an AI action can show greyed out with the reason. Absent when `ai`
@@ -627,6 +682,20 @@ export interface HostAi {
   run(request: AiActionRequest): Promise<AiActionResponse>;
 }
 
+/** [additive, #1] See `Host.assistant` (wire: @freero/shared "The board assistant"). */
+export interface HostAssistant {
+  /** Where board content goes ("Anthropic (Claude) · claude-sonnet-5-5"), for the data notice. */
+  provider: string;
+  source: 'instance' | 'workspace';
+  /** This person can edit: the assistant may propose changes (as suggestions). */
+  canPropose: boolean;
+  /** Their own conversation on this board, oldest first. */
+  conversation(): Promise<AssistantMessage[]>;
+  ask(request: AssistantAsk): Promise<AssistantTurn>;
+  /** Forgets their conversation on this board. */
+  clear(): Promise<void>;
+}
+
 /** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */
 export interface ContentReport {
   target: ReportTarget;
@@ -753,11 +822,19 @@ export interface LowDetailPaint {
   readonly selectionColor: string;
   /** How the item's container wants it shown (a kanban's colour-by accent), as `Component` gets it. */
   readonly presentation: ChildPresentation | null;
+  /** [additive, #185] The zoom the canvas paints at: a line `1 / zoom` wide is one screen pixel (a hairline). */
+  readonly zoom: number;
   /**
    * Fills and/or outlines the item's box (the outline inside it, like a CSS border). `radius`
-   * rounds the corners; `round` makes it the ellipse in the box. `alpha` fades the fill only.
+   * rounds the corners; `round` makes it the ellipse in the box. `alpha` fades the fill only,
+   * [additive, #185] `strokeAlpha` the outline.
    */
-  box(o: { fill?: string | null; stroke?: string | null; strokeWidth?: number; radius?: number; round?: boolean; alpha?: number }): void;
+  box(o: { fill?: string | null; stroke?: string | null; strokeWidth?: number; radius?: number; round?: boolean; alpha?: number; strokeAlpha?: number }): void;
+  /**
+   * [additive, #185] A surface colour (a frame's fill) as this page shows it: a light one dark on a
+   * dark page, as the full drawing's `fr-canvas-surface` does (engine/canvas/theme.ts).
+   */
+  surface(color: string): string;
   /** Fills a rectangle (bars standing for lines of text). */
   rect(x: number, y: number, w: number, h: number, color: string, alpha?: number): void;
   /** Fills a polygon given in fractions of the box (0–1): a diamond's silhouette. */
@@ -841,6 +918,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * may use `zoom` itself).
    */
   lowDetail?(element: ElementOf<T>, paint: LowDetailPaint): void;
+  /**
+   * [additive, #185] Paints in low detail only while its longer side is below this many screen px
+   * (default 160, `LOW_DETAIL_MAX_PX`): a frame keeps its title, which you drag it by, until the
+   * title is too small to show. 0: not this one (a hidden frame's cover for viewers).
+   */
+  lowDetailMaxPx?: number | ((element: ElementOf<T>) => number);
   /** Defaults merged under user-provided fields on create (tools usually call this). */
   defaults(): Omit<NewElement<T>, 'x' | 'y'>;
   resize: ResizeMode;

@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "Der Tracker hat nicht geantwortet. Versuchen Sie es erneut.",
   "sendToTracker": "An Tracker senden …",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "Jeder Vorgang wird zu einer damit verknüpften Aufgabenkarte (bis zu 50 auf einmal). Vorgänge, die bereits auf diesem Board sind, werden ausgelassen.",
   "countIssue": "{count, plural, one {# Vorgang} other {# Vorgänge}}",
   "countItem": "{count, plural, one {# Element} other {# Elemente}}",
-  "countSelectedItem": "{count, plural, one {# ausgewähltes Element} other {# ausgewählte Elemente}}"
+  "countSelectedItem": "{count, plural, one {# ausgewähltes Element} other {# ausgewählte Elemente}}",
+  "quarter": "Quartal",
+  "aList": "Eine Liste"
 }

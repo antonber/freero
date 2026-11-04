@@ -191,6 +191,8 @@
     "frame",
     "tabAndShiftTabMove",
     "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen",
     "zoomPercentPresets"
   ],
   "dots": "نقاط",
@@ -374,6 +376,8 @@
   "youNoLongerHaveAccess": "لم يعد لديك وصول إلى هذه اللوحة.",
   "connecting": "جارٍ الاتصال…",
   "reconnectingYourChangesAreKept": "جارٍ إعادة الاتصال… تغييراتك محفوظة وستُزامن.",
+  "youReOfflineChangesAreKeptOnDevice": "أنت غير متصل. تُحفظ التغييرات على هذا الجهاز وتُزامن عند عودتك إلى الاتصال.",
+  "youReOfflineKeepThisTabOpen": "أنت غير متصل. أبقِ علامة التبويب هذه مفتوحة: ستُزامن تغييراتك عند عودتك إلى الاتصال.",
   "groupOfLengthItemsSelected": "تم تحديد مجموعة من {length} عنصر.",
   "thisBoardCouldnTStart": "تعذّر بدء هذه اللوحة",
   "liveBoard": "لوحة مباشرة",

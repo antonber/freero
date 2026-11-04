@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "テキスト",
   "number": "数値",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length2, plural, other {#列}}に{length, plural, other {#枚のカード}}: {join}",
   "whatTheOtherColumnsBecome": "その他の列の扱い",
   "nameofHasLengthDifferentValues": "「{nameOf}」には{length}種類の値がありますが、カンバンの列は最大{max_kanban_columns}列です。別の列を選んでください。",
-  "eachRowBecomesACard": "各行がカードになり、カンバンが表と置き換わります。元に戻すと表に戻ります。"
+  "eachRowBecomesACard": "各行がカードになり、カンバンが表と置き換わります。元に戻すと表に戻ります。",
+  "addADateColumnTo": "日付の列を追加すると、行をタイムラインで表示できます。",
+  "noDates": "日付なし",
+  "timelineRowsAsBarsBetween": "タイムライン：2つの日付列の間に行をバーで表示",
+  "groupRowsBy": "行のグループ化",
+  "noGroups": "グループなし",
+  "groupColumnname": "グループ：{columnName}",
+  "barsStartAt": "バーの開始",
+  "barsEndAt": "バーの終了"
 }

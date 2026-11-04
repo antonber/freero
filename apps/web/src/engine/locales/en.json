@@ -180,6 +180,8 @@
   "youNoLongerHaveAccess": "You no longer have access to this board.",
   "connecting": "Connecting…",
   "reconnectingYourChangesAreKept": "Reconnecting… your changes are kept and will sync.",
+  "youReOfflineChangesAreKeptOnDevice": "You’re offline. Changes are kept on this device and sync when you’re back online.",
+  "youReOfflineKeepThisTabOpen": "You’re offline. Keep this tab open: your changes sync when you’re back online.",
   "groupOfLengthItemsSelected": "Group of {length} items selected.",
   "thisBoardCouldnTStart": "This board couldn't start",
   "liveBoard": "Live board",

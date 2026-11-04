@@ -16,6 +16,7 @@ import {
   REPORT_REASONS,
   type ListingForReview,
   type MicrosoftIntegrationsInfo,
+  type HostAppInfo,
   type ListingStatus,
   type ModeratedBoard,
   type ModeratedUpload,
@@ -200,6 +201,7 @@ export function OperatorPage() {
           <AccountLookup onAct={setPending} />
           <FileLookup onAct={setPending} />
           <MicrosoftPackages />
+          <OtherPlatformApps />
         </aside>
       </div>
       )}
@@ -678,6 +680,36 @@ function MicrosoftPackages() {
             <span>{tr('copilotAgentOffSetCopilot')}</span>
           )}
           <span>{tr('uploadThemInTheTeams')}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** What this instance offers for Confluence and Jira, Zoom and Google Meet (#166–#169), each turned on by its id. */
+function OtherPlatformApps() {
+  const [info, setInfo] = useState<{ atlassian: HostAppInfo; zoom: HostAppInfo; meet: HostAppInfo } | null>(null);
+  useEffect(() => {
+    const off: HostAppInfo = { on: false, packageUrl: null };
+    void Promise.all([api.hostApp('atlassian').catch(() => off), api.hostApp('zoom').catch(() => off), api.meetAddOn().catch(() => off)]).then(([atlassian, zoom, meet]) => setInfo({ atlassian, zoom, meet }));
+  }, []);
+  const entry = (app: HostAppInfo, label: string, off: string) =>
+    app.packageUrl ? (
+      <a className="fr-op-card__file" href={app.packageUrl} download>{label}</a>
+    ) : (
+      <span>{off}</span>
+    );
+  return (
+    <section className="fr-op-tool">
+      <h2>{tr('otherPlatformApps')}</h2>
+      {!info ? (
+        <Spinner size={18} label={tr('loading')} />
+      ) : (
+        <div className="fr-op-tool__result">
+          {entry(info.atlassian, tr('atlassianAppSource'), tr('atlassianAppOff'))}
+          {entry(info.zoom, tr('zoomAppSettings'), tr('zoomAppOff'))}
+          {entry(info.meet, tr('meetDeployment'), tr('meetAddOnOff'))}
+          <span>{tr('registerThemWithEach')}</span>
         </div>
       )}
     </section>

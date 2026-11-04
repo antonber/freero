@@ -1,0 +1,11 @@
+{
+    "url": "/boards/{{parameters.board}}/comments",
+    "method": "POST",
+    "body": {
+        "text": "{{parameters.text}}",
+        "itemId": "{{if(parameters.item, parameters.item, null)}}"
+    },
+    "response": {
+        "output": "{{body.thread}}"
+    }
+}

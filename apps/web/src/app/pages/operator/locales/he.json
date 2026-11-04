@@ -156,7 +156,15 @@
     "readOnlySnapshot",
     "couldNotLoadTheBoard",
     "loadingTheBoard",
-    "sentByEmailWithThe"
+    "sentByEmailWithThe",
+    "otherPlatformApps",
+    "atlassianAppSource",
+    "atlassianAppOff",
+    "zoomAppSettings",
+    "zoomAppOff",
+    "meetDeployment",
+    "meetAddOnOff",
+    "registerThemWithEach"
   ],
   "new": "חדש",
   "beingLookedAt": "בבדיקה",
@@ -314,5 +322,13 @@
   "readOnlySnapshot": "תמונת מצב לקריאה בלבד",
   "couldNotLoadTheBoard": "לא ניתן היה לטעון את הלוח",
   "loadingTheBoard": "טוען את הלוח",
-  "sentByEmailWithThe": "נשלח באימייל יחד עם ההחלטה. יש לציין מה היה לא בסדר ואיפה; זה גם מה שעליו יוגש הערעור."
+  "sentByEmailWithThe": "נשלח באימייל יחד עם ההחלטה. יש לציין מה היה לא בסדר ואיפה; זה גם מה שעליו יוגש הערעור.",
+  "otherPlatformApps": "אפליקציות בפלטפורמות אחרות",
+  "atlassianAppSource": "אפליקציה ל-Confluence ול-Jira (קוד Forge)",
+  "atlassianAppOff": "אפליקציה ל-Confluence ול-Jira: כבויה (הגדירו ATLASSIAN_APP_ID)",
+  "zoomAppSettings": "הגדרות אפליקציית Zoom",
+  "zoomAppOff": "אפליקציית Zoom: כבויה (הגדירו ZOOM_CLIENT_ID)",
+  "meetDeployment": "פריסת התוסף ל-Google Meet",
+  "meetAddOnOff": "התוסף ל-Google Meet: כבוי (הגדירו GOOGLE_MEET_CLOUD_PROJECT_NUMBER)",
+  "registerThemWithEach": "רשמו אותן בכל פלטפורמה: ראו docs/integrations/."
 }

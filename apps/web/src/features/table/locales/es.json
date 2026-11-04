@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "Texto",
   "number": "Número",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length, plural, one {# tarjeta} other {# tarjetas}} en {length2, plural, one {# columna} other {# columnas}}:  {join}",
   "whatTheOtherColumnsBecome": "En qué se convierten las demás columnas",
   "nameofHasLengthDifferentValues": "“{nameOf}” tiene {length} valores distintos; un kanban tiene como máximo {max_kanban_columns} columnas. Elige otra columna.",
-  "eachRowBecomesACard": "Cada fila se convierte en una tarjeta. El kanban ocupa el lugar de la tabla; deshacer recupera la tabla."
+  "eachRowBecomesACard": "Cada fila se convierte en una tarjeta. El kanban ocupa el lugar de la tabla; deshacer recupera la tabla.",
+  "addADateColumnTo": "Añade una columna de fecha para ver las filas en una línea de tiempo.",
+  "noDates": "Sin fechas",
+  "timelineRowsAsBarsBetween": "Línea de tiempo: filas como barras entre dos columnas de fecha",
+  "groupRowsBy": "Agrupar filas por",
+  "noGroups": "Sin grupos",
+  "groupColumnname": "Grupo: {columnName}",
+  "barsStartAt": "Las barras empiezan en",
+  "barsEndAt": "Las barras terminan en"
 }

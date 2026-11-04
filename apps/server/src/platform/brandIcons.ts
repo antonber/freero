@@ -1,8 +1,10 @@
-// The two icons a Microsoft 365 app package carries (Teams app, Copilot agent), drawn from Freero's
-// own mark — apps/web/public/freero.svg: the white "F" (three rectangles) and the mint dot on the
-// brand purple, in a 64-unit square. Rasterised here (4×4 supersampling, no dependency) so every
-// instance builds its package without image tools:
-// - color.png, 192×192: the mark on a full-bleed purple square (Teams rounds the corners itself);
+// The icons the app packages for other platforms carry (the Teams app and Copilot agent, the
+// Atlassian, Zoom and Google Meet apps, the Power Automate connector), drawn from Freero's own mark —
+// apps/web/public/freero.svg: the white "F" (three rectangles) and the mint dot on the brand purple,
+// in a 64-unit square. Rasterised here (4×4 supersampling, no dependency) so every instance builds
+// its packages without image tools:
+// - colorIcon(size), 192×192 by default: the mark on a full-bleed purple square (hosts round the
+//   corners themselves; the mark fills under 70% of it, as Microsoft's connector icons require);
 // - outline.png, 32×32: the mark alone in white on transparent, as Teams requires of outline icons.
 import { crc32, deflateSync } from 'node:zlib';
 
@@ -73,9 +75,11 @@ function png(size: number, rgba: Buffer): Buffer {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
 
-/** color.png: 192×192, the mark on a full-bleed brand square (freero.svg's framing, without its rounded corners). */
-export function colorIcon(): Buffer {
-  const size = 192;
+/** The brand purple of the icons' background (hosts that ask for an icon colour get this one). */
+export const BRAND_COLOR = '#5B3FF0';
+
+/** color.png: `size`×`size` (192 by default), the mark on a full-bleed brand square (freero.svg's framing, without its rounded corners). */
+export function colorIcon(size = 192): Buffer {
   const u = (p: number) => (p / size) * 64;
   return png(size, raster(size, (px, py) => (inDot(u(px), u(py)) ? MINT : inF(u(px), u(py)) ? WHITE : PURPLE)));
 }

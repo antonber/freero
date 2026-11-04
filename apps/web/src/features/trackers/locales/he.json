@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "כלי המעקב לא הגיב. אפשר לנסות שוב.",
   "sendToTracker": "שליחה לכלי המעקב…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "כל פריט הופך לכרטיס משימה שמקושר אליו (עד 50 בכל פעם). פריטים שכבר נמצאים בלוח הזה לא ייכללו.",
   "countIssue": "{count, plural, one {פריט אחד} two {# פריטים} other {# פריטים}}",
   "countItem": "{count, plural, one {רכיב אחד} two {# רכיבים} other {# רכיבים}}",
-  "countSelectedItem": "{count, plural, one {רכיב נבחר אחד} two {# רכיבים נבחרים} other {# רכיבים נבחרים}}"
+  "countSelectedItem": "{count, plural, one {רכיב נבחר אחד} two {# רכיבים נבחרים} other {# רכיבים נבחרים}}",
+  "quarter": "רבעון",
+  "aList": "רשימה"
 }

@@ -13,7 +13,8 @@
 //
 // Checks drive it like people in Azure DevOps would: `edit(id, { title, state, iteration, team })`
 // bumps the revision, `editBeforeNextPatch(id, changes)` makes someone edit the work item between
-// Freero's read and its write, `webhook(url, secret, id)` posts a service hook delivery
+// Freero's read and its write, `editAfterNextPatch(id, changes)` right after it (before Freero
+// reads it again), `webhook(url, secret, id)` posts a service hook delivery
 // authenticated with basic auth (the secret as the password).
 //
 //   node scripts/lib/mock-azure.mjs --port 4484 [--deployment server]
@@ -68,6 +69,7 @@ export async function startMockAzure({ port = 0, host = '127.0.0.1', organizatio
   let nextId = 1;
   let updates = 0;
   const pendingEdits = [];
+  const afterEdits = [];
   let url = '';
   const base = `/${organization}`;
 
@@ -230,7 +232,11 @@ export async function startMockAzure({ port = 0, host = '127.0.0.1', organizatio
         Object.assign(w, copy);
         touch(w);
         updates++;
-        return json(200, view(w));
+        const answer = view(w);
+        // Someone edits it the moment this write lands, before anyone reads it again.
+        const after = afterEdits.findIndex((p) => p.id === w.id);
+        if (after >= 0) edit(w.id, afterEdits.splice(after, 1)[0].changes);
+        return json(200, answer);
       }
     }
     if (path === '/_apis/wit/workitemsbatch' && req.method === 'POST') {
@@ -269,6 +275,9 @@ export async function startMockAzure({ port = 0, host = '127.0.0.1', organizatio
     },
     /** The next PATCH of work item `id` finds it changed by someone else first. */
     editBeforeNextPatch: (id, changes) => pendingEdits.push({ id: Number(id), changes }),
+    /** Right after the next PATCH of work item `id` lands, someone edits it (before Freero reads it back). */
+    editAfterNextPatch: (id, changes) => afterEdits.push({ id: Number(id), changes }),
+    pendingAfterEdits: () => afterEdits.length,
     /** Posts a service hook delivery ("Work item updated") about `id` to `target`. */
     async webhook(target, secret, id, { eventType = 'workitem.updated' } = {}) {
       const payload = JSON.stringify({

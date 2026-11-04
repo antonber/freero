@@ -248,7 +248,15 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "无法连接到 Freero，请重试。",
   "restoreAccount": "恢复账户",
@@ -387,7 +395,7 @@
   "connectAnAgent": "连接智能体",
   "appsAgents": "应用与智能体",
   "yourIssueTrackers": "你的问题跟踪工具",
-  "yourOwnJiraLinearGithub": "你自己的 Jira、Linear、GitHub、Azure DevOps、Asana 或 monday.com 连接，用于在任何你可编辑的白板上将白板项目发送为问题。团队的连接在其管理控制台中设置。",
+  "yourOwnJiraLinearGithub": "你自己的 Jira、Linear、GitHub、Azure DevOps、Asana、monday.com、ClickUp 或 Trello 连接，可在你能编辑的任何看板上把条目作为问题发送。团队的连接在团队的管理控制台中设置。",
   "problemsYouReported": "你报告的问题",
   "yourNameCanTBe": "名称不能为空",
   "keepItUnder80Characters": "请少于 80 个字符",
@@ -498,5 +506,13 @@
   "email": "邮件",
   "emailLabel": "邮件：{label}",
   "slackLabel": "Slack：{label}",
-  "delete": "删除"
+  "delete": "删除",
+  "newCommentsOnYourBoards": "你的白板上的新评论",
+  "tellMeWhenSomeoneStarts": "有人在我拥有或加星标的白板上发起评论时通知我：显示在铃铛中，然后按下方的选择通过邮件或 Slack 发送。",
+  "notificationsOnThisComputer": "此电脑上的通知",
+  "notificationsInThisBrowser": "此浏览器中的通知",
+  "popUpsForNewActivity": "当 Freero 不是前台窗口时，用系统通知提醒你收件箱中的新动态。仅对此设备生效。",
+  "showNotificationsOnThisDevice": "在此设备上显示通知",
+  "notificationsAreBlockedForFreero": "Freero 的通知已被阻止。请在系统或浏览器设置中允许后重试。",
+  "showMeNotificationsAbout": "通知我以下内容"
 }

@@ -1,5 +1,6 @@
 // Freero's OAuth 2.0 authorization server, built to the OAuth 2.1 rules the MCP authorization spec
-// asks for (KAI-107 reuses it as is): authorization code only, PKCE S256 required for every client,
+// asks for (KAI-107 reuses it as is): authorization code only, PKCE S256 required for every public
+// client (a confidential app a person registered, with its client secret, may leave it out: below),
 // exact redirect URIs (loopback: any port, RFC 8252), refresh tokens that rotate and revoke the
 // whole consent when one is replayed, audience-bound tokens (RFC 8707 `resource`), dynamic client
 // registration (RFC 7591), client ID metadata documents (an https URL as client_id, #81:
@@ -175,6 +176,7 @@ interface ValidRequest {
   redirectUri: string;
   scopes: ApiScope[];
   state: string | null;
+  /** The PKCE S256 challenge, or '' for a confidential client that sent none. */
   codeChallenge: string;
   resource: string;
 }
@@ -237,15 +239,25 @@ export async function checkAuthorizeRequest(p: AuthorizeParams, at: AuthorizeCon
   const state = typeof p.state === 'string' ? p.state.slice(0, 1000) : null;
   const back = (error: string, description: string) => ({ redirect: errorRedirect(given, at.issuer, error, description, state) });
   if (p.response_type !== 'code') return back('unsupported_response_type', 'Only response_type=code is supported');
-  if (typeof p.code_challenge !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(p.code_challenge))
-    return back('invalid_request', 'PKCE is required: send code_challenge (S256)');
-  if (p.code_challenge_method !== 'S256') return back('invalid_request', 'code_challenge_method must be S256');
+  // PKCE: required of every public client. A confidential client (one a person registered in
+  // Settings with a client secret, which authenticates at the token endpoint) may leave it out —
+  // RFC 9700 §2.1.1 asks it of public clients and recommends it for confidential ones — because the
+  // automation platforms' generic OAuth (Power Automate's connectors, Make's apps) can't send it
+  // (#174, #175). A challenge that IS sent is always enforced, and a code issued without one is
+  // redeemed only with the client secret and no verifier (no PKCE downgrade).
+  let codeChallenge = '';
+  if (p.code_challenge !== undefined || client.secretHash === null) {
+    if (typeof p.code_challenge !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(p.code_challenge))
+      return back('invalid_request', 'PKCE is required: send code_challenge (S256)');
+    if (p.code_challenge_method !== 'S256') return back('invalid_request', 'code_challenge_method must be S256');
+    codeChallenge = p.code_challenge;
+  }
   const asked = typeof p.scope === 'string' ? p.scope.split(' ').filter(Boolean) : [];
   if (asked.some((s) => !isApiScope(s) || isOperatorScope(s))) return back('invalid_scope', `Unknown scope. Freero's scopes: ${OAUTH_SCOPES.join(' ')}`);
   const resource = resourcePath(p.resource);
   if (!resource) return back('invalid_target', 'Unknown resource');
   const scopes = asked.length ? [...new Set(asked as ApiScope[])] : (protectedResources().get(resource)?.scopes ?? DEFAULT_OAUTH_SCOPES);
-  return { ok: { issuer: at.issuer, client, redirectUri: given, scopes, state, codeChallenge: p.code_challenge, resource } };
+  return { ok: { issuer: at.issuer, client, redirectUri: given, scopes, state, codeChallenge, resource } };
 }
 
 const optInScopes = (resource: string): readonly ApiScope[] => protectedResources().get(resource)?.optInScopes ?? [];
@@ -379,8 +391,13 @@ export async function tokenRequest(req: Request, body: Record<string, unknown>) 
     const code = typeof body.code === 'string' ? await repo.takeCode(hashSecret(body.code)) : null;
     if (!code || code.expiresAt <= now || code.clientId !== client.id) throw new OAuthError('invalid_grant', 'The code is invalid, expired or already used');
     if (body.redirect_uri !== undefined && body.redirect_uri !== code.redirectUri) throw new OAuthError('invalid_grant', 'redirect_uri does not match the authorization request');
-    const verifier = typeof body.code_verifier === 'string' ? body.code_verifier : '';
-    if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !safeEqual(s256(verifier), code.codeChallenge)) throw new OAuthError('invalid_grant', 'PKCE verification failed');
+    if (code.codeChallenge === '') {
+      // Issued without PKCE (a confidential client): its secret was checked above; a verifier now would be a downgrade.
+      if (client.secretHash === null || body.code_verifier !== undefined) throw new OAuthError('invalid_grant', 'PKCE verification failed');
+    } else {
+      const verifier = typeof body.code_verifier === 'string' ? body.code_verifier : '';
+      if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !safeEqual(s256(verifier), code.codeChallenge)) throw new OAuthError('invalid_grant', 'PKCE verification failed');
+    }
     const grants = await repo.grantsOf(code.userId);
     const grant = grants.find((g) => g.clientId === client.id);
     if (!grant) throw new OAuthError('invalid_grant', 'The person revoked this app’s access');

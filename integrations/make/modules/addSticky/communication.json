@@ -1,0 +1,22 @@
+{
+    "url": "/boards/{{parameters.board}}/structure",
+    "method": "POST",
+    "body": {
+        "structure": {
+            "kind": "items",
+            "items": [
+                {
+                    "type": "sticky",
+                    "text": "{{parameters.text}}",
+                    "color": "{{ifempty(parameters.color, 'yellow')}}"
+                }
+            ]
+        },
+        "placement": {
+            "into": "{{parameters.into}}"
+        }
+    },
+    "response": {
+        "output": "{{body}}"
+    }
+}

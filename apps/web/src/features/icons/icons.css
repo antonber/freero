@@ -131,3 +131,54 @@
   font-weight: 600;
   color: var(--fr-ink-2);
 }
+
+/* ---- workspace shape packs (#4) ---- */
+.fr-icons__source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-icons__source > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fr-icons__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fr-icons__section-title {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fr-ink-2);
+}
+
+.fr-icons-pack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 32px;
+}
+
+.fr-icons-pack__by {
+  flex: 1;
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+.fr-icons-pack__rename {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+}
+
+.fr-icons-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}

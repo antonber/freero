@@ -1,0 +1,21 @@
+[
+    {
+        "name": "title",
+        "label": "Title",
+        "type": "text",
+        "required": true
+    },
+    {
+        "name": "description",
+        "label": "Description",
+        "type": "text",
+        "multiline": true
+    },
+    {
+        "name": "workspace",
+        "label": "Workspace",
+        "type": "select",
+        "options": "rpc://listWorkspaces",
+        "help": "Your personal workspace if empty."
+    }
+]

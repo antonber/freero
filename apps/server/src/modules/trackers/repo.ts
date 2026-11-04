@@ -1,5 +1,5 @@
 // The only writer of `tracker_connections`, `tracker_links`, `tracker_link_sources`,
-// `tracker_proposals`, `tracker_oauth_flows` and `tracker_webhooks` [S4].
+// `tracker_proposals`, `tracker_oauth_flows`, `tracker_webhooks` and `tracker_relations` [S4].
 import type { FieldMapEntry, SyncBase, TrackerProviderKind } from '@freero/shared';
 import { isUniqueViolation, one, query, tx } from '../../platform/db';
 
@@ -31,6 +31,16 @@ export interface ConnectionSettings {
   workspace?: string | null;
   /** monday.com: the account's address ("https://acme.monday.com"), for item links. */
   accountUrl?: string | null;
+  /** The tracker login the account uses (Trello username, GitHub login), from the last test. */
+  login?: string | null;
+  /** GitHub (#42): the Project (v2) whose Status, estimate, iteration and dates sync ("owner/number"). */
+  planningProject?: string | null;
+  /**
+   * #50: dependency connectors sync as the tracker's "blocks" links. Present (true) only when on:
+   * connections made before #50 have no such key, so an upgrade writes no link to anyone's tracker
+   * until a manager turns it on; new connections start with it on.
+   */
+  dependencies?: true;
 }
 
 export interface StoredConnection {
@@ -145,6 +155,18 @@ export async function listConnections(owner: { workspaceId: string } | { ownerId
       ? await query<ConnectionRow>(`SELECT * FROM tracker_connections WHERE workspace_id = $1 ORDER BY created_at`, [owner.workspaceId])
       : await query<ConnectionRow>(`SELECT * FROM tracker_connections WHERE owner_id = $1 ORDER BY created_at`, [owner.ownerId]);
   return rows.map(toConnection);
+}
+
+/**
+ * People's own connections to a tracker site with the login each was tested as (who a Trello or
+ * GitHub account is in Freero, when the tracker hides addresses).
+ */
+export async function personalLogins(provider: TrackerProviderKind, site: string): Promise<Array<{ ownerId: string; login: string }>> {
+  const rows = await query<{ owner_id: string; login: string | null }>(
+    `SELECT owner_id, settings->>'login' AS login FROM tracker_connections WHERE provider = $1 AND site = $2 AND owner_id IS NOT NULL AND credentials_sealed IS NOT NULL`,
+    [provider, site],
+  );
+  return rows.filter((r) => r.login).map((r) => ({ ownerId: r.owner_id, login: r.login! }));
 }
 
 /** Every connection that has linked issues (the poll job). */
@@ -672,4 +694,28 @@ export async function hooksToRetry(before: number, limit = 50): Promise<StoredHo
       [new Date(before), limit],
     )
   ).map(toHook);
+}
+
+// ---- dependencies between linked issues (#50) ----
+
+/** The "blocker blocks blocked" pairs both sides last agreed on that involve this link. */
+export async function relationsOf(linkId: string): Promise<Array<{ blocker: string; blocked: string }>> {
+  return (await query<{ blocker_link: string; blocked_link: string }>(`SELECT blocker_link, blocked_link FROM tracker_relations WHERE blocker_link = $1 OR blocked_link = $1`, [linkId])).map((r) => ({
+    blocker: r.blocker_link,
+    blocked: r.blocked_link,
+  }));
+}
+
+/** Makes the agreed pairs that involve `linkId` exactly `pairs` (a pair whose other link is gone is skipped). */
+export async function setRelations(linkId: string, pairs: Array<{ blocker: string; blocked: string }>, at = Date.now()): Promise<void> {
+  await tx(async () => {
+    await query(`DELETE FROM tracker_relations WHERE blocker_link = $1 OR blocked_link = $1`, [linkId]);
+    for (const p of pairs)
+      await query(
+        `INSERT INTO tracker_relations (blocker_link, blocked_link, created_at)
+         SELECT $1, $2, $3 WHERE EXISTS (SELECT 1 FROM tracker_links WHERE id = $1) AND EXISTS (SELECT 1 FROM tracker_links WHERE id = $2)
+         ON CONFLICT DO NOTHING`,
+        [p.blocker, p.blocked, new Date(at)],
+      );
+  });
 }

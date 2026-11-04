@@ -31,3 +31,4 @@ export * from './embedCode';
 export * from './participation';
 export * from './i18n';
 export * from './compliance';
+export * from './icons';

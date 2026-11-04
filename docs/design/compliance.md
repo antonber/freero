@@ -232,7 +232,10 @@ data                     each sealed row names its DEK (`sealed_with` = '<worksp
   keyed workspace whose key can't be used throws and writes nothing.
 - **Not covered (metadata)**: board titles and descriptions, members, the audit log, and uploaded
   files (still storage-encrypted only; see "Left"). Thumbnails are not stored for keyed
-  workspaces. Derived plaintext — the search index, backlinks — exists while the key is usable;
+  workspaces. Offline copies on devices (#178) are not kept for keyed workspaces either,
+  unless their `offlineCopies` policy is 'all' (the device's own key can't be suspended by the
+  workspace's KMS; a suspended key closes the board, and the device deletes its copy the next time
+  it is online). Derived plaintext — the search index, backlinks — exists while the key is usable;
   when it is suspended, destroyed or refused (not on a mere network blip, which throws and is
   retried), realtime's stored readers read the board as empty and every state change re-raises
   each board's content event in its transaction, so those indexes derive nothing (and rebuild

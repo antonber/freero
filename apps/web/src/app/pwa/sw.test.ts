@@ -41,7 +41,7 @@ describe('service worker', () => {
     expect(cache.size).toBe(0);
   });
 
-  it('always loads pages from the network (a deploy is picked up at once) and never stores them; offline it shows the offline page', async () => {
+  it('always loads pages from the network (a deploy is picked up at once) and never stores them; offline a board opens on the app shell, other pages show the offline page', async () => {
     const { e, cache, fetched } = env(() => new Response('<html>new build</html>', { headers: { 'Content-Type': 'text/html' } }));
     cache.set('/offline.html', new Response('offline page'));
     for (const path of ['/app', '/login', '/board/abc']) {
@@ -53,7 +53,11 @@ describe('service worker', () => {
 
     const offline = env(() => Promise.reject(new TypeError('Failed to fetch')));
     offline.cache.set('/offline.html', new Response('offline page'));
-    expect(await (await respond(get('/board/abc', 'navigate'), ORIGIN, offline.e)!).text()).toBe('offline page');
+    offline.cache.set('/index.html', new Response('<html>this build</html>'));
+    // #178: a board may be kept on the device, so it gets the app; sign-in and the rest can't work offline.
+    expect(await (await respond(get('/board/abc', 'navigate'), ORIGIN, offline.e)!).text()).toBe('<html>this build</html>');
+    for (const path of ['/login', '/app', '/board/abc/extra'])
+      expect(await (await respond(get(path, 'navigate'), ORIGIN, offline.e)!).text()).toBe('offline page');
   });
 
   it('keeps a build file after its first load, but never a failed or no-store response', async () => {

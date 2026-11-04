@@ -144,10 +144,13 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A diagram (#117, #118; `DiagramElement`, type `diagram`: title, layout, layers, `laidOut`, its box) and its members' layout — positions, `diagramPinned`, `diagramLayer` on join, layer locks (`locked` + `layerLocked`), stacking, lines between members joining it — read through `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `memberLayerId`, `hiddenByLayer`, `diagramSignature`) | `features/diagram`: its element's `arrange` (`planDiagram`, the one writer of members' positions: it reflows only when `laidOut`, the structure's signature, changes; a member moved by hand is pinned) and its commands (layout, Lay out again, unpin, layers); server `modules/structure` / `modules/api` through `withDiagramLayout` in the same change; `layoutStructure` wraps graph-like structures in one (`wrapInDiagram`) | `runCommand('diagram.setLayout' / 'diagram.relayout' / 'diagram.unpin' / 'diagram.wrap' / 'diagram.focus')`. Features that write member positions of a diagram (from-text's source edits) leave them to it. Focus is engine UI state (`Editor.setFocus`); the layer a person adds to is a personal view (`_layer`). See docs/design/diagrams.md |
+| A board's copy on a device (#178: IndexedDB `freero-offline` — the board's Yjs state, its summary, the account card, the key that seals them) | the engine's `BoardStore` writes a copy's content through `Host.offline`; `app/offline/copies.ts` decides which boards are kept and deletes them (sign-out, session gone, another person, access lost, policy); only `app/offline/vault.ts` touches the database | the server's `BoardPermissions.offline` and `POST /boards/offline-check`; see "Offline copies" |
 | A person's interface language (`users.locale`, `Account.locale`, #5) and the page's `<html lang dir>` | server `modules/auth` (`PATCH /api/auth/me` `{ locale }`, sign-up's `locale`); in the browser `app/i18n/locale.ts` is the only writer of `lang` / `dir` and of the language this browser remembers — decided once before the app loads (`?lang=` for the tab > the account's > this browser's > `navigator.languages` > English), a change saves and reloads | `LanguagePicker` (`app/components`): account settings → Language, under the sign-in card |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
+| A table's views and derived row layout (#51: `TableElement.view` grid / board / timeline, `groupRows`, `timeline` start / end date columns; derived `hiddenRows` and `bands`, from which normalize sizes the grid — a filter reclaims what it hides, a grouped grid's bands take room) | `features/table` (format toolbar; `refreshRows` in the transaction of every cell, filter or grouping change; timeline bars write the date cells through `setRowSpan`, @freero/shared `spanValues` / `spanOfDates` / `timelineRange` as a kanban's timeline tab) | its format toolbar; never edit `hiddenRows` / `bands` by hand (server `render/svg.ts` only reads `hiddenRows`) |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
+| A workspace's shape packs (`shape_packs`, `shape_pack_icons`, #4): names, each icon's sanitised drawing | server `modules/shapepacks` (the workspace's owners / admins upload, rename, remove; the upload is the caller's own ZIP of SVGs through modules/uploads — its size cap, quota, rate limit — read once and deleted; every SVG reduced by `@freero/shared` `sanitizeSvg`) | `Host.shapePacks` (the icons feature's library: a pack switcher, search by name; the shape library lists matching packs); a PLACED icon is an ordinary `icon` element holding its drawing (`nodes`, `viewBox`, `art`), so it outlives its pack. Every reader (board, exports, the server's SVG render) draws only what `cleanIconNodes` keeps |
 | Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
@@ -155,6 +158,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
+| "New comments on your boards" (#104: `notification_prefs` key `board-comments`, off unless set) | server `modules/notifications` (`updatePrefs`) | `PUT /notifications/prefs` `boardComments` (account settings) |
 | The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
 | Who presents a board (`presentation` key `session`, #146) | server `modules/presentations` (realtime `updateServerEntry`: start, hand off, end; a socket's write is undone) | `Host.presentation` (`features/present`) |
 | Icebreaker results (`icebreakerResults`, #150) and a quiz's answer key (`engage_keys`, #147) | server `modules/icebreakers` (`writeServerCollection`) and `modules/engage` | `Host.icebreakers.roll`; `Host.engage.setKey` / `runQuiz` |
@@ -219,7 +223,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   only the part a change touched (drag, a collaborator's edit) and all of it on selection, focus,
   theme or zoom changes. Paint only: the doc, hit-testing, selection overlays, exports and
   thumbnails (`ElementFrame` in export mode) and the live regions / Board as list (they read the
-  doc) never see it; canvases are `aria-hidden`.
+  doc) never see it; canvases are `aria-hidden`. Containers paint too (#185): a kanban's paper and
+  column blocks, a diagram's body, a frame's fill — a type may paint only below its own on-screen
+  size (`lowDetailMaxPx`: a frame once its title, which you drag it by, can't show; 0 for a hidden
+  frame). Entering low detail is immediate (#183: deferring it drew the zoomed-out view in full
+  first — on load, the whole board's fit); leaving it is gradual (#184): the canvases keep painting,
+  at the resolution they were left at, what hasn't mounted yet, and items mount nearest the pointer
+  first in batches sized by the last frame (`useLeavingLowDetail`).
+- Only items near the view are mounted — the selection too (#182); the item being edited is the
+  one kept mounted wherever it is.
 - Items are placed with `left` / `top` (a transform only when rotated) and are each a stacking
   context (`z-index: 0`). Each item's selected / edited / drag-preview state comes from one ui
   subscription per editor (`ItemStates` in `WorldLayer.tsx`) that notifies only the items whose
@@ -1148,11 +1160,14 @@ to `dist/sw.js` by the `freero-sw` plugin in `vite.config.ts` (version = hash of
 files; it precaches them plus the shell files). Rules, all in `strategyFor` / `respond` (tested):
 - `/api`, `/ws`, `/uploads`, non-GET and other origins are never answered or stored by the worker.
 - Navigations always go to the network (never cached, so sign-in pages and a deploy's new
-  `index.html` are never stale); `offline.html` (no scripts: CSP) when the network fails.
+  `index.html` are never stale); when the network fails, a board (`/board/:id`) gets this build's
+  precached `index.html` (`APP_SHELL`, #178: it may be kept on the device), every other page
+  `offline.html` (no scripts: CSP).
 - Hashed `/assets/*` and the shell files are cache-first; old versions' caches go on activation.
 - `app/pwa/AppUpdates.tsx` registers it (production only), offers "Reload" when a new version
-  waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. Offline editing is out of scope;
-  anything that must work offline is a new decision, not a new cache rule.
+  waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. The worker never holds board
+  data: boards kept offline live in IndexedDB, written by the app (below). Anything else that must
+  work offline is a new decision, not a new cache rule.
 - File handler (KAI-218): the manifest's `file_handlers` opens `.freero` files with `/app?restore=1`;
   the dashboard reads the file from `launchQueue` (`app/lib/pendingBackup.ts`) into the restore
   dialog. Share target: `share_target` POSTs a multipart form to `/api/share-target` (server
@@ -1413,7 +1428,8 @@ sticker sets, #138), `gifs` (no table: GIF search in the sticker panel through t
 the operator's provider (`GIF_PROVIDER`, `GIF_API_KEY`) is asked for results no more mature than
 the workspace's `gifs` policy; previews come through `GET /gifs/media` and a placed GIF is copied
 into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provider links the
-server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `outline` (no table: the semantic board read model,
+server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
+packs, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
@@ -1429,8 +1445,8 @@ and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed
 SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
 admin console of team workspaces; see "Audit log, admin console and workspace
 policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
-(ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
-configures; see "AI" below), `apiauth` (api_tokens,
+(ai_workspace_settings, ai_usage, ai_assistant_messages: AI board actions and the board assistant
+with a provider the operator or a workspace configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
 `/api/v1`; see "Public API and OAuth" below), `embed` (embed_member_tokens: live board views inside AI assistants, `/embed/board`, `/ws/embed/boards`, see "The MCP server"; boards embedded on other sites, `/embed/b`, `/ws/embed/b`, oEmbed, see "Boards embedded on other sites"), `mcp` (no table: the remote MCP server `/mcp`; see
@@ -1441,7 +1457,7 @@ below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals, engage_keys: live audience activities; see "Live activities" below), `icebreakers`
 (no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `presentations`
 (no tables: who presents a board, its handoffs, #146), `trackers`
-(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
+(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks, tracker_relations: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
@@ -1452,7 +1468,10 @@ three in "Search, the event stream and webhooks" below — `backup` (no table: `
 backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
 "Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (slack_teams, slack_user_links, slack_oauth_flows: the operator's Slack app — link unfurls, and personal Slack: people's linked Slack accounts, direct messages, `/freero`; see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
-Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
+Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `atlassian` (no table: the
+Forge app's generated source, its board page framed by Atlassian's hosts), `zoom` (zoom_meeting_boards: the board a Zoom
+meeting opened for everyone, by the hash of its UUID, for a day), `meet` (no table: the Meet add-on's deployment
+manifest, its pages framed by Meet) — see "Apps that run on other platforms" below, `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
@@ -1517,6 +1536,14 @@ reports" below).
   `/board/<id>?changes=1` (`activity.showChanges`). Claim-then-send in the same digest job. Its
   unsubscribe token is signed over the list name (`list=board-changes`): it stops only this email,
   and an all-emails token can't be bent into it; the master switch stops it too.
+  "New comments on your boards" (#104): opt-in per person (`notification_prefs` key
+  `board-comments`, `PUT /notifications/prefs` `boardComments`). Realtime marks a message that is
+  the first of its thread (`CommentMessageEvent.newThread`: no other message record in it, deleted
+  ones included), and `onCommentMessage` sends `comment.thread` to the board's followers — its
+  owner and everyone who starred it (boards' `boardFollowerIds`) — except the author and people the
+  message already mentions; `notify` drops anyone who can no longer open the board and, for a
+  thread in a hidden frame (`editorsOnly`), anyone not an owner or editor. From there it is an
+  ordinary notification: the bell, then Slack or the digest by the type's switches.
   Times in emails (security notices, export expiry, this digest) read in the recipient's time zone
   (`platform/time.ts` `formatWhen`); calendar dates (due dates) stay dates.
 
@@ -1856,7 +1883,10 @@ members with roles owner / admin / member / guest (separate from board roles).
   (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
   embed page's framing header, its sockets and oEmbed all ask), `linkPassword` / `linkMaxDays`
   (#39: what a board's link needs before it is turned on or changed; see "Co-owners, board
-  sharing settings and moving boards"), `gifs` (#139: GIF search off, or the highest content
+  sharing settings and moving boards"), `offlineCopies` (#178: may its boards be kept on devices
+  for offline work — 'all', 'unkeyed' (default: not while the workspace has its own encryption
+  key), 'off'; told to devices by `BoardPermissions.offline` and `POST /boards/offline-check`, a
+  label may cap it; see "Offline copies"), `gifs` (#139: GIF search off, or the highest content
   rating its results may have, G by default or PG-13; enforced by `modules/gifs` on every search
   and placement, and sent to the provider with each search). All other
   policies are enforced by the endpoint that does the work;
@@ -2323,6 +2353,21 @@ board and builds `Host.ai` only when it says yes.
 - **Text-only answers** (#134): `expand` reads one mind-map topic, its path and its children from
   the reader's view (no private draft but the topic itself) and returns `children` (3–7, repeats of
   what is there dropped, fewer gets the repair turn); nothing is laid out or placed on the server.
+- **The board assistant** (#1; `ai/assistant.ts`, `features/ai` dock `ai.assistant`): a conversation
+  about one board, `GET|POST|DELETE /boards/:id/ai/assistant`. `decideAi(…, { read: true })`: anyone
+  who can open the board and passes the workspace's AI policy may ask (`BoardAiStatus.assistant`,
+  `Host.assistant`), within the same rate limits, budgets, downloads policy and `ai.request` audit
+  (task `assistant`). It reads the board through `boardOutline` with the asker's OWN access (their
+  drafts only, hidden frames only for owners/editors), budgeted after the conversation's last
+  `ASSISTANT_LIMITS.context` messages, in the untrusted envelope; the model answers JSON (answer,
+  cites, proposal), validated: cites only ids the asker was shown; the proposal kept only for people
+  who can edit, only the propose_changes shapes and fields, only ids they see that aren't private
+  drafts. It never writes the board: the proposal goes through api's `readProposal` / `planProposal`
+  (the same planners as MCP `propose_changes`) into realtime's `proposeSuggestions` as one group from
+  "AI for <person>" — accepting it is the suggestions feature's ordinary one-step edit. The
+  conversation is the asker's alone (`ai_assistant_messages`, single writer `ai/repo.ts`, newest
+  `ASSISTANT_LIMITS.kept`; the body sealed with the workspace key when it has one, #159; cascades
+  with the board and the account; DELETE clears it; in the personal data export).
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited
@@ -2377,7 +2422,10 @@ audit and admin controls are the same code.
   (`kind: 'app'`, its name, the person it acts for). This is the contract the MCP server's
   `propose_changes` (KAI-107) calls.
 - **OAuth server** (`apiauth/oauth.ts`), built to OAuth 2.1 as the MCP authorization spec requires:
-  authorization code only; PKCE S256 mandatory for every client; exact redirect URIs (loopback http
+  authorization code only; PKCE S256 mandatory for every public client — a confidential app a person
+  registered (client secret) may omit it, because Power Automate's and Make's generic OAuth can't
+  send it (#174, #175; RFC 9700 §2.1.1): a challenge that is sent is always enforced, and a code
+  issued without one needs the secret and refuses any verifier (no downgrade); exact redirect URIs (loopback http
   on any port, RFC 8252; https; an app's own scheme; never `javascript:`/`data:`/fragments); codes
   single use (deleted on redemption, even a failed one), 10 minutes; access tokens 1 hour; refresh
   tokens rotate, and a replayed one revokes the whole consent; RFC 7591 dynamic client registration
@@ -2747,9 +2795,69 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   route) and MCP (`import_meeting_notes`, a thin tool over it; proposed when the credential may only
   suggest) produce the same frame. Dropped `.md` stays the doc importer's: only the menu reads Markdown
   as meeting notes.
-- **Power Automate**: `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
-  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
-  keeps the checked-in file in step and free of OpenAPI 3 constructs.
+- **Power Automate** (#175): `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
+  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `scripts/lib/powerAutomate.mjs`
+  turns "add a webhook" into a webhook trigger (`x-ms-notification-url`; the API's 201 answers the
+  webhook's `Location`, which the trigger DELETEs) and builds the certification files
+  (`docs/integrations/power-automate/certified/`: a curated operation list in Microsoft's wording,
+  generic OAuth to freero.app, the icon from `platform/brandIcons.ts`). `api/powerAutomate.test.ts`
+  keeps both in step, free of OpenAPI 3 constructs and within Microsoft's published certification
+  rules.
+
+### Apps that run on other platforms (`integrations/`, `modules/{atlassian,zoom,meet}`; #166–#169, #173, #174)
+
+Code another vendor runs or hosts, kept in `integrations/<platform>/` (MIT, outside the npm
+workspaces: each platform's own SDK — Zapier's platform packages, Atlassian's Forge bridge — is
+installed only there by whoever publishes, never as Freero's dependency, since their licences
+aren't permissive). They talk to Freero only through what any client has — REST API v1, OAuth,
+webhooks, the public embed — so they add no server state. Their tests are in
+`apps/server/src/integrations/` (root layer, like the composition root: they mount the routes of the
+modules they call) and run the app definitions unchanged against a real HTTP server.
+
+- **Zapier** (`integrations/zapier`, Zapier Platform CLI): OAuth 2.0 with PKCE to freero.app (the
+  app's `CLIENT_ID`/`CLIENT_SECRET`) or to any Freero by address with that server's own confidential
+  OAuth app; REST-hook trigger Board Event (subscribe = `POST …/webhooks` scoped to a board,
+  unsubscribe = `DELETE`, every delivery's `Freero-Signature` checked with the subscription's
+  secret, five-minute window), polling New Item / New Comment, actions over `/structure`,
+  `/comments`, `/boards`. `zapier.test.ts` drives it with a stand-in `z` that applies the app's own
+  middleware.
+- **Make** (`integrations/make`, the Make Apps Editor's local layout: `makecomapp.json` + IML JSON):
+  OAuth 2.0 as a confidential app without PKCE (Make can't send it; apiauth allows exactly that),
+  the hosted app's client in Make's common data, any Freero by address with its own app; a dedicated
+  webhook whose attach / detach add and remove the workspace webhook; actions over `/structure`
+  (empty optional fields — Make sends them — mean "not given": structure's `readPlacement`),
+  `/comments`, `/boards`, a universal module. `make.test.ts` checks every request against the API
+  reference and runs the connection, modules and webhook against the real server with a deliberately
+  tiny IML evaluator that refuses expressions it doesn't know.
+
+**Boards on other platforms' pages** (#166–#169; `modules/atlassian`, `modules/zoom`, `modules/meet`,
+web `app/hosts/`; docs/integrations/atlassian.md, zoom.md, google-meet.md). Teams' pattern, three times:
+off until the operator sets the platform's id (`config.atlassian`, `.zoom`, `.meet`); what the operator
+registers is generated per instance (`platform/hostApps.ts`: the https origin, the download, the app
+page); each platform's page is `PublicEmbed` (same `boardEmbedding` gate, board-bound member token,
+visitor rule) and may be framed only by that platform's documented origins through
+`frameFromOrigins` — the board pages only while the board allows embedding — and `FrameGuard` lets
+exactly those paths render framed.
+
+- **Atlassian** (`forge.ts`): a Forge project (manifest with a Confluence macro + `autoConvert` for
+  this host's board links + `adfExport`, a Jira issue panel, `external.frames` = this host's
+  `/atlassian/b/` only; Custom UI pages that resolve a macro's link, an issue property or the issue's
+  remote link from tracker sync to `/atlassian/b/<id>?item=`). Ancestors: `*.atlassian.net`,
+  `*.jira.com`, `*.cdn.prod.atlassian-dev.net` (Forge's frame sits between). Editing keeps the plain
+  embed's uncovered-frame click (any Forge app can frame the page).
+- **Zoom** (`@zoom/appssdk`, MIT, only in `app/hosts/zoom/zoomSdk.ts`): Zoom's desktop browser loads
+  the pages top level with its own cookies, so `/zoom/home` lists boards with the session and mints the
+  token in place; Zoom's web client frames them (`zoom.us`, `*.zoom.us`), where the Lax session cookie
+  never reaches, so they use the chooser and sign-in windows. "Invite everyone" records the meeting's
+  board (`zoom_meeting_boards`, sha256 of the meeting UUID, a day; set by the session or the board's
+  embed token — embed's index exports `memberOf` for this — only for a board the person can open that
+  allows embedding; looked up by invitees, null once embedding is off) and sends Zoom's invitation.
+- **Google Meet**: Google's add-ons SDK may not be bundled, so `/meet/sidepanel` and `/meet/stage/:id`
+  load it from `https://www.gstatic.com` — `frameFromOrigins(…, { scripts })` adds that origin to those
+  responses' `script-src` only. The side panel starts an activity whose main stage is the board.
+- **`/embed/choose`** (`app/hosts/EmbedChoosePage`, `allowOpener`): the first-party chooser window a
+  Freero frame without a session opens; it posts `EmbedChooseMessage` (the board and its member token)
+  to `window.opener` with targetOrigin = Freero's origin, like `/embed/connect`.
 
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 
@@ -2764,7 +2872,8 @@ piece reuses an owner that already exists.
   `/mcp`, OAuth through the plugin vault). The plugin lists its tools from mcp's
   `mcpToolDescriptions` (mcp's index: the `tools/list` descriptions, JSON Schema from the tools' zod
   input), so the package can't drift from the server; write tools carry a confirmation. Icons are
-  rasterised from Freero's mark in `icons.ts` (no image dependency). Served per instance
+  rasterised from Freero's mark in `platform/brandIcons.ts` (no image dependency; every host
+  app package uses it). Served per instance
   (`/api/integrations/{teams/app-package,copilot/agent-package}`, `?version=`), by the CLI
   (`teams:package`, `copilot:package`) and linked from the operator console.
 - **The tab is the public embed.** `app/teams/TeamsTabPage` renders `PublicEmbed`
@@ -2997,7 +3106,7 @@ target itself:
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
 one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub, Azure DevOps Boards (Services /
-Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
+Server, #6), Asana (#120), monday.com (#121), ClickUp (#180) or Trello (#181), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -3012,7 +3121,10 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
   capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
   (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
-  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below). `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below), `endpoints`
+  (GitHub Enterprise's GraphQL beside `/api/v3`). GitHub (#42) reads and writes the connection's
+  planning Project (v2) through GraphQL: Status, estimate, Iteration (`sprints`), start / target
+  dates; milestones as due dates; sub-issues as `parents`. `RemoteIssue.version` is the revision read (Azure DevOps): a write
   against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
   fresh reads (at most twice) instead of overwriting. Trackers without revisions (Asana,
   monday.com) write only the fields a sync changes (a PUT of those fields, a column write of those
@@ -3038,7 +3150,18 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
   (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
   Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
-- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, where
+- **Dependencies (#50)** are a synced RELATION, not a field (`relations.ts`, `tracker_relations`):
+  a connector with one arrowhead between two linked task cards of one connection is "tail blocks
+  head"; `TrackerProvider.dependencies` adds / removes the tracker's own blocks link and `getIssue`
+  reads them into `RemoteIssue.relations`. `syncLink` merges the pairs involving its link against
+  the agreed rows (`planRelations`: one-sided changes flow across), writes the tracker, draws or
+  removes connectors in the same board change, then stores the pairs as agreed;
+  `boardSideChanged` also notices a dependency connector drawn or removed. Only for connections
+  whose `settings.dependencies` is on (PATCH `syncDependencies`): new connections get it, those
+  from before #50 have no key and stay off, so an upgrade writes nothing to a tracker.
+  Writes that answer with the issue as written (Azure DevOps' PATCH, Linear's issueUpdate) are
+  what a sync agrees on, instead of a read-back that may already hold the next edit.
+- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, ClickUp, Trello, where
   nobody can paste an address): one per connection and project, registered after a send or import
   into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,
   registered again for a new secret). The address names the registration (`h`) and carries `k`, an
@@ -3046,7 +3169,13 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   handshake (`WebhookResult.handshake`: Asana's `X-Hook-Secret` echoed and kept sealed —
   `keepHookSecret` only for a pending row without one, so only once —, monday.com's challenge
   echoed) is answered only while that row is pending, i.e. while Freero waits on `register`; Asana
-  deliveries are then verified with that secret (`X-Hook-Signature`).
+  deliveries are then verified with that secret (`X-Hook-Signature`). ClickUp names its signing
+  secret in `register`'s answer (`{ id, secret }`), kept the same way while the row is pending;
+  Trello's is the API key's secret (`ProviderConnection.signingSecret`), and its HEAD check of an
+  address (`HEAD /api/trackers/webhooks/:id`) is answered 200 only while that row is pending.
+- **People a tracker hides addresses of** (Trello; `ProviderConnection.people`, connections.ts
+  `peopleOf`): a login is a Freero person's only through their OWN connection to that site, tested
+  as that login (`settings.login`, `repo.personalLogins`); a login two people tested is nobody's.
 - **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
   link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
   draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
@@ -3087,8 +3216,80 @@ Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
   `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks),
   `mock-asana.mjs` (sections, tags, custom fields, external attachments, OAuth, webhooks with the
   handshake and signatures) and `mock-monday.mjs` (GraphQL: columns, groups, updates, subitems,
-  webhooks with the challenge, complexity), which implement the subset of each public API used,
+  webhooks with the challenge, complexity) and `mock-clickup.mjs` (Lists, statuses, comments,
+  OAuth, webhooks naming their secret) and `mock-trello.mjs` (lists, hidden addresses, HEAD check,
+  signed webhooks), which implement the subset of each public API used,
   webhooks included.
+
+### Desktop app (`apps/desktop`, #176; docs/desktop.md)
+
+A Tauri 2 shell (Rust, `apps/desktop/src-tauri`) whose one window shows a Freero instance's web
+app as the server serves it — the operator's by default (`FREERO_INSTANCE_URL` at build time), any
+https server the person chooses (Freero › Change server…, the shell's own page `apps/desktop/ui`).
+Not an npm workspace: the Tauri CLI is fetched at a pinned version (`npm run desktop:dev` /
+`desktop:build`, `apps/desktop/build.mjs`), `Cargo.lock` is committed, and CI
+(`.github/workflows/desktop.yml`) tests it on Linux and builds unsigned Windows / macOS installers
+(signing, notarisation and the update key are the owner's secrets; docs/desktop.md).
+- `freero://board/<id>`, `doc/<id>`, `app`, `open?url=` and the chosen server's own https pages
+  open in the window; anything else never does (`src/links.rs`, tested). A second launch hands its
+  link to the running app (single instance).
+- The page may call only the notification plugin, and only from the chosen server's origin (a
+  capability added at start); changing the server is a command only the shell's own page may call.
+- Notifications: the web app's `app/notifications/device.ts` turns new inbox items into the
+  system's notifications (the shell's plugin, or the browser's Notification API) for the types
+  left on in Settings › "Notifications on this computer / in this browser" — a per-device choice
+  kept in this browser's storage, written only there — and only while Freero isn't in front.
+- Updates: tauri-plugin-updater against a signed manifest (default: the latest GitHub release's
+  `latest.json`); without the owner's public key baked in, the app never updates itself.
+
+### Offline copies (#178; `app/offline/`, `engine/store/BoardStore` persistence)
+
+A board someone opened on a device is kept there, so it opens — and can be edited — without a
+network, also after a reload, and syncs when the network is back.
+
+- **What is kept**: the board's Yjs state as the engine holds it — the shared doc, this person's
+  private layer (their drafts and sealed ballots) and, only while they read the board as an owner /
+  editor, the editors layer (hidden frames' contents, suggestions). Nothing the server never sent
+  them can be in it: layers reach a socket only when it may read them ("Board layers"). Plus the
+  `BoardSummary` and team the page needs to open it, and the account card (to start offline).
+  At most `MAX_OFFLINE_BOARDS` (20) boards; opening another drops the one opened longest ago.
+- **Who decides**: the server, per person and board: `BoardPermissions.offline` (boards'
+  `mayKeepOffline`: the workspace's `offlineCopies` policy, raised by its organisation's floor or a
+  label's cap; 'unkeyed' — the default — says no for a workspace under its own encryption key,
+  #159, because a key on a device can't promise what the workspace's key does). Absent (an older
+  server) or false: `offlineHostFor` gives the engine no `Host.offline` and deletes any copy.
+  Guests, embeds, live views and previews never get one.
+- **Writers**: the engine's `BoardStore` is the only writer of a copy's content (through
+  `Host.offline`: read before the socket connects — `restored` lets the initial view and the
+  "offline" banner work without a sync — saved after the first sync, then at most every 800 ms
+  while changes come, and at once when the page is hidden or the board closes); `app/offline/
+  copies.ts` alone decides which boards are kept and deletes them; `app/offline/vault.ts` is the
+  only code that touches the IndexedDB database `freero-offline`.
+- **At rest**: every part is sealed with AES-256-GCM (additional data: user, board, part) under a
+  non-extractable WebCrypto key made when the first copy is written after a sign-in and kept beside
+  the records. It is deleted — with everything — on sign-out, when the session check finds no
+  session (signed out elsewhere, expired, revoked), and when another person signs in on the
+  device; the key goes first, so a record an interrupted delete leaves behind can't be read. It
+  does not protect against someone who can read the browser profile while the person is signed
+  in: that is why keyed workspaces keep no copies unless their policy says 'all'.
+- **When copies go**: sign-out / session gone / another person (above); a board whose socket the
+  server ends for good (4401 / 4403 / taken down: `BoardStore` stops saving and calls `forget`);
+  `GET /boards/:id` answering 403 / 404 / 451; and on every online start the app asks
+  `POST /api/boards/offline-check { ids }` → `{ keep }` (the boards this person can still open
+  and may keep, never counted as opening them) and deletes the rest — so a person removed while
+  offline, a policy turned off, or a board deleted, leaves nothing on the device once it is online.
+- **Sync**: Yjs. Offline edits are ordinary local updates; on reconnect y-websocket's step 1/2
+  exchange (and the layers' own) sends exactly what the server lacks. The server applies its rules
+  to them as to any update — a person made a viewer while offline has their offline edits refused,
+  layer writes they may no longer make are dropped, private-mode and hidden-frame placement are
+  checked as usual. Tested with real sockets (`realtime/offline.test.ts`).
+- **Opening offline**: the service worker answers `/board/:id` with this build's `index.html`
+  when the network fails (only boards; the app's chunks are cache-first once loaded). The auth
+  context falls back to the account card in the vault when the session check can't reach the
+  server; `BoardPage` opens the kept summary when `GET /boards/:id` can't. Services that need the
+  server (uploads, history, templates, sharing) fail as they do on a dropped connection.
+- **Mixed versions**: an older server sends no `permissions.offline`, so a new client keeps
+  nothing; an older client ignores it. The migration adds a nullable column (NULL = default).
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 

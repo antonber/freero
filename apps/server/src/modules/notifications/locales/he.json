@@ -89,7 +89,11 @@
     "digest.more",
     "digest.action",
     "digest.outro",
-    "digest.unsubscribe"
+    "digest.unsubscribe",
+    "comment.thread.label",
+    "comment.thread.description",
+    "comment.thread.title",
+    "comment.thread.link"
   ],
   "someone": "מישהו",
   "quoted": "”{title}“",
@@ -180,5 +184,9 @@
   "digest.more": "אלה {shown} האחרונות; עוד {more} מחכות לך ב־Freero.",
   "digest.action": "פתיחת Freero",
   "digest.outro": "האימיילים האלה נשלחים על פעילות שעוד לא ראית ב־Freero. אפשר לבחור אילו מהם לקבל בהגדרות החשבון.",
-  "digest.unsubscribe": "ביטול המינוי לאימיילים של התראות"
+  "digest.unsubscribe": "ביטול המינוי לאימיילים של התראות",
+  "comment.thread.label": "תגובות חדשות בלוחות שלך",
+  "comment.thread.description": "מישהו פותח שרשור תגובות בלוח שבבעלותך או שסימנת בכוכב (אחרי שהפעלת זאת).",
+  "comment.thread.title": "{actor} הגיב/ה על {board}",
+  "comment.thread.link": "פתיחת התגובה"
 }

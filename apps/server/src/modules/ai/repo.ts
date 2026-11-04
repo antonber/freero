@@ -1,4 +1,4 @@
-// The only writer of `ai_workspace_settings` and `ai_usage` [S4].
+// The only writer of `ai_workspace_settings`, `ai_usage` and `ai_assistant_messages` [S4].
 import type { AiAccess, AiProviderKind } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
 
@@ -158,4 +158,75 @@ export async function usageOfWorkspace(workspaceId: string): Promise<UsageRecord
     [workspaceId],
   );
   return rows.map((r) => ({ ...toTotals(r), workspaceId: r.workspace_id, month: r.month, source: r.source }));
+}
+
+// ---- the board assistant's conversations (#1) ----
+
+export interface StoredAssistantMessage {
+  id: string;
+  boardId: string;
+  userId: string;
+  at: number;
+  /** The data key `body` is sealed with (`<workspaceId>:<version>`), or null. */
+  sealedWith: string | null;
+  body: Buffer;
+}
+
+interface AssistantRow {
+  id: string;
+  board_id: string;
+  user_id: string;
+  created_at: Date;
+  sealed_with: string | null;
+  body: Buffer | Uint8Array;
+}
+
+const toMessage = (r: AssistantRow): StoredAssistantMessage => ({
+  id: r.id,
+  boardId: r.board_id,
+  userId: r.user_id,
+  at: r.created_at.getTime(),
+  sealedWith: r.sealed_with,
+  body: Buffer.from(r.body),
+});
+
+/** Appends messages (in order) and keeps only the newest `keep` of that conversation. One transaction. */
+export async function appendAssistantMessages(rows: readonly StoredAssistantMessage[], keep: number): Promise<void> {
+  if (!rows.length) return;
+  await tx(async () => {
+    for (const m of rows)
+      await query('INSERT INTO ai_assistant_messages (id, board_id, user_id, created_at, sealed_with, body) VALUES ($1, $2, $3, $4, $5, $6)', [
+        m.id,
+        m.boardId,
+        m.userId,
+        new Date(m.at),
+        m.sealedWith,
+        m.body,
+      ]);
+    const { boardId, userId } = rows[0];
+    await query(
+      `DELETE FROM ai_assistant_messages WHERE board_id = $1 AND user_id = $2 AND n NOT IN (
+         SELECT n FROM ai_assistant_messages WHERE board_id = $1 AND user_id = $2 ORDER BY n DESC LIMIT $3)`,
+      [boardId, userId, keep],
+    );
+  });
+}
+
+/** One person's conversation on one board, oldest first (the newest `limit`). */
+export async function assistantMessages(boardId: string, userId: string, limit: number): Promise<StoredAssistantMessage[]> {
+  const rows = await query<AssistantRow>(
+    `SELECT * FROM (SELECT * FROM ai_assistant_messages WHERE board_id = $1 AND user_id = $2 ORDER BY n DESC LIMIT $3) m ORDER BY n`,
+    [boardId, userId, limit],
+  );
+  return rows.map(toMessage);
+}
+
+export async function deleteAssistantConversation(boardId: string, userId: string): Promise<void> {
+  await query('DELETE FROM ai_assistant_messages WHERE board_id = $1 AND user_id = $2', [boardId, userId]);
+}
+
+/** Every message of a person, on every board (data export), oldest first. */
+export async function assistantMessagesOfUser(userId: string): Promise<StoredAssistantMessage[]> {
+  const rows = await query<AssistantRow>('SELECT * FROM ai_assistant_messages WHERE user_id = $1 ORDER BY board_id, n', [userId]);
+  return rows.map(toMessage);
 }

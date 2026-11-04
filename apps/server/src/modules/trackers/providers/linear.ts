@@ -17,7 +17,8 @@ const WEBHOOK_MAX_AGE_MS = 60_000;
 
 const ISSUE = `id identifier url title description updatedAt dueDate estimate priority priorityLabel
   state { name type } assignee { name email } labels { nodes { name } } team { id key name }
-  project { name } parent { title } cycle { id number name }`;
+  project { name } parent { title } cycle { id number name }
+  relations { nodes { id type relatedIssue { id } } } inverseRelations { nodes { id type issue { id } } }`;
 const CYCLE = 'id number name startsAt endsAt completedAt';
 
 const CATEGORY: Record<string, IssueStatusCategory> = {
@@ -58,6 +59,9 @@ interface LinearIssue {
   labels?: { nodes?: Array<{ name?: string }> };
   team?: { id: string; key: string; name?: string };
   project?: { name?: string } | null;
+  /** #50: "blocks" relations this issue has (it blocks `relatedIssue`), and those others have on it. */
+  relations?: { nodes?: Array<{ id: string; type?: string; relatedIssue?: { id: string } | null }> };
+  inverseRelations?: { nodes?: Array<{ id: string; type?: string; issue?: { id: string } | null }> };
   parent?: { title?: string } | null;
   cycle?: { id: string; number?: number; name?: string | null } | null;
 }
@@ -136,6 +140,10 @@ function toRemote(i: LinearIssue): RemoteIssue {
     updatedAt: i.updatedAt ? Date.parse(i.updatedAt) || 0 : 0,
     // Linear's projects are what other trackers call epics; a sub-issue's parent otherwise.
     groups: { team: i.team?.name ?? i.team?.key ?? null, epic: i.project?.name ?? i.parent?.title ?? null },
+    relations: {
+      blocks: (i.relations?.nodes ?? []).filter((r) => r.type === 'blocks' && r.relatedIssue?.id).map((r) => r.relatedIssue!.id),
+      blockedBy: (i.inverseRelations?.nodes ?? []).filter((r) => r.type === 'blocks' && r.issue?.id).map((r) => r.issue!.id),
+    },
   };
 }
 
@@ -349,9 +357,11 @@ export const linear: TrackerProvider = {
     const notes: string[] = [];
     const current = await gql<{ issue: LinearIssue }>(conn, `query($id: String!) { issue(id: $id) { team { id } } }`, { id: issue.id }, 'read the issue');
     const input = await inputFor(conn, current.issue.team!.id, patch, notes);
-    if (Object.keys(input).length)
-      await gql(conn, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`, { id: issue.id, input }, `change ${issue.key}`);
-    return notes;
+    if (!Object.keys(input).length) return notes;
+    // Linear answers with the issue as this update left it: what the sync agrees on, rather than a
+    // read that may already hold the next person's edit.
+    const d = await gql<{ issueUpdate?: { issue?: LinearIssue | null } }>(conn, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { ${ISSUE} } } }`, { id: issue.id, input }, `change ${issue.key}`);
+    return d.issueUpdate?.issue ? { notes, issue: toRemote(d.issueUpdate.issue) } : notes;
   },
 
   async priorities() {
@@ -366,6 +376,21 @@ export const linear: TrackerProvider = {
       'search issues',
     );
     return d.searchIssues.nodes.map(toRemote);
+  },
+
+  dependencies: {
+    async add(conn, blocker, blocked) {
+      await gql(conn, 'mutation ($a: String!, $b: String!) { issueRelationCreate(input: { issueId: $a, relatedIssueId: $b, type: blocks }) { success } }', { a: blocker, b: blocked }, 'link the issues as blocking');
+    },
+    async remove(conn, blocker, blocked) {
+      const d = await gql<{ issue?: { relations?: { nodes?: Array<{ id: string; type?: string; relatedIssue?: { id: string } | null }> } } | null }>(
+        conn,
+        'query ($id: String!) { issue(id: $id) { relations { nodes { id type relatedIssue { id } } } } }',
+        { id: blocker },
+        'read the issue’s relations',
+      );
+      for (const r of d.issue?.relations?.nodes ?? []) if (r.type === 'blocks' && r.relatedIssue?.id === blocked) await gql(conn, 'mutation ($id: String!) { issueRelationDelete(id: $id) { success } }', { id: r.id }, 'remove the blocking link');
+    },
   },
 
   async changedSince(conn, issues, since) {

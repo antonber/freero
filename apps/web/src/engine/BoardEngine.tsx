@@ -133,7 +133,8 @@ function useInitialView(core: EngineCore) {
     const tryInit = () => {
       if (done) return;
       const s = core.ui.getState();
-      if (s.viewport.width <= 1 || !s.synced) return;
+      // A board opened from the device copy (#178) starts there: offline no sync may ever come.
+      if (s.viewport.width <= 1 || !(s.synced || s.restored)) return;
       done = true;
       const editor = core.editor;
       // ?item=<id> (Copy link to item); ?el=<id> is the older spelling, still honored.

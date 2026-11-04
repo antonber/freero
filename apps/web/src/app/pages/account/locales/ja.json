@@ -248,7 +248,15 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "Freero に接続できませんでした。もう一度お試しください。",
   "restoreAccount": "アカウントを復元",
@@ -387,7 +395,7 @@
   "connectAnAgent": "エージェントを接続",
   "appsAgents": "アプリとエージェント",
   "yourIssueTrackers": "あなたの課題トラッカー",
-  "yourOwnJiraLinearGithub": "あなた自身の Jira、Linear、GitHub、Azure DevOps、Asana、monday.com への接続です。編集できるボードの項目を課題として送信できます。チームの接続は管理コンソールで設定します。",
+  "yourOwnJiraLinearGithub": "編集できるどのボードからでも項目を Issue として送るための、あなた自身の Jira、Linear、GitHub、Azure DevOps、Asana、monday.com、ClickUp、Trello の接続です。チームの接続はチームの管理コンソールで設定します。",
   "problemsYouReported": "報告した問題",
   "yourNameCanTBe": "名前を空にすることはできません",
   "keepItUnder80Characters": "80文字未満にしてください",
@@ -498,5 +506,13 @@
   "email": "メール",
   "emailLabel": "メール: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "削除"
+  "delete": "削除",
+  "newCommentsOnYourBoards": "自分のボードへの新しいコメント",
+  "tellMeWhenSomeoneStarts": "自分が所有またはスターを付けたボードで誰かがコメントスレッドを始めたら通知：ベルに表示し、下で選んだとおりメールまたは Slack でも。",
+  "notificationsOnThisComputer": "このコンピューターの通知",
+  "notificationsInThisBrowser": "このブラウザーの通知",
+  "popUpsForNewActivity": "Freero が前面のウィンドウでないとき、受信トレイの新しいアクティビティをシステムの通知でお知らせします。このデバイスだけの設定です。",
+  "showNotificationsOnThisDevice": "このデバイスに通知を表示",
+  "notificationsAreBlockedForFreero": "Freero の通知がブロックされています。システムまたはブラウザーの設定で許可してから、もう一度お試しください。",
+  "showMeNotificationsAbout": "通知する内容"
 }

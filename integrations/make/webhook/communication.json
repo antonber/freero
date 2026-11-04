@@ -1,0 +1,10 @@
+{
+    "respond": {
+        "status": 200,
+        "type": "json",
+        "body": {
+            "ok": true
+        }
+    },
+    "condition": "{{body.type != 'ping' & body.id != 'ping'}}"
+}

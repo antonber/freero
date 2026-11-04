@@ -201,8 +201,12 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 | `TRACKER_FALLBACK_POLL_SECONDS` | `900` | How often connections with webhooks poll anyway, to catch a delivery that never arrived. |
 | `TRACKER_JIRA_CLIENT_ID` / `TRACKER_JIRA_CLIENT_SECRET` | — | An OAuth 2.0 (3LO) app you registered at developer.atlassian.com (callback `<PUBLIC_URL>/api/trackers/oauth/jira/callback`; scopes `read:jira-work write:jira-work read:jira-user offline_access`). Set: "Connect with Atlassian" is offered next to API tokens. Both or neither. |
 | `TRACKER_JIRA_AUTH_URL` / `TRACKER_JIRA_API_URL` | `https://auth.atlassian.com` / `https://api.atlassian.com` | Atlassian's authorization server and API gateway. Only changed to test against a mock. |
+| `TRACKER_TRELLO_KEY` / `TRACKER_TRELLO_SECRET` | — | The operator's Trello API key and its secret (#181). Trello has no OAuth 2.0 app: register a Power-Up at <https://trello.com/power-ups/admin> → **New** (name "Freero", your Trello Workspace, an email; the iframe connector URL may stay empty), accept Atlassian's Developer Terms, open it → **API key** → **Generate a new API key**, and copy the **API key** and the **Secret**. Set: connecting Trello needs only a token, and the connect form links to Trello's authorize page (`/1/authorize?key=…&scope=read,write&expiration=never&response_type=token`) where people allow Freero and copy theirs; the secret verifies every webhook delivery (`X-Trello-Webhook`). Unset: people give their own API key with their token (and optionally its secret). The key alone is fine; the secret needs the key. |
+| `TRACKER_CLICKUP_URL` / `TRACKER_CLICKUP_API_URL` | `https://app.clickup.com` / `https://api.clickup.com` | ClickUp's app (its consent page, `/api`) and API host (`/api/v2`, the token exchange too). Only changed to test against a mock. |
+| `TRACKER_TRELLO_URL` / `TRACKER_TRELLO_API_URL` | `https://trello.com` / `https://api.trello.com` | Trello's site (its authorize page) and API host (`/1`). Only changed to test against a mock. |
 | `TRACKER_ASANA_CLIENT_ID` / `TRACKER_ASANA_CLIENT_SECRET` | — | An Asana OAuth app you registered in the Asana developer console (redirect URL `<PUBLIC_URL>/api/trackers/oauth/asana/callback`; full permissions, or the `default` scope). Set: "Connect with Asana" is offered next to personal access tokens. Both or neither. |
 | `TRACKER_MONDAY_CLIENT_ID` / `TRACKER_MONDAY_CLIENT_SECRET` | — | A monday.com app with OAuth you registered in the monday.com Developer Center (redirect URL `<PUBLIC_URL>/api/trackers/oauth/monday/callback`; scopes `boards:read boards:write users:read updates:read updates:write webhooks:write me:read`). Set: "Connect with monday.com" is offered next to API tokens. Both or neither. |
+| `TRACKER_CLICKUP_CLIENT_ID` / `TRACKER_CLICKUP_CLIENT_SECRET` | — | A ClickUp OAuth app (#180). Register it in ClickUp: Settings → Apps (Workspace owner or admin) → **Create new app**; name "Freero", redirect URL `<PUBLIC_URL host>` (ClickUp matches the redirect's host: e.g. `freero.app`; Freero sends `<PUBLIC_URL>/api/trackers/oauth/clickup/callback`); copy the Client ID and Client Secret here. ClickUp's OAuth has no scopes: the person picks the Workspaces Freero may reach on the consent page. Set: "Connect with ClickUp" is offered next to personal tokens. Both or neither. |
 | `TRACKER_ASANA_URL` / `TRACKER_MONDAY_AUTH_URL` / `TRACKER_MONDAY_API_URL` | `https://app.asana.com` / `https://auth.monday.com` / `https://api.monday.com` | Asana's app (its OAuth endpoints and `/api/1.0`), monday.com's authorization server and API. Only changed to test against a mock. |
 
 ## Public API and OAuth apps
@@ -280,6 +284,18 @@ for your instance: [integrations/teams.md](integrations/teams.md). Each is off u
 | `TEAMS_BOT_OPENID_METADATA_URL` | `https://login.botframework.com/v1/.well-known/openidconfiguration` | The Bot Connector's OpenID metadata (tests point it at a stand-in). |
 | `COPILOT_APP_ID` | — | The GUID of your Copilot agent app. With the next one, turns on the agent package (`/api/integrations/copilot/agent-package`, `npm run admin -- copilot:package`). |
 | `COPILOT_OAUTH_REFERENCE_ID` | — | The OAuth client registration ID from the Teams Developer Portal, for Freero's OAuth app registered for Copilot. One without the other refuses to start. |
+
+## Confluence and Jira, Zoom, Google Meet
+
+Apps that show a board through its [embed](integrations/embedding.md) on other platforms, each off
+unless its id is set; `PUBLIC_URL` must be https. Owner steps: [atlassian.md](integrations/atlassian.md),
+[zoom.md](integrations/zoom.md), [google-meet.md](integrations/google-meet.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `ATLASSIAN_APP_ID` | — | Your Forge app's id (`ari:cloud:ecosystem::app/<uuid>`). Turns on the app's source (`/api/integrations/atlassian/forge-app`, `npm run admin -- atlassian:package`) and lets Atlassian's hosts — only them — frame `/atlassian/b/<board>` while the board allows embedding. |
+| `ZOOM_CLIENT_ID` | — | Your Zoom App's Client ID. Turns on its settings (`/api/integrations/zoom/app-settings`, `npm run admin -- zoom:settings`), a meeting's board (`/api/integrations/zoom/meeting-board`), and lets Zoom's web client frame `/zoom/home` and `/zoom/b/<board>`. |
+| `GOOGLE_MEET_CLOUD_PROJECT_NUMBER` | — | The number of the Google Cloud project the Meet add-on is deployed from. Turns on its deployment manifest (`/api/integrations/meet/deployment.json`, `npm run admin -- meet:deployment`) and lets Google Meet frame `/meet/sidepanel` and `/meet/stage/<board>`, whose CSP alone allows Google's add-ons SDK (`https://www.gstatic.com`). |
 
 ## Board calls
 
@@ -450,6 +466,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 | `RATE_LIMIT_SLACK_UNFURL` | `50/1m` | Per Slack workspace: link previews Freero posts with `chat.unfurl` (Slack's own limit for it is about 50 a minute); past it, links stay without a preview. |
 | `RATE_LIMIT_TEAMS_UNFURL` | `120/1m` | Per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes); past it, links get no card. |
+| `RATE_LIMIT_ZOOM_MEETING_BOARD` | `120/10m` | Per IP: a Zoom meeting's board set or looked up (the Zoom App does it once per participant who opens it). |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).

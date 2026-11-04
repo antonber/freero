@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "텍스트",
   "number": "숫자",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length2, plural, other {열 #개}}에 {length, plural, other {카드 #개}}: {join}",
   "whatTheOtherColumnsBecome": "나머지 열의 처리 방식",
   "nameofHasLengthDifferentValues": "“{nameOf}”에는 서로 다른 값이 {length}개 있지만, 칸반의 열은 최대 {max_kanban_columns}개예요. 다른 열을 고르세요.",
-  "eachRowBecomesACard": "각 행이 카드가 돼요. 칸반이 표 자리를 대신하며, 실행 취소하면 표가 돌아와요."
+  "eachRowBecomesACard": "각 행이 카드가 돼요. 칸반이 표 자리를 대신하며, 실행 취소하면 표가 돌아와요.",
+  "addADateColumnTo": "날짜 열을 추가하면 행을 타임라인으로 볼 수 있습니다.",
+  "noDates": "날짜 없음",
+  "timelineRowsAsBarsBetween": "타임라인: 두 날짜 열 사이의 막대로 행 표시",
+  "groupRowsBy": "행 그룹 기준",
+  "noGroups": "그룹 없음",
+  "groupColumnname": "그룹: {columnName}",
+  "barsStartAt": "막대 시작",
+  "barsEndAt": "막대 끝"
 }

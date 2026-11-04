@@ -93,8 +93,19 @@ interface JiraIssue {
     updated?: string;
     project?: { key?: string; name?: string };
     parent?: { key?: string; fields?: { summary?: string } };
+    /** #50: an `outwardIssue` is one this issue blocks; an `inwardIssue` one it is blocked by (type Blocks). */
+    issuelinks?: JiraLink[];
   };
 }
+
+interface JiraLink {
+  id: string;
+  type?: { name?: string; outward?: string };
+  outwardIssue?: { id?: string; key?: string };
+  inwardIssue?: { id?: string; key?: string };
+}
+
+const isBlocks = (l: JiraLink) => l.type?.name === 'Blocks' || /^blocks$/i.test(l.type?.outward ?? '');
 
 const mapOf = (conn: ProviderConnection): FieldMapEntry[] => conn.settings.fieldMap ?? [];
 
@@ -111,6 +122,7 @@ const issueFields = (conn: ProviderConnection) =>
       'updated',
       'project',
       'parent',
+      'issuelinks',
       ...(conn.settings.estimateField ? [conn.settings.estimateField] : []),
       ...(conn.settings.startDateField ? [conn.settings.startDateField] : []),
       ...(conn.settings.sprintField ? [conn.settings.sprintField] : []),
@@ -192,6 +204,10 @@ function toRemote(conn: ProviderConnection, j: JiraIssue): RemoteIssue {
     updatedAt: f.updated ? Date.parse(f.updated) || 0 : 0,
     groups: { team: f.project?.name ?? f.project?.key ?? null, epic: f.parent?.fields?.summary ?? f.parent?.key ?? null },
     project: f.project?.key ?? (String(j.key).includes('-') ? String(j.key).replace(/-\d+$/, '') : null),
+    relations: {
+      blocks: (f.issuelinks ?? []).filter((l) => isBlocks(l) && l.outwardIssue?.id).map((l) => String(l.outwardIssue!.id)),
+      blockedBy: (f.issuelinks ?? []).filter((l) => isBlocks(l) && l.inwardIssue?.id).map((l) => String(l.inwardIssue!.id)),
+    },
   };
 }
 
@@ -600,6 +616,24 @@ export const jira: TrackerProvider = {
     return (((res.json as { issues?: unknown[] })?.issues ?? []) as JiraIssue[]).slice(0, limit).map((j) => toRemote(conn, j));
   },
 
+  dependencies: {
+    async add(conn, blocker, blocked) {
+      // The inward issue of a Blocks link is the one that blocks; the outward one waits on it.
+      const res = await conn.call({ method: 'POST', path: `/rest/api/${v(conn)}/issueLink`, body: { type: { name: 'Blocks' }, inwardIssue: { id: blocker }, outwardIssue: { id: blocked } } });
+      if (!ok(res)) throw refused(res, 'link the issues as blocking');
+    },
+    async remove(conn, blocker, blocked) {
+      const res = await conn.call({ method: 'GET', path: `/rest/api/${v(conn)}/issue/${encodeURIComponent(blocker)}?fields=issuelinks` });
+      if (res.status === 404) return;
+      if (!ok(res)) throw refused(res, 'read the issue’s links');
+      for (const l of ((res.json as JiraIssue).fields?.issuelinks ?? []) as JiraLink[])
+        if (isBlocks(l) && String(l.outwardIssue?.id ?? '') === blocked) {
+          const del = await conn.call({ method: 'DELETE', path: `/rest/api/${v(conn)}/issueLink/${encodeURIComponent(l.id)}` });
+          if (!ok(del) && del.status !== 404) throw refused(del, 'remove the blocking link');
+        }
+    },
+  },
+
   async changedSince(conn, issues, since) {
     const out: string[] = [];
     // Relative minutes: JQL dates are read in the API user's time zone, "-Nm" is not.
@@ -651,15 +685,17 @@ export const jira: TrackerProvider = {
   webhook(d: WebhookDelivery) {
     const sig = d.headers['x-hub-signature'];
     if (!hmacOk(d.secret, d.rawBody, Array.isArray(sig) ? sig[0] : sig)) return null;
-    let body: { issue?: { id?: unknown; key?: unknown } } | null = null;
+    let body: { issue?: { id?: unknown; key?: unknown }; issueLink?: { sourceIssueId?: unknown; destinationIssueId?: unknown } } | null = null;
     try {
       body = JSON.parse(d.rawBody.toString('utf8'));
     } catch {
       return { issues: [] };
     }
     const issue = body?.issue;
+    // An issue link made or removed (#50): both of its issues.
+    const link = body?.issueLink;
     return {
-      issues: [issue?.id, issue?.key].filter((x): x is string | number => typeof x === 'string' || typeof x === 'number').map(String),
+      issues: [issue?.id, issue?.key, link?.sourceIssueId, link?.destinationIssueId].filter((x): x is string | number => typeof x === 'string' || typeof x === 'number').map(String),
     };
   },
 };

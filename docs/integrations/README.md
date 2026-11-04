@@ -14,12 +14,15 @@ server ([../mcp.md](../mcp.md)). Nothing here needs a marketplace listing or any
 | **Live board embeds** | A board live in Notion, Confluence, a wiki, a blog or any web page (iframe); pasting a board link into oEmbed-aware tools embeds it; never shows more than the board's sharing | Share dialog → *Embed on other sites*, [embedding.md](embedding.md) |
 | **Slack link unfurls** | A board link posted in Slack shows a preview (title and picture only for public boards) | Operator: a Slack app from a manifest, [slack.md](slack.md) |
 | **Microsoft Teams app** | A board as a Teams tab and in meetings (side panel, shared to the stage); board links previewed in messages | Operator: `TEAMS_APP_ID` (+ an Azure Bot for previews), package uploaded in Teams, [teams.md](teams.md) |
+| **Confluence and Jira** | A live board in a Confluence page (macro, or a pasted link) and in a Jira issue's panel (the board tracker sync linked) | Operator: a Forge app + `ATLASSIAN_APP_ID`, its generated source deployed with `forge`, [atlassian.md](atlassian.md) |
+| **Zoom App** | A live board in a Zoom meeting's app panel; the host invites everyone to it | Operator: a Zoom App + `ZOOM_CLIENT_ID`, [zoom.md](zoom.md) |
+| **Google Meet add-on** | A board on a Meet call's main stage; everyone else is asked to join | Operator: a Google Cloud project + `GOOGLE_MEET_CLOUD_PROJECT_NUMBER`, [google-meet.md](google-meet.md) |
 | **Microsoft 365 Copilot** | Copilot puts stickies, diagrams and task tables on boards through Freero's MCP server | Operator: an OAuth app + `COPILOT_*`, package uploaded in Microsoft 365, [teams.md](teams.md#microsoft-365-copilot) |
 | **Meeting notes import** | A summary or transcript (Granola-, Otter-, Fathom-, Meetily-style Markdown or text; WebVTT, SRT) becomes one frame: decisions, action items with owner and due date, points, who spoke | Board menu → *Import meeting notes…*, drop a `.vtt` / `.srt`, REST structure `kind: "meeting"`, MCP `import_meeting_notes`; [samples](meeting-notes/) |
 | **n8n** | Importable workflows: GitHub issue → card, board comment → Slack | [n8n.md](n8n.md) |
-| **Make** | The same two scenarios, step by step | [make.md](make.md) |
-| **Zapier** | Webhooks by Zapier + the REST API | [zapier.md](zapier.md) |
-| **Power Automate / Logic Apps** | A custom connector for the whole REST API | [power-automate.md](power-automate.md), `npm run gen:power-automate` |
+| **Make** | Freero's Make app (instant trigger on board events; stickies, cards, comments, boards, any API call), or two scenarios with HTTP modules, step by step | [make.md](make.md), `integrations/make` (owner publishes) |
+| **Zapier** | Freero's Zapier app (triggers on board events, items, comments; actions for stickies, cards, comments, boards), or Webhooks by Zapier + the REST API | [zapier.md](zapier.md), `integrations/zapier` (owner publishes) |
+| **Power Automate / Logic Apps** | A custom connector for the whole REST API, with a trigger on board events; certification files for a listed connector (owner submits) | [power-automate.md](power-automate.md), `npm run gen:power-automate` |
 
 Matrix isn't on the list: it has no standard incoming-webhook URL to post to (see
 [events.md](../events.md#formats)).

@@ -1,6 +1,8 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { iconIndex, searchIcons } from './lib/iconIndex';
-import { cleanNodes } from './lib/nodes';
+import { cleanNodes, IconSvg } from './lib/nodes';
 import { parseDragPayload, dragPayload } from './lib/insert';
 
 describe('icon library index', () => {
@@ -31,5 +33,20 @@ describe('icon drawings from the board are untrusted', () => {
     // The drag-onto-canvas path goes through the same filter.
     const dropped = parseDragPayload(dragPayload({ name: 'x', nodes: crafted as never }));
     expect(dropped?.nodes).toHaveLength(2);
+  });
+
+  it('an icon drawn on the board — and so in exports, which draw the same component — carries nothing that can run or load, whatever its element says (#4)', () => {
+    const crafted = [
+      ['foreignObject', { width: 24, height: 24 }],
+      ['use', { href: 'https://evil.test/sprite.svg#x' }],
+      ['path', { d: 'M4 4h16', onLoad: 'alert(1)', onload: 'alert(1)', fill: 'url(https://evil.test/x)', stroke: '#232f3e', style: 'x', 'xlink:href': 'https://evil.test' }],
+      ['rect', { x: 1, y: 1, width: 4, height: 4, transform: 'translate(1)" onload="alert(2)', fill: '#ff9900' }],
+    ];
+    for (const art of [undefined, 'mono', 'color'] as const) {
+      const html = renderToStaticMarkup(createElement(IconSvg, { nodes: crafted, color: '#000', strokeWidth: 2, art, viewBox: '0 0 24 24" onload="alert(3)' }));
+      expect(html).toContain('d="M4 4h16"');
+      expect(html).toContain('fill="#ff9900"');
+      expect(html).not.toMatch(/script|alert|on[a-z]+=|href|url\(|foreignObject|<use|style="[^"]*x/i);
+    }
   });
 });

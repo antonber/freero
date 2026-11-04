@@ -136,7 +136,7 @@
   "connectAnAgent": "Connect an agent",
   "appsAgents": "Apps & agents",
   "yourIssueTrackers": "Your issue trackers",
-  "yourOwnJiraLinearGithub": "Your own Jira, Linear, GitHub, Azure DevOps, Asana or monday.com connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console.",
+  "yourOwnJiraLinearGithub": "Your own Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp or Trello connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console.",
   "problemsYouReported": "Problems you reported",
   "yourNameCanTBe": "Your name can’t be empty",
   "keepItUnder80Characters": "Keep it under 80 characters",
@@ -172,6 +172,12 @@
   "aSummaryOfWhatOthers": "A summary of what others changed on boards you own or starred, in the morning in your time zone (weekly: on Mondays).",
   "emailASummaryOfChanges": "Email a summary of changes on your boards",
   "emailMeAbout": "Email me about",
+  "notificationsOnThisComputer": "Notifications on this computer",
+  "notificationsInThisBrowser": "Notifications in this browser",
+  "popUpsForNewActivity": "Your system’s pop-ups for new activity in your inbox, while Freero isn’t the window in front. Set for this device only.",
+  "showNotificationsOnThisDevice": "Show notifications on this device",
+  "notificationsAreBlockedForFreero": "Notifications are blocked for Freero. Allow them in your system or browser settings, then try again.",
+  "showMeNotificationsAbout": "Show me notifications about",
   "confirmationLinkSentToEmail": "Confirmation link sent to {email}",
   "couldNotSendTheLink": "Could not send the link",
   "couldNotStartTheChange": "Could not start the change",
@@ -247,5 +253,7 @@
   "email": "Email",
   "emailLabel": "Email: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "Delete"
+  "delete": "Delete",
+  "newCommentsOnYourBoards": "New comments on your boards",
+  "tellMeWhenSomeoneStarts": "Tell me when someone starts a comment thread on a board I own or starred: under the bell, then by email or Slack as chosen below."
 }

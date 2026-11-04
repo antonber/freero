@@ -84,7 +84,9 @@
     "eachIssueBecomesATask",
     "countIssue",
     "countItem",
-    "countSelectedItem"
+    "countSelectedItem",
+    "quarter",
+    "aList"
   ],
   "theTrackerDidnTAnswer": "لم تستجب أداة التتبع. حاول مجددًا.",
   "sendToTracker": "إرسال إلى أداة التتبع…",
@@ -170,5 +172,7 @@
   "eachIssueBecomesATask": "تصبح كل مشكلة بطاقة مهمة مرتبطة بها (حتى 50 في كل مرة). تُستبعد المشكلات الموجودة على هذه اللوحة بالفعل.",
   "countIssue": "{count, plural, zero {# مشكلة} one {مشكلة واحدة} two {مشكلتان} few {# مشكلات} many {# مشكلة} other {# مشكلة}}",
   "countItem": "{count, plural, zero {# عنصر} one {عنصر واحد} two {عنصران} few {# عناصر} many {# عنصرًا} other {# عنصر}}",
-  "countSelectedItem": "{count, plural, zero {# عنصر محدد} one {عنصر محدد واحد} two {عنصران محددان} few {# عناصر محددة} many {# عنصرًا محددًا} other {# عنصر محدد}}"
+  "countSelectedItem": "{count, plural, zero {# عنصر محدد} one {عنصر محدد واحد} two {عنصران محددان} few {# عناصر محددة} many {# عنصرًا محددًا} other {# عنصر محدد}}",
+  "quarter": "الربع",
+  "aList": "قائمة"
 }

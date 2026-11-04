@@ -191,6 +191,8 @@
     "frame",
     "tabAndShiftTabMove",
     "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen",
     "zoomPercentPresets"
   ],
   "dots": "Punkte",
@@ -374,6 +376,8 @@
   "youNoLongerHaveAccess": "Sie haben keinen Zugriff mehr auf dieses Board.",
   "connecting": "Verbindung wird hergestellt…",
   "reconnectingYourChangesAreKept": "Verbindung wird wiederhergestellt… Ihre Änderungen bleiben erhalten und werden synchronisiert.",
+  "youReOfflineChangesAreKeptOnDevice": "Sie sind offline. Änderungen bleiben auf diesem Gerät gespeichert und werden synchronisiert, sobald Sie wieder online sind.",
+  "youReOfflineKeepThisTabOpen": "Sie sind offline. Lassen Sie diesen Tab geöffnet: Ihre Änderungen werden synchronisiert, sobald Sie wieder online sind.",
   "groupOfLengthItemsSelected": "Gruppe mit {length} Elementen ausgewählt.",
   "thisBoardCouldnTStart": "Dieses Board konnte nicht gestartet werden",
   "liveBoard": "Live-Board",

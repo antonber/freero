@@ -94,5 +94,13 @@
   "nCardsInNColumns": "{length, plural, one {# card} other {# cards}} in {length2, plural, one {# column} other {# columns}}:  {join}",
   "whatTheOtherColumnsBecome": "What the other columns become",
   "nameofHasLengthDifferentValues": "“{nameOf}” has {length} different values; a kanban has at most {max_kanban_columns} columns. Pick another column.",
-  "eachRowBecomesACard": "Each row becomes a card. The kanban takes the table’s place; undo brings the table back."
+  "eachRowBecomesACard": "Each row becomes a card. The kanban takes the table’s place; undo brings the table back.",
+  "addADateColumnTo": "Add a date column to see the rows on a timeline.",
+  "noDates": "No dates",
+  "timelineRowsAsBarsBetween": "Timeline: rows as bars between two date columns",
+  "groupRowsBy": "Group rows by",
+  "noGroups": "No groups",
+  "groupColumnname": "Group: {columnName}",
+  "barsStartAt": "Bars start at",
+  "barsEndAt": "Bars end at"
 }

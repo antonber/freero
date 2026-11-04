@@ -2,7 +2,7 @@
 // item opens its link — the board, or the board with the comment thread open.
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlarmClock, AtSign, Bell, Bot, CalendarClock, CheckCheck, DoorOpen, KeyRound, MessageSquareReply, MessageSquareText, Settings, ShieldAlert, SmilePlus, SquareCheckBig, UserPlus, Users, Wrench } from 'lucide-react';
+import { AlarmClock, AtSign, Bell, Bot, CalendarClock, CheckCheck, DoorOpen, KeyRound, MessageSquarePlus, MessageSquareReply, MessageSquareText, Settings, ShieldAlert, SmilePlus, SquareCheckBig, UserPlus, Users, Wrench } from 'lucide-react';
 import type { AppNotification, NotificationType, Role } from '@freero/shared';
 import { Avatar, Button, IconButton, Popover, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
@@ -21,6 +21,7 @@ import './notifications.css';
 const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   'comment.mention': AtSign,
   'comment.reply': MessageSquareReply,
+  'comment.thread': MessageSquarePlus,
   'board.invite': UserPlus,
   'workspace.invite': Users,
   'access.request': KeyRound,

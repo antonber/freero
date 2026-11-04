@@ -64,7 +64,10 @@
     "valueStream",
     "leanValueStreamMappingProcesses",
     "dataFlow",
-    "processesDataStoresExternalEntities"
+    "processesDataStoresExternalEntities",
+    "workspaceShapePacks",
+    "packNameIcons",
+    "packNameMatches"
   ],
   "rectangle": "矩形",
   "roundedRectangle": "圆角矩形",
@@ -130,5 +133,8 @@
   "valueStream": "价值流",
   "leanValueStreamMappingProcesses": "精益价值流图：流程、库存、流动、改善爆炸点",
   "dataFlow": "数据流",
-  "processesDataStoresExternalEntities": "处理过程、数据存储、外部实体和信任边界"
+  "processesDataStoresExternalEntities": "处理过程、数据存储、外部实体和信任边界",
+  "workspaceShapePacks": "工作区的图形包",
+  "packNameIcons": "{name}：{count, plural, other {# 个图标}}",
+  "packNameMatches": "{name}：{count, plural, other {# 个匹配}}"
 }

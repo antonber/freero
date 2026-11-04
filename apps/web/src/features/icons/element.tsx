@@ -9,7 +9,7 @@ import './icons.css';
 
 /** Vector, so it stays crisp at any zoom; the drawing lives in the element (see IconElement). */
 const IconView = memo(function IconView({ element }: ElementRenderProps<IconElement>) {
-  return <IconSvg className="fr-icons-el" nodes={element.nodes} color={canvasInk(element.color)} strokeWidth={element.strokeWidth} />;
+  return <IconSvg className="fr-icons-el" nodes={element.nodes} color={canvasInk(element.color)} strokeWidth={element.strokeWidth} viewBox={element.viewBox} art={element.art} />;
 });
 
 export default defineElement({

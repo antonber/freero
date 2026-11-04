@@ -248,7 +248,15 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "לא ניתן להתחבר ל-Freero. נא לנסות שוב.",
   "restoreAccount": "שחזור החשבון",
@@ -387,7 +395,7 @@
   "connectAnAgent": "חיבור סוכן",
   "appsAgents": "אפליקציות וסוכנים",
   "yourIssueTrackers": "מערכות מעקב הבעיות שלך",
-  "yourOwnJiraLinearGithub": "החיבורים האישיים שלך ל-Jira, ‏Linear, ‏GitHub, ‏Azure DevOps, ‏Asana או monday.com, לשליחת פריטי לוח כבעיות מכל לוח שמותר לך לערוך. חיבורי הצוות מוגדרים במסוף הניהול שלו.",
+  "yourOwnJiraLinearGithub": "החיבורים שלכם ל-Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp או Trello, לשליחת פריטי לוח כבעיות מכל לוח שאתם יכולים לערוך. חיבורי הצוות מוגדרים במסוף הניהול שלו.",
   "problemsYouReported": "בעיות שדיווחת עליהן",
   "yourNameCanTBe": "השם לא יכול להיות ריק",
   "keepItUnder80Characters": "עד 80 תווים",
@@ -498,5 +506,13 @@
   "email": "דוא״ל",
   "emailLabel": "דוא״ל: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "מחיקה"
+  "delete": "מחיקה",
+  "newCommentsOnYourBoards": "תגובות חדשות בלוחות שלך",
+  "tellMeWhenSomeoneStarts": "ליידע אותי כשמישהו פותח שרשור תגובות בלוח שבבעלותי או שסימנתי בכוכב: בפעמון, ואז בדוא״ל או ב-Slack כפי שנבחר למטה.",
+  "notificationsOnThisComputer": "התראות במחשב הזה",
+  "notificationsInThisBrowser": "התראות בדפדפן הזה",
+  "popUpsForNewActivity": "התראות של המערכת על פעילות חדשה בתיבת הדואר שלכם, כש-Freero אינו החלון שבחזית. מוגדר למכשיר הזה בלבד.",
+  "showNotificationsOnThisDevice": "הצגת התראות במכשיר הזה",
+  "notificationsAreBlockedForFreero": "ההתראות חסומות עבור Freero. אפשרו אותן בהגדרות המערכת או הדפדפן ונסו שוב.",
+  "showMeNotificationsAbout": "הצגת התראות על"
 }

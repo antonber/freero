@@ -191,6 +191,8 @@
     "frame",
     "tabAndShiftTabMove",
     "xAndYMoveThe",
+    "youReOfflineChangesAreKeptOnDevice",
+    "youReOfflineKeepThisTabOpen",
     "zoomPercentPresets"
   ],
   "dots": "Puntos",
@@ -374,6 +376,8 @@
   "youNoLongerHaveAccess": "Ya no tienes acceso a este tablero.",
   "connecting": "Conectando…",
   "reconnectingYourChangesAreKept": "Reconectando… tus cambios se conservan y se sincronizarán.",
+  "youReOfflineChangesAreKeptOnDevice": "Estás sin conexión. Los cambios se guardan en este dispositivo y se sincronizan cuando vuelvas a estar en línea.",
+  "youReOfflineKeepThisTabOpen": "Estás sin conexión. Mantén esta pestaña abierta: tus cambios se sincronizan cuando vuelvas a estar en línea.",
   "groupOfLengthItemsSelected": "Grupo de {length} elementos seleccionado.",
   "thisBoardCouldnTStart": "No se pudo iniciar este tablero",
   "liveBoard": "Tablero en vivo",

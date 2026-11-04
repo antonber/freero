@@ -6,6 +6,8 @@ import type { Editor } from '@engine';
 import { t } from '../messages';
 export const AI_DIALOG = 'ai.dialog';
 export const CATCH_UP_DIALOG = 'ai.catch-up';
+/** The board assistant's dock (#1). */
+export const ASSISTANT_DOCK = 'ai.assistant';
 
 /** Kinds clustering sorts (the server moves these into groups; titles stay put). */
 const CLUSTERABLE = new Set(['sticky', 'card']);

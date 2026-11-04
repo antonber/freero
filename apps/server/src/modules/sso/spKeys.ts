@@ -33,7 +33,13 @@ const len = (n: number): Buffer => {
 const tlv = (tag: number, body: Buffer) => Buffer.concat([Buffer.from([tag]), len(body.length), body]);
 const seq = (...items: Buffer[]) => tlv(0x30, Buffer.concat(items));
 const set = (...items: Buffer[]) => tlv(0x31, Buffer.concat(items));
-const int = (b: Buffer) => tlv(0x02, b[0] & 0x80 ? Buffer.concat([Buffer.from([0]), b]) : b);
+/** A non-negative DER INTEGER: minimal (no leading zero bytes, which X.509 parsers refuse as
+ * "illegal padding"), with one zero byte added back only when the top bit is set. */
+export const derInteger = (raw: Buffer) => {
+  let b = raw;
+  while (b.length > 1 && b[0] === 0) b = b.subarray(1);
+  return tlv(0x02, b[0] & 0x80 ? Buffer.concat([Buffer.from([0]), b]) : b);
+};
 const oid = (dotted: string) => {
   const [a, b, ...rest] = dotted.split('.').map(Number);
   const out = [40 * a + b];
@@ -59,8 +65,8 @@ export function newKeyPair(commonName: string, now = Date.now()): { privateKeyPe
   const serial = randomBytes(16);
   serial[0] &= 0x7f; // positive
   const tbs = seq(
-    tlv(0xa0, int(Buffer.from([2]))), // v3
-    int(serial),
+    tlv(0xa0, derInteger(Buffer.from([2]))), // v3
+    derInteger(serial),
     SHA256_RSA,
     name(commonName),
     seq(time(new Date(now - 86_400_000)), time(new Date(now + VALID_DAYS * 86_400_000))),

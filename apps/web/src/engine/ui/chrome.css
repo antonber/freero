@@ -516,6 +516,15 @@ button.fr-title:hover {
   color: var(--fr-ink);
 }
 
+.fr-connection--offline {
+  /* #178: offline can last a whole train ride, so it waits at the bottom instead of covering the
+     top bar's people, timer and session controls. */
+  top: auto;
+  bottom: 16px;
+  max-width: calc(100% - 32px);
+  text-align: center;
+}
+
 .fr-connection--error {
   background: var(--fr-danger-soft);
   color: var(--fr-danger);

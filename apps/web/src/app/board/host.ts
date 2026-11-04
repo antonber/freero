@@ -73,6 +73,8 @@ export interface HostDeps {
   onAccessLost?: () => void;
   /** The person's theme (app/lib/theme.ts; saved to their account when they have one). */
   colorTheme?: Host['colorTheme'];
+  /** #178: where the device copy of the board is kept (app/offline), when it may be. */
+  offline?: Host['offline'];
 }
 
 /** Close code of a board socket whose access ended (y-websocket contract in @freero/shared api.ts). */
@@ -128,6 +130,19 @@ export function stickersOf(boardId: string): NonNullable<Host['stickers']> {
   };
 }
 
+/** The board's workspace's shape packs (#4): a pack is uploaded as one ZIP through the upload checks, then named. */
+export function shapePacksOf(boardId: string): NonNullable<Host['shapePacks']> {
+  return {
+    list: () => api.shapePacks(boardId),
+    async create(name, zip) {
+      const { url } = await api.uploadAttachment(zip);
+      return api.createShapePack(boardId, name, url);
+    },
+    rename: async (packId, name) => (await api.renameShapePack(packId, name)).pack,
+    remove: async (packId) => void (await api.removeShapePack(packId)),
+  };
+}
+
 /** Toasts with an action button stay up long enough to read and act on. */
 const ACTION_TOAST_MS = 12000;
 
@@ -164,6 +179,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     personalViews: personalViewsOf(board.id),
     stickers: stickersOf(board.id),
     ...(board.permissions.gifs ? { gifs: { search: (q: string, pos: string | null) => api.searchGifs(board.id, q, pos), place: (media: string) => api.placeGif(board.id, media) } } : {}),
+    shapePacks: shapePacksOf(board.id),
     uploadImage,
     uploadFile,
     uploadAttachment,
@@ -184,6 +200,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     openShareDialog: deps.openShareDialog,
     ...(deps.reportProblem ? { reportProblem: deps.reportProblem } : {}),
     ...(deps.colorTheme ? { colorTheme: deps.colorTheme } : {}),
+    ...(deps.offline ? { offline: deps.offline } : {}),
     navigate: deps.navigate,
     notify: deps.notify,
     track,
@@ -217,6 +234,19 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     docs: docsFrom(board.id, deps.navigate),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
+    // The board assistant (#1): also for viewers and commenters the workspace lets use AI.
+    ...(deps.ai?.assistant
+      ? {
+          assistant: {
+            provider: deps.ai.provider ?? '',
+            source: deps.ai.source ?? 'instance',
+            canPropose: deps.ai.assistant.canPropose,
+            conversation: async () => (await api.assistant(board.id)).messages,
+            ask: (body) => api.askAssistant(board.id, body),
+            clear: async () => void (await api.clearAssistant(board.id)),
+          },
+        }
+      : {}),
     // AI exists on this server but not for this person here: actions may show greyed out with why.
     ...(deps.ai && !deps.ai.available ? { aiUnavailable: deps.ai.reason ?? t('aiIsnTAvailableOn') } : {}),
     // Tracker entry points exist only when the server listed a connection this user may use here.

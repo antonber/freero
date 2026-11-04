@@ -50,14 +50,19 @@ function StyleControl({ editor, icons }: { editor: Editor; icons: IconElement[] 
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('iconStyle')}>
         <div className="fr-icons-pop">
           <ColorSwatches colors={COLORS} names={NAMES} value={mixed ? null : color} columns={6} size={26} allowCustom onChange={(c) => set({ color: c })} aria-label={t('iconColor')} />
-          <span className="fr-icons-pop__label">{t('lineWeight')}</span>
-          <SegmentedControl
-            size="sm"
-            aria-label={t('lineWeight')}
-            options={WEIGHTS}
-            value={nearestWeight(icons[0].strokeWidth)}
-            onChange={(v) => set({ strokeWidth: Number(v) })}
-          />
+          {/* Uploaded drawings (#4) keep their own line weights. */}
+          {icons.every((i) => !i.art) && (
+            <>
+              <span className="fr-icons-pop__label">{t('lineWeight')}</span>
+              <SegmentedControl
+                size="sm"
+                aria-label={t('lineWeight')}
+                options={WEIGHTS}
+                value={nearestWeight(icons[0].strokeWidth)}
+                onChange={(v) => set({ strokeWidth: Number(v) })}
+              />
+            </>
+          )}
         </div>
       </Popover>
     </>
@@ -67,6 +72,7 @@ function StyleControl({ editor, icons }: { editor: Editor; icons: IconElement[] 
 export default defineFormat({
   id: 'icons.format',
   order: 20,
-  appliesTo: (selection) => selection.length > 0 && selection.every((el) => el.type === 'icon'),
+  // A drawing in several colours of its own (#4) isn't recoloured.
+  appliesTo: (selection) => selection.length > 0 && selection.every((el) => el.type === 'icon' && (el as IconElement).art !== 'color'),
   Component: ({ editor, selection }) => <StyleControl editor={editor} icons={selection as IconElement[]} />,
 });

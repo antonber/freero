@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import type { BoardTrackersResponse, TrackerProviderKind } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
+import { getConfig } from '../../platform/config';
 import { handle } from '../../platform/http';
 import { appUrl } from '../../platform/mail';
 import { rateLimit } from '../../platform/rateLimit';
@@ -13,7 +14,7 @@ import { createConnection, deleteConnectionRecord, listManaged, requireManaged, 
 import { finishOAuth, oauthOffered, startOAuth } from './oauth';
 import * as repo from './repo';
 import { dropWebhooks, ensureWebhooks } from './hooks';
-import { boardConnections, importIssues, issueTypesOf, markDisconnected, previewSend, projectsOf, receiveWebhook, requestSync, resyncConnection, sendToTracker, sprintsOf, unlink } from './service';
+import { boardConnections, importIssues, issueTypesOf, markDisconnected, previewSend, projectsOf, receiveWebhook, requestSync, resyncConnection, sendToTracker, sprintsOf, unlink, webhookAddressPending } from './service';
 
 // Trackers post webhooks from their own servers: no browser, no cookie — the signature over the
 // body with the connection's secret is the only credential (service.receiveWebhook); Azure DevOps,
@@ -22,7 +23,15 @@ import { boardConnections, importIssues, issueTypesOf, markDisconnected, preview
 allowCrossSitePost(/^\/api\/trackers\/webhooks\/[^/]+$/, 'tracker webhooks are posted by the tracker’s servers and verified by their HMAC signature (or the secret, for Azure DevOps service hooks; or the address’s key, for webhooks Freero registered)');
 
 const origin = (req: Parameters<typeof appUrl>[0]) => appUrl(req, '');
-const providerParam = (p: string): TrackerProviderKind => (p === 'asana' || p === 'monday' ? p : 'jira');
+const providerParam = (p: string): TrackerProviderKind => (p === 'asana' || p === 'monday' || p === 'clickup' ? p : 'jira');
+
+/** Trello (#181): the operator's API key (public by design) and where a person gets a token for it. */
+function trelloOffer() {
+  const t = getConfig().trackers;
+  if (!t.trelloKey) return { key: null, authorizeUrl: null };
+  const q = new URLSearchParams({ expiration: 'never', name: 'Freero', scope: 'read,write', response_type: 'token', key: t.trelloKey });
+  return { key: t.trelloKey, authorizeUrl: `${t.trelloUrl}/1/authorize?${q}` };
+}
 
 export default function trackerRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -110,7 +119,8 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
       const workspaceId = typeof req.query.workspace === 'string' && req.query.workspace ? req.query.workspace : null;
       res.json({
         connections: await listManaged(currentUser(req).id, workspaceId, req),
-        oauth: { jira: oauthOffered('jira'), asana: oauthOffered('asana'), monday: oauthOffered('monday') },
+        oauth: { jira: oauthOffered('jira'), asana: oauthOffered('asana'), monday: oauthOffered('monday'), clickup: oauthOffered('clickup') },
+        trello: trelloOffer(),
       });
     }),
   );
@@ -212,6 +222,14 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
 
   // ---- webhooks ----
 
+  // Trello asks with a HEAD request whether an address takes deliveries before it makes a webhook:
+  // yes only for an address Freero made (its key verifies) while Freero is registering it.
+  r.head(
+    '/trackers/webhooks/:id',
+    handle(async (req, res) => {
+      res.status((await webhookAddressPending(req.params.id, req.query as Record<string, unknown>)) ? 200 : 401).end();
+    }),
+  );
   r.post(
     '/trackers/webhooks/:id',
     handle(async (req, res) => {

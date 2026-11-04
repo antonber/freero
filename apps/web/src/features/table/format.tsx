@@ -8,6 +8,7 @@ import {
   Download,
   Filter,
   Heading,
+  GanttChart,
   KanbanSquare,
   Table2,
   Italic,
@@ -18,7 +19,7 @@ import type { TableElement, TableFilter } from '@freero/shared';
 import { defineFormat, useCollection, useEditingPart, useTextFormatState, type Editor } from '@engine';
 import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl, Select, Tooltip } from '@ui';
 import { CELLS, cellText } from './lib/cells';
-import { activeCell, addCol, addRow, currentFill, deleteCol, deleteRow, exportCsv, fillCells, groupColumns, setFilter, setView } from './lib/actions';
+import { activeCell, addCol, addRow, currentFill, dateColumns, deleteCol, deleteRow, exportCsv, fillCells, groupColumns, setFilter, setGroupRows, setTimeline, setView } from './lib/actions';
 import { FILTER_OPS, typeOf } from './lib/columns';
 
 import { t as tr } from './messages';
@@ -173,23 +174,43 @@ export default defineFormat({
     const table = selection[0] as TableElement;
     const fmt = useTextFormatState();
     const editing = editor.getEditingId() === table.id;
-    const board = table.view === 'board';
+    const view = table.view ?? 'grid';
+    const board = view !== 'grid';
     const canGroup = groupColumns(table).length > 0;
+    const dates = dateColumns(table);
+    const views: Array<{ value: 'grid' | 'board' | 'timeline'; icon: typeof Table2; title: string }> = [
+      { value: 'grid', icon: Table2, title: tr('table') },
+      ...(canGroup || view === 'board' ? [{ value: 'board' as const, icon: KanbanSquare, title: tr('boardRowsAsCardsBy') }] : []),
+      ...(dates.length || view === 'timeline' ? [{ value: 'timeline' as const, icon: GanttChart, title: tr('timelineRowsAsBarsBetween') }] : []),
+    ];
+    const dateOptions = dates.map((c) => ({ value: c.id, label: columnName(editor, table, c.id) }));
     return (
       <>
-        {(canGroup || board) && (
-          <SegmentedControl<'grid' | 'board'>
+        {views.length > 1 && (
+          <SegmentedControl<'grid' | 'board' | 'timeline'>
             size="sm"
             aria-label={tr('view')}
-            value={board ? 'board' : 'grid'}
-            options={[
-              { value: 'grid', icon: Table2, title: tr('table') },
-              { value: 'board', icon: KanbanSquare, title: tr('boardRowsAsCardsBy') },
-            ]}
+            value={view}
+            options={views}
             onChange={(v) => setView(editor, table.id, v)}
           />
         )}
-        {board && groupColumns(table).length > 1 && (
+        {view === 'grid' && canGroup && (
+          <Select
+            size="sm"
+            aria-label={tr('groupRowsBy')}
+            value={table.groupRows ?? ''}
+            options={[{ value: '', label: tr('noGroups') }, ...groupColumns(table).map((c) => ({ value: c.id, label: tr('groupColumnname', { columnName: columnName(editor, table, c.id) }) }))]}
+            onChange={(id) => setGroupRows(editor, table.id, id || null)}
+          />
+        )}
+        {view === 'timeline' && table.timeline && dates.length > 0 && (
+          <>
+            <Select size="sm" aria-label={tr('barsStartAt')} value={table.timeline.start} options={dateOptions} onChange={(id) => setTimeline(editor, table.id, { start: id, end: table.timeline!.end })} />
+            <Select size="sm" aria-label={tr('barsEndAt')} value={table.timeline.end} options={dateOptions} onChange={(id) => setTimeline(editor, table.id, { start: table.timeline!.start, end: id })} />
+          </>
+        )}
+        {view === 'board' && groupColumns(table).length > 1 && (
           <Select
             size="sm"
             aria-label={tr('groupBy')}

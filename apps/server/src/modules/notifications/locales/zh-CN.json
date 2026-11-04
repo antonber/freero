@@ -89,7 +89,11 @@
     "digest.more",
     "digest.action",
     "digest.outro",
-    "digest.unsubscribe"
+    "digest.unsubscribe",
+    "comment.thread.label",
+    "comment.thread.description",
+    "comment.thread.title",
+    "comment.thread.link"
   ],
   "someone": "有人",
   "quoted": "「{title}」",
@@ -180,5 +184,9 @@
   "digest.more": "以下是最新的 {shown} 条；还有 {more} 条在 Freero 中等你查看。",
   "digest.action": "打开 Freero",
   "digest.outro": "当 Freero 中有你尚未查看的动态时，你会收到这些邮件。可在账户设置中选择接收哪些。",
-  "digest.unsubscribe": "退订通知邮件"
+  "digest.unsubscribe": "退订通知邮件",
+  "comment.thread.label": "你的白板上的新评论",
+  "comment.thread.description": "有人在你拥有或加星标的白板上发起评论（开启后）。",
+  "comment.thread.title": "{actor} 评论了 {board}",
+  "comment.thread.link": "打开评论"
 }

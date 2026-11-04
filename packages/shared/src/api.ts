@@ -3,7 +3,7 @@
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
 import type { BoardLabelSummary } from './compliance';
-import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
+import type { ActivityElement, BoardElement, IconNode, TableCopyContent } from './elements';
 import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
@@ -185,7 +185,27 @@ export interface BoardPermissions {
    * and the workspace's `gifs` policy isn't 'off'. Absent: no GIF search.
    */
   gifs?: boolean;
+  /**
+   * [additive, #178] You may keep a copy of this board on your devices to open and edit it offline:
+   * the workspace's `offlineCopies` policy allows it (a workspace under its own encryption key only
+   * with 'all'). Absent or false: nothing is kept on the device, and a copy already there is deleted.
+   */
+  offline?: boolean;
 }
+
+/**
+ * [#178] Which boards kept on a device may stay there (the app asks each time it starts online).
+ * POST /api/boards/offline-check  body OfflineCheckRequest -> OfflineCheckResponse: `keep` lists
+ * the ids this person can still open AND may keep offline; the device deletes the others.
+ */
+export interface OfflineCheckRequest {
+  ids: string[];
+}
+export interface OfflineCheckResponse {
+  keep: string[];
+}
+/** At most this many ids per offline check (a device keeps at most 20 boards). */
+export const OFFLINE_CHECK_MAX = 50;
 
 // ---- Board call (KAI-134) ----
 // No audio/video in Freero: a board has a call link people open in their meeting tool. Either a
@@ -438,6 +458,13 @@ export interface WorkspacePolicies {
    * 'pg-13'.
    */
   gifs: 'off' | 'g' | 'pg-13';
+  /**
+   * [additive, #178] May people keep copies of its boards on their devices to work offline? 'all':
+   * yes, also while the workspace keeps its boards under its own encryption key (#159); 'unkeyed'
+   * (default): yes, unless it does; 'off': no (copies already on devices are deleted the next time
+   * the app is online there).
+   */
+  offlineCopies: 'all' | 'unkeyed' | 'off';
 }
 /** The longest a workspace may let board links live without changing them (#39 `linkMaxDays`). */
 export const LINK_MAX_DAYS_LIMIT = 365;
@@ -501,6 +528,7 @@ export const POLICY_STRICTNESS: { [K in OrderedPolicyKey]: ReadonlyArray<Workspa
   linkPassword: ['optional', 'required'],
   templatePublishing: ['members', 'admins'],
   gifs: ['pg-13', 'g', 'off'],
+  offlineCopies: ['all', 'unkeyed', 'off'],
 };
 /** The floored policies whose values are an ordered choice (all but the numeric `linkMaxDays`). */
 export type OrderedPolicyKey = Exclude<OrganisationPolicyKey, 'linkMaxDays'>;
@@ -1325,6 +1353,60 @@ export interface GifPlaceResponse {
   h: number;
 }
 
+// ---- Shape packs (#4; server modules/shapepacks) ----
+// A workspace's own icon and shape sets: SVGs its admins upload (their design system's icons, the
+// cloud architecture icons they are licensed to use, engineering symbols), searched and placed from
+// the icon library on any of its boards. Each SVG is reduced on the server to the primitives an
+// `icon` element may draw (`sanitizeSvg`, icons.ts) and a placed icon holds its drawing, so it keeps
+// showing after its pack is removed.
+// GET    /api/boards/:id/shape-packs      -> ShapePacksResponse  (the packs of the board's workspace;
+//                                          none when you aren't in that workspace)
+// POST   /api/boards/:id/shape-packs      body { name, upload } -> ShapePackCreated  (owners / admins
+//                                          of the board's workspace; `upload` is "/uploads/<name>" of
+//                                          the caller's own upload — a ZIP of SVGs uploaded as an
+//                                          attachment, or one SVG — read once and deleted; uploads'
+//                                          size cap, quota and rate limit apply to it)
+// PATCH  /api/shape-packs/:id             body { name } -> { pack: ShapePack }  (owners / admins)
+// DELETE /api/shape-packs/:id             -> { ok: true }  (owners / admins)
+export interface ShapePackIcon {
+  id: string;
+  /** From the file name ("Arch_Amazon-EC2_64"). */
+  name: string;
+  nodes: IconNode[];
+  viewBox: string;
+  art: 'mono' | 'color';
+}
+export interface ShapePack {
+  id: string;
+  name: string;
+  /** Who uploaded it, by their current name (null: an account deleted since). */
+  createdBy: string | null;
+  createdAt: number;
+  icons: ShapePackIcon[];
+}
+export interface ShapePacksResponse {
+  packs: ShapePack[];
+  /** You may upload, rename and remove the workspace's packs (its owners and admins). */
+  canManage: boolean;
+}
+export interface ShapePackCreated {
+  pack: ShapePack;
+  /** Files that weren't SVGs Freero could read (by name, at most 50), skipped. */
+  skipped: string[];
+}
+export const SHAPE_PACK_LIMITS = {
+  /** Packs one workspace may hold. */
+  packs: 50,
+  /** Icons in one pack. */
+  icons: 500,
+  /** Characters of a pack's name. */
+  name: 60,
+  /** Files read from one ZIP (others are ignored). */
+  zipEntries: 2000,
+  /** Characters of all of a workspace's drawings together (what the library loads). */
+  workspaceChars: 12_000_000,
+} as const;
+
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a
 // guest) of.
@@ -1615,6 +1697,42 @@ export interface MicrosoftIntegrationsInfo {
   copilot: { packageUrl: string } | null;
 }
 
+// ---- Apps on other platforms: Confluence and Jira, Zoom, Google Meet (#166–#169) ----
+// Each is the public embed on that platform's page, off until the operator registers the app:
+// /atlassian/b/:id (framed by Atlassian's hosts), /zoom/home and /zoom/b/:id (Zoom's in-meeting
+// browser), /meet/sidepanel and /meet/stage/:id (framed by Google Meet).
+// GET /api/integrations/{atlassian,zoom,meet} -> HostAppInfo
+export interface HostAppInfo {
+  /** Whether this instance offers the app (the operator set its id). */
+  on: boolean;
+  /** Where the operator downloads what they register with the platform (null while off). */
+  packageUrl: string | null;
+}
+/** GET /api/integrations/meet: also the Google Cloud project the add-on's pages name to Meet's SDK (not a secret). */
+export interface MeetAddOnInfo extends HostAppInfo {
+  cloudProjectNumber: string | null;
+}
+/**
+ * What the board chooser window (/embed/choose) tells the Freero frame that opened it
+ * (window.opener, Freero's own origin only): the board, and a token for its embeds so the frame
+ * opens signed in.
+ */
+export interface EmbedChooseMessage {
+  freeroEmbedChoose: 'board';
+  boardId: string;
+  title: string;
+  token: string;
+  expiresAt: number;
+}
+/**
+ * Zoom: the board a meeting's host opened for everyone, so participants they invite open the same
+ * one. PUT /api/integrations/zoom/meeting-board { meetingUuid, boardId } (signed in, board shown
+ * through its embed), POST /api/integrations/zoom/meeting-board/lookup { meetingUuid } -> this.
+ */
+export interface ZoomMeetingBoard {
+  boardId: string | null;
+}
+
 export interface OEmbedResponse {
   version: '1.0';
   type: 'rich';
@@ -1721,7 +1839,7 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 // POST /api/notifications/read   body { ids?: string[] } -> { unread }  (no ids: mark all read)
 // GET  /api/notifications/prefs  -> NotificationPrefs
 // PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, slack?: { [type]: boolean },
-//      emailAll?: boolean, boardChanges?: BoardChangesFrequency } -> NotificationPrefs
+//      emailAll?: boolean, boardChanges?: BoardChangesFrequency, boardComments?: boolean } -> NotificationPrefs
 // POST /api/notifications/unsubscribe?token=<t>[&list=board-changes]  (no session needed: the signed
 //      link from a digest email, also its RFC 8058 one-click target) -> { ok: true, email, list } | 400
 //      (list 'board-changes': the "changes on your boards" email only; else every notification email)
@@ -1734,6 +1852,7 @@ export type NotificationType =
   | 'board.invite'
   | 'comment.mention'
   | 'comment.reply'
+  | 'comment.thread'
   | 'workspace.invite'
   | 'access.request'
   | 'access.response'
@@ -1791,6 +1910,12 @@ export interface NotificationPrefs {
    * your time zone). Its own unsubscribe link turns only it off; `emailAll` off stops it too.
    */
   boardChanges: BoardChangesFrequency;
+  /**
+   * [additive, #104] "New comments on your boards": each comment thread someone else starts on a
+   * board you own or starred notifies you (type 'comment.thread': the bell, then email or Slack by
+   * that type's switches). Off unless you turn it on.
+   */
+  boardComments?: boolean;
   /**
    * [additive, #105] Personal Slack: null when this server offers no "Connect Slack"; `linked`: the
    * person connected a Slack account, so the types' `slack` switches apply.
@@ -2172,7 +2297,72 @@ export interface BoardAiStatus {
   provider?: string;
   /** Who configured it: Freero's operator ('instance') or the workspace's admins ('workspace'). */
   source?: 'instance' | 'workspace';
+  /**
+   * [additive, #1] The board assistant is open to this person here: it reads the board as they see
+   * it, so viewers and commenters may ask too (when the workspace lets them use AI); `canPropose`
+   * when they can edit, so its changes can be proposed as suggestions. Absent: no assistant.
+   * `provider` and `source` are set whenever this is.
+   */
+  assistant?: { canPropose: boolean };
 }
+
+// ---- The board assistant (#1; server modules/ai assistant.ts; docs/ai.md "Board assistant") ----
+// A conversation about one board with the AI the board's workspace uses, kept per person per board
+// (only that person ever reads it; deleted with the board or the account, or when they clear it).
+// It reads the board through the outline AS THE PERSON SEES IT — never another person's private
+// draft, never a hidden frame's contents they can't see — and answers in text, citing the items it
+// used. It never writes the board: changes the person asks for are PROPOSED as one group of
+// suggestions ("AI for <person>", KAI-169), planned like the public API's propose_changes, and
+// nothing changes until someone who can edit accepts them. Board text is untrusted data to the
+// model; what the model returns is validated (only ids the person can see; only the proposal's
+// shapes) before anything else happens.
+// GET    /api/boards/:id/ai/assistant          -> AssistantConversation  (your own; [] when none)
+// POST   /api/boards/:id/ai/assistant  body AssistantAsk -> AssistantTurn  (rate limited, budgeted
+//        and audited like AI actions; 403 'downloads_restricted' under the downloads policy)
+// DELETE /api/boards/:id/ai/assistant          -> { ok: true }  (forgets your conversation here)
+export interface AssistantProposal {
+  /** The suggestion group on the board (accept / reject it there). */
+  groupId: string;
+  /** Changes in it. */
+  count: number;
+  description: string;
+}
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  /** Plain text (never markup). */
+  text: string;
+  at: number;
+  /** assistant: the items its answer is about (ids on this board that the person could see). */
+  cites?: string[];
+  /** assistant: what it proposed, as suggestions. */
+  proposal?: AssistantProposal;
+  /** assistant: it was asked for a change but could not propose it (why, in words). */
+  proposalError?: string;
+}
+export interface AssistantConversation {
+  messages: AssistantMessage[];
+}
+export interface AssistantAsk {
+  question: string;
+  /** Items the person has selected, so "these" means them (ids; others are ignored). */
+  ids?: string[];
+}
+export interface AssistantTurn {
+  question: AssistantMessage;
+  answer: AssistantMessage;
+  usage: { inputTokens: number; outputTokens: number };
+}
+export const ASSISTANT_LIMITS = {
+  /** Characters of one question. */
+  question: 2000,
+  /** Messages kept per person per board (the oldest go first). */
+  kept: 200,
+  /** Earlier messages the model sees with each question. */
+  context: 12,
+  /** Changes one proposal may hold. */
+  changes: 100,
+} as const;
 
 export interface AiActionRequest {
   task: AiTask;
@@ -2549,6 +2739,8 @@ export const AUDIT_ACTIONS = {
   'blueprint.shared': 'Shared a blueprint with the team',
   'blueprint.used': 'Made a project from a blueprint',
   'stickers.set_removed': 'Removed a team sticker set',
+  'shape_pack.created': 'Uploaded a shape pack',
+  'shape_pack.removed': 'Removed a shape pack',
   'template.published': 'Published a company template',
   'template.unpublished': 'Withdrew a company template',
   'template.locked': 'Locked a template',

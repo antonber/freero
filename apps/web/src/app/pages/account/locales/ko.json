@@ -248,7 +248,15 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts",
+    "notificationsOnThisComputer",
+    "notificationsInThisBrowser",
+    "popUpsForNewActivity",
+    "showNotificationsOnThisDevice",
+    "notificationsAreBlockedForFreero",
+    "showMeNotificationsAbout"
   ],
   "couldNotReachFreeroTry": "Freero에 연결할 수 없습니다. 다시 시도해 주세요.",
   "restoreAccount": "계정 복원",
@@ -387,7 +395,7 @@
   "connectAnAgent": "에이전트 연결",
   "appsAgents": "앱 및 에이전트",
   "yourIssueTrackers": "내 이슈 트래커",
-  "yourOwnJiraLinearGithub": "편집할 수 있는 모든 보드에서 항목을 이슈로 보낼 수 있는 나만의 Jira, Linear, GitHub, Azure DevOps, Asana 또는 monday.com 연결입니다. 팀의 연결은 팀 관리 콘솔에서 설정합니다.",
+  "yourOwnJiraLinearGithub": "편집할 수 있는 모든 보드에서 항목을 이슈로 보내기 위한 나만의 Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp, Trello 연결입니다. 팀의 연결은 팀 관리 콘솔에서 설정합니다.",
   "problemsYouReported": "내가 신고한 문제",
   "yourNameCanTBe": "이름은 비워 둘 수 없습니다",
   "keepItUnder80Characters": "80자 미만으로 입력하세요",
@@ -498,5 +506,13 @@
   "email": "이메일",
   "emailLabel": "이메일: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "삭제"
+  "delete": "삭제",
+  "newCommentsOnYourBoards": "내 보드의 새 댓글",
+  "tellMeWhenSomeoneStarts": "내가 소유하거나 별표한 보드에서 누군가 댓글 스레드를 시작하면 알림: 종 아이콘에 표시하고, 아래에서 선택한 대로 이메일이나 Slack으로도 보냅니다.",
+  "notificationsOnThisComputer": "이 컴퓨터의 알림",
+  "notificationsInThisBrowser": "이 브라우저의 알림",
+  "popUpsForNewActivity": "Freero가 앞에 있는 창이 아닐 때 받은편지함의 새 활동을 시스템 알림으로 알려 드립니다. 이 기기에만 적용됩니다.",
+  "showNotificationsOnThisDevice": "이 기기에 알림 표시",
+  "notificationsAreBlockedForFreero": "Freero 알림이 차단되어 있습니다. 시스템 또는 브라우저 설정에서 허용한 뒤 다시 시도하세요.",
+  "showMeNotificationsAbout": "알림을 받을 항목"
 }

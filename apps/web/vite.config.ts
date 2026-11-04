@@ -44,7 +44,8 @@ function freeroServiceWorker(): Plugin {
         // the app chunk is the shell too. Translations stay out (one language is fetched online).
         for (const f of out.dynamicImports) if (!/(^|\/)locale-/.test(f)) add(f);
       }
-      const precache = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/theme-boot.js', ...[...shell].sort().map((f) => `/${f}`)];
+      // index.html: what a board kept on the device opens with offline (#178, sw.ts APP_SHELL).
+      const precache = ['/index.html', '/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/theme-boot.js', ...[...shell].sort().map((f) => `/${f}`)];
       const version = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);
       const { code } = await transformWithEsbuild(readFileSync(source, 'utf8'), source, {
         loader: 'ts',

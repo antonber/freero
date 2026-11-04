@@ -257,7 +257,7 @@ export interface Asked extends Accepted {
 export async function ask(g: AiGrant, userId: string, plan: TaskPlan, usage: Asked['usage']): Promise<Asked> {
   const c = getConfig().ai;
   let calls = 0;
-  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: plan.user }];
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [...(plan.history ?? []), { role: 'user', content: plan.user }];
   try {
     for (let attempt = 0; ; attempt++) {
       calls++;

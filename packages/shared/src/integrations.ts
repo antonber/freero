@@ -357,7 +357,7 @@ const TRACKERS: Integration[] = [
     category: 'trackers',
     oneLiner: 'Board items become GitHub issues, open or closed in step with their cards.',
     description: [
-      'Send items to a repository as issues and import a GitHub search (for example repo:owner/name is:open) as linked cards. Title, description, labels and open or closed state sync both ways; GitHub Enterprise Server works the same way with its own address.',
+      'Send items to a repository as issues and import a GitHub search (for example repo:owner/name is:open), an iteration or a parent issue’s sub-issues as linked cards. Title, description, labels, assignees and open or closed state sync both ways; with a GitHub Project, its Status, estimate, iteration and start and target dates too, and milestones carry due dates otherwise. GitHub Enterprise Server works the same way with its own address.',
       'Freero writes only its own section of an issue’s body, between markers, so the rest of the description is left alone.',
     ],
     status: 'settings',
@@ -412,6 +412,77 @@ const TRACKERS: Integration[] = [
     seo: {
       title: 'monday.com integration: whiteboard notes to board items',
       description: 'Turn sticky notes and cards into monday.com items and import a board onto a kanban, statuses as columns, kept in sync both ways.',
+    },
+  },
+  {
+    id: 'clickup',
+    name: 'ClickUp',
+    category: 'trackers',
+    oneLiner: 'Board items become ClickUp tasks, and a List comes onto a kanban with its statuses as columns.',
+    description: [
+      'Send notes, clusters or cards to a ClickUp List as tasks, or import a List (or a filter of it: a status, a tag, a person) as linked cards: into a kanban, each card lands in the column named after its status. Name, description, assignee, status, priority, start and due dates, sprint points, tags and mapped custom fields stay in step both ways.',
+      'Freero registers its own webhooks in ClickUp for the Lists you use, verifies every delivery’s signature, and polls as a fallback.',
+    ],
+    status: 'settings',
+    connect: {
+      ...trackerConnect('ClickUp', 'a personal token'),
+      steps: [
+        'In Settings → Your issue trackers (or your team’s admin console → Issue trackers), add a ClickUp connection with a personal token (ClickUp → Settings → Apps). Freero tests it before keeping it.',
+        'On a board, select notes or cards and choose Send to tracker…, or use Import issues… to bring in a List. Freero asks ClickUp for webhooks itself.',
+      ],
+    },
+    keywords: ['clickup', 'tasks', 'lists', 'statuses', 'subtasks', 'kanban', 'sync'],
+    seo: {
+      title: 'ClickUp integration: whiteboard notes to ClickUp tasks',
+      description: 'Turn sticky notes and cards into ClickUp tasks and import a List onto a kanban, statuses as columns, kept in sync both ways.',
+    },
+  },
+  {
+    id: 'trello',
+    name: 'Trello',
+    category: 'trackers',
+    oneLiner: 'Board items become Trello cards, and a Trello board comes onto a kanban with its lists as columns.',
+    description: [
+      'Send notes, clusters or cards to a Trello board as cards, or import a board (or a filter of it: a list, a label, a member) as linked cards: into a kanban, each card lands in the column named after its list. Name, description, list, start and due dates, labels, members and mapped custom fields stay in step both ways.',
+      'Freero registers its own webhooks on the boards you use, verifies their signature when it knows the API key’s secret, and polls as a fallback.',
+    ],
+    status: 'settings',
+    connect: {
+      ...trackerConnect('Trello', 'a token (and your API key, unless this server has its own)'),
+      steps: [
+        'In Settings → Your issue trackers (or your team’s admin console → Issue trackers), add a Trello connection with a token. Freero tests it before keeping it.',
+        'On a board, select notes or cards and choose Send to tracker…, or use Import issues… to bring in a Trello board. Freero asks Trello for webhooks itself.',
+        'Trello hides members’ addresses: to be matched to your Trello account, connect your own Trello in Settings too.',
+      ],
+    },
+    keywords: ['trello', 'cards', 'lists', 'boards', 'labels', 'kanban', 'sync'],
+    seo: {
+      title: 'Trello integration: whiteboard notes to Trello cards',
+      description: 'Turn sticky notes into Trello cards and bring a Trello board onto a kanban, lists as columns, kept in sync both ways.',
+    },
+  },
+  {
+    id: 'confluence-jira-app',
+    name: 'Confluence and Jira app',
+    category: 'trackers',
+    oneLiner: 'A live board in a Confluence page (the Freero board macro) and in a Jira issue’s panel.',
+    description: [
+      'Add the Freero board macro to a Confluence page, or paste a board link into it, and the board is live in the page. In Jira, the Freero board panel shows the board an issue was linked to by tracker sync, opened at its item, or one you paste.',
+      'Each reader sees the board as Freero shares it with them: people it is shared with sign in once to edit or comment; boards anyone with the link may view show read-only to everyone else. Page exports show the board’s link, with its picture for public boards.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: [
+        'The server’s operator creates a Forge app, sets ATLASSIAN_APP_ID, downloads the app’s source from the operator console and deploys it with forge deploy and forge install.',
+        'In Confluence, add the Freero board macro (or paste a board link); in Jira, open Apps → Freero board on an issue. The board’s owner must allow embedding.',
+      ],
+      docs: { file: 'docs/integrations/atlassian.md', anchor: 'setting-it-up-owner', label: 'Confluence and Jira setup' },
+    },
+    operatorSetup: 'Off by default: needs ATLASSIAN_APP_ID (a Forge app) on the server, and the app deployed to your Atlassian site.',
+    keywords: ['confluence', 'jira', 'atlassian', 'forge', 'macro', 'issue panel', 'embed', 'wiki'],
+    seo: {
+      title: 'Freero boards in Confluence pages and Jira issues',
+      description: 'Put a live Freero board in a Confluence page with a macro, and show the board an issue was planned on in its Jira issue panel.',
     },
   },
 ];
@@ -767,6 +838,48 @@ const CALLS: Integration[] = [
       description: 'Give each Freero board its own Jitsi room on meet.jit.si or your own deployment, with room names nobody can guess from the board.',
     },
   },
+  {
+    id: 'zoom-app',
+    name: 'Zoom App',
+    category: 'calls',
+    oneLiner: 'A live board in a Zoom meeting’s app panel; the host invites everyone to the same board.',
+    description: [
+      'Open Freero from Apps in a Zoom meeting, sign in and pick a board. Hosts invite everyone in the meeting with one click, and each person’s app opens the same board.',
+      'Each person sees the board as Freero shares it with them; a board anyone with the link may view shows read-only to guests without an account.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: ['The server’s operator creates a Zoom App in the Zoom App Marketplace, sets ZOOM_CLIENT_ID and enters the values the operator console lists.', 'In a meeting, open Apps → Freero and pick a board; its owner must allow embedding.'],
+      docs: { file: 'docs/integrations/zoom.md', anchor: 'setting-it-up-owner', label: 'Zoom App setup' },
+    },
+    operatorSetup: 'Off by default: needs ZOOM_CLIENT_ID (a Zoom App) on the server.',
+    keywords: ['zoom', 'zoom app', 'meeting', 'side panel', 'invite', 'video call'],
+    seo: {
+      title: 'Zoom App: a live whiteboard in your Zoom meeting',
+      description: 'Open a live Freero board in a Zoom meeting’s app panel and invite everyone in the meeting to the same board.',
+    },
+  },
+  {
+    id: 'google-meet-addon',
+    name: 'Google Meet add-on',
+    category: 'calls',
+    oneLiner: 'Open a board on a Meet call’s main stage; everyone else is asked to join.',
+    description: [
+      'In a Google Meet call, open Activities → Freero, pick a board in the side panel and open it on the main stage for everyone. Meet asks the others to join.',
+      'Each person sees the board as Freero shares it with them; a board anyone with the link may view shows read-only to people without an account.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: ['The server’s operator deploys the add-on from a Google Cloud project with the manifest the operator console offers, and sets GOOGLE_MEET_CLOUD_PROJECT_NUMBER.', 'In a call, open Activities → Freero, pick a board and open it on the main stage.'],
+      docs: { file: 'docs/integrations/google-meet.md', anchor: 'setting-it-up-owner', label: 'Google Meet add-on setup' },
+    },
+    operatorSetup: 'Off by default: needs GOOGLE_MEET_CLOUD_PROJECT_NUMBER and the add-on deployed from that Google Cloud project.',
+    keywords: ['google meet', 'meet', 'add-on', 'main stage', 'side panel', 'activity', 'video call'],
+    seo: {
+      title: 'Google Meet add-on: a live whiteboard on the main stage',
+      description: 'Open a live Freero board on a Google Meet call’s main stage from the side panel; everyone else in the call is asked to join.',
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -992,17 +1105,17 @@ const AUTOMATION: Integration[] = [
     id: "make",
     name: "Make",
     category: 'automation',
-    oneLiner: "A step-by-step Make scenario on Freero’s REST API and signed webhooks.",
+    oneLiner: "Freero’s Make app: watch board events instantly; add stickies, cards and comments, create and search boards.",
     description: [
-      "Build a Make scenario that reacts to Freero webhooks or adds items to a board through the REST API, following the step-by-step guide.",
-      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Make’s own directory.",
+      "Add Freero modules to a scenario and sign in. Watch board events triggers instantly through a workspace webhook the scenario adds and removes; actions add sticky notes, cards (into a kanban column if you like) and comments, create boards, search boards, and call any REST operation.",
+      "The app works with freero.app and with your own Freero server. It is shared by invitation until Make’s review lists it; without it, the guide’s HTTP-module recipes do the same.",
     ],
     status: 'api',
     connect: {
-      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Follow the guide to add the webhook trigger and HTTP modules in Make."],
-      docs: { file: "docs/integrations/make.md", label: "Make recipe" },
+      steps: ["In a scenario, add a Freero module and create a connection (for your own server, its address and an OAuth app of it).", "Pick Watch board events, or an action such as Add a card."],
+      docs: { file: "docs/integrations/make.md", label: "Make app" },
     },
-    keywords: ["make", "integromat", "automation", "scenario", "webhooks"],
+    keywords: ["make", "integromat", "automation", "scenario", "webhooks", "make app", "instant trigger"],
     seo: {
       title: "Make and Freero: whiteboard automation scenarios",
       description: "Connect Freero boards to Make scenarios with the REST API and signed webhooks: a step-by-step guide to triggers and actions.",
@@ -1012,17 +1125,17 @@ const AUTOMATION: Integration[] = [
     id: "zapier",
     name: "Zapier",
     category: 'automation',
-    oneLiner: "Zaps that react to Freero webhooks and add items through the REST API.",
+    oneLiner: "Freero’s Zapier app: board events, new items and comments start Zaps; Zaps add stickies, cards, comments and boards.",
     description: [
-      "Use Webhooks by Zapier to catch Freero events and the REST API to add notes or cards, following the guide.",
-      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Zapier’s own directory.",
+      "Pick Freero in the Zap editor and sign in. Board Event triggers instantly through a signed workspace webhook the Zap adds and removes itself; New Item and New Comment work for anyone who can open the board. Actions add sticky notes, cards (into a kanban column if you like) and comments, and create boards; Find Board searches by title.",
+      "The app works with freero.app and with your own Freero server. It is invite-only until Zapier’s review lists it in Zapier’s directory; without it, the guide’s Webhooks by Zapier recipes do the same.",
     ],
     status: 'api',
     connect: {
-      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Follow the guide to set up the Webhooks by Zapier trigger and actions."],
-      docs: { file: "docs/integrations/zapier.md", label: "Zapier recipe" },
+      steps: ["In a Zap, choose Freero and sign in (for your own server, set its address and an OAuth app of it).", "Pick a trigger such as Board Event or an action such as Add Card."],
+      docs: { file: "docs/integrations/zapier.md", label: "Zapier app" },
     },
-    keywords: ["zapier", "zap", "automation", "webhooks", "no-code"],
+    keywords: ["zapier", "zap", "automation", "webhooks", "no-code", "trigger", "action", "zapier app"],
     seo: {
       title: "Zapier and Freero: automate your whiteboards",
       description: "Automate Freero with Zapier: catch board events with Webhooks by Zapier and add notes or cards through Freero’s REST API.",
@@ -1032,17 +1145,17 @@ const AUTOMATION: Integration[] = [
     id: "power-automate",
     name: "Power Automate",
     category: 'automation',
-    oneLiner: "A custom connector for Power Automate and Logic Apps, generated from Freero’s API description.",
+    oneLiner: "A connector for Power Automate and Logic Apps: every REST operation as an action, and a trigger when something happens on a board.",
     description: [
-      "Import the generated Swagger 2.0 connector into Power Automate or Logic Apps and every REST operation becomes an action you can use in a flow.",
-      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Power Automate’s own directory.",
+      "Import the generated Swagger 2.0 connector into Power Automate or Logic Apps: every REST operation becomes an action, and “When something happens on a board” runs a flow on board events through a workspace webhook that the flow adds and removes itself.",
+      "The files for a certified connector (OAuth sign-in to freero.app, listed in Power Automate’s own connector list) are generated too; until Microsoft certifies it, import the custom connector.",
     ],
     status: 'api',
     connect: {
-      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Import docs/integrations/power-automate/freero.swagger.json as a custom connector and sign in with the token."],
-      docs: { file: "docs/integrations/power-automate.md", label: "Power Automate recipe" },
+      steps: ["Create a Freero token under Connect an agent → Any HTTP client (webhooks:manage for the trigger).", "Import docs/integrations/power-automate/freero.swagger.json as a custom connector and sign in with the token."],
+      docs: { file: "docs/integrations/power-automate.md", label: "Power Automate connector" },
     },
-    keywords: ["power automate", "logic apps", "microsoft", "custom connector", "flow"],
+    keywords: ["power automate", "logic apps", "microsoft", "custom connector", "certified connector", "flow", "trigger", "webhook"],
     seo: {
       title: "Power Automate connector for Freero whiteboards",
       description: "Use Freero in Power Automate and Logic Apps with a custom connector generated from its REST API: every operation available as an action.",

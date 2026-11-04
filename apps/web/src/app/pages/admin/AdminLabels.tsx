@@ -25,6 +25,7 @@ const SWITCHES: Array<{ key: keyof LabelCaps; on: string; label: string }> = [
   { key: 'boardEmbeds', on: 'off', label: t('noEmbeddingOnOtherSites') },
   { key: 'liveEmbeds', on: 'off', label: t('noLiveEmbedsOfOther') },
   { key: 'linkPassword', on: 'required', label: t('linksNeedAPassword') },
+  { key: 'offlineCopies', on: 'off', label: t('noOfflineCopiesOnDevices') },
 ];
 
 export function AdminLabels({ workspace }: { workspace: WorkspaceSummary }) {

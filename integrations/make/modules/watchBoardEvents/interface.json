@@ -1,0 +1,120 @@
+[
+    {
+        "name": "id",
+        "label": "Event ID",
+        "type": "text"
+    },
+    {
+        "name": "type",
+        "label": "Event type",
+        "type": "text"
+    },
+    {
+        "name": "createdAt",
+        "label": "Happened at",
+        "type": "date"
+    },
+    {
+        "name": "workspaceId",
+        "label": "Workspace ID",
+        "type": "text"
+    },
+    {
+        "name": "board",
+        "label": "Board",
+        "type": "collection",
+        "spec": [
+            {
+                "name": "id",
+                "label": "ID",
+                "type": "text"
+            },
+            {
+                "name": "title",
+                "label": "Title",
+                "type": "text"
+            },
+            {
+                "name": "url",
+                "label": "Link",
+                "type": "url"
+            }
+        ]
+    },
+    {
+        "name": "actor",
+        "label": "Who",
+        "type": "collection",
+        "spec": [
+            {
+                "name": "kind",
+                "label": "Kind",
+                "type": "text"
+            },
+            {
+                "name": "id",
+                "label": "ID",
+                "type": "text"
+            },
+            {
+                "name": "name",
+                "label": "Name",
+                "type": "text"
+            }
+        ]
+    },
+    {
+        "name": "data",
+        "label": "Data",
+        "type": "collection",
+        "spec": [
+            {
+                "name": "text",
+                "label": "Comment text",
+                "type": "text"
+            },
+            {
+                "name": "threadId",
+                "label": "Thread ID",
+                "type": "text"
+            },
+            {
+                "name": "itemId",
+                "label": "Commented item ID",
+                "type": "text"
+            },
+            {
+                "name": "title",
+                "label": "Board title",
+                "type": "text"
+            },
+            {
+                "name": "item",
+                "label": "Item",
+                "type": "collection",
+                "spec": [
+                    {
+                        "name": "id",
+                        "label": "ID",
+                        "type": "text"
+                    },
+                    {
+                        "name": "type",
+                        "label": "Type",
+                        "type": "text"
+                    },
+                    {
+                        "name": "text",
+                        "label": "Text",
+                        "type": "text"
+                    },
+                    {
+                        "name": "containerId",
+                        "label": "Frame or kanban ID",
+                        "type": "text"
+                    }
+                ]
+            }
+        ]
+    }
+]

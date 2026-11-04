@@ -89,19 +89,33 @@ export function createCore(
   bundles: FeatureBundle[],
   opts: { persistLocal?: boolean; initialState?: Uint8Array } = {},
 ): EngineCore {
-  const store = new BoardStore({
+  // [#178] The device copy goes through the CURRENT host (a new host object after a rename carries
+  // the new title); the editors layer is kept only while this person reads the board as an editor.
+  const hostRef = { current: host };
+  const readRole = (): Role => store.serverReadRole ?? store.serverRole ?? ui.getState().role;
+  const store: BoardStore = new BoardStore({
     boardId: host.board.id,
     syncUrl: host.syncUrl,
     syncProtocols: host.syncProtocols,
     persistLocal: opts.persistLocal,
     initialState: opts.initialState,
+    ...(host.offline && host.syncUrl
+      ? {
+          persist: {
+            load: () => hostRef.current.offline?.load() ?? Promise.resolve(null),
+            save: (copy) => hostRef.current.offline?.save(copy) ?? Promise.resolve(),
+            forget: () => hostRef.current.offline?.forget() ?? Promise.resolve(),
+            keeps: (layer) => layer === 'private' || ROLE_RANK[readRole()] >= ROLE_RANK.editor,
+          },
+        }
+      : {}),
   });
   const ui = createUiStore({ role: host.board.role });
   const scopedCache = new Map<string, Editor>();
   const disposers: Array<() => void> = [];
 
   const core = {
-    hostRef: { current: host },
+    hostRef,
     store,
     ui,
     registry: null as unknown as Registry,
@@ -146,7 +160,7 @@ export function createCore(
     }
 
   // ---- restore per-user tool options (e.g. last sticky color)
-  ui.setState({ toolOptions: loadToolOptions(), connection: store.status, synced: store.synced });
+  ui.setState({ toolOptions: loadToolOptions(), connection: store.status, synced: store.synced, restored: store.restored });
 
   // Deleted or now hidden (collapsed mind-map branch, folded into a collapsed column): drop from the selection.
   const pruneSelection = () => {
@@ -183,7 +197,7 @@ export function createCore(
     // Web fonts arrived: text measured with fallback fonts gets its real size (locally, no undo).
     subscribeFontEpoch(() => core.editor.renormalizeMeasured()),
     store.subscribeStatus(() => {
-      ui.setState({ connection: store.status, synced: store.synced });
+      ui.setState({ connection: store.status, synced: store.synced, restored: store.restored });
       core.emitter.emit('connection');
       if (store.ended && !endReported) {
         endReported = true;
@@ -219,6 +233,20 @@ export function createCore(
     store.subscribeUndo(() => ui.setState((s) => ({ undoVersion: s.undoVersion + 1 }))),
     store.subscribeSettings(() => ui.setState((s) => ({ settingsVersion: s.settingsVersion + 1 }))),
   );
+
+  // [#178] A tab being hidden or closed may never run the next timer: save the device copy now.
+  if (host.offline && typeof document !== 'undefined') {
+    const flush = () => {
+      if (document.visibilityState === 'hidden') store.flushPersisted();
+    };
+    const onPageHide = () => store.flushPersisted();
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', onPageHide);
+    disposers.push(() => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', onPageHide);
+    });
+  }
 
   // ---- ui → events + presence
   // Viewport publishing is throttled; while someone follows this user it runs at ~20 Hz so their

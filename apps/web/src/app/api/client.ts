@@ -53,6 +53,9 @@ import type {
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
+  AssistantAsk,
+  AssistantConversation,
+  AssistantTurn,
   BoardAiStatus,
   WorkspaceAiAdmin,
   WorkspaceAiPatch,
@@ -87,6 +90,9 @@ import type {
   PublicEmbedInfo,
   PublicEmbedMember,
   MicrosoftIntegrationsInfo,
+  HostAppInfo,
+  MeetAddOnInfo,
+  ZoomMeetingBoard,
   PublicEmbedToken,
   GuestJoinResponse,
   AccessRequestState,
@@ -160,9 +166,9 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { GifPlaceResponse, GifSearchResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
+import type { GifPlaceResponse, GifSearchResponse, ShapePack, ShapePackCreated, ShapePacksResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
-import { BACKUP_MEDIA_TYPE } from '@freero/shared';
+import { BACKUP_MEDIA_TYPE, type OfflineCheckRequest, type OfflineCheckResponse } from '@freero/shared';
 import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
@@ -333,6 +339,8 @@ export const api = {
       return r;
     }),
   getBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/boards/${id}`),
+  /** #178: which boards kept on this device may stay (the rest are deleted from it). */
+  offlineCheck: (ids: string[]) => request<OfflineCheckResponse>('POST', '/api/boards/offline-check', { ids } satisfies OfflineCheckRequest),
   // docs (KAI-162): containers like boards — /api/boards/:id serves their summary, sharing, versions
   createDoc: (body: CreateDocRequest = {}) => request<CreateDocResponse>('POST', '/api/docs', body),
   /** The doc as Markdown (downloads policy; recorded as an export). */
@@ -425,6 +433,11 @@ export const api = {
   publicEmbedMember: (id: string, token: string) => request<PublicEmbedMember>('POST', `/api/embed/b/${encodeURIComponent(id)}/me`, { token }),
   /** The Microsoft Teams app and Copilot agent this instance offers (#112, #114). */
   microsoftIntegrations: () => request<MicrosoftIntegrationsInfo>('GET', '/api/integrations/microsoft'),
+  // Apps on other platforms (#166–#169): what this instance offers.
+  hostApp: (host: 'atlassian' | 'zoom') => request<HostAppInfo>('GET', `/api/integrations/${host}`),
+  meetAddOn: () => request<MeetAddOnInfo>('GET', '/api/integrations/meet'),
+  zoomSetMeetingBoard: (meetingUuid: string, boardId: string, token?: string) => request<{ ok: true }>('PUT', '/api/integrations/zoom/meeting-board', { meetingUuid, boardId, token }),
+  zoomMeetingBoard: (meetingUuid: string) => request<ZoomMeetingBoard>('POST', '/api/integrations/zoom/meeting-board/lookup', { meetingUuid }),
 
   // activity
   boardActivity: (id: string, before?: number) =>
@@ -453,6 +466,7 @@ export const api = {
     email?: Partial<Record<NotificationType, boolean>>;
     slack?: Partial<Record<NotificationType, boolean>>;
     boardChanges?: BoardChangesFrequency;
+    boardComments?: boolean;
   }) => request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
   /** Personal Slack (#105): whether the server offers it and the person's connected account. Connecting is a page visit to /api/integrations/slack/oauth/start. */
   slackAccount: () => request<SlackAccountInfo>('GET', '/api/integrations/slack/me'),
@@ -630,6 +644,10 @@ export const api = {
   // AI (404 while the server offers no AI at all)
   boardAi: (boardId: string) => request<{ ai: BoardAiStatus | null }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
   runAi: (boardId: string, body: AiActionRequest) => request<AiActionResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/actions`, body),
+  // the board assistant (#1): your own conversation on this board
+  assistant: (boardId: string) => request<AssistantConversation>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
+  askAssistant: (boardId: string, body: AssistantAsk) => request<AssistantTurn>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`, body),
+  clearAssistant: (boardId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/ai/assistant`),
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
   testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),
@@ -655,7 +673,7 @@ export const api = {
   trackerUnlink: (boardId: string, linkId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/trackers/links/${encodeURIComponent(linkId)}`),
   /** A team's connections (its admins) or, without `workspaceId`, the person's own. */
   trackerConnections: (workspaceId: string | null) =>
-    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean; asana?: boolean; monday?: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
+    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean; asana?: boolean; monday?: boolean; clickup?: boolean }; trello?: { key: string | null; authorizeUrl: string | null } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
   createTrackerConnection: (body: TrackerConnectionInput) => request<{ connection: TrackerConnectionInfo; webhookSecret: string }>('POST', '/api/trackers/connections', body),
   updateTrackerConnection: (id: string, body: Partial<TrackerConnectionInput>) => request<{ connection: TrackerConnectionInfo }>('PATCH', `/api/trackers/connections/${encodeURIComponent(id)}`, body),
   testTrackerConnection: (id: string) => request<{ ok: true; account: string | null; connection: TrackerConnectionInfo }>('POST', `/api/trackers/connections/${encodeURIComponent(id)}/test`),
@@ -873,6 +891,12 @@ export const api = {
     }
     return ((await res.json()) as { sticker: Sticker }).sticker;
   },
+  // shape packs (#4): the board's workspace's own icon sets
+  shapePacks: (boardId: string) => request<ShapePacksResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`),
+  createShapePack: (boardId: string, name: string, upload: string) =>
+    request<ShapePackCreated>('POST', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`, { name, upload }),
+  renameShapePack: (packId: string, name: string) => request<{ pack: ShapePack }>('PATCH', `/api/shape-packs/${encodeURIComponent(packId)}`, { name }),
+  removeShapePack: (packId: string) => request<{ ok: true }>('DELETE', `/api/shape-packs/${encodeURIComponent(packId)}`),
   removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
   removeSticker: (setId: string, stickerId: string) =>
     request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),
