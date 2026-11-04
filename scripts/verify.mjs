@@ -8166,6 +8166,100 @@ async function trackerChecks() {
       assert(/\?item=g1/.test(body), 'no link back to the board item');
     });
 
+    // ---- GitHub Projects, milestones, assignees, sub-issues (#42) ----
+
+    let ghp = null;
+    await check('trackers (GitHub, #42): with a planning Project, an iteration imported into a kanban has the Project’s Status as columns, the estimate, the Iteration and the Start / Target dates; a card moved to Done closes the issue and sets its Status; a Status changed in the Project (no webhook for that) reaches the card by polling', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub planning', workspaceId: team.id, site: gh.url, token: gh.token, inbound: 'polling', defaults: { project: 'acme/app' } });
+      assert(made.status === 201, `github connection: ${made.status} ${made.text}`);
+      ghp = made.json.connection;
+      const bad = await O.req('PATCH', `/api/trackers/connections/${ghp.id}`, { fieldMap: { planningProject: 'not a project' } });
+      assert(bad.status === 400, `a malformed planning Project was kept: ${bad.status}`);
+      const set = await O.req('PATCH', `/api/trackers/connections/${ghp.id}`, { fieldMap: { planningProject: gh.project } });
+      assert(set.status === 200 && set.json.connection.fieldMap.planningProject === gh.project, `planning Project: ${set.status} ${set.text}`);
+      const fields = await O.req('GET', `/api/trackers/connections/${ghp.id}/fields`);
+      assert(fields.status === 200 && ['Status', 'Estimate', 'Start date', 'Target date', 'Team'].every((n) => fields.json.fields.some((f) => f.name === n)), `the Project's fields: ${fields.text}`);
+      const sprints = await O.req('GET', `/api/boards/${board.id}/trackers/connections/${ghp.id}/sprints?project=acme/app`);
+      assert(sprints.status === 200 && sprints.json.fieldName === 'Iteration' && sprints.json.sprints.find((s) => s.name === 'Iteration 2')?.state === 'active' && sprints.json.sprints.find((s) => s.name === 'Iteration 1')?.state === 'closed', `iterations: ${sprints.text}`);
+      const a = gh.create('acme/app', { title: 'Checkout redesign' });
+      gh.setField('acme/app', a, 'Status', 'In Review');
+      gh.setField('acme/app', a, 'Estimate', 5);
+      gh.setField('acme/app', a, 'Iteration', 'Iteration 2');
+      gh.setField('acme/app', a, 'Start date', '2026-11-09');
+      gh.setField('acme/app', a, 'Target date', '2026-11-20');
+      const b = gh.create('acme/app', { title: 'Receipt emails' });
+      gh.setField('acme/app', b, 'Status', 'Todo');
+      gh.setField('acme/app', b, 'Iteration', 'Iteration 2');
+      const shipped = gh.create('acme/app', { title: 'Saved carts' });
+      gh.setField('acme/app', shipped, 'Status', 'Done');
+      gh.setField('acme/app', shipped, 'Iteration', 'Iteration 2');
+      const later = gh.create('acme/app', { title: 'Gift cards' });
+      gh.setField('acme/app', later, 'Iteration', 'Iteration 3');
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: ghp.id, scope: { project: 'acme/app', sprint: 'current' }, placement: { newKanban: 'App iteration' } });
+      assert(r.status === 201 && r.json.cards.length === 3, `import the current iteration: ${r.status} ${r.text.slice(0, 300)}`);
+      const kid = r.json.containerId;
+      await waitFor(() => E.get(kid) && r.json.cards.every((x) => E.get(x.id)), 8000, 'the App iteration kanban');
+      const titles = E.get(kid).columns.map((c) => plain(c.title));
+      assert(JSON.stringify(titles) === JSON.stringify(['Todo', 'In Review', 'Done']), `columns: ${titles}`);
+      const card = (n) => E.get(r.json.cards.find((x) => x.key === `acme/app#${n}`).id);
+      const ca = card(a);
+      assert(columnTitle(kid, ca) === 'In Review' && String(ca.estimate) === '5', `the column / estimate on the card: ${columnTitle(kid, ca)} ${ca.estimate}`);
+      assert(ca.startDate === '2026-11-09' && ca.dueDate === '2026-11-20' && optionLabel(kid, 'Iteration', ca) === 'Iteration 2', `dates / iteration: ${ca.startDate} ${ca.dueDate} ${optionLabel(kid, 'Iteration', ca)}`);
+      await waitFor(() => /\?item=/.test(gh.issue('acme/app', a).body), 10_000, 'the first sync (a link back)');
+      // Moved on the board: the Project's Status follows by name.
+      E.set(ca.id, { ...E.get(ca.id), x: xInColumn(kid, E.get(ca.id), 'Todo'), status: 'todo' });
+      await waitFor(() => gh.issue('acme/app', a).fields.Status === 'Todo', 15_000, 'Todo in the Project from the board');
+      // Moved in the Project (no repository webhook says so): polling brings it.
+      gh.setField('acme/app', b, 'Status', 'In Review');
+      await waitFor(() => columnTitle(kid, card(b)) === 'In Review', 20_000, 'In Review from the Project on the card, by polling');
+      const cb = card(b);
+      E.set(cb.id, { ...cb, x: xInColumn(kid, cb, 'Done'), status: 'done' });
+      await waitFor(() => gh.issue('acme/app', b).state === 'closed' && gh.issue('acme/app', b).fields.Status === 'Done', 15_000, 'closed and Done in GitHub');
+      // The next iteration, picked on the card, moves the issue there; a completed one is refused with a note.
+      await waitFor(() => fieldOf(kid, 'Iteration')?.options?.some((o) => o.label === 'Iteration 3'), 1000, 'Iteration 3 among the options');
+      setOption(kid, 'Iteration', ca.id, 'Iteration 3');
+      await waitFor(() => gh.issue('acme/app', a).fields.Iteration === 'Iteration 3', 15_000, 'Iteration 3 in the Project');
+    });
+
+    await check('trackers (GitHub, #42): assignees by the GitHub profile’s public address; without a Target date field the due date is the milestone’s; a card sent under a parent issue becomes its sub-issue, and an import by parent brings the sub-issues', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub docs', workspaceId: team.id, site: gh.url, token: gh.token, inbound: 'polling', defaults: { project: 'acme/docs' } });
+      assert(made.status === 201, `github connection: ${made.status} ${made.text}`);
+      const gd = made.json.connection;
+      gh.addUser('member-m', M.email);
+      gh.addUser('ann-hidden', null);
+      const m1 = gh.addMilestone('acme/docs', 'December docs', '2026-12-20');
+      gh.addMilestone('acme/docs', 'Year end', '2026-12-31');
+      const parent = gh.create('acme/docs', { title: 'Docs overhaul', milestone: m1 });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: gd.id, query: 'repo:acme/docs Docs overhaul' });
+      assert(r.status === 201 && r.json.cards.length === 1, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      const pid = r.json.cards[0].id;
+      await waitFor(() => E.get(pid)?.dueDate === '2026-12-20', 8000, 'the milestone’s due date on the card');
+      await waitFor(() => /\?item=/.test(gh.issue('acme/docs', parent).body), 10_000, 'the first sync');
+      E.set(pid, { ...E.get(pid), dueDate: '2026-12-31' });
+      await waitFor(() => gh.issue('acme/docs', parent).milestoneDue === '2026-12-31', 15_000, 'the issue moved to the milestone due that day');
+      E.set(pid, { ...E.get(pid), dueDate: '2027-01-05' });
+      await waitFor(() => comments().some((t) => /no open milestone due on 2027-01-05/.test(t)), 15_000, 'a note: no milestone due that day');
+      assert(gh.issue('acme/docs', parent).milestoneDue === '2026-12-31', 'the milestone changed without one due that day');
+      // A card assigned to M, sent under the parent: assigned by M's public address, a sub-issue of it.
+      E.set('gs1', { ...base, id: 'gs1', type: 'card', x: 0, y: 24000, w: 260, h: 120, title: '<p>API reference</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: M.id, dueDate: null });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: gd.id, project: 'acme/docs', itemIds: ['gs1'], parent: `#${parent}` });
+      assert(sent.status === 201, `send under a parent: ${sent.status} ${sent.text}`);
+      const key = sent.json.issues[0].key;
+      const n = Number(key.split('#')[1]);
+      assert(JSON.stringify(gh.issue('acme/docs', n).assignees) === '["member-m"]', `assignees: ${JSON.stringify(gh.issue('acme/docs', n).assignees)}`);
+      assert(JSON.stringify(gh.subIssues('acme/docs', parent)) === JSON.stringify([key]), `sub-issues: ${JSON.stringify(gh.subIssues('acme/docs', parent))}`);
+      // Assigned in GitHub to someone whose address it hides: the badge says who, the card keeps M (never a guess).
+      gh.edit('acme/docs', n, { assignees: ['ann-hidden'] });
+      await waitFor(() => records().get(E.get('gs1').trackerLink)?.assignee === 'ann-hidden', 20_000, 'the hidden-address login on the badge');
+      assert(E.get('gs1').assigneeId === M.id, 'the card’s assignee changed to a guess');
+      gh.edit('acme/docs', n, { assignees: [] });
+      await waitFor(() => E.get('gs1').assigneeId === null, 20_000, 'nobody on the card');
+      gh.edit('acme/docs', n, { assignees: ['member-m'] });
+      await waitFor(() => E.get('gs1').assigneeId === M.id, 20_000, 'M on the card from GitHub');
+      const kids = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: gd.id, scope: { project: 'acme/docs', epic: `#${parent}` } });
+      assert(kids.status === 201 && kids.json.skipped === 1 && kids.json.created.length === 0, `import by parent (its one sub-issue is on the board already): ${kids.status} ${kids.text.slice(0, 300)}`);
+    });
+
     await check('trackers: every sync is in the workspace’s audit log, and no credential appears there or in the server log', async () => {
       const events = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=500`)).json.events;
       const actions = new Set(events.map((e) => e.action));

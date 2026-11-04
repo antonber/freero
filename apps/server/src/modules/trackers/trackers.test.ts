@@ -547,7 +547,7 @@ it('a tracker that answers 429 is asked again after the wait it named; a longer 
 // ---- Asana (#120) and monday.com (#121) ----
 
 type Sent = { method: string; path: string; body?: unknown; headers?: Record<string, string> };
-const SITES = { asana: ['https://app.asana.com', 'https://app.asana.com/api/1.0'], monday: ['https://monday.com', 'https://api.monday.com'], clickup: ['https://app.clickup.com', 'https://api.clickup.com/api/v2'] } as const;
+const SITES = { asana: ['https://app.asana.com', 'https://app.asana.com/api/1.0'], monday: ['https://monday.com', 'https://api.monday.com'], clickup: ['https://app.clickup.com', 'https://api.clickup.com/api/v2'], github: ['https://github.com', 'https://api.github.com'] } as const;
 const fakeConn = (provider: keyof typeof SITES, answer: (r: Sent) => { status?: number; json: unknown }, settings: Record<string, unknown> = {}) => {
   const sent: Sent[] = [];
   const conn = {
@@ -708,4 +708,24 @@ it('a Trello delivery is taken only from an address Freero registered, and with 
   expect(trello.webhook({ headers: {}, rawBody: body, secret: 's', now, hook })).toBeNull();
   // Not an address Freero registered (the service found no registration): refused whatever it carries.
   expect(trello.webhook({ headers: { 'x-trello-webhook': sig('api-key-secret') }, rawBody: body, secret: 's', now })).toBeNull();
+});
+
+it('labels and an assignee pushed to GitHub add and remove just those, so a label or assignee someone added there meanwhile is kept', async () => {
+  const issue = { id: 5001, node_id: 'I_5', number: 4, html_url: 'https://github.com/acme/web/issues/4', title: 'Flaky test', body: '', state: 'open', labels: [{ name: 'bug' }, { name: 'ux' }], assignees: [{ login: 'ann' }, { login: 'bo' }] };
+  const g = fakeConn('github', (r) =>
+    r.path.endsWith('/graphql')
+      ? { json: { data: { repository: { issue: { id: 'I_5', projectItems: { nodes: [] } } } } } }
+      : r.path.startsWith('/search/users')
+        ? { json: { items: [{ login: 'cy' }] } }
+        : { json: r.method === 'GET' ? issue : {} },
+  );
+  const remote = { id: 'acme/web#4', key: 'acme/web#4', url: issue.html_url, project: 'acme/web', values: { title: 'Flaky test', description: '', labels: ['bug', 'ux'] }, assigneeName: 'ann', updatedAt: 0 } as RemoteIssue;
+  await github.updateIssue(g.conn, remote, { labels: ['ux', 'flaky'], assignee: 'cy@x.test' });
+  const writes = g.sent.filter((r) => r.method !== 'GET' && !r.path.endsWith('/graphql'));
+  expect(writes).toEqual([
+    { method: 'POST', path: '/repos/acme/web/issues/4/labels', body: { labels: ['flaky'] } },
+    { method: 'DELETE', path: '/repos/acme/web/issues/4/labels/bug' },
+    { method: 'POST', path: '/repos/acme/web/issues/4/assignees', body: { assignees: ['cy'] } },
+    { method: 'DELETE', path: '/repos/acme/web/issues/4/assignees', body: { assignees: ['ann'] } },
+  ]);
 });

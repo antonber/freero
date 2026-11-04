@@ -357,7 +357,7 @@ const TRACKERS: Integration[] = [
     category: 'trackers',
     oneLiner: 'Board items become GitHub issues, open or closed in step with their cards.',
     description: [
-      'Send items to a repository as issues and import a GitHub search (for example repo:owner/name is:open) as linked cards. Title, description, labels and open or closed state sync both ways; GitHub Enterprise Server works the same way with its own address.',
+      'Send items to a repository as issues and import a GitHub search (for example repo:owner/name is:open), an iteration or a parent issue’s sub-issues as linked cards. Title, description, labels, assignees and open or closed state sync both ways; with a GitHub Project, its Status, estimate, iteration and start and target dates too, and milestones carry due dates otherwise. GitHub Enterprise Server works the same way with its own address.',
       'Freero writes only its own section of an issue’s body, between markers, so the rest of the description is left alone.',
     ],
     status: 'settings',

@@ -28,10 +28,14 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
   const [start, setStart] = useState(initial.startDateField ?? '');
   const [types, setTypes] = useState<Array<{ project: string; type: string }>>(Object.entries(initial.issueTypes).map(([project, type]) => ({ project, type })));
   const [map, setMap] = useState<FieldMapEntry[]>(initial.fields);
+  const [planning, setPlanning] = useState(initial.planningProject ?? '');
   const [busy, setBusy] = useState(false);
-  // Custom fields: every tracker with its own (#43, #120, #121); story points, start date and issue types: Jira and Azure DevOps.
-  const custom = connection.provider !== 'linear' && connection.provider !== 'github';
+  // Custom fields: every tracker with its own (#43, #120, #121; GitHub: its planning Project's, #42);
+  // story points and start date: Jira, Azure DevOps and a GitHub Project; issue types: Jira and Azure DevOps.
+  const github = connection.provider === 'github';
+  const custom = connection.provider !== 'linear';
   const typed = connection.provider === 'jira' || connection.provider === 'azure';
+  const pointed = typed || github;
 
   useEffect(() => {
     if (!custom) return setFields([]);
@@ -58,7 +62,8 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
     try {
       const out = await api.updateTrackerConnection(connection.id, {
         fieldMap: {
-          ...(typed ? { estimateField: estimate || null, startDateField: start || null } : {}),
+          ...(pointed ? { estimateField: estimate || null, startDateField: start || null } : {}),
+          ...(github ? { planningProject: planning.trim() || null } : {}),
           issueTypes: Object.fromEntries(types.filter((t) => t.project.trim() && t.type.trim()).map((t) => [t.project.trim(), t.type.trim()])),
           ...(custom ? { fields: map.filter((m) => m.tracker && m.board.trim()) } : {}),
         },
@@ -75,10 +80,23 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
   if (!fields) return <Spinner />;
   return (
     <div className="fr-trackerconn__map" aria-label={`Field map of ${connection.name}`}>
-      {typed && (
+      {github && (
+        <div className="fr-trackerconn__grid">
+          <Input
+            label="Planning Project (owner/number, e.g. acme/3)"
+            value={planning}
+            placeholder="acme/3"
+            onChange={(e) => setPlanning(e.target.value)}
+          />
+          <p className="fr-trackerconn__fine">
+            Its Status, estimate, Iteration, Start date and Target date fields sync (found by name; save, then reopen to pick others). New issues join it. Without a Target date field, due dates are milestones’.
+          </p>
+        </div>
+      )}
+      {pointed && (
         <div className="fr-trackerconn__grid">
           <label>
-            <span>Story points (a card’s estimate)</span>
+            <span>{github ? 'Estimate (a number field)' : 'Story points (a card’s estimate)'}</span>
             <Select aria-label="Story points field" options={pick('number', estimate)} value={estimate} onChange={setEstimate} width="100%" />
           </label>
           <label>

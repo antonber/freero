@@ -312,7 +312,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
               <Button size="sm" icon={RefreshCw} onClick={() => void test(c)}>
                 Test
               </Button>
-              {c.fieldMap && c.provider !== 'linear' && c.provider !== 'github' && (
+              {c.fieldMap && c.provider !== 'linear' && (
                 <Button size="sm" variant="ghost" icon={ListTree} aria-expanded={mapping === c.id} onClick={() => setMapping(mapping === c.id ? null : c.id)}>
                   Field map
                 </Button>

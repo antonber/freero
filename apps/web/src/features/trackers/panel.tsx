@@ -28,13 +28,13 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 /** What a tracker calls its sprints (#119); none: it has none Freero imports by. */
-const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprint', linear: 'Cycle', azure: 'Iteration' };
+const SPRINT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Sprint', linear: 'Cycle', azure: 'Iteration', github: 'Iteration' };
 /** What a tracker calls the issue others go under (#43); none: not from Freero (GitHub). */
-const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: 'Parent issue', azure: 'Parent work item', asana: 'Parent task', monday: 'Parent item', clickup: 'Parent task' };
+const PARENT_NAME: Partial<Record<TrackerProviderKind, string>> = { jira: 'Epic', linear: 'Parent issue', azure: 'Parent work item', asana: 'Parent task', monday: 'Parent item', clickup: 'Parent task', github: 'Parent issue' };
 /** What a tracker's project is called where it isn't one (#120, #121). */
 const PROJECT_NAME: Partial<Record<TrackerProviderKind, string>> = { github: 'Repository', linear: 'Team', monday: 'Board', clickup: 'List', trello: 'Board' };
 /** A parent's key, as people find it in each tracker. */
-const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: 'Task id or link', monday: 'Item id', clickup: 'Task id or link' };
+const PARENT_HINT: Partial<Record<TrackerProviderKind, string>> = { azure: '#12', linear: 'ENG-12', asana: 'Task id or link', monday: 'Item id', clickup: 'Task id or link', github: '#12 or owner/name#12' };
 /** Trackers whose whole project (board, List) can be imported without a query (#120, #121, #180). */
 const WHOLE_PROJECT: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday', 'clickup', 'trello']);
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);

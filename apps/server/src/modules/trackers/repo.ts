@@ -33,6 +33,8 @@ export interface ConnectionSettings {
   accountUrl?: string | null;
   /** The tracker login the account uses (Trello username, GitHub login), from the last test. */
   login?: string | null;
+  /** GitHub (#42): the Project (v2) whose Status, estimate, iteration and dates sync ("owner/number"). */
+  planningProject?: string | null;
 }
 
 export interface StoredConnection {

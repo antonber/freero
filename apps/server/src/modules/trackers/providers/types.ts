@@ -131,6 +131,8 @@ export interface TrackerProvider {
   fields: readonly IssueField[];
   /** What the import query is, in the dialog ("JQL"). */
   queryLanguage: string;
+  /** Other addresses of the same tracker its calls may go to (GitHub Enterprise's GraphQL beside /api/v3). */
+  endpoints?(apiBase: string): string[];
   /** The headers that authenticate a call with these credentials. */
   authHeaders(creds: Credentials, conn: Pick<ProviderConnection, 'deployment'>): Record<string, string>;
   /** Who the credentials act as, plus what the connection should remember (estimate field…). */

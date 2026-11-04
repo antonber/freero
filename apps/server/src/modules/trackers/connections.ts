@@ -179,7 +179,7 @@ export function openConnection(c: StoredConnection): ProviderConnection {
       creds ??= openCredentials(c);
       if (creds.kind === 'oauth' && creds.expiresAt !== null && creds.expiresAt < Date.now() + 60_000) creds = await refreshed(c, creds, false);
       const url = req.path.startsWith('http') ? req.path : `${base}${req.path}`;
-      if (!url.startsWith(base)) throw new TrackerError('Freero only calls the connection’s own address.', 'refused');
+      if (!url.startsWith(base) && !(provider.endpoints?.(base) ?? []).includes(url)) throw new TrackerError('Freero only calls the connection’s own address.', 'refused');
       const send = (cr: Credentials) =>
         trackerRequest(
           {
@@ -275,12 +275,13 @@ export function info(c: StoredConnection, links: number, req: Request | null, ma
 }
 
 /** The field map part of a connection's settings, as managers see it (#43). */
-export function fieldMapSettingsOf(c: Pick<StoredConnection, 'settings'>): TrackerFieldMapSettings {
+export function fieldMapSettingsOf(c: Pick<StoredConnection, 'settings' | 'provider'>): TrackerFieldMapSettings {
   return {
     estimateField: c.settings.estimateField ?? null,
     startDateField: c.settings.startDateField ?? null,
     issueTypes: c.settings.issueTypes ?? {},
     fields: c.settings.fieldMap ?? [],
+    ...(c.provider === 'github' ? { planningProject: c.settings.planningProject ?? null } : {}),
   };
 }
 
@@ -306,6 +307,12 @@ function fieldMapPatch(c: StoredConnection, v: unknown): Partial<repo.Connection
   if (b.estimateField !== undefined) out.estimateField = fieldId(b.estimateField, 'fieldMap.estimateField');
   if (b.startDateField !== undefined) out.startDateField = fieldId(b.startDateField, 'fieldMap.startDateField');
   if (out.estimateField !== undefined || out.startDateField !== undefined) out.fieldsPicked = true;
+  if (b.planningProject !== undefined) {
+    if (c.provider !== 'github') throw badRequest('Only GitHub connections have a planning Project');
+    if (b.planningProject !== null && b.planningProject !== '' && (typeof b.planningProject !== 'string' || !/^[\w.-]{1,100}\/\d{1,9}$/.test(b.planningProject.trim())))
+      throw badRequest('fieldMap.planningProject must be a GitHub Project as owner/number (acme/3)');
+    out.planningProject = typeof b.planningProject === 'string' && b.planningProject.trim() ? b.planningProject.trim() : null;
+  }
   if (b.issueTypes !== undefined) {
     if (!b.issueTypes || typeof b.issueTypes !== 'object' || Array.isArray(b.issueTypes)) throw badRequest('fieldMap.issueTypes must map project keys to issue types');
     const entries = Object.entries(b.issueTypes as Record<string, unknown>);

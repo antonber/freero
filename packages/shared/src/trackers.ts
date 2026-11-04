@@ -546,6 +546,12 @@ export interface TrackerFieldMapSettings {
   /** Issue (work item) type by project key, before the connection's default. */
   issueTypes: Record<string, string>;
   fields: FieldMapEntry[];
+  /**
+   * [additive] GitHub (#42): the Project (v2) whose fields sync ("acme/3": an organization or user
+   * and the Project's number) — Status ↔ column, estimate, Iteration, start and target dates. New
+   * issues join it; an issue in another Project uses the first one it is in.
+   */
+  planningProject?: string | null;
 }
 
 export interface TrackerConnectionInput {

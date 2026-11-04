@@ -58,17 +58,34 @@ network needs `TRACKER_PRIVATE_ENDPOINTS=true` ([configuration.md](configuration
 | a card's title / one note's first line / a cluster's heading (shared frame, or the title above the notes) | title | a cluster's title is made from the board and never written back into a note |
 | a card's description / a note's text + a link back / a bullet per note with its link back | description | ADF on Jira Cloud, wiki markup on Data Center, Markdown on Linear and GitHub (only Freero's own section of a GitHub issue body, between markers) |
 | tags (on notes and cards) | labels | Jira labels can't hold spaces: `checkout flow` ↔ `checkout-flow` |
-| card status / kanban column | status | Jira moves through the workflow's transitions (or the card gets a note when none leads there); GitHub: open / closed |
+| card status / kanban column | status | Jira moves through the workflow's transitions (or the card gets a note when none leads there); GitHub: open / closed, and the Project's Status (#42) |
 | a kanban card's column (its Stage) | the status of that name | Jira / Linear: a card moved to "In review" asks for the "In review" status (case and spaces don't count) before falling back to the column's status category; a column the tracker has no status for sends only its category. From the tracker: the card moves to the column named after the status, else the first column of its category |
 | a kanban card's Priority (a single select called "Priority") | priority | Jira: by name (the site's priority scheme); Linear: Urgent / High / Medium / Low. A level the field lacks is added to it. Not on GitHub |
-| card assignee | assignee | matched by verified email address; nobody when there is no match (with a note) — not on GitHub |
-| card start date (a timeline bar's first day) | start date | Jira's "Start date" field is found by name; not on Linear (issues have none) or GitHub |
-| card due date | due date | not on GitHub |
-| card estimate (a number) | story points / estimate | Jira's story points field is found by name, Azure DevOps's by process (Story Points, Effort, Size); a manager can pick another in the field map; not on GitHub |
-| a kanban card's Sprint (a single select called "Sprint", "Cycle" or "Iteration", #119) | Jira sprint, Linear cycle, Azure DevOps iteration path | by name. Jira: the issue's open sprint (closed ones it passed through are history), moved through Jira Software's agile API (the backlog for none); Linear: the team's cycles ("Cycle 12" when unnamed); Azure DevOps: the path below the project ("Sprint 3", "Release 1\Sprint 3"). A closed sprint is a read-only option: cards keep it, nobody picks it, and one set anyway (an old client, the API) stays in the tracker with a note. Not on GitHub (GitHub Projects iterations are #42) |
+| card assignee | assignee | matched by verified email address; nobody when there is no match (with a note). GitHub and Trello hide most addresses: a login is a Freero person when they connected their own account there (Settings → Your issue trackers), on GitHub also when their profile shows the address; anyone else stays on the badge only |
+| card start date (a timeline bar's first day) | start date | Jira's "Start date" field is found by name; GitHub: the Project's Start date field (#42); not on Linear (issues have none) |
+| card due date | due date | GitHub: the Project's Target date field, else the milestone's due date (#42) |
+| card estimate (a number) | story points / estimate | Jira's story points field is found by name, Azure DevOps's by process (Story Points, Effort, Size), GitHub's in the Project (Estimate, Points, Story points, Size); a manager can pick another in the field map |
+| a kanban card's Sprint (a single select called "Sprint", "Cycle" or "Iteration", #119) | Jira sprint, Linear cycle, Azure DevOps iteration path | by name. Jira: the issue's open sprint (closed ones it passed through are history), moved through Jira Software's agile API (the backlog for none); Linear: the team's cycles ("Cycle 12" when unnamed); Azure DevOps: the path below the project ("Sprint 3", "Release 1\Sprint 3"). A closed sprint is a read-only option: cards keep it, nobody picks it, and one set anyway (an old client, the API) stays in the tracker with a note. GitHub: the Project's Iteration field (#42) |
 | a kanban field the connection's field map names (#43) | a custom field (Jira: select, multi-select, number, date, text, user; Azure DevOps: picklist, number, date, text, identity) | by the kanban field's name and kind, the tracker field's id. A kanban without a field of that name holds no value: nothing is sent or cleared, and what changes in the tracker meanwhile reaches the card once a field of that name is back (rename the field back, or point the map at its new name) |
-| parent (send *One per cluster*, or *Under* an epic) | Jira parent (Data Center: Epic Link), Linear parent issue, Azure DevOps parent (Hierarchy-Reverse) | not synced afterwards; not on GitHub |
+| parent (send *One per cluster*, or *Under* an epic) | Jira parent (Data Center: Epic Link), Linear parent issue, Azure DevOps parent (Hierarchy-Reverse), GitHub sub-issue (#42) | not synced afterwards |
 | each linked item | a remote link (Jira), an attachment (Linear), a line in Freero's section (GitHub), a Hyperlink relation (Azure DevOps), an external attachment (Asana), a line in Freero's “On a Freero board” update (monday.com) | removed when the item is deleted; the issue stays |
+
+**GitHub Projects (#42).** A manager sets the connection's **planning Project** in its field map
+(`acme/3`: the organization or user and the Project's number; the token needs Projects read &
+write). An issue in it — or, without one, in any Project: the first it is in — syncs the Project's
+fields, found by name unless the field map picks others: **Status** (single select) ↔ the kanban
+column by name (an issue closed, or a Status like Done, is done; a card moved to Done closes the
+issue and sets the Status), a number field (Estimate, Points, Story points, Size) ↔ the estimate,
+**Iteration** ↔ the kanban's Iteration field (completed iterations read-only; *Import issues → An
+iteration* imports the current one), **Start date** and **Target date** (End / Due date) ↔ the
+card's dates — so a roadmap bar's start and end both sync. Project fields of other kinds map by id
+in the field map. New issues join the planning Project. Without a Target date field the due date is
+the **milestone's**: read from its due date, written by moving the issue to the open milestone due
+that day (none: a note, the milestone stays). Writes add and remove just the labels and the
+assignee that changed. *Under* puts new issues under a parent issue as **sub-issues** (`#12` or
+`owner/name#12`), and **A parent issue** imports its sub-issues. A Project field change doesn't
+reach a repository's webhooks: polling reads the planning Project's items updated since (switch
+the connection to polling, or rely on the fallback poll).
 
 Azure DevOps descriptions are HTML written from a fixed template (paragraphs, bullets, http(s)
 links; every piece of board text escaped) and read back as text and links. Its state follows the
@@ -274,7 +291,8 @@ scripts/lib/mock-asana.mjs --port 4485`, `node scripts/lib/mock-monday.mjs --por
 `TRACKER_PRIVATE_ENDPOINTS=true`).
 
 Not done yet: Microsoft Entra OAuth for Azure DevOps Services (needs the operator's Entra app
-registration; PATs work on both Services and Server), GitHub Projects iterations (#42), and the
+registration; PATs work on both Services and Server), a GitHub App with installation tokens for
+operators (#42: tokens work; an App also needs its own webhook route for Projects events), and the
 manual checks against real trackers (a Jira Cloud site with Jira Software, a Linear workspace, an
 Azure DevOps organization, an Asana workspace, a monday.com account) that #43, #119, #6, #120 and
 #121 ask to record in their PRs, and the operator's Asana, monday.com and ClickUp OAuth apps (off

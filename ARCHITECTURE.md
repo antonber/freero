@@ -2827,7 +2827,10 @@ Server, #6), Asana (#120), monday.com (#121), ClickUp (#180) or Trello (#181), a
   backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
   capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
   (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
-  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below). `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below), `endpoints`
+  (GitHub Enterprise's GraphQL beside `/api/v3`). GitHub (#42) reads and writes the connection's
+  planning Project (v2) through GraphQL: Status, estimate, Iteration (`sprints`), start / target
+  dates; milestones as due dates; sub-issues as `parents`. `RemoteIssue.version` is the revision read (Azure DevOps): a write
   against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
   fresh reads (at most twice) instead of overwriting. Trackers without revisions (Asana,
   monday.com) write only the fields a sync changes (a PUT of those fields, a column write of those
