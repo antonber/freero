@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.antonber/freero",
+  "title": "Freero",
+  "description": "A collaborative whiteboard your AI assistant can read, fill and show live, with changes you review.",
+  "websiteUrl": "https://freero.app/",
+  "icons": [
+    {
+      "src": "https://freero.app/icons/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/antonber/freero",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://freero.app/mcp"
+    }
+  ]
+}
