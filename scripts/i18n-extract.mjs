@@ -56,6 +56,9 @@ const NEVER_CALLS = new Set([
 const hasLetter = (s) => /\p{L}/u.test(s);
 const codeish = (s) =>
   /^(https?:|mailto:|data:|\/|#|\.|var\(|fr-|--|@)/.test(s.trim()) ||
+  /^\s*[MmLlCcQqAaHhVvZz]\s*(-?[\d.]|x\b|,)/.test(s) || // SVG path data
+  /(^|\s)x(px|%)?$/.test(s.trim()) && !/\p{L}{2,}/u.test(s.replace(/ x /g, ' ')) || // just a number and a unit
+  PROPER.test(s.trim()) ||
   /[{};<>=\\]|\$\(|=>|\bfunction\b/.test(s) ||
   /^[A-Z0-9_]+$/.test(s.trim()) ||
   /^[a-z][a-zA-Z0-9]*([.:/-][a-zA-Z0-9]+)+$/.test(s.trim()) || // ids, keys, mime types
@@ -65,8 +68,13 @@ const human = (s) => hasLetter(s) && !codeish(s) && (/\s/.test(s.trim()) || /^[\
 const ENTITIES = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', middot: '·', times: '×', rarr: '→', larr: '←', copy: '©' };
 /** JSX text as React renders it: entities decoded. */
 const decodeJsx = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e) => (e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITIES[e] ?? m));
-/** Interface text anywhere: a capitalised phrase of two words or more. */
-const sentence = (s) => hasLetter(s) && !codeish(s) && /^[\p{Lu}“"‘(¿¡]/u.test(s.trim()) && /\p{L}+[\s ]+\S/u.test(s.trim());
+/** Interface text anywhere: a capitalised phrase of two real words or more (placeholders aside). */
+const sentence = (s) => {
+  const plain = s.replace(/ x /g, ' ').trim();
+  return hasLetter(plain) && !codeish(s) && /^[\p{Lu}“"‘(¿¡]/u.test(plain) && /\p{L}{2,}[^\p{L}]+\p{L}{2,}/u.test(plain);
+};
+/** Names that read the same in every language. */
+const PROPER = /^(Freero|freero|GitHub|GitLab|Jira|Linear|Asana|Trello|Slack|Microsoft Teams|Teams|Claude|ChatGPT|Google|Figma|Miro|Notion|Zoom|Excel|PowerPoint|Visio|Mermaid|Markdown|CSV|PDF|PNG|SVG|JSON|OK|Excalidraw|C\+\+|C#)$/;
 
 // ---- units ------------------------------------------------------------------------------------
 /** The owned unit a file belongs to (its catalogue), or null. */
@@ -88,7 +96,7 @@ function skipFile(abs) {
   if (/^features\/templates\/lib\/(catalog|specs|spec)\//.test(r) || r === 'features/templates/lib/kit.ts') return true; // template content
   if (r.startsWith('app/i18n/') || r === 'ui/i18n.ts') return true;
   if (r === 'app/analytics/runtime.ts' || r === 'app/pwa/sw.ts') return true; // built on their own, without imports
-  if (r === 'features/templates/lib/gate.ts') return true; // the template gate's findings are for template authors
+  if (r === 'features/templates/lib/gate.ts' || r === 'app/problems/diagnostics.ts') return true; // operators' / authors' text // the template gate's findings are for template authors
   if (outlineClosure().has(slash(abs).toLowerCase())) return true; // loaded by an outline.ts, which runs on the server [W13]
   if (r.startsWith('engine/store/')) return true;
   return false;
@@ -431,6 +439,8 @@ function processFile(sf, checker, unit) {
   };
 
   const jsxRuns = (parent) => {
+    const tag = ts.isJsxElement(parent) ? parent.openingElement.tagName.getText(sf) : '';
+    if (/^(code|pre|kbd|Kbd|samp)$/.test(tag)) return;
     const kids = parent.children;
     let run = [];
     const flush = () => {
@@ -477,7 +487,8 @@ function processFile(sf, checker, unit) {
         if (m && !/\n/.test(raw.slice(raw.trimEnd().length))) trail = "{' '}";
         last.text = last.text.trimEnd();
       }
-      const built = build(pieces);
+      const textOnly = pieces.filter((x) => x.text !== undefined).map((x) => x.text).join(' ');
+      const built = codeish(textOnly) && !pieces.some((x) => x.plural) ? null : build(pieces);
       if (built) {
         const start = run[0].getStart(sf, false) ?? run[0].pos;
         edits.push([run[0].pos, run[run.length - 1].end, `${lead}{${call(built)}}${trail}`]);
