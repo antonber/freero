@@ -14,6 +14,9 @@ export {
   isBearerError,
   registerProtectedResource,
   createPersonalToken,
+  // Freero's own chat integrations (Slack, #105) under the same workspace policies as an app.
+  integrationMayReach,
+  integrationCredentialId,
   type ApiCredential,
 } from './credentials';
 // Live board views inside AI assistants (MCP Apps, KAI-171): a single-use ticket per tool call,
@@ -35,7 +38,7 @@ export { listOwnClients as ownOAuthApps, registerClient as registerOAuthApp } fr
 // The person's API data for their data export (modules/privacy).
 export { apiDataOf } from './dataExport';
 // A workspace's security admins exempt one credential from its IP allowlist (#156).
-export { setCredentialIpExempt } from './workspacePolicy';
+export { setCredentialIpExempt, setWorkspaceApiAccess } from './workspacePolicy';
 export { ipExemptIn as ipExemptionsOf } from './repo';
 // Credentials revoked for good (KAI-224), announced through the outbox in the revoking transaction:
 // realtime withdraws the pending suggestions they proposed.

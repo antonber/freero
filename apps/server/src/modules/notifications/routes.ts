@@ -65,15 +65,17 @@ export default function notificationRoutes(_ctx: ServerContext): Router {
   r.put(
     '/notifications/prefs',
     handle(async (req, res) => {
-      const body = (req.body ?? {}) as { emailAll?: unknown; email?: unknown; boardChanges?: unknown };
+      const body = (req.body ?? {}) as { emailAll?: unknown; email?: unknown; slack?: unknown; boardChanges?: unknown };
       if (body.emailAll !== undefined && typeof body.emailAll !== 'boolean') throw badRequest('emailAll must be true or false');
       if (body.boardChanges !== undefined && !FREQUENCIES.includes(body.boardChanges as BoardChangesFrequency))
         throw badRequest('boardChanges must be off, daily or weekly');
       if (body.email !== undefined && (typeof body.email !== 'object' || body.email === null)) throw badRequest('email must map types to true or false');
+      if (body.slack !== undefined && (typeof body.slack !== 'object' || body.slack === null)) throw badRequest('slack must map types to true or false');
       res.json(
         await updatePrefs(currentUser(req).id, {
           emailAll: body.emailAll as boolean | undefined,
           email: body.email as Partial<Record<NotificationType, boolean>> | undefined,
+          slack: body.slack as Partial<Record<NotificationType, boolean>> | undefined,
           boardChanges: body.boardChanges as BoardChangesFrequency | undefined,
         }),
       );

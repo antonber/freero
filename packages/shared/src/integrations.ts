@@ -551,7 +551,7 @@ const CHAT: Integration[] = [
     oneLiner: "A Freero board link pasted in Slack unfolds into its title and thumbnail, when the board is public.",
     description: [
       "The server’s operator creates a Slack app from Freero’s manifest and sets two secrets. After that, a Freero board link pasted in a Slack workspace that installed the app shows a preview.",
-      "Only a board anyone with its link may open (no password, not expired) shows its title, description and thumbnail. Every other link, and a link to a board that doesn’t exist, gets the same generic “Sign in to Freero to view it” card, so a preview never reveals a private board.",
+      "Only a board anyone with its link may open (no password, not expired) shows its title, description and thumbnail — or a board the person who posted the link can open, once they connected their Slack account (Slack notifications and /freero). Every other link, and a link to a board that doesn’t exist, gets the same generic “Sign in to Freero to view it” card, so a preview never reveals a private board.",
     ],
     status: 'operator',
     connect: {
@@ -566,6 +566,28 @@ const CHAT: Integration[] = [
     seo: {
       title: 'Slack link previews for whiteboards',
       description: "Paste a public Freero board link in Slack and see its title and thumbnail; private boards show a generic card that reveals nothing.",
+    },
+  },
+  {
+    id: 'slack-personal',
+    name: 'Slack notifications and /freero',
+    category: 'chat',
+    oneLiner: 'Your mentions, replies and assigned cards as Slack direct messages, and /freero to create or find a board.',
+    description: [
+      'Each person connects their own Slack account once in their settings. Then the notifications they choose (mentions, replies, cards assigned to them, due-date reminders, access requests) arrive as direct messages from Freero’s Slack app, at once and instead of the email, so nothing comes twice.',
+      'A link they paste in Slack to a board they can open shows its title and thumbnail, even when the board is private. In Slack, /freero new and a title creates a board; /freero and a few words finds their boards. Disconnecting stops all of it.',
+    ],
+    status: 'settings',
+    connect: {
+      steps: ['In Settings → Slack, choose Connect Slack and allow Freero’s app in your Slack workspace.', 'Pick which notifications come to Slack under Notification emails and Slack.'],
+      app: { path: '/settings#slack', label: 'Slack settings' },
+      docs: { file: 'docs/integrations/slack.md', anchor: 'connect-slack-direct-messages-private-previews-and-freero', label: 'Connect Slack' },
+    },
+    operatorSetup: 'Off by default: needs the Slack app of “Slack link previews” plus SLACK_CLIENT_ID and SLACK_CLIENT_SECRET on the server.',
+    keywords: ['slack', 'direct message', 'dm', 'notifications', 'slash command', 'mentions', 'assigned'],
+    seo: {
+      title: 'Slack notifications for your whiteboard',
+      description: 'Get Freero mentions, replies and assigned cards as Slack direct messages, preview private board links you share, and create boards with /freero.',
     },
   },
   {

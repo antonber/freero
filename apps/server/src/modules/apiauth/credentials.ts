@@ -26,7 +26,7 @@ import { appUrl } from '../../platform/mail';
 import { currentRequestContext, markApiCredential, setRequestUser } from '../../platform/requestContext';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getAccount, isOperator, isSuspended, signInRestriction } from '../auth/index';
-import { getWorkspaceInfo, ipAllowedIn } from '../workspaces/index';
+import { getWorkspaceInfo, hasIpAllowlist, ipAllowedIn } from '../workspaces/index';
 import * as repo from './repo';
 
 export const PERSONAL_PREFIX = 'frp_';
@@ -261,6 +261,36 @@ export function requireScope(req: Request, cred: ApiCredential, scope: ApiScope,
   );
 }
 export const isBearerError = (e: unknown): e is HttpError & { challenge: string } => e instanceof BearerError;
+
+/**
+ * Whether one of Freero's own chat integrations (the Slack app, #105), acting for `userId`, may
+ * reach a workspace's boards. It is treated like an app the person connected: the workspace's
+ * admin console lists it as '<integration>:<userId>' (kind 'oauth') and can block it there; a
+ * workspace (or its organisation) with API access off refuses it. Its requests come from the chat
+ * app's servers, not the person's network, so a workspace with an IP allowlist refuses it unless
+ * its admins exempted it. Personal workspaces have no policies. Never throws for a policy: false.
+ */
+export async function integrationMayReach(workspaceId: string, integration: { id: string; label: string; scopes: ApiScope[] }, userId: string): Promise<boolean> {
+  const ws = await getWorkspaceInfo(workspaceId);
+  if (!ws) return false;
+  if (ws.kind !== 'team') return true;
+  if (!(await repo.workspaceApiEnabled(workspaceId))) return false;
+  if (ws.organisationId && !(await repo.workspaceApiEnabled(ws.organisationId))) return false; // an organisation's switch is a floor
+  const { blocked, ipExempt } = await repo.noteWorkspaceUse({
+    workspaceId,
+    credentialId: integrationCredentialId(integration.id, userId),
+    userId,
+    kind: 'oauth',
+    label: integration.label,
+    scopes: integration.scopes,
+    at: Date.now(),
+  });
+  if (blocked) return false;
+  return ipExempt || !(await hasIpAllowlist(workspaceId));
+}
+
+/** The credential id an integration acting for `userId` has in workspaces' API lists (and IP exemptions). */
+export const integrationCredentialId = (integrationId: string, userId: string) => `${integrationId}:${userId}`;
 
 /**
  * The credential is about to act in a workspace (read or change a board there, create one): team

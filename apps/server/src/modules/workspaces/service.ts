@@ -140,6 +140,15 @@ export function setIpExemptionReader(fn: IpExemptions): void {
   ipExemptions = fn;
 }
 
+/**
+ * Whether the workspace (or its organisation) limits where its boards are opened from (#156). For
+ * integrations whose requests come from a chat app's servers rather than the person (#105).
+ */
+export async function hasIpAllowlist(workspaceId: string): Promise<boolean> {
+  const w = await repo.getWorkspace(workspaceId);
+  return !!w && w.kind === 'team' && ipListsOf(w).length > 0;
+}
+
 /** May a request from `ip` reach the workspace's boards (#156)? For apiauth's per-workspace check. */
 export async function ipAllowedIn(workspaceId: string, ip: string | null): Promise<boolean> {
   const w = await repo.getWorkspace(workspaceId);

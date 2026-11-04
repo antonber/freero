@@ -54,6 +54,11 @@ export interface NotificationTypeDef {
    * people must get whatever their preferences, like moderation decisions.
    */
   direct?: boolean;
+  /**
+   * Sent to Slack as a direct message unless the person turned it off, once they connected Slack
+   * (#105). Types without it are offered for Slack too, off until turned on (noisier ones).
+   */
+  slackByDefault?: boolean;
 }
 
 const board = (d: NotificationData) => `“${d.boardTitle || (d.objectKind === 'doc' ? 'Untitled doc' : 'Untitled board')}”`;
@@ -101,6 +106,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} asked to ${d.role && ASK_PHRASE[d.role] ? ASK_PHRASE[d.role] : 'open'} ${board(d)}`,
     link: (id, d) => `${boardPath(id, d)}?share=requests`,
     linkLabel: 'Review the request',
+    slackByDefault: true,
   },
   'access.response': {
     label: 'Answers to your access requests',
@@ -111,6 +117,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
         : `${actor} declined your request to open a board`,
     link: (id, d) => boardPath(id ?? d.requestedBoardId ?? null, d),
     linkLabel: 'Open the board',
+    slackByDefault: true,
   },
   'comment.mention': {
     label: 'Mentions',
@@ -118,6 +125,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} mentioned you in ${board(d)}`,
     link: threadPath,
     linkLabel: 'Open the comment',
+    slackByDefault: true,
   },
   'comment.reply': {
     label: 'Replies',
@@ -125,6 +133,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} replied in ${board(d)}`,
     link: threadPath,
     linkLabel: 'Open the thread',
+    slackByDefault: true,
   },
   'board.invite': {
     label: 'Boards shared with you',
@@ -132,6 +141,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} invited you to ${d.role && ROLE_PHRASE[d.role] ? `${ROLE_PHRASE[d.role]} ` : ''}${board(d)}`,
     link: (id, d) => boardPath(id, d),
     linkLabel: 'Open the board',
+    slackByDefault: true,
   },
   'workspace.invite': {
     label: 'Workspaces you are added to',
@@ -140,6 +150,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
       `${actor} added you to the “${d.workspaceName || 'team'}” workspace${d.role && d.role !== 'member' ? ` as ${d.role === 'admin' ? 'an admin' : 'a guest'}` : ''}`,
     link: (_id, d) => (d.workspaceId ? `/app?ws=${encodeURIComponent(d.workspaceId)}` : '/app'),
     linkLabel: 'Open the workspace',
+    slackByDefault: true,
   },
   'card.assigned': {
     label: 'Cards assigned to you',
@@ -147,6 +158,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} assigned ${card(d)} to you on ${board(d)}${d.dueDate ? ` · due ${dueDay(d.dueDate)}` : ''}`,
     link: itemPath,
     linkLabel: 'Open the card',
+    slackByDefault: true,
   },
   'card.due_changed': {
     label: 'Due dates of your cards',
@@ -155,6 +167,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
       d.dueDate ? `${actor} set ${card(d)} on ${board(d)} due ${dueDay(d.dueDate)}` : `${actor} removed the due date of ${card(d)} on ${board(d)}`,
     link: itemPath,
     linkLabel: 'Open the card',
+    slackByDefault: true,
   },
   'card.due_soon': {
     label: 'Due-date reminders',
@@ -162,6 +175,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (_actor, d) => `${card(d)} on ${board(d)} is due ${d.dueDate ? dueDay(d.dueDate) : 'soon'}`,
     link: itemPath,
     linkLabel: 'Open the card',
+    slackByDefault: true,
   },
   // KAI-249: from modules/api's control room. The actor is the app or token (`actorName`), acting
   // for the recipient; the excerpt is the task's note as the agent wrote it.
@@ -171,6 +185,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} is blocked on ${card(d)} in ${board(d)}`,
     link: itemPath,
     linkLabel: 'Open the task',
+    slackByDefault: true,
   },
   'walkthrough.mention': {
     label: 'Mentions in walkthroughs',
@@ -178,6 +193,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} mentioned you on ${walkthrough(d)} in ${board(d)}`,
     link: walkthroughPath,
     linkLabel: 'Watch from that moment',
+    slackByDefault: true,
   },
   'walkthrough.comment': {
     label: 'Comments on your walkthroughs',

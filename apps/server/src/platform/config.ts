@@ -405,9 +405,12 @@ export interface Config {
   };
   /**
    * Slack link unfurls (modules/slack, #88; docs/integrations/slack.md): the operator's Slack app.
-   * Off (null) unless both its signing secret and its bot token are set.
+   * Off (null) unless both its signing secret and its bot token are set. `oauth` (#105): the app's
+   * client id and secret, which turn on "Connect Slack" for everyone (DMs, private-board previews
+   * for linked people, /freero); null leaves only the link previews of #88. `authorizeUrl`: Slack's
+   * consent page, next to `apiUrl` (both overridden only to test against a stand-in).
    */
-  slack: { signingSecret: string; botToken: string; apiUrl: string } | null;
+  slack: { signingSecret: string; botToken: string; apiUrl: string; authorizeUrl: string; oauth: { clientId: string; clientSecret: string } | null } | null;
   /**
    * The operator's Microsoft Teams app (modules/teams, #112, #113; docs/integrations/teams.md). Off
    * (null) unless TEAMS_APP_ID is set: then the app package is offered and the Teams pages may be
@@ -870,7 +873,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!signingSecret !== !botToken) problems.push('SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN go together (Slack link unfurls need both)');
     if (botToken && !botToken.startsWith('xoxb-')) problems.push('SLACK_BOT_TOKEN must be the app’s bot token (xoxb-…)');
     const apiUrl = (url('SLACK_API_URL', ['https:', 'http:']) ?? 'https://slack.com/api').replace(/\/+$/, '');
-    return signingSecret && botToken ? { signingSecret, botToken, apiUrl } : null;
+    // Personal Slack (#105): the same app's OAuth credentials. Without the app itself there is
+    // nothing to sign in to, so they alone are a mistake too.
+    const oauth = pair('SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET', 'the Slack app (Connect Slack)');
+    if (oauth && !(signingSecret && botToken)) problems.push('SLACK_CLIENT_ID and SLACK_CLIENT_SECRET need SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN too (the same Slack app)');
+    const authorizeUrl = `${new URL(apiUrl).origin}/oauth/v2/authorize`;
+    return signingSecret && botToken ? { signingSecret, botToken, apiUrl, authorizeUrl, oauth } : null;
   };
   // Microsoft Teams and Microsoft 365 Copilot: app ids are GUIDs (the app manifest's `id`, the
   // Entra application id of the Azure Bot). The bot needs the Teams app it belongs to.
