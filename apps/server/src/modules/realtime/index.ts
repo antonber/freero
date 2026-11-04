@@ -92,5 +92,7 @@ export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type Co
 export { storedBoardView, storedDocContent } from './stored';
 export { COMMENTS_COLLECTION };
 export { BOARD_CONTENT_TOPIC } from './repo';
+// Workspace encryption keys (#159, modules/keys): stored content sealed again for its workspace's current key.
+export { boardsNeedingReseal, resealBoard } from './reseal';
 // The uploads board documents reference (the uploads sweep keeps those files).
 export { boardUploadReferences, storedBoardContent, storedBoardSizes } from './uploadRefs';
