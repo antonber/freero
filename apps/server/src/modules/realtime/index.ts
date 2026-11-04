@@ -86,7 +86,7 @@ export { boardBackupContent, encodeBoardContent, withoutLeftOutFields, type Boar
 // frame out of a frozen state, and read a state as everyone sees it (modules/decisions).
 export { freezeBoard, decisionVersion, releaseDecisionVersion, frameOnlyState, viewOfState, liveSharedState } from './decisions';
 // Data exports (modules/privacy): board content and the comments a person wrote.
-export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
+export { exportBoardContent, commentsWrittenBy, exportBoardForReview, type BoardContentExport, type CommentThreadExport, type BoardReviewExport } from './dataExport';
 // Board content as saved, as every reader sees it (derived indexes read it from the outbox), and
 // the outbox topic raised in the same transaction as every saved change of it.
 export { storedBoardView, storedDocContent } from './stored';
