@@ -20,7 +20,8 @@ import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
-import { log } from '../../platform/log';
+import { log, logError } from '../../platform/log';
+import { KeyUnavailableError } from '../keys/index';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
 import {
@@ -45,6 +46,7 @@ import {
   snapshotBoardDoc,
   snapshotBoardLayer,
   snapshotBoardLayers,
+  resealBoard,
 } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
 import {
@@ -283,6 +285,8 @@ const linkLocked = (board: Board) => board.linkPasswordHash !== null && board.li
 export async function describeAccess(
   board: Board,
   userId: string,
+  /** #159: as if the workspace's key were usable (to tell that apart from no access at all). */
+  ignoreKeyBlock = false,
 ): Promise<{ role: Role | null; access: BoardWorkspaceAccess; needsPassword: boolean; coOwner: boolean }> {
   const unlocked = linkLocked(board) && userId !== board.ownerId ? (await repo.unlocksOf(userId, [board.id])).get(board.id) : undefined;
   const seen = linkAsSeenBy(board, unlocked);
@@ -292,7 +296,8 @@ export async function describeAccess(
     const role = joined ? resolveGuestRole(seen, access) : null;
     return { role, access, needsPassword: joined && role === null && seen !== board && resolveGuestRole(board, access) !== null, coOwner: false };
   }
-  const [membership, access] = await Promise.all([getMembership(board.id, userId), boardAccess(userId, board)]);
+  const [membership, loaded] = await Promise.all([getMembership(board.id, userId), boardAccess(userId, board)]);
+  const access = ignoreKeyBlock && loaded.blocked === 'key_unavailable' ? { ...loaded, blocked: null } : loaded;
   const memberRole = membership?.role ?? null;
   const role = resolveRole(seen, userId, memberRole, access);
   const needsPassword = role === null && seen !== board && resolveRole(board, userId, memberRole, access) !== null;
@@ -335,6 +340,8 @@ export async function requireAccess(
   if (!board) throw (await removedFor(boardId, userId)) ? boardRemoved() : notFound('Board not found');
   const { role, access, needsPassword, coOwner } = await describeAccess(board, userId);
   if (!role && needsPassword) throw new HttpError(403, 'This board’s link asks for a password', LINK_PASSWORD_REQUIRED);
+  // #159: closed only because its workspace's key can't be used — said so to whoever could open it otherwise.
+  if (!role && access.blocked === 'key_unavailable' && (await describeAccess(board, userId, true)).role) throw new KeyUnavailableError(board.workspaceId);
   if (!role) throw forbidden();
   if (!atLeast(role, min)) throw forbidden(min === 'owner' ? 'Only the board owner can do that' : `You need ${min} access to do that`);
   return { board, role, access, coOwner };
@@ -770,6 +777,10 @@ export async function moveToWorkspace(board: Board, userId: string, body: { work
   const embeddingOff = board.embeddable && there.policies.boardEmbeds === 'off';
   if (embeddingOff) adjusted.push({ kind: 'embedding_off' });
 
+  // #159: the stored content is sealed for the target's key (or opened, for a target without one)
+  // before the move, so it never depends on the source's key afterwards; refused (403
+  // workspace_key_unavailable) when either key can't be used. Again after it, for saves in between.
+  await resealBoard(board.id, targetId);
   const now = Date.now();
   const fromName = (await getWorkspaceInfo(board.workspaceId))?.name ?? null;
   const toName = target.kind === 'personal' ? 'Personal' : target.name;
@@ -798,6 +809,7 @@ export async function moveToWorkspace(board: Board, userId: string, body: { work
     await repo.appendBoardEvent({ type: 'board.moved', boardId: board.id, workspaceId: board.workspaceId, actorId: userId, title: board.title, to: null, toWorkspace: targetId });
     await repo.appendBoardEvent({ type: 'board.moved', boardId: board.id, workspaceId: targetId, actorId: userId, title: board.title, to: project?.name ?? null, fromWorkspace: board.workspaceId });
   });
+  await resealBoard(board.id).catch((e) => logError(`boards: resealing board ${board.id} after its move failed; rows saved meanwhile stay under the key they name`, e));
   // The target's policies apply from now on: everyone connected is re-checked on every instance.
   await refreshBoardAccess(board.id);
   adjusted.push(...(await boardMovedWorkspace({ boardId: board.id, actorId: userId, fromWorkspaceId: board.workspaceId, toWorkspaceId: targetId })));

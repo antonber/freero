@@ -27,6 +27,7 @@ import { log } from '../../platform/log';
 import { type OutboxConsumer } from '../../platform/outbox';
 import { getUsers } from '../auth/index';
 import { BOARD_EVENTS_TOPIC, boardRecords, boardWorkspaceId, type BoardEventRecord } from '../boards/index';
+import { unusableKeysAmong } from '../keys/index';
 import { MEMBER_EVENTS_TOPIC, type MemberEventRecord } from '../members/index';
 import { outlineOfView } from '../outline/index';
 import { BOARD_CONTENT_TOPIC, COMMENTS_COLLECTION, storedBoardView } from '../realtime/index';
@@ -158,6 +159,9 @@ async function boardNow(boardId: string, title: string): Promise<BoardNow> {
 export async function deriveBoardEvents(boardId: string, dueAt: Date): Promise<number[]> {
   const [record] = await boardRecords([boardId]);
   if (!record) return repo.applyDerivation(boardId, dueAt, [], null);
+  // #159: content under a workspace key that can't be used now reads as nothing — that is no
+  // deletion of every item; compare again once the key is back (its next content event).
+  if ((await unusableKeysAmong([record.workspaceId])).size) return repo.applyDerivation(boardId, dueAt, [], null);
   const prev = await repo.stateOf(boardId);
   const now = await boardNow(boardId, record.title);
   const { events, next } = diffBoard(prev, now);

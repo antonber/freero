@@ -2526,6 +2526,14 @@ export const AUDIT_ACTIONS = {
   'tracker.synced': 'Synced a tracker issue',
   'tracker.sync_failed': 'A tracker sync failed',
   'tracker.unlinked': 'Unlinked a tracker issue',
+  // Workspace encryption keys (modules/keys, #159). Never key material: provider, key ARN, versions.
+  'key.created': 'Turned on a workspace encryption key',
+  'key.rotated': 'Rotated the workspace encryption key',
+  'key.suspended': 'Suspended the workspace encryption key',
+  'key.resumed': 'Resumed the workspace encryption key',
+  'key.destroyed': 'Destroyed the workspace encryption key',
+  'key.unavailable': 'The workspace encryption key became unusable',
+  'key.available': 'The workspace encryption key is usable again',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];
@@ -2726,7 +2734,33 @@ export const WORKSPACE_SETTING_LIMITS = {
 } as const;
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 /** Why the workspace's boards are closed to you right now (see WorkspaceSummary.blocked). */
-export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed';
+/** `key_unavailable` (#159): the workspace's encryption key is suspended, destroyed or unreachable at its KMS. */
+export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed' | 'key_unavailable';
+
+// ---- Workspace encryption keys (#159; docs/design/compliance.md §3) ----
+export type WorkspaceKeyProvider = 'instance' | 'aws-kms';
+/** active: content is sealed and opened; suspended: an owner or security admin stopped it (reversible);
+ * unavailable: the KMS refused or could not be reached (back to active once it answers); destroyed: the data keys are gone for good. */
+export type WorkspaceKeyState = 'active' | 'suspended' | 'unavailable' | 'destroyed';
+export interface WorkspaceKeyStatus {
+  /** Whether this server offers workspace keys at all, and which providers it can use. */
+  providers: WorkspaceKeyProvider[];
+  key: {
+    provider: WorkspaceKeyProvider;
+    /** The AWS KMS key (ARN) for 'aws-kms'. */
+    kmsKeyId: string | null;
+    state: WorkspaceKeyState;
+    /** Why it is unavailable (the KMS's answer), when it is. */
+    reason: string | null;
+    /** The data-key version new content is sealed with. */
+    dataKeyVersion: number;
+    createdAt: number;
+    stateChangedAt: number;
+    kekRotatedAt: number | null;
+    /** Stored board content not yet sealed with the current data key (sealed in the background). */
+    pendingBoards: number;
+  } | null;
+}
 export interface AdminMember extends WorkspaceMember {
   deactivated: boolean;
   twoFactor: boolean;

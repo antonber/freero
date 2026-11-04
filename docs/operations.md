@@ -263,7 +263,45 @@ What is sealed by the app today (audit, KAI-143):
 | `users.password_hash`, board link passwords | scrypt |
 | `sessions`, `guest_sessions`, `auth_tokens`, `auth_challenges`, `auth_devices`, `api_tokens`, `embed_member_tokens`, `oauth_codes`, OAuth client secrets, `scim_tokens`, `user_recovery_codes`, OIDC / SSO flow `state` | sha256 only |
 | `auth_oidc_flows` / `sso_flows` PKCE verifier and nonce | plain, by decision: single use, deleted within minutes, and useless without the authorization code, which is never stored |
-| Board documents, layers, comments, search index, events, audit log, notifications, emails and names | plain in the database, protected by storage encryption (deployment.md explains why) |
+| Board documents, layers, comments, search index, events, audit log, notifications, emails and names | plain in the database, protected by storage encryption (deployment.md explains why) — except board documents, update logs, versions and layers of workspaces with an encryption key (next section) |
+| `workspace_data_keys.wrapped` | wrapped by the workspace's KEK: sealed under `SESSION_SECRET` (purpose `workspace-kek-v1`) or encrypted by the workspace's AWS KMS key |
+
+## Workspace encryption keys
+
+A team workspace may turn on its own encryption key (admin console → Security → Encryption key;
+design: [design/compliance.md §3](design/compliance.md)). Its board content is then stored sealed
+(AES-256-GCM) under versioned data keys, each wrapped by the workspace's key-encryption key: the
+instance's (derived from `SESSION_SECRET`) or the workspace's own AWS KMS key (`KMS_AWS_*` in
+[configuration.md](configuration.md#workspace-encryption-keys)).
+
+- **Rolling out.** Turn the feature on only once every instance runs a release that has it: an
+  older instance can't open sealed rows (it fails on them — the stored form starts with bytes no
+  Yjs decoder accepts, so it never mistakes them for content), so boards of a keyed workspace
+  wouldn't open there. `WORKSPACE_KEYS=false` during the rollout, then true.
+- **A customer's own key.** They create a symmetric KMS key and allow your `KMS_AWS_*` principal
+  `kms:Encrypt` and `kms:Decrypt` on it, conditioned on `kms:EncryptionContext:freero_workspace`
+  = their workspace id; then paste its ARN. Freero checks the key both ways before it seals anything.
+  Every use shows in their CloudTrail with that context.
+- **Rotation, no downtime.** "Rotate key" re-wraps every data key (under a new KMS key, if one is
+  given) and adds a new data key for new content; older content keeps opening and is sealed again
+  under the newest data key by the `keys:seal` job (a few boards a minute). Rotating `SESSION_SECRET`
+  ("Rotating SESSION_SECRET" above) rotates the instance key: data keys wrapped under the previous
+  secret are wrapped again the first time they are used, so keep `SESSION_SECRET_PREVIOUS` until
+  every keyed workspace's boards were opened (or rotate those keys from the console).
+- **Revocation.** A security admin suspends the key in the console (reversible: Resume), or the
+  customer disables the key / revokes the grant at their KMS. Either way the workspace's boards
+  close (`key_unavailable` on the dashboard, `workspace_key_unavailable` from the API) and the
+  search index and backlinks drop their content. In-app suspension takes effect at once on every
+  instance (with `REDIS_URL`); a KMS-side revocation within `WORKSPACE_KEY_CACHE_SECONDS` (the
+  `keys:check` probe). When the KMS answers again, the key becomes active by itself.
+- **Destroying** (owners, typing the workspace's name) deletes every wrapped data key: the
+  workspace's sealed content can never be read again, by anyone, from any backup. That is the
+  intended crypto-shredding of a workspace; there is no undo.
+- **Loss.** For 'instance' keys, losing `SESSION_SECRET` loses every keyed workspace's content —
+  keep it in a secrets manager with a recovery copy. For a KMS key, a key the customer deletes (after
+  KMS's waiting period) is gone with everything sealed under it; disabling it only pauses.
+- **Database restores** (`pg_dump`) carry the wrapped keys with the content: a restored keyed
+  workspace opens as long as its KEK still works (the same `SESSION_SECRET`, or the KMS key).
 
 ## Workspace single sign-on and provisioning
 

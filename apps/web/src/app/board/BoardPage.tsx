@@ -218,6 +218,8 @@ function ServerBoard({ id }: { id: string }) {
   }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem, onAccessLost, colorTheme]);
 
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
+  // #159: the board's workspace encrypts it with its own key, which can't be used right now.
+  if (state.status === 'error' && state.reason === 'workspace_key_unavailable') return <BoardError boardId={id} code={423} message={state.message} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;
   if (state.status === 'error') return <BoardError boardId={id} code={state.code} message={state.message} />;
   if (!host || !board) return <FullPageSpinner label="Opening board" />;
@@ -301,6 +303,11 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
       ? {
           title: 'This board was removed for review',
           body: 'Freero’s moderators took it down after a report. If it is your board, we emailed you the reason and how to appeal.',
+        }
+      : code === 423
+      ? {
+          title: 'This board’s workspace key isn’t available',
+          body: 'Its workspace encrypts its boards with its own key, and that key can’t be used right now: its admins suspended it, or its key service refused or didn’t answer. The board opens again once the key is available.',
         }
       : code === 403
       ? { title: "You don't have access to this board", body: 'Ask the board owner to invite you, or switch to the account they shared it with.' }

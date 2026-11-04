@@ -35,6 +35,7 @@ import { getUser, getUsers, hasTwoFactor } from '../auth/index';
 import { creationRefusal } from './creation';
 import { deletionHoldOn } from './holds';
 import { labelsForPlaces, UNKNOWN_LABEL_CAPS, withLabelCaps } from './labels';
+import { unusableKeysAmong } from '../keys/index';
 import {
   boardIdsInWorkspace,
   cleanUpDeletedBoards,
@@ -115,10 +116,19 @@ async function organisationRolesOf(userId: string): Promise<Map<string, Workspac
  * organisation-wide deactivation, e.g. its directory's deprovisioning), or the workspace — itself
  * or through its organisation — requires two-step verification and they haven't turned it on.
  */
-function blockOf(w: Workspace | undefined, deactivated: Set<string>, workspaceId: string, twoFactor: () => boolean, ipExempt: Set<string>): WorkspaceBlock | null {
+function blockOf(
+  w: Workspace | undefined,
+  deactivated: Set<string>,
+  workspaceId: string,
+  twoFactor: () => boolean,
+  ipExempt: Set<string>,
+  keyUnusable: Set<string>,
+): WorkspaceBlock | null {
   if (deactivated.has(workspaceId) || (w?.organisation && deactivated.has(w.organisation.id))) return 'deactivated';
   if (w?.kind === 'team' && w.settings.requireTwoFactor && !twoFactor()) return 'two_factor_required';
   if (w?.kind === 'team' && !ipExempt.has(w.id) && ipBlocked(w)) return 'ip_not_allowed';
+  // #159: its encryption key is suspended, destroyed or refused / unreachable at its KMS.
+  if (keyUnusable.has(workspaceId)) return 'key_unavailable';
   return null;
 }
 
@@ -155,16 +165,21 @@ export async function ipAllowedIn(workspaceId: string, ip: string | null): Promi
  * (#156: only for a request through an API credential to a workspace with an IP allowlist) where
  * that credential is exempt.
  */
-async function blockInputs(userId: string, workspaces: Array<Workspace | undefined>): Promise<{ deactivated: Set<string>; twoFactor: boolean; ipExempt: Set<string> }> {
+async function blockInputs(
+  userId: string,
+  workspaces: Array<Workspace | undefined>,
+): Promise<{ deactivated: Set<string>; twoFactor: boolean; ipExempt: Set<string>; keyUnusable: Set<string> }> {
   const needs2fa = workspaces.some((w) => w?.kind === 'team' && w.settings.requireTwoFactor);
   const credentialId = currentRequestContext()?.apiCredentialId;
   const listed = credentialId ? workspaces.filter((w): w is Workspace => !!w && w.kind === 'team' && ipListsOf(w).length > 0).map((w) => w.id) : [];
-  const [deactivated, twoFactor, ipExempt] = await Promise.all([
+  const teams = workspaces.filter((w): w is Workspace => w?.kind === 'team').map((w) => w.id);
+  const [deactivated, twoFactor, ipExempt, keyUnusable] = await Promise.all([
     repo.deactivatedIn(userId),
     needs2fa ? hasTwoFactor(userId) : Promise.resolve(true),
     listed.length ? ipExemptions(credentialId!, listed) : Promise.resolve(new Set<string>()),
+    teams.length ? unusableKeysAmong(teams) : Promise.resolve(new Set<string>()),
   ]);
-  return { deactivated, twoFactor, ipExempt };
+  return { deactivated, twoFactor, ipExempt, keyUnusable };
 }
 
 export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
@@ -172,7 +187,7 @@ export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]
   const [rows, orgRoles] = await Promise.all([repo.workspacesOf(userId), organisationRolesOf(userId)]);
   const b = await blockInputs(userId, rows.map((r) => r.workspace));
   return rows.map((r) =>
-    toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor, b.ipExempt), orgRoles, r.adminScopes),
+    toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor, b.ipExempt, b.keyUnusable), orgRoles, r.adminScopes),
   );
 }
 
@@ -185,7 +200,7 @@ export async function workspaceSummary(workspaceId: string, userId: string): Pro
     row.workspace,
     row.role,
     row.memberCount,
-    blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor, b.ipExempt),
+    blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor, b.ipExempt, b.keyUnusable),
     await organisationRolesOf(userId),
     row.adminScopes,
   );
@@ -847,7 +862,7 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
       outsidersBlocked: policies.externalSharing === 'none',
       maxLink: policies.linkSharing,
       anonymousLinks: policies.publicLinks === 'anyone',
-      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor, blocks.ipExempt),
+      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor, blocks.ipExempt, blocks.keyUnusable),
       trashRetentionDays: ws?.settings.trashRetentionDays ?? DEFAULT_TRASH_DAYS,
       label,
     };

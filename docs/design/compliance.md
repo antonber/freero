@@ -173,74 +173,119 @@ Filled in when the work lands.
 
 ### What we want
 
-On a shared instance, a regulated workspace's board content and files are encrypted with keys
-only usable through a key it controls: an instance-managed key by default, its own cloud KMS key
-(AWS KMS first) when it brings one. Revoking the key makes the content unreadable — the app says
-so — and rotating it never takes the workspace down.
+On a shared instance, a regulated workspace's board content is encrypted with keys only usable
+through a key it controls: an instance-managed key by default, its own cloud KMS key (AWS KMS
+first) when it brings one. Revoking the key makes the content unreadable — the app says so — and
+rotating it never takes the workspace down.
 
 ### Envelope
 
 ```
 KEK  key-encryption key   per workspace; never leaves its provider
-       provider 'instance': AES-256-GCM key derived from SESSION_SECRET (platform/secrets seal,
-                            purpose 'workspace-kek-v1'), rotatable with SESSION_SECRET
+       provider 'instance': platform/secrets seal (HKDF of SESSION_SECRET, purpose
+                            'workspace-kek-v1'), the workspace id sealed in with the DEK;
+                            rotates with SESSION_SECRET (re-wrapped on first use)
        provider 'aws-kms':  the workspace's CMK (ARN); Encrypt/Decrypt with encryption context
-                            { freero_workspace: <id> }; credentials = the operator's AWS principal,
-                            which the customer's key policy grants (cross-account)
+                            { freero_workspace: <id> }; credentials = the operator's AWS principal
+                            (KMS_AWS_*), which the customer's key policy grants (cross-account)
 DEK  data-encryption key  per workspace, versioned (workspace_data_keys: workspace_id, version,
                             wrapped DEK, kek ref, created_at); 256-bit, AES-256-GCM
-data                     each encrypted blob carries its DEK version; AAD binds it to
-                            (workspace id, board id, table) so a blob copied to another board or
-                            workspace never decrypts
+data                     each sealed row names its DEK (`sealed_with` = '<workspaceId>:<version>');
+                            the blob is SEALED_PREFIX | nonce | tag | ciphertext, and its additional
+                            data binds it to (workspace, board, table, layer): a blob copied to
+                            another board, table, workspace or person's private layer never opens
 ```
 
-- **Covered**: every Yjs blob realtime stores (`board_docs.state`, `board_doc_updates.data`,
-  `board_doc_snapshots.state`, `board_layers.state` and layer updates) and the files uploaded to a
-  keyed workspace's boards. All realtime blob I/O already goes through `realtime/repo.ts`, so
-  encryption sits at that one boundary.
-- **Not covered (metadata)**: board titles and descriptions, members, the audit log, thumbnails
-  are not generated for keyed workspaces. Derived plaintext — the search index, backlinks, events
-  and notification excerpts — exists while the key is usable and is **deleted when the key is
-  revoked**; it is rebuilt only when access is restored.
+- **Covered**: every Yjs blob realtime stores — `board_docs.state`, `board_doc_updates.data`,
+  `board_doc_snapshots.state`, `board_layers.state`, `board_layer_updates.data` — so documents,
+  comments, version history, private drafts and the editors layer. All of it goes through
+  `realtime/repo.ts`, which seals on write (`realtime/sealing.ts`) and opens on read; a write for a
+  keyed workspace whose key can't be used throws and writes nothing.
+- **Not covered (metadata)**: board titles and descriptions, members, the audit log, and uploaded
+  files (still storage-encrypted only; see "Left"). Thumbnails are not stored for keyed
+  workspaces. Derived plaintext — the search index, backlinks — exists while the key is usable;
+  when it is suspended, destroyed or refused (not on a mere network blip, which throws and is
+  retried), realtime's stored readers read the board as empty and every state change re-raises
+  each board's content event in its transaction, so those indexes derive nothing (and rebuild
+  when the key is back). The event stream derives no events meanwhile (an unreadable board is no
+  deletion of every item); events already recorded, with their item texts, stay until
+  `EVENTS_RETENTION_DAYS`. Copies people make on purpose
+  — duplicates into other workspaces, templates, `.freero` backups, exports — are content leaving
+  the workspace and follow the downloads policy as before.
 - **What used to need plaintext** (docs/deployment.md "Why board content is not sealed by the
-  app"): the uploads sweep and account purge find files by SQL pattern in stored docs — for an
-  encrypted row the references are kept in a plaintext side list (file names only) written with
-  the blob, and while a workspace's key is unavailable every file it references counts as
-  referenced (never swept on a guess); search and backlinks index through the outbox from the
-  decrypted doc as today; `pg_dump` restores work as long as the KEK is reachable.
-- **Moves**: moving a board into another workspace re-encrypts its blobs under the target's DEK
-  (or decrypts them, for an unkeyed target) in the move's transaction. Files stay under the key
-  they were uploaded with.
+  app"): the uploads sweep, usage and account purge find files by SQL pattern in stored docs —
+  sealed rows add the file names they reference to `board_sealed_refs` in the same transaction,
+  which those scans read, whether or not the key is usable now (grows with the board, goes with it;
+  over-keeping a file is the safe side); search and backlinks index through the outbox from the
+  opened doc as before; `pg_dump` restores work as long as the KEK does.
+- **Moves**: moving a board into another workspace reseals every stored row for the target's DEK
+  (or opens it, for a target without a key) before the move commits, and again after it for saves
+  in between; refused (`workspace_key_unavailable`) when either key can't be used. A row is only
+  ever opened with the key it names, so a save racing a move stays readable — under the source's
+  key until the `keys:seal` job or the next move reseals it.
+- **Rolling deploys**: `SEALED_PREFIX` is nine 0xFF bytes, a Yjs varint no decoder accepts, so an
+  older release reading a sealed row fails at once instead of applying ciphertext as content (and
+  compacting it away). Turn the feature on after every instance runs it (`WORKSPACE_KEYS`).
 
 ### Rotation and revocation
 
-- **KEK rotation** (a new CMK, or `SESSION_SECRET` rotation for 'instance'): re-wrap every DEK
-  version of the workspace — a few rows, no content touched, no downtime.
-- **DEK rotation**: a new version for new writes; old blobs stay readable with their version;
-  compaction rewrites the base under the newest version over time; a background job may re-encrypt
-  the rest.
-- **Revocation**: in Freero ("Suspend": the instance refuses to unwrap; reversible by an owner) or
-  at the customer's KMS (disable / delete the key, revoke the grant). Either way the workspace's
-  boards refuse to open with `workspace_key_unavailable`, and the dashboard and board page say
-  why. In-app suspension flushes every instance's DEK cache (pubsub) and closes open boards;
-  external revocation takes effect when the cached DEK expires (`WORKSPACE_KEY_CACHE_SECONDS`,
-  default 300).
-- **Destroy** (crypto-shredding): deletes the wrapped DEKs. Irreversible: the content is gone for
-  good, backups included. Owners only, with the workspace's name typed to confirm.
+- **KEK rotation** ("Rotate key", optionally naming a new KMS key ARN, or switching between the
+  instance's key and a KMS key): every DEK version is unwrapped and wrapped again under the new KEK
+  and a new DEK version is added for new writes, in one transaction — no content touched, no
+  downtime. `SESSION_SECRET` rotation rotates the instance KEK: a DEK unwrapped under a previous
+  secret is wrapped again on the spot.
+- **DEK rotation**: part of every rotation. Old blobs keep opening with their version; the
+  `keys:seal` job (every minute, a few boards per round) seals them again under the newest one —
+  also content stored before the key was turned on.
+- **Revocation**: in Freero ("Suspend", security admins; reversible with "Resume", which first
+  proves the KEK still answers) or at the customer's KMS (disable / delete the key, revoke the
+  grant: the next unwrap or the `keys:check` probe — every half `WORKSPACE_KEY_CACHE_SECONDS` —
+  marks it `unavailable`; it turns `active` again by itself once the KMS answers). Either way the
+  workspace's `blocked` is `key_unavailable` (REST, lists, search, MCP, embeds, sockets), boards
+  answer 403 `workspace_key_unavailable`, and the dashboard and board page say why. A state change
+  invalidates every instance's key rows (pubsub), so opening stops at once everywhere; a DEK
+  already cached may still seal an open room's last save as it closes (sealing exposes nothing).
+- **Destroy** (crypto-shredding): deletes every wrapped DEK. Irreversible: the content is gone for
+  good, backups included; the workspace stays closed. Owners only, with the workspace's name typed.
 
 ### Failure modes and costs
 
 | Situation | Behaviour |
 |---|---|
 | KMS unreachable, DEK cached | Works until the cache expires |
-| KMS unreachable, not cached | Boards don't open (`workspace_key_unavailable`, retry); open rooms keep edits in memory and retry saving; nothing is written in plaintext |
-| Key disabled / deleted at the KMS | As above, permanently, until the customer re-enables it; a deleted CMK means the content is lost |
+| KMS unreachable, not cached | Boards don't open (`workspace_key_unavailable`, try again); the key's state doesn't change on a network error; open rooms keep edits in memory and retry saving; nothing is written in plaintext |
+| Key disabled / grant revoked at the KMS | `unavailable` within one probe period; open again by itself when the customer restores access; a deleted CMK means the content is lost |
 | `SESSION_SECRET` lost ('instance') | Every instance-keyed workspace is lost — as every sealed secret is today; keep it in a secret manager |
-| Cost | AES-GCM adds well under a millisecond per MB; one KMS Decrypt per DEK version per instance per cache period; keyed files are streamed through the server (no redirects to the bucket) |
+| Cost (measured, Node 22, one core) | Sealing ~0.4 ms per 200 KB (≈ 3.3 ms per 2 MB), opening ≈ 0.3 / 1.8 ms; one extra indexed read per write (the board's workspace); one KMS Decrypt per DEK version per instance per cache period, plus the probe |
 
 ### Built / left
 
-Filled in when the work lands.
+Built: `modules/keys` (tables, envelope, instance and AWS KMS providers with SigV4, DEK cache,
+pubsub invalidation, `keys:check` and `keys:seal` jobs, console routes, audit), sealing in
+`realtime/repo.ts` with `sealed_with` and `board_sealed_refs`, the `key_unavailable` block, moves,
+no thumbnails, the admin console's Encryption key card (Security tab), dashboard and board-page
+messages, docs (configuration, deployment, operations, ARCHITECTURE).
+
+Tests (scenario, named after the failure they prevent): `realtime/sealing.test.ts` (nothing in
+the clear at rest and still opens; an older release fails on sealed rows; a blob copied to another
+board / workspace / private layer never opens; suspension closes everywhere with no plaintext
+fallback or write; destroy is final even with a cached DEK; rotation keeps everything readable and
+reseals; turning a key on seals existing content; the sweep keeps a file only a sealed board
+references, also while suspended), `boards/keyedMove.test.ts` (A→B is under B's key, A's suspension
+doesn't touch it; out to an unkeyed workspace), `keys/kms.test.ts` (a customer's KMS revocation
+closes boards despite a cached DEK and recovery reopens them; an unusable KMS key can't be turned
+on; SigV4 against AWS's published test vectors).
+
+Left:
+- **Uploaded files under the workspace key.** Uploads are made without a board (`POST /api/uploads`),
+  are shared between boards and workspaces by URL, and raster images are served by redirect to the
+  bucket; sealing them needs a board context on upload, serving through the server with ranges,
+  and a rule for a file pasted into another workspace. Files stay under storage encryption
+  (`S3_SSE`, possibly `aws:kms` with the operator's key).
+- **Other external KMSs** (Google Cloud KMS, Azure Key Vault, HashiCorp Vault Transit): the
+  provider interface (`keys/kek.ts` wrap / unwrap, refused vs unreachable) takes them; none built.
+- A workspace's own key can't be turned off again (only destroyed); organisations can't hold a key
+  for all their workspaces.
 
 ---
 

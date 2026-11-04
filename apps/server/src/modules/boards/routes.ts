@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { hasKey } from '../keys/index';
 import type { BoardCallResponse, BoardSharingSettings, BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess, MoveBoardResponse } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
@@ -337,6 +338,9 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (!m) throw badRequest('dataUrl must be a base64 PNG, JPEG or WebP data URL');
       const bytes = Buffer.from(m[2], 'base64');
       if (bytes.byteLength > MAX_THUMBNAIL_BYTES) throw badRequest('Thumbnail is too large (max 1MB)');
+      // A picture of the board is its content: a workspace with an encryption key (#159) keeps none
+      // in storage outside its key, so its boards have no thumbnail.
+      if (await hasKey(board.workspaceId)) return void res.json({ ok: true } satisfies Out);
       const url = await saveUpload(bytes, m[1]);
       // The previous thumbnail as of THIS write (a concurrent save may have replaced the one we read).
       const previous = await repo.setThumbnail(board.id, url);
