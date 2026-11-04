@@ -1,0 +1,22 @@
+{
+  "appId": "app.freero.mobile",
+  "appName": "Freero",
+  "webDir": "www",
+  "server": {
+    "url": "https://freero.app",
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": []
+    }
+  },
+  "ios": {
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

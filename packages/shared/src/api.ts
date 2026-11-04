@@ -1926,6 +1926,21 @@ export type NotificationType =
   | 'agent.blocked'
   | 'problem.fixed';
 
+// ---- Push notifications to the phone and tablet apps (#177; server modules/mobile; docs/mobile.md) ----
+// GET    /api/mobile/push                       -> MobilePushStatus (which kinds of device this server reaches)
+// PUT    /api/mobile/push/devices  body MobilePushDevice -> { ok: true }: this device, for this account
+//        and session (gone when the session ends); `off` = the types turned off on this device
+// DELETE /api/mobile/push/devices  body { token }         -> { ok: true }
+export interface MobilePushStatus {
+  ios: boolean;
+  android: boolean;
+}
+export interface MobilePushDevice {
+  platform: 'ios' | 'android';
+  token: string;
+  off: NotificationType[];
+}
+
 export interface AppNotification {
   id: string;
   type: NotificationType;

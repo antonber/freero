@@ -157,6 +157,24 @@ redirect URI and SCIM base URL that workspaces give their identity provider are 
 | `NOTIFY_EMAIL_INTERVAL_SECONDS` | `60` | How often each instance looks for digests that are due. One instance sends at a time (Postgres advisory lock). |
 | `ACTIVITY_IDLE_SECONDS` | `60` | Activity feed: a person's changes on a board are gathered into one entry ("added 12 sticky notes") until they pause this long (or for 10 minutes at most). |
 
+### Push notifications to the phone and tablet apps
+
+Off unless set (#177). Owner steps and how it works: [mobile.md](mobile.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `PUSH_APNS_KEY` | — | The APNs auth key (`.p8` contents, `\n` for line breaks, or base64). With `PUSH_APNS_KEY_ID` and `PUSH_APNS_TEAM_ID` (all three or none): push to the iOS / iPadOS app. |
+| `PUSH_APNS_KEY_ID` | — | The key's ID (Apple Developer → Keys). |
+| `PUSH_APNS_TEAM_ID` | — | The Apple Developer team ID. |
+| `PUSH_APNS_TOPIC` | `app.freero.mobile` | The iOS app's bundle ID. |
+| `PUSH_APNS_SANDBOX` | `false` | `true`: APNs' development environment (apps run from Xcode). |
+| `PUSH_APNS_URL` | — | Only to test against a stand-in. |
+| `PUSH_FCM_SERVICE_ACCOUNT` | — | The Firebase project's service account key (JSON, or its base64): push to the Android app through FCM HTTP v1. |
+| `PUSH_FCM_URL` | — | Only to test against a stand-in. |
+| `MOBILE_APPLE_APP_ID` | — | `<Team ID>.<bundle ID>`: serves `/.well-known/apple-app-site-association`, so https links to boards and docs open the iOS app. |
+| `MOBILE_ANDROID_CERT_SHA256` | — | The Android app's signing certificate fingerprints (SHA-256, comma separated): serves `/.well-known/assetlinks.json` (Android App Links). |
+| `MOBILE_ANDROID_PACKAGE` | `app.freero.mobile` | The Android app's package name, for `assetlinks.json`. |
+
 ## Moderation (abuse reports and operators)
 
 | Variable | Default | Description |

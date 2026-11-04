@@ -480,6 +480,22 @@ export interface Config {
    */
   figma: { clientId: string; clientSecret: string; apiUrl: string; oauthUrl: string } | null;
   /**
+   * Push notifications to Freero's phone and tablet apps (modules/mobile, #177; docs/mobile.md).
+   * `apns`: the operator's APNs auth key (iOS / iPadOS) — off (null) unless PUSH_APNS_KEY,
+   * _KEY_ID and _TEAM_ID are set. `fcm`: a Firebase service account (Android) — off unless
+   * PUSH_FCM_SERVICE_ACCOUNT. `url`s are overridden only to test against stand-ins.
+   */
+  push: {
+    apns: { key: string; keyId: string; teamId: string; topic: string; url: string } | null;
+    fcm: { projectId: string; clientEmail: string; privateKey: string; tokenUrl: string; url: string } | null;
+  };
+  /**
+   * Which apps https links on this server may open (modules/mobile serves
+   * /.well-known/apple-app-site-association and /.well-known/assetlinks.json from these; #177).
+   * `appleAppId`: "<team id>.<bundle id>"; `android`: the package and its signing certificates' SHA-256.
+   */
+  mobileApps: { appleAppId: string | null; android: { packageName: string; sha256: string[] } | null };
+  /**
    * Further https origins boards may frame as live embeds (KAI-127), besides the built-in providers
    * (`EMBED_PROVIDERS` in @freero/shared): a link on one of them is framed as given, sandboxed.
    * Added to the CSP `frame-src`.
@@ -1036,6 +1052,51 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     const oauthUrl = url('FIGMA_OAUTH_URL', ['https:', 'http:']) ?? 'https://www.figma.com/oauth';
     return oauth ? { ...oauth, apiUrl, oauthUrl } : null;
   };
+  // Multi-line secrets arrive as one environment line: a PEM with \n escapes, or base64 of it.
+  const pem = (name: string): string | null => {
+    const v = str(name);
+    if (v === null) return null;
+    const text = v.includes('-----BEGIN') ? v.replace(/\\n/g, '\n') : Buffer.from(v, 'base64').toString('utf8');
+    if (!text.includes('-----BEGIN')) problems.push(`${name} must be a PEM key (BEGIN … END), with \\n for line breaks, or its base64`);
+    return text;
+  };
+  const pushConfig = (): Config['push'] => {
+    const key = pem('PUSH_APNS_KEY');
+    const keyId = str('PUSH_APNS_KEY_ID');
+    const teamId = str('PUSH_APNS_TEAM_ID');
+    const anyApns = key || keyId || teamId;
+    if (anyApns && !(key && keyId && teamId)) problems.push('PUSH_APNS_KEY, PUSH_APNS_KEY_ID and PUSH_APNS_TEAM_ID go together (the APNs auth key from the Apple Developer account)');
+    const apnsUrl = (url('PUSH_APNS_URL', ['https:', 'http:']) ?? (bool('PUSH_APNS_SANDBOX', false) ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com')).replace(/\/+$/, '');
+    const apns = key && keyId && teamId ? { key, keyId, teamId, topic: str('PUSH_APNS_TOPIC') ?? 'app.freero.mobile', url: apnsUrl } : null;
+    let fcm: Config['push']['fcm'] = null;
+    const account = str('PUSH_FCM_SERVICE_ACCOUNT');
+    if (account) {
+      try {
+        const j = JSON.parse(account.trim().startsWith('{') ? account : Buffer.from(account, 'base64').toString('utf8')) as Record<string, unknown>;
+        if (typeof j.project_id !== 'string' || typeof j.client_email !== 'string' || typeof j.private_key !== 'string') throw new Error();
+        fcm = {
+          projectId: j.project_id,
+          clientEmail: j.client_email,
+          privateKey: j.private_key,
+          tokenUrl: typeof j.token_uri === 'string' ? j.token_uri : 'https://oauth2.googleapis.com/token',
+          url: (url('PUSH_FCM_URL', ['https:', 'http:']) ?? 'https://fcm.googleapis.com').replace(/\/+$/, ''),
+        };
+      } catch {
+        problems.push('PUSH_FCM_SERVICE_ACCOUNT must be the Firebase service account key (JSON, or its base64), with project_id, client_email and private_key');
+      }
+    }
+    return { apns, fcm };
+  };
+  const mobileApps = (): Config['mobileApps'] => {
+    const appleAppId = str('MOBILE_APPLE_APP_ID');
+    if (appleAppId && !/^[A-Z0-9]{10}\.[A-Za-z0-9.-]+$/.test(appleAppId)) problems.push('MOBILE_APPLE_APP_ID must be <Team ID>.<bundle id>, e.g. ABCDE12345.app.freero.mobile');
+    const certs = (str('MOBILE_ANDROID_CERT_SHA256') ?? '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+    if (certs.some((c) => !/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(c))) problems.push('MOBILE_ANDROID_CERT_SHA256 must be SHA-256 fingerprints like AB:CD:… (32 bytes), comma separated');
+    return {
+      appleAppId: appleAppId && /^[A-Z0-9]{10}\./.test(appleAppId) ? appleAppId : null,
+      android: certs.length ? { packageName: str('MOBILE_ANDROID_PACKAGE') ?? 'app.freero.mobile', sha256: certs } : null,
+    };
+  };
   const ai: AiConfig = {
     instance: aiInstance,
     instanceFor: { personal: aiFor.includes('personal'), teams: aiFor.includes('teams') },
@@ -1156,6 +1217,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     zoom: zoomApp(),
     meet: meetAddOn(),
     figma: figmaApp(),
+    push: pushConfig(),
+    mobileApps: mobileApps(),
     embedExtraOrigins,
     appFrameAncestors,
   };

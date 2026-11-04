@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push notifications through APNs (#177). Xcode signs App Store builds as "production". -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- https links to boards and docs on the server open in the app once the server vouches for it
+	     (/.well-known/apple-app-site-association, MOBILE_APPLE_APP_ID on the server; docs/mobile.md). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:$(FREERO_HOST)</string>
+	</array>
+</dict>
+</plist>

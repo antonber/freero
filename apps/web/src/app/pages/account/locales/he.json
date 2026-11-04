@@ -256,7 +256,9 @@
     "popUpsForNewActivity",
     "showNotificationsOnThisDevice",
     "notificationsAreBlockedForFreero",
-    "showMeNotificationsAbout"
+    "showMeNotificationsAbout",
+    "notificationsOnThisDevice",
+    "serverSendsNoPush"
   ],
   "couldNotReachFreeroTry": "לא ניתן להתחבר ל-Freero. נא לנסות שוב.",
   "restoreAccount": "שחזור החשבון",
@@ -514,5 +516,7 @@
   "popUpsForNewActivity": "התראות של המערכת על פעילות חדשה בתיבת הדואר שלכם, כש-Freero אינו החלון שבחזית. מוגדר למכשיר הזה בלבד.",
   "showNotificationsOnThisDevice": "הצגת התראות במכשיר הזה",
   "notificationsAreBlockedForFreero": "ההתראות חסומות עבור Freero. אפשרו אותן בהגדרות המערכת או הדפדפן ונסו שוב.",
-  "showMeNotificationsAbout": "הצגת התראות על"
+  "showMeNotificationsAbout": "הצגת התראות על",
+  "notificationsOnThisDevice": "התראות במכשיר הזה",
+  "serverSendsNoPush": "שרת Freero הזה עדיין לא שולח התראות פוש לסוג המכשיר הזה."
 }

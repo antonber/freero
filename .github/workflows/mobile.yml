@@ -1,0 +1,91 @@
+name: mobile
+
+# Freero's phone and tablet apps (#177, apps/mobile, docs/mobile.md): a debug APK and an unsigned
+# release bundle for Android, an unsigned simulator build for iOS / iPadOS, on every change to the
+# shell. Store signing switches on when the owner adds the secrets listed in docs/mobile.md (Android:
+# the upload keystore); the App Store archive is made from Xcode or the owner's signing step.
+
+on:
+  pull_request:
+    paths: ['apps/mobile/**', '.github/workflows/mobile.yml']
+  push:
+    tags: ['mobile-v*']
+  workflow_dispatch:
+    inputs:
+      instance:
+        description: Server the apps open (self-hosters build their own)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  FREERO_INSTANCE_URL: ${{ inputs.instance || vars.FREERO_INSTANCE_URL || 'https://freero.app' }}
+  FREERO_VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/mobile-v') && github.ref_name || '1.0' }}
+  FREERO_VERSION_CODE: ${{ github.run_number }}
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/native/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: apps/mobile/native
+      # Firebase's config for push on Android (docs/mobile.md "Push notifications"); without it the
+      # app builds and runs, and the push service just never hands it a token.
+      - name: Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then echo "$GOOGLE_SERVICES_JSON" > apps/mobile/native/android/app/google-services.json; fi
+      - run: node apps/mobile/build.mjs android
+      - name: Upload keystore
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "FREERO_ANDROID_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          fi
+      - run: node apps/mobile/build.mjs android release
+        env:
+          FREERO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          FREERO_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          FREERO_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freero-android
+          path: |
+            apps/mobile/native/android/app/build/outputs/apk/debug/*.apk
+            apps/mobile/native/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/native/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: apps/mobile/native
+      - run: node apps/mobile/build.mjs ios
+      - name: Zip the simulator app
+        run: cd apps/mobile/native/ios/build/Build/Products/Release-iphonesimulator && zip -qry "$GITHUB_WORKSPACE/freero-ios-simulator.zip" App.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freero-ios-simulator
+          path: freero-ios-simulator.zip
+          if-no-files-found: error

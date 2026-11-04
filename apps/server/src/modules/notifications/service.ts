@@ -1,7 +1,8 @@
 // Notifications: created from trusted server-side events (comment messages realtime applied from
 // an authenticated socket, boards shared through the members API), listed in the app's inbox,
 // delivered live to open tabs (live.ts), sent at once as a Slack direct message to people who
-// connected Slack (#105), and emailed as batched digests — each one by Slack or by email, never both.
+// connected Slack (#105) and to their phone and tablet apps (#177, modules/mobile), and emailed
+// as batched digests — each one by Slack or by email, never both.
 import { mac, macMatches } from '../../platform/secrets';
 import type { AppNotification, BoardChangesFrequency, NotificationPrefs, NotificationsResponse, NotificationType } from '@freero/shared';
 import { guestDisplayName, isGuestId, mentionedUserIds, mentionsAsNames } from '@freero/shared';
@@ -21,6 +22,7 @@ import {
 } from '../members/index';
 import type { CommentMessageEvent } from '../realtime/index';
 import { sendSlackDm, slackConnectOffered, slackLinked, slackMayReach } from '../slack/index';
+import { pushStatus, pushToUser } from '../mobile/index';
 import { setBoardChangesFrequency } from './boardChanges';
 import * as live from './live';
 import { slackDeliveries } from './metrics';
@@ -66,6 +68,8 @@ export async function notify(n: NewNotification): Promise<boolean> {
     live.changed(n.userId);
     // Once it is committed: a notification rolled back with its cause never reaches Slack.
     repo.afterCommit(() => track(toSlack({ id, userId: n.userId, type: n.type, actorId: n.actorId, boardId: n.boardId, data })));
+    // #177: the person's phone and tablet apps, for the types each device leaves on (modules/mobile).
+    repo.afterCommit(() => track(toPush({ userId: n.userId, type: n.type, actorId: n.actorId, boardId: n.boardId, data })));
   }
   return created;
 }
@@ -121,6 +125,22 @@ async function toSlack(n: { id: string; userId: string; type: NotificationType; 
     await repo.unclaimSlack(n.id).catch(() => undefined);
   } finally {
     slackDeliveries.inc({ outcome });
+  }
+}
+
+// ---- the phone and tablet apps (#177) ----
+
+/** A new notification on the person's devices: its headline in their language, opening its page. Never throws. */
+async function toPush(n: { userId: string; type: NotificationType; actorId: string | null; boardId: string | null; data: NotificationData }): Promise<void> {
+  try {
+    const status = pushStatus();
+    if (!status.ios && !status.android) return;
+    const def = NOTIFICATION_TYPES[n.type];
+    const actor = n.actorId ? (await getUsers([n.actorId])).get(n.actorId)?.name : undefined;
+    const locale = (await localesOf([n.userId])).get(n.userId) ?? null;
+    await pushToUser(n.userId, n.type, { title: def.title(locale, actor ?? n.data.actorName ?? t(locale, 'someone'), n.data), path: def.link(n.boardId, n.data) });
+  } catch (e) {
+    logError('notifications: could not send to the apps', e);
   }
 }
 
