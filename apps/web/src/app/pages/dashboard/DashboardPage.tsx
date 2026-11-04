@@ -466,9 +466,9 @@ export function DashboardPage() {
                   <div className="fr-tabs" role="tablist" aria-label={tr('owner')}>
                     {(
                       [
-                        ['any', 'All'],
-                        ['me', 'Owned by me'],
-                        ['others', 'Owned by others'],
+                        ['any', tr('owner.any')],
+                        ['me', tr('owner.me')],
+                        ['others', tr('owner.others')],
                       ] as const
                     ).map(([id, label]) => (
                       <button

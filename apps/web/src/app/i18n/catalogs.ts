@@ -5,11 +5,12 @@
 import type { Catalog, Catalogs } from '@ui';
 import type { Locale } from '@freero/shared';
 
-const files = import.meta.glob<Catalog>(['../../**/locales/*.json', '!../../**/locales/en.json'], { import: 'default' });
+// Root-relative, so every key is the file's path under src/ (relative patterns get keys relative to this file).
+const files = import.meta.glob<Catalog>(['/src/**/locales/*.json', '!/src/**/locales/en.json'], { import: 'default' });
 
-/** '../../features/voting/locales/de.json' → { ns: 'features/voting', locale: 'de' } */
+/** '/src/features/voting/locales/de.json' → { ns: 'features/voting', locale: 'de' } */
 export function catalogPath(path: string): { ns: string; locale: string } | null {
-  const m = /^(?:\.\.\/)*(.+)\/locales\/([^/]+)\.json$/.exec(path);
+  const m = /^\/src\/(.+)\/locales\/([^/]+)\.json$/.exec(path);
   return m ? { ns: m[1], locale: m[2] } : null;
 }
 

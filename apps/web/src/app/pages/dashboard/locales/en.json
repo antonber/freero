@@ -294,5 +294,8 @@
   "pickSomeoneThisBoardIs": "Pick someone this board is shared with. It moves to their personal workspace; the current owner keeps edit access.",
   "peopleInNameMembersSee": "People in {name}. Members see every board the team shares; guests only what’s shared with them.",
   "handTheWorkspaceToAnother": "Hand the workspace to another member. They become an owner; you stay on as an admin.",
-  "deletesTheWorkspaceAndEvery": "Deletes the workspace and every board in it, for everyone. This can’t be undone. Export it first if you need a copy; every owner gets a receipt."
+  "deletesTheWorkspaceAndEvery": "Deletes the workspace and every board in it, for everyone. This can’t be undone. Export it first if you need a copy; every owner gets a receipt.",
+  "owner.any": "All",
+  "owner.me": "Owned by me",
+  "owner.others": "Owned by others"
 }

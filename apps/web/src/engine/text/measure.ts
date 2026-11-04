@@ -108,7 +108,7 @@ export function measureRichText(html: string, opts: MeasureTextOptions): Measure
   if (n) {
     const s = n.box.style;
     s.cssText =
-      'position:absolute;left:-100000px;top:0;right:auto;bottom:auto;visibility:hidden;pointer-events:none;contain:layout style;box-sizing:border-box;';
+      'position:absolute;left:0;top:-100000px;right:auto;bottom:auto;visibility:hidden;pointer-events:none;contain:layout style;box-sizing:border-box;';
     s.fontFamily = FONT_VARS[family] ?? FONT_VARS.sans;
     s.fontSize = `${size}px`;
     s.fontWeight = String(weight);
