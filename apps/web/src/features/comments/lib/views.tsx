@@ -6,6 +6,7 @@ import type { Editor, HostUser } from '@engine';
 import { Avatar, Button, IconButton, Menu, Popover, Tooltip, formatShortcut } from '@ui';
 import type { CommentMessage, CommentThread } from '@freero/shared';
 import { MentionText, MessageText } from './composer';
+import { AttachButton, MessageAttachments, PendingAttachments, useAttachDraft } from './attachments';
 import { decodeMentions, encodeMentions, type MentionPick } from './mentions';
 import { MESSAGE_REACTIONS, colorFor, relativeTime } from './model';
 import { authorName, usePeopleOf } from './people';
@@ -71,7 +72,11 @@ export function authorColor(m: Pick<CommentMessage, 'authorColor' | 'authorId'>)
 // ---------------------------------------------------------------------------
 export function DraftComposer({ editor }: { editor: Editor }) {
   const d = useMentionDraft();
-  const send = () => submitDraft(editor, d.encoded());
+  const files = useAttachDraft(editor);
+  const ready = (!!d.text.trim() || files.items.length > 0) && !files.uploading;
+  const send = () => {
+    if (ready) submitDraft(editor, d.encoded(), files.items);
+  };
   return (
     <div className="fr-cm-composer">
       <div className="fr-cm-composer__row">
@@ -88,12 +93,14 @@ export function DraftComposer({ editor }: { editor: Editor }) {
           autoFocus
         />
       </div>
+      <PendingAttachments draft={files} />
       <div className="fr-cm-composer__foot">
+        <AttachButton draft={files} />
         <SendHint />
         <Button size="sm" variant="ghost" onClick={() => setUi(editor, { draft: null })}>
           Cancel
         </Button>
-        <Button size="sm" variant="primary" disabled={!d.text.trim()} onClick={send}>
+        <Button size="sm" variant="primary" disabled={!ready} onClick={send}>
           Comment
         </Button>
       </div>
@@ -220,6 +227,7 @@ function MessageRow(props: {
             <MessageText text={m.text} people={people} meId={editor.user.id} />
           </div>
         )}
+        {m.attachments?.length ? <MessageAttachments editor={editor} files={m.attachments} at={{ threadId: thread.id, messageId: m.id }} /> : null}
         {reactions.length > 0 && (
           <div className="fr-cm-reactions">
             {reactions.map(([emoji, users]) => {
@@ -265,6 +273,7 @@ export function ThreadView({
   setEditingId: (id: string | null) => void;
 }) {
   const d = useMentionDraft();
+  const files = useAttachDraft(editor);
   const [menu, setMenu] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -283,10 +292,12 @@ export function ThreadView({
     if (el) el.scrollTop = el.scrollHeight;
   }, [count]);
 
+  const ready = (!!d.text.trim() || files.items.length > 0) && !files.uploading;
   const send = () => {
-    if (!d.text.trim()) return;
-    reply(editor, thread.id, d.encoded());
+    if (!ready) return;
+    reply(editor, thread.id, d.encoded(), files.items);
     d.clear();
+    files.clear();
   };
 
   return (
@@ -347,8 +358,10 @@ export function ThreadView({
           />
         ))}
       </div>
+      {canWrite && !editingId && <PendingAttachments draft={files} />}
       {canWrite && !editingId && (
         <div className="fr-cm-reply">
+          <AttachButton draft={files} />
           <MentionText
             editor={editor}
             value={d.text}
@@ -360,7 +373,7 @@ export function ThreadView({
             label="Reply"
             autoFocus={!quiet}
           />
-          <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!d.text.trim()} onClick={send} />
+          <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!ready} onClick={send} />
         </div>
       )}
     </div>

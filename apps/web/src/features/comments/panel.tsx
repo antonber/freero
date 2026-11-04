@@ -1,9 +1,9 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, MessageCircle, MessageSquareText, Unlink } from 'lucide-react';
+import { Check, MessageCircle, MessageSquareText, Paperclip, Unlink } from 'lucide-react';
 import type { BoardElement, CommentThread } from '@freero/shared';
 import { DockHeader, definePanel, useCamera, useCollection, useDock, useElements, useRole, type Editor, type HostUser } from '@engine';
-import { Avatar, IconButton, Popover, SegmentedControl, Toggle, type Box } from '@ui';
-import { assembleThreads, isUnread, latestActivity, listThreads, relativeTime, threadPoint, type ThreadFilter } from './lib/model';
+import { Avatar, IconButton, Popover, SegmentedControl, Select, Toggle, type Box } from '@ui';
+import { assembleThreads, authorsOf, isUnread, latestActivity, listThreads, relativeTime, threadPoint, type ThreadFilter } from './lib/model';
 import { COLLECTION, PANEL_ID, detachThread, focusThread, markSeen, session, setUi, useCommentsUi, watchLegacyThreads } from './lib/state';
 import { MessageText } from './lib/composer';
 import { authorName, usePeopleOf } from './lib/people';
@@ -151,9 +151,18 @@ function Pins({ editor }: { editor: Editor }) {
   };
 
   const draftPoint = draft ? threadPoint(draft, draft.elementId ? byId.get(draft.elementId) : undefined, cam.zoom) : null;
+  // #143: the area the open (or new) thread is about, outlined while it is open.
+  const area = draft ? draft.area : open?.area;
 
   return (
     <>
+      {area ? (
+        <div
+          className="fr-cm-area"
+          aria-hidden
+          style={{ transform: `translate(${area.x}px, ${area.y}px)`, width: area.w, height: area.h, borderWidth: 1.5 / cam.zoom, borderRadius: 6 / cam.zoom }}
+        />
+      ) : null}
       {threads.map((t) => {
         if (t.resolved && !showResolved && t.id !== openId) return null;
         const p = threadPoint(t, t.elementId ? byId.get(t.elementId) : undefined, cam.zoom);
@@ -254,6 +263,7 @@ function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: bool
   const { editor, thread, unread, now, missing, people } = props;
   const first = thread.messages[0];
   const replies = thread.messages.length - 1;
+  const files = thread.messages.reduce((n, m) => n + (m.attachments?.length ?? 0), 0);
   return (
     <button type="button" className={`fr-cm-card${unread ? ' is-unread' : ''}`} onClick={() => focusThread(editor, thread)}>
       <div className="fr-cm-card__head">
@@ -265,11 +275,16 @@ function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: bool
       <div className="fr-cm-card__text">
         <MessageText text={first.text} people={people} meId={editor.user.id} />
       </div>
-      {(replies > 0 || thread.resolved || missing) && (
+      {(replies > 0 || files > 0 || thread.resolved || missing) && (
         <div className="fr-cm-card__foot">
           {replies > 0 && (
             <span>
               <MessageCircle size={13} /> {replies} {replies === 1 ? 'reply' : 'replies'}
+            </span>
+          )}
+          {files > 0 && (
+            <span>
+              <Paperclip size={13} /> {files} {files === 1 ? 'file' : 'files'}
             </span>
           )}
           {thread.resolved && (
@@ -307,18 +322,32 @@ const EMPTY: Record<ThreadFilter, string> = {
 function CommentsDock({ editor }: { editor: Editor }) {
   const threads = useThreads();
   const elements = useElements();
-  const { filter, showResolved, seen } = useCommentsUi(editor, (s) => s);
+  const { filter, showResolved, seen, author } = useCommentsUi(editor, (s) => s);
   const now = useNow(editor);
   const ids = useMemo(() => new Set(elements.map((e) => e.id)), [elements]);
-  const list = listThreads(threads, filter, editor.user.id, seen);
+  const list = listThreads(threads, filter, editor.user.id, seen, author);
   const firsts = useMemo(() => threads.map((t) => t.messages[0]), [threads]);
   const people = usePeopleOf(editor, firsts);
+  // #143: filter by who wrote in a thread (combines with the filter above).
+  const authors = useMemo(() => authorsOf(threads), [threads]);
   const canWrite = editor.can('commenter');
   return (
     <div className="fr-cm-dock">
       <DockHeader className="fr-cm-dock__head">
         <h2>Comments</h2>
         <SegmentedControl<ThreadFilter> size="sm" value={filter} onChange={(v) => setUi(editor, { filter: v })} options={FILTERS} aria-label="Filter comments" />
+        {authors.length > 1 || author ? (
+          <Select<string>
+            size="sm"
+            aria-label="Written by"
+            value={author ?? ''}
+            onChange={(v) => setUi(editor, { author: v || null })}
+            options={[
+              { value: '', label: 'Anyone' },
+              ...authors.map((a) => ({ value: a.id, label: a.id === editor.user.id ? 'You' : (people[a.id]?.name ?? a.name) })),
+            ]}
+          />
+        ) : null}
         <Toggle size="sm" label="Show resolved on board" checked={showResolved} onChange={(v) => setUi(editor, { showResolved: v })} />
       </DockHeader>
       {list.length ? (
@@ -339,7 +368,7 @@ function CommentsDock({ editor }: { editor: Editor }) {
         <div className="fr-cm-empty">
           <MessageSquareText size={28} strokeWidth={1.6} />
           <div className="fr-cm-empty__title">
-            {EMPTY[filter]}
+            {author ? 'No comments by them here' : EMPTY[filter]}
           </div>
           {canWrite && (filter === 'open' || filter === 'mine') && <div className="fr-cm-empty__hint">Press C, then click anywhere on the board to start a thread.</div>}
         </div>

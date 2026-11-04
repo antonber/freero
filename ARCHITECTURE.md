@@ -1553,6 +1553,22 @@ reports" below).
   Size caps are per kind (`MAX_UPLOAD_MB` images / PDF, `MAX_MEDIA_UPLOAD_MB`,
   `MAX_ATTACHMENT_UPLOAD_MB`), refused before the body is read when `Content-Length` says so; every
   kind counts toward the one per-account quota. Moderation removal answers 410 on both paths.
+- Files on comments (#143; `uploads/commentFiles.ts`, `GET /api/boards/:id/comment-files/:threadId/:messageId/:index`):
+  a comment message's `attachments` (`@freero/shared` `CommentAttachment`, at most
+  `COMMENT_MAX_ATTACHMENTS`) are ATTACHMENT uploads of the message's author, so nothing serves them
+  at `/uploads/`. The route reads the message in the board AS THAT PERSON SEES IT (a thread in a
+  hidden frame or someone's draft isn't theirs; tombstoned threads / messages are gone), requires
+  a `.bin` that is its author's OWN upload (a message can't point at another person's file and
+  launder it out of the board it belongs to), and then: `?inline=1` shows a picture to anyone who
+  can open the board, only when its first bytes are PNG / JPEG / GIF / WebP (`Content-Disposition:
+  inline`, the sandbox CSP, `nosniff`); otherwise it is a download — the downloads policy applies
+  and it is audited (`board.file_downloaded`), like a file card. The uploads sweep keeps them
+  through the board-doc scan (the `/uploads/` URL is in the comments collection). On the web,
+  `Host.commentFile` (`imageUrl`, `download`) is the only way the comments feature reaches them.
+  Thread AREAS (#143, `CommentThreadRecord.area`): a drag with the comment tool stores the world
+  rectangle and pins the thread at its top-right corner (x, y), which is all older clients read —
+  they show it as a point thread there. The comments list filters by author too, combined with
+  Open / Unread / @Me / Resolved / Mine.
 
 ### Moderation (`modules/moderation`, KAI-142)
 

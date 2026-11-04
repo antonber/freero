@@ -891,6 +891,16 @@ export const api = {
     return res.blob();
   },
 
+  /** #143: where a comment's image attachment is shown inline from (same origin; the server checks who may read it). */
+  commentFileUrl: (boardId: string, ref: { threadId: string; messageId: string; index: number }, inline = false) =>
+    `/api/boards/${encodeURIComponent(boardId)}/comment-files/${encodeURIComponent(ref.threadId)}/${encodeURIComponent(ref.messageId)}/${ref.index}${inline ? '?inline=1' : ''}`,
+  /** #143: a comment's file as a download (downloads policy, audited). */
+  async downloadCommentFile(boardId: string, ref: { threadId: string; messageId: string; index: number }): Promise<Blob> {
+    const res = await fetch(api.commentFileUrl(boardId, ref), { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return res.blob();
+  },
+
   // ---- public API credentials (KAI-104): tokens, authorised apps, registered apps, consent ----
   listApiTokens: () => request<{ tokens: PersonalToken[] }>('GET', '/api/auth/tokens'),
   createApiToken: (body: CreateTokenRequest) => request<{ token: PersonalToken; secret: string }>('POST', '/api/auth/tokens', body),
