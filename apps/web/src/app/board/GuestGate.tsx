@@ -3,7 +3,7 @@
 // sign-in page. A browser that already joined this board as a guest goes straight in.
 import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { Eye, MessageSquare } from 'lucide-react';
+import { Eye, MessageSquare, Pencil } from 'lucide-react';
 import { guestDisplayName, LINK_PASSWORD_MAX, MAX_GUEST_NAME, type GuestBoardInfo, type GuestInfo } from '@freero/shared';
 import { Button, Input, Logo } from '@ui';
 import { api, ApiError } from '../api/client';
@@ -18,6 +18,7 @@ type Gate =
   | { status: 'loading' }
   | { status: 'guest'; guest: GuestInfo }
   | { status: 'offer'; info: GuestBoardInfo }
+  | { status: 'removed' }
   | { status: 'sign-in' };
 
 export function GuestGate({ boardId }: { boardId: string }) {
@@ -31,6 +32,7 @@ export function GuestGate({ boardId }: { boardId: string }) {
       const { guest } = await api.guestMe();
       if (guest && guest.boardId === boardId) return { status: 'guest', guest } as const;
       const info = await api.guestBoardInfo(boardId);
+      if (info.removed) return { status: 'removed' } as const;
       return info.allowed ? ({ status: 'offer', info } as const) : ({ status: 'sign-in' } as const);
     })().then(
       (g) => !cancelled && setGate(g),
@@ -43,6 +45,21 @@ export function GuestGate({ boardId }: { boardId: string }) {
 
   if (gate.status === 'loading') return <FullPageSpinner label={t('openingBoard')} />;
   if (gate.status === 'sign-in') return <Navigate to={loginPath(location.pathname + location.search)} replace />;
+  if (gate.status === 'removed') {
+    const next = location.pathname + location.search;
+    return (
+      <div className="fr-boarderror">
+        <div className="fr-boarderror__card fr-reqaccess">
+          <Logo size={36} />
+          <h1>{t('youWereRemovedFromThisBoard')}</h1>
+          <p>{t('theBoardSOwnerRemovedYou')}</p>
+          <p className="fr-boarderror__account">
+            {t('haveAnAccount')} <Link to={loginPath(next)}>{t('signIn')}</Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
   if (gate.status === 'guest')
     return (
       <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
@@ -74,14 +91,14 @@ function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: Guest
     }
   };
 
-  const Icon = info.role === 'commenter' ? MessageSquare : Eye;
+  const Icon = info.canEdit ? Pencil : info.role === 'commenter' ? MessageSquare : Eye;
   return (
     <div className="fr-boarderror">
       <div className="fr-boarderror__card fr-reqaccess">
         <Logo size={36} />
         <h1>{info.title || t('untitledBoard')}</h1>
         <p className="fr-guestjoin__role">
-          <Icon size={15} aria-hidden />{' '}{t('youCan')}{' '}{info.role === 'commenter' ? t('viewAndComment') : 'view'}{' '}{t('withoutAnAccount')}</p>
+          <Icon size={15} aria-hidden />{' '}{t('youCan')}{' '}{info.canEdit ? t('guestsViewAndEdit') : info.role === 'commenter' ? t('viewAndComment') : 'view'}{' '}{t('withoutAnAccount')}</p>
         <form className="fr-reqaccess__form" onSubmit={join} noValidate>
           <Input
             aria-label={t('yourName')}

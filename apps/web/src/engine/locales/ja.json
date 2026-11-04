@@ -193,7 +193,14 @@
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
     "youReOfflineKeepThisTabOpen",
-    "zoomPercentPresets"
+    "zoomPercentPresets",
+    "asAGuestYouCanChangeOnly",
+    "guestLimitHourly",
+    "guestLimitTotal",
+    "guestLimitBoard",
+    "guestLimitRate",
+    "guestChangeUndone",
+    "guestCanEditOwn"
   ],
   "dots": "ドット",
   "lines": "線",
@@ -388,5 +395,12 @@
   "frame": "フレーム",
   "tabAndShiftTabMove": "Tab と Shift+Tab で項目を読み順に移動します（フレームの項目はそのフレームの直後）。Alt+矢印キーでその方向の最も近い項目に移動します。Enter で選択した項目を編集し、矢印キーで移動、Alt+Shift+矢印キーでサイズを変更します。Shift+F10 でメニュー、Alt+F10 で書式ツールバーを開き、F6 でキャンバスとツールバーの間を移動します。作成ツールを選んでいるときは、Enter で選択範囲の隣に新しい項目を配置します。Alt+Shift+L でボードをテキストとして一覧表示します。",
   "xAndYMoveThe": "X と Y は選択範囲全体を移動し、サイズと回転は各項目に適用されます。",
-  "zoomPercentPresets": "{pct}% ズーム: プリセット"
+  "zoomPercentPresets": "{pct}% ズーム: プリセット",
+  "asAGuestYouCanChangeOnly": "ゲストは自分が追加したものだけを変更できます。ロックされたアイテムは変更できません。",
+  "guestLimitHourly": "ゲストが1時間に追加できる上限に達しました。しばらくしてからもう一度お試しください。",
+  "guestLimitTotal": "このボードでゲストが追加できるアイテム数の上限に達しました。",
+  "guestLimitBoard": "このボードがゲストから受け付ける上限に達しました。",
+  "guestLimitRate": "ゲストが変更できる速さを超えています。少しゆっくり操作してください。",
+  "guestChangeUndone": "この変更はゲストには許可されていないため、元に戻されました。",
+  "guestCanEditOwn": "自分のものを追加・編集可"
 }

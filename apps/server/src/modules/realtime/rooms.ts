@@ -68,8 +68,25 @@ import {
   NEW_BOARD_SETTINGS,
   Y_SETTINGS,
   mayProtect,
+  isGuestId,
+  GUEST_EDIT_LIMITS,
+  type GuestEditGrant,
+  type GuestEditNoticeCode,
 } from '@freero/shared';
 import { guardProtectedLocks } from './protectedLock';
+import {
+  encodeGuestNotice,
+  guardGuestEdits,
+  guestGrantFor,
+  guestItemCounts,
+  guestItemIds,
+  newBucket,
+  sameGrant,
+  takeToken,
+  touchedRoots,
+  type GuestBudget,
+  type TokenBucket,
+} from './guestEditing';
 import { getConfig } from '../../platform/config';
 import { keepSuggestionAuthors, noteSuggestionAuthor, type SuggestionAuthorKey } from './repo';
 import { logError } from '../../platform/log';
@@ -211,6 +228,10 @@ export interface Admission {
    * public page's readers never crowd the board's people) and has no private layer.
    */
   visitor?: boolean;
+  /** #97: a guest's name as it gave it (stamped on what it adds as `guestName`). */
+  guestName?: string;
+  /** #97: this guest may edit (boards' describeAccess `guestEdit`); re-resolved on every access refresh. */
+  guestEdit?: boolean;
 }
 export interface Refusal {
   code: number;
@@ -267,6 +288,15 @@ interface Conn {
   /** See Admission.resolveRole / Admission.visitor. */
   resolveRole?: () => Promise<Role | null>;
   visitor: boolean;
+  /** See Admission.guestName (null: an account). */
+  guestName: string | null;
+  /** See Admission.guestEdit (the guest's access; `guestGrant` is what it may do now). */
+  guestEdit: boolean;
+  /** #97 (guestEditing.ts): what this guest may add and change now (null: it only comments). */
+  guestGrant: GuestEditGrant | null;
+  /** #97: the guest socket's update rate, and when it was last told of each refusal. */
+  bucket: TokenBucket | null;
+  noticeAt: Map<GuestEditNoticeCode, number>;
 }
 
 /** One layer doc of a room (see "Board layers" above). */
@@ -288,6 +318,18 @@ function layerMessage(wire: string, write: (e: encoding.Encoder) => void): Uint8
 }
 
 const canEdit = (role: Role | null) => role === 'owner' || role === 'editor';
+
+/** #97: what a guest socket may write in the shared doc (guestEditing.ts), as a participant or not. */
+const GUEST_WRITABLE: ReadonlySet<string> = new Set([ELEMENTS, COMMENTS_COLLECTION]);
+const GUEST_WRITABLE_PARTICIPANT: ReadonlySet<string> = new Set([ELEMENTS, COMMENTS_COLLECTION, ...PARTICIPANT_WRITABLE]);
+/** The same without `comments`: the maps the commenter filter lets through besides comments for a guest editor. */
+const GUEST_EXTRA: ReadonlySet<string> = new Set([ELEMENTS]);
+const GUEST_EXTRA_PARTICIPANT: ReadonlySet<string> = new Set([ELEMENTS, ...PARTICIPANT_WRITABLE]);
+/** #97: how often a guest is told again why its change was undone. */
+const GUEST_NOTICE_EVERY_MS = 5000;
+/** #97: what a guest socket may edit now: only a board socket with a commenter's role whose access lets it edit. */
+const guestGrantOf = (conn: Pick<Conn, 'guestEdit' | 'kind' | 'visitor'>, role: Role, session: ReturnType<typeof readFacilitation>): GuestEditGrant | null =>
+  conn.guestEdit && conn.kind === 'board' && !conn.visitor && role === 'commenter' ? guestGrantFor(session) : null;
 /**
  * May this socket protect items or change protected ones (`mayProtect`)? Its owner, or a co-owner
  * (#122) whose socket isn't capped below what they may do (a live view in an AI assistant writing
@@ -298,7 +340,7 @@ const mayProtectOn = (conn: { access: Role; coOwner: boolean; maxRole?: Role }) 
 /** Who reads the board's layers over this socket (see Conn.readRole). */
 const layerReader = (c: Conn) => ({ userId: c.userId, role: c.readRole });
 
-export function encodeRoleMessage(role: Role, limits?: SessionLimits | null, readRole?: Role, participant?: boolean): Uint8Array {
+export function encodeRoleMessage(role: Role, limits?: SessionLimits | null, readRole?: Role, participant?: boolean, guestEdit?: GuestEditGrant | null): Uint8Array {
   const e = encoding.createEncoder();
   encoding.writeVarUint(e, WS_MESSAGE_ROLE);
   const msg: RoleMessage = {
@@ -307,6 +349,7 @@ export function encodeRoleMessage(role: Role, limits?: SessionLimits | null, rea
     ...(limits ? { limits } : {}),
     ...(readRole && readRole !== role ? { readRole } : {}),
     ...(participant ? { participant: true } : {}),
+    ...(guestEdit ? { guestEdit } : {}),
   };
   encoding.writeVarString(e, JSON.stringify(msg));
   return encoding.toUint8Array(e);
@@ -371,6 +414,8 @@ class Room {
   private removedAt = new Map<string, number>();
   /** Attribution of elements removed lately (attribution.ts), oldest first. */
   private removedAttribution = new Map<string, { at: number; attribution: Attribution }>();
+  /** #97: each guest's adds within the last hour on this board (guestEditing.ts; this instance's). */
+  private guestBudgets = new Map<string, GuestBudget>();
 
   constructor(readonly id: string) {
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -701,7 +746,7 @@ class Room {
         if (!overrides) fixed = guardProtectedLocks(tr, doc.getMap<unknown>(ELEMENTS), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
         // A new draft during an anonymous private mode is nobody's (#44, attribution.ts).
         const creator = creatorOf(conn.userId, isPrivateLayer(name), this.doc);
-        fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), creator, (id) => this.knownAttribution(doc, id)) > 0 || fixed;
+        fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), creator, (id) => this.knownAttribution(doc, id), conn.guestName ?? undefined) > 0 || fixed;
         if (name === EDITORS_LAYER) {
           const g = guardSuggestionWrites(tr, doc, conn.userId);
           fixed = g.reverted > 0 || fixed;
@@ -769,19 +814,24 @@ class Room {
     const next = effectiveAccess(conn.access, conn.userId, session);
     const nextRead = conn.ownAccess === conn.access ? next.role : effectiveAccess(conn.ownAccess, conn.userId, session).role;
     const participant = conn.kind === 'board' && isParticipant(next.role, participationIsOpen(this.doc));
-    if (sameEffective(next, { role: conn.role, limits: conn.limits }) && nextRead === conn.readRole && participant === conn.participant) return;
+    const grant = guestGrantOf(conn, next.role, session);
+    if (sameEffective(next, { role: conn.role, limits: conn.limits }) && nextRead === conn.readRole && participant === conn.participant && sameGrant(grant, conn.guestGrant))
+      return;
     const couldWrite = conn.role !== 'viewer';
     const couldEdit = canEdit(conn.role);
     const couldRead = canEdit(conn.readRole);
     const couldTakePart = conn.participant;
+    const couldGuestEdit = conn.guestGrant !== null;
     conn.role = next.role;
     conn.limits = next.limits;
     conn.readRole = nextRead;
     conn.participant = participant;
-    send(conn.ws, encodeRoleMessage(next.role, next.limits, nextRead, participant));
+    conn.guestGrant = grant;
+    send(conn.ws, encodeRoleMessage(next.role, next.limits, nextRead, participant, grant));
     // Newly writable: ask the client for anything it has that we do not (writes dropped while the
     // board was locked included: they land now instead of leaving its doc diverged for good).
-    if ((!couldWrite && next.role !== 'viewer') || (!couldEdit && canEdit(next.role)) || (!couldTakePart && participant)) this.sendSyncStep1(conn);
+    if ((!couldWrite && next.role !== 'viewer') || (!couldEdit && canEdit(next.role)) || (!couldTakePart && participant) || (!couldGuestEdit && grant))
+      this.sendSyncStep1(conn);
     if (!couldTakePart && participant && !canEdit(next.role)) {
       const own = this.layers.get(privateLayerOf(conn.userId));
       if (own) send(conn.ws, layerMessage('private', (e) => syncProtocol.writeSyncStep1(e, own.doc)));
@@ -1036,14 +1086,20 @@ class Room {
       held: null,
       resolveRole: a.resolveRole,
       visitor: a.visitor === true,
+      guestName: a.guestName ?? null,
+      guestEdit: a.guestEdit === true,
+      guestGrant: null,
+      bucket: null,
+      noticeAt: new Map(),
     };
+    conn.guestGrant = guestGrantOf(conn, conn.role, session);
     this.conns.set(ws, conn);
 
     ws.on('message', (data) => this.receive(conn, toBytes(data)));
     ws.on('close', () => this.leave(conn));
 
     // 1) effective role, 2) sync step 1, 3) current awareness states, then what the client said.
-    send(ws, encodeRoleMessage(conn.role, conn.limits, conn.readRole, conn.participant));
+    send(ws, encodeRoleMessage(conn.role, conn.limits, conn.readRole, conn.participant, conn.guestGrant));
     this.sendSyncStep1(conn);
     const states = this.awareness.getStates();
     if (states.size > 0) {
@@ -1149,6 +1205,11 @@ class Room {
     }
     const hidden = this.layers.get(EDITORS_LAYER)?.doc;
     const layered = hidden?.share.has(COMMENTS_COLLECTION) ? hidden.getMap<unknown>(COMMENTS_COLLECTION) : undefined;
+    // A guest that may edit (guestEditing.ts): its own content too, judged inside the transaction.
+    if (conn.guestGrant && this.onGuestUpdate(conn, conn.guestGrant, update, layered)) {
+      if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
+      return;
+    }
     if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorNames, layered, conn.participant) === 'apply') {
       // A record for a thread that lives in the editors layer (a tab that had not seen it hidden)
       // goes there (elementContent.ts), never to the other sockets of the shared doc.
@@ -1183,6 +1244,61 @@ class Room {
       syncProtocol.writeSyncStep2(e, this.doc);
       send(conn.ws, encoding.toUint8Array(e));
     }
+  }
+
+  /**
+   * A guest editor's update (guestEditing.ts): false when it reaches outside what a guest may write
+   * at all (the caller drops it like a commenter's); otherwise applied with the guest guards in the
+   * same transaction, the sender sent the correction and, now and then, why.
+   */
+  private onGuestUpdate(conn: Conn, grant: GuestEditGrant, update: Uint8Array, layered: Y.Map<unknown> | undefined): boolean {
+    if (update.byteLength > GUEST_EDIT_LIMITS.maxUpdateBytes) {
+      conn.ws.close(1009, 'Change too large');
+      this.leave(conn);
+      return true;
+    }
+    const roots = touchedRoots(this.doc, update);
+    const allowed = conn.participant ? GUEST_WRITABLE_PARTICIPANT : GUEST_WRITABLE;
+    if (!roots || [...roots].some((r) => !allowed.has(r))) return false;
+    // Comments keep the commenter rules (their own messages, threads they started): that check
+    // reads the update against a copy of the doc, so only updates that write comments pay for it.
+    if (roots.has(COMMENTS_COLLECTION) && !commenterMayApply(this.doc, update, conn.userId, conn.authorNames, layered, conn.participant ? GUEST_EXTRA_PARTICIPANT : GUEST_EXTRA))
+      return false;
+    const now = Date.now();
+    conn.bucket ??= newBucket(now);
+    const frozen = !takeToken(conn.bucket, now);
+    const budget = this.guestBudgets.get(conn.userId) ?? { recent: [] };
+    this.guestBudgets.set(conn.userId, budget);
+    const before = Y.encodeStateVector(this.doc);
+    const elements = this.doc.getMap<unknown>(ELEMENTS);
+    if (conn.participant) for (const name of PARTICIPANT_WRITABLE) this.doc.getMap<unknown>(name);
+    let fixed = false;
+    let refused: GuestEditNoticeCode | null = null;
+    let moved: MovedEntry[] = [];
+    this.doc.transact((tr) => {
+      Y.applyUpdate(this.doc, update);
+      if (conn.participant) {
+        fixed = guardVotes(tr, this.doc, this.doc, { userId: conn.userId, participant: true });
+        fixed = guardParticipantEstimates(tr, this.doc, this.doc, conn.userId) || fixed;
+      }
+      const known = (id: string) => this.knownAttribution(this.doc, id);
+      const g = guardGuestEdits(tr, elements, { guestId: conn.userId, grant, frozen, budget, known, now });
+      fixed = g.reverted > 0 || fixed;
+      refused = g.refused;
+      fixed = guardAttribution(tr, elements, conn.userId, known, conn.guestName ?? undefined) > 0 || fixed;
+      moved = guardContentPlacement(tr, this.doc, { editors: this.layers.get(EDITORS_LAYER)?.doc, own: undefined }, SERVER_ORIGIN);
+    }, conn.ws);
+    this.reportMovedComments(moved, conn.userId);
+    if (fixed || moved.length) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
+    if (refused) this.tellGuest(conn, refused, now);
+    return true;
+  }
+
+  /** Tells a guest why its change was undone, at most once per reason every GUEST_NOTICE_EVERY_MS. */
+  private tellGuest(conn: Conn, code: GuestEditNoticeCode, now: number): void {
+    if (now - (conn.noticeAt.get(code) ?? 0) < GUEST_NOTICE_EVERY_MS) return;
+    conn.noticeAt.set(code, now);
+    send(conn.ws, encodeGuestNotice(code));
   }
 
   /**
@@ -1257,9 +1373,9 @@ class Room {
       // As from the socket's own address (#156: IP allowlists), not the refresh's trigger.
       conns.map((c) =>
         runWithRequestContext({ reqId: `access-refresh:${this.id}`, userId: c.userId, ip: c.ip, userAgent: null }, async () => {
-          if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false };
+          if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false, guestEdit: false };
           const a = await getBoardAccess(this.id, c.userId);
-          return { role: a.role, coOwner: a.coOwner };
+          return { role: a.role, coOwner: a.coOwner, guestEdit: a.guestEdit === true };
         }),
       ),
     );
@@ -1271,9 +1387,10 @@ class Room {
       if (!own || !role) {
         conn.ws.close(4403, 'Access revoked');
         this.leave(conn);
-      } else if (role !== conn.access || own !== conn.ownAccess) {
+      } else if (role !== conn.access || own !== conn.ownAccess || resolved[i].guestEdit !== conn.guestEdit) {
         conn.access = role;
         conn.ownAccess = own;
+        conn.guestEdit = resolved[i].guestEdit;
         this.setEffective(conn);
       }
     });
@@ -2071,6 +2188,40 @@ export async function renameCommentAuthor(boardId: string, userId: string, name:
   } catch (err) {
     if (!(err instanceof BoardClosedError)) throw err;
   }
+}
+
+/**
+ * #97: the guests who added items to the board (by guest id: how many, the name on them) and the
+ * ids of guests with a socket on it on this instance now. Live, caught up with the other instances.
+ */
+export async function boardGuestActivity(boardId: string): Promise<{ items: Map<string, { items: number; name: string | null }>; online: Set<string> }> {
+  return withLiveRoom(boardId, (room) => ({
+    items: guestItemCounts(room.doc),
+    // Who is here on any instance (presence names are the server's own).
+    online: new Set([...room.peopleHere().keys()].filter(isGuestId)),
+  }));
+}
+
+/**
+ * #97: deletes every item a guest added to the board — the shared doc and its own private layer —
+ * through the live room (everyone connected sees them go, and it is saved). Returns how many.
+ */
+export async function removeGuestItems(boardId: string, guestId: string): Promise<number> {
+  return withLiveRoom(boardId, async (room) => {
+    let n = 0;
+    const own = room.layers.get(privateLayerOf(guestId))?.doc;
+    for (const doc of own ? [room.doc, own] : [room.doc]) {
+      const ids = guestItemIds(doc, guestId);
+      if (!ids.length) continue;
+      const elements = doc.getMap<unknown>(ELEMENTS);
+      doc.transact(() => {
+        for (const id of ids) elements.delete(id);
+      }, SERVER_ORIGIN);
+      n += ids.length;
+    }
+    if (n) await room.flush();
+    return n;
+  });
 }
 
 /**

@@ -1,6 +1,7 @@
 // EngineCore: everything one mounted board session needs, wired together once.
 // Created by <BoardEngine>, destroyed on unmount. Engine-private.
-import type { Role } from '@freero/shared';
+import type { GuestEditNoticeCode, Role } from '@freero/shared';
+import { t as tr } from '../messages';
 import type { Editor, EditorEvent, FeatureBundle, Host, Point } from '../api';
 import { BoardStore } from '../store/BoardStore';
 import { createPointerStore, createUiStore, type PointerState, type UiStore } from '../state/uiStore';
@@ -16,6 +17,14 @@ import { loadToolOptions, saveToolOptions } from './persist';
 import { subscribeFontEpoch } from '../text/autofit';
 import { installFollow } from '../camera/follow';
 import { installLayerPlacement, publicIds } from '../editor/layers';
+
+/** [#97] What a guest editor is told when the server undoes its change (GuestEditNotice). */
+const GUEST_NOTICES: Record<GuestEditNoticeCode, () => string> = {
+  hourly: () => tr('guestLimitHourly'),
+  total: () => tr('guestLimitTotal'),
+  board: () => tr('guestLimitBoard'),
+  rate: () => tr('guestLimitRate'),
+};
 
 export interface ExportOptions {
   ids?: string[];
@@ -206,7 +215,7 @@ export function createCore(
     }),
     store.subscribeRole(() => {
       const role = store.serverRole ?? core.hostRef.current.board.role;
-      ui.setState({ role, limits: store.serverLimits, participant: store.serverParticipant });
+      ui.setState({ role, limits: store.serverLimits, participant: store.serverParticipant, guestEdit: store.serverGuestEdit !== null });
       // A facilitator just limited what may be added: put down a tool that adds something else.
       if (!core.editor.toolAllowed(ui.getState().toolId)) core.editor.setTool('select');
       // Live role change (e.g. promoted/demoted over REST): drop anything the new role can't do.
@@ -232,6 +241,8 @@ export function createCore(
     }),
     store.subscribeUndo(() => ui.setState((s) => ({ undoVersion: s.undoVersion + 1 }))),
     store.subscribeSettings(() => ui.setState((s) => ({ settingsVersion: s.settingsVersion + 1 }))),
+    // [#97] The server took back a guest's change: say why (it throttles how often it tells).
+    store.subscribeNotice((n) => core.hostRef.current.notify(GUEST_NOTICES[n.code]?.() ?? tr('guestChangeUndone'), 'info')),
   );
 
   // [#178] A tab being hidden or closed may never run the next timer: save the device copy now.

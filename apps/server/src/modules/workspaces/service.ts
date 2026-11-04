@@ -318,6 +318,7 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('templatePublishing', ['members', 'admins']);
   pick('gifs', ['off', 'g', 'pg-13']);
   pick('offlineCopies', ['all', 'unkeyed', 'off']);
+  pick('guestEditing', ['on', 'off']);
   if (p.linkMaxDays !== undefined) {
     const d = p.linkMaxDays;
     if (d !== null && (typeof d !== 'number' || !Number.isInteger(d) || d < 1 || d > LINK_MAX_DAYS_LIMIT))
@@ -381,6 +382,7 @@ const POLICY_LABELS: Record<(typeof FLOOR_POLICY_KEYS)[number], string> = {
   templatePublishing: 'Who shares templates',
   gifs: 'GIF search',
   offlineCopies: 'Offline copies on devices',
+  guestEditing: 'Guests on edit links can edit',
 };
 const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {
   requireTwoFactor: 'Require two-step verification',

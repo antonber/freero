@@ -43,6 +43,8 @@ export interface Board {
   editorsCanShare: boolean;
   /** #123: viewers and commenters may copy, duplicate, export and download it. */
   viewersCanExport: boolean;
+  /** #97: guests on its "can edit" link may edit (while the link, the workspace and the operator allow it). */
+  guestsCanEdit: boolean;
   /** #153: who moved it to the trash (null: before #153, or nobody — a retention rule). */
   deletedBy: string | null;
   /** #153: archived (read-only for everyone, out of the default lists) since, and by whom (null: a retention rule). */
@@ -75,6 +77,7 @@ interface Row {
   embeddable: boolean | null;
   editors_can_share: boolean | null;
   viewers_can_export: boolean | null;
+  guests_can_edit: boolean | null;
   deleted_by: string | null;
   archived_at: Date | null;
   archived_by: string | null;
@@ -108,6 +111,7 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   embeddable: r.embeddable === true,
   editorsCanShare: r.editors_can_share !== false,
   viewersCanExport: r.viewers_can_export !== false,
+  guestsCanEdit: r.guests_can_edit === true,
   deletedBy: r.deleted_by ?? null,
   archivedAt: r.archived_at ? r.archived_at.getTime() : null,
   archivedBy: r.archived_by ?? null,
@@ -681,14 +685,23 @@ export async function discardTrashedBoard(id: string, now: number): Promise<bool
 /** Changes only the given fields, in one statement (concurrent PATCHes of different fields both stick). */
 export async function updateBoardFields(
   id: string,
-  patch: { title?: string; description?: string; linkAccess?: LinkAccess; embeddable?: boolean; editorsCanShare?: boolean; viewersCanExport?: boolean },
+  patch: {
+    title?: string;
+    description?: string;
+    linkAccess?: LinkAccess;
+    embeddable?: boolean;
+    editorsCanShare?: boolean;
+    viewersCanExport?: boolean;
+    guestsCanEdit?: boolean;
+  },
   now: number,
 ): Promise<void> {
   await query(
     `UPDATE boards SET title = COALESCE($2, title), description = COALESCE($3, description),
        link_access = CASE WHEN link_blocked_at IS NULL THEN COALESCE($4, link_access) ELSE link_access END,
        updated_at = GREATEST(updated_at, $5), embeddable = COALESCE($6, embeddable),
-       editors_can_share = COALESCE($7, editors_can_share), viewers_can_export = COALESCE($8, viewers_can_export)
+       editors_can_share = COALESCE($7, editors_can_share), viewers_can_export = COALESCE($8, viewers_can_export),
+       guests_can_edit = COALESCE($9, guests_can_edit)
      WHERE id = $1`,
     [
       id,
@@ -699,6 +712,7 @@ export async function updateBoardFields(
       patch.embeddable ?? null,
       patch.editorsCanShare ?? null,
       patch.viewersCanExport ?? null,
+      patch.guestsCanEdit ?? null,
     ],
   );
 }

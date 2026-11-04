@@ -1,8 +1,8 @@
 // Freero's Accessibility Conformance Report (#141): the structure of the VPAT 2.5 WCAG edition
 // (product information, evaluation methods, terms, a table per conformance level), written from our
 // own review of 2026-11-03 — `npm run a11y` (axe-core in a real session) and the manual passes in
-// docs/accessibility.md. A self-assessment: it stays `underReview` (shown as a draft and kept noindex
-// by the server) until the owner approves it, and says so until an independent audit replaces it.
+// docs/accessibility.md. The owner approved it as a self-assessment on 2026-11-04, so it is published
+// and indexable; it keeps saying "self-assessment, pending an independent audit" until one replaces it.
 // Keep it in step with docs/accessibility.md.
 import type { ReactNode } from 'react';
 import { Table } from '../components/ui';
@@ -88,7 +88,6 @@ export default definePage({
   ogTitle: 'Accessibility conformance report',
   description: 'How Freero meets WCAG 2.2 level A and AA, criterion by criterion, in the VPAT 2.5 format: a self-assessment pending an independent audit.',
   updated: UPDATED,
-  underReview: true,
   closingCta: false,
   body: () => (
     <LegalArticle

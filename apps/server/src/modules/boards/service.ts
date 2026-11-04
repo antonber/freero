@@ -69,6 +69,7 @@ import {
   workspaceRolesOf,
 } from '../workspaces/index';
 import { callOf, jitsiAvailable } from './call';
+import { dockedCalls } from './callRoom';
 import { boardLifecycle, boardMovedWorkspace } from './events';
 import { checkLabelChange } from './labelPolicy';
 import * as repo from './repo';
@@ -289,14 +290,21 @@ export async function describeAccess(
   userId: string,
   /** #159: as if the workspace's key were usable (to tell that apart from no access at all). */
   ignoreKeyBlock = false,
-): Promise<{ role: Role | null; access: BoardWorkspaceAccess; needsPassword: boolean; coOwner: boolean }> {
+): Promise<{ role: Role | null; access: BoardWorkspaceAccess; needsPassword: boolean; coOwner: boolean; guestEdit?: boolean }> {
   const unlocked = linkLocked(board) && userId !== board.ownerId ? (await repo.unlocksOf(userId, [board.id])).get(board.id) : undefined;
   const seen = linkAsSeenBy(board, unlocked);
   if (isGuestId(userId)) {
     const [guest, access] = await Promise.all([getGuests([userId]), boardAccess(userId, board)]);
     const joined = guest.get(userId)?.boardId === board.id;
     const role = joined ? resolveGuestRole(seen, access) : null;
-    return { role, access, needsPassword: joined && role === null && seen !== board && resolveGuestRole(board, access) !== null, coOwner: false };
+    return {
+      role,
+      access,
+      needsPassword: joined && role === null && seen !== board && resolveGuestRole(board, access) !== null,
+      coOwner: false,
+      // #97: still a commenter everywhere; its board socket may also edit what it adds.
+      guestEdit: guestEdits(board, seen.linkAccess, role, access),
+    };
   }
   const [membership, loaded] = await Promise.all([getMembership(board.id, userId), boardAccess(userId, board)]);
   const access = ignoreKeyBlock && loaded.blocked === 'key_unavailable' ? { ...loaded, blocked: null } : loaded;
@@ -304,6 +312,12 @@ export async function describeAccess(
   const role = resolveRole(seen, userId, memberRole, access);
   const needsPassword = role === null && seen !== board && resolveRole(board, userId, memberRole, access) !== null;
   return { role, access, needsPassword, coOwner: role !== null && resolveCoOwner(board, userId, membership, access) };
+}
+
+/** #97: would a guest joining this board by its link edit it (guestEdits, before any password)? */
+export async function guestEditFor(board: Board): Promise<boolean> {
+  const access = await boardAccess('', board);
+  return guestEdits(board, board.linkAccess, resolveGuestRole(board, access), access);
 }
 
 /** May visitors without an account join this board by its link, and as what (null: no)? */
@@ -381,6 +395,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     canArchive: mayArchive(board, userId, access),
     guestLinks: access.anonymousLinks && !access.outsidersBlocked,
     jitsiCalls: jitsiAvailable(),
+    ...(dockedCalls() ? { dockedCalls: dockedCalls()! } : {}),
     liveEmbeds: access.policies.liveEmbeds !== 'off',
     embedOrigins: getConfig().embedExtraOrigins,
     boardEmbeds: access.policies.boardEmbeds !== 'off',
@@ -393,6 +408,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     manageSharing: manages,
     invite: manages || (atLeast(role, 'editor') && board.editorsCanShare),
     canCopy: copies,
+    guestEditing: guestEditingAllowed(access),
     ...(access.policies.linkPassword === 'required' || access.policies.linkMaxDays !== null
       ? { linkPolicy: { passwordRequired: access.policies.linkPassword === 'required', maxDays: access.policies.linkMaxDays } }
       : {}),
@@ -424,12 +440,45 @@ export function checkEmbeddingChange(board: Board, manages: boolean, access: Boa
     throw forbidden('This workspace doesn’t allow embedding its boards on other sites');
 }
 
+/**
+ * #97: may a board of this workspace let guests on its "can edit" link edit at all? The operator
+ * (GUEST_EDITING), the workspace's `guestEditing` policy (an organisation's floor applied) and its
+ * letting visitors without an account in.
+ */
+export const guestEditingAllowed = (access: Pick<BoardWorkspaceAccess, 'policies' | 'anonymousLinks' | 'outsidersBlocked'>): boolean =>
+  getConfig().guestEditing && access.policies.guestEditing !== 'off' && access.anonymousLinks && !access.outsidersBlocked;
+
+/** The board's link as its workspace caps it (`maxLink`). */
+const LINK_ORDER: readonly LinkAccess[] = ['none', 'viewer', 'commenter', 'editor'];
+const cappedLink = (link: LinkAccess, access: Pick<BoardWorkspaceAccess, 'maxLink'>): LinkAccess =>
+  LINK_ORDER.indexOf(link) > LINK_ORDER.indexOf(access.maxLink) ? access.maxLink : link;
+
+/**
+ * #97: does a guest whose role on `board` is `role` edit it? Only a commenter guest (a guest on a
+ * "can edit" link: resolveGuestRole caps it at commenter), on a board that lets guests edit, while
+ * its link — as this guest sees it, the workspace's cap applied — is "can edit" and the workspace
+ * and operator allow it.
+ */
+export function guestEdits(board: Pick<Board, 'guestsCanEdit' | 'archivedAt'>, seenLink: LinkAccess, role: Role | null, access: BoardWorkspaceAccess): boolean {
+  return role === 'commenter' && board.guestsCanEdit && !board.archivedAt && seenLink !== 'none' && cappedLink(seenLink, access) === 'editor' && guestEditingAllowed(access);
+}
+
+/**
+ * Throws unless guest editing may be turned ON (#97): the workspace and operator allow it and the
+ * link (as the same change leaves it) is "can edit". Turning it off is always possible.
+ */
+export function checkGuestEditingChange(board: Board, access: BoardWorkspaceAccess, on: boolean, linkAfter: LinkAccess): void {
+  if (!on || board.guestsCanEdit) return;
+  if (!guestEditingAllowed(access)) throw new HttpError(403, 'Guests can’t edit boards in this workspace', 'guest_editing_off');
+  if (cappedLink(linkAfter, access) !== 'editor') throw new HttpError(400, 'Set the link to “Can edit” first: guests edit only through an edit link', 'guest_editing_needs_edit_link');
+}
+
 /** Validates PATCH /boards/:id `sharing` (#123): the settings it changes. */
 export function cleanSharing(v: unknown): Partial<BoardSharingSettings> {
   if (v === undefined || v === null) return {};
   if (typeof v !== 'object' || Array.isArray(v)) throw badRequest('sharing must be an object');
   const out: Partial<BoardSharingSettings> = {};
-  for (const k of ['editorsCanShare', 'viewersCanExport'] as const) {
+  for (const k of ['editorsCanShare', 'viewersCanExport', 'guestsCanEdit'] as const) {
     const x = (v as Record<string, unknown>)[k];
     if (x === undefined) continue;
     if (typeof x !== 'boolean') throw badRequest(`sharing.${k} must be true or false`);
@@ -449,6 +498,8 @@ export async function sharingSettingsChanged(board: Board, actorId: string, patc
     target: boardTarget(board),
     metadata: Object.fromEntries(changed.flatMap((k) => [[`${k}.from`, board[k]], [`${k}.to`, patch[k]!]])),
   });
+  // #97: connected guests start or stop editing on their open sockets.
+  if (changed.includes('guestsCanEdit')) await refreshBoardAccess(board.id);
 }
 
 /** After a stored embedding change: audited, and every live socket re-checked (embeds close). */
@@ -543,7 +594,7 @@ export async function toSummary(
     call: callOf(board),
     embeddable: board.embeddable,
     ...(coOwner ? { coOwner: true } : {}),
-    sharing: { editorsCanShare: board.editorsCanShare, viewersCanExport: board.viewersCanExport },
+    sharing: { editorsCanShare: board.editorsCanShare, viewersCanExport: board.viewersCanExport, guestsCanEdit: board.guestsCanEdit },
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + access.trashRetentionDays * DAY_MS } : {}),
     ...(board.archivedAt !== null ? { archivedAt: board.archivedAt } : {}),
     ...(access.label ? { label: access.label } : {}),
@@ -718,6 +769,7 @@ export async function createBoard(
         embeddable: false,
         editorsCanShare: true,
         viewersCanExport: true,
+        guestsCanEdit: false,
         deletedBy: null,
         archivedAt: null,
         archivedBy: null,

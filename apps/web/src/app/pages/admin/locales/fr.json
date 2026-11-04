@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "Copier",
   "copied": "Copié",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "Sur un élément",
   "sensitive.nothingFound": "Rien trouvé pour l’instant. Les tableaux sont analysés quand ils changent.",
   "sensitive.untitled": "Tableau sans titre",
-  "sensitive.couldNotLoad": "Impossible de charger l’analyse des données sensibles"
+  "sensitive.couldNotLoad": "Impossible de charger l’analyse des données sensibles",
+  "guestsOnEditLinksCanEdit": "Les invités avec un lien de modification peuvent modifier",
+  "guestsOnEditLinksCanEditHint": "Si le propriétaire d’un tableau peut laisser les visiteurs sans compte venus par son lien « Peut modifier » ajouter et modifier leurs propres éléments. Chaque tableau décide, et c’est désactivé au départ."
 }

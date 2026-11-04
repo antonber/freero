@@ -108,7 +108,7 @@ export function presentationOf(boardId: string): NonNullable<Host['presentation'
 
 /** The board's call link (KAI-134): anyone on the board reads it, editors set it. */
 export function callOf(boardId: string): NonNullable<Host['call']> {
-  return { get: () => api.boardCall(boardId), set: (req) => api.setBoardCall(boardId, req) };
+  return { get: () => api.boardCall(boardId), set: (req) => api.setBoardCall(boardId, req), token: () => api.boardCallToken(boardId) };
 }
 
 /** A signed-in person's own view settings on this board (kept on the server, so they follow them). */
@@ -172,6 +172,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       team: deps.team ? { name: deps.team.name, company: deps.team.company?.name ?? null } : null,
       call: board.call ?? null,
       jitsiCalls: board.permissions.jitsiCalls === true,
+      ...(board.permissions.dockedCalls ? { dockedCalls: board.permissions.dockedCalls } : {}),
       embeds: embedsOf(board.permissions),
     },
     syncUrl: `${wsBase()}/ws/boards`,
@@ -323,6 +324,7 @@ export function createGuestHost(
       team: null,
       signedIn: false,
       call: board.call ?? null,
+      ...(board.permissions.dockedCalls ? { dockedCalls: board.permissions.dockedCalls } : {}),
       embeds: embedsOf(board.permissions),
     },
     syncUrl: `${wsBase()}/ws/boards`,
@@ -363,7 +365,7 @@ export function createGuestHost(
     // Guests answer live activities when the activity lets visitors in (the server checks).
     engage: engageOf(board.id),
     presentation: presentationOf(board.id),
-    call: { get: () => api.boardCall(board.id), set: needsAccount(t('settingTheCallLink')) },
+    call: { get: () => api.boardCall(board.id), set: needsAccount(t('settingTheCallLink')), token: () => api.boardCallToken(board.id) },
     // Visitors watch walkthroughs and open decisions; recording and commenting need an account.
     walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: false }),
     decisions: decisionsOf(board.id),

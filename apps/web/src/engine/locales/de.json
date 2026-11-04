@@ -193,7 +193,14 @@
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
     "youReOfflineKeepThisTabOpen",
-    "zoomPercentPresets"
+    "zoomPercentPresets",
+    "asAGuestYouCanChangeOnly",
+    "guestLimitHourly",
+    "guestLimitTotal",
+    "guestLimitBoard",
+    "guestLimitRate",
+    "guestChangeUndone",
+    "guestCanEditOwn"
   ],
   "dots": "Punkte",
   "lines": "Linien",
@@ -388,5 +395,12 @@
   "frame": "Rahmen",
   "tabAndShiftTabMove": "Tab und Shift+Tab wechseln in Lesereihenfolge durch die Elemente, die Elemente eines Rahmens direkt nach ihm; Alt+Pfeiltasten springen zum nächstgelegenen Element in dieser Richtung. Enter bearbeitet das ausgewählte Element, die Pfeiltasten verschieben es und Alt+Shift+Pfeiltasten ändern seine Größe. Shift+F10 öffnet sein Menü, Alt+F10 die Formatleiste, F6 wechselt zwischen Arbeitsfläche und Werkzeugleisten. Ist ein Erstellungswerkzeug gewählt, platziert Enter ein neues Element neben der Auswahl. Alt+Shift+L gibt das Board als Text aus.",
   "xAndYMoveThe": "X und Y verschieben die gesamte Auswahl; Größe und Drehung gelten für jedes Element.",
-  "zoomPercentPresets": "{pct}% Zoom: Voreinstellungen"
+  "zoomPercentPresets": "{pct}% Zoom: Voreinstellungen",
+  "asAGuestYouCanChangeOnly": "Als Gast können Sie nur ändern, was Sie selbst hinzugefügt haben, und keine gesperrten Elemente.",
+  "guestLimitHourly": "Sie haben so viel hinzugefügt, wie ein Gast pro Stunde kann. Versuchen Sie es später erneut.",
+  "guestLimitTotal": "Sie haben so viele Elemente hinzugefügt, wie ein Gast auf diesem Board kann.",
+  "guestLimitBoard": "Gäste haben so viel hinzugefügt, wie dieses Board von Gästen annimmt.",
+  "guestLimitRate": "Sie ändern Dinge schneller, als ein Gast es kann. Etwas langsamer, bitte.",
+  "guestChangeUndone": "Diese Änderung ist für Gäste nicht erlaubt und wurde rückgängig gemacht.",
+  "guestCanEditOwn": "Kann Eigenes hinzufügen und bearbeiten"
 }

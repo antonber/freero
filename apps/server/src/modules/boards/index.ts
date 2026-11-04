@@ -1,6 +1,8 @@
 // Public API of modules/boards [S2].
 import type { BoardSummary, ObjectKind, Role } from '@freero/shared';
-import { forbidden, notFound } from '../../platform/http';
+import { forbidden, HttpError, notFound } from '../../platform/http';
+import { BOARD_CALLS_OFF, type BoardCallToken } from '@freero/shared';
+import { callToken } from './callRoom';
 import { closeBoardDoc, initBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
@@ -15,6 +17,7 @@ import {
   createBoard,
   checkEmbeddingChange,
   cleanSharing,
+  checkGuestEditingChange,
   sharingSettingsChanged,
   describeAccess,
   duplicateBoard,
@@ -33,6 +36,17 @@ import {
 } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+
+/**
+ * #149: a token for the board's room on the operator's media server, for someone who can open the
+ * board (any role, guests too: `who.id` may be a guest id); 404 `board_calls_off` without one.
+ */
+export async function boardCallToken(boardId: string, who: { id: string; name: string; avatarUrl?: string | null }): Promise<BoardCallToken> {
+  await requireAccess(boardId, who.id);
+  const token = callToken(boardId, who);
+  if (!token) throw new HttpError(404, 'This Freero server has no calls on the board', BOARD_CALLS_OFF);
+  return token;
+}
 // Legal holds (#157) keep boards from retention rules (#154).
 export { onBoardRetentionHold, type BoardHoldCheck } from './retention';
 // Legal holds themselves (#157; modules/ediscovery places and releases them): nothing deletes a held board.
@@ -94,11 +108,12 @@ export {
 export async function getBoardAccess(
   boardId: string,
   userId: string,
-): Promise<{ exists: boolean; role: Role | null; ownerId: string | null; removed: boolean; kind: ObjectKind | null; coOwner: boolean }> {
+): Promise<{ exists: boolean; role: Role | null; ownerId: string | null; removed: boolean; kind: ObjectKind | null; coOwner: boolean; guestEdit: boolean }> {
   const board = await repo.getBoard(boardId);
-  if (!board) return { exists: false, role: null, ownerId: null, removed: await removedFor(boardId, userId), kind: null, coOwner: false };
-  const { role, coOwner } = await describeAccess(board, userId);
-  return { exists: true, role, ownerId: board.ownerId, removed: false, kind: board.kind, coOwner };
+  if (!board) return { exists: false, role: null, ownerId: null, removed: await removedFor(boardId, userId), kind: null, coOwner: false, guestEdit: false };
+  const { role, coOwner, guestEdit } = await describeAccess(board, userId);
+  // #97 guestEdit: a guest (role commenter) whose board socket may also edit what it adds.
+  return { exists: true, role, ownerId: board.ownerId, removed: false, kind: board.kind, coOwner, guestEdit: guestEdit === true };
 }
 
 /**
@@ -156,10 +171,11 @@ export async function setBoardEmbeddable(boardId: string, userId: string, embedd
  * and export") as `userId`, by the share dialog's rules: the owner or a co-owner; audited.
  */
 export async function setBoardSharingSettings(boardId: string, userId: string, sharing: unknown): Promise<void> {
-  const { board, role, coOwner } = await requireAccess(boardId, userId);
+  const { board, role, coOwner, access } = await requireAccess(boardId, userId);
   const patch = cleanSharing(sharing);
   if (!Object.keys(patch).length) return;
   if (!managesSharing(role, coOwner)) throw forbidden('Only the board’s owner and co-owners can change its sharing settings');
+  if (patch.guestsCanEdit !== undefined) checkGuestEditingChange(board, access, patch.guestsCanEdit, board.linkAccess);
   await repo.updateBoardFields(board.id, patch, Date.now());
   await sharingSettingsChanged(board, userId, patch);
 }

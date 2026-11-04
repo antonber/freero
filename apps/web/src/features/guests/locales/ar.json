@@ -1,0 +1,8 @@
+{
+  "@@unreviewed": [
+    "guestName",
+    "addedByAGuest"
+  ],
+  "guestName": "ضيف · {name}",
+  "addedByAGuest": "أضافه {name}، ضيف بلا حساب"
+}

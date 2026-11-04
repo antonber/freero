@@ -54,6 +54,9 @@ export {
   currentActor,
   actorId,
   cleanGuestName,
+  removedGuestBoard,
+  guestsOfBoard,
+  removeGuest,
   type Actor,
 } from './guests';
 // The account password hashing (scrypt), for other secrets people choose: a board link's password (KAI-145).

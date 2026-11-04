@@ -2,6 +2,7 @@
 // Top-right: topbar-right panels + Share.
 import { useContext, useEffect, useRef, useState, type ComponentType } from 'react';
 import { ArrowLeft, ChevronRight, Ellipsis, Eye, Link2, Maximize, MessageSquare, PencilLine, Share2 } from 'lucide-react';
+import { useStore } from 'zustand';
 import { Button, ColorSwatches, IconButton, Logo, Menu, Popover, SegmentedControl, Toggle, Tooltip, type MenuAction } from '@ui';
 import type { BoardSettings } from '@freero/shared';
 import { AppChromeContext, useCore } from '../context';
@@ -264,6 +265,7 @@ function BoardMenu() {
 export function TopLeft() {
   const core = useCore();
   const role = useRole();
+  const guestEdit = useStore(core.ui, (s) => s.guestEdit);
   const { titleAccessory } = useContext(AppChromeContext);
   return (
     <div className="fr-topleft" data-fr-chrome="" data-fr-occludes="" data-fr-region="board" role="region" aria-label={t('board')}>
@@ -280,9 +282,13 @@ export function TopLeft() {
           <span className="fr-rolebadge">
             <Eye size={13} />{' '}{t('viewOnly')}</span>
         )}
-        {role === 'commenter' && (
+        {role === 'commenter' && !guestEdit && (
           <span className="fr-rolebadge">
             <MessageSquare size={13} />{' '}{t('canComment')}</span>
+        )}
+        {role === 'commenter' && guestEdit && (
+          <span className="fr-rolebadge" title={t('asAGuestYouCanChangeOnly')}>
+            <PencilLine size={13} />{' '}{t('guestCanEditOwn')}</span>
         )}
         {titleAccessory}
       </div>

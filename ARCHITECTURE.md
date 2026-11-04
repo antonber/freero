@@ -2246,6 +2246,32 @@ approval lets the requester in at once.
   their board page answers 451). Guests report like anyone (`Host.report`, KAI-181) with an
   optional `contactEmail`; a visitor without an account may report exactly what a guest could
   open (`reportableBoard(id, null)` → `guestRoleFor`).
+- **Guest editors** (#97, `@freero/shared` `guestEditing.ts`, `realtime/guestEditing.ts`,
+  `boards/guests.ts`): a board's owner or co-owner may let guests on its "can edit" link edit
+  (`boards.guests_can_edit`, PATCH `sharing.guestsCanEdit`, off by default, audited with the other
+  sharing settings). It holds only while the link — as the workspace caps it — is "can edit", the
+  workspace's `guestEditing` policy (an organisation floor like every policy) and the operator
+  (`GUEST_EDITING`) allow it: boards' `describeAccess` → `guestEdit`, re-resolved on every access
+  refresh, so turning any of them off makes connected guests commenters on their open sockets. A
+  guest editor stays a COMMENTER everywhere (REST, layers, comments); rooms.ts adds `guestEdit`
+  to its role message (none while a facilitator locks the board; allowed types narrow it) and
+  takes its shared-doc updates through `onGuestUpdate`: `touchedRoots` reads which top-level maps
+  an update writes from the update itself (no doc copy per update: guests drag) and drops anything
+  beyond `elements`, `comments` (commenter rules) and a participant's `voting` / `estimation`;
+  inside the applying transaction `guardGuestEdits` undoes changes and deletions of items the guest
+  didn't create or that are locked, type changes, locking, linking, uploaded stickers, adds outside
+  `GUEST_EDIT_TYPES` and adds past `GUEST_EDIT_LIMITS` (per hour — this instance's count —, per
+  guest, guests' items per board), and every change past the socket's token bucket; an update over
+  `maxUpdateBytes` closes the socket. The guest is sent the correction and, throttled, a
+  `WS_MESSAGE_NOTICE` the engine shows. `guardAttribution` stamps `guestName` (the guest's own
+  name; never a client's) on what a guest socket adds, so the `guests` feature labels it "Guest ·
+  name" in the board, exports and versions. Owners and co-owners list a board's guests
+  (`GET /boards/:id/guests`: auth's sessions, removed ones too, plus guest ids still on the board),
+  remove everything one added (`POST …/undo`, realtime `removeGuestItems` through the live room,
+  `board.guest_edits_undone`) and remove one (`DELETE …`: auth `guest_sessions.removed_at`, its
+  sockets close, `/guest/boards/:id` and the join refuse that browser with `guest_removed` until the
+  session would have expired; `board.guest_removed`); the share dialog can also file a moderation
+  report about the board naming the guest.
 
 ### Share-link password and expiry (`boards/linkProtection.ts`, KAI-145)
 
@@ -3023,6 +3049,20 @@ piece reuses an owner that already exists.
   minutes) and answers `composeExtension/queryLink` / `anonymousQueryLink` in the response with an
   Adaptive Card from boards' `publicLinkPreview` (Slack's rule), untrusted text in `TextRun`s only.
   Per-tenant `RATE_LIMIT_TEAMS_UNFURL`. Nothing calls the Bot Connector, so there is no bot secret.
+
+### Calls docked on the board (#149, `boards/callRoom.ts`, `features/call`; docs/configuration.md)
+
+Off unless the operator configures a media server (`config.boardCalls`: LIVEKIT_URL + key + secret,
+or JITSI_DOMAIN with an optional JWT app id / secret). Freero carries no media: `callRoom(boardId)`
+derives the board's room with the server's secret, and `POST /boards/:id/call/token`
+(boards' `boardCallToken`: `requireAccess` for any role, guests too) mints a token for that room
+only — a LiveKit access token (HS256, the account or guest id as identity) or a Jitsi JWT. The CSP
+and `Permissions-Policy` open camera, microphone, screen capture and the media server's origins only
+while one is configured (`platform/security.ts`). `BoardPermissions.dockedCalls` → `Host.board.dockedCalls`;
+`features/call` then shows "Join call" on every board whose editors set no meeting link of their
+own, and joining mounts the room in a `screen-overlay` panel (`livekit-client`, loaded on demand,
+or Jitsi's IFrame API from the operator's domain) — the panel lives with the board, so leaving the
+board hangs up. Who is in the call stays presence (`ext.call`), as for linked calls.
 
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 

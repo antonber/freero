@@ -95,8 +95,11 @@ export function FormatToolbar() {
 
   const compact = useCompactLayout();
   const phoneEditing = useStore(core.ui, (s) => s.phoneEditing);
+  // A guest editor (#97) formats what it added itself (Editor.mayEdit).
+  const guestEdit = useStore(core.ui, (s) => s.guestEdit);
+  const mayFormat = ROLE_RANK[role] >= ROLE_RANK.editor || (guestEdit && editor.mayEdit(els.map((e) => e.id)));
   // Phone, view-and-comment mode: no format toolbar until the editor switches to editing.
-  const visible = els.length > 0 && !transforming && !contextMenu && ROLE_RANK[role] >= ROLE_RANK.editor && (!compact || phoneEditing);
+  const visible = els.length > 0 && !transforming && !contextMenu && mayFormat && (!compact || phoneEditing || guestEdit);
   // What depends on the selection only is worked out when it changes, never per camera frame: the
   // toolbar follows every pan and zoom, and with ten thousand items selected each pass over them
   // costs milliseconds (docs/performance.md).

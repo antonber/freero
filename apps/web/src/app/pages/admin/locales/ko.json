@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "복사",
   "copied": "복사됨",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "항목에서",
   "sensitive.nothingFound": "아직 발견된 것이 없습니다. 보드는 변경될 때마다 검사됩니다.",
   "sensitive.untitled": "제목 없는 보드",
-  "sensitive.couldNotLoad": "민감한 데이터 검사를 불러올 수 없습니다"
+  "sensitive.couldNotLoad": "민감한 데이터 검사를 불러올 수 없습니다",
+  "guestsOnEditLinksCanEdit": "편집 링크의 게스트가 편집할 수 있음",
+  "guestsOnEditLinksCanEditHint": "보드 소유자가 “편집 가능” 링크로 들어온 계정 없는 방문자에게 자신의 항목을 추가하고 변경하도록 허용할 수 있는지 여부입니다. 보드마다 정하며 처음에는 꺼져 있습니다."
 }

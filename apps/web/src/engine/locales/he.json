@@ -193,7 +193,14 @@
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
     "youReOfflineKeepThisTabOpen",
-    "zoomPercentPresets"
+    "zoomPercentPresets",
+    "asAGuestYouCanChangeOnly",
+    "guestLimitHourly",
+    "guestLimitTotal",
+    "guestLimitBoard",
+    "guestLimitRate",
+    "guestChangeUndone",
+    "guestCanEditOwn"
   ],
   "dots": "נקודות",
   "lines": "קווים",
@@ -388,5 +395,12 @@
   "frame": "מסגרת",
   "tabAndShiftTabMove": "Tab ו-Shift+Tab עוברים בין הפריטים לפי סדר הקריאה, ופריטי מסגרת מיד אחריה; Alt+מקשי החיצים קופצים לפריט הקרוב ביותר בכיוון הזה. Enter עורך את הפריט שנבחר, מקשי החיצים מזיזים אותו ו-Alt+Shift+מקשי החיצים משנים את גודלו. Shift+F10 פותח את התפריט שלו, Alt+F10 את סרגל העיצוב, ו-F6 עובר בין הקנבס לסרגלי הכלים. כשכלי יצירה נבחר, Enter מציב פריט חדש ליד הבחירה. Alt+Shift+L מציג את הלוח כטקסט.",
   "xAndYMoveThe": "X ו-Y מזיזים את כל הבחירה; גודל וסיבוב חלים על כל פריט.",
-  "zoomPercentPresets": "{pct}% זום: הגדרות קבועות"
+  "zoomPercentPresets": "{pct}% זום: הגדרות קבועות",
+  "asAGuestYouCanChangeOnly": "כאורחים אפשר לשנות רק את מה שהוספתם, ולא פריטים נעולים.",
+  "guestLimitHourly": "הוספתם את המקסימום שאורח יכול להוסיף בשעה. נסו שוב מאוחר יותר.",
+  "guestLimitTotal": "הוספתם את מספר הפריטים המרבי שאורח יכול להוסיף ללוח הזה.",
+  "guestLimitBoard": "האורחים הוסיפו את המקסימום שהלוח הזה מקבל מאורחים.",
+  "guestLimitRate": "אתם משנים דברים מהר יותר ממה שאורח יכול. האטו מעט.",
+  "guestChangeUndone": "השינוי הזה אינו מותר לאורחים ובוטל.",
+  "guestCanEditOwn": "אפשר להוסיף ולערוך משלך"
 }

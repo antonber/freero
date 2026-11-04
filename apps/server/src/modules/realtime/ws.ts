@@ -81,6 +81,8 @@ function objectDocRoute(kind: ObjectKind, PREFIX: string): WsRoute {
           // Comments must carry the author's own name (realtime/commentRules.ts, KAI-187): a guest's
           // the one others see them by; an account's current or a previous one.
           ...(guest ? { authorName: user.name } : { authorNames: await authorNamesOf(user.id) }),
+          // #97: a guest's own name (on what it adds) and whether it may edit (guestEditing.ts).
+          ...(guest ? { guestName: guest.name, guestEdit: 'guestEdit' in access && access.guestEdit === true } : {}),
         };
       });
     },

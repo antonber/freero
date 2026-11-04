@@ -880,7 +880,9 @@
     "sensitive.onAnItem",
     "sensitive.nothingFound",
     "sensitive.untitled",
-    "sensitive.couldNotLoad"
+    "sensitive.couldNotLoad",
+    "guestsOnEditLinksCanEdit",
+    "guestsOnEditLinksCanEditHint"
   ],
   "copy": "Copiar",
   "copied": "Copiado",
@@ -1762,5 +1764,7 @@
   "sensitive.onAnItem": "En un elemento",
   "sensitive.nothingFound": "Nada encontrado por ahora. Los tableros se analizan cuando cambian.",
   "sensitive.untitled": "Tablero sin título",
-  "sensitive.couldNotLoad": "No se pudo cargar el análisis de datos sensibles"
+  "sensitive.couldNotLoad": "No se pudo cargar el análisis de datos sensibles",
+  "guestsOnEditLinksCanEdit": "Los invitados con enlaces de edición pueden editar",
+  "guestsOnEditLinksCanEditHint": "Si el propietario de un tablero puede dejar que los visitantes sin cuenta con su enlace «Puede editar» añadan y cambien sus propios elementos. Cada tablero decide, y empieza desactivado."
 }

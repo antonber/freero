@@ -193,7 +193,14 @@
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
     "youReOfflineKeepThisTabOpen",
-    "zoomPercentPresets"
+    "zoomPercentPresets",
+    "asAGuestYouCanChangeOnly",
+    "guestLimitHourly",
+    "guestLimitTotal",
+    "guestLimitBoard",
+    "guestLimitRate",
+    "guestChangeUndone",
+    "guestCanEditOwn"
   ],
   "dots": "Points",
   "lines": "Lignes",
@@ -388,5 +395,12 @@
   "frame": "Cadre",
   "tabAndShiftTabMove": "Tab et Shift+Tab parcourent les éléments dans l’ordre de lecture, les éléments d’un cadre juste après lui ; Alt+flèches saute à l’élément le plus proche dans cette direction. Entrée modifie l’élément sélectionné, les flèches le déplacent et Alt+Shift+flèches le redimensionnent. Shift+F10 ouvre son menu, Alt+F10 la barre de mise en forme, F6 passe du canevas aux barres d’outils. Avec un outil de création choisi, Entrée place un nouvel élément à côté de la sélection. Alt+Shift+L liste le tableau sous forme de texte.",
   "xAndYMoveThe": "X et Y déplacent toute la sélection ; la taille et la rotation s’appliquent à chaque élément.",
-  "zoomPercentPresets": "Zoom {pct} % : préréglages"
+  "zoomPercentPresets": "Zoom {pct} % : préréglages",
+  "asAGuestYouCanChangeOnly": "En tant qu’invité, vous ne pouvez modifier que ce que vous avez ajouté, et pas les éléments verrouillés.",
+  "guestLimitHourly": "Vous avez ajouté autant qu’un invité le peut en une heure. Réessayez plus tard.",
+  "guestLimitTotal": "Vous avez ajouté autant d’éléments qu’un invité le peut sur ce tableau.",
+  "guestLimitBoard": "Les invités ont ajouté autant que ce tableau en accepte de leur part.",
+  "guestLimitRate": "Vous modifiez les choses plus vite qu’un invité ne le peut. Ralentissez un peu.",
+  "guestChangeUndone": "Cette modification n’est pas autorisée pour les invités et a été annulée.",
+  "guestCanEditOwn": "Peut ajouter et modifier les siens"
 }

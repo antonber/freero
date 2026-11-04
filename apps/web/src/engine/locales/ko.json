@@ -193,7 +193,14 @@
     "xAndYMoveThe",
     "youReOfflineChangesAreKeptOnDevice",
     "youReOfflineKeepThisTabOpen",
-    "zoomPercentPresets"
+    "zoomPercentPresets",
+    "asAGuestYouCanChangeOnly",
+    "guestLimitHourly",
+    "guestLimitTotal",
+    "guestLimitBoard",
+    "guestLimitRate",
+    "guestChangeUndone",
+    "guestCanEditOwn"
   ],
   "dots": "점",
   "lines": "선",
@@ -388,5 +395,12 @@
   "frame": "프레임",
   "tabAndShiftTabMove": "Tab과 Shift+Tab으로 읽는 순서대로 항목을 이동합니다(프레임의 항목은 프레임 바로 다음). Alt+화살표 키로 해당 방향에서 가장 가까운 항목으로 이동합니다. Enter로 선택한 항목을 편집하고, 화살표 키로 이동하며, Alt+Shift+화살표 키로 크기를 조정합니다. Shift+F10은 메뉴를, Alt+F10은 서식 도구 모음을 열고, F6은 캔버스와 도구 모음 사이를 이동합니다. 만들기 도구를 선택한 상태에서 Enter를 누르면 선택 항목 옆에 새 항목을 배치합니다. Alt+Shift+L은 보드를 텍스트로 나열합니다.",
   "xAndYMoveThe": "X와 Y는 선택 항목 전체를 이동하며, 크기와 회전은 각 항목에 적용됩니다.",
-  "zoomPercentPresets": "{pct}% 확대/축소: 미리 설정"
+  "zoomPercentPresets": "{pct}% 확대/축소: 미리 설정",
+  "asAGuestYouCanChangeOnly": "게스트는 직접 추가한 항목만 변경할 수 있으며 잠긴 항목은 변경할 수 없습니다.",
+  "guestLimitHourly": "게스트가 한 시간 동안 추가할 수 있는 한도에 도달했습니다. 나중에 다시 시도하세요.",
+  "guestLimitTotal": "이 보드에서 게스트가 추가할 수 있는 항목 수의 한도에 도달했습니다.",
+  "guestLimitBoard": "이 보드가 게스트에게서 받을 수 있는 한도에 도달했습니다.",
+  "guestLimitRate": "게스트가 변경할 수 있는 속도보다 빠릅니다. 조금 천천히 해 주세요.",
+  "guestChangeUndone": "이 변경은 게스트에게 허용되지 않아 취소되었습니다.",
+  "guestCanEditOwn": "내 항목 추가·편집 가능"
 }

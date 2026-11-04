@@ -120,7 +120,7 @@ it('a board can be stricter than its workspace, never looser: its own copy setti
   await updateWorkspace(ws.id, owner.id, { policies: { downloads: 'members' } });
   const board = await createBoard(owner.id, 'Budget', '', 'none', { workspaceId: ws.id });
   await share(owner, board.id, guest, 'editor');
-  expect(boardOf(await call(guest, 'GET', `/boards/${board.id}`)).sharing).toEqual({ editorsCanShare: true, viewersCanExport: true });
+  expect(boardOf(await call(guest, 'GET', `/boards/${board.id}`)).sharing).toMatchObject({ editorsCanShare: true, viewersCanExport: true });
   expect((await call(guest, 'POST', `/boards/${board.id}/duplicate`)).status).toBe(403);
 });
 
