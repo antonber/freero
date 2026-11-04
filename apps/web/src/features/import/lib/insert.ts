@@ -8,13 +8,15 @@ import { looksLikeDrawio, parseDrawio } from './drawio';
 import { looksLikeExcalidraw, parseExcalidraw } from './excalidraw';
 import { isVsdxName, parseVsdx } from './vsdx';
 import { isPptxName, parsePptx } from './pptx';
+import { looksLikeMural, parseMural } from './mural';
+import { looksLikeLucid, parseLucid } from './lucid';
 import { nanoid } from 'nanoid';
 
 import { t as tr } from '../messages';
 export const IMPORT_DIALOG = 'import.dialog';
 
-/** Text formats (a file, or pasted); `.vsdx` and `.pptx` are zip packages, read from their bytes. */
-export type ImportKind = 'drawio' | 'excalidraw';
+/** Text formats (a file, or pasted); `.vsdx` and `.pptx` are zip packages, read from their bytes. Mural's and Lucid's CSV exports are recognised by their header. */
+export type ImportKind = 'drawio' | 'excalidraw' | 'mural' | 'lucid';
 export type FileKind = ImportKind | 'vsdx' | 'pptx';
 
 /** Which importer a file is for, by its name, else by its first bytes; null: none. */
@@ -26,6 +28,9 @@ export function kindOfFile(name: string, head: string): FileKind | null {
   if (n.endsWith('.excalidraw')) return 'excalidraw';
   if ((n.endsWith('.xml') || n.endsWith('.txt') || !n.includes('.')) && looksLikeDrawio(head)) return 'drawio';
   if ((n.endsWith('.json') || n.endsWith('.txt') || !n.includes('.')) && looksLikeExcalidraw(head)) return 'excalidraw';
+  // Any other CSV is left to the CSV import (features/csv).
+  if (n.endsWith('.csv') && looksLikeMural(head)) return 'mural';
+  if (n.endsWith('.csv') && looksLikeLucid(head)) return 'lucid';
   return null;
 }
 
@@ -38,6 +43,8 @@ export function kindOfText(text: string | null): ImportKind | null {
 }
 
 export async function parseImport(kind: ImportKind, text: string, newId: () => string = nanoid): Promise<ImportResult> {
+  if (kind === 'mural') return parseMural(text, newId);
+  if (kind === 'lucid') return parseLucid(text, newId);
   return kind === 'drawio' ? parseDrawio(text, newId) : parseExcalidraw(text, newId);
 }
 
@@ -115,6 +122,9 @@ export async function placeImport(editor: Editor, result: ImportResult, at?: Poi
       const el = { ...t, z: 0, createdBy: '', createdAt: 0, updatedAt: 0 } as unknown as BoardElement;
       ids.push(...editor.insertElements({ elements: [el], content: { [t.id]: content[t.id] } }, { at: { x: t.x + t.w / 2, y: t.y + t.h / 2 } }));
     }
+    // Tags by name: the tags feature finds the board's tag of that name or makes one.
+    const tagged = (result.tags ?? []).filter((t) => ids.includes(t.id) && t.names.length);
+    if (tagged.length) editor.runCommand('tags.applyNames', { items: tagged });
     // Speaker notes become presenter notes (the present feature owns them).
     for (const n of result.notes ?? []) if (editor.getElement<FrameElement>(n.frameId)) editor.runCommand('present.setNote', { frameId: n.frameId, text: n.text });
   });
@@ -136,7 +146,7 @@ export async function importFile(editor: Editor, file: File, at?: Point): Promis
   if (packaged === 'pptx') return placeImport(editor, await parsePptx(new Uint8Array(await file.arrayBuffer()), nanoid), at);
   const text = await file.text();
   const kind = kindOfFile(file.name, text.slice(0, 2000));
-  if (!kind || kind === 'vsdx' || kind === 'pptx') throw new ImportError('Freero imports draw.io (.drawio), Excalidraw (.excalidraw), Visio (.vsdx) and PowerPoint (.pptx) files.');
+  if (!kind || kind === 'vsdx' || kind === 'pptx') throw new ImportError(tr('freeroImportsTheseFiles'));
   return placeImport(editor, await parseImport(kind, text), at);
 }
 

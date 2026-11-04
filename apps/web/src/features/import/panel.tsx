@@ -1,4 +1,4 @@
-// "Import a diagram file…" (KAI-138, #116): pick a file, and afterwards the report of what
+// "Import a diagram file…" (KAI-138, #116; other whiteboards' CSV exports #163, #165): pick a file, and afterwards the report of what
 // could not be mapped. Dropping a file on the board does the same without the dialog; its toast
 // opens the report here ("Details").
 import { useState } from 'react';
@@ -29,6 +29,13 @@ function ReportList({ report }: { report: ImportReport }) {
       ) : (
         <p>{t('everythingInTheFileHas')}</p>
       )}
+      {report.notes?.length ? (
+        <ul className="fr-import__notes">
+          {report.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -45,7 +52,7 @@ function ImportDialog({ editor, props }: PanelProps) {
     setError(null);
     try {
       const r = await importFile(editor, file);
-      if (!r.skipped.length) {
+      if (!r.skipped.length && !r.notes?.length) {
         editor.host.notify(summary(r), 'success');
         close();
       } else setReport(r);
@@ -76,10 +83,11 @@ function ImportDialog({ editor, props }: PanelProps) {
         <div className="fr-import">
           <label className={`fr-import__file${busy ? ' fr-import__file--busy' : ''}`}>
             <FileInput size={18} aria-hidden />
-            <span>{busy ? t('importing') : t('chooseADrawioExcalidrawVsdx')}</span>
-            <input type="file" disabled={busy} accept=".drawio,.dio,.xml,.excalidraw,.json,.vsdx,.vsdm,.pptx,.pptm,.ppsx,.potx" onChange={(e) => void pick(e.target.files?.[0])} />
+            <span>{busy ? t('importing') : t('chooseAFileToImport')}</span>
+            <input type="file" disabled={busy} accept=".drawio,.dio,.xml,.excalidraw,.json,.vsdx,.vsdm,.pptx,.pptm,.ppsx,.potx,.csv" onChange={(e) => void pick(e.target.files?.[0])} />
           </label>
           <p className="fr-import__hint">{t('youCanAlsoDropThe')}</p>
+          <p className="fr-import__hint">{t('otherWhiteboardExports')}</p>
           {error ? (
             <p className="fr-import__error" role="alert">
               {error}

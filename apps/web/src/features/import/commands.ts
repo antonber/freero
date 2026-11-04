@@ -7,7 +7,7 @@ export default defineCommands([
   {
     id: 'import.file',
     icon: FileInput,
-    label: t('importDrawIoExcalidrawVisio'),
+    label: t('importFromAFileOr'),
     menus: ['board'],
     run(editor) {
       editor.openPanel(IMPORT_DIALOG);

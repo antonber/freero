@@ -1,7 +1,7 @@
 // What both importers share: the result they build (Freero element drafts in the source file's
 // coordinates, images still to upload, a report of what could not be mapped), and small helpers.
 // Pure: no editor, no DOM — the parsers run in tests as they run on the board.
-import { plainToRichText, type Anchor, type ConnectorEndpoint, type ElementDraft, type Rect, type TableCopyContent } from '@freero/shared';
+import { plainToRichText, STICKY_COLORS, type Anchor, type ConnectorEndpoint, type ElementDraft, type Rect, type StickyColor, type TableCopyContent } from '@freero/shared';
 
 /** Whole files this large or larger are refused before they are read. */
 export const MAX_FILE_BYTES = 30 * 1024 * 1024;
@@ -10,7 +10,7 @@ export const MAX_UNPACKED_BYTES = 30 * 1024 * 1024;
 /** Items one import may create (the same cap as text-built structure). */
 export const MAX_ITEMS = 2000;
 
-export type SourceTool = 'draw.io' | 'Excalidraw' | 'Visio' | 'PowerPoint';
+export type SourceTool = 'draw.io' | 'Excalidraw' | 'Visio' | 'PowerPoint' | 'Miro' | 'Mural' | 'Lucid';
 
 export interface ImportReport {
   source: SourceTool;
@@ -18,6 +18,8 @@ export interface ImportReport {
   imported: number;
   /** What could not be mapped (or was simplified), with how often. */
   skipped: Array<{ what: string; count: number }>;
+  /** [#62] What the source can't give at all, or what was approximated for the whole board (one line each). */
+  notes?: string[];
 }
 
 export interface ImportResult {
@@ -30,6 +32,8 @@ export interface ImportResult {
   notes?: Array<{ frameId: string; text: string }>;
   /** [#136] Table cells, by the table draft's id (the table feature writes them on insert). */
   content?: Record<string, TableCopyContent>;
+  /** [#62] Tag NAMES for stickies and cards (by draft id): the tags feature finds or makes the board's tags. */
+  tags?: Array<{ id: string; names: string[] }>;
 }
 
 /** A file we refuse, with a message for the person. Nothing is added. */
@@ -55,6 +59,26 @@ export function color(v: string | null | undefined, fallback: string): string {
   if (s === 'none' || s === 'transparent') return 'transparent';
   if (/^#[0-9a-f]{3}([0-9a-f]{3})?$/.test(s)) return s.toUpperCase();
   return NAMED[s] ?? fallback;
+}
+
+const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+/** The sticky paper nearest to a #rrggbb colour (yellow for anything else). */
+export function nearestSticky(hex: string | null | undefined): StickyColor {
+  const h = color(hex, '');
+  if (!/^#[0-9A-F]{6}$/.test(h)) return 'yellow';
+  const [r, g, b] = rgb(h);
+  let best: StickyColor = 'yellow';
+  let bestD = Infinity;
+  for (const [name, paper] of Object.entries(STICKY_COLORS) as Array<[StickyColor, string]>) {
+    const [pr, pg, pb] = rgb(paper);
+    const d = (r - pr) ** 2 * 2 + (g - pg) ** 2 * 4 + (b - pb) ** 2 * 3;
+    if (d < bestD) {
+      bestD = d;
+      best = name;
+    }
+  }
+  return best;
 }
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
