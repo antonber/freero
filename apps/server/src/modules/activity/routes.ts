@@ -45,7 +45,8 @@ export default function activityRoutes(_ctx: ServerContext): Router {
     '/workspaces/:id/activity',
     requireUser,
     handle(async (req, res) => {
-      res.json((await workspaceActivity(req.params.id, currentUser(req).id, page(req.query))) satisfies ActivityResponse);
+      const projectId = typeof req.query.project === 'string' && req.query.project ? req.query.project : undefined;
+      res.json((await workspaceActivity(req.params.id, currentUser(req).id, { ...page(req.query), projectId })) satisfies ActivityResponse);
     }),
   );
 

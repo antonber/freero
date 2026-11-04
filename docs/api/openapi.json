@@ -93,6 +93,37 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "tags": ["boards"],
+        "summary": "The projects of a workspace you can see, sub-projects included",
+        "description": "Projects nest (`parentId`; null at the top, at most three levels). A sub-project reaches only people who also get through every project above it, so the list never holds a project whose parent you can't see. Boards and docs list by project with `GET /boards?project=` and `GET /docs?project=`.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [{ "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "projects"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "projects": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/audit": {
       "get": {
         "operationId": "listWorkspaceAuditEvents",
@@ -3500,6 +3531,19 @@
           "durationMs": { "type": ["integer", "null"] },
           "createdAt": { "type": "integer" },
           "deliveredAt": { "type": ["integer", "null"] }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "required": ["id", "name", "parentId", "description", "access", "teamAccess", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "parentId": { "type": ["string", "null"], "description": "The project it sits in; null at the top of the workspace" },
+          "description": { "type": "string" },
+          "access": { "type": "string", "enum": ["workspace", "private"] },
+          "teamAccess": { "type": ["string", "null"], "enum": ["editor", "commenter", "viewer", null], "description": "Its own team access level; null: inherited" },
+          "createdAt": { "type": "string", "format": "date-time" }
         }
       },
       "Workspace": {

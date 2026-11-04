@@ -20,6 +20,7 @@ import { parseOutlineQuery } from '../outline/index';
 import { listProblems, problemDetail, problemScreenshot, sendProblemScreenshot, updateProblem } from '../problems/index';
 import { backlinksForApi, resolveForApi, searchContent } from './objects';
 import { addDocComment, appendToDoc, createDocFor, editDocFor, listDocComments, listDocs, readDocFor, replyToDocComment } from './docs';
+import { listProjectsFor } from './projects';
 import { getFeedback, postStatus, readStatusPost } from './controlRoom';
 import { workspaceAuditFor } from './audit';
 import * as hooks from './webhooks';
@@ -118,6 +119,8 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('post', `${W}/:webhookId/deliveries/:deliveryId/redeliver`, 'webhooks:manage', async (call) => ({
     body: await hooks.redeliverWebhookFor(call, ws(call), hook(call), call.req.params.deliveryId),
   }));
+  // A workspace's projects, nested (#129).
+  endpoint('get', '/workspaces/:workspaceId/projects', 'boards:read', async (call) => ({ body: await listProjectsFor(call, call.req.params.workspaceId) }));
   endpoint('get', '/boards', 'boards:read', async (call) => ({ body: await api.searchBoards(call, call.req.query) }));
   endpoint('post', '/boards', 'boards:write', async (call) => ({ status: 201, body: await api.createBoard(call, body(call.req)) }));
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));

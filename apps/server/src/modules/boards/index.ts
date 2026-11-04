@@ -227,8 +227,8 @@ export async function requireBoardDownload(boardId: string, userId: string, via:
  * The boards of a workspace the user can open, with their role (in their personal workspace also
  * boards shared with them from outside, like the dashboard's "all"). 404 unless they are in it.
  */
-export async function boardsOpenableIn(userId: string, workspaceId: string): Promise<Array<{ id: string; title: string; role: Role }>> {
-  return (await listBoards(userId, 'all', '', { workspaceId })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
+export async function boardsOpenableIn(userId: string, workspaceId: string, projectId?: string): Promise<Array<{ id: string; title: string; role: Role }>> {
+  return (await listBoards(userId, 'all', '', { workspaceId, ...(projectId ? { projectId } : {}) })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
 }
 
 /**
@@ -374,6 +374,26 @@ export function boardIdsInProject(projectId: string): Promise<string[]> {
 
 export function countLiveBoardsInProject(projectId: string): Promise<number> {
   return repo.countLiveInProject(projectId);
+}
+
+/** The live boards and docs of a project with their owners (#129: deleting a project, its boards to the trash). */
+export async function liveBoardsInProject(projectId: string): Promise<Array<{ id: string; ownerId: string; title: string }>> {
+  return (await repo.getBoards(await repo.idsInProject(projectId))).filter((b) => b.deletedAt === null).map((b) => ({ id: b.id, ownerId: b.ownerId, title: b.title }));
+}
+
+/**
+ * Inside the caller's transaction (deleting a project, #129): every board of the project — trash
+ * included, so restoring one later lands in `to` and not at the top of the workspace — moves to
+ * `to` (null: the workspace root). Returns the ids moved; the caller re-resolves access after commit.
+ */
+export function moveAllBoardsOfProject(projectId: string, to: string | null): Promise<string[]> {
+  return repo.moveAllInProject(projectId, to);
+}
+
+/** Trashes a live board for a project's deletion (#129): the board's owner or the workspace's content admins only (`mayTrash`). */
+export async function trashBoardForProject(boardId: string, actorId: string): Promise<void> {
+  const board = await repo.getBoard(boardId);
+  if (board) await moveToTrash(board, actorId);
 }
 
 /**

@@ -1680,7 +1680,7 @@ first in the app.
 ### Workspaces (`modules/workspaces`)
 
 Every board belongs to a workspace (`boards.workspace_id`) and optionally a project in it
-(`boards.project_id`). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
+(`boards.project_id`; projects nest, #129). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
 first use by `ensurePersonalWorkspace`, so signup — or any future sign-in path — needs no hook;
 deleted with the account row) that only ever holds its owner's boards. TEAM workspaces have
 members with roles owner / admin / member / guest (separate from board roles).
@@ -1708,6 +1708,32 @@ members with roles owner / admin / member / guest (separate from board roles).
   transfers) re-resolves the live sockets of the affected boards on every instance through
   realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
   that workspace and hands boards they owned there to the remover.
+- **Nested projects** (#129; `projects.parent_id`, `description`, `pinned_boards`, `project_pins`;
+  `workspaces/projects.ts`, `roles.ts` `projectChain` / `passesProject` / `teamAccessOf`): a project
+  may sit in another, `PROJECT_MAX_DEPTH` (3) levels at most. **Access only narrows on the way down**:
+  a project — and every board in it — reaches only someone who gets through EVERY project from it up
+  to the top (a private one: its members and groups; an open one: every full member; a guest: only
+  projects they were added to; owners / content admins: all). So a private sub-project narrows an
+  open parent, an "open" sub-project of a private parent is open only to the parent's people, and the
+  team access level is the strictest set on the way up (a lone project still overrides the
+  workspace's, as before). One resolver serves it all: `boardAccessLoader`, `teamMembers`,
+  `openToWholeTeam`, `boardGatekeepers`, the object registry and the project list walk the chain; a
+  broken chain (a parent that isn't there) fails closed. Adding someone to a sub-project whom its
+  parent shuts out is refused with the reason. **Moving** a project (`PATCH /projects/:id
+  { parentId }`) needs its manager, who also manages the project it LEAVES (or a content admin) —
+  leaving can open it wider — and who sees the one it enters; never into itself or below itself,
+  never deeper than the limit counting what it carries; both rows locked (moved: update, target:
+  share; creating a sub-project shares the parent's lock), so cycles can't race in. **Deleting**
+  refuses while it holds sub-projects (no `ON DELETE` action on `parent_id`: nothing may lift a
+  child to the top); its boards — without `?boards=` still 409 — move to the parent (`parent`; the
+  trash's boards too, so a restore never lands wider than the project was) or go to the trash
+  (`trash`: only boards the caller owns, unless a content admin). Every change re-resolves the boards
+  of the whole subtree (`boardIdsUnderProject`, also for groups and directory mappings). Pins are
+  per person (`PUT/DELETE /projects/:id/pin`, anyone who sees it); the project page (dashboard
+  `ProjectOverview`: path, description, sub-projects, the boards its managers pinned — ids, read
+  against the list the reader already gets — and `GET /workspaces/:id/activity?project=`). Public
+  API: `GET /api/v1/workspaces/:workspaceId/projects` (nested, `parentId`). Older clients list
+  sub-projects flat and keep working; the access rule is the server's.
 - **User groups** (#63; `workspaces/groups.ts`, tables `workspace_groups`, `workspace_group_members`,
   `project_groups`; members' `board_group_grants`): members admins make groups of the workspace's
   members (leaving the workspace leaves its groups, in `repo.removeMember`); directory (SCIM) groups

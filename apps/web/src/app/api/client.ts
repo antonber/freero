@@ -619,11 +619,20 @@ export const api = {
   // projects (folders)
   listProjects: (workspaceId: string) =>
     request<{ projects: ProjectSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`),
-  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null) =>
-    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess }),
-  updateProject: (id: string, body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null }) =>
-    request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
-  deleteProject: (id: string) => request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}`),
+  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null, parentId: string | null = null) =>
+    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess, ...(parentId ? { parentId } : {}) }),
+  updateProject: (
+    id: string,
+    body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null; description?: string; pinnedBoardIds?: string[]; parentId?: string | null },
+  ) => request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
+  /** #129: `boards` says what happens to the boards still in it (parent project / trash); without it only an empty project goes. */
+  deleteProject: (id: string, boards?: 'parent' | 'trash') =>
+    request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}${boards ? `?boards=${boards}` : ''}`),
+  /** #129: pin a project to the top of your own sidebar, or unpin it. */
+  setProjectPinned: (id: string, pinned: boolean) => request<{ ok: true }>(pinned ? 'PUT' : 'DELETE', `/api/projects/${encodeURIComponent(id)}/pin`),
+  /** #129: a project page's recent activity (only boards you can open). */
+  projectActivity: (workspaceId: string, projectId: string) =>
+    request<ActivityResponse>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/activity?project=${encodeURIComponent(projectId)}`),
   listProjectMembers: (id: string) =>
     request<{ members: Array<{ userId: string; name: string; color: string; avatarUrl: string | null }> }>(
       'GET',

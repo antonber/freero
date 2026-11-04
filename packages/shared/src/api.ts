@@ -348,7 +348,15 @@ export const LINK_PASSWORD_MAX = 128;
 // GET    /api/workspaces/:id/projects          -> { projects: ProjectSummary[] }  (the ones you can see)
 // POST   /api/workspaces/:id/projects  body { name, access? } -> { project }   (members, not guests)
 // PATCH  /api/projects/:id   body { name?, access?, teamAccess?: TeamAccess | null } -> { project }   (its creator or workspace owner/admin)
-// DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
+//        [additive, #129] also { description?, pinnedBoardIds?: string[] (its own boards, ≤ 12, in order),
+//        parentId?: string | null } — moving it needs its manager, who also manages the project it
+//        leaves (or a content admin) and sees the one it enters; 400 past PROJECT_MAX_DEPTH or into itself
+// DELETE /api/projects/:id?boards=parent|trash -> { ok: true }   (same; 409 while it holds sub-projects,
+//        and — without `boards` — while it still holds boards. `parent`: its boards move to the parent
+//        project (the workspace root at the top); `trash`: they go to the trash, when the caller owns
+//        each of them or is a content admin)
+// PUT    /api/projects/:id/pin  DELETE … -> { ok: true }   [#129] pin it to the top of your sidebar (anyone who sees it)
+// GET    /api/workspaces/:id/activity?project=<id> -> ActivityResponse   [#129] the project page's recent activity
 // GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
 // PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
 /**
@@ -599,7 +607,24 @@ export interface ProjectSummary {
   /** You may rename it, change its access, manage its members and delete it. */
   canManage: boolean;
   createdAt: number;
+  /**
+   * [additive, #129] The project it sits in (null: the top of the workspace). Access is inherited:
+   * its boards reach only people who get through every project above it too, so a sub-project can
+   * narrow its parent's audience but never widen it; its own team access level can only be stricter.
+   */
+  parentId?: string | null;
+  /** [additive, #129] What the project is for (its landing page; plain text). */
+  description?: string;
+  /** [additive, #129] Boards its managers pinned on its page, in order (some may since have moved away). */
+  pinnedBoardIds?: string[];
+  /** [additive, #129] You pinned it to the top of your sidebar. */
+  pinned?: boolean;
 }
+
+/** How deep projects nest: a project, its sub-projects and theirs (#129). */
+export const PROJECT_MAX_DEPTH = 3;
+/** Boards a project page pins at most (#129). */
+export const PROJECT_MAX_PINNED_BOARDS = 12;
 
 /** Days a deleted board stays in its owner's trash (restorable) before it is deleted for good. */
 export const TRASH_RETENTION_DAYS = 30;

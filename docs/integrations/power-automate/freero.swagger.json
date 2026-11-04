@@ -144,6 +144,57 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/projects": {
+      "get": {
+        "tags": [
+          "boards"
+        ],
+        "summary": "The projects of a workspace you can see, sub-projects included",
+        "description": "Projects nest (`parentId`; null at the top, at most three levels). A sub-project reaches only people who also get through every project above it, so the list never holds a project whose parent you can't see. Boards and docs list by project with `GET /boards?project=` and `GET /docs?project=`.",
+        "operationId": "listProjects",
+        "x-freero-scope": "boards:read",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Projects",
+            "schema": {
+              "type": "object",
+              "required": [
+                "notice",
+                "projects"
+              ],
+              "properties": {
+                "notice": {
+                  "$ref": "#/definitions/Notice"
+                },
+                "projects": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Project"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/audit": {
       "get": {
         "tags": [
@@ -6268,6 +6319,56 @@
         "deliveredAt": {
           "type": "integer",
           "x-nullable": true
+        }
+      }
+    },
+    "Project": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "parentId",
+        "description",
+        "access",
+        "teamAccess",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": "string",
+          "description": "The project it sits in; null at the top of the workspace",
+          "x-nullable": true
+        },
+        "description": {
+          "type": "string"
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "private"
+          ]
+        },
+        "teamAccess": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "commenter",
+            "viewer",
+            null
+          ],
+          "description": "Its own team access level; null: inherited",
+          "x-nullable": true
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

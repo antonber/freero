@@ -27,7 +27,7 @@ export { registerWorkspaceObjectTypes } from './objects';
 export { onMembershipChanged, WORKSPACE_MEMBERSHIP_TOPIC, type MembershipChangedEvent } from './events';
 // Managing a team (its routes use these; so may provisioning later, e.g. SCIM).
 export { createTeamWorkspace, updateWorkspace, transferWorkspace, deleteWorkspace, removeMember as removeWorkspaceMember, changeRole as changeWorkspaceRole } from './service';
-export { createProject } from './projects';
+export { createProject, listProjects } from './projects';
 export { inviteToWorkspace } from './invites';
 export { mayDownload, mayShareExternally, isFullMember, mayInvite as mayInviteToWorkspace } from './roles';
 // User groups (#63): groups of a workspace; boards and projects shared with them.

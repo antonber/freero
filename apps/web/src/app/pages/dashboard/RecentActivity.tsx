@@ -10,7 +10,8 @@ import { relativeTime } from '../../lib/time';
 
 const SHOWN = 6;
 
-export function RecentActivity({ workspaceId }: { workspaceId: string }) {
+/** `projectId`: a project page's activity (#129), only its boards. */
+export function RecentActivity({ workspaceId, projectId }: { workspaceId: string; projectId?: string }) {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -21,14 +22,14 @@ export function RecentActivity({ workspaceId }: { workspaceId: string }) {
     setEntries(null);
     setFailed(false);
     setAll(false);
-    api.workspaceActivity(workspaceId).then(
+    (projectId ? api.projectActivity(workspaceId, projectId) : api.workspaceActivity(workspaceId)).then(
       (r) => live && setEntries(r.entries),
       () => live && setFailed(true),
     );
     return () => {
       live = false;
     };
-  }, [workspaceId]);
+  }, [workspaceId, projectId]);
 
   if (failed || (entries && entries.length === 0)) return null;
   const now = Date.now();
