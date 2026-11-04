@@ -20,7 +20,8 @@ import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
-import { log } from '../../platform/log';
+import { log, logError } from '../../platform/log';
+import { KeyUnavailableError } from '../keys/index';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
 import {
@@ -45,6 +46,7 @@ import {
   snapshotBoardDoc,
   snapshotBoardLayer,
   snapshotBoardLayers,
+  resealBoard,
 } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
 import {
@@ -55,6 +57,8 @@ import {
   getWorkspaceInfo,
   isFullMember,
   isManager,
+  labelRequirement,
+  labelsAvailableIn,
   lockProjectForBoard,
   lockWorkspaceForNewBoard,
   mayDownload,
@@ -281,6 +285,8 @@ const linkLocked = (board: Board) => board.linkPasswordHash !== null && board.li
 export async function describeAccess(
   board: Board,
   userId: string,
+  /** #159: as if the workspace's key were usable (to tell that apart from no access at all). */
+  ignoreKeyBlock = false,
 ): Promise<{ role: Role | null; access: BoardWorkspaceAccess; needsPassword: boolean; coOwner: boolean }> {
   const unlocked = linkLocked(board) && userId !== board.ownerId ? (await repo.unlocksOf(userId, [board.id])).get(board.id) : undefined;
   const seen = linkAsSeenBy(board, unlocked);
@@ -290,7 +296,8 @@ export async function describeAccess(
     const role = joined ? resolveGuestRole(seen, access) : null;
     return { role, access, needsPassword: joined && role === null && seen !== board && resolveGuestRole(board, access) !== null, coOwner: false };
   }
-  const [membership, access] = await Promise.all([getMembership(board.id, userId), boardAccess(userId, board)]);
+  const [membership, loaded] = await Promise.all([getMembership(board.id, userId), boardAccess(userId, board)]);
+  const access = ignoreKeyBlock && loaded.blocked === 'key_unavailable' ? { ...loaded, blocked: null } : loaded;
   const memberRole = membership?.role ?? null;
   const role = resolveRole(seen, userId, memberRole, access);
   const needsPassword = role === null && seen !== board && resolveRole(board, userId, memberRole, access) !== null;
@@ -333,6 +340,8 @@ export async function requireAccess(
   if (!board) throw (await removedFor(boardId, userId)) ? boardRemoved() : notFound('Board not found');
   const { role, access, needsPassword, coOwner } = await describeAccess(board, userId);
   if (!role && needsPassword) throw new HttpError(403, 'This board’s link asks for a password', LINK_PASSWORD_REQUIRED);
+  // #159: closed only because its workspace's key can't be used — said so to whoever could open it otherwise.
+  if (!role && access.blocked === 'key_unavailable' && (await describeAccess(board, userId, true)).role) throw new KeyUnavailableError(board.workspaceId);
   if (!role) throw forbidden();
   if (!atLeast(role, min)) throw forbidden(min === 'owner' ? 'Only the board owner can do that' : `You need ${min} access to do that`);
   return { board, role, access, coOwner };
@@ -341,9 +350,10 @@ export async function requireAccess(
 /**
  * The board's own "Viewers and commenters can copy and export" (#123): may someone with `role`
  * take its content out? Editors, co-owners and the owner always may (the workspace's policy still
- * applies to them); guests are viewers or commenters.
+ * applies to them); guests are viewers or commenters. A label (#158) with viewerExports 'off' says never.
  */
-export const boardLetsCopy = (board: Pick<Board, 'viewersCanExport'>, role: Role | null): boolean => board.viewersCanExport || atLeast(role, 'editor');
+export const boardLetsCopy = (board: Pick<Board, 'viewersCanExport'>, role: Role | null, access?: Pick<BoardWorkspaceAccess, 'label'>): boolean =>
+  (board.viewersCanExport && access?.label?.caps.viewerExports !== 'off') || atLeast(role, 'editor');
 
 /**
  * May `userId` archive or unarchive the board (#153)? Its owner — by who they are, since an
@@ -358,7 +368,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
   const isOwner = board.ownerId === userId;
   const admin = isManager(access.workspaceRole);
   const manages = managesSharing(role, coOwner);
-  const copies = boardLetsCopy(board, role);
+  const copies = boardLetsCopy(board, role, access);
   return {
     // A board can be stricter than its workspace (#123), never looser.
     canExport: mayDownload(access.workspaceRole, access.policies) && copies,
@@ -455,7 +465,7 @@ export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outlin
  */
 export async function requireDownload(board: Board, userId: string, access: BoardWorkspaceAccess, via: DownloadVia, role: Role | null): Promise<void> {
   const workspaceAllows = mayDownload(access.workspaceRole, access.policies);
-  const boardAllows = boardLetsCopy(board, role);
+  const boardAllows = boardLetsCopy(board, role, access);
   if (workspaceAllows && boardAllows) return;
   // A visitor without an account is no actor; their guest id is kept in the event.
   const guest = isGuestId(userId);
@@ -515,6 +525,7 @@ export async function toSummary(
     sharing: { editorsCanShare: board.editorsCanShare, viewersCanExport: board.viewersCanExport },
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + access.trashRetentionDays * DAY_MS } : {}),
     ...(board.archivedAt !== null ? { archivedAt: board.archivedAt } : {}),
+    ...(access.label ? { label: access.label } : {}),
   };
 }
 
@@ -623,6 +634,20 @@ function withinBoardQuota<T>(ownerId: string, refusal: (max: number) => string, 
 export interface BoardPlace {
   workspaceId?: string;
   projectId?: string | null;
+  /** #158: the label it carries (a copy keeps its source's); default: the workspace's default label. */
+  labelId?: string | null;
+}
+
+/**
+ * #158: the label a board keeps when its content lands in `workspaceId` (a copy, a move): its own
+ * where that workspace may carry it; none when the label caps nothing; otherwise 403 — a label's
+ * caps can't be shed by copying or moving the board somewhere that doesn't know them.
+ */
+export async function labelInTarget(label: BoardWorkspaceAccess['label'], workspaceId: string): Promise<string | null> {
+  if (!label) return null;
+  if ((await labelsAvailableIn(workspaceId)).some((l) => l.id === label.id)) return label.id;
+  if (Object.keys(label.caps).length === 0) return null;
+  throw new HttpError(403, `This board is labelled ${label.name}: it can only be copied or moved where that label applies.`, 'label_restricted');
 }
 
 export async function createBoard(
@@ -638,6 +663,7 @@ export async function createBoard(
 ): Promise<Board> {
   const workspaceId = place.workspaceId || (await ensurePersonalWorkspace(ownerId));
   const projectId = place.projectId || null;
+  const labelId = place.labelId ?? (await labelRequirement(workspaceId)).defaultLabelId;
   return withinBoardQuota(
     ownerId,
     (max) => `You have reached the limit of ${max} boards. Delete boards you no longer need to create new ones.`,
@@ -674,6 +700,7 @@ export async function createBoard(
         deletedBy: null,
         archivedAt: null,
         archivedBy: null,
+        labelId,
       };
       await repo.insertBoard(board);
       // A new board starts with today's defaults (line jumps on); a copy is its source's content
@@ -727,10 +754,12 @@ export async function moveToWorkspace(board: Board, userId: string, body: { work
   const target = await getWorkspaceInfo(targetId);
   if (!target || (target.kind === 'personal' && target.personalOf !== userId)) throw notFound('Workspace not found');
   // Moving a board out takes its content out of the source workspace's control.
-  await requireDownload(board, userId, await boardAccess(userId, board), 'move', 'owner');
+  const here = await boardAccess(userId, board);
+  await requireDownload(board, userId, here, 'move', 'owner');
+  const labelId = (await labelInTarget(here.label, targetId)) ?? (await labelRequirement(targetId)).defaultLabelId;
 
   // What the target's policies forbid, as the owner would have them there.
-  const there = await boardAccess(userId, { workspaceId: targetId, projectId });
+  const there = await boardAccess(userId, { workspaceId: targetId, projectId, labelId });
   const adjusted: MoveAdjustment[] = [];
   let linkAccess: LinkAccess | undefined;
   const stored = board.storedLinkAccess;
@@ -748,6 +777,10 @@ export async function moveToWorkspace(board: Board, userId: string, body: { work
   const embeddingOff = board.embeddable && there.policies.boardEmbeds === 'off';
   if (embeddingOff) adjusted.push({ kind: 'embedding_off' });
 
+  // #159: the stored content is sealed for the target's key (or opened, for a target without one)
+  // before the move, so it never depends on the source's key afterwards; refused (403
+  // workspace_key_unavailable) when either key can't be used. Again after it, for saves in between.
+  await resealBoard(board.id, targetId);
   const now = Date.now();
   const fromName = (await getWorkspaceInfo(board.workspaceId))?.name ?? null;
   const toName = target.kind === 'personal' ? 'Personal' : target.name;
@@ -756,7 +789,7 @@ export async function moveToWorkspace(board: Board, userId: string, body: { work
     // being deleted until this commits.
     await lockWorkspaceForNewBoard(targetId, userId);
     const project = projectId ? await lockProjectForBoard(projectId, targetId, userId) : null;
-    if (!(await repo.moveToWorkspace(board.id, { workspaceId: targetId, projectId, ...(linkAccess ? { linkAccess } : {}), ...(embeddingOff ? { embeddable: false } : {}) }, now)))
+    if (!(await repo.moveToWorkspace(board.id, { workspaceId: targetId, projectId, labelId, ...(linkAccess ? { linkAccess } : {}), ...(embeddingOff ? { embeddable: false } : {}) }, now)))
       throw notFound('Board not found');
     const detail = { adjusted: adjusted.map((a) => a.kind) };
     await recordAudit({
@@ -776,6 +809,7 @@ export async function moveToWorkspace(board: Board, userId: string, body: { work
     await repo.appendBoardEvent({ type: 'board.moved', boardId: board.id, workspaceId: board.workspaceId, actorId: userId, title: board.title, to: null, toWorkspace: targetId });
     await repo.appendBoardEvent({ type: 'board.moved', boardId: board.id, workspaceId: targetId, actorId: userId, title: board.title, to: project?.name ?? null, fromWorkspace: board.workspaceId });
   });
+  await resealBoard(board.id).catch((e) => logError(`boards: resealing board ${board.id} after its move failed; rows saved meanwhile stay under the key they name`, e));
   // The target's policies apply from now on: everyone connected is re-checked on every instance.
   await refreshBoardAccess(board.id);
   adjusted.push(...(await boardMovedWorkspace({ boardId: board.id, actorId: userId, fromWorkspaceId: board.workspaceId, toWorkspaceId: targetId })));
@@ -905,9 +939,10 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
 
 /** The workspace's live boards for its content admins (the caller checked the scope): what the inventory lists. */
 export async function inventoryBoards(workspaceId: string): Promise<Array<Board & { lastActivityAt: number; publicLink: boolean }>> {
-  const [boards, access] = await Promise.all([repo.inventoryOf(workspaceId), boardAccess('', { workspaceId, projectId: null })]);
+  const [boards, accessOf] = await Promise.all([repo.inventoryOf(workspaceId), boardAccessLoader('', [workspaceId])]);
   // Visitors without an account get in by its link exactly when a guest would (resolveGuestRole).
-  return boards.map((b) => ({ ...b, publicLink: b.linkPasswordHash === null && resolveGuestRole(b, access) !== null }));
+  // Per board: its label (#158) may keep visitors out.
+  return boards.map((b) => ({ ...b, publicLink: b.linkPasswordHash === null && resolveGuestRole(b, accessOf(b)) !== null }));
 }
 
 /** A board of THIS workspace (404 otherwise: the console reaches nothing elsewhere). */
@@ -968,6 +1003,35 @@ export async function setBoardArchived(boardId: string, userId: string, archived
   return { ...board, archivedAt: archived ? (changed ? now : board.archivedAt) : null, archivedBy: archived ? userId : null };
 }
 
+/**
+ * #158: gives the board a classification label (null: none) — whoever manages its sharing (owner,
+ * co-owner) or a content admin of its workspace. The label must be one boards there may carry; a
+ * workspace that requires one refuses none. Its caps apply from the next request on, and everyone
+ * connected is re-checked on every instance (a link the label caps lowers their role at once).
+ */
+export async function setBoardLabel(boardId: string, userId: string, labelId: unknown): Promise<Board> {
+  if (labelId !== null && (typeof labelId !== 'string' || !labelId)) throw badRequest('labelId must be a label id or null');
+  const { board, role, access, coOwner } = await requireAccess(boardId, userId, 'viewer');
+  if (!managesSharing(role, coOwner) && !isManager(access.workspaceRole)) throw forbidden('Only the board’s owner, a co-owner or a content admin can change its label');
+  if (labelId === board.labelId) return board;
+  const [available, requirement] = await Promise.all([labelsAvailableIn(board.workspaceId), labelRequirement(board.workspaceId)]);
+  const label = labelId ? available.find((l) => l.id === labelId) : null;
+  if (labelId && !label) throw badRequest('That label isn’t available in this board’s workspace');
+  if (!labelId && requirement.required) throw new HttpError(400, 'Boards in this workspace must carry a label', 'label_required');
+  await repo.transaction(async () => {
+    if (!(await repo.setLabel(board.id, labelId as string | null))) throw notFound('Board not found');
+    await recordAudit({
+      action: 'board.label_changed',
+      workspaceId: board.workspaceId,
+      actorId: userId,
+      target: boardTarget(board),
+      metadata: { from: access.label?.name ?? null, fromId: board.labelId, to: label?.name ?? null, toId: (labelId as string | null) ?? null },
+    });
+  });
+  await refreshBoardAccess(board.id);
+  return { ...board, labelId: labelId as string | null };
+}
+
 /** The workspace's trash as its content admins see it (#153; the caller checked the scope): metadata only. */
 export async function workspaceTrash(workspaceId: string): Promise<AdminTrashedBoard[]> {
   const boards = await repo.trashedInWorkspace(workspaceId);
@@ -1017,6 +1081,18 @@ export async function restoreForWorkspace(workspaceId: string, boardId: string, 
 export async function deleteForever(boardId: string, userId: string): Promise<void> {
   const board = await repo.getBoardIncludingTrash(boardId);
   if (!board || board.deletedAt === null || board.ownerId !== userId || board.removedAt !== null) throw notFound('Board not found in your trash');
+  // Under a legal hold (#157) it only looks deleted: it leaves the trash for everyone and is kept
+  // for the case, then purged once no hold is left. The hold stays silent to its owner.
+  const discarded = await repo.transaction(async () => {
+    if (!(await repo.heldAmong([board.id])).has(board.id)) return false;
+    if (!(await repo.discardTrashedBoard(board.id, Date.now()))) throw notFound('Board not found in your trash');
+    await recordAudit({ action: 'board.deleted', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { keptBy: 'legal_hold' } });
+    return true;
+  });
+  if (discarded) {
+    await closeBoardDoc(board.id);
+    return;
+  }
   const thumbnail = await repo.transaction(async () => {
     const t = await repo.deleteTrashedBoard(board.id);
     if (t === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
@@ -1048,6 +1124,8 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
   const byWorkspace = (await retentionOverrides())
     .filter((o) => o.trashDays !== TRASH_RETENTION_DAYS)
     .map((o) => ({ workspaceId: o.id, before: now - o.trashDays * DAY_MS }));
+  // Held boards whose time is up leave the trash as if purged, and are kept (#157).
+  await repo.discardHeldExpired(before, byWorkspace, now);
   let total = 0;
   for (;;) {
     const purged = await repo.transaction(async () => {
@@ -1058,7 +1136,7 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
           workspaceId: b.workspaceId,
           actorId: null,
           target: { type: 'board', id: b.id, label: b.title },
-          metadata: { owner: b.ownerId, trashedAt: new Date(b.deletedAt).toISOString() },
+          metadata: { owner: b.ownerId, trashedAt: new Date(b.deletedAt).toISOString(), ...(b.discarded ? { reason: 'legal_hold_released' } : {}) },
         });
       return rows;
     });
@@ -1105,6 +1183,11 @@ export async function duplicateBoard(source: Board, userId: string, role: Role, 
   } else {
     const wsRole = await workspaceRole(source.workspaceId, userId);
     place = isFullMember(wsRole) ? { workspaceId: source.workspaceId, projectId: source.projectId } : {};
+  }
+  // A copy keeps its source's label (#158), and can't land where that label doesn't apply.
+  if (source.labelId) {
+    const target = place.workspaceId || (await ensurePersonalWorkspace(userId));
+    place = { ...place, workspaceId: target, labelId: await labelInTarget((await boardAccess(userId, source)).label, target) };
   }
   // Read the content BEFORE the transaction: it may wait for the live doc to finish loading,
   // which queries the database outside this transaction.

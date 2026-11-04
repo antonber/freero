@@ -1399,12 +1399,12 @@ auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
 user_recovery_codes: two-step verification; auth_two_factor_recoveries: delayed "lost my
 authenticator" recoveries; guest_sessions: visitors without an account),
-`boards` (boards, stars, opens; trash; the guest join routes), `members` (board_members,
+`boards` (boards, stars, opens; trash; the guest join routes; board_legal_holds, board_owner_legal_holds: legal holds; boards.label_id), `members` (board_members,
 board_invites: pending invites for addresses without an account; board_access_requests; role
 resolution), `workspaces` (workspaces, workspace_members,
-workspace_invites, projects, project_members; organisations are directory-only `workspaces` rows; see
+workspace_invites, projects, project_members; workspace_labels, workspace_label_settings: classification labels; organisations are directory-only `workspaces` rows; see
 "Workspaces" and "Organisations" below), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors; y-websocket
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors, board_sealed_refs; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
@@ -1416,7 +1416,7 @@ period, orchestrating the owning modules' exports), `notifications` (notificatio
 notification_prefs, pending_mentions, card_due_watch, board_change_digests: inbox, live delivery,
 email digests, due-date reminders, the "changes on your boards" email), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on;
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache, sso_sp_keys, sso_sessions: per-workspace single sign-on;
 sso_domain_policies, sso_domain_captures: domain control),
 `scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
@@ -1452,7 +1452,8 @@ Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copi
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
-board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), and `problems` (problem_reports: “Report a problem”, see "Problem
+board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
+encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
@@ -1960,8 +1961,22 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   `idp_initiated` switch is on (off by default); then its `Destination` must also be this ACS, its
   RelayState counts only as a same-origin path (`unsolicitedReturnPath`), and the claims are parked
   on a new flow bound by cookie to the browser that posted, finished by the same same-site GET
-  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). Single logout and encrypted
-  assertions: #13. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). **SP keys, encryption,
+  signed requests, single logout** (#13; docs/design/compliance.md §4): a workspace's own RSA key
+  pairs (`sso/spKeys.ts`, `sso_sp_keys`: at most a current and a next one, self-signed certificate
+  DER-built there, private key sealed `sso-sp-key-v1`, never returned) are published in the SP
+  metadata we build (`saml.ts` `serviceProviderMetadata`: every key for signing and encryption, SLO
+  in both bindings); each decrypts encrypted assertions (tried in turn, rotation), the current one
+  signs AuthnRequests and logout messages with "Sign requests"; "Require encrypted assertions"
+  refuses one that arrived in the clear. Single logout (`sso/logout.ts`,
+  `/api/sso/:ws/saml/slo`, cross-site POST allowed): an IdP LogoutRequest must be signed (redirect:
+  over the query), from the IdP, addressed to this SLO URL, recent and used once (`sso_saml_cache`);
+  it ends only `sso_sessions` rows of that workspace + NameID (+ SessionIndex) through auth's
+  `endSessionsByKeys`. Those rows are written by auth's `onSessionStarted` from the opaque
+  `sessionTag` the SAML sign-in passes to `completeSignIn` (kept on `auth_challenges` across the
+  second step) and cascade with the session. Signing out here asks auth's `onSignOutRedirect`
+  (before the session row goes) and the logout answer's `redirect` sends the browser to the IdP
+  with a LogoutRequest. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
   `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
   a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
   started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
@@ -2010,10 +2025,61 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
   mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
   workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409),
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (an organisation with an open legal case: modules/ediscovery; refused deletion with 409),
   `workspaces.onTeamWorkspaceCreation` (domain control), `auth.onSignupExpected` (invite-only).
 - **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
   under Data (pages/admin/AdminIdentity.tsx).
+
+### Legal holds and classification labels (`modules/ediscovery`, `boards/legalHolds.ts`, `workspaces/labels.ts`; #157, #158; docs/design/compliance.md)
+
+- **Legal holds**: an eDiscovery case (`modules/ediscovery`) belongs to a team workspace or an
+  organisation (covering the workspaces attached when it is placed; "refresh" adds later ones) and
+  names custodians (every board a person owns in a covered workspace, now and later, trash
+  included) and boards. Owners and admins with BOTH the security and content scopes manage cases
+  (`requireCaseManager`): a case reveals and exports every board in it. Audited
+  `legal_hold.created / scope_changed / released / export_requested / export_downloaded` in the
+  place's log.
+- **Boards keeps the hold** (the only module that deletes boards): `board_legal_holds` (hold id =
+  case id, board, `via_owner` when carried from a custodian) and `board_owner_legal_holds` (hold,
+  workspace, custodian), written only by boards' repo through `placeLegalHold` / `narrowLegalHold` /
+  `releaseLegalHold`. The database refuses deleting a held board on ANY path — foreign keys
+  RESTRICT and the `boards_legal_hold_guard` trigger (owner holds; SQLSTATE `FH001`,
+  `repo.isLegalHoldViolation`), so even cascades from a deleted account or workspace fail — and the
+  same trigger gives a board its own hold row before it leaves a held owner (transfer, hand-over,
+  move). Every purge path honours it without reaching the trigger: the trash purge skips held
+  boards (`purgeTrashedBefore … NOT HELD`) and marks expired ones `discarded_at` (out of everyone's
+  trash, kept); "delete forever" on a held board only discards it (the hold is silent to its people;
+  audited `board.deleted` with `keptBy`); both are purged on the first round after release;
+  retention rules (`heldAmong`) skip held boards; realtime's snapshot pruning skips them
+  (`pruneSnapshots({ heldAmong })`, fail closed); the account purge waits (`underLegalHold({
+  ownerId })`, before any hand-over); a team workspace with held content can't be deleted (409
+  `legal_hold`), nor can its encryption key be destroyed (#159); an operator's "delete for good"
+  answers 409 (the board stays taken down). Audit retention skips the chains of open cases' places,
+  covered workspaces and custodians (`audit.onAuditRetentionHold`, registered by ediscovery's init;
+  fail closed).
+- **Case export**: a ZIP (`ediscovery/archive.ts`) of every held board in full — realtime's
+  `exportBoardForReview`: the shared doc, EVERY layer and every version as JSON — the audit events
+  of the place's chain about those boards and custodians, and `manifest.json` with the sha256 of
+  every file. Built by the `ediscovery:exports` job into uploads' private files, downloadable by
+  whoever manages the case until `DATA_EXPORT_TTL_HOURS`.
+- **Classification labels** (`workspace_labels`, `workspace_label_settings`, workspaces' repo; a
+  board's `boards.label_id`, boards' repo): a team workspace or organisation defines labels (an
+  organisation's reach all its workspaces) with `caps` — a partial set of the floored policies plus
+  `viewerExports: 'off'`. **One place applies them**: `boardAccessLoader` raises the board's
+  effective policies by its label's caps (`withLabelCaps`, the stricter wins key by key, like an
+  organisation's floor), so `maxLink`, `anonymousLinks`, `outsidersBlocked`, downloads, embedding
+  and link policies follow it on REST, lists, search, the public API, MCP, embeds, guests and
+  socket admission — including links and embeds turned on before the label (the stored setting is
+  kept; removing the label restores it). `BoardPlace.labelId` carries it, so a caller that passes a
+  `Board` gets it for free; a label id nothing defines caps everything (`UNKNOWN_LABEL_CAPS`).
+  `boardLetsCopy` reads `viewerExports`. `PUT /boards/:id/label` (owners, co-owners, content
+  admins; audited `board.label_changed`; live sockets re-resolved); a workspace can require a label
+  and set the default new boards get (an organisation's requirement is a floor). Copies keep their
+  label, and a labelled board can't be copied or moved where its label doesn't apply (403
+  `label_restricted`; a label with no caps simply drops). Changing a label's caps re-resolves every
+  board carrying it. A label in use can't be deleted (409 `label_in_use`); detaching a workspace
+  drops the organisation's labels from its boards (they take the workspace's own default).
+  Sensitive-data scanning is not built (compliance.md §2).
 
 ### Request access (`members/accessRequests.ts`, KAI-40)
 
@@ -3142,9 +3208,59 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   still inactive, still noticed), so the job is idempotent and never races an open. Audited
   `board.archived` / `board.trashed` with no actor and `reason: 'retention'`. Never touched:
   archived boards (archiving is how a board is kept), taken-down boards, boards a hold check names
-  (`boards.onBoardRetentionHold`, the seam for legal holds, #157; a failing check holds them all)
+  (`boards.onBoardRetentionHold`; boards' own legal-hold rows, #157, are checked first; a failing check holds them all)
   and every board of a workspace with a deletion hold (`workspaceHoldOn`). Board events with no
   actor reach the event stream as `actor: { kind: 'system' }`.
+
+### Workspace encryption keys (`modules/keys`, #159)
+
+A team workspace may keep its board content under its own key (design, coverage, failure modes:
+docs/design/compliance.md §3; operating it: docs/operations.md "Workspace encryption keys").
+
+- **Envelope**: `workspace_keys` (provider 'instance' — platform/secrets `seal`, purpose
+  `workspace-kek-v1`, the workspace id sealed in — or 'aws-kms', the workspace's KMS key ARN; state
+  active / suspended / unavailable / destroyed) and versioned `workspace_data_keys` (a 256-bit DEK
+  wrapped by that KEK). `keys/kek.ts` wraps / unwraps (AWS: TrentService JSON over a hand-written
+  SigV4, `keys/sigv4.ts`, encryption context `freero_workspace`); `keys/envelope.ts` seals blobs
+  (AES-256-GCM, additional data = workspace, board, table, layer). Single writer of both tables:
+  keys' repo, through the console's routes (`/workspaces/:id/admin/key…`, security scope;
+  destroy: owners with the workspace's name) and its jobs.
+- **Off by default** (`WORKSPACE_KEYS=false`): no workspace can turn a key on, and while no workspace
+  ever had one, keys' `keysInUse` lets board reads, writes and access checks skip every key lookup —
+  a deploy changes nothing. Keys turned on while it was on keep working.
+- **SESSION_SECRET rotation**: an instance-wrapped DEK opens under `SESSION_SECRET_PREVIOUS`, is
+  wrapped again on use, and the `keys:rewrap-instance` job (hourly while a previous secret is set)
+  wraps every one again, logging when all are done and how many open with no configured secret.
+- **One boundary for content**: `realtime/repo.ts` seals every blob it writes for a board whose
+  workspace has a key (`realtime/sealing.ts` `sealerFor` → keys' `sealerFor`; throws — nothing is
+  written — when that key can't be used, never a plaintext fallback) and opens every sealed blob it
+  reads with the data key the row names (`sealed_with` = `<workspaceId>:<version>`; NULL = stored as
+  is). A sealed blob starts with `SEALED_PREFIX` (an unreadable Yjs varint), so a release without
+  this code fails on it instead of misreading it. Upload names in sealed rows go to
+  `board_sealed_refs` in the same transaction; the uploads sweep and usage read them there, so a
+  file of an encrypted board — or one whose key is unavailable — is never swept.
+- **Gate**: workspaces' one `blocked` rule answers `key_unavailable` for a workspace whose key isn't
+  active (keys' `unusableKeysAmong`, always from the database), so REST, lists, search, MCP, embeds
+  and socket admission refuse it; `requireAccess` answers 403 `workspace_key_unavailable` to whoever
+  could otherwise open the board (the board page and dashboard say why). The admin console never
+  asks it (break-glass: an admin can always resume).
+- **Derived plaintext**: realtime's stored readers (`storedBoardView`, `storedDocContent`) read a
+  board under a suspended / destroyed / refused key as empty (a merely unreachable KMS throws and is
+  retried), and every state change appends each of the workspace's boards' `board.content` event in
+  its transaction — search and references derive nothing while the key is unavailable and
+  everything again once it is back; the event deriver records nothing for such a board (an
+  unreadable board is no deletion of its items). Board thumbnails are not kept
+  for keyed workspaces.
+- **Caches**: unwrapped DEKs and key rows per instance for `WORKSPACE_KEY_CACHE_SECONDS`; a state
+  change invalidates key rows on every instance (pubsub `freero:keys`), so opening stops at once;
+  an already-cached DEK may still SEAL (an open room's last save as it closes). `keys:check` probes
+  each KMS key every half cache period (a customer's revocation → `unavailable`; an answer again →
+  `active`); `keys:seal` seals content stored before the key, under an older data key, or under
+  another workspace's key (realtime `resealBoard`, compare-and-swap per row).
+- **Moves** (#124): boards' `moveToWorkspace` reseals the board for the target (or opens it, for a
+  target without a key) before the move and again after it; refused when either key can't be used.
+- Audited: `key.created` / `rotated` / `suspended` / `resumed` / `destroyed` / `unavailable` /
+  `available` (never key material).
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 

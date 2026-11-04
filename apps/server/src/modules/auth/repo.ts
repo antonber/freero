@@ -392,6 +392,13 @@ export async function deleteSessionReturningUser(tokenHash: string): Promise<str
   return (await one<{ user_id: string }>(`DELETE FROM sessions WHERE token_hash = $1 RETURNING user_id`, [tokenHash]))?.user_id ?? null;
 }
 
+/** Deletes the sessions with these keys (token hashes); returns those that existed, with their account. */
+export async function deleteSessionsByKeys(keys: string[]): Promise<Array<{ key: string; userId: string }>> {
+  if (!keys.length) return [];
+  const rows = await query<{ token_hash: string; user_id: string }>(`DELETE FROM sessions WHERE token_hash = ANY($1::text[]) RETURNING token_hash, user_id`, [keys]);
+  return rows.map((r) => ({ key: r.token_hash, userId: r.user_id }));
+}
+
 /** Deletes one of the user's sessions by its public id; returns its token hash, or null. */
 export async function deleteSessionById(userId: string, id: string): Promise<string | null> {
   const r = await one<{ token_hash: string }>(`DELETE FROM sessions WHERE user_id = $1 AND id = $2 RETURNING token_hash`, [userId, id]);
@@ -634,12 +641,14 @@ export interface Challenge {
   link: PendingLink | null;
   /** The session this sign-in starts ends at this instant at the latest (single sign-on); null/absent: the usual lifetime. */
   sessionExpiresAt?: number | null;
+  /** Opaque, from the directory sign-in that started it (#13); handed on when the session opens. */
+  sessionTag?: string | null;
 }
 
 export async function insertChallenge(tokenHash: string, c: Challenge, now: number, expiresAt: number): Promise<void> {
   await query(
-    `INSERT INTO auth_challenges (token_hash, user_id, method, link, created_at, expires_at, session_expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    `INSERT INTO auth_challenges (token_hash, user_id, method, link, created_at, expires_at, session_expires_at, session_tag)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       tokenHash,
       c.userId,
@@ -648,6 +657,7 @@ export async function insertChallenge(tokenHash: string, c: Challenge, now: numb
       new Date(now),
       new Date(expiresAt),
       c.sessionExpiresAt == null ? null : new Date(c.sessionExpiresAt),
+      c.sessionTag ?? null,
     ],
   );
 }
@@ -657,14 +667,14 @@ export async function insertChallenge(tokenHash: string, c: Challenge, now: numb
  * of attempts. One statement, so parallel guesses can't exceed `maxAttempts`.
  */
 export async function attemptChallenge(tokenHash: string, now: number, maxAttempts: number): Promise<Challenge | null> {
-  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null; session_expires_at: Date | null }>(
+  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null; session_expires_at: Date | null; session_tag: string | null }>(
     `UPDATE auth_challenges SET attempts = attempts + 1
-     WHERE token_hash = $1 AND expires_at > $2 AND attempts < $3 RETURNING user_id, method, link, session_expires_at`,
+     WHERE token_hash = $1 AND expires_at > $2 AND attempts < $3 RETURNING user_id, method, link, session_expires_at, session_tag`,
     [tokenHash, new Date(now), maxAttempts],
   );
   if (!r) return null;
   const link = typeof r.link === 'string' ? (JSON.parse(r.link) as PendingLink) : r.link;
-  return { userId: r.user_id, method: r.method, link, sessionExpiresAt: r.session_expires_at?.getTime() ?? null };
+  return { userId: r.user_id, method: r.method, link, sessionExpiresAt: r.session_expires_at?.getTime() ?? null, sessionTag: r.session_tag };
 }
 
 /** A live challenge (not expired, attempts left), without counting an attempt. */

@@ -213,6 +213,8 @@ function ServerBoard({ id }: { id: string }) {
   }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem, onAccessLost, colorTheme]);
 
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
+  // #159: the board's workspace encrypts it with its own key, which can't be used right now.
+  if (state.status === 'error' && state.reason === 'workspace_key_unavailable') return <BoardError boardId={id} code={423} message={state.message} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;
   if (state.status === 'error') return <BoardError boardId={id} code={state.code} message={state.message} />;
   if (!host || !board) return <FullPageSpinner label={tr('openingBoard')} />;
@@ -294,6 +296,11 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
       ? {
           title: tr('thisBoardWasRemovedFor'),
           body: tr('freeroSModeratorsTookIt'),
+        }
+      : code === 423
+      ? {
+          title: 'This board’s workspace key isn’t available',
+          body: 'Its workspace encrypts its boards with its own key, and that key can’t be used right now: its admins suspended it, or its key service refused or didn’t answer. The board opens again once the key is available.',
         }
       : code === 403
       ? { title: tr('youDonTHaveAccess'), body: tr('askTheBoardOwnerTo') }

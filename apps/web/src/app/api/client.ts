@@ -4,6 +4,13 @@ import type {
   AdminBoardsResponse,
   AdminScope,
   AdminTrashedBoard,
+  BoardLabel,
+  BoardLabelInput,
+  LegalCaseChange,
+  LegalCaseDetail,
+  LegalCaseExportInfo,
+  LegalCaseInput,
+  LegalCaseSummary,
   UsageDay,
   BoardGroupGrant,
   DirectoryGroup,
@@ -153,7 +160,7 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { Sticker, StickerSet, StickersResponse } from '@freero/shared';
+import type { Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -239,7 +246,8 @@ export const api = {
   login: (body: LoginRequest) => request<LoginResponse>('POST', '/api/auth/login', body),
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
-  logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
+  /** `redirect` (#13): the identity provider's single logout, to visit once signed out here. */
+  logout: () => request<{ ok: true; redirect?: string }>('POST', '/api/auth/logout'),
   updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
@@ -528,6 +536,12 @@ export const api = {
     request<DomainControlSettings & { started: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures`, { userIds, graceDays }),
   cancelDomainCapture: (id: string, userId: string) =>
     request<DomainControlSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures/${encodeURIComponent(userId)}`),
+  // The SAML service provider's key pairs (#13).
+  createSsoSpKey: (id: string) => request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys`),
+  promoteSsoSpKey: (id: string, keyId: string) =>
+    request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys/${encodeURIComponent(keyId)}/promote`),
+  removeSsoSpKey: (id: string, keyId: string) =>
+    request<SsoSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys/${encodeURIComponent(keyId)}`),
   discoverSso: (email: string, next: string) =>
     request<SsoDiscovery>('GET', `/api/sso/discover?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`),
   scimSettings: (id: string) => request<ScimSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/scim`),
@@ -572,6 +586,29 @@ export const api = {
   adminTrash: (id: string) => request<{ boards: AdminTrashedBoard[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/trash`),
   adminRestoreBoard: (id: string, boardId: string) =>
     request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/trash/${encodeURIComponent(boardId)}/restore`),
+  // Legal holds (#157): a team workspace's or organisation's eDiscovery cases.
+  legalCases: (id: string) => request<{ cases: LegalCaseSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/legal-cases`),
+  legalCase: (id: string, caseId: string) =>
+    request<{ case: LegalCaseDetail }>('GET', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}`),
+  createLegalCase: (id: string, input: LegalCaseInput) => request<{ case: LegalCaseDetail }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases`, input),
+  changeLegalCase: (id: string, caseId: string, change: LegalCaseChange) =>
+    request<{ case: LegalCaseDetail }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}`, change),
+  releaseLegalCase: (id: string, caseId: string) =>
+    request<{ case: LegalCaseDetail }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/release`),
+  exportLegalCase: (id: string, caseId: string) =>
+    request<{ export: LegalCaseExportInfo }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/exports`),
+  legalCaseExportUrl: (id: string, caseId: string, exportId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/exports/${encodeURIComponent(exportId)}/download`,
+  // Classification labels (#158) of a team workspace or organisation, and a board's label.
+  boardLabels: (id: string) =>
+    request<{ labels: BoardLabel[]; required: boolean; defaultLabelId: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/labels`),
+  createBoardLabel: (id: string, input: BoardLabelInput) => request<{ label: BoardLabel }>('POST', `/api/workspaces/${encodeURIComponent(id)}/labels`, input),
+  updateBoardLabel: (id: string, labelId: string, input: Partial<BoardLabelInput>) =>
+    request<{ label: BoardLabel }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`, input),
+  deleteBoardLabel: (id: string, labelId: string) => request<void>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`),
+  setBoardLabel: (boardId: string, labelId: string | null) => request<{ board: BoardSummary }>('PUT', `/api/boards/${encodeURIComponent(boardId)}/label`, { labelId }),
+  setLabelPolicy: (id: string, patch: { required?: boolean; defaultLabelId?: string | null }) =>
+    request<{ required: boolean; defaultLabelId: string | null }>('PUT', `/api/workspaces/${encodeURIComponent(id)}/label-policy`, patch),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>
@@ -765,6 +802,13 @@ export const api = {
   backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
 
   // audit streaming to a SIEM (#17): owners/admins; 404 when the server has none
+  // Workspace encryption key (#159; security admins, destroying: owners).
+  workspaceKey: (id: string) => request<WorkspaceKeyStatus>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/key`),
+  createWorkspaceKey: (id: string, body: { kmsKeyId?: string }) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key`, body),
+  rotateWorkspaceKey: (id: string, body: { kmsKeyId?: string | null }) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/rotate`, body),
+  suspendWorkspaceKey: (id: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/suspend`),
+  resumeWorkspaceKey: (id: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/resume`),
+  destroyWorkspaceKey: (id: string, confirm: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/destroy`, { confirm }),
   siemSinks: (id: string) => request<{ sinks: SiemSinkInfo[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`),
   createSiemSink: (id: string, body: SiemSinkInput) =>
     request<{ sink: SiemSinkInfo; signingSecret?: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`, body),

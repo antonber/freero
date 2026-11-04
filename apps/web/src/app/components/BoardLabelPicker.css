@@ -1,0 +1,13 @@
+/* A board's classification label (#158). */
+.fr-label-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-label, var(--fr-primary));
+  background: color-mix(in srgb, var(--fr-label, var(--fr-primary)) 14%, transparent);
+  align-self: flex-start;
+}

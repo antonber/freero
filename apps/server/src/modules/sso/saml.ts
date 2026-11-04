@@ -12,8 +12,13 @@
 // - the verified assertion must be addressed to this workspace's assertion consumer service
 //   (bearer SubjectConfirmationData Recipient), which node-saml 5 only warns about;
 // - claims are read from the VERIFIED assertion only (`getAssertion()`), never the outer response.
-// Metadata parsing (the IdP's entityID, SSO URL and signing certificates) reads public metadata
-// with @xmldom/xmldom; it validates nothing cryptographic, it only extracts configuration.
+// Metadata parsing (the IdP's entityID, SSO URL, single logout URL and signing certificates) reads
+// public metadata with @xmldom/xmldom; it validates nothing cryptographic, it only extracts
+// configuration.
+// #13: with the workspace's SP key pairs (spKeys.ts) node-saml decrypts encrypted assertions
+// (`decryptionPvk`; each key is tried, for rotation) and signs AuthnRequests and logout messages
+// (`privateKey`, redirect binding: SigAlg + Signature over the query). The SP metadata is built
+// here (not by node-saml, which publishes one encryption key and one logout binding).
 import { X509Certificate } from 'node:crypto';
 import { DOMParser } from '@xmldom/xmldom';
 import { SAML, ValidateInResponseTo, type CacheProvider, type Profile } from '@node-saml/node-saml';
@@ -55,9 +60,21 @@ export interface IdpSettings {
   ssoUrl: string;
   /** PEM certificates. */
   certs: string[];
+  /** Its SingleLogoutService (HTTP-Redirect), if it has one. */
+  sloUrl?: string | null;
 }
 
-export function samlFor(workspaceId: string, sp: SpUrls, idp: IdpSettings): SAML {
+/** What the service provider brings to one exchange (#13). */
+export interface SpKeyUse {
+  /** PEM private key that signs AuthnRequests and logout messages; absent: unsigned. */
+  signingKey?: string | null;
+  /** PEM private key that decrypts encrypted assertions (and encrypted NameIDs). */
+  decryptionKey?: string | null;
+  /** Our single logout endpoint (where the IdP sends logout messages). */
+  sloUrl?: string;
+}
+
+export function samlFor(workspaceId: string, sp: SpUrls, idp: IdpSettings, keys: SpKeyUse = {}): SAML {
   return new SAML({
     issuer: sp.entityId,
     callbackUrl: sp.acsUrl,
@@ -79,6 +96,11 @@ export function samlFor(workspaceId: string, sp: SpUrls, idp: IdpSettings): SAML
     identifierFormat: null, // let the IdP choose (email or persistent); the subject is NameID either way
     disableRequestedAuthnContext: true, // accept MFA / passwordless / Kerberos as the IdP decides
     signatureAlgorithm: 'sha256',
+    ...(keys.signingKey ? { privateKey: keys.signingKey } : {}),
+    ...(keys.decryptionKey ? { decryptionPvk: keys.decryptionKey } : {}),
+    // Logout messages go to the IdP's single logout service (never its sign-in URL).
+    ...(idp.sloUrl ? { logoutUrl: idp.sloUrl } : {}),
+    ...(keys.sloUrl ? { logoutCallbackUrl: keys.sloUrl } : {}),
   });
 }
 
@@ -140,7 +162,44 @@ export function parseIdpMetadata(xml: string): IdpSettings {
     for (const c of Array.from(kd.getElementsByTagNameNS(DS, 'X509Certificate'))) certs.push(normalizeCertificate(c.textContent ?? ''));
   }
   if (!certs.length) throw badRequest('The metadata has no signing certificate');
-  return { entityId, ssoUrl: checkHttpsUrl(ssoUrl, 'SingleSignOnService'), certs };
+  // Single logout (#13): we send over HTTP-Redirect, so only that binding's endpoint counts.
+  const slo = Array.from(idp.getElementsByTagNameNS(MD, 'SingleLogoutService')).find((s) => s.getAttribute('Binding') === REDIRECT_BINDING);
+  const sloUrl = slo?.getAttribute('Location')?.trim() || null;
+  return { entityId, ssoUrl: checkHttpsUrl(ssoUrl, 'SingleSignOnService'), certs, sloUrl: sloUrl ? checkHttpsUrl(sloUrl, 'SingleLogoutService') : null };
+}
+
+const xmlEsc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!);
+const certBody = (pem: string) => pem.replace(/-----[A-Z ]+-----|\s+/g, '');
+const POST_BINDING = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST';
+const ENCRYPTION_METHODS = [
+  'http://www.w3.org/2009/xmlenc11#aes256-gcm',
+  'http://www.w3.org/2009/xmlenc11#aes128-gcm',
+  'http://www.w3.org/2001/04/xmlenc#aes256-cbc',
+  'http://www.w3.org/2001/04/xmlenc#aes128-cbc',
+];
+
+/**
+ * Our SP metadata: every key pair's certificate for signing AND encryption (both are live during a
+ * rotation), the single logout endpoint in both bindings, the ACS. `AuthnRequestsSigned` says
+ * whether we sign (the IdP may then insist on it).
+ */
+export function serviceProviderMetadata(o: { entityId: string; acsUrl: string; sloUrl: string; certificates: string[]; signsRequests: boolean }): string {
+  const key = (use: 'signing' | 'encryption', pem: string) =>
+    `<md:KeyDescriptor use="${use}"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certBody(pem)}</ds:X509Certificate></ds:X509Data></ds:KeyInfo>${
+      use === 'encryption' ? ENCRYPTION_METHODS.map((a) => `<md:EncryptionMethod Algorithm="${a}"/>`).join('') : ''
+    }</md:KeyDescriptor>`;
+  return [
+    '<?xml version="1.0"?>',
+    `<md:EntityDescriptor xmlns:md="${MD}" xmlns:ds="${DS}" entityID="${xmlEsc(o.entityId)}">`,
+    `<md:SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol" AuthnRequestsSigned="${o.signsRequests}" WantAssertionsSigned="true">`,
+    ...o.certificates.map((c) => key('signing', c)),
+    ...o.certificates.map((c) => key('encryption', c)),
+    `<md:SingleLogoutService Binding="${REDIRECT_BINDING}" Location="${xmlEsc(o.sloUrl)}"/>`,
+    `<md:SingleLogoutService Binding="${POST_BINDING}" Location="${xmlEsc(o.sloUrl)}"/>`,
+    `<md:AssertionConsumerService Binding="${POST_BINDING}" Location="${xmlEsc(o.acsUrl)}" index="1" isDefault="true"/>`,
+    '</md:SPSSODescriptor>',
+    '</md:EntityDescriptor>',
+  ].join('\n');
 }
 
 /** https (or http outside production — local test IdPs), no credentials. */
@@ -166,6 +225,9 @@ export interface SamlClaims {
   sessionNotOnOrAfter: number | null;
   /** The request it answers, as verified by its signature; null: unsolicited (IdP-initiated). */
   inResponseTo: string | null;
+  /** The IdP's session (#13, single logout): its NameID format and SessionIndex, when given. */
+  nameIdFormat: string | null;
+  sessionIndex: string | null;
 }
 
 const EMAIL_ATTRS = [
@@ -232,6 +294,8 @@ export function claimsFromProfile(profile: Profile, acsUrl: string): SamlClaims 
     name,
     sessionNotOnOrAfter: session ? Date.parse(session) || null : null,
     inResponseTo: typeof profile.inResponseTo === 'string' && profile.inResponseTo ? profile.inResponseTo : null,
+    nameIdFormat: typeof profile.nameIDFormat === 'string' && profile.nameIDFormat ? profile.nameIDFormat : null,
+    sessionIndex: typeof profile.sessionIndex === 'string' && profile.sessionIndex ? profile.sessionIndex : null,
   };
 }
 
@@ -251,3 +315,34 @@ export function responseDestination(samlResponse: string): string | null {
 }
 
 export const sameAcs = sameUrl;
+
+const elementChildren = (n: { childNodes: ArrayLike<unknown> }) =>
+  Array.from(n.childNodes as ArrayLike<{ nodeType: number; localName: string }>).filter((c) => c.nodeType === 1);
+
+/** The posted Response's top-level assertion as it arrived: 'encrypted', 'plain', or null (none / unreadable). */
+export function responseAssertionKind(samlResponse: string): 'encrypted' | 'plain' | null {
+  const xml = Buffer.from(samlResponse, 'base64').toString('utf8');
+  if (/<!DOCTYPE/i.test(xml)) return null;
+  const root = new DOMParser({ errorHandler: () => {} }).parseFromString(xml, 'text/xml')?.documentElement;
+  if (!root || root.localName !== 'Response' || root.namespaceURI !== PROTOCOL) return null;
+  const kids = elementChildren(root);
+  if (kids.some((k) => k.localName === 'Assertion')) return 'plain';
+  return kids.some((k) => k.localName === 'EncryptedAssertion') ? 'encrypted' : null;
+}
+
+/**
+ * The root attributes of a logout message the library VERIFIED (a POST body, or the inflated
+ * SAMLRequest / SAMLResponse of a signed redirect): what we check that it doesn't hand back.
+ */
+export function logoutMessageAttributes(xml: string): { kind: 'LogoutRequest' | 'LogoutResponse'; id: string | null; destination: string | null; issueInstant: number | null } | null {
+  if (/<!DOCTYPE/i.test(xml)) return null;
+  const root = new DOMParser({ errorHandler: () => {} }).parseFromString(xml, 'text/xml')?.documentElement;
+  if (!root || root.namespaceURI !== PROTOCOL || (root.localName !== 'LogoutRequest' && root.localName !== 'LogoutResponse')) return null;
+  const instant = root.getAttribute('IssueInstant');
+  return {
+    kind: root.localName,
+    id: root.getAttribute('ID') || null,
+    destination: root.getAttribute('Destination')?.trim() || null,
+    issueInstant: instant ? Date.parse(instant) || null : null,
+  };
+}

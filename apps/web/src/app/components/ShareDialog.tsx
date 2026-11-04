@@ -12,6 +12,7 @@ import { LinkProtection } from './LinkProtection';
 import { ShareGroups } from './ShareGroups';
 import { SharingSettings } from './SharingSettings';
 import { t } from '../messages';
+import { BoardLabelPicker } from './BoardLabelPicker';
 import './ShareDialog.css';
 
 type InviteRole = Exclude<Role, 'owner'>;
@@ -481,6 +482,16 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
             ) : null}
             {manages && !board.linkBlocked && board.linkProtection && (linkAccess !== 'none' || board.linkProtection.storedAccess !== 'none' || !!linkPolicy) ? (
               <LinkProtection
+                board={board}
+                onChange={(updated) => {
+                  setBoard(updated);
+                  onBoardChange?.(updated);
+                }}
+              />
+            ) : null}
+
+            {board.team ? (
+              <BoardLabelPicker
                 board={board}
                 onChange={(updated) => {
                   setBoard(updated);

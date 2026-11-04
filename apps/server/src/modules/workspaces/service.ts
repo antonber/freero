@@ -11,6 +11,7 @@ import {
   WORKSPACE_CREATION_BLOCKED,
   WORKSPACE_SETTING_LIMITS,
   type AdminScope,
+  type BoardLabelSummary,
   type LinkAccess,
   type OrganisationSummary,
   type Role,
@@ -33,12 +34,15 @@ import { recordAudit } from '../audit/index';
 import { getUser, getUsers, hasTwoFactor } from '../auth/index';
 import { creationRefusal } from './creation';
 import { deletionHoldOn } from './holds';
+import { labelsForPlaces, UNKNOWN_LABEL_CAPS, withLabelCaps } from './labels';
+import { unusableKeysAmong } from '../keys/index';
 import {
   boardIdsInWorkspace,
   cleanUpDeletedBoards,
   countHeldBoards,
   deleteBoardRowsInWorkspace,
   transferBoardsOwnedIn,
+  underLegalHold,
 } from '../boards/index';
 import { removeBoardMemberships } from '../members/index';
 import { refreshBoardAccess } from '../realtime/index';
@@ -114,10 +118,19 @@ async function organisationRolesOf(userId: string): Promise<Map<string, Workspac
  * organisation-wide deactivation, e.g. its directory's deprovisioning), or the workspace — itself
  * or through its organisation — requires two-step verification and they haven't turned it on.
  */
-function blockOf(w: Workspace | undefined, deactivated: Set<string>, workspaceId: string, twoFactor: () => boolean, ipExempt: Set<string>): WorkspaceBlock | null {
+function blockOf(
+  w: Workspace | undefined,
+  deactivated: Set<string>,
+  workspaceId: string,
+  twoFactor: () => boolean,
+  ipExempt: Set<string>,
+  keyUnusable: Set<string>,
+): WorkspaceBlock | null {
   if (deactivated.has(workspaceId) || (w?.organisation && deactivated.has(w.organisation.id))) return 'deactivated';
   if (w?.kind === 'team' && w.settings.requireTwoFactor && !twoFactor()) return 'two_factor_required';
   if (w?.kind === 'team' && !ipExempt.has(w.id) && ipBlocked(w)) return 'ip_not_allowed';
+  // #159: its encryption key is suspended, destroyed or refused / unreachable at its KMS.
+  if (keyUnusable.has(workspaceId)) return 'key_unavailable';
   return null;
 }
 
@@ -163,16 +176,21 @@ export async function ipAllowedIn(workspaceId: string, ip: string | null): Promi
  * (#156: only for a request through an API credential to a workspace with an IP allowlist) where
  * that credential is exempt.
  */
-async function blockInputs(userId: string, workspaces: Array<Workspace | undefined>): Promise<{ deactivated: Set<string>; twoFactor: boolean; ipExempt: Set<string> }> {
+async function blockInputs(
+  userId: string,
+  workspaces: Array<Workspace | undefined>,
+): Promise<{ deactivated: Set<string>; twoFactor: boolean; ipExempt: Set<string>; keyUnusable: Set<string> }> {
   const needs2fa = workspaces.some((w) => w?.kind === 'team' && w.settings.requireTwoFactor);
   const credentialId = currentRequestContext()?.apiCredentialId;
   const listed = credentialId ? workspaces.filter((w): w is Workspace => !!w && w.kind === 'team' && ipListsOf(w).length > 0).map((w) => w.id) : [];
-  const [deactivated, twoFactor, ipExempt] = await Promise.all([
+  const teams = workspaces.filter((w): w is Workspace => w?.kind === 'team').map((w) => w.id);
+  const [deactivated, twoFactor, ipExempt, keyUnusable] = await Promise.all([
     repo.deactivatedIn(userId),
     needs2fa ? hasTwoFactor(userId) : Promise.resolve(true),
     listed.length ? ipExemptions(credentialId!, listed) : Promise.resolve(new Set<string>()),
+    teams.length ? unusableKeysAmong(teams) : Promise.resolve(new Set<string>()),
   ]);
-  return { deactivated, twoFactor, ipExempt };
+  return { deactivated, twoFactor, ipExempt, keyUnusable };
 }
 
 export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
@@ -180,7 +198,7 @@ export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]
   const [rows, orgRoles] = await Promise.all([repo.workspacesOf(userId), organisationRolesOf(userId)]);
   const b = await blockInputs(userId, rows.map((r) => r.workspace));
   return rows.map((r) =>
-    toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor, b.ipExempt), orgRoles, r.adminScopes),
+    toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated, r.workspace.id, () => b.twoFactor, b.ipExempt, b.keyUnusable), orgRoles, r.adminScopes),
   );
 }
 
@@ -193,7 +211,7 @@ export async function workspaceSummary(workspaceId: string, userId: string): Pro
     row.workspace,
     row.role,
     row.memberCount,
-    blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor, b.ipExempt),
+    blockOf(row.workspace, b.deactivated, workspaceId, () => b.twoFactor, b.ipExempt, b.keyUnusable),
     await organisationRolesOf(userId),
     row.adminScopes,
   );
@@ -503,6 +521,8 @@ export async function deleteWorkspace(req: Request | null, workspaceId: string, 
   if (hold) throw new HttpError(409, `This workspace can’t be deleted: ${hold}`);
   const owners = (await repo.listMembers(workspaceId)).filter((m) => m.role === 'owner').map((m) => m.userId);
   const boards = await deleteTeamWorkspaceNow(workspace, userId);
+  if (boards === 'legal_hold')
+    throw new HttpError(409, 'This workspace can’t be deleted: a legal hold keeps some of its content. It can be deleted once the hold is released.', 'legal_hold');
   if (boards === 'held')
     throw new HttpError(
       409,
@@ -535,11 +555,13 @@ export async function deleteWorkspace(req: Request | null, workspaceId: string, 
  * (kept for the default retention after the workspace is gone) and in the account log of whoever
  * deleted it (null: the account purge).
  */
-async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<number | null | 'held'> {
+async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<number | null | 'held' | 'legal_hold'> {
   const workspaceId = workspace.id;
   const gone = await repo.transaction(async () => {
     if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
     if (await countHeldBoards({ workspaceId })) return 'held' as const;
+    // A legal hold (#157) on a board or custodian here: the database would refuse the delete anyway.
+    if (await underLegalHold({ workspaceId })) return 'legal_hold' as const;
     const boards = await deleteBoardRowsInWorkspace(workspaceId);
     await repo.deleteTeam(workspaceId);
     await recordAudit({
@@ -553,7 +575,7 @@ async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | nu
     });
     return boards;
   });
-  if (gone === 'held') return 'held';
+  if (gone === 'held' || gone === 'legal_hold') return gone;
   if (gone) await cleanUpDeletedBoards(gone);
   return gone ? gone.length : null;
 }
@@ -803,11 +825,17 @@ export interface BoardWorkspaceAccess {
   blocked: WorkspaceBlock | null;
   /** Days a trashed board of this workspace is kept. */
   trashRetentionDays: number;
+  /**
+   * #158: the board's classification label, whose caps are already in `policies` (and so in
+   * `maxLink`, `anonymousLinks`, `outsidersBlocked`); `viewerExports` is read by boards' download check.
+   */
+  label: BoardLabelSummary | null;
 }
 
 const DEFAULT_TRASH_DAYS = 30;
 
-type BoardPlace = { workspaceId: string; projectId: string | null };
+/** Where a board is, and (#158) the label it carries. */
+type BoardPlace = { workspaceId: string; projectId: string | null; labelId?: string | null };
 
 /** A project nobody gets through: where a board's project chain is broken (a project that isn't there). */
 const CLOSED_GATE: ProjectGate = { access: 'private', member: false };
@@ -837,10 +865,16 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
   ]);
   const wsById = new Map(workspaces.map((w) => [w.id, w]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
-  const blocks = await blockInputs(userId, workspaces);
+  const [blocks, labels] = await Promise.all([
+    blockInputs(userId, workspaces),
+    labelsForPlaces([...ids, ...workspaces.flatMap((w) => (w.organisation ? [w.organisation.id] : []))]),
+  ]);
+  // A label none of these places defines (an organisation's, after a detach) caps everything.
+  const labelOf = (id: string | null | undefined): BoardLabelSummary | null => (id ? (labels.get(id) ?? STALE_LABEL(id)) : null);
   return (b) => {
     const ws = wsById.get(b.workspaceId);
-    const policies = ws?.policies ?? DEFAULT_POLICIES;
+    const label = labelOf(b.labelId);
+    const policies = label ? withLabelCaps(ws?.policies ?? DEFAULT_POLICIES, label.caps) : (ws?.policies ?? DEFAULT_POLICIES);
     const role = roles.get(b.workspaceId) ?? null;
     const gates = projectGates(b.projectId, projectById, myProjects);
     const level = teamAccessOf(policies, gates);
@@ -853,11 +887,15 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
       outsidersBlocked: policies.externalSharing === 'none',
       maxLink: policies.linkSharing,
       anonymousLinks: policies.publicLinks === 'anyone',
-      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor, blocks.ipExempt),
+      blocked: blockOf(ws, blocks.deactivated, b.workspaceId, () => blocks.twoFactor, blocks.ipExempt, blocks.keyUnusable),
       trashRetentionDays: ws?.settings.trashRetentionDays ?? DEFAULT_TRASH_DAYS,
+      label,
     };
   };
 }
+
+/** A label id nothing the loader read defines: it caps everything (fail closed) until the board is relabelled. */
+const STALE_LABEL = (id: string): BoardLabelSummary => ({ id, name: 'Unknown label', color: '#868e96', caps: UNKNOWN_LABEL_CAPS });
 
 export async function boardAccess(userId: string, board: BoardPlace): Promise<BoardWorkspaceAccess> {
   return (await boardAccessLoader(userId, [board.workspaceId]))(board);
@@ -1134,7 +1172,10 @@ export async function handOverTeamWorkspaces(userId: string): Promise<{ held: nu
         });
       return null;
     });
-    if (orphaned && (await deleteTeamWorkspaceNow(orphaned, null)) === 'held') held++;
+    if (orphaned) {
+      const r = await deleteTeamWorkspaceNow(orphaned, null);
+      if (r === 'held' || r === 'legal_hold') held++;
+    }
   }
   return { held };
 }

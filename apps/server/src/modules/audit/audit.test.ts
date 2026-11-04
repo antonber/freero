@@ -5,7 +5,8 @@ import { createUser } from '../auth/index';
 import { createTeamWorkspace } from '../workspaces/index';
 import { connectAudit } from './wiring';
 import { AnchorCheck, chainProblem, eventHash, GENESIS_HASH, type ChainHead, type StoredLink } from './chain';
-import { anchorChains, anchorSigned, listAuditEvents, pruneAudit, recordAudit, setAccountScope, signAnchor, verifyWorkspaceAudit } from './service';
+import { createCase, heldAuditChains, releaseCase } from '../ediscovery/index';
+import { anchorChains, anchorSigned, listAuditEvents, onAuditRetentionHold, pruneAudit, recordAudit, setAccountScope, signAnchor, verifyWorkspaceAudit } from './service';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
@@ -74,6 +75,30 @@ it('retention removes only events older than the workspace’s retention, and wh
   expect(await pruneAudit(async () => new Map([[ws, 90]]), 365, now)).toBe(0);
   await recordAudit({ action: 'board.restored', workspaceId: ws, actorId: 'u1' });
   expect(await verifyWorkspaceAudit(ws)).toMatchObject({ ok: true, events: 3 });
+});
+
+it('retention never prunes a chain a legal hold keeps, and a failing hold check keeps every chain', async () => {
+  const now = Date.now();
+  const [held, free] = ['ws-held', 'ws-not-held'];
+  for (const ws of [held, free]) await recordAudit({ action: 'board.trashed', workspaceId: ws, actorId: 'u1', target: { type: 'board', id: `${ws}-old` }, at: now - 400 * DAY });
+  const failing = onAuditRetentionHold(() => Promise.reject(new Error('db down')));
+  expect(await pruneAudit(async () => new Map([[held, 90], [free, 90]]), 90, now)).toBe(0);
+  failing();
+  const off = onAuditRetentionHold((chains) => new Set(chains.filter((c) => c === `w:${held}`)));
+  await pruneAudit(async () => new Map([[held, 90], [free, 90]]), 90, now);
+  expect((await listAuditEvents({ workspaceId: held }, 10)).length).toBe(1);
+  expect((await listAuditEvents({ workspaceId: free }, 10)).length).toBe(0);
+  off();
+});
+
+it('an open legal case holds its workspace’s log and its custodians’ own logs, and releasing it lets retention resume', async () => {
+  const owner = await createUser({ name: 'Counsel', email: 'counsel@audit.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const ws = (await createTeamWorkspace(owner.id, 'Under hold')).id;
+  const chains = [`w:${ws}`, `u:${owner.id}`, 'w:someone-else', 'u:someone-else'];
+  const c = await createCase(ws, owner.id, { name: 'Keep the log', custodianIds: [owner.id] });
+  expect([...(await heldAuditChains(chains))].sort()).toEqual([`u:${owner.id}`, `w:${ws}`]);
+  await releaseCase(ws, c.id, owner.id);
+  expect((await heldAuditChains(chains)).size).toBe(0);
 });
 
 it('events recorded at the same moment by parallel requests get consecutive positions in their chain', async () => {

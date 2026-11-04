@@ -77,6 +77,9 @@ export { onSignInRestriction, signInRestriction, type SignInAttempt, type SignIn
 // Invite-only servers (SIGNUPS=invite-only): modules say which addresses are expected (a pending invite…).
 export { onSignupExpected, signupRefusal } from './signups';
 export { endSessionsOf } from './service';
+// SAML single logout (#13, modules/sso): which sessions a directory sign-in started (tagged at
+// completeSignIn), ending exactly those, and the IdP's logout after a sign-out here.
+export { onSessionStarted, endSessionsByKeys, onSignOutRedirect, type StartedSession } from './service';
 // Credentials that outlive sessions (modules/apiauth: API tokens, authorised apps): how the session
 // that made one signed in (sign-in restrictions apply to the credential too), and the moment an
 // account is signed out everywhere (they end with it).

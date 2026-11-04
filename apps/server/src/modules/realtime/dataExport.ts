@@ -7,8 +7,34 @@ import * as Y from 'yjs';
 import { DOC_FRAGMENT, docToMarkdown } from '@freero/shared';
 import { COMMENTS_COLLECTION } from './comments';
 import { readDocBlocks } from './docContent';
+import { listSnapshots, loadSnapshot } from './docStore';
 import { privateLayerOf } from './layers';
-import { snapshotBoardDoc, snapshotBoardLayer } from './rooms';
+import type { SnapshotInfo } from './repo';
+import { snapshotBoardDoc, snapshotBoardLayer, snapshotBoardLayers } from './rooms';
+
+/**
+ * A board in full for a legal review (#157, an eDiscovery case's export): the shared doc and EVERY
+ * layer (hidden frames, everyone's private drafts — the record, not one person's view), and every
+ * version kept, each decoded to JSON. Only for whoever may manage the case.
+ */
+export interface BoardReviewExport {
+  content: Record<string, unknown>;
+  markdown?: string;
+  layers: Array<{ layer: string; json: Record<string, unknown> }>;
+  versions: Array<{ info: SnapshotInfo; json: Record<string, unknown> }>;
+}
+
+export async function exportBoardForReview(boardId: string): Promise<BoardReviewExport> {
+  const content = decode(await snapshotBoardDoc(boardId));
+  const layers = (await snapshotBoardLayers(boardId)).map((l) => ({ layer: l.layer, json: decode(l.state) }));
+  const versions: BoardReviewExport['versions'] = [];
+  for (const info of await listSnapshots(boardId)) {
+    const state = await loadSnapshot(boardId, info.id);
+    if (state) versions.push({ info, json: decode(state) });
+  }
+  const blocks = content[DOC_FRAGMENT];
+  return { content, layers, versions, ...(Array.isArray(blocks) && blocks.length ? { markdown: docToMarkdown(blocks) } : {}) };
+}
 
 export interface BoardContentExport {
   /** Yjs update of the whole shared doc (null: the board has no content). */

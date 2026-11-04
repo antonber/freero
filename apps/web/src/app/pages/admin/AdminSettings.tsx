@@ -19,6 +19,7 @@ import {
 import { Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { AdminNetworks } from './AdminNetworks';
+import { AdminEncryptionKey } from './AdminEncryptionKey';
 import { INACTIVE_ACTION_OPTIONS, LINK_MAX_DAYS_FIELD, parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
 
 import { t } from './messages';
@@ -153,6 +154,7 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
       </div>
       ) : null}
       {scopes.includes('security') ? <AdminNetworks workspace={workspace} /> : null}
+      {scopes.includes('security') && workspace.kind === 'team' ? <AdminEncryptionKey workspace={workspace} /> : null}
 
       {scopes.includes('content') ? (
       <div className="fr-admin-card">

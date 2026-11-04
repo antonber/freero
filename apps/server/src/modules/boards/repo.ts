@@ -48,6 +48,8 @@ export interface Board {
   /** #153: archived (read-only for everyone, out of the default lists) since, and by whom (null: a retention rule). */
   archivedAt: number | null;
   archivedBy: string | null;
+  /** #158: its classification label (modules/workspaces' labels), or null. */
+  labelId: string | null;
 }
 
 interface Row {
@@ -76,6 +78,7 @@ interface Row {
   deleted_by: string | null;
   archived_at: Date | null;
   archived_by: string | null;
+  label_id?: string | null;
 }
 
 // Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
@@ -108,10 +111,15 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   deletedBy: r.deleted_by ?? null,
   archivedAt: r.archived_at ? r.archived_at.getTime() : null,
   archivedBy: r.archived_by ?? null,
+  labelId: r.label_id ?? null,
 });
 
 /** A board in service: not in the trash, not taken down by an operator. */
 const LIVE = `deleted_at IS NULL AND removed_at IS NULL`;
+
+/** The board (alias `b`) is under a legal hold (#157): picked by one, or owned by a custodian in its workspace. */
+const HELD = `(EXISTS (SELECT 1 FROM board_legal_holds h WHERE h.board_id = b.id)
+  OR EXISTS (SELECT 1 FROM board_owner_legal_holds h WHERE h.owner_id = b.owner_id AND h.workspace_id = b.workspace_id))`;
 
 /**
  * Runs fn in one database transaction: every write made inside it — by this module or by other
@@ -150,10 +158,34 @@ export async function appendBoardEvent(e: Omit<BoardEventRecord, 'at'>, at = Dat
 
 export async function insertBoard(b: Board): Promise<void> {
   await query(
-    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at, workspace_id, project_id, kind)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt), b.workspaceId, b.projectId, b.kind],
+    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at, workspace_id, project_id, kind, label_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt), b.workspaceId, b.projectId, b.kind, b.labelId ?? null],
   );
+}
+
+/** #158: sets a live board's label (null: none); false when there is no such live board. */
+export async function setLabel(id: string, labelId: string | null): Promise<boolean> {
+  return (await query(`UPDATE boards SET label_id = $2 WHERE id = $1 AND ${LIVE} RETURNING 1`, [id, labelId])).length > 0;
+}
+
+/** #158: a workspace no longer sees these labels (it left their organisation): its boards carrying one get `to`. */
+export async function replaceLabels(workspaceId: string, labelIds: string[], to: string | null): Promise<string[]> {
+  if (!labelIds.length) return [];
+  return (await query<{ id: string }>(`UPDATE boards SET label_id = $3 WHERE workspace_id = $1 AND label_id = ANY($2::text[]) RETURNING id`, [workspaceId, labelIds, to])).map(
+    (r) => r.id,
+  );
+}
+
+export async function idsWithLabel(labelId: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM boards WHERE label_id = $1`, [labelId])).map((r) => r.id);
+}
+
+/** #158: how many boards carry each label. */
+export async function labelUse(labelIds: string[]): Promise<Map<string, number>> {
+  if (!labelIds.length) return new Map();
+  const rows = await query<{ label_id: string; n: number }>(`SELECT label_id, count(*)::int AS n FROM boards WHERE label_id = ANY($1::text[]) GROUP BY label_id`, [labelIds]);
+  return new Map(rows.map((r) => [r.label_id, r.n]));
 }
 
 /** A live board (null when missing, in the trash or taken down). */
@@ -188,7 +220,8 @@ export async function setLinkBlocked(id: string, at: number | null): Promise<boo
 
 /** A board whether live or in the trash (restore, delete forever). */
 export async function getBoardIncludingTrash(id: string): Promise<Board | null> {
-  const r = await one<Row>(`SELECT * FROM boards WHERE id = $1`, [id]);
+  // A board its owner deleted forever while a legal hold kept it (#157) is gone as far as anyone can tell.
+  const r = await one<Row>(`SELECT * FROM boards WHERE id = $1 AND discarded_at IS NULL`, [id]);
   return r ? toBoard(r) : null;
 }
 
@@ -240,7 +273,7 @@ export async function lockOwnerQuota(ownerId: string): Promise<void> {
 export async function trashedBoardsOf(ownerId: string, workspaceId: string): Promise<Board[]> {
   return (
     await query<Row>(
-      `SELECT * FROM boards WHERE owner_id = $1 AND workspace_id = $2 AND deleted_at IS NOT NULL AND removed_at IS NULL ORDER BY deleted_at DESC`,
+      `SELECT * FROM boards WHERE owner_id = $1 AND workspace_id = $2 AND deleted_at IS NOT NULL AND removed_at IS NULL AND discarded_at IS NULL ORDER BY deleted_at DESC`,
       [
       ownerId,
       workspaceId,
@@ -283,7 +316,7 @@ export async function workspaceStats(
   const [counts, owners, active] = await Promise.all([
     one<{ live: number; trashed: number; archived: number }>(
       `SELECT count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NULL)::int AS live,
-         count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS trashed,
+         count(*) FILTER (WHERE deleted_at IS NOT NULL AND discarded_at IS NULL)::int AS trashed,
          count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NOT NULL)::int AS archived
        FROM boards WHERE workspace_id = $1`,
       [workspaceId],
@@ -356,7 +389,7 @@ export async function trashBoard(id: string, now: number, by: string | null = nu
 
 /** Takes a board out of the trash; false if it was not in the trash. */
 export async function restoreBoard(id: string): Promise<boolean> {
-  return (await one(`UPDATE boards SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
+  return (await one(`UPDATE boards SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 AND deleted_at IS NOT NULL AND discarded_at IS NULL RETURNING id`, [id])) !== null;
 }
 
 /**
@@ -466,7 +499,7 @@ export async function applyInactiveRule(workspaceId: string, id: string, action:
 /** Every board in a workspace's trash (its content admins, #153), most recently deleted first; taken-down ones stay with the operators. */
 export async function trashedInWorkspace(workspaceId: string): Promise<Board[]> {
   return (
-    await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND deleted_at IS NOT NULL AND removed_at IS NULL ORDER BY deleted_at DESC, id`, [workspaceId])
+    await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND deleted_at IS NOT NULL AND removed_at IS NULL AND discarded_at IS NULL ORDER BY deleted_at DESC, id`, [workspaceId])
   ).map((r) => toBoard(r));
 }
 
@@ -481,7 +514,7 @@ export async function allBoardIdsOwnedBy(userId: string): Promise<string[]> {
  */
 export async function deleteAllOwnedBy(userId: string): Promise<Array<string | null>> {
   return (
-    await query<{ thumbnail: string | null }>(`DELETE FROM boards WHERE owner_id = $1 AND removed_at IS NULL RETURNING thumbnail`, [userId])
+    await query<{ thumbnail: string | null }>(`DELETE FROM boards b WHERE owner_id = $1 AND removed_at IS NULL AND NOT ${HELD} RETURNING thumbnail`, [userId])
   ).map((r) => r.thumbnail);
 }
 
@@ -496,7 +529,7 @@ export async function countHeld(by: { ownerId: string } | { workspaceId: string 
 
 /** Deletes a TAKEN-DOWN board for good (an operator's decision); its thumbnail, or undefined if it isn't taken down. */
 export async function deleteTakenDown(id: string): Promise<string | null | undefined> {
-  const r = await one<{ thumbnail: string | null }>(`DELETE FROM boards WHERE id = $1 AND removed_at IS NOT NULL RETURNING thumbnail`, [id]);
+  const r = await one<{ thumbnail: string | null }>(`DELETE FROM boards b WHERE id = $1 AND removed_at IS NOT NULL AND NOT ${HELD} RETURNING thumbnail`, [id]);
   return r ? r.thumbnail : undefined;
 }
 
@@ -511,22 +544,23 @@ export async function liveOwnedBy(userId: string): Promise<Array<{ id: string; t
   ).map((r) => ({ id: r.id, title: r.title, linkShared: r.link_shared }));
 }
 
-/** Deletes up to `limit` boards trashed before `before` for good; returns what was deleted. */
 /**
  * Deletes (up to `limit`) trashed boards deleted before their workspace's cutoff: `before` by
- * default, the `byWorkspace` cutoff for the workspaces listed there.
+ * default, the `byWorkspace` cutoff for the workspaces listed there — and boards deleted forever
+ * while a legal hold kept them, once none does (#157). A held board is never deleted.
  */
 export async function purgeTrashedBefore(
   before: number,
   limit: number,
   byWorkspace: Array<{ workspaceId: string; before: number }> = [],
-): Promise<Array<{ id: string; thumbnail: string | null; title: string; workspaceId: string; ownerId: string; deletedAt: number }>> {
-  const rows = await query<{ id: string; thumbnail: string | null; title: string; workspace_id: string; owner_id: string; deleted_at: Date }>(
+): Promise<Array<{ id: string; thumbnail: string | null; title: string; workspaceId: string; ownerId: string; deletedAt: number; discarded: boolean }>> {
+  const rows = await query<{ id: string; thumbnail: string | null; title: string; workspace_id: string; owner_id: string; deleted_at: Date; discarded_at: Date | null }>(
     `DELETE FROM boards WHERE id IN (
        SELECT b.id FROM boards b
        LEFT JOIN unnest($3::text[], $4::timestamptz[]) AS o(workspace_id, before) ON o.workspace_id = b.workspace_id
-       WHERE b.deleted_at < COALESCE(o.before, $1) AND b.removed_at IS NULL ORDER BY b.deleted_at LIMIT $2
-     ) RETURNING id, thumbnail, title, workspace_id, owner_id, deleted_at`,
+       WHERE (b.deleted_at < COALESCE(o.before, $1) OR b.discarded_at IS NOT NULL) AND b.removed_at IS NULL AND NOT ${HELD}
+       ORDER BY b.deleted_at LIMIT $2
+     ) RETURNING id, thumbnail, title, workspace_id, owner_id, deleted_at, discarded_at`,
     [new Date(before), limit, byWorkspace.map((w) => w.workspaceId), byWorkspace.map((w) => new Date(w.before))],
   );
   return rows.map((r) => ({
@@ -536,7 +570,112 @@ export async function purgeTrashedBefore(
     workspaceId: r.workspace_id,
     ownerId: r.owner_id,
     deletedAt: new Date(r.deleted_at).getTime(),
+    discarded: r.discarded_at !== null,
   }));
+}
+
+/**
+ * A held board whose trash retention ran out leaves the trash as if it had been purged (the hold is
+ * silent, #157) but is kept: it is marked discarded. Returns how many.
+ */
+export async function discardHeldExpired(before: number, byWorkspace: Array<{ workspaceId: string; before: number }>, now: number): Promise<number> {
+  const rows = await query(
+    `UPDATE boards SET discarded_at = $4 WHERE id IN (
+       SELECT b.id FROM boards b
+       LEFT JOIN unnest($2::text[], $3::timestamptz[]) AS o(workspace_id, before) ON o.workspace_id = b.workspace_id
+       WHERE b.deleted_at < COALESCE(o.before, $1) AND b.discarded_at IS NULL AND b.removed_at IS NULL AND ${HELD}
+     ) RETURNING 1`,
+    [new Date(before), byWorkspace.map((w) => w.workspaceId), byWorkspace.map((w) => new Date(w.before)), new Date(now)],
+  );
+  return rows.length;
+}
+
+// ---- legal holds (#157): the only writer of board_legal_holds and board_owner_legal_holds ----
+
+/** Postgres error code of the trigger that refuses to delete a held board (migration 202611301005). */
+export const LEGAL_HOLD_ERROR = 'FH001';
+export const isLegalHoldViolation = (e: unknown): boolean => (e as { code?: unknown } | null)?.code === LEGAL_HOLD_ERROR;
+
+/** The ids among `ids` under any legal hold. */
+export async function heldAmong(ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await query<{ id: string }>(`SELECT b.id FROM boards b WHERE b.id = ANY($1::text[]) AND ${HELD}`, [ids]);
+  return new Set(rows.map((r) => r.id));
+}
+
+/** Puts boards (that still exist) and custodians — every board a person owns in a workspace — under hold `holdId`. */
+export async function placeLegalHold(
+  holdId: string,
+  scope: { boardIds: string[]; custodians: Array<{ workspaceId: string; ownerId: string }> },
+  now: number,
+): Promise<void> {
+  if (scope.boardIds.length)
+    await query(
+      `INSERT INTO board_legal_holds (hold_id, board_id, via_owner, created_at)
+       SELECT $1, id, NULL, $3 FROM boards WHERE id = ANY($2::text[])
+       ON CONFLICT (hold_id, board_id) DO UPDATE SET via_owner = NULL`,
+      [holdId, scope.boardIds, new Date(now)],
+    );
+  if (scope.custodians.length)
+    await query(
+      `INSERT INTO board_owner_legal_holds (hold_id, workspace_id, owner_id, created_at)
+       SELECT $1, c.workspace_id, c.owner_id, $4 FROM unnest($2::text[], $3::text[]) AS c(workspace_id, owner_id)
+       ON CONFLICT DO NOTHING`,
+      [holdId, scope.custodians.map((c) => c.workspaceId), scope.custodians.map((c) => c.ownerId), new Date(now)],
+    );
+}
+
+/** Takes boards and custodians out of hold `holdId` (other holds keep theirs); a custodian's boards that left them while held go with them. */
+export async function narrowLegalHold(holdId: string, scope: { boardIds: string[]; ownerIds: string[] }): Promise<void> {
+  if (scope.boardIds.length) await query(`DELETE FROM board_legal_holds WHERE hold_id = $1 AND board_id = ANY($2::text[]) AND via_owner IS NULL`, [holdId, scope.boardIds]);
+  if (scope.ownerIds.length) {
+    await query(`DELETE FROM board_legal_holds WHERE hold_id = $1 AND via_owner = ANY($2::text[])`, [holdId, scope.ownerIds]);
+    await query(`DELETE FROM board_owner_legal_holds WHERE hold_id = $1 AND owner_id = ANY($2::text[])`, [holdId, scope.ownerIds]);
+  }
+}
+
+/** Ends hold `holdId` entirely. */
+export async function releaseLegalHold(holdId: string): Promise<void> {
+  await query(`DELETE FROM board_legal_holds WHERE hold_id = $1`, [holdId]);
+  await query(`DELETE FROM board_owner_legal_holds WHERE hold_id = $1`, [holdId]);
+}
+
+/** What hold `holdId` names: its explicit boards and its custodians (per workspace). */
+export async function legalHoldScope(holdId: string): Promise<{ boardIds: string[]; custodians: Array<{ workspaceId: string; ownerId: string }> }> {
+  const [boards, owners] = await Promise.all([
+    query<{ board_id: string }>(`SELECT board_id FROM board_legal_holds WHERE hold_id = $1 AND via_owner IS NULL ORDER BY created_at, board_id`, [holdId]),
+    query<{ workspace_id: string; owner_id: string }>(`SELECT workspace_id, owner_id FROM board_owner_legal_holds WHERE hold_id = $1 ORDER BY created_at, owner_id, workspace_id`, [holdId]),
+  ]);
+  return { boardIds: boards.map((r) => r.board_id), custodians: owners.map((r) => ({ workspaceId: r.workspace_id, ownerId: r.owner_id })) };
+}
+
+/** Every board hold `holdId` keeps right now, in any state (trashed, discarded, archived, taken down), oldest first. */
+export async function boardsUnderLegalHold(holdId: string): Promise<Array<Board & { discarded: boolean }>> {
+  const rows = await query<Row & { discarded_at: Date | null }>(
+    `SELECT b.* FROM boards b WHERE EXISTS (SELECT 1 FROM board_legal_holds h WHERE h.hold_id = $1 AND h.board_id = b.id)
+       OR EXISTS (SELECT 1 FROM board_owner_legal_holds h WHERE h.hold_id = $1 AND h.owner_id = b.owner_id AND h.workspace_id = b.workspace_id)
+     ORDER BY b.created_at, b.id`,
+    [holdId],
+  );
+  return rows.map((r) => ({ ...toBoard(r), discarded: r.discarded_at !== null }));
+}
+
+/** How many legal-hold rows touch a person (as a custodian, or owner of a held board) or a workspace (custodians there, held boards in it). */
+export async function legalHoldCount(by: { ownerId: string } | { workspaceId: string }): Promise<number> {
+  const [col, holdCol] = 'ownerId' in by ? ['owner_id', 'owner_id'] : ['workspace_id', 'workspace_id'];
+  const r = await one<{ n: number }>(
+    `SELECT ((SELECT count(*) FROM board_owner_legal_holds WHERE ${holdCol} = $1)
+       + (SELECT count(*) FROM boards b WHERE b.${col} = $1 AND EXISTS (SELECT 1 FROM board_legal_holds h WHERE h.board_id = b.id)))::int AS n`,
+    ['ownerId' in by ? by.ownerId : by.workspaceId],
+  );
+  return r?.n ?? 0;
+}
+
+/** "Deleted forever" while held: out of the trash for everyone, kept for the hold. False if it isn't in the trash. */
+export async function discardTrashedBoard(id: string, now: number): Promise<boolean> {
+  return (
+    (await one(`UPDATE boards SET discarded_at = $2 WHERE id = $1 AND deleted_at IS NOT NULL AND discarded_at IS NULL AND removed_at IS NULL RETURNING 1`, [id, new Date(now)])) !== null
+  );
 }
 
 /** Changes only the given fields, in one statement (concurrent PATCHes of different fields both stick). */
@@ -571,14 +710,14 @@ export async function updateBoardFields(
  */
 export async function moveToWorkspace(
   id: string,
-  to: { workspaceId: string; projectId: string | null; linkAccess?: LinkAccess; embeddable?: false },
+  to: { workspaceId: string; projectId: string | null; labelId: string | null; linkAccess?: LinkAccess; embeddable?: false },
   now: number,
 ): Promise<boolean> {
   const rows = await query(
     `UPDATE boards SET workspace_id = $2, project_id = $3, link_access = COALESCE($4, link_access),
-       embeddable = COALESCE($5, embeddable), updated_at = GREATEST(updated_at, $6)
+       embeddable = COALESCE($5, embeddable), updated_at = GREATEST(updated_at, $6), label_id = $7
      WHERE id = $1 AND ${LIVE} RETURNING 1`,
-    [id, to.workspaceId, to.projectId, to.linkAccess ?? null, to.embeddable ?? null, new Date(now)],
+    [id, to.workspaceId, to.projectId, to.linkAccess ?? null, to.embeddable ?? null, new Date(now), to.labelId],
   );
   return rows.length > 0;
 }
