@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "erasePartsOfStrokes",
+    "eraseWholeStrokes",
+    "eraserMode",
+    "eraserSize",
+    "eraser"
+  ],
+  "erasePartsOfStrokes": "Teile von Strichen radieren",
+  "eraseWholeStrokes": "Ganze Striche radieren",
+  "eraserMode": "Radiermodus",
+  "eraserSize": "Radiergröße",
+  "eraser": "Radierer"
+}

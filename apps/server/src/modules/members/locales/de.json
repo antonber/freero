@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} hat Sie zu „{board}“ auf Freero eingeladen",
+  "invite.title": "{inviter} hat Sie zu einem Board eingeladen",
+  "invite.body": "{role, select, editor {Sie können „{board}“ bearbeiten.} commenter {Sie können „{board}“ kommentieren.} other {Sie können „{board}“ ansehen.}} Freero ist ein kostenloses Online-Whiteboard; zum Öffnen benötigen Sie ein kostenloses Konto.",
+  "invite.action": "Board öffnen",
+  "invite.outro": "{inviter} ({email}) hat diese Einladung gesendet. Der Link funktioniert einmal und läuft in 14 Tagen ab."
+}

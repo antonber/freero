@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "Kein Tag",
+  "selectTwoOrMoreUnlocked": "Wählen Sie zwei oder mehr entsperrte Elemente aus",
+  "selectThreeOrMoreUnlocked": "Wählen Sie drei oder mehr entsperrte Elemente aus",
+  "autoLayout": "Automatisches Layout",
+  "selectTwoOrMoreUnlocked2": "Wählen Sie zwei oder mehr entsperrte, durch Verbindungen verknüpfte Elemente aus",
+  "alignAndDistribute": "Ausrichten und verteilen",
+  "clusterStickies": "Haftnotizen gruppieren"
+}
