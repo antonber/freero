@@ -1,0 +1,6 @@
+{
+  "plugin.signedIn.title": "You’re signed in",
+  "plugin.signedIn.body": "Go back to Figma: the Freero plugin finishes signing in on its own. You can close this tab.",
+  "plugin.failed.title": "Signing in didn’t finish",
+  "plugin.failed.body": "Go back to Figma and choose Sign in to Freero again."
+}

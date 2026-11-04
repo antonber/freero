@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "لقد سجّلت الدخول",
+  "plugin.signedIn.body": "عُد إلى Figma: سيُكمل مكوّن Freero الإضافي تسجيل الدخول تلقائيًا. يمكنك إغلاق علامة التبويب هذه.",
+  "plugin.failed.title": "لم يكتمل تسجيل الدخول",
+  "plugin.failed.body": "عُد إلى Figma واختر تسجيل الدخول إلى Freero مرة أخرى."
+}

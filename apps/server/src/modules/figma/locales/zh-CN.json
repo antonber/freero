@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "你已登录",
+  "plugin.signedIn.body": "请返回 Figma：Freero 插件会自动完成登录。你可以关闭此标签页。",
+  "plugin.failed.title": "登录未完成",
+  "plugin.failed.body": "请返回 Figma，再次选择“登录 Freero”。"
+}

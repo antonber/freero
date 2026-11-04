@@ -1,4 +1,5 @@
-// The only writer of `figma_accounts`, `figma_oauth_flows` and `figma_recent_files` [S4] (#171).
+// The only writer of `figma_accounts`, `figma_oauth_flows`, `figma_recent_files` and
+// `figma_plugin_codes` [S4] (#171, #172).
 import { one, query } from '../../platform/db';
 
 // ---- connected accounts (tokens arrive and leave sealed: service.ts seals them) ----
@@ -107,4 +108,20 @@ export async function recentFiles(userId: string): Promise<Array<{ key: string; 
     [userId],
   );
   return rows.map((r) => ({ key: r.file_key, name: r.name, thumbnail: r.thumbnail, usedAt: r.used_at.getTime() }));
+}
+
+// ---- the plugin's sign-in codes (#172) ----
+
+export async function keepPluginCode(stateHash: string, sealedCode: string, expiresAt: number): Promise<void> {
+  await query(`DELETE FROM figma_plugin_codes WHERE expires_at < now()`);
+  await query(
+    `INSERT INTO figma_plugin_codes (state_hash, code, expires_at) VALUES ($1, $2, $3)
+     ON CONFLICT (state_hash) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at`,
+    [stateHash, sealedCode, new Date(expiresAt)],
+  );
+}
+
+/** Takes a kept code (single use: deleted in the same statement), unless expired. */
+export async function takePluginCode(stateHash: string): Promise<string | null> {
+  return (await one<{ code: string }>(`DELETE FROM figma_plugin_codes WHERE state_hash = $1 AND expires_at > now() RETURNING code`, [stateHash]))?.code ?? null;
 }

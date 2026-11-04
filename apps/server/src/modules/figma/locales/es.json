@@ -1,0 +1,12 @@
+{
+  "@@unreviewed": [
+    "plugin.signedIn.title",
+    "plugin.signedIn.body",
+    "plugin.failed.title",
+    "plugin.failed.body"
+  ],
+  "plugin.signedIn.title": "Has iniciado sesión",
+  "plugin.signedIn.body": "Vuelve a Figma: el plugin de Freero termina de iniciar sesión por sí solo. Puedes cerrar esta pestaña.",
+  "plugin.failed.title": "No se completó el inicio de sesión",
+  "plugin.failed.body": "Vuelve a Figma y elige de nuevo Iniciar sesión en Freero."
+}

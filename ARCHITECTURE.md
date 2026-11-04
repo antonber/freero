@@ -1429,7 +1429,7 @@ the operator's provider (`GIF_PROVIDER`, `GIF_API_KEY`) is asked for results no 
 the workspace's `gifs` policy; previews come through `GET /gifs/media` and a placed GIF is copied
 into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provider links the
 server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `figma`
-(figma_accounts, figma_oauth_flows, figma_recent_files: "Place from Figma", #171 — see "Figma" below), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
+(figma_accounts, figma_oauth_flows, figma_recent_files: "Place from Figma", #171; figma_plugin_codes: the Figma plugin's sign-in, #172 — see "Figma" below), `shapepacks` (shape_packs, shape_pack_icons: a workspace's own SVG icon / shape
 packs, #4), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -2860,7 +2860,7 @@ exactly those paths render framed.
   Freero frame without a session opens; it posts `EmbedChooseMessage` (the board and its member token)
   to `window.opener` with targetOrigin = Freero's origin, like `/embed/connect`.
 
-### Figma (`modules/figma`, `features/figma`; #171; docs/integrations/figma.md)
+### Figma (`modules/figma`, `features/figma`, `integrations/figma`; #171, #172; docs/integrations/figma.md)
 
 - **Place from Figma** (off unless `FIGMA_CLIENT_ID` + `FIGMA_CLIENT_SECRET`; `BoardPermissions.figma`,
   `Host.figma`). Each person connects their own Figma account through the operator's Figma app
@@ -2877,6 +2877,16 @@ exactly those paths render framed.
   (`features/figma`: format toolbar, context menu) reads the link, places again and swaps `src`
   (same width and centre, the new proportions). The feature creates image elements itself; it
   never imports the image feature.
+- **The Figma plugin** (#172, `integrations/figma`: plain JS, no dependencies; `build.mjs` inlines
+  `src/freero.js` + `src/ui.js` into the plugin's page). It reaches Freero only as any API client:
+  dynamic client registration + PKCE with `/api/integrations/figma/plugin/callback` as its redirect
+  (the page keeps the code sealed in `figma_plugin_codes` under the plugin's state; the plugin picks
+  it up once with `POST …/plugin/pickup`, the module's only cross-site route), or a personal token.
+  Frames go to `POST /api/v1/boards/{boardId}/images` (api `images.ts`): the bytes — read raw, only
+  with an Authorization header, at most `MAX_UPLOAD_MB` — are typed by their content and stored with
+  uploads' `saveUpload`; `replace=<itemId>`, else an image whose link is `sameFigmaFrame`, gets the
+  new picture in one change instead of a new item. `apps/server/src/integrations/figma.test.ts` runs
+  the plugin's client unchanged against the real server.
 
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 

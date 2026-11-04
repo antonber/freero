@@ -57,3 +57,43 @@ To try it locally without Figma: `node scripts/lib/mock-figma.mjs --port 4471`, 
 server with `FIGMA_CLIENT_ID=dev FIGMA_CLIENT_SECRET=dev FIGMA_API_URL=http://127.0.0.1:4471
 FIGMA_OAUTH_URL=http://127.0.0.1:4471/oauth` and paste
 `https://www.figma.com/design/MockCheckoutFile2026/Checkout` into the picker.
+
+## The Figma plugin
+
+`integrations/figma` (MIT, no dependencies; built with `node integrations/figma/build.mjs`). In
+Figma: select frames → Plugins → *Freero* → pick a board → *Send to board*. Each frame is exported
+by Figma as a PNG (twice its size, the long side at most 4096 px) and sent to
+`POST /api/v1/boards/{boardId}/images` (scope `boards:write`): stored through the upload checks
+(its bytes decide its type, the size cap, the sender's quota) and placed as an image whose link
+points back at the frame. Sending a frame again updates its picture in place instead of adding
+another: the plugin remembers, in the frame's plugin data, which item it became on each board
+(`replace`), and a teammate's copy of the plugin finds it by the frame's link.
+
+- **Signing in**: *Sign in to Freero* registers the plugin with the chosen Freero as a public OAuth
+  app (dynamic client registration) whose redirect is `/api/integrations/figma/plugin/callback`,
+  opens Freero's consent in the browser, and polls `POST /api/integrations/figma/plugin/pickup`
+  with its secret `state` for the code (kept sealed, single use, five minutes), which it redeems
+  with its PKCE verifier. Or paste a personal API token (Settings → API tokens). The sign-in stays
+  in Figma's client storage on that computer.
+- **Links back**: Figma tells only private and organisation plugins the file's key; the published
+  plugin asks for the file's link once (*Copy link* in Figma's Share menu) and keeps the key with
+  the file. Without it, pictures are sent without a link (re-sending still updates them through the
+  remembered item).
+- It works with any Freero: the address field takes the server; the build bakes in the one the
+  manifest may reach (`networkAccess`).
+
+### Owner steps: publishing to the Figma Community
+
+1. `node integrations/figma/build.mjs` (hosted: the default `https://freero.app`; a self-hosted
+   operator passes `--server https://their.freero` and publishes privately to their organisation).
+2. In the Figma desktop app: Plugins → Development → *Import plugin from manifest…* →
+   `integrations/figma/manifest.json`. Try it against freero.app (or a local server on
+   `http://localhost:4000`, which the manifest allows while developing).
+3. Plugins → Development → *Publish*: Figma assigns the plugin id on the first publish — write it
+   into `manifest.json` with `node integrations/figma/build.mjs --id <id>`, commit it, and build
+   again before every later publish. Fill in the listing: name *Freero*, a tagline, the
+   description (what is sent where: the selected frames, as pictures, to the board you pick), an
+   icon (128×128, from `apps/web/public/icons/`), a cover image (1920×1080: the plugin beside a
+   board), a support contact, and the network access reason (already in the manifest).
+4. Figma reviews Community plugins (usually within a few working days); answer their questions
+   from the Figma account that published it. Once approved, the plugin is listed.

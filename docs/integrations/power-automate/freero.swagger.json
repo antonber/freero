@@ -2300,6 +2300,86 @@
         }
       }
     },
+    "/boards/{boardId}/images": {
+      "parameters": [
+        {
+          "$ref": "#/parameters/BoardId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "items"
+        ],
+        "summary": "Add a picture from its bytes, or update the one sent before",
+        "description": "Owners and editors. The request body is the picture itself (PNG, JPEG, GIF or WebP, decided by its bytes; at most the server's upload size), stored with your uploads (your quota) and placed as an image item on free space at its own proportions. For apps that make the picture themselves, such as the Figma plugin.\n\nSending it again updates instead of duplicating: with `replace` (an item id you got back before) that image gets the new picture; otherwise an image whose `link` points at the same thing (for a Figma frame link: the same file and frame, however the link is written) does. An updated image keeps its place and width and takes the new picture's proportions; the answer is then 200 with `replaced: true`.",
+        "operationId": "putImage",
+        "x-freero-scope": "boards:write",
+        "parameters": [
+          {
+            "name": "link",
+            "in": "query",
+            "required": false,
+            "description": "The item's link (http or https), e.g. back to the Figma frame the picture shows. Also how a re-sent picture finds the image it replaces.",
+            "type": "string",
+            "maxLength": 2000
+          },
+          {
+            "name": "alt",
+            "in": "query",
+            "required": false,
+            "description": "Alternative text for the picture.",
+            "type": "string",
+            "maxLength": 500
+          },
+          {
+            "name": "replace",
+            "in": "query",
+            "required": false,
+            "description": "The id of an image item to give this picture (one you placed before). If it is gone, a new item is added.",
+            "type": "string",
+            "maxLength": 200
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An existing image got the new picture",
+            "schema": {
+              "$ref": "#/definitions/PictureResult"
+            }
+          },
+          "201": {
+            "description": "The new image item",
+            "schema": {
+              "$ref": "#/definitions/PictureResult"
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          },
+          "413": {
+            "description": "The picture is larger than the server's upload size, or your upload quota is full",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "415": {
+            "description": "The body isn't a PNG, JPEG, GIF or WebP picture",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/boards/{boardId}/items/{itemId}": {
       "parameters": [
         {
@@ -6046,6 +6126,26 @@
             }
           },
           "description": "Values by field name: labels, names, YYYY-MM-DD, numbers"
+        }
+      }
+    },
+    "PictureResult": {
+      "type": "object",
+      "required": [
+        "notice",
+        "item",
+        "replaced"
+      ],
+      "properties": {
+        "notice": {
+          "$ref": "#/definitions/Notice"
+        },
+        "item": {
+          "$ref": "#/definitions/Item"
+        },
+        "replaced": {
+          "type": "boolean",
+          "description": "true: an existing image got the new picture"
         }
       }
     },

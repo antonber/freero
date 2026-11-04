@@ -8,7 +8,7 @@
 // layers through realtime's view), the team's API switch and blocks, and records one `api.call`
 // audit event (who, which token or app, what, the outcome). Board text in responses is marked
 // untrusted (`notice`).
-import { Router, type Request, type Response } from 'express';
+import express, { Router, type Request, type Response } from 'express';
 import { PROBLEM_REPORT_NOTICE, type ApiScope } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, HttpError } from '../../platform/http';
@@ -27,6 +27,8 @@ import { workspaceAuditFor } from './audit';
 import * as hooks from './webhooks';
 import { exportLink, redeemExport, renderForApi } from './exports';
 import * as api from './service';
+import { putImage } from './images';
+import { getConfig } from '../../platform/config';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
 export const mountPath = '/api/v1';
@@ -246,6 +248,11 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   });
 
   // ---- changing items (owners and editors: the realtime write path) ----
+  // A picture sent as its bytes (#172: the Figma plugin): read raw, at most the upload cap, and
+  // only from a request that carries a credential (the endpoint checks it).
+  const rawPicture = express.raw({ type: () => true, limit: getConfig().maxUploadBytes });
+  r.post('/boards/:boardId/images', (req, res, next) => (req.headers.authorization ? rawPicture(req, res, next) : next()));
+  endpoint('post', '/boards/:boardId/images', 'boards:write', async (call) => putImage(call, call.req.params.boardId, call.req.body, call.req.query as Record<string, unknown>));
   endpoint('post', '/boards/:boardId/items', 'boards:write', async (call) => ({ status: 201, body: await api.createItems(call, call.req.params.boardId, call.req.body) }));
   endpoint('patch', '/boards/:boardId/items/:itemId', 'boards:write', async (call) => {
     const b = call.req.body as unknown;
