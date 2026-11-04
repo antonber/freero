@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import type { Walkthrough } from '@freero/shared';
 import type { Editor } from '@engine';
 
+import { t } from '../messages';
 export interface PlayerState {
   walkthrough: Walkthrough | null;
   loading: boolean;
@@ -30,11 +31,11 @@ export function usePlayer(): PlayerState {
   );
 }
 
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'This walkthrough couldn’t be opened.');
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : t('thisWalkthroughCouldnTBe'));
 
 export async function openWalkthrough(editor: Editor, id: string, startAt = 0): Promise<void> {
   const host = editor.host.walkthroughs;
-  if (!host) return editor.host.notify('Walkthroughs need a Freero server.', 'info');
+  if (!host) return editor.host.notify(t('walkthroughsNeedAFreeroServer'), 'info');
   const session = state.session + 1;
   set({ loading: true, session });
   try {

@@ -3,6 +3,7 @@ import { MAX_REPORT_NOTE, REPORT_REASONS, type ReportReason } from '@freero/shar
 import { definePanel, type PanelProps } from '@engine';
 import { Button, Input, Modal, TextArea } from '@ui';
 import { isReportTarget, REPORT_DIALOG, TARGET_NOUN } from './lib/target';
+import { t } from './messages';
 import './report.css';
 
 function ReportDialog({ editor, props }: PanelProps) {
@@ -23,9 +24,9 @@ function ReportDialog({ editor, props }: PanelProps) {
     try {
       await editor.host.report({ target, reason, note: note.trim(), ...(visitor && contact.trim() ? { contactEmail: contact.trim() } : {}) });
       close();
-      editor.host.notify('Thanks for your report. Freero’s moderators will review it.', 'success');
+      editor.host.notify(t('thanksForYourReportFreero'), 'success');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Your report could not be sent. Try again.');
+      setError(e instanceof Error ? e.message : t('yourReportCouldNotBe'));
       setBusy(false);
     }
   };
@@ -34,22 +35,18 @@ function ReportDialog({ editor, props }: PanelProps) {
     <Modal
       open
       onClose={close}
-      title={`Report ${TARGET_NOUN[target.kind]}`}
-      description="Tell Freero’s moderators what is wrong. The board’s owner isn’t told who reported it."
+      title={t('reportTargetNoun', { target_noun: TARGET_NOUN[target.kind] })}
+      description={t('tellFreeroSModeratorsWhat')}
       width={460}
       footer={
         <>
-          <Button variant="ghost" onClick={close} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={send} disabled={!reason} loading={busy}>
-            Send report
-          </Button>
+          <Button variant="ghost" onClick={close} disabled={busy}>{t('cancel')}</Button>
+          <Button variant="primary" onClick={send} disabled={!reason} loading={busy}>{t('sendReport')}</Button>
         </>
       }
     >
       <fieldset className="fr-report__reasons">
-        <legend className="fr-report__legend">What’s the problem?</legend>
+        <legend className="fr-report__legend">{t('whatSTheProblem')}</legend>
         {REPORT_REASONS.map((r) => (
           <label key={r.id} className={`fr-report__reason${reason === r.id ? ' is-picked' : ''}`}>
             <input type="radio" name="fr-report-reason" value={r.id} checked={reason === r.id} onChange={() => setReason(r.id)} />
@@ -58,19 +55,19 @@ function ReportDialog({ editor, props }: PanelProps) {
         ))}
       </fieldset>
       <TextArea
-        label="Details (optional)"
+        label={t('detailsOptional')}
         value={note}
         maxLength={MAX_REPORT_NOTE}
         rows={3}
-        placeholder="Anything that helps us understand, e.g. where on the board it is"
+        placeholder={t('anythingThatHelpsUsUnderstand')}
         onChange={(e) => setNote(e.target.value)}
       />
       {visitor && (
         <Input
           className="fr-report__contact"
           type="email"
-          label="Your email (optional)"
-          placeholder="To hear what we decided"
+          label={t('yourEmailOptional')}
+          placeholder={t('toHearWhatWeDecided')}
           value={contact}
           maxLength={254}
           autoComplete="email"

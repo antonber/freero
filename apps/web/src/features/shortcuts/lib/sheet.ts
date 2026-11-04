@@ -2,6 +2,7 @@
 import type { ShortcutEntry } from '@engine';
 import { formatShortcut } from '@ui';
 
+import { t as tr } from '../messages';
 export const SHEET_PANEL = 'shortcuts.sheet';
 
 export interface SheetRow {
@@ -39,12 +40,12 @@ const humanize = (feature: string) => {
 /** The section a shortcut-sheet row or command-palette entry reads under. */
 export function sectionOf(e: Pick<ShortcutEntry, 'id' | 'feature'> & { kind: string }): string {
   if (e.kind === 'tool') return 'Tools';
-  if (e.id.startsWith('engine.settings.')) return 'Board settings';
-  if (e.feature === 'engine') return VIEW_IDS.test(e.id) ? 'View & navigation' : 'Editing';
+  if (e.id.startsWith('engine.settings.')) return tr('boardSettings');
+  if (e.feature === 'engine') return VIEW_IDS.test(e.id) ? tr('viewNavigation') : 'Editing';
   return humanize(e.feature);
 }
 
-const FIXED = ['Tools', 'Editing', 'View & navigation'];
+const FIXED = ['Tools', 'Editing', tr('viewNavigation')];
 
 /**
  * Sections in a stable order (tools, editing, view, then features A–Z), keeping only rows whose

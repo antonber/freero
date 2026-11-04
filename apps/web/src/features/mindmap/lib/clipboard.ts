@@ -4,6 +4,7 @@ import type { Editor } from '@engine';
 import { currentIndex } from './actions';
 import { mapsToOutline } from './outline';
 
+import { t } from '../messages';
 export async function copyOutline(editor: Editor, rootIds: string[]): Promise<void> {
   if (!rootIds.length) return;
   const { text, html } = mapsToOutline(currentIndex(editor), rootIds, (id) => (editor.getElement(id) as { text?: string } | undefined)?.text ?? '');
@@ -13,8 +14,8 @@ export async function copyOutline(editor: Editor, rootIds: string[]): Promise<vo
         new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }), 'text/html': new Blob([html], { type: 'text/html' }) }),
       ]);
     } else await navigator.clipboard.writeText(text);
-    editor.host.notify('Copied as an outline', 'success');
+    editor.host.notify(t('copiedAsAnOutline'), 'success');
   } catch {
-    editor.host.notify('The browser didn’t allow copying to the clipboard', 'error');
+    editor.host.notify(t('theBrowserDidnTAllow'), 'error');
   }
 }

@@ -2,6 +2,7 @@
 // how results are drawn (shares, word sizes). The answers themselves are the server's.
 import { richTextToPlain, type ActivityElement, type ActivityInfo, type ActivityKind, type ActivityOption, type ActivityResults, type QuizQuestion } from '@freero/shared';
 
+import { t } from '../messages';
 export const ANSWER_DIALOG = 'engage.answer';
 export const SETTINGS_DIALOG = 'engage.settings';
 export const LINK_DIALOG = 'engage.link';
@@ -10,13 +11,13 @@ export const RESULTS = 'engageResults';
 export const TOOL_ID = 'engage';
 
 export const KINDS: ReadonlyArray<{ value: ActivityKind; label: string; hint: string }> = [
-  { value: 'poll', label: 'Poll', hint: 'Pick one (or a few) of the choices' },
-  { value: 'wordcloud', label: 'Word cloud', hint: 'Answer in a word or two' },
-  { value: 'ranking', label: 'Ranking', hint: 'Put the items in order' },
-  { value: 'rating', label: 'Rating scale', hint: 'Rate each statement' },
-  { value: 'qna', label: 'Q&A', hint: 'Ask questions and upvote the ones you want answered' },
-  { value: 'matrix', label: '2×2 matrix', hint: 'Place each item on two axes' },
-  { value: 'quiz', label: 'Quiz', hint: 'Questions with right answers, scores and a leaderboard' },
+  { value: 'poll', label: t('poll'), hint: t('pickOneOrAFew') },
+  { value: 'wordcloud', label: t('wordCloud'), hint: t('answerInAWordOr') },
+  { value: 'ranking', label: t('ranking'), hint: t('putTheItemsInOrder') },
+  { value: 'rating', label: t('ratingScale'), hint: t('rateEachStatement') },
+  { value: 'qna', label: t('qA'), hint: t('askQuestionsAndUpvoteThe') },
+  { value: 'matrix', label: t('n22Matrix'), hint: t('placeEachItemOnTwo') },
+  { value: 'quiz', label: t('quiz'), hint: t('questionsWithRightAnswersScores') },
 ];
 
 /** A new activity's accent: one per kind, never red for a quiz (red reads as "wrong" there). */
@@ -32,13 +33,13 @@ export const ACTIVITY_W = 520;
 export const ACTIVITY_H = 340;
 
 const STARTERS: Record<ActivityKind, { question: string; options: string[] }> = {
-  poll: { question: 'Which option do you prefer?', options: ['Option A', 'Option B', 'Option C'] },
-  wordcloud: { question: 'One word for how this week went?', options: [] },
-  ranking: { question: 'What should we do first?', options: ['First idea', 'Second idea', 'Third idea'] },
-  rating: { question: 'How much do you agree?', options: ['We communicate well', 'Our goals are clear'] },
-  qna: { question: 'Questions for the team', options: [] },
-  matrix: { question: 'Where does each idea land?', options: ['First idea', 'Second idea', 'Third idea'] },
-  quiz: { question: 'Team quiz', options: [] },
+  poll: { question: t('whichOptionDoYouPrefer'), options: ['Option A', 'Option B', 'Option C'] },
+  wordcloud: { question: t('oneWordForHowThis'), options: [] },
+  ranking: { question: t('whatShouldWeDoFirst'), options: [t('firstIdea'), t('secondIdea'), t('thirdIdea')] },
+  rating: { question: t('howMuchDoYouAgree'), options: [t('weCommunicateWell'), t('ourGoalsAreClear')] },
+  qna: { question: t('questionsForTheTeam'), options: [] },
+  matrix: { question: t('whereDoesEachIdeaLand'), options: [t('firstIdea'), t('secondIdea'), t('thirdIdea')] },
+  quiz: { question: t('teamQuiz'), options: [] },
 };
 
 /** The question and options a new activity of this kind starts with, and what else the kind needs. */
@@ -46,7 +47,7 @@ export function starter(kind: ActivityKind, newId: () => string): { question: st
   const s = STARTERS[kind];
   const extra: Partial<ActivityElement> =
     kind === 'matrix'
-      ? { axes: { x: ['Low effort', 'High effort'], y: ['Low impact', 'High impact'] } }
+      ? { axes: { x: [t('lowEffort'), t('highEffort')], y: [t('lowImpact'), t('highImpact')] } }
       : kind === 'quiz'
         ? { questions: [newQuizQuestion(newId, 1)], quiz: { step: -1, openedAt: 0, showAnswer: false }, results: 'reveal', anonymous: false }
         : {};
@@ -55,7 +56,7 @@ export function starter(kind: ActivityKind, newId: () => string): { question: st
 
 /** A fresh quiz question with two answers (#147). */
 export function newQuizQuestion(newId: () => string, n: number): QuizQuestion {
-  return { id: newId(), text: `Question ${n}`, options: [{ id: newId(), text: 'Answer A' }, { id: newId(), text: 'Answer B' }], seconds: 20 };
+  return { id: newId(), text: t('questionN', { n }), options: [{ id: newId(), text: t('answerA') }, { id: newId(), text: t('answerB') }], seconds: 20 };
 }
 
 /** Whole-number percentages of `counts` that add up to 100 (largest remainder), all 0 for no answers. */
@@ -83,13 +84,13 @@ export function wordSize(count: number, least: number, most: number, min = 14, m
 }
 
 /** The option's text, or a placeholder for one removed since. */
-export const optionText = (a: Pick<ActivityElement, 'options'>, id: string): string => a.options.find((o) => o.id === id)?.text || 'Removed choice';
+export const optionText = (a: Pick<ActivityElement, 'options'>, id: string): string => a.options.find((o) => o.id === id)?.text || t('removedChoice');
 
 /** "No answers yet" / "1 answer" / "12 answers" (Q&A counts people taking part). */
 export function answersLabel(kind: ActivityKind, results: ActivityResults | undefined): string {
   const n = results?.respondents ?? 0;
-  if (kind === 'qna') return n === 0 ? 'Nobody has asked yet' : n === 1 ? '1 person taking part' : `${n} people taking part`;
-  return n === 0 ? 'No answers yet' : n === 1 ? '1 answer' : `${n} answers`;
+  if (kind === 'qna') return n === 0 ? t('nobodyHasAskedYet') : n === 1 ? '1 person taking part' : `${n} people taking part`;
+  return n === 0 ? t('noAnswersYet') : n === 1 ? '1 answer' : `${n} answers`;
 }
 
 /**
@@ -154,7 +155,7 @@ export function resultsCsv(a: ActivityElement, r: ActivityResults | undefined): 
         rows.push(['Word', 'Count'], ...(r.words ?? []).map((w) => [w.word, w.count]));
         break;
       case 'ranking':
-        rows.push(['Item', 'Points', 'Average place'], ...(r.ranking ?? []).map((x) => [text(x.optionId), x.points, x.avgRank]));
+        rows.push(['Item', 'Points', t('averagePlace')], ...(r.ranking ?? []).map((x) => [text(x.optionId), x.points, x.avgRank]));
         break;
       case 'rating':
         rows.push(['Statement', 'Average', 'Ratings'], ...(r.rating ?? []).map((x) => [text(x.optionId), x.avg, x.count]));
@@ -165,13 +166,13 @@ export function resultsCsv(a: ActivityElement, r: ActivityResults | undefined): 
       case 'matrix': {
         const ax = a.axes ?? { x: ['Low', 'High'], y: ['Low', 'High'] };
         rows.push(
-          ['Item', `${ax.x[0]} → ${ax.x[1]} (0–1)`, `${ax.y[0]} → ${ax.y[1]} (0–1)`, 'Spread across', 'Spread up', 'Placed by'],
+          ['Item', `${ax.x[0]} → ${ax.x[1]} (0–1)`, `${ax.y[0]} → ${ax.y[1]} (0–1)`, t('spreadAcross'), t('spreadUp'), t('placedBy')],
           ...(r.matrix ?? []).map((m) => [text(m.optionId), m.x, m.y, m.sx, m.sy, m.count]),
         );
         break;
       }
       case 'quiz':
-        rows.push(['Place', 'Name', 'Score', 'Right answers'], ...(r.quiz?.leaderboard ?? []).map((x, i) => [i + 1, x.name, x.score, x.right]));
+        rows.push(['Place', 'Name', 'Score', t('rightAnswers')], ...(r.quiz?.leaderboard ?? []).map((x, i) => [i + 1, x.name, x.score, x.right]));
         break;
     }
   return rows.map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';

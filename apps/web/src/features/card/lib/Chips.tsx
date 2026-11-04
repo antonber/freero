@@ -14,6 +14,7 @@ import type { CardElement, FieldChip } from '@freero/shared';
 import { formatDue, isOverdue } from './actions';
 import { STATUSES } from './constants';
 
+import { t } from '../messages';
 /** A chip as words: its tooltip when that already says the value ("Priority: High"), else "tooltip: text". */
 const describe = (el: Element) => {
   const name = el.getAttribute('title')?.trim() ?? '';
@@ -87,7 +88,7 @@ export function Chips(props: {
       case 'date': {
         const overdue = c.field === '$due' && isOverdue(c.date, card.status, now);
         lead.push(
-          <span key={key} className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? `${c.name}: overdue` : c.name}>
+          <span key={key} className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? t('nameOverdue', { name: c.name }) : c.name}>
             <CalendarDays size={12} strokeWidth={2.2} />
             {formatDue(c.date, now)}
           </span>,
@@ -130,7 +131,7 @@ export function Chips(props: {
         {lead}
       </div>
       {more && (
-        <span className="fr-card__chip fr-card__chip--plain fr-card__chip--more" title={more.label} aria-label={`${more.n} more: ${more.label}`}>
+        <span className="fr-card__chip fr-card__chip--plain fr-card__chip--more" title={more.label} aria-label={t('nMoreLabel', { n: more.n, label: more.label })}>
           +{more.n}
         </span>
       )}

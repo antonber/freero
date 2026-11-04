@@ -5,6 +5,7 @@ import { useEffect, useState, type PointerEvent, type RefObject } from 'react';
 import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import { formatTime } from './kinds';
 
+import { t } from '../messages';
 export interface Playback {
   playing: boolean;
   time: number;
@@ -61,7 +62,7 @@ export function Controls({
   return (
     <div className={`fr-media-controls fr-media-controls--${variant}`} data-fr-interactive="" onPointerDown={stop} onDoubleClick={(e) => e.stopPropagation()}>
       {variant === 'video' && (
-        <button type="button" className="fr-media-controls__play" aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'} onClick={onToggle}>
+        <button type="button" className="fr-media-controls__play" aria-label={playing ? t('pause') : t('play')} title={playing ? t('pause') : t('play')} onClick={onToggle}>
           {playing ? <Pause size="1.15em" fill="currentColor" strokeWidth={0} /> : <Play size="1.15em" fill="currentColor" strokeWidth={0} />}
         </button>
       )}
@@ -73,7 +74,7 @@ export function Controls({
         step="any"
         value={Math.min(time, duration || 0)}
         disabled={!media || !duration}
-        aria-label="Seek"
+        aria-label={t('seek')}
         style={{ ['--fr-media-progress' as string]: duration ? `${(Math.min(time, duration) / duration) * 100}%` : '0%' }}
         onChange={(e) => {
           if (media) media.currentTime = Number(e.target.value);
@@ -86,8 +87,8 @@ export function Controls({
       <button
         type="button"
         className="fr-media-controls__mute"
-        aria-label={muted ? 'Unmute' : 'Mute'}
-        title={muted ? 'Unmute' : 'Mute'}
+        aria-label={muted ? t('unmute') : t('mute')}
+        title={muted ? t('unmute') : t('mute')}
         disabled={!media}
         onClick={() => {
           if (media) media.muted = !media.muted;

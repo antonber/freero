@@ -6,6 +6,7 @@ import type { SwimlaneBand, SwimlaneElement } from '@freero/shared';
 import type { Editor, NewElement, Point } from '@engine';
 import { DEFAULT_COLUMN_LANE, DEFAULT_LANE, DEFAULT_PHASE, DEFAULT_ROW_PHASE, reflow, sizeOf } from './layout';
 
+import { t as tr } from '../messages';
 /** Header tints, in the order new lanes take them. */
 export const LANE_COLORS = ['#E9E4FF', '#DDF0FF', '#DDF6EA', '#FFF1D6', '#FFE3E0', '#F1F0F5'];
 
@@ -17,7 +18,7 @@ export function newSwimlane(at: Point): NewElement<'swimlane'> {
   const lanes = ['Customer', 'Team', 'System'].map((t, i) => band(t, DEFAULT_LANE, LANE_COLORS[i]));
   const phases = [band('Phase', DEFAULT_PHASE, LANE_COLORS[5])];
   const { w, h } = sizeOf({ lanes, phases });
-  return { type: 'swimlane', x: Math.round(at.x - w / 2), y: Math.round(at.y - h / 2), w, h, title: 'Swimlanes', lanes, phases };
+  return { type: 'swimlane', x: Math.round(at.x - w / 2), y: Math.round(at.y - h / 2), w, h, title: tr('swimlanes'), lanes, phases };
 }
 
 function fresh(editor: Editor, id: string): SwimlaneElement | null {
@@ -53,7 +54,7 @@ export function addBand(editor: Editor, id: string, kind: BandKind, index?: numb
   const at = Math.max(0, Math.min(list.length, index ?? list.length));
   // The first added phase splits the pool into two phases (the existing one becomes "Phase 1").
   const color = kind === 'lanes' ? LANE_COLORS[list.length % (LANE_COLORS.length - 1)] : LANE_COLORS[5];
-  const title = kind === 'lanes' ? 'New lane' : `Phase ${list.length + 1}`;
+  const title = kind === 'lanes' ? tr('newLane') : `Phase ${list.length + 1}`;
   const b = band(title, kindSize(p, kind), color);
   setBands(editor, id, { lanes: p.lanes, phases: p.phases, [kind]: [...list.slice(0, at), b, ...list.slice(at)] });
   return b.id;

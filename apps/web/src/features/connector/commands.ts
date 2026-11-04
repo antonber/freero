@@ -3,6 +3,7 @@ import { defineCommands, type Point } from '@engine';
 import { findTarget } from './lib/connect';
 import { buildConnector, DEFAULT_STYLE, endpoint } from './lib/model';
 
+import { t } from './messages';
 const CAPS: readonly CapStyle[] = ['none', 'arrow'];
 const ROUTINGS: readonly ConnectorRouting[] = ['straight', 'elbow', 'curved'];
 
@@ -16,7 +17,7 @@ export default defineCommands([
     // end would, unless both land on the same item (a line drawn across one shape stays free).
     // Args: { from, to, id?, endCap?: 'none' | 'arrow', startCap?, routing?, stroke?, strokeWidth? }.
     id: 'connector.insert',
-    label: 'Insert line',
+    label: t('insertLine'),
     palette: false,
     run: (editor, args) => {
       const a = (args ?? {}) as Record<string, unknown>;

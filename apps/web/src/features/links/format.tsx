@@ -3,6 +3,7 @@ import { defineFormat } from '@engine';
 import { IconButton } from '@ui';
 import { LINK_DIALOG } from './lib/link';
 
+import { t } from './messages';
 /** "Link" in the format toolbar of any single unlocked item (connectors excepted). */
 export default defineFormat({
   id: 'links.format',
@@ -11,7 +12,7 @@ export default defineFormat({
   Component: ({ editor, selection }) => (
     <IconButton
       icon={Link2}
-      label={selection[0].link ? 'Edit link' : 'Link to…'}
+      label={selection[0].link ? t('editLink') : t('linkTo')}
       shortcut="Mod+K"
       size={32}
       active={!!selection[0].link}

@@ -3,6 +3,7 @@ import { defineCommands, type Editor } from '@engine';
 import { followLink } from './lib/follow';
 import { LINK_DIALOG } from './lib/link';
 
+import { t } from './messages';
 /** The one selected, linkable item (connectors don't carry links), or null. */
 const single = (editor: Editor) => {
   const sel = editor.getSelection();
@@ -15,7 +16,7 @@ export default defineCommands([
   {
     id: 'links.edit',
     icon: Link2,
-    label: 'Link to…',
+    label: t('linkTo'),
     shortcut: 'mod+k',
     menus: ['context'],
     when: (editor) => !!single(editor) && !single(editor)!.locked,
@@ -26,7 +27,7 @@ export default defineCommands([
   {
     id: 'links.open',
     icon: SquareArrowOutUpRight,
-    label: 'Open link',
+    label: t('openLink'),
     minRole: 'viewer',
     menus: ['context'],
     when: (editor) => !!single(editor)?.link,
@@ -37,7 +38,7 @@ export default defineCommands([
   {
     id: 'links.remove',
     icon: Link2Off,
-    label: 'Remove link',
+    label: t('removeLink'),
     menus: ['context'],
     when: (editor) => editor.getSelection().some((id) => !!editor.getElement(id)?.link && !editor.getElement(id)?.locked),
     run(editor) {

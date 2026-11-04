@@ -4,6 +4,7 @@ import type { TextElement } from '@freero/shared';
 import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
 import { layoutText, measureTextBox, textPadding } from './lib/layout';
 import { pastedTextToRich, textBlockAt, textDefaults } from './lib/actions';
+import { t } from './messages';
 import './text.css';
 
 const TextView = memo(function TextView({ element }: ElementRenderProps<TextElement>) {
@@ -17,7 +18,7 @@ const TextView = memo(function TextView({ element }: ElementRenderProps<TextElem
       padding={pad}
       fontSize={element.fontSize}
       vAlign="top"
-      placeholder="Type something…"
+      placeholder={t('typeSomething')}
       className={`fr-textbox${element.autoWidth ? ' fr-textbox--auto' : ''}${style ? ' fr-textbox--hl' : ''}`}
       style={style}
       // On the canvas (no highlight of its own) the default ink turns light on a dark page.
@@ -28,7 +29,7 @@ const TextView = memo(function TextView({ element }: ElementRenderProps<TextElem
 
 export default defineElement({
   type: 'text',
-  label: { one: 'Text', many: 'Text' },
+  label: { one: t('text'), many: t('text') },
   icon: TypeIcon,
   // Corners scale the text (font size follows); side handles set a wrapping width.
   resize: 'scale',

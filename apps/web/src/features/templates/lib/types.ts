@@ -1,5 +1,6 @@
 import type { NewElement } from '@engine';
 
+import { t } from '../messages';
 export type TemplateCategory =
   | 'brainstorm'
   | 'icebreakers'
@@ -22,24 +23,24 @@ export type TemplateCategory =
 
 /** In the order the picker shows them; a template is listed under its FIRST category when browsing all. */
 export const CATEGORIES: Array<{ id: TemplateCategory; label: string }> = [
-  { id: 'brainstorm', label: 'Brainstorm' },
-  { id: 'icebreakers', label: 'Team building' },
-  { id: 'meetings', label: 'Meetings' },
-  { id: 'agile', label: 'Agile' },
-  { id: 'product', label: 'Product' },
-  { id: 'design', label: 'Design' },
-  { id: 'research', label: 'Research & UX' },
-  { id: 'strategy', label: 'Strategy' },
-  { id: 'consulting', label: 'Consulting' },
-  { id: 'sales', label: 'Sales & marketing' },
-  { id: 'people', label: 'HR & people' },
-  { id: 'operations', label: 'Operations' },
-  { id: 'planning', label: 'Planning' },
-  { id: 'personal', label: 'Personal' },
-  { id: 'diagramming', label: 'Diagramming' },
-  { id: 'engineering', label: 'Engineering' },
-  { id: 'ai', label: 'AI & agents' },
-  { id: 'education', label: 'Education' },
+  { id: 'brainstorm', label: t('brainstorm') },
+  { id: 'icebreakers', label: t('teamBuilding') },
+  { id: 'meetings', label: t('meetings') },
+  { id: 'agile', label: t('agile') },
+  { id: 'product', label: t('product') },
+  { id: 'design', label: t('design') },
+  { id: 'research', label: t('researchUx') },
+  { id: 'strategy', label: t('strategy') },
+  { id: 'consulting', label: t('consulting') },
+  { id: 'sales', label: t('salesMarketing') },
+  { id: 'people', label: t('hrPeople') },
+  { id: 'operations', label: t('operations') },
+  { id: 'planning', label: t('planning') },
+  { id: 'personal', label: t('personal') },
+  { id: 'diagramming', label: t('diagramming') },
+  { id: 'engineering', label: t('engineering') },
+  { id: 'ai', label: t('aiAgents') },
+  { id: 'education', label: t('education') },
 ];
 
 /** What a template builds: its elements, plus content kept outside them (table cells), by element id. */

@@ -9,6 +9,7 @@ import { RESULTS, STAGE_DIALOG, answerLink, answersLabel, kindLabel } from './ac
 import { Body } from './Results';
 import { QrCode } from './qr';
 
+import { t } from '../messages';
 export function Stage({ editor, props }: PanelProps) {
   const id = typeof props?.id === 'string' ? props.id : '';
   const a = useElement(id) as ActivityElement | undefined;
@@ -28,25 +29,25 @@ export function Stage({ editor, props }: PanelProps) {
   if (!a || a.type !== 'activity') return null;
   const link = answerLink(editor.boardId, a.id, !!editor.host.engage);
   return (
-    <div ref={root} className="fr-engage-stage" role="dialog" aria-modal="true" aria-label={`${kindLabel(a.kind)} full screen`} tabIndex={-1} style={{ ['--accent' as string]: a.color }}>
+    <div ref={root} className="fr-engage-stage" role="dialog" aria-modal="true" aria-label={t('kindlabelFullScreen', { kindLabel: kindLabel(a.kind) })} tabIndex={-1} style={{ ['--accent' as string]: a.color }}>
       <div className="fr-engage-stage__main">
         <div className="fr-engage-stage__kind">
           {kindLabel(a.kind)} · <span aria-live="polite">{answersLabel(a.kind, results)}</span>
-          {a.closed ? ' · Closed' : ''}
+          {a.closed ? t('closed2') : ''}
         </div>
-        <h1 className="fr-engage-stage__question">{richTextToPlain(a.question).trim() || 'Untitled activity'}</h1>
+        <h1 className="fr-engage-stage__question">{richTextToPlain(a.question).trim() || t('untitledActivity')}</h1>
         <div className="fr-engage-stage__results">
           <Body a={a} r={results} now={() => editor.host.serverNow()} />
         </div>
       </div>
       {!a.closed ? (
         <aside className="fr-engage-stage__join">
-          <QrCode className="fr-engage-stage__qr" text={link} label="QR code of the answer link" />
-          <p>Scan to answer</p>
+          <QrCode className="fr-engage-stage__qr" text={link} label={t('qrCodeOfTheAnswer')} />
+          <p>{t('scanToAnswer')}</p>
           <code>{link.replace(/^https?:\/\//, '')}</code>
         </aside>
       ) : null}
-      <IconButton className="fr-engage-stage__close" icon={X} label="Close full screen" shortcut="Esc" onClick={close} />
+      <IconButton className="fr-engage-stage__close" icon={X} label={t('closeFullScreen')} shortcut="Esc" onClick={close} />
     </div>
   );
 }

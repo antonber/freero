@@ -4,6 +4,7 @@
 import { connectorDraft, frameDraft, shapeDraft, textDraft, type CapStyle, type ConnectorEndpoint, type ElementDraft, type FontFamily, type Rect, type ShapeKind } from '@freero/shared';
 import { attachedEnd, color, coord, freeEnd, ImportError, imageDraft, imageSource, lineBox, MAX_ITEMS, penDraft, richLabel, size, Skips, type ImportResult } from './common';
 
+import { t as tx } from '../messages';
 /** Looks like an Excalidraw scene (by its content, whatever its name). */
 export function looksLikeExcalidraw(text: string): boolean {
   return /^\s*\{[\s\S]{0,400}"type"\s*:\s*"excalidraw(\/clipboard)?"/.test(text.slice(0, 2000));
@@ -155,7 +156,7 @@ export function parseExcalidraw(text: string, newId: () => string): ImportResult
         };
         const a = end(el.startBinding, pts[0]);
         const b = end(el.endBinding, pts[pts.length - 1]);
-        if (isArrow && pts.length > 2 && el.elbowed !== true) skips.add('Bends of curved or multi-point arrows (drawn as curves)');
+        if (isArrow && pts.length > 2 && el.elbowed !== true) skips.add(tx('bendsOfCurvedOrMulti'));
         d = {
           ...connectorDraft(id, { point: { x: 0, y: 0 } }, { point: { x: 0, y: 0 } }),
           ...lineBox(a, b),
@@ -181,14 +182,14 @@ export function parseExcalidraw(text: string, newId: () => string): ImportResult
           stroke,
           n(el.strokeWidth, 2) * 2,
         );
-        if (!d) skips.add('Freehand strokes with fewer than two points (left out)');
+        if (!d) skips.add(tx('freehandStrokesWithFewerThan'));
         break;
       }
       case 'image': {
         const file = typeof el.fileId === 'string' && isObj(files[el.fileId]) ? (files[el.fileId] as Raw) : null;
         const src = imageSource(str(file?.dataURL));
         if (!src) {
-          skips.add('Images whose picture isn’t in the file (left out)');
+          skips.add(tx('imagesWhosePictureIsnT'));
           break;
         }
         d = imageDraft(id, r, deg(el.angle), '');
@@ -197,12 +198,12 @@ export function parseExcalidraw(text: string, newId: () => string): ImportResult
       }
       case 'embeddable':
       case 'iframe':
-        skips.add('Embedded web pages (left out)');
+        skips.add(tx('embeddedWebPagesLeftOut'));
         break;
       case 'selection':
         break;
       default:
-        skips.add(`“${String(el.type).slice(0, 40)}” items (left out)`);
+        skips.add(tx('sliceItemsLeftOut', { slice: String(el.type).slice(0, 40) }));
     }
     if (!d) continue;
     if (place.frameId && d.type !== 'frame') d.frameId = place.frameId;

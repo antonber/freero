@@ -5,6 +5,7 @@ import { defineElement, useCanEdit, useEditor, type ElementRenderProps, type New
 import { FOOT_H, ITEM_W } from './lib/layout';
 import { isPdfFile, insertPdf, turnPage } from './lib/actions';
 import { openDocument, pageSize, rasterScale, renderPage, type Raster } from './lib/render';
+import { t } from './messages';
 import './pdf.css';
 
 /** Below this zoom a page is a few px tall: show the paper, skip rendering. */
@@ -72,25 +73,25 @@ const PdfView = memo(function PdfView({ element: el, selected, zoom }: ElementRe
     <div className={`fr-pdf${selected ? ' is-selected' : ''}`}>
       <div className="fr-pdf__page" style={{ height: areaH }}>
         {view.state === 'ready' ? (
-          <img className="fr-pdf__img" src={view.raster.url} alt={`${el.name}, page ${page}`} draggable={false} />
+          <img className="fr-pdf__img" src={view.raster.url} alt={t('namePagePage', { name: el.name, page })} draggable={false} />
         ) : (
           <div className="fr-pdf__placeholder">
             <FileText size={Math.min(48, el.w / 6)} strokeWidth={1.4} aria-hidden />
-            {view.state === 'failed' && <span>Couldn't open this PDF</span>}
+            {view.state === 'failed' && <span>{t('couldnTOpenThisPdf2')}</span>}
           </div>
         )}
       </div>
       <div className="fr-pdf__foot" style={{ height: FOOT_H }}>
         <span className="fr-pdf__name" title={el.name}>
-          {el.name || 'Document'}
+          {el.name || t('document')}
         </span>
         {count > 1 && (
           <span className="fr-pdf__pager">
-            {nav(-1, 'Previous page', ChevronLeft, page <= 1)}
+            {nav(-1, t('previousPage'), ChevronLeft, page <= 1)}
             <span className="fr-pdf__num">
               {page} / {count}
             </span>
-            {nav(1, 'Next page', ChevronRight, page >= count)}
+            {nav(1, t('nextPage'), ChevronRight, page >= count)}
           </span>
         )}
       </div>
@@ -100,7 +101,7 @@ const PdfView = memo(function PdfView({ element: el, selected, zoom }: ElementRe
 
 export default defineElement({
   type: 'pdf',
-  label: { one: 'PDF', many: 'PDFs' },
+  label: { one: 'PDF', many: t('pdfs') },
   icon: FileText,
   resize: 'aspect',
   minSize: { w: 120, h: 120 },
@@ -116,7 +117,7 @@ export default defineElement({
   Component: PdfView,
   toPlainText: (el) => el.name,
   // PageUp / PageDown page through the selected document.
-  keys: [{ shortcuts: ['pagedown', 'pageup'], label: 'Next / previous page of a document' }],
+  keys: [{ shortcuts: ['pagedown', 'pageup'], label: t('nextPreviousPageOfA') }],
   onKeyDown(e, { editor, selection }) {
     if (selection.length !== 1 || selection[0].type !== 'pdf' || !editor.can('editor')) return false;
     if (e.key === 'PageDown' || e.key === 'PageUp') {

@@ -8,6 +8,7 @@ import { addChild, currentIndex, relayout, rootIdsOf, setBranchColor, setDirecti
 import { expandWithAi } from './lib/ai';
 import type { Direction } from './lib/tree';
 
+import { t } from './messages';
 function ColorControl({ editor, nodes }: { editor: Editor; nodes: MindmapElement[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -17,19 +18,19 @@ function ColorControl({ editor, nodes }: { editor: Editor; nodes: MindmapElement
   const mixed = nodes.some((n) => n.color !== current);
   return (
     <>
-      <Tooltip content={onlyRoots ? 'Topic color' : 'Branch color'} side="bottom">
+      <Tooltip content={onlyRoots ? t('topicColor') : t('branchColor')} side="bottom">
         <button
           ref={ref}
           type="button"
           className="fr-mm-swatch-btn"
-          aria-label={onlyRoots ? 'Topic color' : 'Branch color'}
+          aria-label={onlyRoots ? t('topicColor') : t('branchColor')}
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
           <span style={{ background: current }} />
         </button>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Branch color">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('branchColor')}>
         <ColorSwatches
           colors={colors}
           names={COLOR_NAMES}
@@ -38,7 +39,7 @@ function ColorControl({ editor, nodes }: { editor: Editor; nodes: MindmapElement
           size={26}
           allowCustom
           onChange={(c) => setBranchColor(editor, nodes.map((n) => n.id), c)}
-          aria-label={onlyRoots ? 'Topic color' : 'Branch color'}
+          aria-label={onlyRoots ? t('topicColor') : t('branchColor')}
         />
       </Popover>
     </>
@@ -65,20 +66,20 @@ export default defineFormat({
             value={roots.every((r) => (r.direction ?? 'right') === direction) ? direction : ('' as Direction)}
             onChange={(d) => setDirection(editor, rootIds, d)}
             options={[
-              { value: 'left', icon: ArrowLeft, title: 'Grow to the left' },
-              { value: 'both', icon: ArrowLeftRight, title: 'Grow on both sides' },
-              { value: 'right', icon: ArrowRight, title: 'Grow to the right' },
-              { value: 'down', icon: ArrowDown, title: 'Grow downwards' },
+              { value: 'left', icon: ArrowLeft, title: t('growToTheLeft') },
+              { value: 'both', icon: ArrowLeftRight, title: t('growOnBothSides') },
+              { value: 'right', icon: ArrowRight, title: t('growToTheRight') },
+              { value: 'down', icon: ArrowDown, title: t('growDownwards') },
             ]}
-            aria-label="Map direction"
+            aria-label={t('mapDirection')}
           />
         )}
-        {single && <IconButton icon={Plus} label="Add child idea" shortcut="Tab" size={32} onClick={() => addChild(editor, single.id)} />}
+        {single && <IconButton icon={Plus} label={t('addChildIdea')} shortcut="Tab" size={32} onClick={() => addChild(editor, single.id)} />}
         {/* #134: greyed out with the reason where AI exists on the server but not for this person here. */}
         {single && (editor.host.ai || editor.host.aiUnavailable) && (
           <IconButton
             icon={Sparkles}
-            label={editor.host.ai ? 'Expand with AI' : `Expand with AI: ${editor.host.aiUnavailable}`}
+            label={editor.host.ai ? t('expandWithAi2') : t('expandWithAiAiunavailable', { aiUnavailable: editor.host.aiUnavailable })}
             size={32}
             // Not `disabled`: the tooltip (and a click) must still say why.
             aria-disabled={!editor.host.ai || undefined}
@@ -89,12 +90,12 @@ export default defineFormat({
         {single && hasKids && (
           <IconButton
             icon={single.collapsed ? ChevronsUpDown : ChevronsDownUp}
-            label={single.collapsed ? 'Expand branch' : 'Collapse branch'}
+            label={single.collapsed ? t('expandBranch') : t('collapseBranch')}
             size={32}
             onClick={() => toggleCollapse(editor, single.id)}
           />
         )}
-        <IconButton icon={ListTree} label="Tidy up layout" size={32} onClick={() => relayout(editor, rootIds)} />
+        <IconButton icon={ListTree} label={t('tidyUpLayout')} size={32} onClick={() => relayout(editor, rootIds)} />
       </>
     );
   },

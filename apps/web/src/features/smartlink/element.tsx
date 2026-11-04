@@ -4,27 +4,28 @@ import { parseObjectUri, type ObjectLinkElement, type ObjectRef, type ObjectSumm
 import { defineElement, describeElementType, useEditor, useIsExporting, type Editor, type ElementRenderProps, type IconComponent, type NewElement } from '@engine';
 import { pastedObject } from './lib/address';
 import { useResolvedObject } from './lib/useResolved';
+import { t } from './messages';
 import './smartlink.css';
 
 const CHIP_W = 300;
 const CHIP_H = 64;
 
 const TYPE_ICON: Record<string, IconComponent> = { board: LayoutDashboard, template: LayoutTemplate, workspace: Users, project: Folder, doc: FileText, issue: Ticket, walkthrough: CirclePlay, decision: Stamp };
-const TYPE_NAME: Record<string, string> = { board: 'Board', element: 'Item', template: 'Template', workspace: 'Workspace', project: 'Project', issue: 'Issue', doc: 'Doc', walkthrough: 'Walkthrough', decision: 'Decision' };
+const TYPE_NAME: Record<string, string> = { board: 'Board', element: 'Item', template: 'Template', workspace: 'Workspace', project: 'Project', issue: 'Issue', doc: t('doc'), walkthrough: 'Walkthrough', decision: 'Decision' };
 
 const stop = (e: MouseEvent | PointerEvent) => e.stopPropagation();
 
 /** Goes to the target: an item on this board glides into view; anything else opens its page. */
 function open(editor: Editor, ref: ObjectRef | null, object: ObjectSummary | null): void {
   if (ref?.type === 'element' && ref.boardId === editor.host.board.id) {
-    if (!editor.getElement(ref.id) || !editor.getBounds([ref.id])) return editor.host.notify('That item isn’t on this board any more, or is hidden.', 'info');
+    if (!editor.getElement(ref.id) || !editor.getBounds([ref.id])) return editor.host.notify(t('thatItemIsnTOn'), 'info');
     editor.select([ref.id]);
     editor.zoomToFit([ref.id], { animate: true, maxZoom: 1, padding: 120 });
     return;
   }
   const path = object?.path ?? (ref?.type === 'board' ? `/board/${ref.id}` : ref?.type === 'element' ? `/board/${ref.boardId}?el=${ref.id}` : null);
   if (path) editor.host.navigate(path);
-  else editor.host.notify('This kind of link has no page to open yet.', 'info');
+  else editor.host.notify(t('thisKindOfLinkHas'), 'info');
 }
 
 /**
@@ -85,8 +86,8 @@ const ObjectLinkView = memo(function ObjectLinkView({ element: el }: ElementRend
           type="button"
           className="fr-smartlink__open"
           data-fr-interactive=""
-          title={denied ? 'Open (you may be able to ask for access)' : 'Open'}
-          aria-label={denied ? 'Open link' : `Open ${title}`}
+          title={denied ? t('openYouMayBeAble') : t('open')}
+          aria-label={denied ? t('openLink') : t('openTitle', { title })}
           onPointerDown={stop}
           onClick={(e) => {
             e.stopPropagation();
@@ -102,7 +103,7 @@ const ObjectLinkView = memo(function ObjectLinkView({ element: el }: ElementRend
 
 export default defineElement({
   type: 'objectlink',
-  label: { one: 'Smart link', many: 'Smart links' },
+  label: { one: t('smartLink'), many: t('smartLinks') },
   icon: Link2,
   resize: 'free',
   minSize: { w: 180, h: 48 },

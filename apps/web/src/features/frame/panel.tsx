@@ -12,6 +12,7 @@ import { Filmstrip, FILMSTRIP_ID } from './lib/Filmstrip';
 import { SlideEditBar } from './lib/SlideEditBar';
 import { editSlide } from './lib/slideEditor';
 
+import { t } from './messages';
 const DRAG_PX = 4;
 
 function Row(props: {
@@ -53,7 +54,7 @@ function Row(props: {
           className="fr-frames__name-input"
           value={draft}
           autoFocus
-          aria-label="Frame title"
+          aria-label={t('frameTitle')}
           onFocus={(e) => e.currentTarget.select()}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -64,13 +65,13 @@ function Row(props: {
         />
       ) : (
         <span className="fr-frames__name" title={frame.title}>
-          {frame.title || 'Untitled frame'}
+          {frame.title || t('untitledFrame')}
         </span>
       )}
       {canEdit && !renaming && (
         <span className="fr-frames__actions" onPointerDown={(e) => e.stopPropagation()}>
-          <IconButton icon={Pencil} label="Rename" size={32} onClick={startRename} />
-          <IconButton icon={Trash2} label="Delete frame" size={32} onClick={() => editor.remove([frame.id])} />
+          <IconButton icon={Pencil} label={t('rename')} size={32} onClick={startRename} />
+          <IconButton icon={Trash2} label={t('deleteFrame')} size={32} onClick={() => editor.remove([frame.id])} />
         </span>
       )}
     </li>
@@ -138,15 +139,12 @@ function FramesPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-frames">
       <DockHeader className="fr-frames__head">
-        <h2 className="fr-frames__title">
-          Frames{frames.length > 0 && <span className="fr-frames__count">{frames.length}</span>}
+        <h2 className="fr-frames__title">{t('frames')}{frames.length > 0 && <span className="fr-frames__count">{frames.length}</span>}
         </h2>
-        <Button size="sm" variant="primary" icon={Play} onClick={() => editor.runCommand('present.start')}>
-          Present
-        </Button>
+        <Button size="sm" variant="primary" icon={Play} onClick={() => editor.runCommand('present.start')}>{t('present')}</Button>
       </DockHeader>
       {frames.length ? (
-        <ul className="fr-frames__list" ref={listRef} aria-label="Frames">
+        <ul className="fr-frames__list" ref={listRef} aria-label={t('frames')}>
           {frames.map((f, i) => (
             <Row
               key={f.id}
@@ -165,15 +163,13 @@ function FramesPanel({ editor }: { editor: Editor }) {
       ) : (
         <div className="fr-frames__empty">
           <Frame size={28} strokeWidth={1.5} />
-          <strong>No frames yet</strong>
-          <span>Frames turn areas of the board into slides you can present, in this order.</span>
+          <strong>{t('noFramesYet')}</strong>
+          <span>{t('framesTurnAreasOfThe')}</span>
         </div>
       )}
       {canEdit && (
         <div className="fr-frames__foot">
-          <Button size="sm" variant="secondary" icon={Plus} onClick={() => editor.setTool(TOOL_ID)}>
-            Add frame
-          </Button>
+          <Button size="sm" variant="secondary" icon={Plus} onClick={() => editor.setTool(TOOL_ID)}>{t('addFrame')}</Button>
         </div>
       )}
     </div>
@@ -203,7 +199,7 @@ export default [
       <Filmstrip
         editor={editor}
         onOpen={(f) => editSlide(editor, f.id)}
-        extraMenu={(f) => [{ id: 'edit', label: 'Edit slide', icon: SquarePen, onSelect: () => editSlide(editor, f.id) }]}
+        extraMenu={(f) => [{ id: 'edit', label: t('editSlide'), icon: SquarePen, onSelect: () => editSlide(editor, f.id) }]}
       />
     ),
   }),

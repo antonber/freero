@@ -5,6 +5,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { timelineLayout as T } from '@freero/shared';
 import { Button, Popover } from '@ui';
 
+import { t } from '../messages';
 const DAY_MS = 86_400_000;
 const fmt = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, { timeZone: 'UTC', ...opts });
 const longDay = fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -108,23 +109,19 @@ export function DatesPopover({
       >
         <strong className="fr-kanban-proj__dates-title">{title}</strong>
         <label>
-          <span>{two ? 'Start' : 'Date'}</span>
+          <span>{two ? t('start') : t('date')}</span>
           <input type="date" autoFocus value={a} onChange={(e) => setA(e.target.value)} />
         </label>
         {two && (
           <label>
-            <span>End</span>
+            <span>{t('end')}</span>
             <input type="date" value={b} aria-invalid={bad} onChange={(e) => setB(e.target.value)} />
           </label>
         )}
-        {bad && <span className="fr-kanban-proj__dates-bad">The end can’t be before the start.</span>}
+        {bad && <span className="fr-kanban-proj__dates-bad">{t('theEndCanTBe')}</span>}
         <span className="fr-kanban-proj__dates-actions">
-          <Button size="sm" variant="ghost" onClick={() => (onSave(null, null), onClose())}>
-            No date
-          </Button>
-          <Button size="sm" variant="primary" type="submit" disabled={bad}>
-            Save
-          </Button>
+          <Button size="sm" variant="ghost" onClick={() => (onSave(null, null), onClose())}>{t('noDate')}</Button>
+          <Button size="sm" variant="primary" type="submit" disabled={bad}>{t('save')}</Button>
         </span>
       </form>
     </Popover>

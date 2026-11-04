@@ -5,13 +5,14 @@ import { defineTool, plainToRichText, useToolGhost, useToolOptions } from '@engi
 import { SegmentedControl } from '@ui';
 import { ACTIVITY_H, ACTIVITY_W, KINDS, TOOL_ID, kindAccent, starter } from './lib/activity';
 
+import { t } from './messages';
 interface Options {
   kind?: ActivityKind;
 }
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Live activity',
+  label: t('liveActivity'),
   icon: ChartColumn,
   order: 46,
   placement: 'more',
@@ -53,7 +54,7 @@ export default defineTool({
     return (
       <div style={{ padding: 8 }}>
         <SegmentedControl<ActivityKind>
-          aria-label="Activity kind"
+          aria-label={t('activityKind')}
           size="sm"
           options={KINDS.map((k) => ({ value: k.value, label: k.label }))}
           value={kind}

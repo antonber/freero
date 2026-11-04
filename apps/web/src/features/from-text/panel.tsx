@@ -9,10 +9,10 @@ import { Button, ElementsPreview, Modal, Select, TextArea, Toggle } from '@ui';
 import { DIAGRAMS, DIALOG_ID, containerOf, insertLaid, layoutText, previewElements, updateDiagram } from './lib/insert';
 import { detectKind, KINDS, kindLabel, type TextKind } from './lib/parse';
 import type { DiagramRecord } from './lib/reconcile';
+import { t } from './messages';
 import './from-text.css';
 
 const isKind = (v: unknown): v is TextKind => KINDS.some((k) => k.value === v);
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
 function FromTextDialog({ editor, props }: PanelProps) {
   const diagramId = typeof props?.diagramId === 'string' ? props.diagramId : null;
@@ -32,7 +32,7 @@ function FromTextDialog({ editor, props }: PanelProps) {
     try {
       return { laid: layoutText(kind, deferred) };
     } catch (e) {
-      return { error: e instanceof LayoutError ? e.message : 'This text can’t be laid out' };
+      return { error: e instanceof LayoutError ? e.message : t('thisTextCanTBe') };
     }
   }, [kind, deferred]);
   const laid = result && 'laid' in result ? result.laid : null;
@@ -55,15 +55,15 @@ function FromTextDialog({ editor, props }: PanelProps) {
       if (record && diagramId) {
         const r = updateDiagram(editor, diagramId, text, { keepMoved });
         close();
-        editor.host.notify(`Diagram updated: ${[r.created && `${r.created} added`, r.updated && `${r.updated} changed`, r.removed && `${r.removed} removed`].filter(Boolean).join(', ') || 'nothing changed'}`, 'success');
+        editor.host.notify(t('diagramUpdatedValue', { value: [r.created && `${r.created} added`, r.updated && `${r.updated} changed`, r.removed && `${r.removed} removed`].filter(Boolean).join(', ') || t('nothingChanged') }), 'success');
       } else {
         const fresh = layoutText(kind, text);
         insertLaid(editor, kind, text, fresh, at);
         close();
-        editor.host.notify(`${KINDS.find((k) => k.value === kind)!.noun} inserted. Undo takes it back.`, 'success');
+        editor.host.notify(t('nounInsertedUndoTakesIt', { noun: KINDS.find((k) => k.value === kind)!.noun }), 'success');
       }
     } catch (e) {
-      setFailure(e instanceof Error ? e.message : 'This text can’t be laid out');
+      setFailure(e instanceof Error ? e.message : t('thisTextCanTBe'));
     }
   };
 
@@ -75,17 +75,15 @@ function FromTextDialog({ editor, props }: PanelProps) {
       width={760}
       title={
         <span className="fr-from-text__title">
-          <TextCursorInput size={18} aria-hidden /> {record ? 'Edit diagram source' : 'Insert from text'}
+          <TextCursorInput size={18} aria-hidden /> {record ? t('editDiagramSource2') : t('insertFromText2')}
         </span>
       }
       footer={
         <>
-          {record && !containerOf(editor, record) && <Toggle checked={keepMoved} onChange={setKeepMoved} label="Keep items I moved" className="fr-from-text__keep" />}
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
+          {record && !containerOf(editor, record) && <Toggle checked={keepMoved} onChange={setKeepMoved} label={t('keepItemsIMoved')} className="fr-from-text__keep" />}
+          <Button variant="ghost" onClick={close}>{t('cancel')}</Button>
           <Button variant="primary" onClick={submit} disabled={!laid || stale}>
-            {record ? 'Update diagram' : 'Insert'}
+            {record ? t('updateDiagram') : t('insert')}
           </Button>
         </>
       }
@@ -97,7 +95,7 @@ function FromTextDialog({ editor, props }: PanelProps) {
               <span className="fr-from-text__fixed">{kindLabel(kind)}</span>
             ) : (
               <Select<TextKind>
-                aria-label="What the text is"
+                aria-label={t('whatTheTextIs')}
                 options={KINDS.map((k) => ({ value: k.value, label: k.label }))}
                 value={kind}
                 onChange={(k) => {
@@ -110,7 +108,7 @@ function FromTextDialog({ editor, props }: PanelProps) {
           </div>
           <p className="fr-from-text__hint">{meta.hint}</p>
           <TextArea
-            aria-label={`${meta.label} text`}
+            aria-label={t('labelText', { label: meta.label })}
             className="fr-from-text__text"
             value={text}
             rows={14}
@@ -142,15 +140,15 @@ function FromTextDialog({ editor, props }: PanelProps) {
         <div className="fr-from-text__preview" aria-live="polite">
           {laid ? (
             <>
-              <ElementsPreview elements={elements} label={`Preview: ${meta.label.toLowerCase()}`} className="fr-from-text__picture" />
+              <ElementsPreview elements={elements} label={t('previewLabel', { label: meta.label.toLowerCase() })} className="fr-from-text__picture" />
               <p className="fr-from-text__summary">
-                {plural(laid.elements.filter((e) => e.type !== 'connector').length, 'item')}
-                {laid.elements.some((e) => e.type === 'connector') ? `, ${plural(laid.elements.filter((e) => e.type === 'connector').length, 'line')}` : ''}
-                {record ? ' · items you styled keep their style' : ' · nothing is on the board until you insert'}
+                {t('countItem', { count: laid.elements.filter((e) => e.type !== 'connector').length })}
+                {laid.elements.some((e) => e.type === 'connector') ? `, ${t('countLine', { count: laid.elements.filter((e) => e.type === 'connector').length })}` : ''}
+                {record ? t('itemsYouStyledKeepTheir') : t('nothingIsOnTheBoard')}
               </p>
             </>
           ) : (
-            <div className="fr-from-text__empty">{error ? null : 'The preview shows here.'}</div>
+            <div className="fr-from-text__empty">{error ? null : t('thePreviewShowsHere')}</div>
           )}
           {error && (
             <p className="fr-from-text__error" role="alert">

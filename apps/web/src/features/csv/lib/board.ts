@@ -29,6 +29,7 @@ import { nanoid } from 'nanoid';
 import type { Editor, NewElement } from '@engine';
 import type { FieldColumn, ImportedRow, ItemRow } from './csv';
 
+import { t } from '../messages';
 type Item = StickyElement | CardElement;
 const isItem = (el: BoardElement | undefined): el is Item => el?.type === 'sticky' || el?.type === 'card';
 
@@ -126,7 +127,7 @@ export interface KanbanImport {
 }
 
 /** The column a row without a value for the columns goes to. */
-export const NO_STAGE = 'No stage';
+export const NO_STAGE = t('noStage');
 
 /**
  * Rows onto a NEW kanban with fields: a column per distinct value of `spec.columnsFrom` (with the

@@ -2,9 +2,10 @@ import { ChartGantt } from 'lucide-react';
 import { defineTool } from '@engine';
 import { newTimeline } from './lib/actions';
 
+import { t } from './messages';
 export default defineTool({
   id: 'timeline',
-  label: 'Timeline',
+  label: t('timeline'),
   icon: ChartGantt,
   order: 43,
   placement: 'more',

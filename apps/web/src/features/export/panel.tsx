@@ -16,6 +16,7 @@ import {
 import { exportFileName } from './lib/files';
 import { buildFramesPdf, framesInPageOrder, type PageSize } from './lib/pdf';
 import { EXPORT_DIALOG, type ExportKind } from './lib/dialog';
+import { t } from './messages';
 import './export.css';
 
 
@@ -63,41 +64,37 @@ function ImageDialog({ editor }: { editor: Editor }) {
       close();
     } catch (err) {
       console.warn('Image export failed', err);
-      editor.host.notify('Export failed. Try a smaller scale or area.', 'error');
+      editor.host.notify(t('exportFailedTryASmaller'), 'error');
     } finally {
       setBusy(false);
     }
   };
 
   const empty = boardEmpty
-    ? 'This board is empty. Add something first, then export it.'
+    ? t('thisBoardIsEmptyAdd')
     : info.count === 0
       ? scope === 'selection'
-        ? 'Nothing is selected. Select items on the board or pick another scope.'
-        : 'Nothing is visible right now. Pan to some content or export the whole board.'
+        ? t('nothingIsSelectedSelectItems')
+        : t('nothingIsVisibleRightNow')
       : null;
 
   return (
     <Modal
       open
       onClose={busy ? () => {} : close}
-      title="Export board as image"
+      title={t('exportBoardAsImage2')}
       width={480}
       footer={
         <>
-          <Button variant="secondary" onClick={close} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={ImageDown} loading={busy} disabled={!!empty || busy} onClick={run}>
-            Export
-          </Button>
+          <Button variant="secondary" onClick={close} disabled={busy}>{t('cancel')}</Button>
+          <Button variant="primary" icon={ImageDown} loading={busy} disabled={!!empty || busy} onClick={run}>{t('export')}</Button>
         </>
       }
     >
       <div className="fr-export">
-        <Row label="Format">
+        <Row label={t('format')}>
           <SegmentedControl
-            aria-label="Format"
+            aria-label={t('format')}
             value={format}
             onChange={setFormat}
             options={[
@@ -107,12 +104,12 @@ function ImageDialog({ editor }: { editor: Editor }) {
             ]}
           />
         </Row>
-        <Row label="Scale" hint={format === 'svg' ? 'SVG is vector, so it stays sharp at any size.' : undefined}>
+        <Row label={t('scale')} hint={format === 'svg' ? t('svgIsVectorSoIt') : undefined}>
           {format === 'svg' ? (
-            <span className="fr-export__muted">Not needed for SVG</span>
+            <span className="fr-export__muted">{t('notNeededForSvg')}</span>
           ) : (
             <SegmentedControl
-              aria-label="Scale"
+              aria-label={t('scale')}
               value={scale}
               onChange={setScale}
               options={[
@@ -123,18 +120,18 @@ function ImageDialog({ editor }: { editor: Editor }) {
             />
           )}
         </Row>
-        <Row label="Background" hint={format === 'jpeg' ? 'JPG has no transparency, so the board background is always included.' : undefined}>
-          <Toggle aria-label="Include background" checked={background || format === 'jpeg'} disabled={format === 'jpeg'} onChange={setBackground} />
+        <Row label={t('background')} hint={format === 'jpeg' ? t('jpgHasNoTransparencySo') : undefined}>
+          <Toggle aria-label={t('includeBackground')} checked={background || format === 'jpeg'} disabled={format === 'jpeg'} onChange={setBackground} />
         </Row>
-        <Row label="Area">
+        <Row label={t('area')}>
           <SegmentedControl
-            aria-label="Area"
+            aria-label={t('area')}
             value={scope}
             onChange={setScope}
             options={[
-              { value: 'board', label: 'Whole board' },
-              { value: 'selection', label: 'Selection' },
-              { value: 'visible', label: 'Visible area' },
+              { value: 'board', label: t('wholeBoard') },
+              { value: 'selection', label: t('selection') },
+              { value: 'visible', label: t('visibleArea') },
             ]}
           />
         </Row>
@@ -143,14 +140,14 @@ function ImageDialog({ editor }: { editor: Editor }) {
         ) : (
           <p className="fr-export__summary">
             {info.count} {info.count === 1 ? 'item' : 'items'}
-            {size ? ` · ${size.w.toLocaleString()} × ${size.h.toLocaleString()} px` : ''}
-            {size?.capped ? ' (reduced to the maximum size)' : ''}
+            {size ? t('wHPx', { w: size.w.toLocaleString(), h: size.h.toLocaleString() }) : ''}
+            {size?.capped ? t('reducedToTheMaximumSize') : ''}
           </p>
         )}
         {busy && (
           <Progress
             value={drawn}
-            label={info.count > LARGE_BOARD ? `Rendering ${info.count.toLocaleString()} items. Large boards take a while…` : 'Rendering…'}
+            label={info.count > LARGE_BOARD ? t('renderingCountItemsLargeBoards', { count: info.count.toLocaleString() }) : t('rendering')}
           />
         )}
       </div>
@@ -204,7 +201,7 @@ function PdfDialog({ editor }: { editor: Editor }) {
       }
     } catch (err) {
       console.warn('PDF export failed', err);
-      editor.host.notify('PDF export failed. Try fewer frames or the A4 page size.', 'error');
+      editor.host.notify(t('pdfExportFailedTryFewer'), 'error');
     } finally {
       if (abort.current === ctrl) abort.current = null;
       setProgress(null);
@@ -220,35 +217,32 @@ function PdfDialog({ editor }: { editor: Editor }) {
     <Modal
       open
       onClose={cancel}
-      title="Export frames as PDF"
-      description={frames.length ? 'Each frame becomes one page, in presentation order.' : undefined}
+      title={t('exportFramesAsPdf2')}
+      description={frames.length ? t('eachFrameBecomesOnePage') : undefined}
       width={480}
       footer={
         <>
           <Button variant="secondary" onClick={cancel}>
-            {busy ? 'Stop' : 'Cancel'}
+            {busy ? t('stop') : t('cancel')}
           </Button>
           <Button variant="primary" icon={FileDown} loading={busy} disabled={!picked.length || busy} onClick={run}>
-            {picked.length > 1 ? `Export ${picked.length} pages` : 'Export'}
+            {t('exportLengthPages', { length: picked.length })}
           </Button>
         </>
       }
     >
       {frames.length === 0 ? (
-        <p className="fr-export__empty">
-          This board has no frames yet. Add a frame around the content you want on each page, then come back here. To export
-          everything as one picture, use “Export board as image”.
-        </p>
+        <p className="fr-export__empty">{t('thisBoardHasNoFrames')}</p>
       ) : (
         <div className="fr-export">
           <div className="fr-export__framesHead">
-            <span className="fr-export__label">Frames</span>
+            <span className="fr-export__label">{t('frames')}</span>
             <button
               type="button"
               className="fr-export__link"
               onClick={() => setChosen(picked.length === frames.length ? new Set() : new Set(frames.map((f) => f.id)))}
             >
-              {picked.length === frames.length ? 'Select none' : 'Select all'}
+              {picked.length === frames.length ? t('selectNone') : t('selectAll')}
             </button>
           </div>
           <ul className="fr-export__frames">
@@ -259,7 +253,7 @@ function PdfDialog({ editor }: { editor: Editor }) {
                   <span className="fr-export__frameNum">{i + 1}</span>
                   <span className="fr-export__frameTitle">
                     {f.title}
-                    {f.skip && <span className="fr-export__skipped"> · skipped in the deck</span>}
+                    {f.skip && <span className="fr-export__skipped">{' '}{t('skippedInTheDeck')}</span>}
                   </span>
                   <span className="fr-export__frameSize">
                     {Math.round(f.w)} × {Math.round(f.h)}
@@ -268,13 +262,13 @@ function PdfDialog({ editor }: { editor: Editor }) {
               </li>
             ))}
           </ul>
-          <Row label="Page size">
+          <Row label={t('pageSize')}>
             <SegmentedControl
-              aria-label="Page size"
+              aria-label={t('pageSize')}
               value={pageSize}
               onChange={setPageSize}
               options={[
-                { value: 'fit', label: 'Fit to frame' },
+                { value: 'fit', label: t('fitToFrame') },
                 { value: 'a4', label: 'A4 landscape' },
               ]}
             />
@@ -282,7 +276,7 @@ function PdfDialog({ editor }: { editor: Editor }) {
           {progress && (
             <Progress
               value={progress.total ? progress.done / progress.total : 0}
-              label={`Rendering page ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`}
+              label={t('renderingPageMinOfTotal', { min: Math.min(progress.done + 1, progress.total), total: progress.total })}
             />
           )}
         </div>

@@ -7,6 +7,7 @@ import { Glyph } from './lib/Glyph';
 import { STAMP_PREFIX, STAMPS, StampArt } from './lib/stamps';
 import { stampTargetAt } from './lib/reactions';
 
+import { t as tr } from './messages';
 /** World size that shows as PLACE_SIZE px on screen right now. */
 function placeSize(zoom: number): number {
   return Math.round(Math.max(16, Math.min(1024, PLACE_SIZE / zoom)));
@@ -45,8 +46,8 @@ function Picker({ editor }: { editor: Editor }) {
       <Input
         size="sm"
         icon={Search}
-        placeholder="Search emoji and stamps"
-        aria-label="Search emoji and stamps"
+        placeholder={tr('searchEmojiAndStamps')}
+        aria-label={tr('searchEmojiAndStamps')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
@@ -58,7 +59,7 @@ function Picker({ editor }: { editor: Editor }) {
       />
       {stampHits.length > 0 && (
         <>
-          <div className="fr-emoji-picker__section">Stamps</div>
+          <div className="fr-emoji-picker__section">{tr('stamps')}</div>
           <div className="fr-emoji-picker__stamps">
             {stampHits.map((s) => (
               <button
@@ -78,7 +79,7 @@ function Picker({ editor }: { editor: Editor }) {
       )}
       {emojiHits ? (
         <>
-          <div className="fr-emoji-picker__section">Emoji</div>
+          <div className="fr-emoji-picker__section">{tr('emoji')}</div>
           {emojiHits.length ? (
             <div className="fr-emoji-picker__grid" data-fr-scrollable="">
               {emojiHits.map((it) => (
@@ -86,14 +87,14 @@ function Picker({ editor }: { editor: Editor }) {
               ))}
             </div>
           ) : (
-            stampHits.length === 0 && <div className="fr-emoji-picker__empty">Nothing matches “{query.trim()}”</div>
+            stampHits.length === 0 && <div className="fr-emoji-picker__empty">{tr('nothingMatchesQuery', { query: query.trim() })}</div>
           )}
         </>
       ) : (
         <>
           {recentEmojis.length > 0 && (
             <>
-              <div className="fr-emoji-picker__section">Recent</div>
+              <div className="fr-emoji-picker__section">{tr('recent')}</div>
               <div className="fr-emoji-picker__grid">
                 {recentEmojis.map((r) => (
                   <Item key={r} value={r} label={r} active={current === r} onPick={() => pick(r)} />
@@ -101,7 +102,7 @@ function Picker({ editor }: { editor: Editor }) {
               </div>
             </>
           )}
-          <div className="fr-emoji-picker__tabs" role="tablist" aria-label="Emoji categories">
+          <div className="fr-emoji-picker__tabs" role="tablist" aria-label={tr('emojiCategories')}>
             {EMOJI_CATEGORIES.map((c) => (
               <button
                 key={c.id}
@@ -143,7 +144,7 @@ function Ghost() {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Emoji & stamps',
+  label: tr('emojiStamps'),
   icon: Stamp,
   order: 60,
   placement: 'more',

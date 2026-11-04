@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid';
 import { LayoutError, layoutKanbanRows, type ElementDraft, type FrameElement, type KanbanRowsInput } from '@freero/shared';
 import type { Editor, NewElement, Point } from '@engine';
 
+import { t } from '../messages';
 const isPoint = (p: unknown): p is Point => !!p && typeof p === 'object' && Number.isFinite((p as Point).x) && Number.isFinite((p as Point).y);
 
 /**
@@ -20,7 +21,7 @@ export function createFromRows(editor: Editor, args: { rows?: unknown; at?: unkn
     laid = layoutKanbanRows(args.rows as KanbanRowsInput, { newId: () => nanoid(10) });
   } catch (e) {
     if (!(e instanceof LayoutError)) throw e;
-    editor.host.notify(`Couldn’t make the kanban. ${e.message}`, 'error');
+    editor.host.notify(t('couldnTMakeTheKanban', { message: e.message }), 'error');
     return null;
   }
   const [board, ...cards] = laid.elements;

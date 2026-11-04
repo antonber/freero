@@ -57,6 +57,7 @@ function obstacleMovedNear(editor: Editor, c: ConnectorElement, changed: Readonl
   return false;
 }
 import { DEFAULT_LABEL_T, extraPart, hasMainLabel, labelBoxes, moveLabel, parsePart, partAt, writeLabel, type LabelPart } from './lib/labels';
+import { t as tr } from './messages';
 import './connector.css';
 
 function dashArray(style: ConnectorElement['strokeStyle'], w: number): string | undefined {
@@ -205,7 +206,7 @@ function LabelText(props: { c: ConnectorElement; part?: string; value?: string; 
       vAlign="middle"
       padding={0}
       color={canvasInk('#17162B')}
-      placeholder="Add text"
+      placeholder={tr('addText')}
       style={{ position: 'relative', inset: 'auto', overflow: 'visible' }}
     />
   );
@@ -261,7 +262,7 @@ function Label(props: {
     window.addEventListener('pointerup', onUp, true);
     window.addEventListener('pointercancel', onUp, true);
   };
-  const drag = props.draggable ? { 'data-fr-interactive': '', onPointerDown, title: 'Drag along the line · Click to edit' } : {};
+  const drag = props.draggable ? { 'data-fr-interactive': '', onPointerDown, title: tr('dragAlongTheLineClick') } : {};
   return (
     <div
       className={`fr-cx-label${props.editing ? ' is-editing' : ''}${props.draggable ? ' is-draggable' : ''}`}
@@ -275,7 +276,7 @@ function Label(props: {
 
 export default defineElement({
   type: 'connector',
-  label: { one: 'Connector', many: 'Connectors' },
+  label: { one: tr('connector'), many: tr('connectors') },
   icon: SplineIcon,
   resize: 'none',
   rotatable: false,

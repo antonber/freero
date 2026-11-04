@@ -6,6 +6,7 @@ import { Glyph } from './lib/Glyph';
 import { DEFAULT_CHOICE, PLACE_SIZE } from './lib/constants';
 import { stampOf } from './lib/stamps';
 import { stampTargetAt } from './lib/reactions';
+import { t } from './messages';
 import './emoji.css';
 
 const EmojiView = memo(function EmojiView({ element }: ElementRenderProps<EmojiElement>) {
@@ -18,7 +19,7 @@ const EmojiView = memo(function EmojiView({ element }: ElementRenderProps<EmojiE
 
 export default defineElement({
   type: 'emoji',
-  label: { one: 'Stamp', many: 'Stamps' },
+  label: { one: t('stamp'), many: t('stamps') },
   icon: StampIcon,
   resize: 'aspect',
   minSize: { w: 16, h: 16 },

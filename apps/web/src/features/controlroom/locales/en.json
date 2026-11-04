@@ -1,0 +1,10 @@
+{
+  "letAgentChangeThisBoard": "Let {agent} change this board again",
+  "stopAgentChangingThisBoard": "Stop {agent} changing this board until you resume it",
+  "agentCanWorkOnThis": "{agent} can work on this board again",
+  "agentIsPausedItsNext": "{agent} is paused: its next change to this board will be refused",
+  "resumeAgent": "Resume agent",
+  "pauseAgent": "Pause agent",
+  "agentPausedByBy": "Agent paused by {by}",
+  "agentPaused": "Agent paused"
+}

@@ -48,9 +48,10 @@ import { FilterRules, FilterSection, SortRules, SortSection } from './FilterSort
 import { myView, setMyView, tabsEditable } from './tabs';
 import { hasOwnLinkedView, linkedEditable, myLinkedView, renameLinkedView, resetMyLinkedView, saveLinkedViewForEveryone, selectedLinkedView, setLinkedLayout, setLinkedLocked, setMyLinkedView } from './linked';
 
+import { t as tr } from '../messages';
 const DENSITIES: Array<{ value: CardDensity; label: string }> = [
-  { value: 'compact', label: 'Compact' },
-  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: tr('compact') },
+  { value: 'comfortable', label: tr('comfortable') },
 ];
 
 /** What the panel shows: a selected linked view (step 3c), else the kanban the selection points at. */
@@ -81,12 +82,12 @@ function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | nul
     return (
       <div className="fr-kanban-fields">
         <DockHeader className="fr-kanban-fields__head">
-          <h2 className="fr-kanban-fields__title">View</h2>
+          <h2 className="fr-kanban-fields__title">{tr('view')}</h2>
         </DockHeader>
         <div className="fr-kanban-fields__empty">
           <SlidersHorizontal size={28} strokeWidth={1.5} aria-hidden />
-          <strong>Select a kanban board</strong>
-          <span>Choose what its cards show and how they are coloured.</span>
+          <strong>{tr('selectAKanbanBoard')}</strong>
+          <span>{tr('chooseWhatItsCardsShow')}</span>
         </div>
       </div>
     );
@@ -108,21 +109,21 @@ function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | nul
   const groupBy = saved.groupBy ?? 'stage';
   const groupName = schema.find((f) => f.id === groupBy)?.name ?? 'Stage';
   const colorChoices: Array<{ value: CardColorBy; label: string }> = [
-    { value: 'group', label: `Column (${groupName})` },
-    { value: 'own', label: 'Card’s own colour' },
-    { value: '$status', label: 'Status' },
+    { value: 'group', label: tr('columnGroupname', { groupName }) },
+    { value: 'own', label: tr('cardSOwnColour') },
+    { value: '$status', label: tr('status') },
     ...colorableFields(schema, groupBy).map((f) => ({ value: f.id, label: f.name })),
   ];
   const groupable = groupableFields(k);
   const groupChoices = groupable.map((f) => ({ value: f.id, label: `${f.name} (${FIELD_TYPE_LABELS[f.type].toLowerCase()})` }));
   const NONE = '';
-  const laneChoices = [{ value: NONE, label: 'None' }, ...groupChoices.filter((c) => c.value !== groupBy)];
+  const laneChoices = [{ value: NONE, label: tr('none') }, ...groupChoices.filter((c) => c.value !== groupBy)];
 
   return (
     <div className="fr-kanban-fields fr-kanban-view">
       <DockHeader className="fr-kanban-fields__head">
-        <h2 className="fr-kanban-fields__title">View</h2>
-        <span className="fr-kanban-fields__of">{richTextToPlain(k.title) || 'Kanban'}</span>
+        <h2 className="fr-kanban-fields__title">{tr('view')}</h2>
+        <span className="fr-kanban-fields__of">{richTextToPlain(k.title) || tr('kanban')}</span>
       </DockHeader>
       <Whose own={own} mayShare={mayShare} onSave={() => saveViewForEveryone(editor, k.id)} onReset={() => resetMyView(editor, k.id)} />
       {canEdit && !k.locked && (
@@ -130,13 +131,13 @@ function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | nul
           {lockedByOther ? (
             <>
               <Lock size={14} aria-hidden />
-              <span>Locked by {lockedBy}: the view stays as saved. You can still change it for yourself.</span>
+              <span>{tr('lockedByLockedbyTheView', { lockedBy })}</span>
             </>
           ) : (
             <Toggle
               size="sm"
               checked={!!saved.locked}
-              label={saved.locked ? `View locked by ${lockedBy}` : 'Lock this view'}
+              label={saved.locked ? tr('viewLockedByLockedby', { lockedBy }) : tr('lockThisView')}
               onChange={(on) => setViewLocked(editor, k.id, on)}
             />
           )}
@@ -144,31 +145,29 @@ function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | nul
       )}
 
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-groups">
-        <h3 id="fr-kanban-view-groups" className="fr-kanban-view__heading">
-          Columns
-        </h3>
+        <h3 id="fr-kanban-view-groups" className="fr-kanban-view__heading">{tr('columns')}</h3>
         <label className="fr-kanban-view__row">
-          <span>Group by</span>
+          <span>{tr('groupBy')}</span>
           {mayShare ? (
-            <Select size="sm" aria-label="Group cards by" value={groupBy} options={groupChoices} onChange={(id) => setGroupBy(editor, k.id, id)} />
+            <Select size="sm" aria-label={tr('groupCardsBy')} value={groupBy} options={groupChoices} onChange={(id) => setGroupBy(editor, k.id, id)} />
           ) : (
             <span className="fr-kanban-view__value">{groupName}</span>
           )}
         </label>
         <label className="fr-kanban-view__row">
-          <span>Swimlanes</span>
+          <span>{tr('swimlanes')}</span>
           {mayShare ? (
-            <Select size="sm" aria-label="Swimlanes by" value={saved.subGroupBy ?? NONE} options={laneChoices} onChange={(id) => setSwimlanes(editor, k.id, id || null)} />
+            <Select size="sm" aria-label={tr('swimlanesBy')} value={saved.subGroupBy ?? NONE} options={laneChoices} onChange={(id) => setSwimlanes(editor, k.id, id || null)} />
           ) : (
-            <span className="fr-kanban-view__value">{schema.find((f) => f.id === saved.subGroupBy)?.name ?? 'None'}</span>
+            <span className="fr-kanban-view__value">{schema.find((f) => f.id === saved.subGroupBy)?.name ?? tr('none')}</span>
           )}
         </label>
         <p className="fr-kanban-fields__hint">
           {mayShare
-            ? 'Grouping moves the cards on the board, so it changes for everyone. A single select, person or checkbox field can make the columns or the rows.'
+            ? tr('groupingMovesTheCardsOn')
             : lockedByOther
-              ? 'The view is locked: its grouping stays as saved.'
-              : 'The board’s editors choose how its cards are grouped.'}
+              ? tr('theViewIsLockedIts')
+              : tr('theBoardSEditorsChoose')}
         </p>
       </section>
 
@@ -177,23 +176,21 @@ function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | nul
       <SortSection editor={editor} k={k} schema={schema} sort={saved.sort ?? []} mayShare={mayShare} />
 
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-cards">
-        <h3 id="fr-kanban-view-cards" className="fr-kanban-view__heading">
-          Cards
-        </h3>
+        <h3 id="fr-kanban-view-cards" className="fr-kanban-view__heading">{tr('cards')}</h3>
         <label className="fr-kanban-view__row">
-          <span>Density</span>
+          <span>{tr('density')}</span>
           {mayShare ? (
-            <SegmentedControl size="sm" aria-label="Card density" value={card.density} options={DENSITIES} onChange={(d) => setDensity(editor, k.id, d)} />
+            <SegmentedControl size="sm" aria-label={tr('cardDensity')} value={card.density} options={DENSITIES} onChange={(d) => setDensity(editor, k.id, d)} />
           ) : (
             <span className="fr-kanban-view__value">{DENSITIES.find((d) => d.value === card.density)?.label}</span>
           )}
         </label>
-        <p className="fr-kanban-fields__hint">{mayShare ? 'Density changes card sizes for everyone.' : 'Density is set by the board’s editors.'}</p>
+        <p className="fr-kanban-fields__hint">{mayShare ? tr('densityChangesCardSizesFor') : tr('densityIsSetByThe')}</p>
         <label className="fr-kanban-view__row">
-          <span>Colour by</span>
+          <span>{tr('colourBy')}</span>
           <Select<CardColorBy>
             size="sm"
-            aria-label="Colour cards by"
+            aria-label={tr('colourCardsBy')}
             // Coloured by the field the board is now grouped by = coloured by column.
             value={card.color === groupBy ? 'group' : colorChoices.some((c) => c.value === card.color) ? card.color : 'own'}
             options={colorChoices}
@@ -203,10 +200,8 @@ function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | nul
       </section>
 
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-fields">
-        <h3 id="fr-kanban-view-fields" className="fr-kanban-view__heading">
-          Fields on cards
-        </h3>
-        <ol className="fr-kanban-fields__list fr-kanban-view__fields" aria-label="Fields on cards">
+        <h3 id="fr-kanban-view-fields" className="fr-kanban-view__heading">{tr('fieldsOnCards')}</h3>
+        <ol className="fr-kanban-fields__list fr-kanban-view__fields" aria-label={tr('fieldsOnCards')}>
           {shown.map((f, i) => (
             <li key={f.id} className="fr-kanban-view__field">
               <Toggle size="sm" checked label={f.name} onChange={() => setShow(card.show.filter((id) => id !== f.id))} />
@@ -214,14 +209,14 @@ function KanbanViewPanel({ editor, k }: { editor: Editor; k: KanbanElement | nul
                 <IconButton
                   icon={ChevronUp}
                   size={32}
-                  label={`Show ${f.name} earlier`}
+                  label={tr('showNameEarlier', { name: f.name })}
                   disabled={i === 0}
                   onClick={() => setShow(swap(shown.map((x) => x.id), i, i - 1))}
                 />
                 <IconButton
                   icon={ChevronDown}
                   size={32}
-                  label={`Show ${f.name} later`}
+                  label={tr('showNameLater', { name: f.name })}
                   disabled={i === shown.length - 1}
                   onClick={() => setShow(swap(shown.map((x) => x.id), i, i + 1))}
                 />
@@ -245,30 +240,26 @@ function Whose({ own, mayShare, onSave, onReset, noun = 'view' }: { own: boolean
     <div className={`fr-kanban-view__whose${own ? ' is-own' : ''}`} role="status">
       {own ? (
         <>
-          <span>Only you see these changes.</span>
+          <span>{tr('onlyYouSeeTheseChanges')}</span>
           <span className="fr-kanban-view__whose-actions">
             {mayShare && (
-              <Button size="sm" variant="primary" onClick={onSave}>
-                Save for everyone
-              </Button>
+              <Button size="sm" variant="primary" onClick={onSave}>{tr('saveForEveryone')}</Button>
             )}
-            <Button size="sm" variant="ghost" onClick={onReset}>
-              Reset
-            </Button>
+            <Button size="sm" variant="ghost" onClick={onReset}>{tr('reset')}</Button>
           </span>
         </>
       ) : (
-        <span>{mayShare ? `Everyone sees this ${noun}. Your changes stay yours until you save them.` : 'Changes you make here are yours alone.'}</span>
+        <span>{mayShare ? tr('everyoneSeesThisNounYour', { noun }) : tr('changesYouMakeHereAre')}</span>
       )}
     </div>
   );
 }
 
 const SCALE_CHOICES: Array<{ value: TimelineScale; label: string }> = [
-  { value: 'day', label: 'Days' },
-  { value: 'week', label: 'Weeks' },
-  { value: 'month', label: 'Months' },
-  { value: 'quarter', label: 'Quarters' },
+  { value: 'day', label: tr('days') },
+  { value: 'week', label: tr('weeks') },
+  { value: 'month', label: tr('months') },
+  { value: 'quarter', label: tr('quarters') },
 ];
 
 /** A kanban's projection tab (a table, list, calendar or timeline): its settings, mine until saved. */
@@ -281,9 +272,9 @@ function ProjectionPanel({ editor, k, saved }: { editor: Editor; k: KanbanElemen
   return (
     <div className="fr-kanban-fields fr-kanban-view">
       <DockHeader className="fr-kanban-fields__head">
-        <h2 className="fr-kanban-fields__title">View</h2>
+        <h2 className="fr-kanban-fields__title">{tr('view')}</h2>
         <span className="fr-kanban-fields__of">
-          {richTextToPlain(k.title) || 'Kanban'} · {saved.name}
+          {richTextToPlain(k.title) || tr('kanban')} · {saved.name}
         </span>
       </DockHeader>
       <Whose own={own} mayShare={mayShare} onSave={() => saveViewForEveryone(editor, k.id)} onReset={() => resetMyView(editor, k.id)} />
@@ -311,45 +302,43 @@ function LinkedViewPanel({ editor, lv }: { editor: Editor; lv: KanbanViewElement
   return (
     <div className="fr-kanban-fields fr-kanban-view">
       <DockHeader className="fr-kanban-fields__head">
-        <h2 className="fr-kanban-fields__title">View</h2>
+        <h2 className="fr-kanban-fields__title">{tr('view')}</h2>
         <span className="fr-kanban-fields__of">
           {saved.name}
-          {k ? ` · linked to ${richTextToPlain(k.title) || 'Kanban'}` : ''}
+          {k ? tr('linkedToValue', { value: richTextToPlain(k.title) || tr('kanban') }) : ''}
         </span>
       </DockHeader>
       {!k ? (
         <div className="fr-kanban-fields__empty">
           <SlidersHorizontal size={28} strokeWidth={1.5} aria-hidden />
-          <strong>Its kanban isn’t on the board</strong>
-          <span>{canEdit ? 'It was deleted. Undo brings it back.' : 'It was deleted, or is somewhere on the board you can’t see.'}</span>
+          <strong>{tr('itsKanbanIsnTOn')}</strong>
+          <span>{canEdit ? tr('itWasDeletedUndoBrings') : tr('itWasDeletedOrIs')}</span>
         </div>
       ) : (
         <>
-          <Whose own={own} mayShare={mayShare} noun="linked view" onSave={() => saveLinkedViewForEveryone(editor, lv.id)} onReset={() => resetMyLinkedView(editor, lv.id)} />
+          <Whose own={own} mayShare={mayShare} noun={tr('linkedView2')} onSave={() => saveLinkedViewForEveryone(editor, lv.id)} onReset={() => resetMyLinkedView(editor, lv.id)} />
           {canEdit && !lv.locked && (
             <div className={`fr-kanban-view__lock${saved.locked ? ' is-locked' : ''}`}>
               {lockedByOther ? (
                 <>
                   <Lock size={14} aria-hidden />
-                  <span>Locked by {lockedBy}: the view stays as saved. You can still change it for yourself.</span>
+                  <span>{tr('lockedByLockedbyTheView', { lockedBy })}</span>
                 </>
               ) : (
-                <Toggle size="sm" checked={!!saved.locked} label={saved.locked ? `View locked by ${lockedBy}` : 'Lock this view'} onChange={(on) => setLinkedLocked(editor, lv.id, on)} />
+                <Toggle size="sm" checked={!!saved.locked} label={saved.locked ? tr('viewLockedByLockedby', { lockedBy }) : tr('lockThisView')} onChange={(on) => setLinkedLocked(editor, lv.id, on)} />
               )}
             </div>
           )}
           {mayShare && (
             <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-linked">
-              <h3 id="fr-kanban-view-linked" className="fr-kanban-view__heading">
-                Linked view
-              </h3>
+              <h3 id="fr-kanban-view-linked" className="fr-kanban-view__heading">{tr('linkedView')}</h3>
               <label className="fr-kanban-view__row">
-                <span>Name</span>
+                <span>{tr('name')}</span>
                 <NameInput key={saved.name} name={saved.name} onCommit={(name) => renameLinkedView(editor, lv.id, name)} />
               </label>
               <label className="fr-kanban-view__row">
-                <span>Show as</span>
-                <Select<ProjectionLayout> size="sm" aria-label="Show the cards as" value={saved.layout} options={PROJECTION_LAYOUTS.map((l) => ({ value: l, label: LAYOUT_NAMES[l] }))} onChange={(l) => setLinkedLayout(editor, lv.id, l)} />
+                <span>{tr('showAs')}</span>
+                <Select<ProjectionLayout> size="sm" aria-label={tr('showTheCardsAs')} value={saved.layout} options={PROJECTION_LAYOUTS.map((l) => ({ value: l, label: LAYOUT_NAMES[l] }))} onChange={(l) => setLinkedLayout(editor, lv.id, l)} />
               </label>
               <p className="fr-kanban-fields__hint">Changes the view for everyone. Its filter and sort stay; edits in it change the kanban’s real cards.</p>
             </section>
@@ -372,7 +361,7 @@ function NameInput({ name, onCommit }: { name: string; onCommit: (name: string) 
   return (
     <input
       className="fr-kanban-view__name"
-      aria-label="Name of the linked view"
+      aria-label={tr('nameOfTheLinkedView')}
       aria-invalid={!!problem}
       title={problem ?? undefined}
       value={draft}
@@ -408,70 +397,60 @@ function ProjectionSettings({ k, mine, set, scope }: { k: KanbanElement; mine: P
     <>
       {mine.layout === 'calendar' && (
         <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-dates">
-          <h3 id="fr-kanban-view-dates" className="fr-kanban-view__heading">
-            Dates
-          </h3>
+          <h3 id="fr-kanban-view-dates" className="fr-kanban-view__heading">{tr('dates')}</h3>
           <label className="fr-kanban-view__row">
-            <span>Cards sit on</span>
-            <Select size="sm" aria-label="Date field the calendar places cards on" value={calendarDateField(mine, schema)} options={dates} onChange={(date) => set({ date })} />
+            <span>{tr('cardsSitOn')}</span>
+            <Select size="sm" aria-label={tr('dateFieldTheCalendarPlaces')} value={calendarDateField(mine, schema)} options={dates} onChange={(date) => set({ date })} />
           </label>
-          <p className="fr-kanban-fields__hint">Dragging a card to a day sets this date. A date field of the kanban works too.</p>
+          <p className="fr-kanban-fields__hint">{tr('draggingACardToA')}</p>
         </section>
       )}
       {mine.layout === 'timeline' && (
         <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-dates">
-          <h3 id="fr-kanban-view-dates" className="fr-kanban-view__heading">
-            Bars
-          </h3>
+          <h3 id="fr-kanban-view-dates" className="fr-kanban-view__heading">{tr('bars')}</h3>
           <label className="fr-kanban-view__row">
-            <span>Start</span>
-            <Select size="sm" aria-label="Where bars start" value={timelineFields(mine, schema).start} options={dates} onChange={(start) => set({ start })} />
+            <span>{tr('start')}</span>
+            <Select size="sm" aria-label={tr('whereBarsStart')} value={timelineFields(mine, schema).start} options={dates} onChange={(start) => set({ start })} />
           </label>
           <label className="fr-kanban-view__row">
-            <span>End</span>
-            <Select size="sm" aria-label="Where bars end" value={timelineFields(mine, schema).end} options={dates} onChange={(end) => set({ end })} />
+            <span>{tr('end')}</span>
+            <Select size="sm" aria-label={tr('whereBarsEnd')} value={timelineFields(mine, schema).end} options={dates} onChange={(end) => set({ end })} />
           </label>
           <label className="fr-kanban-view__row">
-            <span>Scale</span>
-            <Select<TimelineScale> size="sm" aria-label="Timeline scale" value={timelineFields(mine, schema).scale} options={SCALE_CHOICES} onChange={(scale) => set({ scale })} />
+            <span>{tr('scale')}</span>
+            <Select<TimelineScale> size="sm" aria-label={tr('timelineScale')} value={timelineFields(mine, schema).scale} options={SCALE_CHOICES} onChange={(scale) => set({ scale })} />
           </label>
           <label className="fr-kanban-view__row">
-            <span>Swimlanes</span>
-            <Select size="sm" aria-label="Swimlanes by" value={timelineFields(mine, schema).lanes?.id ?? NONE} options={[{ value: NONE, label: 'None' }, ...groups]} onChange={(id) => set({ lanesBy: id || null })} />
+            <span>{tr('swimlanes')}</span>
+            <Select size="sm" aria-label={tr('swimlanesBy')} value={timelineFields(mine, schema).lanes?.id ?? NONE} options={[{ value: NONE, label: tr('none') }, ...groups]} onChange={(id) => set({ lanesBy: id || null })} />
           </label>
           <p className="fr-kanban-fields__hint">Dragging a bar moves both dates; dragging an end changes that one.</p>
         </section>
       )}
       {mine.layout === 'list' && (
         <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-group">
-          <h3 id="fr-kanban-view-group" className="fr-kanban-view__heading">
-            Groups
-          </h3>
+          <h3 id="fr-kanban-view-group" className="fr-kanban-view__heading">{tr('groups')}</h3>
           <label className="fr-kanban-view__row">
-            <span>Group by</span>
-            <Select size="sm" aria-label="Group the list by" value={listGroupField(k, mine, schema)?.id ?? NONE} options={[{ value: NONE, label: 'Nothing' }, ...groups]} onChange={(id) => set({ groupBy: id || null })} />
+            <span>{tr('groupBy')}</span>
+            <Select size="sm" aria-label={tr('groupTheListBy')} value={listGroupField(k, mine, schema)?.id ?? NONE} options={[{ value: NONE, label: tr('nothing') }, ...groups]} onChange={(id) => set({ groupBy: id || null })} />
           </label>
-          <p className="fr-kanban-fields__hint">Alt + ↑ / ↓ on a row moves the card to the group above or below.</p>
+          <p className="fr-kanban-fields__hint">{tr('altOnARowMoves')}</p>
         </section>
       )}
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-filter">
-        <h3 id="fr-kanban-view-filter" className="fr-kanban-view__heading">
-          Filter
-        </h3>
+        <h3 id="fr-kanban-view-filter" className="fr-kanban-view__heading">{tr('filter')}</h3>
         <FilterRules k={k} schema={schema} filter={mine.filter ?? null} onChange={(filter) => set({ filter })} />
-        <p className="fr-kanban-fields__hint">Leaves {noun} out of this {scope} only: the board and its cards don’t change.</p>
+        <p className="fr-kanban-fields__hint">{tr('leavesNounOutOfThis', { noun, scope })}</p>
       </section>
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-sort">
-        <h3 id="fr-kanban-view-sort" className="fr-kanban-view__heading">
-          Sort
-        </h3>
+        <h3 id="fr-kanban-view-sort" className="fr-kanban-view__heading">{tr('sort')}</h3>
         <SortRules schema={schema} sort={mine.sort ?? []} noun={noun} onChange={(sort) => set({ sort })} />
         <p className="fr-kanban-fields__hint">
           {mine.layout === 'timeline'
-            ? 'Without a sort, bars are in order of their start.'
+            ? tr('withoutASortBarsAre')
             : mine.layout === 'calendar'
-              ? 'Orders the cards within each day.'
-              : 'Without a sort, rows follow the board: column by column, top to bottom.'}
+              ? tr('ordersTheCardsWithinEach')
+              : tr('withoutASortRowsFollow')}
         </p>
       </section>
       {(mine.layout === 'table' || mine.layout === 'list') && <ColumnsSection k={k} schema={schema} shown={mine.layout === 'table' ? tableColumns(mine, schema) : listColumns(k, mine, schema)} onChange={(columns) => set({ columns })} list={mine.layout === 'list'} />}
@@ -488,15 +467,15 @@ function ColumnsSection({ schema, shown, onChange, list }: { k: KanbanElement; s
     <>
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-columns">
         <h3 id="fr-kanban-view-columns" className="fr-kanban-view__heading">
-          {list ? 'Fields on rows' : 'Columns'}
+          {list ? tr('fieldsOnRows') : tr('columns')}
         </h3>
-        <ol className="fr-kanban-fields__list fr-kanban-view__fields" aria-label={list ? 'Fields on the list’s rows' : 'Columns of the table'}>
+        <ol className="fr-kanban-fields__list fr-kanban-view__fields" aria-label={list ? tr('fieldsOnTheListS') : tr('columnsOfTheTable')}>
           {shown.map((id, i) => (
             <li key={id} className="fr-kanban-view__field">
               <Toggle size="sm" checked label={name(id)} onChange={() => setColumns(shown.filter((x) => x !== id))} />
               <span className="fr-kanban-view__move">
-                <IconButton icon={ChevronUp} size={32} label={`Move ${name(id)} left`} disabled={i === 0} onClick={() => setColumns(swap(shown, i, i - 1))} />
-                <IconButton icon={ChevronDown} size={32} label={`Move ${name(id)} right`} disabled={i === shown.length - 1} onClick={() => setColumns(swap(shown, i, i + 1))} />
+                <IconButton icon={ChevronUp} size={32} label={tr('moveNameLeft', { name: name(id) })} disabled={i === 0} onClick={() => setColumns(swap(shown, i, i - 1))} />
+                <IconButton icon={ChevronDown} size={32} label={tr('moveNameRight', { name: name(id) })} disabled={i === shown.length - 1} onClick={() => setColumns(swap(shown, i, i + 1))} />
               </span>
             </li>
           ))}

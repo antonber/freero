@@ -23,6 +23,7 @@ import {
 import { convertColumn, inferType, OPTION_COLORS, sortedRows, typeOf, valueFor, visibleRows, type PeopleLookup } from './columns';
 import { CELLS, cellText, plainGrid, setCellFill, setCellText, writeContent } from './cells';
 
+import { t as tr } from '../messages';
 /** The single selected table, if the selection is exactly one table. */
 export function selectedTable(editor: Editor): TableElement | null {
   const sel = editor.getSelection();
@@ -196,7 +197,7 @@ export async function exportCsv(editor: Editor, el: TableElement) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  editor.host.notify('Table exported as CSV', 'success');
+  editor.host.notify(tr('tableExportedAsCsv'), 'success');
 }
 
 export { writeContent };

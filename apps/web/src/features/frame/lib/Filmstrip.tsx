@@ -15,6 +15,7 @@ import { SlideThumb } from './Thumb';
 import { useSlides } from './useSlides';
 import { editSlide, slideEditStore } from './slideEditor';
 
+import { t as tr } from '../messages';
 export const FILMSTRIP_ID = 'frame.filmstrip';
 const THUMB_W = 148;
 const THUMB_H = 84;
@@ -37,7 +38,7 @@ const Tile = memo(function Tile(props: {
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const tileRef = useRef<HTMLLIElement>(null);
-  const name = frame.title || 'Untitled slide';
+  const name = frame.title || tr('untitledSlide');
   useEffect(() => {
     if (props.selected) tileRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [props.selected]);
@@ -56,7 +57,7 @@ const Tile = memo(function Tile(props: {
         className="fr-film__card"
         role="button"
         tabIndex={0}
-        aria-label={`Slide ${props.position + 1}: ${name}`}
+        aria-label={tr('slideValueName', { value: props.position + 1, name })}
         aria-pressed={props.selected}
         onPointerDown={props.onPointerDown}
         onDoubleClick={props.onOpen}
@@ -67,8 +68,8 @@ const Tile = memo(function Tile(props: {
         <span className="fr-film__thumb" style={{ width: THUMB_W, height: THUMB_H }}>
           <SlideThumb editor={editor} frame={frame} children={props.children} w={THUMB_W} h={THUMB_H} />
           {frame.skip && (
-            <span className="fr-film__skipped" title="Skipped in presentation">
-              <EyeOff size={12} aria-label="Skipped" />
+            <span className="fr-film__skipped" title={tr('skippedInPresentation')}>
+              <EyeOff size={12} aria-label={tr('skipped')} />
             </span>
           )}
         </span>
@@ -85,7 +86,7 @@ const Tile = memo(function Tile(props: {
             ref={ref}
             type="button"
             className="fr-film__more"
-            aria-label={`Slide options: ${name}`}
+            aria-label={tr('slideOptionsName', { name })}
             aria-haspopup="menu"
             aria-expanded={menu}
             onPointerDown={(e) => e.stopPropagation()}
@@ -93,7 +94,7 @@ const Tile = memo(function Tile(props: {
           >
             <MoreHorizontal size={14} aria-hidden />
           </button>
-          <Menu open={menu} onClose={() => setMenu(false)} anchor={ref.current} side="top" items={slideMenu(editor, frame, props.extraMenu(frame))} aria-label="Slide options" />
+          <Menu open={menu} onClose={() => setMenu(false)} anchor={ref.current} side="top" items={slideMenu(editor, frame, props.extraMenu(frame))} aria-label={tr('slideOptions')} />
         </>
       )}
     </li>
@@ -172,13 +173,11 @@ export function Filmstrip({ editor, onOpen, extraMenu }: { editor: Editor; onOpe
     <div className="fr-film">
       <div className="fr-film__side">
         <span className="fr-film__count">
-          {frames.length ? (shown === frames.length ? `${frames.length} ${frames.length === 1 ? 'slide' : 'slides'}` : `${shown} of ${frames.length} shown`) : 'No slides'}
+          {frames.length ? (shown === frames.length ? `${frames.length} ${frames.length === 1 ? 'slide' : 'slides'}` : tr('shownOfLengthShown', { shown, length: frames.length })) : tr('noSlides')}
         </span>
-        <Button size="sm" variant="primary" icon={Play} disabled={!shown} onClick={() => editor.runCommand('present.start')}>
-          Present
-        </Button>
+        <Button size="sm" variant="primary" icon={Play} disabled={!shown} onClick={() => editor.runCommand('present.start')}>{tr('present')}</Button>
       </div>
-      <ul className="fr-film__list" ref={listRef} aria-label="Slides" data-fr-scrollable="">
+      <ul className="fr-film__list" ref={listRef} aria-label={tr('slides')} data-fr-scrollable="">
         {frames.map((f, i) => (
           <Tile
             key={f.id}
@@ -207,15 +206,15 @@ export function Filmstrip({ editor, onOpen, extraMenu }: { editor: Editor; onOpe
               onClick={() => setAdding((o) => !o)}
             >
               <Plus size={20} aria-hidden />
-              <span>New slide</span>
+              <span>{tr('newSlide')}</span>
             </button>
-            <Menu open={adding} onClose={() => setAdding(false)} anchor={addRef.current} side="top" items={layoutMenu(add, true)} aria-label="New slide layout" />
+            <Menu open={adding} onClose={() => setAdding(false)} anchor={addRef.current} side="top" items={layoutMenu(add, true)} aria-label={tr('newSlideLayout')} />
           </li>
         )}
       </ul>
       <div className="fr-film__side fr-film__side--end">
-        <IconButton icon={NotebookText} label="Slides with speaker notes" size={32} tooltipSide="top" onClick={() => editor.openDock(editor.getDock() === DECK_PANEL_ID ? null : DECK_PANEL_ID)} />
-        <IconButton icon={X} label="Close filmstrip" size={32} tooltipSide="top" onClick={() => editor.openBottomDock(null)} />
+        <IconButton icon={NotebookText} label={tr('slidesWithSpeakerNotes')} size={32} tooltipSide="top" onClick={() => editor.openDock(editor.getDock() === DECK_PANEL_ID ? null : DECK_PANEL_ID)} />
+        <IconButton icon={X} label={tr('closeFilmstrip')} size={32} tooltipSide="top" onClick={() => editor.openBottomDock(null)} />
       </div>
     </div>
   );

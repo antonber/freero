@@ -10,6 +10,7 @@ import { isVsdxName, parseVsdx } from './vsdx';
 import { isPptxName, parsePptx } from './pptx';
 import { nanoid } from 'nanoid';
 
+import { t as tr } from '../messages';
 export const IMPORT_DIALOG = 'import.dialog';
 
 /** Text formats (a file, or pasted); `.vsdx` and `.pptx` are zip packages, read from their bytes. */
@@ -82,7 +83,7 @@ export async function placeImport(editor: Editor, result: ImportResult, at?: Poi
   if (result.images.length) {
     const stored = await storeImages(editor, result.images);
     const failed = new Set([...stored].filter(([, url]) => !url).map(([id]) => id));
-    if (failed.size) skipped.push({ what: 'Images that couldn’t be stored (left out)', count: failed.size });
+    if (failed.size) skipped.push({ what: tr('imagesThatCouldnTBe'), count: failed.size });
     drafts = drafts
       .filter((d) => !failed.has(d.id))
       .map((d) => {
@@ -143,5 +144,5 @@ export async function importFile(editor: Editor, file: File, at?: Point): Promis
 export function summary(r: ImportReport): string {
   const n = r.imported;
   const left = r.skipped.reduce((s, x) => s + x.count, 0);
-  return `Imported ${n} ${n === 1 ? 'item' : 'items'} from ${r.source}${left ? ` · ${left} not mapped exactly` : ''}`;
+  return tr('importedNItemsFromSource', { n, source: r.source, value: left ? tr('leftNotMappedExactly', { left }) : '' });
 }

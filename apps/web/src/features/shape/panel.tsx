@@ -6,6 +6,7 @@ import { LIBRARY_COLLECTION, SHAPE_SETS, enabledSets, searchShapes, type Library
 import { encodeDrag, insertShape } from './lib/insert';
 import { LIBRARY_PANEL_ID } from './lib/constants';
 import { ShapeIcon } from './lib/ShapeIcon';
+import { t } from './messages';
 import './library.css';
 
 function Tile({ editor, shape, canEdit }: { editor: Editor; shape: LibraryShape; canEdit: boolean }) {
@@ -42,19 +43,17 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-shape-lib">
       <DockHeader className="fr-shape-lib__head">
-        <h2 className="fr-shape-lib__title">Shapes</h2>
+        <h2 className="fr-shape-lib__title">{t('shapes')}</h2>
         <button
           type="button"
           className={`fr-shape-lib__manage${managing ? ' is-active' : ''}`}
           aria-expanded={managing}
           onClick={() => setManaging((m) => !m)}
         >
-          <SlidersHorizontal size={14} aria-hidden />
-          Libraries
-        </button>
+          <SlidersHorizontal size={14} aria-hidden />{t('libraries')}</button>
       </DockHeader>
       {managing && (
-        <ul className="fr-shape-lib__sets" aria-label="Shape libraries on this board">
+        <ul className="fr-shape-lib__sets" aria-label={t('shapeLibrariesOnThisBoard')}>
           {SHAPE_SETS.map((set) => (
             <li key={set.id} className="fr-shape-lib__set">
               <span>
@@ -64,7 +63,7 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
               <Toggle
                 checked={on.has(set.id)}
                 disabled={!canEdit}
-                aria-label={`Show ${set.label} shapes on this board`}
+                aria-label={t('showLabelShapesOnThis', { label: set.label })}
                 onChange={(next: boolean) => editor.collection<boolean>(LIBRARY_COLLECTION).set(set.id, next)}
               />
             </li>
@@ -73,7 +72,7 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
       )}
       <label className="fr-shape-lib__search">
         <Search size={15} aria-hidden />
-        <Input value={query} placeholder="Search shapes" aria-label="Search shapes" onChange={(e) => setQuery(e.target.value)} />
+        <Input value={query} placeholder={t('searchShapes')} aria-label={t('searchShapes')} onChange={(e) => setQuery(e.target.value)} />
       </label>
       {groups.map(({ set, shapes }) => (
         <section key={set.id} className="fr-shape-lib__group" aria-label={set.label}>
@@ -86,15 +85,13 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
           {set.id === 'wireframe' && (
             // Icons for screens come from the icon library (its own feature, reached by command).
             <button type="button" className="fr-shape-options__more" disabled={!canEdit} onClick={() => editor.runCommand('icons.openLibrary')}>
-              <Sparkles size={14} aria-hidden />
-              Icons for your screens
-            </button>
+              <Sparkles size={14} aria-hidden />{t('iconsForYourScreens')}</button>
           )}
         </section>
       ))}
       {!groups.length && (
         <p className="fr-shape-lib__empty">
-          {sets.length ? `No shapes match “${query}”.` : 'No shape libraries are on for this board.'}
+          {sets.length ? t('noShapesMatchQuery', { query }) : t('noShapeLibrariesAreOn')}
         </p>
       )}
     </div>

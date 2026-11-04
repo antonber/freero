@@ -1,0 +1,17 @@
+{
+  "approved": "Approved",
+  "star": "Star",
+  "question": "Question",
+  "loveIt": "Love it",
+  "loveIt2": "LOVE IT",
+  "notThis": "Not this",
+  "reactWith": "React with",
+  "stamp": "Stamp",
+  "stamps": "Stamps",
+  "searchEmojiAndStamps": "Search emoji and stamps",
+  "emoji": "Emoji",
+  "nothingMatchesQuery": "Nothing matches “{query}”",
+  "recent": "Recent",
+  "emojiCategories": "Emoji categories",
+  "emojiStamps": "Emoji & stamps"
+}

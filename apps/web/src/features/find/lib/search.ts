@@ -5,6 +5,7 @@
 import { commentAuthorName, mentionedUserIds, mentionsAsNames, type BoardElement, type CommentMessageRecord, type CommentThreadRecord, type ElementType } from '@freero/shared';
 import { replaceInRichText, richTextToPlain, type Editor, type ElementPatch, type HostUser, type Point, type TextPart } from '@engine';
 
+import { t as tr } from '../messages';
 export const PANEL_ID = 'find.panel';
 
 /** One searchable text on the board. */
@@ -117,7 +118,7 @@ export function boardSources(editor: Editor, elements: BoardElement[], comments:
       id: el.id,
       type: el.type,
       text,
-      frameTitle: frame?.type === 'frame' ? frame.title || 'Untitled frame' : null,
+      frameTitle: frame?.type === 'frame' ? frame.title || tr('untitledFrame') : null,
     });
   }
   const online = new Map(editor.getPeers().map((p) => [p.user.id, p.user.name]));

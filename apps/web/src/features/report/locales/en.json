@@ -1,0 +1,16 @@
+{
+  "reportBoard": "Report board…",
+  "report": "Report…",
+  "report2": "Report",
+  "thanksForYourReportFreero": "Thanks for your report. Freero’s moderators will review it.",
+  "yourReportCouldNotBe": "Your report could not be sent. Try again.",
+  "reportTargetNoun": "Report {target_noun}",
+  "tellFreeroSModeratorsWhat": "Tell Freero’s moderators what is wrong. The board’s owner isn’t told who reported it.",
+  "cancel": "Cancel",
+  "sendReport": "Send report",
+  "whatSTheProblem": "What’s the problem?",
+  "detailsOptional": "Details (optional)",
+  "anythingThatHelpsUsUnderstand": "Anything that helps us understand, e.g. where on the board it is",
+  "yourEmailOptional": "Your email (optional)",
+  "toHearWhatWeDecided": "To hear what we decided"
+}

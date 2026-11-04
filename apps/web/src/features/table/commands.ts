@@ -3,10 +3,11 @@ import { defineCommands } from '@engine';
 import { addCol, addRow, exportCsv, peopleLookup, selectedTable } from './lib/actions';
 import { CONVERT_DIALOG, convertToKanban, copyKanbanAsTable, selectedKanban } from './lib/convert';
 
+import { t as tr } from './messages';
 export default defineCommands([
   {
     id: 'table.addRow',
-    label: 'Insert row below',
+    label: tr('insertRowBelow'),
     icon: BetweenHorizontalEnd,
     menus: ['context'],
     group: 'Table',
@@ -18,7 +19,7 @@ export default defineCommands([
   },
   {
     id: 'table.addColumn',
-    label: 'Insert column right',
+    label: tr('insertColumnRight'),
     icon: BetweenVerticalEnd,
     menus: ['context'],
     group: 'Table',
@@ -31,7 +32,7 @@ export default defineCommands([
   {
     // Viewers may take the data out too.
     id: 'table.exportCsv',
-    label: 'Export table as CSV',
+    label: tr('exportTableAsCsv'),
     icon: FileDown,
     menus: ['context'],
     minRole: 'viewer',
@@ -46,7 +47,7 @@ export default defineCommands([
     // rows, the other columns fields); the dialog picks the columns. One undo step. Args
     // { columnsFrom, titleFrom } (column ids of the selected table) convert without the dialog.
     id: 'table.convertToKanban',
-    label: 'Convert to kanban…',
+    label: tr('convertToKanban'),
     icon: SquareKanban,
     menus: ['context'],
     when: (editor) => {
@@ -66,7 +67,7 @@ export default defineCommands([
     // On a kanban: a table beside it with a row per card and a column per field. A snapshot, not
     // a live view (the kanban is only read; the table is this feature's own element).
     id: 'table.copyKanbanAsTable',
-    label: 'Copy as table',
+    label: tr('copyAsTable'),
     icon: Table2,
     menus: ['context'],
     when: (editor) => !!selectedKanban(editor),
@@ -75,7 +76,7 @@ export default defineCommands([
       if (!k) return;
       void peopleLookup(editor).then((people) => {
         const id = copyKanbanAsTable(editor, k.id, people);
-        if (id) editor.host.notify('Copied as a table. It won’t follow later changes to the cards.', 'success');
+        if (id) editor.host.notify(tr('copiedAsATableIt'), 'success');
       });
     },
   },

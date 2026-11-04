@@ -3,6 +3,7 @@ import { defineTool, useToolGhost, useToolOptions, type Editor, type Point } fro
 import { dragRect, PRESETS, presetById, TOOL_ID, type FramePreset } from './lib/frames';
 import { createFrame, syncMembership } from './lib/actions';
 
+import { t } from './messages';
 interface FrameToolOptions {
   preset?: FramePreset;
 }
@@ -25,7 +26,7 @@ function PresetIcon({ w, h }: { w: number; h: number }) {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Frame',
+  label: t('frame'),
   icon: Frame,
   shortcut: 'f',
   order: 50,
@@ -71,8 +72,8 @@ export default defineTool({
     const { preset = '16:9' } = useToolOptions<FrameToolOptions>(TOOL_ID);
     return (
       <div className="fr-frame-options">
-        <div className="fr-frame-options__label">Frame size</div>
-        <div className="fr-frame-options__grid" role="radiogroup" aria-label="Frame size">
+        <div className="fr-frame-options__label">{t('frameSize')}</div>
+        <div className="fr-frame-options__grid" role="radiogroup" aria-label={t('frameSize')}>
           {PRESETS.map((p) => (
             <button
               key={p.id}

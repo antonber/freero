@@ -1,5 +1,6 @@
 import type { CardStatus, KanbanColumn } from '@freero/shared';
 
+import { t } from '../messages';
 export const TOOL_ID = 'kanban';
 /** The dock panel that edits a kanban's fields (panel.tsx). */
 export const FIELDS_PANEL = 'kanban.fields';
@@ -29,13 +30,13 @@ export const COLUMN_COLOR_NAMES: Record<string, string> = {
 };
 
 export const DEFAULT_COLUMNS: Array<Omit<KanbanColumn, 'id'>> = [
-  { title: 'To do', status: 'todo', color: '#8A89A3' },
-  { title: 'In progress', status: 'doing', color: '#2E9BF0' },
-  { title: 'Done', status: 'done', color: '#1FA463' },
+  { title: t('toDo'), status: 'todo', color: '#8A89A3' },
+  { title: t('inProgress'), status: 'doing', color: '#2E9BF0' },
+  { title: t('done'), status: 'done', color: '#1FA463' },
 ];
 
 /** Card statuses a column can set (same values as task cards' own status). */
-export const STATUS_LABELS: Record<CardStatus, string> = { todo: 'To do', doing: 'In progress', done: 'Done' };
+export const STATUS_LABELS: Record<CardStatus, string> = { todo: t('toDo'), doing: t('inProgress'), done: t('done') };
 
 export const WIP_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10];
 

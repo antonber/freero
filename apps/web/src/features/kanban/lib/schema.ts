@@ -24,13 +24,14 @@ import type { Editor } from '@engine';
 import { addColumn, moveColumnTo, patchColumn, removeColumn } from './actions';
 import { COLUMN_PALETTE } from './constants';
 
+import { t } from '../messages';
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
-  select: 'Single select',
-  multiselect: 'Multi-select',
+  select: t('singleSelect'),
+  multiselect: t('multiSelect'),
   person: 'Person',
   date: 'Date',
   number: 'Number',
-  text: 'Text',
+  text: t('text'),
   url: 'Link',
   checkbox: 'Checkbox',
 };
@@ -41,7 +42,7 @@ const DEFAULT_NAMES: Record<FieldType, string> = {
   person: 'Owner',
   date: 'Date',
   number: 'Points',
-  text: 'Notes',
+  text: t('notes'),
   url: 'URL',
   checkbox: 'Done?',
 };
@@ -133,7 +134,7 @@ export function addOption(editor: Editor, kid: string, fieldId: string): string 
   patchField(editor, kid, fieldId, (options) => {
     if (options.length >= FIELD_LIMITS.options) return null;
     id = nanoid(8);
-    return [...options, { id, label: 'New option', color: COLUMN_PALETTE[options.length % COLUMN_PALETTE.length] }];
+    return [...options, { id, label: t('newOption'), color: COLUMN_PALETTE[options.length % COLUMN_PALETTE.length] }];
   });
   return id;
 }

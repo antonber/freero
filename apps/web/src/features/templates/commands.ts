@@ -5,11 +5,12 @@ import { DOCK_ID, addTemplate } from './lib/insert';
 import { loadTemplates } from './lib/catalog/load';
 import { SAVE_DIALOG_ID } from './lib/saved';
 
+import { t as tr } from './messages';
 export default defineCommands([
   {
     id: 'templates.open',
     icon: LayoutTemplate,
-    label: 'Templates…',
+    label: tr('templates'),
     menus: ['board'],
     run(editor) {
       editor.openDock(editor.getDock() === DOCK_ID ? null : DOCK_ID);
@@ -18,14 +19,14 @@ export default defineCommands([
   {
     // For other features (a retro's setup): args { id } of a built-in template. No menus.
     id: 'templates.insert',
-    label: 'Insert a template',
+    label: tr('insertATemplate'),
     run(editor, args) {
       loadTemplates()
         .then((all) => {
           const def = all.find((t) => t.id === args?.id);
           return def ? addTemplate(editor, def) : null;
         })
-        .catch(() => editor.host.notify('Could not load the template. Check your connection and try again.', 'error'));
+        .catch(() => editor.host.notify(tr('couldNotLoadTheTemplate'), 'error'));
     },
   },
   {
@@ -35,7 +36,7 @@ export default defineCommands([
     // reloaded after it was added) only opens the panel, so following it twice never adds a copy.
     // A board still untitled takes the template's name; one the person named keeps theirs.
     id: 'templates.fromLink',
-    label: 'Start from a template',
+    label: tr('startFromATemplate'),
     urlParam: 'template',
     run(editor, args) {
       loadTemplates()
@@ -46,7 +47,7 @@ export default defineCommands([
           const title = editor.host.board.title.trim();
           if (added.length && (!title || title === DEFAULT_BOARD_TITLE)) await editor.host.renameBoard(def.name).catch(() => undefined);
         })
-        .catch(() => editor.host.notify('Could not load the template. Check your connection and try again.', 'error'));
+        .catch(() => editor.host.notify(tr('couldNotLoadTheTemplate'), 'error'));
     },
   },
   // Saving copies content into the user's own template library (never writes the board), so
@@ -55,7 +56,7 @@ export default defineCommands([
   {
     id: 'templates.saveBoard',
     icon: BookmarkPlus,
-    label: 'Save board as template…',
+    label: tr('saveBoardAsTemplate'),
     menus: ['board'],
     minRole: 'viewer',
     when: (editor) => editor.host.board.canExport !== false && editor.getElements().length > 0,
@@ -66,7 +67,7 @@ export default defineCommands([
   {
     id: 'templates.saveSelection',
     icon: BookmarkPlus,
-    label: 'Save as template…',
+    label: tr('saveAsTemplate'),
     menus: ['context'],
     minRole: 'viewer',
     when: (editor) => editor.host.board.canExport !== false && editor.getSelection().length > 0,

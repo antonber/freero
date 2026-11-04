@@ -9,6 +9,7 @@ import { ColorSwatches, Popover, SegmentedControl, Slider, ToolbarButton, Toolti
 import { FILL_COLORS, SHAPE_KINDS, STROKE_COLORS, STROKE_STYLES, STROKE_WIDTHS, TOOL_ID } from './constants';
 import { ShapeIcon } from './ShapeIcon';
 
+import { t } from '../messages';
 /** Writes a style patch to every selected shape and remembers it for the next shape drawn. */
 export function patchShapes(editor: Editor, shapes: ShapeElement[], patch: Partial<ShapeElement>) {
   editor.updateMany(shapes.map((s) => ({ id: s.id, patch })));
@@ -54,9 +55,9 @@ function Dot({ color, ring }: { color: Maybe<string>; ring?: boolean }) {
 export function KindControl({ editor, shapes }: { editor: Editor; shapes: ShapeElement[] }) {
   const kind = common(shapes, (s) => s.shape);
   return (
-    <PopButton label="Shape" content={kind === MIXED ? <Shapes size={18} aria-hidden /> : <ShapeIcon kind={kind} size={20} />}>
+    <PopButton label={t('shape')} content={kind === MIXED ? <Shapes size={18} aria-hidden /> : <ShapeIcon kind={kind} size={20} />}>
       {(close) => (
-        <div className="fr-shape-picker fr-shape-picker--popover" role="radiogroup" aria-label="Shape">
+        <div className="fr-shape-picker fr-shape-picker--popover" role="radiogroup" aria-label={t('shape')}>
           {SHAPE_KINDS.map((s) => (
             <Tooltip key={s.kind} content={s.label} side="bottom">
               <button
@@ -86,7 +87,7 @@ export function FillControl({ editor, shapes }: { editor: Editor; shapes: ShapeE
   const opacity = common(shapes, (s) => s.fillOpacity);
   const sliding = useRef(false);
   return (
-    <PopButton label="Fill color" content={<Dot color={fill} />} width={260}>
+    <PopButton label={t('fillColor')} content={<Dot color={fill} />} width={260}>
       {() => (
         <div className="fr-shape-pop">
           <ColorSwatches
@@ -96,10 +97,10 @@ export function FillControl({ editor, shapes }: { editor: Editor; shapes: ShapeE
             columns={6}
             size={26}
             allowCustom
-            aria-label="Fill color"
+            aria-label={t('fillColor')}
           />
           <Slider
-            label="Opacity"
+            label={t('opacity')}
             showValue
             format={(v) => (opacity === MIXED && !sliding.current ? 'Mixed' : `${Math.round(v * 100)}%`)}
             min={0}
@@ -121,7 +122,7 @@ export function FillControl({ editor, shapes }: { editor: Editor; shapes: ShapeE
                 editor.endGesture();
               }
             }}
-            aria-label="Fill opacity"
+            aria-label={t('fillOpacity')}
           />
         </div>
       )}
@@ -134,10 +135,10 @@ export function BorderControl({ editor, shapes }: { editor: Editor; shapes: Shap
   const width = common(shapes, (s) => s.strokeWidth);
   const style = common(shapes, (s) => s.strokeStyle);
   return (
-    <PopButton label="Border" content={<Dot color={width === 0 ? 'transparent' : stroke} ring />} width={300}>
+    <PopButton label={t('border')} content={<Dot color={width === 0 ? 'transparent' : stroke} ring />} width={300}>
       {() => (
         <div className="fr-shape-pop">
-          <div className="fr-shape-pop__label">Border color</div>
+          <div className="fr-shape-pop__label">{t('borderColor')}</div>
           <ColorSwatches
             colors={STROKE_COLORS}
             value={stroke === MIXED ? null : stroke}
@@ -145,23 +146,23 @@ export function BorderControl({ editor, shapes }: { editor: Editor; shapes: Shap
             columns={7}
             size={24}
             allowCustom
-            aria-label="Border color"
+            aria-label={t('borderColor')}
           />
-          <div className="fr-shape-pop__label">Thickness</div>
+          <div className="fr-shape-pop__label">{t('thickness')}</div>
           <SegmentedControl<string>
             size="sm"
             value={width === MIXED ? '' : String(width)}
             onChange={(v) => patchShapes(editor, shapes, { strokeWidth: Number(v) })}
-            options={STROKE_WIDTHS.map((w) => ({ value: String(w), label: w === 0 ? 'None' : `${w}`, title: w === 0 ? 'No border' : `${w} px` }))}
-            aria-label="Border thickness"
+            options={STROKE_WIDTHS.map((w) => ({ value: String(w), label: w === 0 ? t('none') : `${w}`, title: w === 0 ? t('noBorder') : t('wPx', { w }) }))}
+            aria-label={t('borderThickness')}
           />
-          <div className="fr-shape-pop__label">Style</div>
+          <div className="fr-shape-pop__label">{t('style')}</div>
           <SegmentedControl<StrokeStyle | ''>
             size="sm"
             value={style === MIXED ? '' : style}
             onChange={(v) => v && patchShapes(editor, shapes, { strokeStyle: v, ...(width === 0 ? { strokeWidth: 2 } : {}) })}
             options={STROKE_STYLES.map((s) => ({ value: s, icon: <StrokeSample style={s} />, title: s[0].toUpperCase() + s.slice(1) }))}
-            aria-label="Border style"
+            aria-label={t('borderStyle')}
           />
         </div>
       )}

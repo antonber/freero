@@ -19,6 +19,7 @@ import {
   type VotingValue,
 } from './voting';
 
+import { t as tr } from '../messages';
 export const RESULTS_PANEL_ID = 'voting.results';
 /** The "Start voting" dialog panel: editor.openPanel(START_DIALOG_ID). */
 export const START_DIALOG_ID = 'voting.start';
@@ -139,5 +140,5 @@ export function previewOf(editor: Editor, el: BoardElement): string {
   if (!text && 'text' in el && typeof el.text === 'string') text = richTextToPlain(el.text);
   text = text.replace(/\s+/g, ' ').trim();
   if (text) return text;
-  return el.type === 'sticky' ? 'Empty sticky' : el.type === 'shape' ? 'Shape' : el.type === 'card' ? 'Untitled card' : `${el.type[0].toUpperCase()}${el.type.slice(1)}`;
+  return el.type === 'sticky' ? tr('emptySticky') : el.type === 'shape' ? 'Shape' : el.type === 'card' ? tr('untitledCard') : `${el.type[0].toUpperCase()}${el.type.slice(1)}`;
 }

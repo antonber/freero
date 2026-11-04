@@ -4,6 +4,7 @@ import { defineCommands, type CommandDefinition, type Editor } from '@engine';
 import { colourOf, similarIds, tagsOf, type Similarity } from './lib/similar';
 import { canNarrow, narrowableTypes, narrowTo } from './lib/narrow';
 
+import { t } from './messages';
 const selected = (editor: Editor) =>
   editor
     .getSelection()
@@ -16,7 +17,7 @@ const command = (by: Similarity, label: string, icon: CommandDefinition['icon'],
   icon,
   minRole: 'viewer',
   menus: ['context'],
-  group: 'Select all',
+  group: t('selectAll'),
   when: (editor) => {
     const els = selected(editor);
     return els.length > 0 && when(els);
@@ -25,7 +26,7 @@ const command = (by: Similarity, label: string, icon: CommandDefinition['icon'],
   run(editor) {
     const ids = similarIds(editor.getElements(), selected(editor), by);
     editor.select(ids);
-    if (ids.length > 1) editor.host.notify(`${ids.length} items selected`, 'info');
+    if (ids.length > 1) editor.host.notify(t('lengthItemsSelected', { length: ids.length }), 'info');
   },
 });
 
@@ -37,17 +38,17 @@ const narrowCommand = ({ type, name }: { type: BoardElement['type']; name: strin
   icon: ListFilter,
   minRole: 'viewer',
   menus: ['context'],
-  group: 'Select only',
+  group: t('selectOnly'),
   when: (editor) => canNarrow(selected(editor), type),
   disabledReason: (editor) =>
-    selected(editor).some((el) => el.type === type) ? 'Only one kind of item is selected' : `No ${name.toLowerCase()} in the selection`,
+    selected(editor).some((el) => el.type === type) ? t('onlyOneKindOfItem') : t('noNameInTheSelection', { name: name.toLowerCase() }),
   detail: (editor) => String(narrowTo(selected(editor), type).length),
   run: (editor) => editor.select(narrowTo(selected(editor), type)),
 });
 
 export default defineCommands(({ elements }) => [
-  command('type', 'Of this type', Shapes, () => true, 'Select something first'),
-  command('colour', 'With this colour', Palette, (els) => els.some((el) => colourOf(el) !== null), 'Select something with a colour'),
-  command('tag', 'With this tag', Tag, (els) => els.some((el) => tagsOf(el).length > 0), 'Select something tagged'),
+  command('type', t('ofThisType'), Shapes, () => true, t('selectSomethingFirst')),
+  command('colour', t('withThisColour'), Palette, (els) => els.some((el) => colourOf(el) !== null), t('selectSomethingWithAColour')),
+  command('tag', t('withThisTag'), Tag, (els) => els.some((el) => tagsOf(el).length > 0), t('selectSomethingTagged')),
   ...narrowableTypes(elements).map(narrowCommand),
 ]);

@@ -4,6 +4,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import type { BoardVersion } from '@freero/shared';
 import type { Editor } from '@engine';
 
+import { t } from '../messages';
 interface VersionsState {
   boardId: string | null;
   versions: BoardVersion[] | null;
@@ -20,7 +21,7 @@ function set(patch: Partial<VersionsState>) {
   for (const l of [...listeners]) l();
 }
 
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong');
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : t('somethingWentWrong'));
 
 /** (Re)loads the version list of the editor's board. */
 export async function refreshVersions(editor: Editor): Promise<void> {
@@ -54,7 +55,7 @@ export function useVersions(editor: Editor): VersionsState {
 export async function nameCurrentVersion(editor: Editor, name: string): Promise<boolean> {
   try {
     await editor.host.versions.nameCurrent(name);
-    editor.host.notify(`Saved “${name}” as a version`, 'success');
+    editor.host.notify(t('savedNameAsAVersion', { name }), 'success');
     void refreshVersions(editor);
     return true;
   } catch (e) {
@@ -83,15 +84,15 @@ export async function restoreVersion(editor: Editor, v: BoardVersion, mode: 'res
     const before = await editor.host.versions.restore(v.id);
     const text =
       mode === 'undo'
-        ? 'Restore undone for everyone'
+        ? t('restoreUndoneForEveryone')
         : mode === 'redo'
-          ? 'Restored again for everyone'
-          : `Restored the version from ${formatWhen(v.createdAt)} for everyone`;
+          ? t('restoredAgainForEveryone')
+          : t('restoredTheVersionFromValue', { value: formatWhen(v.createdAt) });
     editor.host.notify(text, 'success', {
       action:
         mode === 'undo'
-          ? { label: 'Redo', run: () => void restoreVersion(editor, before, 'redo') }
-          : { label: 'Undo', run: () => void restoreVersion(editor, before, 'undo') },
+          ? { label: t('redo'), run: () => void restoreVersion(editor, before, 'redo') }
+          : { label: t('undo'), run: () => void restoreVersion(editor, before, 'undo') },
     });
     void refreshVersions(editor);
     return true;
@@ -113,8 +114,8 @@ export function versionTitle(v: BoardVersion): string {
 
 export function versionByline(v: BoardVersion): string | null {
   if (!v.createdBy) return null;
-  if (v.kind === 'decision') return `Decision frozen by ${v.createdBy.name}`;
-  return v.kind === 'before-restore' ? `${v.createdBy.name} restored an earlier version` : `Named by ${v.createdBy.name}`;
+  if (v.kind === 'decision') return t('decisionFrozenByName', { name: v.createdBy.name });
+  return v.kind === 'before-restore' ? `${v.createdBy.name} restored an earlier version` : t('namedByName', { name: v.createdBy.name });
 }
 
 const time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });

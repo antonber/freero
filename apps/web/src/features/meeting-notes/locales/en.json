@@ -1,0 +1,16 @@
+{
+  "summarise": "Summarise",
+  "importMeetingNotes": "Import meeting notes…",
+  "youNeedEditAccessTo": "You need edit access to import",
+  "couldNotImportThatTranscript": "Could not import that transcript",
+  "couldNotImportTheseNotes": "Could not import these notes",
+  "importMeetingNotes2": "Import meeting notes",
+  "aSummaryMarkdownOrText": "A summary (Markdown or text) or a transcript (.vtt, .srt) from your notes app becomes one frame: decisions, action items with owner and due date, and the other points. One undo takes it back.",
+  "cancel": "Cancel",
+  "importText": "Import text",
+  "importing": "Importing…",
+  "chooseAFileMdTxt": "Choose a file (.md, .txt, .vtt, .srt)",
+  "orPasteTheNotes": "Or paste the notes",
+  "forTranscriptsAddWhoSpoke": "For transcripts, add who spoke and for how long",
+  "droppingAVttOrSrt": "Dropping a .vtt or .srt file on the board imports it too."
+}

@@ -3,13 +3,14 @@ import type { Tag } from '@freero/shared';
 import { defineCommands, type ElementPatch } from '@engine';
 import { isTaggable, nextColor, normName } from './lib/tags';
 
+import { t as tr } from './messages';
 export default defineCommands([
   {
     // Tags by NAME for other features (a CSV import, KAI-136): `{ items: [{ id, names }] }` adds the
     // named tags to those stickies / cards, creating the board tags that don't exist yet (matched
     // case-insensitively). Runs in the caller's transaction when there is one (one undo step).
     id: 'tags.applyNames',
-    label: 'Tag items by name',
+    label: tr('tagItemsByName'),
     run(editor, args) {
       const items = Array.isArray(args?.items) ? (args.items as Array<{ id?: unknown; names?: unknown }>) : [];
       const coll = editor.collection<Tag>('tags');

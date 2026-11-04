@@ -1,5 +1,6 @@
 import { STICKY_COLORS, STICKY_SIDES, STICKY_SIZES, stickyDims, type StickyColor, type StickyElement, type StickyShape, type StickySize } from '@freero/shared';
 
+import { t } from '../messages';
 /** The side of a medium square sticky (the size stickies always had). */
 export const STICKY_SIZE = 200;
 
@@ -48,11 +49,11 @@ export function nearestColor(hex: string): StickyColor {
 }
 
 export const FONT_SIZES: Array<{ id: string; label: string; value: StickyElement['fontSize'] }> = [
-  { id: 'auto', label: 'Auto', value: 'auto' },
-  { id: 's', label: 'Small', value: 14 },
-  { id: 'm', label: 'Medium', value: 20 },
-  { id: 'l', label: 'Large', value: 28 },
-  { id: 'xl', label: 'Extra large', value: 40 },
+  { id: 'auto', label: t('auto'), value: 'auto' },
+  { id: 's', label: t('small'), value: 14 },
+  { id: 'm', label: t('medium'), value: 20 },
+  { id: 'l', label: t('large'), value: 28 },
+  { id: 'xl', label: t('extraLarge'), value: 40 },
 ];
 
 export interface StickyToolOptions {

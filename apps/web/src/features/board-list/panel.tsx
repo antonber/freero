@@ -7,6 +7,7 @@ import { DockHeader, definePanel, useElements, usePeers, useSelection, type Edit
 import type { OutlineItem } from '@freero/shared';
 import { PANEL_ID } from './lib/ids';
 import { elementIdsOf, kindLabel, rowLabel, treeRows } from './lib/rows';
+import { t } from './messages';
 import './board-list.css';
 
 function BoardList({ editor }: { editor: Editor }) {
@@ -100,17 +101,14 @@ function BoardList({ editor }: { editor: Editor }) {
   return (
     <div className="fr-board-list">
       <DockHeader className="fr-board-list__dockhead">
-        <h2 className="fr-board-list__title">
-          Board as list<span className="fr-board-list__count">{outline.meta.itemCount}</span>
+        <h2 className="fr-board-list__title">{t('boardAsList')}<span className="fr-board-list__count">{outline.meta.itemCount}</span>
         </h2>
       </DockHeader>
-      <p className="fr-board-list__hint" id="fr-board-list-hint">
-        Every item in reading order, a frame’s items under it. Arrow keys move, Right and Left open and close a frame, Enter shows the item on the board.
-      </p>
+      <p className="fr-board-list__hint" id="fr-board-list-hint">{t('everyItemInReadingOrder')}</p>
       {rows.length === 0 ? (
-        <p className="fr-board-list__empty">This board is empty.</p>
+        <p className="fr-board-list__empty">{t('thisBoardIsEmpty')}</p>
       ) : (
-        <ul className="fr-board-list__tree" role="tree" aria-label="Board items" aria-describedby="fr-board-list-hint" ref={treeRef} onKeyDown={onKeyDown}>
+        <ul className="fr-board-list__tree" role="tree" aria-label={t('boardItems')} aria-describedby="fr-board-list-hint" ref={treeRef} onKeyDown={onKeyDown}>
           {rows.map((r) => (
             <li
               key={r.item.id}
@@ -137,7 +135,7 @@ function BoardList({ editor }: { editor: Editor }) {
       )}
       {outline.edges.length > 0 && (
         <>
-          <h3 className="fr-board-list__sub">Connections</h3>
+          <h3 className="fr-board-list__sub">{t('connections')}</h3>
           <ul className="fr-board-list__edges">
             {outline.edges.map((edge) => (
               <li key={edge.id}>

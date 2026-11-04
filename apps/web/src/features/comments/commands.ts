@@ -2,10 +2,11 @@ import { MessageSquare, MessageSquarePlus } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { focusThread, getThread, PANEL_ID, replaceInMessages, startDraft } from './lib/state';
 
+import { t as tr } from './messages';
 export default defineCommands([
   {
     id: 'comments.togglePanel',
-    label: 'Comments',
+    label: tr('comments'),
     icon: MessageSquare,
     menus: ['board'],
     minRole: 'viewer',
@@ -15,7 +16,7 @@ export default defineCommands([
     // Right-click an item → comment on it, pinned just outside its top-right corner (clear of
     // its content and handles, and following it when it is resized).
     id: 'comments.commentOnItem',
-    label: 'Add comment',
+    label: tr('addComment'),
     icon: MessageSquarePlus,
     menus: ['context'],
     minRole: 'commenter',
@@ -31,14 +32,14 @@ export default defineCommands([
     // caller keeps the keyboard focus. runCommand('comments.openThread', { threadId, quiet? })
     // Also the deep link /board/<id>?thread=<threadId> (notifications).
     id: 'comments.openThread',
-    label: 'Open comment thread',
+    label: tr('openCommentThread'),
     minRole: 'viewer',
     urlParam: 'thread',
     run(editor, args) {
       const id = args?.threadId ?? args?.thread;
       const t = typeof id === 'string' ? getThread(editor, id) : undefined;
       if (t) focusThread(editor, t, { quiet: args?.quiet === true });
-      else if (typeof args?.thread === 'string') editor.host.notify('That comment was deleted.', 'info');
+      else if (typeof args?.thread === 'string') editor.host.notify(tr('thatCommentWasDeleted'), 'info');
     },
   },
   {
@@ -46,7 +47,7 @@ export default defineCommands([
     // replaceInMessages). runCommand('comments.replaceText', { find, replacement, caseSensitive?,
     // only?: [{ threadId, messageId }] })
     id: 'comments.replaceText',
-    label: 'Replace text in your comments',
+    label: tr('replaceTextInYourComments'),
     minRole: 'commenter',
     run(editor, args) {
       if (typeof args?.find !== 'string' || typeof args.replacement !== 'string') return;

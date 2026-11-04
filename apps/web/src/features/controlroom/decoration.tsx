@@ -3,6 +3,7 @@ import { Pause } from 'lucide-react';
 import { AGENT_PAUSES_COLLECTION, type AgentPauseRecord, type BoardElement, type KanbanElement } from '@freero/shared';
 import { defineDecoration, useCollection } from '@engine';
 import { agentOfLane } from './format';
+import { t } from './messages';
 import './controlroom.css';
 
 /** Below this zoom the tag is an unreadable speck. */
@@ -18,7 +19,7 @@ const PausedTag = memo(function PausedTag({ element, zoom }: { element: BoardEle
     <div className="fr-controlroom-tag-wrap">
       <span className="fr-controlroom-tag" role="status" data-fr-keep-clear="">
         <Pause size={11} aria-hidden />
-        {by ? `Agent paused by ${by}` : 'Agent paused'}
+        {by ? t('agentPausedByBy', { by }) : t('agentPaused')}
       </span>
     </div>
   );

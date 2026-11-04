@@ -12,6 +12,7 @@ import { Menu, type MenuItem } from '@ui';
 import { cellOptions, cellText, cellValue, writeCell, type GridColumn } from './table';
 import { useKanbanPeople } from './people';
 
+import { t } from '../messages';
 export type GridEntry =
   | { kind: 'group'; key: string; title: string; count: number; color?: string }
   | { kind: 'card'; card: CardElement };
@@ -68,7 +69,7 @@ function Chips({ col, value }: { col: GridColumn; value: FieldValue | null }) {
       {cellOptions(col, value).map((o) => (
         <span key={o.id} className="fr-kanban-grid__chip" style={{ ['--opt' as string]: o.color }}>
           <span className="fr-kanban-grid__dot" aria-hidden />
-          {o.label || 'Untitled'}
+          {o.label || t('untitled')}
         </span>
       ))}
     </span>
@@ -168,14 +169,14 @@ const GridRow = memo(function GridRow(p: RowProps) {
           content = (
             <span className={`fr-kanban-grid__check${value === true ? ' is-on' : ''}`}>
               {value === true && <Check size={14} strokeWidth={3} aria-hidden />}
-              <span className="fr-sr-only">{value === true ? 'Checked' : 'Not checked'}</span>
+              <span className="fr-sr-only">{value === true ? t('checked') : t('notChecked')}</span>
             </span>
           );
         } else if (col.id === '$title') {
           const desc = p.descriptions ? richTextToPlain(card.description ?? '').split('\n')[0] : '';
           content = (
             <span className="fr-kanban-grid__title">
-              <span className={text ? undefined : 'is-empty'}>{text || 'Untitled'}</span>
+              <span className={text ? undefined : 'is-empty'}>{text || t('untitled')}</span>
               {desc && <span className="fr-kanban-grid__desc">{desc}</span>}
             </span>
           );
@@ -494,16 +495,16 @@ function choiceItems(editor: Editor, k: KanbanElement, card: CardElement, col: G
   if (col.type === 'person') {
     const known = typeof value !== 'string' || people.some((p) => p.id === value);
     return [
-      { id: '~none', label: 'Nobody', checked: value === null, onSelect: () => set(null) },
+      { id: '~none', label: t('nobody'), checked: value === null, onSelect: () => set(null) },
       ...people.map((p) => ({ id: p.id, label: p.name, checked: value === p.id, onSelect: () => set(p.id) })),
-      ...(known ? [] : [{ id: String(value), label: 'Someone who no longer has access', checked: true, onSelect: () => undefined }]),
+      ...(known ? [] : [{ id: String(value), label: t('someoneWhoNoLongerHas'), checked: true, onSelect: () => undefined }]),
     ];
   }
   const options = col.options ?? [];
   const label = (o: { label: string; color: string }) => (
     <span className="fr-kanban-grid__chip" style={{ ['--opt' as string]: o.color }}>
       <span className="fr-kanban-grid__dot" aria-hidden />
-      {o.label || 'Untitled'}
+      {o.label || t('untitled')}
     </span>
   );
   if (col.type === 'multiselect') {
@@ -516,7 +517,7 @@ function choiceItems(editor: Editor, k: KanbanElement, card: CardElement, col: G
     }));
   }
   return [
-    ...(required ? [] : [{ id: '~none', label: 'None', checked: value === null, onSelect: () => set(null) }]),
+    ...(required ? [] : [{ id: '~none', label: t('none'), checked: value === null, onSelect: () => set(null) }]),
     // A read-only option (a tracker's closed sprint) stays on the cards that hold it; nobody picks it.
     ...options.filter((o) => !o.readOnly || value === o.id).map((o) => ({ id: o.id, label: label(o), checked: value === o.id, onSelect: () => set(o.id) })),
   ];

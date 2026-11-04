@@ -16,6 +16,7 @@
 import { PRIVATE_MODE_COLLECTION, PRIVATE_MODE_KEY, PRIVATE_MODE_TYPES, type BoardElement, type ElementType, type PrivateModeSession } from '@freero/shared';
 import type { Editor } from '@engine';
 
+import { t } from '../messages';
 export const COLLECTION = PRIVATE_MODE_COLLECTION;
 const KEY = PRIVATE_MODE_KEY;
 
@@ -97,5 +98,5 @@ export function revealAndEnd(editor: Editor): void {
   if (!editor.can('editor') || !s) return;
   editor.revealPrivate('elements', { anonymous: !!s.anonymous });
   editor.collection<PrivateModeSession>(COLLECTION).set(KEY, { ...s, active: false });
-  editor.host.notify(s.anonymous ? 'Private content revealed to everyone, without names' : 'Private content revealed to everyone', 'success');
+  editor.host.notify(s.anonymous ? t('privateContentRevealedToEveryone') : t('privateContentRevealedToEveryone2'), 'success');
 }

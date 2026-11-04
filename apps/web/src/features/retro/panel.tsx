@@ -5,6 +5,7 @@ import { ArrowRight, Check, History, LayoutGrid, ListPlus, X } from 'lucide-reac
 import { definePanel, useCollection, type Editor } from '@engine';
 import { Button, Modal, SegmentedControl, Toggle } from '@ui';
 import { addAction, advance, canManage, clusterAll, end, FORMATS, PHASES, readSession, RETRO_COLLECTION, start, START_DIALOG_ID, type RetroSession } from './lib/flow';
+import { t } from './messages';
 import './retro.css';
 
 function useSession(): RetroSession | undefined {
@@ -27,17 +28,13 @@ function StartDialog({ editor }: { editor: Editor }) {
     <Modal
       open
       onClose={close}
-      title="Run a retrospective"
-      description="Five steps: write on your own, reveal and group, vote, discuss, agree on actions. You move everyone along."
+      title={t('runARetrospective2')}
+      description={t('fiveStepsWriteOnYour')}
       width={480}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={History} onClick={submit}>
-            Start writing
-          </Button>
+          <Button variant="ghost" onClick={close}>{t('cancel')}</Button>
+          <Button variant="primary" icon={History} onClick={submit}>{t('startWriting')}</Button>
         </>
       }
     >
@@ -49,7 +46,7 @@ function StartDialog({ editor }: { editor: Editor }) {
         }}
       >
         <fieldset className="fr-retro-formats">
-          <legend>Format</legend>
+          <legend>{t('format')}</legend>
           {FORMATS.map((f) => (
             <label key={f.id ?? 'board'} className={`fr-retro-formats__opt${format === f.id ? ' is-on' : ''}`}>
               <input type="radio" name="fr-retro-format" checked={format === f.id} onChange={() => setFormat(f.id)} />
@@ -58,24 +55,24 @@ function StartDialog({ editor }: { editor: Editor }) {
           ))}
         </fieldset>
         <div className="fr-retro-form__row">
-          <span>Writing time</span>
+          <span>{t('writingTime')}</span>
           <SegmentedControl
             size="sm"
-            aria-label="Writing time"
+            aria-label={t('writingTime')}
             value={minutes}
             onChange={setMinutes}
             options={[
-              { value: '3', label: '3 min' },
-              { value: '5', label: '5 min' },
-              { value: '10', label: '10 min' },
+              { value: '3', label: t('n3Min') },
+              { value: '5', label: t('n5Min') },
+              { value: '10', label: t('n10Min') },
             ]}
           />
         </div>
         <div className="fr-retro-form__row">
-          <span>Votes per person</span>
+          <span>{t('votesPerPerson')}</span>
           <SegmentedControl
             size="sm"
-            aria-label="Votes per person"
+            aria-label={t('votesPerPerson')}
             value={votes}
             onChange={setVotes}
             options={[
@@ -85,7 +82,7 @@ function StartDialog({ editor }: { editor: Editor }) {
             ]}
           />
         </div>
-        <Toggle label="Participants add only stickies until the action step" checked={stickiesOnly} onChange={setStickiesOnly} />
+        <Toggle label={t('participantsAddOnlyStickiesUntil')} checked={stickiesOnly} onChange={setStickiesOnly} />
       </form>
     </Modal>
   );
@@ -98,8 +95,8 @@ function StepperBar({ editor }: { editor: Editor }) {
   const phase = PHASES[at];
   const manage = canManage(editor, session);
   return (
-    <div className="fr-retro-bar" data-fr-interactive="" role="region" aria-label="Retrospective">
-      <ol className="fr-retro-steps" aria-label="Steps">
+    <div className="fr-retro-bar" data-fr-interactive="" role="region" aria-label={t('retrospective')}>
+      <ol className="fr-retro-steps" aria-label={t('steps')}>
         {PHASES.map((p, i) => (
           <li key={p.id} className={i < at ? 'is-done' : i === at ? 'is-current' : undefined} aria-current={i === at ? 'step' : undefined}>
             <span className="fr-retro-steps__dot">{i < at ? <Check size={11} strokeWidth={3} /> : i + 1}</span>
@@ -110,16 +107,13 @@ function StepperBar({ editor }: { editor: Editor }) {
       <div className="fr-retro-bar__row">
         <span className="fr-retro-bar__hint">
           {phase.hint}
-          {!manage && ` ${session.startedByName} moves to the next step.`}
+          {!manage && t('startedbynameMovesToTheNext', { startedByName: session.startedByName })}
         </span>
         {manage && session.phase === 'group' && (
-          <Button size="sm" variant="ghost" icon={LayoutGrid} onClick={() => clusterAll(editor)}>
-            Cluster by colour
-          </Button>
+          <Button size="sm" variant="ghost" icon={LayoutGrid} onClick={() => clusterAll(editor)}>{t('clusterByColour')}</Button>
         )}
         {session.phase === 'act' && (
-          <Button size="sm" variant={manage ? 'ghost' : 'primary'} icon={ListPlus} onClick={() => addAction(editor)}>
-            Add action item{session.actionIds.length ? ` (${session.actionIds.length})` : ''}
+          <Button size="sm" variant={manage ? 'ghost' : 'primary'} icon={ListPlus} onClick={() => addAction(editor)}>{t('addActionItem')}{session.actionIds.length ? ` (${session.actionIds.length})` : ''}
           </Button>
         )}
         {manage && phase.next && (
@@ -129,7 +123,7 @@ function StepperBar({ editor }: { editor: Editor }) {
         )}
         {manage && (
           <Button size="sm" variant={phase.next ? 'ghost' : 'primary'} icon={phase.next ? X : Check} onClick={() => end(editor)}>
-            {phase.next ? 'End' : 'Finish retro'}
+            {phase.next ? t('end') : t('finishRetro')}
           </Button>
         )}
       </div>

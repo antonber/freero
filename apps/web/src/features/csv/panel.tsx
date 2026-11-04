@@ -9,21 +9,22 @@ import { Button, Modal, SegmentedControl, Select, TextArea, Toggle } from '@ui';
 import { CSV_IMPORT_DIALOG } from './lib/actions';
 import { placeRows, placeRowsOnKanban } from './lib/board';
 import { FIELDS, fieldColumns, guessColumnsFrom, guessMapping, parseDelimited, rowsToItems, sniffDelimiter, type Field, type FieldChoice, type Mapping } from './lib/csv';
+import { t as tr } from './messages';
 import './csv.css';
 
 const MAX_ROWS = LAYOUT_LIMITS.elements - 1;
 const NONE = -1;
 
 const TYPE_OPTIONS: Array<{ value: FieldChoice; label: string }> = [
-  { value: 'select', label: 'Single select' },
-  { value: 'multiselect', label: 'Multi-select' },
-  { value: 'text', label: 'Text' },
-  { value: 'number', label: 'Number' },
-  { value: 'date', label: 'Date' },
-  { value: 'url', label: 'Link' },
-  { value: 'checkbox', label: 'Checkbox' },
-  { value: 'person', label: 'Person (members by name)' },
-  { value: 'skip', label: 'Leave out' },
+  { value: 'select', label: tr('singleSelect') },
+  { value: 'multiselect', label: tr('multiSelect') },
+  { value: 'text', label: tr('text') },
+  { value: 'number', label: tr('number') },
+  { value: 'date', label: tr('date') },
+  { value: 'url', label: tr('link') },
+  { value: 'checkbox', label: tr('checkbox') },
+  { value: 'person', label: tr('personMembersByName') },
+  { value: 'skip', label: tr('leaveOut') },
 ];
 
 function ImportDialog({ editor }: PanelProps) {
@@ -68,14 +69,14 @@ function ImportDialog({ editor }: PanelProps) {
 
   const readFile = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return setError('That file is over 5 MB');
+    if (file.size > 5 * 1024 * 1024) return setError(tr('thatFileIsOver5'));
     setError(null);
     setFileName(file.name);
     setText(await file.text());
   };
 
   const run = () => {
-    if (!items.length) return setError('No rows with text to import');
+    if (!items.length) return setError(tr('noRowsWithTextTo'));
     try {
       const title = fileName?.replace(/\.[^.]+$/, '') ?? 'Imported';
       const ids = typed
@@ -83,27 +84,27 @@ function ImportDialog({ editor }: PanelProps) {
         : placeRows(editor, items, layout, title);
       editor.select(ids);
       editor.zoomToFit(ids);
-      editor.host.notify(`Imported ${items.length} ${as === 'card' ? 'cards' : 'stickies'}${body.length > MAX_ROWS ? ` (first ${MAX_ROWS} rows)` : ''}`, 'success');
+      editor.host.notify(tr('importedLengthValueValue2', { length: items.length, value: as === 'card' ? tr('cards') : tr('stickies'), value2: body.length > MAX_ROWS ? tr('firstMaxRowsRows', { max_rows: MAX_ROWS }) : '' }), 'success');
       close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not import that file');
+      setError(e instanceof Error ? e.message : tr('couldNotImportThatFile'));
     }
   };
 
-  const columnOptions = [{ value: NONE, label: '—' }, ...header.slice(0, width).map((h, i) => ({ value: i, label: h || `Column ${i + 1}` }))];
+  const columnOptions = [{ value: NONE, label: '—' }, ...header.slice(0, width).map((h, i) => ({ value: i, label: h || tr('columnValue', { value: i + 1 }) }))];
   const builtins = FIELDS.filter((f) => as === 'card' || ['text', 'tags', 'color', 'type', 'status'].includes(f.field));
   return (
     <Modal
       open
       onClose={close}
-      title="Import from CSV"
+      title={tr('importFromCsv')}
       description="Each row becomes a sticky or a task card. Tags, status, assignee and due date come from their columns; on a kanban, the other columns become fields."
       width={620}
       footer={
         <>
-          <Button onClick={close}>Cancel</Button>
+          <Button onClick={close}>{tr('cancel')}</Button>
           <Button variant="primary" disabled={!items.length} onClick={run}>
-            {items.length ? `Import ${items.length}` : 'Import'}
+            {items.length ? tr('importLength', { length: items.length }) : tr('import')}
           </Button>
         </>
       }
@@ -112,15 +113,15 @@ function ImportDialog({ editor }: PanelProps) {
         <div className="fr-csv__source">
           <label className="fr-csv__file">
             <Upload size={16} aria-hidden />
-            <span>{fileName ?? 'Choose a .csv or .tsv file'}</span>
+            <span>{fileName ?? tr('chooseACsvOrTsv')}</span>
             <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={(e) => void readFile(e.target.files?.[0])} />
           </label>
-          <span className="fr-csv__or">or paste</span>
+          <span className="fr-csv__or">{tr('orPaste')}</span>
         </div>
         <TextArea
-          aria-label="CSV text"
+          aria-label={tr('csvText')}
           rows={4}
-          placeholder={'Title,Status,Assignee,Due date,Tags\nWrite the brief,doing,Ann,2026-11-04,marketing'}
+          placeholder={tr('titleStatusAssigneeDueDate')}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -131,31 +132,31 @@ function ImportDialog({ editor }: PanelProps) {
           <>
             <div className="fr-csv__row">
               <SegmentedControl<'sticky' | 'card'>
-                aria-label="Import as"
+                aria-label={tr('importAs')}
                 options={[
-                  { value: 'card', label: 'Task cards' },
-                  { value: 'sticky', label: 'Stickies' },
+                  { value: 'card', label: tr('taskCards') },
+                  { value: 'sticky', label: tr('stickies2') },
                 ]}
                 value={as}
                 onChange={setAs}
               />
               <SegmentedControl<'grid' | 'kanban'>
-                aria-label="Layout"
+                aria-label={tr('layout')}
                 options={[
-                  { value: 'grid', label: 'Grid' },
-                  { value: 'kanban', label: 'Kanban' },
+                  { value: 'grid', label: tr('grid') },
+                  { value: 'kanban', label: tr('kanban') },
                 ]}
                 value={layout}
                 onChange={setLayout}
               />
-              <Toggle size="sm" label="First row is a header" checked={hasHeader} onChange={setHasHeader} />
+              <Toggle size="sm" label={tr('firstRowIsAHeader')} checked={hasHeader} onChange={setHasHeader} />
             </div>
-            <div className="fr-csv__mapping" role="group" aria-label="Columns">
+            <div className="fr-csv__mapping" role="group" aria-label={tr('columns')}>
               {builtins.map((f) => (
                 <label key={f.field} className="fr-csv__map">
                   <span>{f.label}</span>
                   <Select<number>
-                    aria-label={`Column for ${f.label}`}
+                    aria-label={tr('columnForLabel', { label: f.label })}
                     size="sm"
                     options={columnOptions}
                     value={mapping[f.field] ?? NONE}
@@ -165,25 +166,25 @@ function ImportDialog({ editor }: PanelProps) {
               ))}
             </div>
             {layout === 'kanban' && as === 'card' ? (
-              <div className="fr-csv__kanban" role="group" aria-label="Kanban">
+              <div className="fr-csv__kanban" role="group" aria-label={tr('kanban')}>
                 <label className="fr-csv__map">
-                  <span>Columns from</span>
+                  <span>{tr('columnsFrom')}</span>
                   <Select<number>
-                    aria-label="Column the kanban's columns come from"
+                    aria-label={tr('columnTheKanbanSColumns')}
                     size="sm"
-                    options={[{ value: NONE, label: 'Status (To do, Doing, Done)' }, ...columnOptions.slice(1)]}
+                    options={[{ value: NONE, label: tr('statusToDoDoingDone') }, ...columnOptions.slice(1)]}
                     value={columnsFrom}
                     onChange={setColumnsFrom}
                   />
                 </label>
                 {fields.length ? (
-                  <div className="fr-csv__fields" role="group" aria-label="Fields">
-                    <span className="fr-csv__fields-title">Other columns become fields</span>
+                  <div className="fr-csv__fields" role="group" aria-label={tr('fields')}>
+                    <span className="fr-csv__fields-title">{tr('otherColumnsBecomeFields')}</span>
                     {fields.map((f) => (
                       <label key={f.column} className="fr-csv__map" title={f.note}>
                         <span>{f.name}</span>
                         <Select<FieldChoice>
-                          aria-label={`Field type for ${f.name}`}
+                          aria-label={tr('fieldTypeForName', { name: f.name })}
                           size="sm"
                           options={TYPE_OPTIONS}
                           value={f.type}
@@ -197,10 +198,9 @@ function ImportDialog({ editor }: PanelProps) {
             ) : null}
             <p className="fr-csv__hint">
               {body.length} {body.length === 1 ? 'row' : 'rows'}
-              {body.length > MAX_ROWS ? ` (the first ${MAX_ROWS} are imported)` : ''} · {items.length} with text
-              {mapping.assignee !== undefined && as === 'card' ? ' · assignees are matched to board members by name' : ''}
+              {body.length > MAX_ROWS ? tr('theFirstMaxRowsAre', { max_rows: MAX_ROWS }) : ''}{' '}{tr('lengthWithText', { length: items.length })}{mapping.assignee !== undefined && as === 'card' ? tr('assigneesAreMatchedToBoard') : ''}
             </p>
-            <div className="fr-csv__preview" aria-label="Preview">
+            <div className="fr-csv__preview" aria-label={tr('preview')}>
               <table>
                 <thead>
                   <tr>{header.slice(0, width).map((h, i) => <th key={i}>{h}</th>)}</tr>

@@ -4,13 +4,14 @@ import { getSession, type VotingValue } from './lib/voting';
 import { START_DIALOG_ID } from './lib/state';
 import { end, start } from './lib/actions';
 
+import { t } from './messages';
 const session = (editor: Editor) => getSession(editor.collection<VotingValue>('voting'));
 
 export default defineCommands([
   {
     id: 'voting.start',
     icon: Vote,
-    label: 'Start voting…',
+    label: t('startVoting'),
     menus: ['board'],
     when: (editor) => !session(editor)?.active,
     // Other features (a retro's vote phase) may start it directly: args { votesPerUser, hideResults?,
@@ -18,7 +19,7 @@ export default defineCommands([
     run: (editor, args) => {
       if (typeof args?.votesPerUser !== 'number') return editor.openPanel(START_DIALOG_ID);
       start(editor, {
-        title: typeof args.title === 'string' ? args.title : 'Vote',
+        title: typeof args.title === 'string' ? args.title : t('vote'),
         votesPerUser: args.votesPerUser,
         hideResults: args.hideResults !== false,
         anonymous: args.anonymous !== false,
@@ -32,7 +33,7 @@ export default defineCommands([
     // Board-menu escape hatch so any editor can close a session whose facilitator left.
     id: 'voting.end',
     icon: Trophy,
-    label: 'End voting',
+    label: t('endVoting'),
     menus: ['board'],
     when: (editor) => !!session(editor)?.active,
     run: (editor) => end(editor),

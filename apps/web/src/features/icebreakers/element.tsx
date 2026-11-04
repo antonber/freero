@@ -6,6 +6,7 @@ import { Dices, Disc3, ListOrdered, PartyPopper } from 'lucide-react';
 import type { FacilitationSession, IcebreakerElement, IcebreakerResult } from '@freero/shared';
 import { defineElement, useCanEdit, useCollection, useEditor, useIsExporting, type Editor, type ElementRenderProps, type NewElement } from '@engine';
 import { COLORS, RESULTS, SIZE, STARTER_ENTRIES, TITLES, entriesOf, progress, resultText, wheelAngle } from './lib/model';
+import { t } from './messages';
 import './icebreakers.css';
 
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -139,7 +140,7 @@ const IcebreakerView = memo(function IcebreakerView({ element }: ElementRenderPr
     try {
       await editor.host.icebreakers!.roll(element.id);
     } catch (e) {
-      editor.host.notify(e instanceof Error ? e.message : 'Couldn’t spin', 'error');
+      editor.host.notify(e instanceof Error ? e.message : t('couldnTSpin'), 'error');
     } finally {
       setBusy(false);
     }
@@ -161,11 +162,11 @@ const IcebreakerView = memo(function IcebreakerView({ element }: ElementRenderPr
           {result && done ? (
             <>
               {element.kind !== 'speakers' ? <PartyPopper size={14} aria-hidden /> : null}
-              <strong>{element.kind === 'speakers' ? `Shuffled by ${result.by}` : resultText(result)}</strong>
+              <strong>{element.kind === 'speakers' ? t('shuffledByBy', { by: result.by }) : resultText(result)}</strong>
               {element.kind !== 'speakers' ? <small> · {result.by}</small> : null}
             </>
           ) : result ? (
-            `${result.by} is ${element.kind === 'wheel' ? 'spinning' : element.kind === 'dice' ? 'rolling' : 'shuffling'}…`
+            t('byIsValue', { by: result.by, value: element.kind === 'wheel' ? t('spinning') : (element.kind === 'dice' ? t('rolling') : t('shuffling')) })
           ) : (
             ''
           )}
@@ -182,7 +183,7 @@ const IcebreakerView = memo(function IcebreakerView({ element }: ElementRenderPr
 
 export default defineElement({
   type: 'icebreaker',
-  label: { one: 'Icebreaker', many: 'Icebreakers' },
+  label: { one: t('icebreaker'), many: t('icebreakers') },
   icon: Disc3,
   resize: 'free',
   minSize: { w: 200, h: 180 },

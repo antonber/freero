@@ -1,0 +1,16 @@
+{
+  "nameIsnTAPdf": "“{name}” isn't a PDF Freero can open.",
+  "couldnTUploadNameTry": "Couldn't upload “{name}”. Try again later.",
+  "couldnTOpenThisPdf": "Couldn't open this PDF.",
+  "placingTheFirstNOf": "Placing the first {n} of {numPages} pages.",
+  "placingNPages": "{n, plural, one {Placing {n} page…} other {Placing {n} pages…}}",
+  "couldnTPlaceThePages": "Couldn't place the pages. Try again later.",
+  "placeAllPages": "Place all pages",
+  "namePagePage": "{name}, page {page}",
+  "couldnTOpenThisPdf2": "Couldn't open this PDF",
+  "document": "Document",
+  "previousPage": "Previous page",
+  "nextPage": "Next page",
+  "pdfs": "PDFs",
+  "nextPreviousPageOfA": "Next / previous page of a document"
+}

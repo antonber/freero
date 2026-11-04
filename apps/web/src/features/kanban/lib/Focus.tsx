@@ -41,22 +41,23 @@ import { gridColumns } from './table';
 import { myTab, myView } from './tabs';
 import { TimelineBody } from './TimelineView';
 
+import { t } from '../messages';
 const ROW_H: Record<FocusDensity, number> = { compact: 36, comfortable: 56 };
 const NONE = '';
 /** A horizontal swipe this long (px), mostly sideways, goes to the next or previous group. */
 const SWIPE_PX = 60;
 const SCALES: Array<{ value: TimelineScale; label: string }> = [
-  { value: 'day', label: 'Days' },
-  { value: 'week', label: 'Weeks' },
-  { value: 'month', label: 'Months' },
-  { value: 'quarter', label: 'Quarters' },
+  { value: 'day', label: t('days') },
+  { value: 'week', label: t('weeks') },
+  { value: 'month', label: t('months') },
+  { value: 'quarter', label: t('quarters') },
 ];
 
 export function FocusDialog({ editor, props }: PanelProps) {
   const kid = typeof props?.id === 'string' ? props.id : null;
   const close = () => editor.closePanel(FOCUS_PANEL);
   const { k, cards } = useKanbanCards(editor, kid);
-  if (!k) return <Modal open onClose={close} title="Kanban not found" description="It was deleted, or you can no longer see it." />;
+  if (!k) return <Modal open onClose={close} title={t('kanbanNotFound')} description={t('itWasDeletedOrYou')} />;
   return <FocusPage editor={editor} k={k} cards={cards} onClose={close} />;
 }
 
@@ -110,7 +111,7 @@ function FocusPage({ editor, k, cards, onClose }: { editor: PanelProps['editor']
   const sortWords = s.sort.map((r) => queryField(schema, r.field)?.name).filter(Boolean).join(', ');
   const count = grouped ? shown : rows.length;
   const editable = canEdit && !k.locked;
-  const empty = cards.length ? 'Your filter leaves out every card.' : 'This kanban has no cards yet.';
+  const empty = cards.length ? t('yourFilterLeavesOutEvery') : t('thisKanbanHasNoCards');
 
   return (
     <Modal
@@ -122,28 +123,27 @@ function FocusPage({ editor, k, cards, onClose }: { editor: PanelProps['editor']
       className="fr-kanban-focus"
       title={title}
       description={
-        <>
-          Arranged your way: only you see how. {editable ? 'Changes to cards are saved for everyone.' : 'You can read every card here.'}{' '}
-          <span className="fr-kanban-focus__count">{count === cards.length ? `${cards.length} ${cards.length === 1 ? 'card' : 'cards'}` : `${count} of ${cards.length} cards`}</span>
+        <>{t('arrangedYourWayOnlyYou')}{' '}{editable ? t('changesToCardsAreSaved') : t('youCanReadEveryCard')}{' '}
+          <span className="fr-kanban-focus__count">{count === cards.length ? `${cards.length} ${cards.length === 1 ? 'card' : 'cards'}` : t('countOfLengthCards', { count, length: cards.length })}</span>
         </>
       }
     >
-      <div className="fr-kanban-focus__bar" role="toolbar" aria-label="Arrange this kanban for you">
+      <div className="fr-kanban-focus__bar" role="toolbar" aria-label={t('arrangeThisKanbanForYou')}>
         <SegmentedControl<ProjectionLayout>
           size="sm"
-          aria-label="Show the cards as"
+          aria-label={t('showTheCardsAs')}
           value={s.layout}
           options={PROJECTION_LAYOUTS.map((l) => ({ value: l, label: phone ? undefined : LAYOUT_NAMES[l], icon: LAYOUT_ICONS[l], title: LAYOUT_NAMES[l] }))}
           onChange={(layout) => setFocus(editor, k.id, { layout })}
         />
         {grouped && (
           <label className="fr-kanban-focus__ctl">
-            <span>Group by</span>
+            <span>{t('groupBy')}</span>
             <Select
               size="sm"
-              aria-label="Group cards by"
+              aria-label={t('groupCardsBy')}
               value={s.groupBy ?? NONE}
-              options={[{ value: NONE, label: 'Nothing' }, ...groupFields.map((f) => ({ value: f.id, label: f.name }))]}
+              options={[{ value: NONE, label: t('nothing') }, ...groupFields.map((f) => ({ value: f.id, label: f.name }))]}
               onChange={(v) => setFocus(editor, k.id, { groupBy: v || null })}
             />
           </label>
@@ -151,63 +151,61 @@ function FocusPage({ editor, k, cards, onClose }: { editor: PanelProps['editor']
         {grouped && (
           <SegmentedControl
             size="sm"
-            aria-label="Row density"
+            aria-label={t('rowDensity')}
             value={s.density}
             options={[
-              { value: 'compact', label: 'Compact' },
-              { value: 'comfortable', label: 'Comfortable' },
+              { value: 'compact', label: t('compact') },
+              { value: 'comfortable', label: t('comfortable') },
             ]}
             onChange={(density) => setFocus(editor, k.id, { density })}
           />
         )}
         {s.layout === 'calendar' && (
           <label className="fr-kanban-focus__ctl">
-            <span>By</span>
-            <Select size="sm" aria-label="Date field the calendar places cards on" value={s.date} options={dates} onChange={(date) => setFocus(editor, k.id, { date })} />
+            <span>{t('by')}</span>
+            <Select size="sm" aria-label={t('dateFieldTheCalendarPlaces')} value={s.date} options={dates} onChange={(date) => setFocus(editor, k.id, { date })} />
           </label>
         )}
         {s.layout === 'timeline' && (
           <>
             <label className="fr-kanban-focus__ctl">
-              <span>From</span>
-              <Select size="sm" aria-label="Where bars start" value={s.start} options={dates} onChange={(start) => setFocus(editor, k.id, { start })} />
+              <span>{t('from')}</span>
+              <Select size="sm" aria-label={t('whereBarsStart')} value={s.start} options={dates} onChange={(start) => setFocus(editor, k.id, { start })} />
             </label>
             <label className="fr-kanban-focus__ctl">
-              <span>to</span>
-              <Select size="sm" aria-label="Where bars end" value={s.end} options={dates} onChange={(end) => setFocus(editor, k.id, { end })} />
+              <span>{t('to')}</span>
+              <Select size="sm" aria-label={t('whereBarsEnd')} value={s.end} options={dates} onChange={(end) => setFocus(editor, k.id, { end })} />
             </label>
-            <Select<TimelineScale> size="sm" aria-label="Timeline scale" value={s.scale} options={SCALES} onChange={(scale) => setFocus(editor, k.id, { scale })} />
+            <Select<TimelineScale> size="sm" aria-label={t('timelineScale')} value={s.scale} options={SCALES} onChange={(scale) => setFocus(editor, k.id, { scale })} />
             <label className="fr-kanban-focus__ctl">
-              <span>Lanes</span>
+              <span>{t('lanes')}</span>
               <Select
                 size="sm"
-                aria-label="Swimlanes by"
+                aria-label={t('swimlanesBy')}
                 value={s.lanesBy ?? NONE}
-                options={[{ value: NONE, label: 'None' }, ...groupFields.map((f) => ({ value: f.id, label: f.name }))]}
+                options={[{ value: NONE, label: t('none') }, ...groupFields.map((f) => ({ value: f.id, label: f.name }))]}
                 onChange={(v) => setFocus(editor, k.id, { lanesBy: v || null })}
               />
             </label>
           </>
         )}
         <Button size="sm" variant={s.filter ? 'secondary' : 'ghost'} icon={Filter} aria-expanded={!!filterAnchor} onClick={(e) => setFilterAnchor(filterAnchor ? null : e.currentTarget)}>
-          {s.filter ? `Filter (${s.filter.rules.length})` : 'Filter'}
+          {s.filter ? t('filterLength', { length: s.filter.rules.length }) : t('filter')}
         </Button>
         <Button size="sm" variant={s.sort.length ? 'secondary' : 'ghost'} icon={ArrowDownUp} aria-expanded={!!sortAnchor} onClick={(e) => setSortAnchor(sortAnchor ? null : e.currentTarget)}>
-          {s.sort.length ? `Sorted by ${sortWords}` : 'Sort'}
+          {s.sort.length ? t('sortedBySortwords', { sortWords }) : t('sort')}
         </Button>
         {grouped && (
-          <Button size="sm" variant="ghost" icon={Columns3} aria-haspopup="menu" aria-expanded={!!fieldsAnchor} onClick={(e) => setFieldsAnchor(fieldsAnchor ? null : e.currentTarget)}>
-            Fields
-          </Button>
+          <Button size="sm" variant="ghost" icon={Columns3} aria-haspopup="menu" aria-expanded={!!fieldsAnchor} onClick={(e) => setFieldsAnchor(fieldsAnchor ? null : e.currentTarget)}>{t('fields')}</Button>
         )}
         {raw && (
           <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => resetFocus(editor, k.id)}>
-            {tab.layout === 'board' ? 'As on the board' : `As in ${tab.name}`}
+            {tab.layout === 'board' ? t('asOnTheBoard') : t('asInName', { name: tab.name })}
           </Button>
         )}
       </div>
       {phone && grouped && groups.length > 1 && (
-        <div className="fr-kanban-focus__groups" role="tablist" aria-label="Groups">
+        <div className="fr-kanban-focus__groups" role="tablist" aria-label={t('groups')}>
           {groups.map((g, n) =>
             g.e.kind === 'group' ? (
               <button key={g.e.key} type="button" role="tab" aria-selected={n === group} className={`fr-kanban-focus__group${n === group ? ' is-on' : ''}`} style={{ ['--opt' as string]: g.e.color ?? 'var(--fr-ink-3)' }} onClick={() => jump(n)}>
@@ -242,7 +240,7 @@ function FocusPage({ editor, k, cards, onClose }: { editor: PanelProps['editor']
             canEdit={editable}
             rowH={ROW_H[s.density]}
             descriptions={s.density === 'comfortable'}
-            label={`${title}: cards`}
+            label={t('titleCards', { title })}
             interactive
             api={grid}
             empty={empty}
@@ -258,14 +256,14 @@ function FocusPage({ editor, k, cards, onClose }: { editor: PanelProps['editor']
             canEdit={editable}
             rowH={ROW_H[s.density] + 4}
             descriptions={s.density === 'comfortable'}
-            label={`${title}: cards as a list`}
+            label={t('titleCardsAsAList', { title })}
             titleWidth={phone ? 230 : undefined}
             interactive
             api={grid}
             empty={empty}
           />
         )}
-        {s.layout === 'calendar' && <CalendarBody editor={editor} k={k} rows={rows} dateRef={s.date} canEdit={editable} interactive label={`${title}: cards by date`} compact={phone} />}
+        {s.layout === 'calendar' && <CalendarBody editor={editor} k={k} rows={rows} dateRef={s.date} canEdit={editable} interactive label={t('titleCardsByDate', { title })} compact={phone} />}
         {s.layout === 'timeline' && (
           <TimelineBody
             editor={editor}
@@ -278,24 +276,24 @@ function FocusPage({ editor, k, cards, onClose }: { editor: PanelProps['editor']
             lanes={groupFields.find((f) => f.id === s.lanesBy) ?? null}
             canEdit={editable}
             interactive
-            label={`${title}: cards on a timeline`}
+            label={t('titleCardsOnATimeline', { title })}
             compact={phone}
           />
         )}
       </div>
-      <Popover open={!!filterAnchor} onClose={() => setFilterAnchor(null)} anchor={filterAnchor} side="bottom" align="start" width={420} aria-label="Filter for you" escapeToContent>
+      <Popover open={!!filterAnchor} onClose={() => setFilterAnchor(null)} anchor={filterAnchor} side="bottom" align="start" width={420} aria-label={t('filterForYou')} escapeToContent>
         <div className="fr-kanban-focus__pop">
           <FilterRules k={k} schema={schema} filter={s.filter} onChange={(filter) => setFocus(editor, k.id, { filter })} />
-          <p className="fr-kanban-fields__hint">Leaves cards out of this page, for you only. The board doesn’t change.</p>
+          <p className="fr-kanban-fields__hint">{t('leavesCardsOutOfThis')}</p>
         </div>
       </Popover>
-      <Popover open={!!sortAnchor} onClose={() => setSortAnchor(null)} anchor={sortAnchor} side="bottom" align="start" width={420} aria-label="Sort for you" escapeToContent>
+      <Popover open={!!sortAnchor} onClose={() => setSortAnchor(null)} anchor={sortAnchor} side="bottom" align="start" width={420} aria-label={t('sortForYou')} escapeToContent>
         <div className="fr-kanban-focus__pop">
           <SortRules schema={schema} sort={s.sort} noun={grouped ? 'rows' : 'cards'} onChange={(sort) => setFocus(editor, k.id, { sort })} />
-          <p className="fr-kanban-fields__hint">Orders the {grouped ? 'rows' : 'cards'} here, for you only. The cards stay where they are on the board.</p>
+          <p className="fr-kanban-fields__hint">{t('ordersThe')}{' '}{grouped ? 'rows' : 'cards'}{' '}{t('hereForYouOnlyThe')}</p>
         </div>
       </Popover>
-      <Menu open={!!fieldsAnchor} onClose={() => setFieldsAnchor(null)} anchor={fieldsAnchor} items={fieldItems} aria-label="Fields shown" />
+      <Menu open={!!fieldsAnchor} onClose={() => setFieldsAnchor(null)} anchor={fieldsAnchor} items={fieldItems} aria-label={t('fieldsShown')} />
     </Modal>
   );
 }

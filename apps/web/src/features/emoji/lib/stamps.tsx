@@ -1,6 +1,7 @@
 // Freero's own stamps: simple vector badges drawn on a 100 × 100 grid.
 import type { ComponentType, ReactNode } from 'react';
 
+import { t } from '../messages';
 export interface StampDef {
   id: string; // stored as `stamp:<id>`
   label: string;
@@ -25,7 +26,7 @@ function Disc({ fill, rim }: { fill: string; rim: string }) {
 export const STAMPS: StampDef[] = [
   {
     id: 'check',
-    label: 'Approved',
+    label: t('approved'),
     words: 'check done yes approved ok tick',
     art: (
       <>
@@ -36,7 +37,7 @@ export const STAMPS: StampDef[] = [
   },
   {
     id: 'star',
-    label: 'Star',
+    label: t('star'),
     words: 'star favorite best great',
     art: (
       <>
@@ -68,7 +69,7 @@ export const STAMPS: StampDef[] = [
   },
   {
     id: 'question',
-    label: 'Question',
+    label: t('question'),
     words: 'question ask unclear why help',
     art: (
       <>
@@ -81,7 +82,7 @@ export const STAMPS: StampDef[] = [
   },
   {
     id: 'love',
-    label: 'Love it',
+    label: t('loveIt'),
     words: 'love it heart like great awesome',
     art: (
       <g transform="rotate(-8 50 50)">
@@ -93,15 +94,13 @@ export const STAMPS: StampDef[] = [
           transform="translate(-2 0)"
           fill="#fff"
         />
-        <text x="50" y="61" textAnchor="middle" dominantBaseline="central" fill="#fff" fontFamily={FONT} fontWeight="700" fontSize="17" letterSpacing="0.6">
-          LOVE IT
-        </text>
+        <text x="50" y="61" textAnchor="middle" dominantBaseline="central" fill="#fff" fontFamily={FONT} fontWeight="700" fontSize="17" letterSpacing="0.6">{t('loveIt2')}</text>
       </g>
     ),
   },
   {
     id: 'cross',
-    label: 'Not this',
+    label: t('notThis'),
     words: 'cross no reject wrong x',
     art: (
       <>

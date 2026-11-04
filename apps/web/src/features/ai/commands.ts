@@ -2,6 +2,7 @@ import { ClipboardList, FileText, History, Lightbulb, Shapes, Workflow } from 'l
 import { defineCommands } from '@engine';
 import { AI_DIALOG, aiAvailable, aiOfferedHere, aiOrExplain, CATCH_UP_DIALOG, clusterable, openAi, selectedElements } from './lib/actions';
 
+import { t } from './messages';
 // Every entry point hides itself unless the server offered AI on this board for this person (and
 // they can edit). In the right-click and board menus they fold into one "AI ▸" submenu. Not in the
 // command palette: it lists unavailable commands greyed out, and a board without AI must show none.
@@ -10,7 +11,7 @@ import { AI_DIALOG, aiAvailable, aiOfferedHere, aiOrExplain, CATCH_UP_DIALOG, cl
 export default defineCommands([
   {
     id: 'ai.ideas',
-    label: 'Generate ideas…',
+    label: t('generateIdeas'),
     icon: Lightbulb,
     group: 'AI',
     menus: ['context', 'board'],
@@ -20,7 +21,7 @@ export default defineCommands([
   },
   {
     id: 'ai.cluster',
-    label: 'Cluster by theme…',
+    label: t('clusterByTheme'),
     icon: Shapes,
     group: 'AI',
     menus: ['context'],
@@ -30,7 +31,7 @@ export default defineCommands([
   },
   {
     id: 'ai.summarize',
-    label: 'Summarise…',
+    label: t('summarise'),
     icon: FileText,
     group: 'AI',
     menus: ['context', 'board'],
@@ -42,7 +43,7 @@ export default defineCommands([
     // #126: a written catch-up of what others changed (the activity feature's catch-up bar runs it
     // with { since: 'visit' }).
     id: 'ai.catchUp',
-    label: 'Catch me up…',
+    label: t('catchMeUp'),
     icon: History,
     group: 'AI',
     menus: ['board'],
@@ -55,7 +56,7 @@ export default defineCommands([
   {
     // #148: a report of a live activity's results (the server reads only results everyone sees).
     id: 'ai.report',
-    label: 'Write a report…',
+    label: t('writeAReport'),
     icon: ClipboardList,
     group: 'AI',
     menus: ['context'],
@@ -70,7 +71,7 @@ export default defineCommands([
     // "Summary" note ({ fill }), else a new note inside its frame. Run by other features with
     // { frameId, fill? } (no menu of its own).
     id: 'ai.summarizeFrame',
-    label: 'Summarise with AI',
+    label: t('summariseWithAi'),
     palette: false,
     when: aiOfferedHere,
     run: (editor, args) => {
@@ -82,7 +83,7 @@ export default defineCommands([
   },
   {
     id: 'ai.diagram',
-    label: 'Diagram from text…',
+    label: t('diagramFromText'),
     icon: Workflow,
     group: 'AI',
     menus: ['context', 'board'],

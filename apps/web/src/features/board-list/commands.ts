@@ -2,10 +2,11 @@ import { ListTree } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { PANEL_ID } from './lib/ids';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'board-list.toggle',
-    label: 'Board as list',
+    label: t('boardAsList'),
     icon: ListTree,
     shortcut: 'alt+shift+l',
     minRole: 'viewer',

@@ -5,6 +5,7 @@ import { armShape, shapeInRect } from './lib/actions';
 import { LIBRARY_PANEL_ID, SHAPE_KINDS } from './lib/constants';
 import { LIBRARY_KINDS } from './lib/library';
 
+import { t } from './messages';
 const KINDS = new Set<string>([...SHAPE_KINDS.map((s) => s.kind), ...LIBRARY_KINDS]);
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -12,19 +13,19 @@ const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 export default defineCommands([
   {
     id: 'shape.rectangle',
-    label: 'Rectangle',
+    label: t('rectangle'),
     shortcut: 'r',
     run: (editor) => armShape(editor, 'rect'),
   },
   {
     id: 'shape.ellipse',
-    label: 'Circle',
+    label: t('circle'),
     shortcut: 'o',
     run: (editor) => armShape(editor, 'ellipse'),
   },
   {
     id: 'shape.openLibrary',
-    label: 'Shape library',
+    label: t('shapeLibrary'),
     icon: LibraryBig,
     menus: ['board'],
     minRole: 'viewer',
@@ -35,7 +36,7 @@ export default defineCommands([
     // rectangle into one). Styled like the next shape the Shapes tool would draw, with the
     // border / fill given. Args: { kind, x, y, w, h, id?, rotation?, stroke?, strokeWidth?, fill? }.
     id: 'shape.insert',
-    label: 'Insert shape',
+    label: t('insertShape'),
     palette: false,
     run: (editor, args) => {
       const a = (args ?? {}) as Record<string, unknown>;

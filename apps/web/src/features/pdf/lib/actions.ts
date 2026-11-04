@@ -4,6 +4,7 @@ import type { Editor, NewElement, Point } from '@engine';
 import { openBytes, openDocument, pageBlob, pageSize, rememberDocument } from './render';
 import { ITEM_W, MAX_PLACED_PAGES, PLACED_PAGE_PX, itemHeight, pageGrid } from './layout';
 
+import { t } from '../messages';
 export const isPdfFile = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
 
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message && e.message !== 'Upload failed' ? e.message : fallback);
@@ -17,7 +18,7 @@ export async function insertPdf(editor: Editor, file: File, at?: Point, near?: P
   try {
     doc = await openBytes(new Uint8Array(await file.arrayBuffer()));
   } catch {
-    editor.host.notify(`“${file.name}” isn't a PDF Freero can open.`, 'error');
+    editor.host.notify(t('nameIsnTAPdf', { name: file.name }), 'error');
     return null;
   }
   const first = await pageSize(doc, 1);
@@ -29,7 +30,7 @@ export async function insertPdf(editor: Editor, file: File, at?: Point, near?: P
   try {
     ({ url } = await editor.host.uploadFile(file));
   } catch (e) {
-    editor.host.notify(message(e, `Couldn't upload “${file.name}”. Try again later.`), 'error');
+    editor.host.notify(message(e, t('couldnTUploadNameTry', { name: file.name })), 'error');
     void doc.destroy();
     return null;
   } finally {
@@ -79,12 +80,12 @@ export async function placeAllPages(editor: Editor, id: string): Promise<void> {
   try {
     doc = await openDocument(el.src);
   } catch {
-    editor.host.notify("Couldn't open this PDF.", 'error');
+    editor.host.notify(t('couldnTOpenThisPdf'), 'error');
     return;
   }
   const n = Math.min(doc.numPages, MAX_PLACED_PAGES);
-  if (doc.numPages > n) editor.host.notify(`Placing the first ${n} of ${doc.numPages} pages.`, 'info');
-  else editor.host.notify(`Placing ${n} ${n === 1 ? 'page' : 'pages'}…`, 'info');
+  if (doc.numPages > n) editor.host.notify(t('placingTheFirstNOf', { n, numPages: doc.numPages }), 'info');
+  else editor.host.notify(t('placingNPages', { n }), 'info');
   const pages: Array<{ url: string; w: number; h: number }> = new Array(n);
   let next = 0;
   let failed: unknown = null;
@@ -103,7 +104,7 @@ export async function placeAllPages(editor: Editor, id: string): Promise<void> {
   };
   await Promise.all([worker(), worker(), worker()]);
   if (failed) {
-    editor.host.notify(message(failed, "Couldn't place the pages. Try again later."), 'error');
+    editor.host.notify(message(failed, t('couldnTPlaceThePages')), 'error');
     return;
   }
   const cur = editor.getElement<PdfElement>(id) ?? el;

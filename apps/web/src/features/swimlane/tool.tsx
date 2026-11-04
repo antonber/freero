@@ -2,9 +2,10 @@ import { Rows3 } from 'lucide-react';
 import { defineTool } from '@engine';
 import { newSwimlane } from './lib/actions';
 
+import { t } from './messages';
 export default defineTool({
   id: 'swimlane',
-  label: 'Swimlanes',
+  label: t('swimlanes'),
   icon: Rows3,
   order: 42,
   placement: 'more',

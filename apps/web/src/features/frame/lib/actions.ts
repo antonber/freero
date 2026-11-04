@@ -17,6 +17,7 @@ import {
 } from './frames';
 import { layoutItems, relayoutPlan, type SlideLayoutId } from './layouts';
 
+import { t } from '../messages';
 export function allFrames(editor: Editor): FrameElement[] {
   return editor.getElements().filter(isFrame);
 }
@@ -45,8 +46,8 @@ export function setHidden(editor: Editor, frames: FrameElement[], hidden: boolea
   editor.transact(() => frames.forEach((f) => editor.update<FrameElement>(f.id, { hidden })));
   editor.host.notify(
     hidden
-      ? 'Contents hidden: viewers and commenters now see an empty frame, and the server no longer sends them what is inside.'
-      : 'Contents visible to everyone again.',
+      ? t('contentsHiddenViewersAndCommenters')
+      : t('contentsVisibleToEveryoneAgain'),
     'info',
   );
 }
@@ -179,7 +180,7 @@ export function newSlide(editor: Editor, layout: SlideLayoutId | null, after?: s
     id = createFrame(editor, { ...spot, ...size }, prev?.preset === '4:3' ? '4:3' : '16:9', { select: false });
     if (!id) return;
     const n = order.length + 1;
-    editor.update<FrameElement>(id, { title: `Slide ${n}` });
+    editor.update<FrameElement>(id, { title: t('slideN', { n }) });
     if (prev) moveSlide(editor, id, order.indexOf(prev) + 1);
     if (layout) applyLayout(editor, id, layout);
   });

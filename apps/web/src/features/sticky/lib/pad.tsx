@@ -8,6 +8,7 @@ import { defineElement, useCanEdit, useEditor, useIsExporting, useParticipant, t
 import { DEFAULT_COLOR, STICKY_SIZE, nearestColor } from './constants';
 import { stickyAt } from './actions';
 
+import { t } from '../messages';
 /** How far the sheets under the top one show (world units). */
 export const PAD_STACK = 8;
 /** Height of the glue strip (fraction of the pad's height). */
@@ -32,7 +33,7 @@ function peel(editor: Editor, pad: StickyPadElement, down: ReactPointerEvent<HTM
   down.preventDefault();
   down.stopPropagation();
   if (!editor.mayAdd('sticky')) {
-    editor.host.notify(editor.isParticipant() ? 'You can add stickies while private mode is on.' : 'You can’t add stickies on this board.', 'info');
+    editor.host.notify(editor.isParticipant() ? t('youCanAddStickiesWhile') : t('youCanTAddStickies'), 'info');
     return;
   }
   // The viewport's offset in the page: the pad's top-left is at its box (client) and at
@@ -107,12 +108,11 @@ const PadView = memo(function PadView({ element }: ElementRenderProps<StickyPadE
           className="fr-stickypad__peel"
           style={{ top: `${GLUE * 100}%` }}
           {...(canPeel ? { 'data-fr-interactive': '', onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => e.button === 0 && peel(editor, element, e) } : {})}
-          title={canPeel ? 'Drag to peel off a sticky' : undefined}
+          title={canPeel ? t('dragToPeelOffA') : undefined}
         >
           {!exporting ? (
             <span className="fr-stickypad__hint">
-              <StickyNote size={16} aria-hidden /> Drag to peel
-            </span>
+              <StickyNote size={16} aria-hidden />{' '}{t('dragToPeel')}</span>
           ) : null}
         </div>
       </div>
@@ -122,7 +122,7 @@ const PadView = memo(function PadView({ element }: ElementRenderProps<StickyPadE
 
 export const padDefinition = defineElement({
   type: 'stickypad',
-  label: { one: 'Sticky pad', many: 'Sticky pads' },
+  label: { one: t('stickyPad'), many: t('stickyPads') },
   icon: StickyNote,
   resize: 'free',
   rotatable: false,
@@ -137,5 +137,5 @@ export const padDefinition = defineElement({
     color: DEFAULT_COLOR,
   }),
   Component: PadView,
-  toPlainText: () => 'Sticky pad',
+  toPlainText: () => t('stickyPad'),
 });

@@ -9,13 +9,14 @@ import type { Editor } from '@engine';
 import { Button, IconButton, Input, Select } from '@ui';
 import { newQuizQuestion } from './activity';
 
+import { t } from '../messages';
 const LIMITS = [
-  { value: '0', label: 'No time limit' },
-  { value: '10', label: '10 seconds' },
-  { value: '20', label: '20 seconds' },
-  { value: '30', label: '30 seconds' },
-  { value: '60', label: '1 minute' },
-  { value: '120', label: '2 minutes' },
+  { value: '0', label: t('noTimeLimit') },
+  { value: '10', label: t('n10Seconds') },
+  { value: '20', label: t('n20Seconds') },
+  { value: '30', label: t('n30Seconds') },
+  { value: '60', label: t('n1Minute') },
+  { value: '120', label: t('n2Minutes') },
 ];
 const MAX_ANSWERS = 6;
 
@@ -40,12 +41,12 @@ export function QuizEditor({ editor, a }: { editor: Editor; a: ActivityElement }
     setKey(next);
     // People may pick several only where several are right (that much is not a secret).
     if (!!q.multi !== right.length > 1) patch(q.id, { multi: right.length > 1 });
-    if (!engage?.setKey) return setError('Right answers need a board on a Freero server.');
+    if (!engage?.setKey) return setError(t('rightAnswersNeedABoard'));
     try {
       setKey((await engage.setKey(a.id, next)).key ?? next);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t save the right answers');
+      setError(e instanceof Error ? e.message : t('couldnTSaveTheRight'));
     }
   };
 
@@ -54,10 +55,10 @@ export function QuizEditor({ editor, a }: { editor: Editor; a: ActivityElement }
       <p className="fr-engage-quizedit__note">Right answers stay on the server until you show them; nobody else can read them from the board.</p>
       {questions.map((q, qi) => (
         <fieldset key={q.id} className="fr-engage-quizedit__q">
-          <legend>Question {qi + 1}</legend>
+          <legend>{t('question')}{' '}{qi + 1}</legend>
           <div className="fr-engage-form__row">
-            <Input aria-label={`Question ${qi + 1}`} value={q.text} maxLength={200} onChange={(e) => patch(q.id, { text: e.target.value })} />
-            <IconButton size={32} icon={Trash2} label="Remove question" disabled={questions.length <= 1} onClick={() => setQuestions(questions.filter((x) => x.id !== q.id))} />
+            <Input aria-label={t('questionValue', { value: qi + 1 })} value={q.text} maxLength={200} onChange={(e) => patch(q.id, { text: e.target.value })} />
+            <IconButton size={32} icon={Trash2} label={t('removeQuestion')} disabled={questions.length <= 1} onClick={() => setQuestions(questions.filter((x) => x.id !== q.id))} />
           </div>
           {q.options.map((o, oi) => {
             const right = (key[q.id] ?? []).includes(o.id);
@@ -66,17 +67,17 @@ export function QuizEditor({ editor, a }: { editor: Editor; a: ActivityElement }
                 <IconButton
                   size={32}
                   icon={right ? CircleCheck : Circle}
-                  label={right ? 'Right answer (click to unmark)' : 'Mark as a right answer'}
+                  label={right ? t('rightAnswerClickToUnmark') : t('markAsARightAnswer')}
                   active={right}
                   onClick={() => void toggleRight(q, o.id)}
                 />
                 <Input
-                  aria-label={`Question ${qi + 1}, answer ${oi + 1}`}
+                  aria-label={t('questionValueAnswerValue2', { value: qi + 1, value2: oi + 1 })}
                   value={o.text}
                   maxLength={120}
                   onChange={(e) => patch(q.id, { options: q.options.map((x) => (x.id === o.id ? { ...x, text: e.target.value } : x)) })}
                 />
-                <IconButton size={32} icon={Trash2} label="Remove answer" disabled={q.options.length <= 2} onClick={() => patch(q.id, { options: q.options.filter((x) => x.id !== o.id) })} />
+                <IconButton size={32} icon={Trash2} label={t('removeAnswer')} disabled={q.options.length <= 2} onClick={() => patch(q.id, { options: q.options.filter((x) => x.id !== o.id) })} />
               </div>
             );
           })}
@@ -86,13 +87,11 @@ export function QuizEditor({ editor, a }: { editor: Editor; a: ActivityElement }
               size="sm"
               icon={Plus}
               disabled={q.options.length >= MAX_ANSWERS}
-              onClick={() => patch(q.id, { options: [...q.options, { id: nanoid(8), text: `Answer ${String.fromCharCode(65 + q.options.length)}` }] })}
-            >
-              Add answer
-            </Button>
-            <Select<string> aria-label={`Time limit of question ${qi + 1}`} options={LIMITS} value={String(q.seconds ?? 0)} onChange={(v) => patch(q.id, { seconds: Number(v) })} />
+              onClick={() => patch(q.id, { options: [...q.options, { id: nanoid(8), text: t('answerFromcharcode', { fromCharCode: String.fromCharCode(65 + q.options.length) }) }] })}
+            >{t('addAnswer')}</Button>
+            <Select<string> aria-label={t('timeLimitOfQuestionValue', { value: qi + 1 })} options={LIMITS} value={String(q.seconds ?? 0)} onChange={(v) => patch(q.id, { seconds: Number(v) })} />
           </div>
-          {!(key[q.id] ?? []).length ? <p className="fr-engage-quizedit__warn">Mark at least one right answer</p> : null}
+          {!(key[q.id] ?? []).length ? <p className="fr-engage-quizedit__warn">{t('markAtLeastOneRight')}</p> : null}
         </fieldset>
       ))}
       <Button
@@ -101,9 +100,7 @@ export function QuizEditor({ editor, a }: { editor: Editor; a: ActivityElement }
         icon={Plus}
         disabled={questions.length >= ENGAGE_MAX_QUIZ_QUESTIONS}
         onClick={() => setQuestions([...questions, newQuizQuestion(() => nanoid(8), questions.length + 1)])}
-      >
-        Add question
-      </Button>
+      >{t('addQuestion')}</Button>
       {error ? (
         <p className="fr-actform__error" role="alert">
           {error}

@@ -1,0 +1,20 @@
+{
+  "openDoc": "Open doc",
+  "exportDocAsMarkdown": "Export doc as Markdown",
+  "couldNotExportTheDoc": "Could not export the doc",
+  "madeTheDocTitleFrom": "Made the doc “{title}” from Markdown",
+  "couldNotCreateTheDoc": "Could not create the doc",
+  "noAccessToThisBoard": "No access to this board",
+  "thisDocWasRemovedFor": "This doc was removed for review",
+  "noAccessToThisDoc": "No access to this doc",
+  "itsOwnerHasnTShared": "Its owner hasn’t shared it with you.",
+  "requestAccess": "Request access",
+  "untitledDoc": "Untitled doc",
+  "doc": "Doc",
+  "editHere": "Edit here",
+  "openTheDoc": "Open the doc",
+  "aFreeroDoc": "A Freero doc",
+  "loading": "Loading…",
+  "docs": "Docs",
+  "docsNeedAFreeroAccount": "Docs need a Freero account and a saved board."
+}

@@ -6,6 +6,7 @@ import { addColumn, setColumnWidth } from './lib/actions';
 import { COLUMN_WIDTHS, FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
 import { columnsAreOptions } from './lib/group';
 
+import { t } from './messages';
 function DockButton({ editor, panel, icon: Icon, label }: { editor: Editor; panel: string; icon: LucideIcon; label: string }) {
   const open = useDock() === panel;
   return (
@@ -28,13 +29,11 @@ export default defineFormat({
       <div className="fr-kanban-format">
         {columnsAreOptions(k) && (
           <button type="button" className="fr-kanban-format__btn" onClick={() => addColumn(editor, k.id)}>
-            <Plus size={16} aria-hidden />
-            Add column
-          </button>
+            <Plus size={16} aria-hidden />{t('addColumn')}</button>
         )}
         <SegmentedControl
           size="sm"
-          aria-label="Column width"
+          aria-label={t('columnWidth')}
           value={COLUMN_WIDTHS.find((c) => c.w === k.colW)?.id ?? ''}
           options={COLUMN_WIDTHS.map((c) => ({ value: c.id, label: c.label }))}
           onChange={(id: string) => {
@@ -42,8 +41,8 @@ export default defineFormat({
             if (w) setColumnWidth(editor, k.id, w);
           }}
         />
-        <DockButton editor={editor} panel={FIELDS_PANEL} icon={ListChecks} label="Fields" />
-        <DockButton editor={editor} panel={VIEW_PANEL} icon={SlidersHorizontal} label="View" />
+        <DockButton editor={editor} panel={FIELDS_PANEL} icon={ListChecks} label={t('fields')} />
+        <DockButton editor={editor} panel={VIEW_PANEL} icon={SlidersHorizontal} label={t('view')} />
       </div>
     );
   },

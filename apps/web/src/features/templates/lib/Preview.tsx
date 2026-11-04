@@ -10,6 +10,7 @@ import type { NewElement } from '@engine';
 import { boundsOf } from './place';
 import type { TemplateDef } from './types';
 
+import { t as tr } from '../messages';
 const cache = new Map<string, NewElement[]>();
 
 function elementsFor(def: TemplateDef): NewElement[] {
@@ -304,7 +305,7 @@ export const TemplatePreview = memo(function TemplatePreview({ def }: { def: Tem
       viewBox={`${b.x - pad} ${b.y - pad} ${b.w + pad * 2} ${b.h + pad * 2}`}
       preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label={`${def.name} preview`}
+      aria-label={tr('namePreview', { name: def.name })}
     >
       {ordered.map((el) => draw(el, byId))}
     </svg>

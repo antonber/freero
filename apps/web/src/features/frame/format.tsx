@@ -8,6 +8,7 @@ import { DEFAULT_FILL, PRESETS, presetById } from './lib/frames';
 import { applyLayout, fitToContent, setHidden, setPreset, setSkipped, zoomToFrame } from './lib/actions';
 import { SLIDE_LAYOUTS } from './lib/layouts';
 
+import { t } from './messages';
 const FILLS = ['#FFFFFF', '#F4F3F8', '#FFF8DB', '#FFEDE3', '#FDEBF4', '#EEEAFF', '#E5F1FF', '#E2F7F1', '#2B2A40', '#17162B'];
 const FILL_NAMES: Record<string, string> = {
   '#FFFFFF': 'White',
@@ -29,19 +30,19 @@ function FillControl({ editor, frames }: { editor: Editor; frames: FrameElement[
   const mixed = frames.some((f) => (f.fill || DEFAULT_FILL) !== current);
   return (
     <>
-      <Tooltip content="Background" side="bottom">
+      <Tooltip content={t('background')} side="bottom">
         <button
           ref={ref}
           type="button"
           className="fr-frame-fill-btn"
-          aria-label="Frame background"
+          aria-label={t('frameBackground')}
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
           <span style={{ background: mixed ? 'conic-gradient(#fff 0 50%, #e4e3ee 0 100%)' : current }} />
         </button>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Frame background">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('frameBackground')}>
         <ColorSwatches
           colors={FILLS}
           names={FILL_NAMES}
@@ -50,7 +51,7 @@ function FillControl({ editor, frames }: { editor: Editor; frames: FrameElement[
           size={26}
           allowCustom
           onChange={(fill) => editor.transact(() => frames.forEach((f) => editor.update<FrameElement>(f.id, { fill })))}
-          aria-label="Frame background"
+          aria-label={t('frameBackground')}
         />
       </Popover>
     </>
@@ -64,16 +65,16 @@ function PresetControl({ editor, frames }: { editor: Editor; frames: FrameElemen
   const mixed = frames.some((f) => (f.preset ?? 'custom') !== current);
   return (
     <>
-      <Tooltip content="Frame size" side="bottom">
+      <Tooltip content={t('frameSize')} side="bottom">
         <button
           ref={ref}
           type="button"
           className="fr-frame-fmt-btn"
-          aria-label="Frame size"
+          aria-label={t('frameSize')}
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
-          {mixed ? 'Mixed' : presetById(current).label}
+          {mixed ? t('mixed') : presetById(current).label}
           <ChevronDown size={14} />
         </button>
       </Tooltip>
@@ -109,25 +110,25 @@ function GridControl({ editor, frame }: { editor: Editor; frame: FrameElement })
   const cols = layout?.cols ?? DEFAULT_GRID.cols;
   return (
     <>
-      <IconButton ref={ref} icon={LayoutGrid} label="Grid layout" size={32} active={!!layout || open} onClick={() => setOpen((o) => !o)} />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Grid layout" className="fr-frame-grid">
+      <IconButton ref={ref} icon={LayoutGrid} label={t('gridLayout')} size={32} active={!!layout || open} onClick={() => setOpen((o) => !o)} />
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('gridLayout')} className="fr-frame-grid">
         <div className="fr-frame-grid__row">
-          <span>Grid layout</span>
-          <Toggle size="sm" checked={!!layout} aria-label="Keep items in a grid" onChange={(on) => set(on ? { ...DEFAULT_GRID } : null)} />
+          <span>{t('gridLayout')}</span>
+          <Toggle size="sm" checked={!!layout} aria-label={t('keepItemsInAGrid')} onChange={(on) => set(on ? { ...DEFAULT_GRID } : null)} />
         </div>
         <div className={`fr-frame-grid__row${layout ? '' : ' is-off'}`}>
-          <span>Columns</span>
+          <span>{t('columns')}</span>
           <span className="fr-frame-grid__stepper">
-            <IconButton icon={Minus} label="Fewer columns" size={32} disabled={!layout || cols <= 1} onClick={() => layout && set({ ...layout, cols: cols - 1 })} />
+            <IconButton icon={Minus} label={t('fewerColumns')} size={32} disabled={!layout || cols <= 1} onClick={() => layout && set({ ...layout, cols: cols - 1 })} />
             <span className="fr-frame-grid__num">{cols}</span>
-            <IconButton icon={Plus} label="More columns" size={32} disabled={!layout || cols >= MAX_COLS} onClick={() => layout && set({ ...layout, cols: cols + 1 })} />
+            <IconButton icon={Plus} label={t('moreColumns')} size={32} disabled={!layout || cols >= MAX_COLS} onClick={() => layout && set({ ...layout, cols: cols + 1 })} />
           </span>
         </div>
         <div className={`fr-frame-grid__row${layout ? '' : ' is-off'}`}>
-          <span>Gap</span>
+          <span>{t('gap')}</span>
           <SegmentedControl
             size="sm"
-            aria-label="Gap between items"
+            aria-label={t('gapBetweenItems')}
             value={GRID_GAPS.find((g) => g.gap === (layout?.gap ?? DEFAULT_GRID.gap))?.id ?? ''}
             options={GRID_GAPS.map((g) => ({ value: g.id, label: g.label }))}
             onChange={(id: string) => {
@@ -147,8 +148,8 @@ function LayoutControl({ editor, frame }: { editor: Editor; frame: FrameElement 
   const ref = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <Tooltip content="Slide layout" side="bottom">
-        <button ref={ref} type="button" className="fr-frame-layout-btn" aria-label="Slide layout" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <Tooltip content={t('slideLayout')} side="bottom">
+        <button ref={ref} type="button" className="fr-frame-layout-btn" aria-label={t('slideLayout')} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <LayoutTemplate size={16} aria-hidden />
         </button>
       </Tooltip>
@@ -157,7 +158,7 @@ function LayoutControl({ editor, frame }: { editor: Editor; frame: FrameElement 
         onClose={() => setOpen(false)}
         anchor={ref.current}
         side="bottom"
-        aria-label="Slide layout"
+        aria-label={t('slideLayout')}
         items={SLIDE_LAYOUTS.map((l) => ({ id: l.id, label: l.label, onSelect: () => applyLayout(editor, frame.id, l.id) }))}
       />
     </>
@@ -176,31 +177,31 @@ export default defineFormat({
         <PresetControl editor={editor} frames={frames} />
         <IconButton
           icon={Shrink}
-          label="Fit to content"
+          label={t('fitToContent')}
           size={32}
           onClick={() => {
             editor.beginGesture();
             const fitted = frames.map((f) => fitToContent(editor, f)).some(Boolean);
             editor.endGesture();
-            if (!fitted) editor.host.notify('Nothing inside this frame to fit to yet.');
+            if (!fitted) editor.host.notify(t('nothingInsideThisFrameTo'));
           }}
         />
         {frames.length === 1 && !frames[0].locked && <GridControl editor={editor} frame={frames[0]} />}
         {frames.length === 1 && (
-          <IconButton icon={Maximize2} label="Zoom to frame" size={32} onClick={() => zoomToFrame(editor, frames[0])} />
+          <IconButton icon={Maximize2} label={t('zoomToFrame')} size={32} onClick={() => zoomToFrame(editor, frames[0])} />
         )}
         {frames.length === 1 && !frames[0].locked && <LayoutControl editor={editor} frame={frames[0]} />}
         <IconButton
           icon={Presentation}
-          label={frames.every((f) => f.skip) ? 'Include in presentation' : 'Skip in presentation'}
+          label={frames.every((f) => f.skip) ? t('includeInPresentation') : t('skipInPresentation')}
           size={32}
           active={frames.every((f) => f.skip)}
           onClick={() => setSkipped(editor, frames, !frames.every((f) => f.skip))}
         />
         {frames.every((f) => f.hidden) ? (
-          <IconButton icon={Eye} label="Show contents to everyone" size={32} active onClick={() => setHidden(editor, frames, false)} />
+          <IconButton icon={Eye} label={t('showContentsToEveryone')} size={32} active onClick={() => setHidden(editor, frames, false)} />
         ) : (
-          <IconButton icon={EyeOff} label="Hide contents from viewers and commenters" size={32} onClick={() => setHidden(editor, frames, true)} />
+          <IconButton icon={EyeOff} label={t('hideContentsFromViewersAnd')} size={32} onClick={() => setHidden(editor, frames, true)} />
         )}
       </>
     );

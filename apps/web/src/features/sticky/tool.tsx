@@ -7,12 +7,13 @@ import { stickyAt } from './lib/actions';
 import { BoxControl } from './lib/BoxControl';
 import { PAD_STACK } from './lib/pad';
 
+import { t } from './messages';
 /** A new sticky pad's box (#132): a medium sticky with the stack under it. */
 const PAD_SIZE = STICKY_SIZE + PAD_STACK;
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Sticky note',
+  label: t('stickyNote'),
   icon: StickyNote,
   shortcut: 'n',
   order: 10,
@@ -42,7 +43,7 @@ export default defineTool({
     const { color = DEFAULT_COLOR, shape = 'square', size = 'm', pad = false } = useToolOptions<StickyToolOptions>(TOOL_ID);
     return (
       <div className="fr-sticky-options">
-        <div className="fr-sticky-options__label">Sticky color</div>
+        <div className="fr-sticky-options__label">{t('stickyColor')}</div>
         <ColorSwatches
           colors={COLOR_HEX}
           names={COLOR_NAMES}
@@ -50,11 +51,11 @@ export default defineTool({
           onChange={(hex) => editor.setToolOptions(TOOL_ID, { color: colorFromHex(hex) })}
           columns={6}
           size={24}
-          aria-label="Sticky color"
+          aria-label={t('stickyColor')}
         />
         {pad ? null : (
           <>
-            <div className="fr-sticky-options__label">Shape and size</div>
+            <div className="fr-sticky-options__label">{t('shapeAndSize')}</div>
             <BoxControl
               shape={shape}
               size={size}
@@ -64,7 +65,7 @@ export default defineTool({
           </>
         )}
         {editor.mayAdd('stickypad') ? (
-          <Toggle size="sm" label="Place a sticky pad" checked={pad} onChange={(on) => editor.setToolOptions(TOOL_ID, { pad: on })} />
+          <Toggle size="sm" label={t('placeAStickyPad')} checked={pad} onChange={(on) => editor.setToolOptions(TOOL_ID, { pad: on })} />
         ) : null}
       </div>
     );

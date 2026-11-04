@@ -33,6 +33,7 @@ import { useKanbanPeople } from './people';
 import { accentOf, today, writeBar } from './projection';
 import { DatesPopover, WindowedList, attr, dayShort, dayWords } from './projectionParts';
 
+import { t as tr } from '../messages';
 export interface TimelineBodyProps {
   editor: Editor;
   k: KanbanElement;
@@ -85,8 +86,8 @@ export function TimelineBody(p: TimelineBodyProps) {
   const schema = useMemo(() => collectionSchema(k), [k]);
   const people = useKanbanPeople(editor);
   const names = dateFields(schema);
-  const startName = names.find((f) => f.id === startRef)?.name ?? 'Start date';
-  const endName = names.find((f) => f.id === endRef)?.name ?? 'Due date';
+  const startName = names.find((f) => f.id === startRef)?.name ?? tr('startDate');
+  const endName = names.find((f) => f.id === endRef)?.name ?? tr('dueDate');
   const now = today();
   const labelW = p.compact ? 128 : 220;
   const ppd = T.PX_PER_DAY[scale];
@@ -383,7 +384,7 @@ export function TimelineBody(p: TimelineBodyProps) {
       <div
         ref={scroll}
         role="grid"
-        aria-label={`${p.label}: ${startName} to ${endName}`}
+        aria-label={tr('labelStartnameToEndname', { label: p.label, startName, endName })}
         aria-rowcount={entries.length + 1}
         className="fr-kanban-tl__scroll"
         {...(interactive ? { 'data-fr-scrollable': '' } : {})}
@@ -394,7 +395,7 @@ export function TimelineBody(p: TimelineBodyProps) {
       >
         <div role="row" className="fr-kanban-tl__head" style={{ width: labelW + trackW, height: HEAD_H }}>
           <div role="columnheader" className="fr-kanban-tl__corner" style={{ width: labelW }}>
-            {lanes ? `By ${lanes.name}` : 'Card'}
+            {lanes ? tr('byName', { name: lanes.name }) : tr('card')}
           </div>
           <div className="fr-kanban-tl__axis" style={{ left: labelW, width: trackW }} aria-hidden>
             {ticks.top.filter(inView).map((t) => (
@@ -413,18 +414,17 @@ export function TimelineBody(p: TimelineBodyProps) {
           {now >= range.start && now <= range.end && <span className="fr-kanban-tl__today" style={{ left: labelW + x(now) + ppd / 2 }} aria-hidden />}
           {aside?.moved && aside.day !== null && <span className="fr-kanban-tl__drop" style={{ left: labelW + x(aside.day), width: (one ? 1 : T.DEFAULT_DAYS[scale]) * ppd }} aria-hidden />}
           {drawn}
-          {!entries.length && <div className="fr-kanban-grid__empty">{rows.length ? `No card has a ${startName.toLowerCase()} or ${endName.toLowerCase()} yet: drag one from the side.` : 'No cards to show.'}</div>}
+          {!entries.length && <div className="fr-kanban-grid__empty">{rows.length ? tr('noCardHasAStartname', { startName: startName.toLowerCase(), endName: endName.toLowerCase() }) : tr('noCardsToShow')}</div>}
         </div>
       </div>
-      <section className="fr-kanban-tl__undated" aria-label="Cards without dates">
-        <h4>
-          No dates <span className="fr-kanban-grid__count">{undated.length}</span>
+      <section className="fr-kanban-tl__undated" aria-label={tr('cardsWithoutDates')}>
+        <h4>{tr('noDates')}{' '}<span className="fr-kanban-grid__count">{undated.length}</span>
         </h4>
         {undated.length ? (
           <WindowedList
             count={undated.length}
             rowH={UNDATED_ROW_H}
-            label="Cards without dates"
+            label={tr('cardsWithoutDates')}
             render={(i) => {
               const card = undated[i];
               const title = richTextToPlain(card.title) || 'Untitled';
@@ -435,7 +435,7 @@ export function TimelineBody(p: TimelineBodyProps) {
                   className={`fr-kanban-cal__card${aside?.id === card.id && aside.moved ? ' is-dragging' : ''}`}
                   style={{ ['--opt' as string]: accentOf(k, card, schema) }}
                   tabIndex={interactive ? 0 : -1}
-                  aria-label={`${title}, no dates`}
+                  aria-label={tr('titleNoDates', { title })}
                   aria-describedby={editable ? hintId : undefined}
                   onPointerDown={(e) => onAsideDown(e, card)}
                   onPointerMove={onAsideMove}
@@ -461,7 +461,7 @@ export function TimelineBody(p: TimelineBodyProps) {
             }}
           />
         ) : (
-          <p className="fr-kanban-cal__none">Every card has dates.</p>
+          <p className="fr-kanban-cal__none">{tr('everyCardHasDates')}</p>
         )}
       </section>
       {picker && pickerCard && (

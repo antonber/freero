@@ -7,12 +7,13 @@ import { defineFormat, richTextToPlain, type Editor } from '@engine';
 import { IconButton } from '@ui';
 import { LINK_DIALOG, RESULTS, SETTINGS_DIALOG, STAGE_DIALOG, resultsCsv } from './lib/activity';
 
+import { t } from './messages';
 async function run(editor: Editor, fn: () => Promise<unknown>, done?: string) {
   try {
     await fn();
     if (done) editor.host.notify(done, 'success');
   } catch (e) {
-    editor.host.notify(e instanceof Error ? e.message : 'Something went wrong', 'error');
+    editor.host.notify(e instanceof Error ? e.message : t('somethingWentWrong'), 'error');
   }
 }
 
@@ -39,10 +40,10 @@ function QuizControls({ editor, a }: { editor: Editor; a: ActivityElement }) {
   const go = (body: { step: number } | { showAnswer: true }, done?: string) => void run(editor, () => runQuiz(a.id, body), done);
   return (
     <>
-      {step < 0 ? <IconButton icon={Play} label="Start the quiz (open question 1)" disabled={!total} onClick={() => go({ step: 0 })} /> : null}
-      {step >= 0 && !a.quiz?.showAnswer ? <IconButton icon={CircleCheck} label="Show the right answer" onClick={() => go({ showAnswer: true })} /> : null}
-      {step >= 0 && a.quiz?.showAnswer && step < total - 1 ? <IconButton icon={SkipForward} label={`Next question (${step + 2} of ${total})`} onClick={() => go({ step: step + 1 })} /> : null}
-      {step >= 0 ? <IconButton icon={ListRestart} label="Back to the start of the quiz" onClick={() => go({ step: -1 })} /> : null}
+      {step < 0 ? <IconButton icon={Play} label={t('startTheQuizOpenQuestion')} disabled={!total} onClick={() => go({ step: 0 })} /> : null}
+      {step >= 0 && !a.quiz?.showAnswer ? <IconButton icon={CircleCheck} label={t('showTheRightAnswer')} onClick={() => go({ showAnswer: true })} /> : null}
+      {step >= 0 && a.quiz?.showAnswer && step < total - 1 ? <IconButton icon={SkipForward} label={t('nextQuestionValueOfTotal', { value: step + 2, total })} onClick={() => go({ step: step + 1 })} /> : null}
+      {step >= 0 ? <IconButton icon={ListRestart} label={t('backToTheStartOf')} onClick={() => go({ step: -1 })} /> : null}
     </>
   );
 }
@@ -52,32 +53,32 @@ function Controls({ editor, a }: { editor: Editor; a: ActivityElement }) {
   const quiz = a.kind === 'quiz';
   return (
     <>
-      <IconButton icon={Settings2} label="Set up activity" onClick={() => editor.openPanel(SETTINGS_DIALOG, { id: a.id })} />
+      <IconButton icon={Settings2} label={t('setUpActivity')} onClick={() => editor.openPanel(SETTINGS_DIALOG, { id: a.id })} />
       {quiz ? <QuizControls editor={editor} a={a} /> : null}
       {engage && a.results === 'reveal' ? (
         <>
           <IconButton
             icon={Eye}
-            label={quiz ? 'Reveal the leaderboard to everyone' : 'Reveal results to everyone'}
-            onClick={() => void run(editor, () => engage.reveal(a.id, true), quiz ? 'Leaderboard revealed' : 'Results revealed')}
+            label={quiz ? t('revealTheLeaderboardToEveryone') : t('revealResultsToEveryone')}
+            onClick={() => void run(editor, () => engage.reveal(a.id, true), quiz ? t('leaderboardRevealed') : t('resultsRevealed'))}
           />
-          <IconButton icon={EyeOff} label={quiz ? 'Hide the leaderboard again' : 'Hide results again'} onClick={() => void run(editor, () => engage.reveal(a.id, false))} />
+          <IconButton icon={EyeOff} label={quiz ? t('hideTheLeaderboardAgain') : t('hideResultsAgain')} onClick={() => void run(editor, () => engage.reveal(a.id, false))} />
         </>
       ) : null}
       <IconButton
         icon={a.closed ? MessageSquare : MessageSquareOff}
-        label={a.closed ? 'Reopen answers' : 'Close answers'}
+        label={a.closed ? t('reopenAnswers') : t('closeAnswers')}
         onClick={() => editor.update<ActivityElement>(a.id, { closed: !a.closed })}
       />
-      <IconButton icon={QrCode} label="Answer link and QR code (phones)" onClick={() => editor.openPanel(LINK_DIALOG, { id: a.id })} />
-      <IconButton icon={Maximize2} label="Show full screen" onClick={() => editor.openPanel(STAGE_DIALOG, { id: a.id })} />
-      {editor.host.board.canExport !== false ? <IconButton icon={FileDown} label="Download results (CSV)" onClick={() => downloadCsv(editor, a)} /> : null}
+      <IconButton icon={QrCode} label={t('answerLinkAndQrCode2')} onClick={() => editor.openPanel(LINK_DIALOG, { id: a.id })} />
+      <IconButton icon={Maximize2} label={t('showFullScreen')} onClick={() => editor.openPanel(STAGE_DIALOG, { id: a.id })} />
+      {editor.host.board.canExport !== false ? <IconButton icon={FileDown} label={t('downloadResultsCsv')} onClick={() => downloadCsv(editor, a)} /> : null}
       {engage ? (
         <IconButton
           icon={RotateCcw}
-          label="Start over (delete every answer)"
+          label={t('startOverDeleteEveryAnswer')}
           onClick={() => {
-            if (window.confirm('Delete every answer to this activity? This can’t be undone.')) void run(editor, () => engage.clear(a.id), 'Answers cleared');
+            if (window.confirm(t('deleteEveryAnswerToThis'))) void run(editor, () => engage.clear(a.id), t('answersCleared'));
           }}
         />
       ) : null}

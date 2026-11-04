@@ -18,6 +18,7 @@ import { Popover } from '@ui';
 import { accentOf, moveToDay, today } from './projection';
 import { DatesPopover, WindowedList, attr, dayOfMonth, dayShort, dayWords, monthWords, sameMonth, weekdayNames } from './projectionParts';
 
+import { t } from '../messages';
 export type CalendarMode = 'month' | 'week';
 
 export interface CalendarBodyProps {
@@ -55,7 +56,7 @@ interface Drag {
 export function CalendarBody(p: CalendarBodyProps) {
   const { editor, k, rows, dateRef, canEdit, interactive } = p;
   const schema = useMemo(() => collectionSchema(k), [k]);
-  const fieldName = dateFields(schema).find((f) => f.id === dateRef)?.name ?? 'Due date';
+  const fieldName = dateFields(schema).find((f) => f.id === dateRef)?.name ?? t('dueDate');
   const now = today();
   const [mode, setMode] = useState<CalendarMode>(p.compact ? 'week' : 'month');
   const [anchor, setAnchor] = useState(now);
@@ -282,8 +283,7 @@ export function CalendarBody(p: CalendarBodyProps) {
             onClick={(e) => interactive && setMore({ day, el: e.currentTarget })}
             onKeyDown={(e) => e.stopPropagation()}
           >
-            +{cards.length - shown.length} more
-          </button>
+            +{cards.length - shown.length}{' '}{t('more')}</button>
         )}
       </div>
     );
@@ -302,33 +302,29 @@ export function CalendarBody(p: CalendarBodyProps) {
       aria-label={p.label}
       {...(interactive ? { 'data-fr-interactive': '', 'data-fr-keyboard-trap': '' } : {})}
     >
-      <span id={hintId} hidden>
-        Alt and the arrow keys move it by a day or a week. Enter sets its date.
-      </span>
+      <span id={hintId} hidden>{t('altAndTheArrowKeys')}</span>
       <div className="fr-kanban-cal__bar">
-        <button type="button" className="fr-kanban-proj__btn" aria-label={mode === 'month' ? 'Previous month' : 'Previous week'} onPointerDown={(e) => e.stopPropagation()} onClick={() => step(-1)}>
+        <button type="button" className="fr-kanban-proj__btn" aria-label={mode === 'month' ? t('previousMonth') : t('previousWeek')} onPointerDown={(e) => e.stopPropagation()} onClick={() => step(-1)}>
           <ChevronLeft size={16} aria-hidden />
         </button>
         <strong className="fr-kanban-cal__title" aria-live="off">
           {title}
         </strong>
-        <button type="button" className="fr-kanban-proj__btn" aria-label={mode === 'month' ? 'Next month' : 'Next week'} onPointerDown={(e) => e.stopPropagation()} onClick={() => step(1)}>
+        <button type="button" className="fr-kanban-proj__btn" aria-label={mode === 'month' ? t('nextMonth') : t('nextWeek')} onPointerDown={(e) => e.stopPropagation()} onClick={() => step(1)}>
           <ChevronRight size={16} aria-hidden />
         </button>
-        <button type="button" className="fr-kanban-proj__btn is-text" onPointerDown={(e) => e.stopPropagation()} onClick={() => goTo(now, false)}>
-          Today
-        </button>
-        <span className="fr-kanban-proj__seg" role="radiogroup" aria-label="Show">
+        <button type="button" className="fr-kanban-proj__btn is-text" onPointerDown={(e) => e.stopPropagation()} onClick={() => goTo(now, false)}>{t('today')}</button>
+        <span className="fr-kanban-proj__seg" role="radiogroup" aria-label={t('show')}>
           {(['month', 'week'] as const).map((m) => (
             <button key={m} type="button" role="radio" aria-checked={mode === m} className={`fr-kanban-proj__btn is-text${mode === m ? ' is-on' : ''}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMode(m)}>
-              {m === 'month' ? 'Month' : 'Week'}
+              {m === 'month' ? t('month') : t('week')}
             </button>
           ))}
         </span>
-        <span className="fr-kanban-cal__field">by {fieldName}</span>
+        <span className="fr-kanban-cal__field">{t('byFieldname', { fieldName })}</span>
       </div>
       <div className="fr-kanban-cal__main">
-        <div role="grid" aria-label={`${title}, cards by ${fieldName}`} className={`fr-kanban-cal__grid is-${mode}`} data-fr-scrollable={interactive ? '' : undefined}>
+        <div role="grid" aria-label={t('titleCardsByFieldname', { title, fieldName })} className={`fr-kanban-cal__grid is-${mode}`} data-fr-scrollable={interactive ? '' : undefined}>
           {!p.compact && (
             <div role="row" className="fr-kanban-cal__weekdays">
               {names.map((n) => (
@@ -346,16 +342,15 @@ export function CalendarBody(p: CalendarBodyProps) {
             ))}
           </div>
         </div>
-        <section className="fr-kanban-cal__undated" aria-label={`Cards with no ${fieldName.toLowerCase()}`} data-day="">
-          <h4 className={drag?.moved && drag.over === '' ? 'is-drop' : undefined}>
-            No {fieldName.toLowerCase()} <span className="fr-kanban-grid__count">{undated.length}</span>
+        <section className="fr-kanban-cal__undated" aria-label={t('cardsWithNoFieldname', { fieldName: fieldName.toLowerCase() })} data-day="">
+          <h4 className={drag?.moved && drag.over === '' ? 'is-drop' : undefined}>{t('noFieldname', { fieldName: fieldName.toLowerCase() })}{' '}<span className="fr-kanban-grid__count">{undated.length}</span>
           </h4>
           {undated.length ? (
             <div data-cards="" className="fr-kanban-cal__undated-list">
-              <WindowedList count={undated.length} rowH={UNDATED_ROW_H} label={`No ${fieldName.toLowerCase()}`} render={(i) => chip(undated[i], null, interactive)} />
+              <WindowedList count={undated.length} rowH={UNDATED_ROW_H} label={t('noFieldname', { fieldName: fieldName.toLowerCase() })} render={(i) => chip(undated[i], null, interactive)} />
             </div>
           ) : (
-            <p className="fr-kanban-cal__none">Every card has a {fieldName.toLowerCase()}.</p>
+            <p className="fr-kanban-cal__none">{t('everyCardHasAFieldname', { fieldName: fieldName.toLowerCase() })}</p>
           )}
         </section>
       </div>

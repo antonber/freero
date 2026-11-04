@@ -7,6 +7,7 @@ import { DEFAULT_COL_W, MAX_COL_W, MIN_COL_W, boardWidth, colLeft, colWidth, col
 import { COLUMN_COLORS, DEFAULT_COLUMNS } from './constants';
 import { viewEditable } from './view';
 
+import { t } from '../messages';
 export function newKanban(at: Point): NewElement<'kanban'> {
   const columns = DEFAULT_COLUMNS.map((c) => ({ ...c, id: nanoid(8) }));
   const w = kanbanWidth(columns.length, DEFAULT_COL_W);
@@ -16,7 +17,7 @@ export function newKanban(at: Point): NewElement<'kanban'> {
     y: Math.round(at.y - 160),
     w,
     h: 320,
-    title: 'Kanban',
+    title: t('kanban'),
     columns,
     colW: DEFAULT_COL_W,
     // New boards colour their cards by column; boards from before keep their cards' own colours.
@@ -65,7 +66,7 @@ export function addColumn(editor: Editor, id: string, afterIndex?: number): stri
   const k = fresh(editor, id);
   if (!k) return null;
   const at = afterIndex === undefined ? k.columns.length : afterIndex + 1;
-  const col: KanbanColumn = { id: nanoid(8), title: 'New column', status: null, color: COLUMN_COLORS[k.columns.length % COLUMN_COLORS.length] };
+  const col: KanbanColumn = { id: nanoid(8), title: t('newColumn'), status: null, color: COLUMN_COLORS[k.columns.length % COLUMN_COLORS.length] };
   setColumns(editor, id, [...k.columns.slice(0, at), col, ...k.columns.slice(at)]);
   return col.id;
 }

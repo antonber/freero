@@ -2,6 +2,7 @@
 import type { BoardElement, FrameElement } from '@freero/shared';
 import type { Rect } from '@engine';
 
+import { t } from '../messages';
 export type FramePreset = NonNullable<FrameElement['preset']>;
 
 export const TOOL_ID = 'frame';
@@ -11,15 +12,15 @@ export const DEFAULT_FILL = '#FFFFFF';
 export const CONTENT_PADDING = 40;
 
 export const PRESETS: Array<{ id: FramePreset; label: string; w: number; h: number; hint: string }> = [
-  { id: '16:9', label: '16:9', w: 1280, h: 720, hint: 'Slides' },
-  { id: '4:3', label: '4:3', w: 1024, h: 768, hint: 'Classic slides' },
-  { id: '1:1', label: '1:1', w: 800, h: 800, hint: 'Square' },
-  { id: 'a4', label: 'A4', w: 794, h: 1123, hint: '210 × 297 mm' },
-  { id: 'letter', label: 'Letter', w: 816, h: 1056, hint: '8.5 × 11 in' },
-  { id: 'mobile', label: 'Mobile', w: 390, h: 844, hint: 'Phone screen' },
-  { id: 'tablet', label: 'Tablet', w: 820, h: 1180, hint: 'Tablet screen' },
-  { id: 'desktop', label: 'Desktop', w: 1440, h: 1024, hint: 'Web page' },
-  { id: 'custom', label: 'Custom', w: 960, h: 640, hint: 'Drag to size' },
+  { id: '16:9', label: '16:9', w: 1280, h: 720, hint: t('slides') },
+  { id: '4:3', label: '4:3', w: 1024, h: 768, hint: t('classicSlides') },
+  { id: '1:1', label: '1:1', w: 800, h: 800, hint: t('square') },
+  { id: 'a4', label: 'A4', w: 794, h: 1123, hint: t('n210297Mm') },
+  { id: 'letter', label: t('letter'), w: 816, h: 1056, hint: t('n8511In') },
+  { id: 'mobile', label: t('mobile'), w: 390, h: 844, hint: t('phoneScreen') },
+  { id: 'tablet', label: t('tablet'), w: 820, h: 1180, hint: t('tabletScreen') },
+  { id: 'desktop', label: t('desktop'), w: 1440, h: 1024, hint: t('webPage') },
+  { id: 'custom', label: t('custom'), w: 960, h: 640, hint: t('dragToSize') },
 ];
 
 export const presetById = (id: FramePreset | undefined) => PRESETS.find((p) => p.id === id) ?? PRESETS[0];

@@ -1,0 +1,13 @@
+{
+  "selectAll": "Select all",
+  "lengthItemsSelected": "{length} items selected",
+  "selectOnly": "Select only",
+  "onlyOneKindOfItem": "Only one kind of item is selected",
+  "noNameInTheSelection": "No {name} in the selection",
+  "ofThisType": "Of this type",
+  "selectSomethingFirst": "Select something first",
+  "withThisColour": "With this colour",
+  "selectSomethingWithAColour": "Select something with a colour",
+  "withThisTag": "With this tag",
+  "selectSomethingTagged": "Select something tagged"
+}

@@ -6,6 +6,7 @@ import { anchorOnOutline, classDividers, ENTITY_FONT, ENTITY_LINE, ENTITY_PAD, e
 import { DEFAULT_SIZE } from './lib/constants';
 import { shapeDefaults } from './lib/actions';
 import { decodeDrag, insertShape } from './lib/insert';
+import { t } from './messages';
 import './shape.css';
 
 /** Below this zoom text is unreadable: skip laying it out (big boards stay fast). */
@@ -96,7 +97,7 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
 
 export default defineElement({
   type: 'shape',
-  label: { one: 'Shape', many: 'Shapes' },
+  label: { one: t('shape'), many: t('shapes') },
   icon: ShapesIcon,
   resize: 'free',
   minSize: { w: 8, h: 8 },

@@ -1,10 +1,11 @@
 import { Bot, LayoutGrid } from 'lucide-react';
 import { defineCommands } from '@engine';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'connect.open',
-    label: 'Connect an AI agent…',
+    label: t('connectAnAiAgent'),
     icon: Bot,
     menus: ['board'],
     minRole: 'viewer',
@@ -15,7 +16,7 @@ export default defineCommands([
   {
     // Everything else that connects (#87): trackers, chat, embeds, calls, sign-in, automation.
     id: 'connect.apps',
-    label: 'Apps & agents…',
+    label: t('appsAgents'),
     icon: LayoutGrid,
     menus: ['board'],
     minRole: 'viewer',

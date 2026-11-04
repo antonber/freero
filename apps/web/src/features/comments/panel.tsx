@@ -8,6 +8,7 @@ import { COLLECTION, PANEL_ID, detachThread, focusThread, markSeen, session, set
 import { MessageText } from './lib/composer';
 import { authorName, usePeopleOf } from './lib/people';
 import { DraftComposer, ThreadView, authorColor, useNow } from './lib/views';
+import { t as tr } from './messages';
 import './comments.css';
 
 function useThreads(): CommentThread[] {
@@ -171,7 +172,7 @@ function Pins({ editor }: { editor: Editor }) {
             unread={isUnread(t, seen[t.id], editor.user.id)}
             resolved={t.resolved}
             active={t.id === openId}
-            label={`Comment by ${authorName(first, people)}`}
+            label={tr('commentByAuthorname', { authorName: authorName(first, people) })}
             pinRef={refFor(t.id)}
             onOpen={() => {
               const jc = justClosed.current;
@@ -194,7 +195,7 @@ function Pins({ editor }: { editor: Editor }) {
           resolved={false}
           active
           ghost
-          label="New comment"
+          label={tr('newComment')}
           pinRef={refFor('__draft')}
         />
       )}
@@ -208,7 +209,7 @@ function Pins({ editor }: { editor: Editor }) {
         align="start"
         offset={10}
         width={320}
-        aria-label="New comment"
+        aria-label={tr('newComment')}
       >
         {draft && <DraftComposer key={`${draft.x},${draft.y},${draft.elementId}`} editor={editor} />}
       </Popover>
@@ -229,7 +230,7 @@ function Pins({ editor }: { editor: Editor }) {
         offset={10}
         width={340}
         className="fr-cm-popover"
-        aria-label="Comment thread"
+        aria-label={tr('commentThread')}
       >
         {open && (
           <ThreadView
@@ -260,7 +261,7 @@ function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: bool
         <Avatar name={authorName(first, people)} color={authorColor(first)} src={people[first.authorId]?.avatarUrl} size={24} />
         <span className="fr-cm-card__name">{authorName(first, people)}</span>
         <span className="fr-cm-card__time">{relativeTime(latestActivity(thread), now)}</span>
-        {unread && <span className="fr-cm-card__dot" aria-label="Unread" />}
+        {unread && <span className="fr-cm-card__dot" aria-label={tr('unread')} />}
       </div>
       <div className="fr-cm-card__text">
         <MessageText text={first.text} people={people} meId={editor.user.id} />
@@ -274,13 +275,11 @@ function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: bool
           )}
           {thread.resolved && (
             <span className="fr-cm-badge fr-cm-badge--resolved">
-              <Check size={12} /> Resolved
-            </span>
+              <Check size={12} />{' '}{tr('resolved')}</span>
           )}
           {missing && (
             <span>
-              <Unlink size={13} /> Item deleted
-            </span>
+              <Unlink size={13} />{' '}{tr('itemDeleted')}</span>
           )}
         </div>
       )}
@@ -289,19 +288,19 @@ function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: bool
 }
 
 const FILTERS: Array<{ value: ThreadFilter; label: string }> = [
-  { value: 'open', label: 'Open' },
-  { value: 'unread', label: 'Unread' },
+  { value: 'open', label: tr('open') },
+  { value: 'unread', label: tr('unread') },
   { value: 'mentions', label: '@Me' },
-  { value: 'resolved', label: 'Resolved' },
-  { value: 'mine', label: 'Mine' },
+  { value: 'resolved', label: tr('resolved') },
+  { value: 'mine', label: tr('mine') },
 ];
 
 const EMPTY: Record<ThreadFilter, string> = {
-  open: 'No open comments',
-  unread: 'You’re all caught up',
-  mentions: 'Nobody has mentioned you yet',
-  resolved: 'Nothing resolved yet',
-  mine: 'You haven’t commented yet',
+  open: tr('noOpenComments'),
+  unread: tr('youReAllCaughtUp'),
+  mentions: tr('nobodyHasMentionedYouYet'),
+  resolved: tr('nothingResolvedYet'),
+  mine: tr('youHavenTCommentedYet'),
 };
 
 function CommentsDock({ editor }: { editor: Editor }) {
@@ -317,9 +316,9 @@ function CommentsDock({ editor }: { editor: Editor }) {
   return (
     <div className="fr-cm-dock">
       <DockHeader className="fr-cm-dock__head">
-        <h2>Comments</h2>
-        <SegmentedControl<ThreadFilter> size="sm" value={filter} onChange={(v) => setUi(editor, { filter: v })} options={FILTERS} aria-label="Filter comments" />
-        <Toggle size="sm" label="Show resolved on board" checked={showResolved} onChange={(v) => setUi(editor, { showResolved: v })} />
+        <h2>{tr('comments')}</h2>
+        <SegmentedControl<ThreadFilter> size="sm" value={filter} onChange={(v) => setUi(editor, { filter: v })} options={FILTERS} aria-label={tr('filterComments')} />
+        <Toggle size="sm" label={tr('showResolvedOnBoard')} checked={showResolved} onChange={(v) => setUi(editor, { showResolved: v })} />
       </DockHeader>
       {list.length ? (
         <div className="fr-cm-dock__list">
@@ -341,7 +340,7 @@ function CommentsDock({ editor }: { editor: Editor }) {
           <div className="fr-cm-empty__title">
             {EMPTY[filter]}
           </div>
-          {canWrite && (filter === 'open' || filter === 'mine') && <div className="fr-cm-empty__hint">Press C, then click anywhere on the board to start a thread.</div>}
+          {canWrite && (filter === 'open' || filter === 'mine') && <div className="fr-cm-empty__hint">{tr('pressCThenClickAnywhere')}</div>}
         </div>
       )}
     </div>
@@ -359,7 +358,7 @@ function CommentsToggle({ editor }: { editor: Editor }) {
   return (
     <IconButton
       icon={MessageCircle}
-      label={unread ? `Comments (${unread} unread)` : 'Comments'}
+      label={unread ? tr('commentsUnreadUnread', { unread }) : tr('comments')}
       size={32}
       tooltipSide="top"
       active={open}

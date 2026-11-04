@@ -4,6 +4,7 @@ import { defineFormat } from '@engine';
 import { IconButton, Popover, formatShortcut } from '@ui';
 import { ARRANGE_COMMANDS, CLUSTER_COMMANDS, LAYOUT_COMMANDS } from './commands';
 import { unitsOf } from './lib/arrange';
+import { t } from './messages';
 import './arrange.css';
 
 /** Multi-selections: one "Align" button opening a palette of align / distribute / tidy actions. */
@@ -18,9 +19,9 @@ export default defineFormat({
     if (unitsOf(selection, (el) => ({ x: el.x, y: el.y, w: el.w, h: el.h })).length < 2) return null;
     return (
       <>
-        <IconButton ref={ref} icon={AlignStartVertical} label="Align and distribute" size={32} active={open} onClick={() => setOpen((o) => !o)} />
+        <IconButton ref={ref} icon={AlignStartVertical} label={t('alignAndDistribute')} size={32} active={open} onClick={() => setOpen((o) => !o)} />
         <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="center" className="fr-arrange">
-          <div className="fr-arrange__grid" role="group" aria-label="Align and distribute">
+          <div className="fr-arrange__grid" role="group" aria-label={t('alignAndDistribute')}>
             {ARRANGE_COMMANDS.map((c) => {
               const enabled = !c.when || c.when(editor);
               return (
@@ -37,8 +38,8 @@ export default defineFormat({
             })}
           </div>
           {LAYOUT_COMMANDS.some((c) => c.when?.(editor)) && (
-            <div className="fr-arrange__cluster" role="group" aria-label="Auto-layout">
-              <span className="fr-arrange__label">Auto-layout</span>
+            <div className="fr-arrange__cluster" role="group" aria-label={t('autoLayout')}>
+              <span className="fr-arrange__label">{t('autoLayout')}</span>
               {LAYOUT_COMMANDS.map((c) => (
                 <button key={c.id} type="button" className="fr-arrange__cluster-btn" onClick={() => editor.runCommand(c.id)}>
                   {c.icon && <c.icon size={16} aria-hidden />}
@@ -48,7 +49,7 @@ export default defineFormat({
             </div>
           )}
           {CLUSTER_COMMANDS.some((c) => c.when(editor)) && (
-            <div className="fr-arrange__cluster" role="group" aria-label="Cluster stickies">
+            <div className="fr-arrange__cluster" role="group" aria-label={t('clusterStickies')}>
               {CLUSTER_COMMANDS.map((c) => (
                 <button key={c.id} type="button" className="fr-arrange__cluster-btn" onClick={() => editor.runCommand(c.id)}>
                   <c.icon size={16} aria-hidden />
