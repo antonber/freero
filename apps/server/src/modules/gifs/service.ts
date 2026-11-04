@@ -41,15 +41,15 @@ function configured() {
 }
 
 /** The rating cap on this board for someone who may edit it; refuses when its workspace turned GIFs off. */
-async function ratingFor(boardId: string, userId: string): Promise<GifRating> {
+async function ratingFor(boardId: string, userId: string): Promise<{ rating: GifRating; workspaceId: string }> {
   const access = await requireBoardAccess(boardId, userId, 'editor');
   if (access.gifs === 'off') throw forbidden('GIF search is turned off in this workspace', 'gifs_off');
-  return access.gifs;
+  return { rating: access.gifs, workspaceId: access.workspaceId };
 }
 
 export async function searchGifs(boardId: string, userId: string, q: unknown, pos: unknown, lang: string): Promise<GifSearchResponse> {
   const gifs = configured();
-  const rating = await ratingFor(boardId, userId);
+  const { rating } = await ratingFor(boardId, userId);
   const words = typeof q === 'string' ? q : '';
   const at = typeof pos === 'string' && pos ? pos : null;
   let body: unknown;
@@ -97,11 +97,12 @@ export async function gifPreview(token: unknown): Promise<{ type: string; body: 
 /** Copies the chosen GIF into the caller's uploads (their quota), for a board they may edit. */
 export async function placeGif(boardId: string, userId: string, token: unknown): Promise<GifPlaceResponse> {
   configured();
-  await ratingFor(boardId, userId);
+  const { workspaceId } = await ratingFor(boardId, userId);
   const url = mediaUrl(token);
   if (!url) throw badRequest('Not a GIF from a search');
   try {
-    const img = await importImageFromUrl(url, userId, getConfig().maxUploadBytes);
+    // The board's workspace's file (#159: sealed with its key when it has one).
+    const img = await importImageFromUrl(url, userId, getConfig().maxUploadBytes, workspaceId);
     return { url: img.src, w: img.w, h: img.h };
   } catch (e) {
     if (e instanceof UnfurlError) throw new HttpError(502, 'That GIF could not be copied. Try another one.', 'gifs_copy_failed');

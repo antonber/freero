@@ -135,7 +135,7 @@ export function shapePacksOf(boardId: string): NonNullable<Host['shapePacks']> {
   return {
     list: () => api.shapePacks(boardId),
     async create(name, zip) {
-      const { url } = await api.uploadAttachment(zip);
+      const { url } = await api.uploadAttachment(zip, boardId);
       return api.createShapePack(boardId, name, url);
     },
     rename: async (packId, name) => (await api.renameShapePack(packId, name)).pack,
@@ -180,9 +180,9 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     stickers: stickersOf(board.id),
     ...(board.permissions.gifs ? { gifs: { search: (q: string, pos: string | null) => api.searchGifs(board.id, q, pos), place: (media: string) => api.placeGif(board.id, media) } } : {}),
     shapePacks: shapePacksOf(board.id),
-    uploadImage,
-    uploadFile,
-    uploadAttachment,
+    uploadImage: (file) => uploadImage(file, board.id),
+    uploadFile: (file) => uploadFile(file, board.id),
+    uploadAttachment: (file) => uploadAttachment(file, board.id),
     downloadFile: downloadBoardFile(board.id),
     commentFile: commentFilesOf(board.id),
     downloadBackup: downloadBackupOf(board.id),

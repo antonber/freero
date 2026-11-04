@@ -874,10 +874,13 @@ export const api = {
     return res.blob();
   },
 
-  // uploads (images, PDF documents, video and audio; the server checks type, size and quota)
-  uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
+  // uploads (images, PDF documents, video and audio; the server checks type, size and quota).
+  // `boardId`: the board it goes on — the file is then its workspace's (#159: sealed with the
+  // workspace's encryption key when it has one).
+  uploadImage: (file: Blob, boardId?: string) => upload(`/api/uploads${boardId ? `?board=${encodeURIComponent(boardId)}` : ''}`, file, file.type || 'application/octet-stream'),
   // any other file: an opaque attachment, only ever downloaded from its board
-  uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+  uploadAttachment: (file: Blob, boardId?: string) =>
+    upload(`/api/uploads?as=attachment${boardId ? `&board=${encodeURIComponent(boardId)}` : ''}`, file, 'application/octet-stream'),
 
   // team sticker sets (#138): the board's workspace's own stickers
   stickers: (boardId: string) => request<StickersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/stickers`),

@@ -1,19 +1,30 @@
 // Moving a board between workspaces with encryption keys (#159): its stored content follows it to
 // the target's key, so the source's key no longer has any say over it.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import * as Y from 'yjs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { initStorage } from '../../platform/storage';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createKey, forgetAllCachedKeys, suspendKey } from '../keys/index';
 import { boardsNeedingReseal, initBoardDoc, storedBoardView } from '../realtime/index';
+import { followBoardMoves, readUpload, saveUpload } from '../uploads/index';
 import { createTeamWorkspace } from '../workspaces/index';
 import * as repo from './repo';
 import { createBoard, moveToWorkspace } from './service';
 
+let dir = '';
 beforeAll(async () => {
-  await openTestDb({ WORKSPACE_KEYS: 'true' });
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-keyed-move-'));
+  initStorage(await openTestDb({ FREERO_DATA_DIR: dir, WORKSPACE_KEYS: 'true' }));
+  followBoardMoves();
 });
-afterAll(closeTestDb);
+afterAll(async () => {
+  await closeTestDb();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 function sticky(text: string): Uint8Array {
   const doc = new Y.Doc();
@@ -58,4 +69,30 @@ it('a board moved to a workspace without a key is stored as is there, and one mo
   await suspendKey(keyed, me.id);
   forgetAllCachedKeys();
   expect(await textOn(board.id)).toBe('roundtrip');
+});
+
+it("a moved board takes its own files to the target's key; a file a board left behind still shows stays the source's, so neither workspace's key decides the other's pictures", async () => {
+  const me = await createUser({ name: 'Mover 3', email: 'mover3@keys.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const a = (await createTeamWorkspace(me.id, 'Alpha 3')).id;
+  const b = (await createTeamWorkspace(me.id, 'Beta 3')).id;
+  await createKey(a, me.id, {});
+  await createKey(b, me.id, {});
+  const png = (label: string) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(label)]);
+  const own = await saveUpload(png('only on the moving board'), 'image/png', me.id, { workspaceId: a });
+  const shared = await saveUpload(png('also on a board that stays'), 'image/png', me.id, { workspaceId: a });
+  const withImages = (srcs: string[]) => {
+    const doc = new Y.Doc();
+    srcs.forEach((src, i) => doc.getMap('elements').set(`i${i}`, { id: `i${i}`, type: 'image', x: 0, y: 0, w: 10, h: 10, src }));
+    return Y.encodeStateAsUpdate(doc);
+  };
+  const moving = await createBoard(me.id, 'Moving 3', '', 'none', { workspaceId: a });
+  const staying = await createBoard(me.id, 'Staying 3', '', 'none', { workspaceId: a });
+  await initBoardDoc(moving.id, withImages([own, shared]));
+  await initBoardDoc(staying.id, withImages([shared]));
+
+  await moveToWorkspace((await repo.getBoard(moving.id))!, me.id, { workspaceId: b });
+  await suspendKey(a, me.id);
+  forgetAllCachedKeys();
+  expect((await readUpload(own))?.toString('latin1')).toContain('only on the moving board');
+  expect(await readUpload(shared)).toBeNull();
 });

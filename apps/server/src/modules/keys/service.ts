@@ -223,6 +223,20 @@ export async function unusableKeysAmong(workspaceIds: string[]): Promise<Set<str
   return new Set([...states].filter(([, s]) => s !== 'active').map(([id]) => id));
 }
 
+/**
+ * Every workspace with a key (from the database): the data-key reference each active one seals new
+ * content with, and the ones whose key can't seal now (suspended, unavailable, destroyed). For jobs
+ * that seal stored things again (uploads' files).
+ */
+export async function keyedWorkspaces(): Promise<{ sealing: Map<string, string>; unusable: string[] }> {
+  if (!(await keysInUse())) return { sealing: new Map(), unusable: [] };
+  const rows = await repo.keysIn(['active', 'suspended', 'unavailable', 'destroyed']);
+  return {
+    sealing: new Map(rows.filter((k) => k.state === 'active').map((k) => [k.workspaceId, `${k.workspaceId}:${k.currentVersion}`])),
+    unusable: rows.filter((k) => k.state !== 'active').map((k) => k.workspaceId),
+  };
+}
+
 export async function hasKey(workspaceId: string): Promise<boolean> {
   return (await keyOf(workspaceId)) !== null;
 }

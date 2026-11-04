@@ -92,7 +92,7 @@ export async function restoreBackup(
   const referenced = uploadNamesIn(JSON.stringify(doc) + (editors ? JSON.stringify(editors) : ''));
   const uploaded = new Map<string, string>();
   try {
-    for (const [name, bytes] of backup.files) if (referenced.has(name)) uploaded.set(name, await restoreUploadFile(name, bytes, userId));
+    for (const [name, bytes] of backup.files) if (referenced.has(name)) uploaded.set(name, await restoreUploadFile(name, bytes, userId, place.workspaceId));
 
     const ids = new Map(elementIdsOf(doc, editors).filter((id) => id.length >= 8).map((id) => [id, newId(21)]));
     // A file the backup did not carry keeps its old reference (it may exist here: a restore on the

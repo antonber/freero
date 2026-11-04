@@ -6,10 +6,10 @@
 import type { Readable } from 'node:stream';
 import type { FileElement, MediaElement } from '@freero/shared';
 import { HttpError, notFound } from '../../platform/http';
-import { storage } from '../../platform/storage';
 import { authorizeFileDownload } from '../boards/index';
 import { readBoardView } from '../realtime/index';
 import { isUploadRemoved, uploadName } from './moderation';
+import { openUpload } from './sealedFiles';
 
 export interface BoardFile {
   body: Readable;
@@ -21,7 +21,7 @@ export interface BoardFile {
 /** An upload's bytes by name (404 / 410 like the routes). The caller decided who may download it. */
 export async function openUploadForDownload(name: string): Promise<{ body: Readable; size: number | null }> {
   if (await isUploadRemoved(name)) throw new HttpError(410, 'This file was removed by Freero’s moderators');
-  const obj = await storage().get(name);
+  const obj = await openUpload(name);
   if (!obj) throw notFound('File not found');
   return { body: obj.body, size: obj.size };
 }
@@ -36,7 +36,7 @@ export async function openBoardFile(boardId: string, elementId: string, userId: 
   const name = typeof item.src === 'string' ? uploadName(item.src) : null;
   if (!name) throw notFound('File not found');
   if (await isUploadRemoved(name)) throw new HttpError(410, 'This file was removed by Freero’s moderators');
-  const obj = await storage().get(name);
+  const obj = await openUpload(name);
   if (!obj) throw notFound('File not found');
   const fileName = typeof item.name === 'string' && item.name.trim() ? item.name : 'download';
   if (opts.audit !== false) {

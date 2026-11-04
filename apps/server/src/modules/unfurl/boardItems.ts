@@ -47,11 +47,12 @@ export function imageSize(body: Buffer, type: string): { w: number; h: number } 
  * Fetches the image at `url` (an image by its bytes, ≤ the upload limit and 10 MB), stores it as
  * `ownerId`'s upload (their quota) and answers its `/uploads/…` URL and pixel size (a square when
  * the header doesn't say). Throws UnfurlError when it is unreachable, blocked or no image.
+ * `workspaceId`: the workspace of the board it goes on (#159: sealed with its key when it has one).
  */
-export async function importImageFromUrl(url: string, ownerId: string, maxBytes: number): Promise<{ src: string; w: number; h: number }> {
+export async function importImageFromUrl(url: string, ownerId: string, maxBytes: number, workspaceId: string | null = null): Promise<{ src: string; w: number; h: number }> {
   const img = await fetchRemoteImage(url, maxBytes);
   const size = imageSize(img.body, img.type) ?? { w: 800, h: 800 };
-  return { src: await saveUpload(img.body, img.type, ownerId), ...size };
+  return { src: await saveUpload(img.body, img.type, ownerId, { workspaceId }), ...size };
 }
 
 /** A link card's preview, as the web app fills it: the picture stored with `ownerId`'s uploads. 'failed' when the page can't be read. */

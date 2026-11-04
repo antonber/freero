@@ -1,16 +1,20 @@
 import express, { Router, type RequestHandler, type Response } from 'express';
 import type { ServerContext } from '../../platform/context';
-import { handle, HttpError, notFound } from '../../platform/http';
+import { badRequest, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { storage, type ByteRange } from '../../platform/storage';
 import { actorId, currentActor, currentUser, requireUser, requireUserOrGuest } from '../auth/index';
+import { requireBoardAccess } from '../boards/index';
+import { openerFor } from '../keys/index';
 import { openBoardFile } from './download';
 import { openCommentFile } from './commentFiles';
-import { isUploadRemoved } from './moderation';
+import * as repo from './repo';
+import { openStoredUpload } from './sealedFiles';
 import {
   ATTACHMENT_EXT,
   FILE_NAME_RE,
   MEDIA_EXTS,
+  SEALED_CACHE_CONTROL,
   TYPE_BY_EXT,
   saveUpload,
   tooLarge,
@@ -81,6 +85,8 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
 
   // `?as=attachment`: any other file (a file card), stored as an opaque attachment. Otherwise the
   // declared type says what it is: an image / PDF, or video / audio (the bytes decide which).
+  // `?board=<id>` (#159): the board it is for — anyone who may comment there (comments carry files
+  // too). The file is then that board's workspace's, sealed with its key when it has one.
   r.post(
     '/api/uploads',
     requireUser,
@@ -89,7 +95,11 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const body: unknown = req.body;
       const data = Buffer.isBuffer(body) ? body : Buffer.alloc(0);
-      const url = await saveUpload(data, req.headers['content-type'] ?? '', currentUser(req).id, { attachment: req.query.as === 'attachment' });
+      const me = currentUser(req).id;
+      const boardId = req.query.board;
+      if (boardId !== undefined && (typeof boardId !== 'string' || !boardId)) throw badRequest('board must be a board id');
+      const workspaceId = boardId ? (await requireBoardAccess(boardId, me, 'commenter')).workspaceId : null;
+      const url = await saveUpload(data, req.headers['content-type'] ?? '', me, { attachment: req.query.as === 'attachment', workspaceId });
       res.status(201).json({ url });
     }),
   );
@@ -105,17 +115,23 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const name = req.params.file;
       if (!FILE_NAME_RE.test(name)) throw notFound('File not found');
+      const row = await repo.getUploadRow(name);
       // Removed by an operator: gone for good, whatever caches or the bucket still hold.
-      if (await isUploadRemoved(name)) {
+      if (row?.removedAt != null) {
         res.setHeader('Cache-Control', 'no-store');
         throw new HttpError(410, 'This file was removed by Freero’s moderators');
       }
       const ext = name.split('.').pop()!;
       if (ext === ATTACHMENT_EXT) throw notFound('Files attached to a board are downloaded from the board');
+      // Under a workspace key (#159): never handed to the bucket (it holds only ciphertext), never
+      // kept by a shared cache, and every use asks again — answered only while the key is usable
+      // (403 workspace_key_unavailable otherwise, a 304 included).
+      const sealed = row?.sealedWith ?? null;
+      if (sealed) await openerFor(sealed);
       // Cached for UPLOAD_CACHE_SECONDS, then revalidated (KAI-177): a name's bytes never change,
       // so the name is the ETag and asking again costs a 304 — or a 410 once the file was removed.
-      res.setHeader('Cache-Control', uploadCacheControl());
-      const direct = ext === 'svg' || ext === 'pdf' ? null : storage().publicUrl(name);
+      res.setHeader('Cache-Control', sealed ? SEALED_CACHE_CONTROL : uploadCacheControl());
+      const direct = sealed || ext === 'svg' || ext === 'pdf' ? null : storage().publicUrl(name);
       if (direct) return res.redirect(302, direct);
       const etag = `"${name}"`;
       res.setHeader('ETag', etag);
@@ -127,7 +143,8 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
       if (MEDIA_EXTS.has(ext)) {
         res.setHeader('Accept-Ranges', 'bytes');
         if (req.headers.range) {
-          total = (await storage().stat(name))?.size ?? null;
+          // A sealed file's size is the size it was uploaded with (its stored object is larger).
+          total = sealed ? (row?.bytes ?? null) : ((await storage().stat(name))?.size ?? null);
           if (total === null) throw notFound('File not found');
           range = parseRange(req.headers.range, total);
         }
@@ -136,7 +153,7 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
         res.setHeader('Content-Range', `bytes */${total}`);
         return res.status(416).end();
       }
-      const obj = await storage().get(name, range ? { range } : {});
+      const obj = await openStoredUpload(name, row, range ? { range } : {});
       if (!obj) throw notFound('File not found');
       if (range) {
         res.status(206);
