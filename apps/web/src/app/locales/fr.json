@@ -497,7 +497,10 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "Cadre sans titre",
   "couldNotChangeEmbedding": "Impossible de modifier l’intégration",
@@ -996,5 +999,8 @@
   "noLabel": "Aucune étiquette",
   "thisLabelLimitsTheBoard": "Cette étiquette limite le tableau : {limits}.",
   "thisBoardSWorkspaceKey": "La clé de l’espace de travail de ce tableau n’est pas disponible",
-  "itsWorkspaceEncryptsItsBoards": "Son espace de travail chiffre ses tableaux avec sa propre clé, et cette clé ne peut pas être utilisée pour le moment : ses admins l’ont suspendue, ou son service de clés a refusé ou n’a pas répondu. Le tableau s’ouvrira de nouveau dès que la clé sera disponible."
+  "itsWorkspaceEncryptsItsBoards": "Son espace de travail chiffre ses tableaux avec sa propre clé, et cette clé ne peut pas être utilisée pour le moment : ses admins l’ont suspendue, ou son service de clés a refusé ou n’a pas répondu. Le tableau s’ouvrira de nouveau dès que la clé sera disponible.",
+  "errors.gifs_off": "La recherche de GIF est désactivée dans cet espace de travail",
+  "errors.gifs_unavailable": "Le service de GIF n'a pas répondu. Réessayez dans un moment.",
+  "errors.gifs_copy_failed": "Ce GIF n'a pas pu être copié. Essayez-en un autre."
 }

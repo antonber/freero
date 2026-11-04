@@ -838,7 +838,11 @@
     "create",
     "thereIsAlreadyALabel",
     "asTheWorkspaceAllows",
-    "linksExpireWithinDays"
+    "linksExpireWithinDays",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "نسخ",
   "copied": "تم النسخ",
@@ -1678,5 +1682,9 @@
   "create": "إنشاء",
   "thereIsAlreadyALabel": "توجد تسمية بهذا الاسم بالفعل",
   "asTheWorkspaceAllows": "كما تسمح مساحة العمل",
-  "linksExpireWithinDays": "تنتهي صلاحية الروابط خلال (أيام)"
+  "linksExpireWithinDays": "تنتهي صلاحية الروابط خلال (أيام)",
+  "gifSearch": "البحث عن صور GIF",
+  "gifSearchHint": "البحث عن صور GIF في لوحة الملصقات، حيث يوفّرها هذا الخادم، وأعلى تصنيف مسموح للنتائج.",
+  "gifRatedG": "تصنيف G فقط",
+  "gifRatedPg13": "حتى PG-13"
 }

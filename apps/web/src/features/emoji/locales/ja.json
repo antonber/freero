@@ -49,7 +49,15 @@
     "stickersOrEmoji",
     "stickers",
     "searchStickersAndEmoji",
-    "stickersEmoji"
+    "stickersEmoji",
+    "gifs",
+    "gif",
+    "searchGifs",
+    "gifsForQuery",
+    "trendingGifs",
+    "gifsUnavailable",
+    "moreGifs",
+    "gifsFromProvider"
   ],
   "approved": "承認",
   "star": "スター",
@@ -100,5 +108,13 @@
   "stickersOrEmoji": "ステッカーまたは絵文字",
   "stickers": "ステッカー",
   "searchStickersAndEmoji": "ステッカーと絵文字を検索",
-  "stickersEmoji": "ステッカーと絵文字"
+  "stickersEmoji": "ステッカーと絵文字",
+  "gifs": "GIF",
+  "gif": "GIF",
+  "searchGifs": "GIF を検索",
+  "gifsForQuery": "「{query}」の GIF",
+  "trendingGifs": "人気の GIF",
+  "gifsUnavailable": "現在 GIF を読み込めません。しばらくしてからもう一度お試しください。",
+  "moreGifs": "さらに GIF を表示",
+  "gifsFromProvider": "GIF 提供元: {provider}"
 }

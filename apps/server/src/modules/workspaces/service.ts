@@ -316,6 +316,7 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('boardEmbeds', ['on', 'off']);
   pick('linkPassword', ['optional', 'required']);
   pick('templatePublishing', ['members', 'admins']);
+  pick('gifs', ['off', 'g', 'pg-13']);
   if (p.linkMaxDays !== undefined) {
     const d = p.linkMaxDays;
     if (d !== null && (typeof d !== 'number' || !Number.isInteger(d) || d < 1 || d > LINK_MAX_DAYS_LIMIT))
@@ -377,6 +378,7 @@ const POLICY_LABELS: Record<(typeof FLOOR_POLICY_KEYS)[number], string> = {
   linkPassword: 'Password on board links',
   linkMaxDays: 'Board links expire within',
   templatePublishing: 'Who shares templates',
+  gifs: 'GIF search',
 };
 const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {
   requireTwoFactor: 'Require two-step verification',

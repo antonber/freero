@@ -838,7 +838,11 @@
     "create",
     "thereIsAlreadyALabel",
     "asTheWorkspaceAllows",
-    "linksExpireWithinDays"
+    "linksExpireWithinDays",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "Copiar",
   "copied": "Copiado",
@@ -1678,5 +1682,9 @@
   "create": "Criar",
   "thereIsAlreadyALabel": "Já existe um rótulo com esse nome",
   "asTheWorkspaceAllows": "Como o espaço de trabalho permitir",
-  "linksExpireWithinDays": "Links expiram em até (dias)"
+  "linksExpireWithinDays": "Links expiram em até (dias)",
+  "gifSearch": "Busca de GIFs",
+  "gifSearchHint": "A busca de GIFs no painel de figurinhas, quando este servidor a oferece, e a classificação máxima dos resultados.",
+  "gifRatedG": "Somente classificação G",
+  "gifRatedPg13": "Até PG-13"
 }

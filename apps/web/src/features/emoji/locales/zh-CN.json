@@ -49,7 +49,15 @@
     "stickersOrEmoji",
     "stickers",
     "searchStickersAndEmoji",
-    "stickersEmoji"
+    "stickersEmoji",
+    "gifs",
+    "gif",
+    "searchGifs",
+    "gifsForQuery",
+    "trendingGifs",
+    "gifsUnavailable",
+    "moreGifs",
+    "gifsFromProvider"
   ],
   "approved": "已批准",
   "star": "星标",
@@ -100,5 +108,13 @@
   "stickersOrEmoji": "贴纸或表情",
   "stickers": "贴纸",
   "searchStickersAndEmoji": "搜索贴纸和表情",
-  "stickersEmoji": "贴纸和表情"
+  "stickersEmoji": "贴纸和表情",
+  "gifs": "GIF",
+  "gif": "GIF",
+  "searchGifs": "搜索 GIF",
+  "gifsForQuery": "“{query}”的 GIF",
+  "trendingGifs": "热门 GIF",
+  "gifsUnavailable": "暂时无法加载 GIF，请稍后再试。",
+  "moreGifs": "更多 GIF",
+  "gifsFromProvider": "GIF 来自 {provider}"
 }

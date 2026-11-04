@@ -497,7 +497,10 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "Unbenannter Rahmen",
   "couldNotChangeEmbedding": "Einbettung konnte nicht geändert werden",
@@ -996,5 +999,8 @@
   "noLabel": "Kein Label",
   "thisLabelLimitsTheBoard": "Dieses Label schränkt das Board ein: {limits}.",
   "thisBoardSWorkspaceKey": "Der Schlüssel des Arbeitsbereichs dieses Boards ist nicht verfügbar",
-  "itsWorkspaceEncryptsItsBoards": "Sein Arbeitsbereich verschlüsselt seine Boards mit einem eigenen Schlüssel, und dieser kann gerade nicht verwendet werden: Die Admins haben ihn ausgesetzt, oder sein Schlüsseldienst hat abgelehnt oder nicht geantwortet. Das Board öffnet sich wieder, sobald der Schlüssel verfügbar ist."
+  "itsWorkspaceEncryptsItsBoards": "Sein Arbeitsbereich verschlüsselt seine Boards mit einem eigenen Schlüssel, und dieser kann gerade nicht verwendet werden: Die Admins haben ihn ausgesetzt, oder sein Schlüsseldienst hat abgelehnt oder nicht geantwortet. Das Board öffnet sich wieder, sobald der Schlüssel verfügbar ist.",
+  "errors.gifs_off": "Die GIF-Suche ist in diesem Arbeitsbereich ausgeschaltet",
+  "errors.gifs_unavailable": "Der GIF-Dienst hat nicht geantwortet. Versuchen Sie es gleich noch einmal.",
+  "errors.gifs_copy_failed": "Dieses GIF konnte nicht kopiert werden. Versuchen Sie ein anderes."
 }

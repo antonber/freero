@@ -41,6 +41,8 @@ import type {
   Sticker,
   StickerSet,
   StickersResponse,
+  GifPlaceResponse,
+  GifSearchResponse,
   StrokeStyle,
   SuggestionRecord,
   SuggestionState,
@@ -122,6 +124,14 @@ export interface HostStickers {
   add(setId: string, file: Blob, name: string): Promise<Sticker>;
   removeSet(setId: string): Promise<void>;
   remove(setId: string, stickerId: string): Promise<void>;
+}
+
+/** [additive, #139] See `Host.gifs` (wire: @freero/shared `GifSearchResponse`, `GifPlaceResponse`). */
+export interface HostGifs {
+  /** Words to search for ('' for what's trending); `pos` from the previous page's `next`. */
+  search(q: string, pos: string | null): Promise<GifSearchResponse>;
+  /** Copies a result (its `media`) into the person's uploads: `{ url: '/uploads/…', w, h }`. */
+  place(media: string): Promise<GifPlaceResponse>;
 }
 
 /** [additive] Light, dark, or whatever the device uses. */
@@ -211,6 +221,12 @@ export interface Host {
    * message that can be shown (too large, not an image, not allowed).
    */
   stickers?: HostStickers;
+  /**
+   * [additive, #139] GIF search in the sticker panel, through the server (the browser never talks
+   * to the provider). Absent where the operator configured no GIF provider, the workspace turned it
+   * off, and in the sandbox, embeds and for guests without an account: no GIF tab.
+   */
+  gifs?: HostGifs;
   /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).

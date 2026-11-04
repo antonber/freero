@@ -182,6 +182,8 @@ export async function requireBoardAccess(
   editorsCanShare: boolean;
   /** #63: the workspace's guest-invite policy lets them invite guests (sharing with a group that has guests). */
   mayInviteGuests: boolean;
+  /** #139: the workspace's GIF search policy (effective, after its organisation's floor). */
+  gifs: 'off' | 'g' | 'pg-13';
 }> {
   const { board, role, access, coOwner } = await requireAccess(boardId, userId, min);
   return {
@@ -196,6 +198,7 @@ export async function requireBoardAccess(
     manages: managesSharing(role, coOwner),
     editorsCanShare: board.editorsCanShare,
     mayInviteGuests: access.team !== null && mayInviteToWorkspace(access.workspaceRole, 'guest', access.policies),
+    gifs: access.policies.gifs ?? 'g',
   };
 }
 

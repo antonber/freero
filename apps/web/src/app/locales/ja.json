@@ -497,7 +497,10 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "無題のフレーム",
   "couldNotChangeEmbedding": "埋め込み設定を変更できませんでした",
@@ -996,5 +999,8 @@
   "noLabel": "ラベルなし",
   "thisLabelLimitsTheBoard": "このラベルによりボードが制限されています: {limits}。",
   "thisBoardSWorkspaceKey": "このボードのワークスペースのキーを利用できません",
-  "itsWorkspaceEncryptsItsBoards": "このボードのワークスペースは独自のキーでボードを暗号化していますが、そのキーは現在使用できません。管理者が一時停止したか、キーサービスが拒否したか応答しませんでした。キーが利用できるようになると、ボードを再び開けます。"
+  "itsWorkspaceEncryptsItsBoards": "このボードのワークスペースは独自のキーでボードを暗号化していますが、そのキーは現在使用できません。管理者が一時停止したか、キーサービスが拒否したか応答しませんでした。キーが利用できるようになると、ボードを再び開けます。",
+  "errors.gifs_off": "このワークスペースでは GIF 検索がオフになっています",
+  "errors.gifs_unavailable": "GIF サービスが応答しませんでした。しばらくしてからもう一度お試しください。",
+  "errors.gifs_copy_failed": "その GIF をコピーできませんでした。別の GIF をお試しください。"
 }

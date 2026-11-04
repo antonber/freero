@@ -49,7 +49,15 @@
     "stickersOrEmoji",
     "stickers",
     "searchStickersAndEmoji",
-    "stickersEmoji"
+    "stickersEmoji",
+    "gifs",
+    "gif",
+    "searchGifs",
+    "gifsForQuery",
+    "trendingGifs",
+    "gifsUnavailable",
+    "moreGifs",
+    "gifsFromProvider"
   ],
   "approved": "موافق عليه",
   "star": "نجمة",
@@ -100,5 +108,13 @@
   "stickersOrEmoji": "الملصقات أو الرموز التعبيرية",
   "stickers": "الملصقات",
   "searchStickersAndEmoji": "البحث في الملصقات والرموز التعبيرية",
-  "stickersEmoji": "الملصقات والرموز التعبيرية"
+  "stickersEmoji": "الملصقات والرموز التعبيرية",
+  "gifs": "صور GIF",
+  "gif": "صورة GIF",
+  "searchGifs": "البحث عن صور GIF",
+  "gifsForQuery": "صور GIF لـ «{query}»",
+  "trendingGifs": "صور GIF رائجة",
+  "gifsUnavailable": "يتعذّر تحميل صور GIF الآن. حاول مرة أخرى بعد قليل.",
+  "moreGifs": "المزيد من صور GIF",
+  "gifsFromProvider": "صور GIF من {provider}"
 }

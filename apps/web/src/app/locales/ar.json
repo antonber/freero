@@ -497,7 +497,10 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -996,5 +999,8 @@
   "noLabel": "بدون تسمية",
   "thisLabelLimitsTheBoard": "هذه التسمية تقيّد اللوحة: {limits}.",
   "thisBoardSWorkspaceKey": "مفتاح مساحة العمل لهذه اللوحة غير متاح",
-  "itsWorkspaceEncryptsItsBoards": "تشفّر مساحة العمل لوحاتها بمفتاحها الخاص، ولا يمكن استخدام هذا المفتاح الآن: علّقه مسؤولوها، أو رفضت خدمة المفاتيح أو لم تستجب. ستُفتح اللوحة مجددًا بمجرد توفر المفتاح."
+  "itsWorkspaceEncryptsItsBoards": "تشفّر مساحة العمل لوحاتها بمفتاحها الخاص، ولا يمكن استخدام هذا المفتاح الآن: علّقه مسؤولوها، أو رفضت خدمة المفاتيح أو لم تستجب. ستُفتح اللوحة مجددًا بمجرد توفر المفتاح.",
+  "errors.gifs_off": "البحث عن صور GIF متوقف في مساحة العمل هذه",
+  "errors.gifs_unavailable": "لم تستجب خدمة صور GIF. حاول مرة أخرى بعد قليل.",
+  "errors.gifs_copy_failed": "تعذّر نسخ صورة GIF هذه. جرّب صورة أخرى."
 }

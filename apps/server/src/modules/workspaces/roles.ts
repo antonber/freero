@@ -64,6 +64,7 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   linkPassword: 'optional',
   linkMaxDays: null,
   templatePublishing: 'members',
+  gifs: 'g',
 };
 
 /**

@@ -497,7 +497,10 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "Marco sin título",
   "couldNotChangeEmbedding": "No se pudo cambiar la inserción",
@@ -996,5 +999,8 @@
   "noLabel": "Sin etiqueta",
   "thisLabelLimitsTheBoard": "Esta etiqueta limita el tablero: {limits}.",
   "thisBoardSWorkspaceKey": "La clave del espacio de trabajo de este tablero no está disponible",
-  "itsWorkspaceEncryptsItsBoards": "Su espacio de trabajo cifra sus tableros con su propia clave, y esa clave no se puede usar ahora mismo: sus administradores la suspendieron, o su servicio de claves la rechazó o no respondió. El tablero se abrirá de nuevo en cuanto la clave esté disponible."
+  "itsWorkspaceEncryptsItsBoards": "Su espacio de trabajo cifra sus tableros con su propia clave, y esa clave no se puede usar ahora mismo: sus administradores la suspendieron, o su servicio de claves la rechazó o no respondió. El tablero se abrirá de nuevo en cuanto la clave esté disponible.",
+  "errors.gifs_off": "La búsqueda de GIF está desactivada en este espacio de trabajo",
+  "errors.gifs_unavailable": "El servicio de GIF no respondió. Inténtalo de nuevo en un momento.",
+  "errors.gifs_copy_failed": "No se pudo copiar ese GIF. Prueba con otro."
 }

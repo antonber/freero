@@ -48,5 +48,13 @@
   "stickersOrEmoji": "Stickers or emoji",
   "stickers": "Stickers",
   "searchStickersAndEmoji": "Search stickers and emoji",
-  "stickersEmoji": "Stickers & emoji"
+  "stickersEmoji": "Stickers & emoji",
+  "gifs": "GIFs",
+  "gif": "GIF",
+  "searchGifs": "Search GIFs",
+  "gifsForQuery": "GIFs for “{query}”",
+  "trendingGifs": "Trending GIFs",
+  "gifsUnavailable": "GIFs can’t be loaded right now. Try again in a moment.",
+  "moreGifs": "More GIFs",
+  "gifsFromProvider": "GIFs from {provider}"
 }

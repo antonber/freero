@@ -838,7 +838,11 @@
     "create",
     "thereIsAlreadyALabel",
     "asTheWorkspaceAllows",
-    "linksExpireWithinDays"
+    "linksExpireWithinDays",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "复制",
   "copied": "已复制",
@@ -1678,5 +1682,9 @@
   "create": "创建",
   "thereIsAlreadyALabel": "已有同名标签",
   "asTheWorkspaceAllows": "按工作区设置",
-  "linksExpireWithinDays": "链接有效期上限（天）"
+  "linksExpireWithinDays": "链接有效期上限（天）",
+  "gifSearch": "GIF 搜索",
+  "gifSearchHint": "在贴纸面板中搜索 GIF（当此服务器提供该功能时），以及结果允许的最高分级。",
+  "gifRatedG": "仅限 G 级",
+  "gifRatedPg13": "最高 PG-13"
 }

@@ -496,5 +496,8 @@
   "noLabel": "No label",
   "thisLabelLimitsTheBoard": "This label limits the board: {limits}.",
   "thisBoardSWorkspaceKey": "This board’s workspace key isn’t available",
-  "itsWorkspaceEncryptsItsBoards": "Its workspace encrypts its boards with its own key, and that key can’t be used right now: its admins suspended it, or its key service refused or didn’t answer. The board opens again once the key is available."
+  "itsWorkspaceEncryptsItsBoards": "Its workspace encrypts its boards with its own key, and that key can’t be used right now: its admins suspended it, or its key service refused or didn’t answer. The board opens again once the key is available.",
+  "errors.gifs_off": "GIF search is turned off in this workspace",
+  "errors.gifs_unavailable": "The GIF service didn’t answer. Try again in a moment.",
+  "errors.gifs_copy_failed": "That GIF could not be copied. Try another one."
 }

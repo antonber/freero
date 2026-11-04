@@ -180,6 +180,11 @@ export interface BoardPermissions {
    * changed: a password, and/or an expiry at most `maxDays` days ahead. Absent: nothing.
    */
   linkPolicy?: { passwordRequired: boolean; maxDays: number | null };
+  /**
+   * [additive, #139] GIF search is offered on this board: the operator configured a GIF provider
+   * and the workspace's `gifs` policy isn't 'off'. Absent: no GIF search.
+   */
+  gifs?: boolean;
 }
 
 // ---- Board call (KAI-134) ----
@@ -427,6 +432,12 @@ export interface WorkspacePolicies {
    * publish company templates (and a floor for its workspaces): any member, or owners and content admins.
    */
   templatePublishing: 'members' | 'admins';
+  /**
+   * [additive, #139] GIF search in the sticker panel (only where the operator configured a GIF
+   * provider): 'off', or the highest content rating results may have — 'g' (the default) or
+   * 'pg-13'.
+   */
+  gifs: 'off' | 'g' | 'pg-13';
 }
 /** The longest a workspace may let board links live without changing them (#39 `linkMaxDays`). */
 export const LINK_MAX_DAYS_LIMIT = 365;
@@ -489,6 +500,7 @@ export const POLICY_STRICTNESS: { [K in OrderedPolicyKey]: ReadonlyArray<Workspa
   boardEmbeds: ['on', 'off'],
   linkPassword: ['optional', 'required'],
   templatePublishing: ['members', 'admins'],
+  gifs: ['pg-13', 'g', 'off'],
 };
 /** The floored policies whose values are an ordered choice (all but the numeric `linkMaxDays`). */
 export type OrderedPolicyKey = Exclude<OrganisationPolicyKey, 'linkMaxDays'>;
@@ -1275,6 +1287,43 @@ export const MAX_STICKER_SETS = 30;
 export const MAX_STICKERS_PER_SET = 120;
 export const MAX_STICKER_BYTES = 512 * 1024;
 export const MAX_STICKER_NAME = 60;
+
+// ---- GIF search (#139; modules/gifs) ----
+// Offered only where the operator configured a GIF provider (GIF_PROVIDER + GIF_API_KEY) and the
+// board's workspace policy `gifs` isn't 'off' (`BoardPermissions.gifs`). The browser never talks
+// to the provider: searches, previews and the chosen GIF all go through Freero's server, which
+// asks the provider for results rated no higher than the workspace allows.
+// GET  /api/boards/:id/gifs?q=<words>&pos=<next>  -> GifSearchResponse  (editors of the board;
+//                                                     no q: the provider's trending GIFs)
+// GET  /api/gifs/media?m=<token>                    -> a preview's bytes (only links the server
+//                                                     itself handed out in a search)
+// POST /api/boards/:id/gifs/place  body { media }   -> 201 GifPlaceResponse: the GIF copied into
+//                                                     the caller's uploads, so the board never
+//                                                     loads it from the provider
+export interface GifResult {
+  id: string;
+  /** The provider's description (may be empty). */
+  title: string;
+  /** A small animated preview, served through Freero ("/api/gifs/media?m=…"). */
+  preview: { url: string; w: number; h: number };
+  /** Hand back to `place` to store the GIF (opaque, signed by the server). */
+  media: string;
+  w: number;
+  h: number;
+}
+export interface GifSearchResponse {
+  results: GifResult[];
+  /** Pass as `pos` for more; null: no more. */
+  next: string | null;
+  /** Who the results come from, to credit them (e.g. "GIPHY"). */
+  provider: string;
+}
+export interface GifPlaceResponse {
+  /** "/uploads/<name>" */
+  url: string;
+  w: number;
+  h: number;
+}
 
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a

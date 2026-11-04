@@ -1409,7 +1409,11 @@ protocol + role filter + update log; version history + snapshot retention), `unf
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
 templates; content is opaque engine JSON), `blueprints` (blueprints, blueprint_items: a project's boards and docs saved for reuse, #161; see "Blueprints"), `stickers` (sticker_sets, stickers: a workspace's own
-sticker sets, #138), `outline` (no table: the semantic board read model,
+sticker sets, #138), `gifs` (no table: GIF search in the sticker panel through the server, #139 —
+the operator's provider (`GIF_PROVIDER`, `GIF_API_KEY`) is asked for results no more mature than
+the workspace's `gifs` policy; previews come through `GET /gifs/media` and a placed GIF is copied
+into the placer's uploads by `POST /boards/:id/gifs/place`, both only for provider links the
+server signed in a search (`mediaToken`), so neither is an open proxy; `Host.gifs`), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
@@ -1852,7 +1856,9 @@ members with roles owner / admin / member / guest (separate from board roles).
   (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
   embed page's framing header, its sockets and oEmbed all ask), `linkPassword` / `linkMaxDays`
   (#39: what a board's link needs before it is turned on or changed; see "Co-owners, board
-  sharing settings and moving boards"). All other
+  sharing settings and moving boards"), `gifs` (#139: GIF search off, or the highest content
+  rating its results may have, G by default or PG-13; enforced by `modules/gifs` on every search
+  and placement, and sent to the provider with each search). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare

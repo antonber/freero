@@ -9,6 +9,7 @@ import { STAMP_PREFIX, StampArt, type StampDef } from './lib/stamps';
 import { isCustom } from './lib/custom';
 import { stampTargetAt } from './lib/reactions';
 import { TeamStickers, useTeamStickers } from './lib/TeamStickers';
+import { Gifs } from './lib/Gifs';
 
 import { t as tr } from './messages';
 /** World size that shows as PLACE_SIZE px on screen right now. */
@@ -16,11 +17,24 @@ function placeSize(zoom: number): number {
   return Math.round(Math.max(16, Math.min(1024, PLACE_SIZE / zoom)));
 }
 
-function choose(editor: Editor, value: string, name?: string) {
+/** A GIF lands bigger than a stamp, in its own proportions: its longer side this many times a stamp's. */
+const GIF_SCALE = 2.5;
+
+/** The world box a click places: square for emoji and stamps, the picture's shape for a GIF. */
+function placeBox(zoom: number, aspect: number | undefined): { w: number; h: number } {
+  const s = placeSize(zoom);
+  if (!aspect || !Number.isFinite(aspect) || aspect <= 0) return { w: s, h: s };
+  const long = Math.min(2048, s * GIF_SCALE);
+  const a = Math.min(4, Math.max(0.25, aspect));
+  return a >= 1 ? { w: Math.round(long), h: Math.round(long / a) } : { w: Math.round(long * a), h: Math.round(long) };
+}
+
+function choose(editor: Editor, value: string, name?: string, aspect?: number) {
   const recent = editor.getToolOptions<EmojiToolOptions>(TOOL_ID).recent ?? [];
   editor.setToolOptions(TOOL_ID, {
     current: value,
     currentName: name,
+    currentAspect: aspect,
     recent: isCustom(value) ? recent : [value, ...recent.filter((r) => r !== value)].slice(0, MAX_RECENT),
   });
 }
@@ -60,7 +74,8 @@ function StickerGrid({ stickers, current, onPick }: { stickers: StampDef[]; curr
 function Picker({ editor }: { editor: Editor }) {
   const { current = DEFAULT_CHOICE, recent = [] } = useToolOptions<EmojiToolOptions>(TOOL_ID);
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<'stickers' | 'emoji'>('stickers');
+  const [mode, setMode] = useState<'stickers' | 'emoji' | 'gifs'>('stickers');
+  const gifs = editor.host.gifs;
   const team = useTeamStickers(editor);
   const q = query.trim().toLowerCase();
   const packHits = useMemo(() => PACKS.map((p) => ({ ...p, stickers: q ? p.stickers.filter((s) => matches(s, q)) : p.stickers })).filter((p) => p.stickers.length), [q]);
@@ -80,9 +95,13 @@ function Picker({ editor }: { editor: Editor }) {
         options={[
           { value: 'stickers', label: tr('stickers') },
           { value: 'emoji', label: tr('emoji') },
+          // #139: only where the server offers GIF search on this board.
+          ...(gifs ? [{ value: 'gifs' as const, label: tr('gifs') }] : []),
         ]}
       />
-      {mode === 'emoji' ? (
+      {mode === 'gifs' && gifs ? (
+        <Gifs editor={editor} gifs={gifs} onPick={(v, name, aspect) => choose(editor, v, name, aspect)} />
+      ) : mode === 'emoji' ? (
         // The shared emoji catalogue and picker (@ui).
         <EmojiPicker onPick={(e) => pick(e)} recent={recentEmojis} />
       ) : (
@@ -141,12 +160,12 @@ function Picker({ editor }: { editor: Editor }) {
 
 function Ghost() {
   const { zoom } = useCamera();
-  const { current = DEFAULT_CHOICE, currentName } = useToolOptions<EmojiToolOptions>(TOOL_ID);
-  const s = placeSize(zoom);
-  const p = useToolGhost({ w: s, h: s });
+  const { current = DEFAULT_CHOICE, currentName, currentAspect } = useToolOptions<EmojiToolOptions>(TOOL_ID);
+  const box = placeBox(zoom, isCustom(current) ? currentAspect : undefined);
+  const p = useToolGhost(box);
   if (!p) return null;
   return (
-    <div className="fr-emoji-ghost" style={{ width: s, height: s, transform: `translate(${p.x}px, ${p.y}px)` }}>
+    <div className="fr-emoji-ghost" style={{ width: box.w, height: box.h, transform: `translate(${p.x}px, ${p.y}px)` }}>
       <Glyph value={current} label={currentName} />
     </div>
   );
@@ -164,18 +183,18 @@ export default defineTool({
   // active so several stamps can be dropped in a row (Esc / V returns to select).
   onPointerDown({ editor, point, button }) {
     if (button !== 0) return;
-    const { current = DEFAULT_CHOICE, currentName } = editor.getToolOptions<EmojiToolOptions>(TOOL_ID);
-    const s = placeSize(editor.getCamera().zoom);
+    const { current = DEFAULT_CHOICE, currentName, currentAspect } = editor.getToolOptions<EmojiToolOptions>(TOOL_ID);
+    const { w, h } = placeBox(editor.getCamera().zoom, isCustom(current) ? currentAspect : undefined);
     // Dropped on an item, the stamp rides on it (moves, duplicates and is deleted with it).
     const on = stampTargetAt(editor, point);
     editor.create<'emoji'>({
       type: 'emoji',
       emoji: current,
       ...(isCustom(current) && currentName ? { name: currentName } : {}),
-      x: Math.round(point.x - s / 2),
-      y: Math.round(point.y - s / 2),
-      w: s,
-      h: s,
+      x: Math.round(point.x - w / 2),
+      y: Math.round(point.y - h / 2),
+      w,
+      h,
       attachedTo: on?.id ?? null,
     });
   },

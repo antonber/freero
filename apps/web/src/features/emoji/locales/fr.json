@@ -49,7 +49,15 @@
     "stickersOrEmoji",
     "stickers",
     "searchStickersAndEmoji",
-    "stickersEmoji"
+    "stickersEmoji",
+    "gifs",
+    "gif",
+    "searchGifs",
+    "gifsForQuery",
+    "trendingGifs",
+    "gifsUnavailable",
+    "moreGifs",
+    "gifsFromProvider"
   ],
   "approved": "Approuvé",
   "star": "Étoile",
@@ -100,5 +108,13 @@
   "stickersOrEmoji": "Autocollants ou emoji",
   "stickers": "Autocollants",
   "searchStickersAndEmoji": "Rechercher des autocollants et des emoji",
-  "stickersEmoji": "Autocollants et emoji"
+  "stickersEmoji": "Autocollants et emoji",
+  "gifs": "GIF",
+  "gif": "GIF",
+  "searchGifs": "Rechercher des GIF",
+  "gifsForQuery": "GIF pour « {query} »",
+  "trendingGifs": "GIF tendance",
+  "gifsUnavailable": "Impossible de charger les GIF pour l'instant. Réessayez dans un moment.",
+  "moreGifs": "Plus de GIF",
+  "gifsFromProvider": "GIF fournis par {provider}"
 }

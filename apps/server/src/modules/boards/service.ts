@@ -382,6 +382,8 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     liveEmbeds: access.policies.liveEmbeds !== 'off',
     embedOrigins: getConfig().embedExtraOrigins,
     boardEmbeds: access.policies.boardEmbeds !== 'off',
+    // #139: GIF search where the operator configured a provider and the workspace allows it.
+    gifs: getConfig().gifs !== null && access.policies.gifs !== 'off',
     manageSharing: manages,
     invite: manages || (atLeast(role, 'editor') && board.editorsCanShare),
     canCopy: copies,

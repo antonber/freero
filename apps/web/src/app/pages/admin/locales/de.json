@@ -838,7 +838,11 @@
     "create",
     "thereIsAlreadyALabel",
     "asTheWorkspaceAllows",
-    "linksExpireWithinDays"
+    "linksExpireWithinDays",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "Kopieren",
   "copied": "Kopiert",
@@ -1678,5 +1682,9 @@
   "create": "Erstellen",
   "thereIsAlreadyALabel": "Es gibt bereits ein Label mit diesem Namen",
   "asTheWorkspaceAllows": "Wie der Arbeitsbereich erlaubt",
-  "linksExpireWithinDays": "Links laufen ab innerhalb von (Tagen)"
+  "linksExpireWithinDays": "Links laufen ab innerhalb von (Tagen)",
+  "gifSearch": "GIF-Suche",
+  "gifSearchHint": "Die Suche nach GIFs im Sticker-Bereich, sofern dieser Server sie anbietet, und die höchste Altersfreigabe der Ergebnisse.",
+  "gifRatedG": "Nur Freigabe G",
+  "gifRatedPg13": "Bis PG-13"
 }

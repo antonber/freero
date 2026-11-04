@@ -49,7 +49,15 @@
     "stickersOrEmoji",
     "stickers",
     "searchStickersAndEmoji",
-    "stickersEmoji"
+    "stickersEmoji",
+    "gifs",
+    "gif",
+    "searchGifs",
+    "gifsForQuery",
+    "trendingGifs",
+    "gifsUnavailable",
+    "moreGifs",
+    "gifsFromProvider"
   ],
   "approved": "מאושר",
   "star": "כוכב",
@@ -100,5 +108,13 @@
   "stickersOrEmoji": "מדבקות או אמוג׳י",
   "stickers": "מדבקות",
   "searchStickersAndEmoji": "חיפוש מדבקות ואמוג׳י",
-  "stickersEmoji": "מדבקות ואמוג׳י"
+  "stickersEmoji": "מדבקות ואמוג׳י",
+  "gifs": "GIF",
+  "gif": "GIF",
+  "searchGifs": "חיפוש GIF",
+  "gifsForQuery": "קובצי GIF עבור „{query}”",
+  "trendingGifs": "קובצי GIF פופולריים",
+  "gifsUnavailable": "אי אפשר לטעון קובצי GIF כרגע. נסו שוב בעוד רגע.",
+  "moreGifs": "עוד קובצי GIF",
+  "gifsFromProvider": "קובצי GIF מ-{provider}"
 }

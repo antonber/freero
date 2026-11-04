@@ -838,7 +838,11 @@
     "create",
     "thereIsAlreadyALabel",
     "asTheWorkspaceAllows",
-    "linksExpireWithinDays"
+    "linksExpireWithinDays",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "コピー",
   "copied": "コピーしました",
@@ -1678,5 +1682,9 @@
   "create": "作成",
   "thereIsAlreadyALabel": "その名前のラベルはすでにあります",
   "asTheWorkspaceAllows": "ワークスペースの設定どおり",
-  "linksExpireWithinDays": "リンクの有効期限（日数以内）"
+  "linksExpireWithinDays": "リンクの有効期限（日数以内）",
+  "gifSearch": "GIF 検索",
+  "gifSearchHint": "ステッカーパネルでの GIF 検索（このサーバーが提供している場合）と、結果に許可する最高のレーティング。",
+  "gifRatedG": "G 指定のみ",
+  "gifRatedPg13": "PG-13 まで"
 }

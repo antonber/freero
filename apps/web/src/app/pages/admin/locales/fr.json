@@ -838,7 +838,11 @@
     "create",
     "thereIsAlreadyALabel",
     "asTheWorkspaceAllows",
-    "linksExpireWithinDays"
+    "linksExpireWithinDays",
+    "gifSearch",
+    "gifSearchHint",
+    "gifRatedG",
+    "gifRatedPg13"
   ],
   "copy": "Copier",
   "copied": "Copié",
@@ -1678,5 +1682,9 @@
   "create": "Créer",
   "thereIsAlreadyALabel": "Une étiquette porte déjà ce nom",
   "asTheWorkspaceAllows": "Selon l’espace de travail",
-  "linksExpireWithinDays": "Les liens expirent sous (jours)"
+  "linksExpireWithinDays": "Les liens expirent sous (jours)",
+  "gifSearch": "Recherche de GIF",
+  "gifSearchHint": "La recherche de GIF dans le panneau d'autocollants, si ce serveur la propose, et la classification maximale des résultats.",
+  "gifRatedG": "Classés G uniquement",
+  "gifRatedPg13": "Jusqu'à PG-13"
 }

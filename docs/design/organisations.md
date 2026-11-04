@@ -99,6 +99,7 @@ policy is.
 | `publicLinks` | anyone → signedIn |
 | `liveEmbeds`, `boardEmbeds` | on → off |
 | `linkPassword` | optional → required |
+| `gifs` | pg-13 → g → off (an organisation starts at G: PG-13 GIFs need it to allow them) |
 | `linkMaxDays` | none → more days → fewer days (the shorter limit) |
 | `requireTwoFactor` | off → on |
 | `sessionMaxHours`, `sessionIdleMinutes` | none → longer → shorter (the smaller limit) |

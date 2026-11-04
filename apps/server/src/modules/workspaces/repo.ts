@@ -42,6 +42,7 @@ interface WsRow {
   public_links: 'anyone' | 'signed_in';
   live_embeds: 'on' | 'off';
   board_embeds: 'on' | 'off';
+  gifs: WorkspacePolicies['gifs'];
   link_password: 'optional' | 'required' | null;
   link_max_days: number | null;
   template_publishing: 'members' | 'admins' | null;
@@ -67,6 +68,7 @@ interface WsRow {
   org_public_links: 'anyone' | 'signed_in' | null;
   org_live_embeds: 'on' | 'off' | null;
   org_board_embeds: 'on' | 'off' | null;
+  org_gifs: WorkspacePolicies['gifs'] | null;
   org_link_password: 'optional' | 'required' | null;
   org_link_max_days: number | null;
   org_template_publishing: 'members' | 'admins' | null;
@@ -84,7 +86,7 @@ interface WsRow {
  */
 const WS_SELECT = `SELECT w.*, o.name AS org_name, o.external_sharing AS org_external_sharing, o.link_sharing AS org_link_sharing,
     o.guest_invites AS org_guest_invites, o.downloads AS org_downloads, o.public_links AS org_public_links,
-    o.live_embeds AS org_live_embeds, o.board_embeds AS org_board_embeds, o.require_two_factor AS org_require_two_factor,
+    o.live_embeds AS org_live_embeds, o.board_embeds AS org_board_embeds, o.gifs AS org_gifs, o.require_two_factor AS org_require_two_factor,
     o.link_password AS org_link_password, o.link_max_days AS org_link_max_days, o.template_publishing AS org_template_publishing,
     o.session_max_hours AS org_session_max_hours, o.session_idle_minutes AS org_session_idle_minutes,
     o.inactive_board_action AS org_inactive_board_action, o.inactive_board_days AS org_inactive_board_days,
@@ -106,6 +108,7 @@ function toWorkspace(r: WsRow): Workspace {
     linkPassword: r.link_password === 'required' ? 'required' : 'optional',
     linkMaxDays: r.link_max_days ?? null,
     templatePublishing: r.template_publishing === 'admins' ? 'admins' : 'members',
+    gifs: r.gifs === 'off' || r.gifs === 'pg-13' ? r.gifs : 'g',
   };
   const ownSettings: WorkspaceSettings = {
     requireTwoFactor: r.require_two_factor,
@@ -134,6 +137,7 @@ function toWorkspace(r: WsRow): Workspace {
             linkPassword: r.org_link_password ?? NO_FLOOR_POLICIES.linkPassword,
             linkMaxDays: r.org_link_max_days ?? null,
             templatePublishing: r.org_template_publishing ?? NO_FLOOR_POLICIES.templatePublishing,
+            gifs: r.org_gifs ?? NO_FLOOR_POLICIES.gifs,
           },
           settings: {
             requireTwoFactor: r.org_require_two_factor ?? false,
@@ -269,7 +273,7 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
        public_links = COALESCE($9, public_links), live_embeds = COALESCE($10, live_embeds),
        board_embeds = COALESCE($11, board_embeds), link_password = COALESCE($12, link_password),
        link_max_days = CASE WHEN $13::boolean THEN $14::integer ELSE link_max_days END,
-       template_publishing = COALESCE($15, template_publishing)
+       template_publishing = COALESCE($15, template_publishing), gifs = COALESCE($16, gifs)
      WHERE id = $1`,
     [
       id,
@@ -288,6 +292,7 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
       p.linkMaxDays !== undefined,
       p.linkMaxDays ?? null,
       p.templatePublishing ?? null,
+      p.gifs ?? null,
     ],
   );
 }

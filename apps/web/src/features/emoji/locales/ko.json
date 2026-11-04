@@ -49,7 +49,15 @@
     "stickersOrEmoji",
     "stickers",
     "searchStickersAndEmoji",
-    "stickersEmoji"
+    "stickersEmoji",
+    "gifs",
+    "gif",
+    "searchGifs",
+    "gifsForQuery",
+    "trendingGifs",
+    "gifsUnavailable",
+    "moreGifs",
+    "gifsFromProvider"
   ],
   "approved": "승인",
   "star": "별",
@@ -100,5 +108,13 @@
   "stickersOrEmoji": "스티커 또는 이모지",
   "stickers": "스티커",
   "searchStickersAndEmoji": "스티커 및 이모지 검색",
-  "stickersEmoji": "스티커 및 이모지"
+  "stickersEmoji": "스티커 및 이모지",
+  "gifs": "GIF",
+  "gif": "GIF",
+  "searchGifs": "GIF 검색",
+  "gifsForQuery": "“{query}” GIF",
+  "trendingGifs": "인기 GIF",
+  "gifsUnavailable": "지금은 GIF를 불러올 수 없습니다. 잠시 후 다시 시도하세요.",
+  "moreGifs": "GIF 더 보기",
+  "gifsFromProvider": "{provider} 제공 GIF"
 }

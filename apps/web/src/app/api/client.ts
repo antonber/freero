@@ -160,7 +160,7 @@ import type {
   WorkspaceSummary,
 } from '@freero/shared';
 import { serverErrorText } from '../i18n/errors';
-import type { Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
+import type { GifPlaceResponse, GifSearchResponse, Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -875,6 +875,10 @@ export const api = {
   removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
   removeSticker: (setId: string, stickerId: string) =>
     request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),
+  // GIF search through the server (#139)
+  searchGifs: (boardId: string, q: string, pos: string | null) =>
+    request<GifSearchResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/gifs?q=${encodeURIComponent(q)}${pos ? `&pos=${encodeURIComponent(pos)}` : ''}`),
+  placeGif: (boardId: string, media: string) => request<GifPlaceResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/gifs/place`, { media }),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });

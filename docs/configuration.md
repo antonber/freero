@@ -287,6 +287,29 @@ for your instance: [integrations/teams.md](integrations/teams.md). Each is off u
 |---|---|---|
 | `JITSI_BASE_URL` | — | An https Jitsi deployment (`https://meet.jit.si`, or your own) where a board can get a call room of its own ("Call link…" → Jitsi room). The room name is derived from the board id with `SESSION_SECRET` (`Freero` + 24 hex characters), so nobody can guess another board's room; rotating the secret gives every board a new room. Unset: boards only use meeting links their editors paste (Meet, Zoom, Teams…, https only). Freero carries no audio or video itself. |
 
+## GIF search
+
+GIF search in the sticker panel (#139). Off unless both are set. Every search, every preview and
+the GIF someone places go through Freero's server: the key never reaches a browser and browsers
+never contact the provider; a placed GIF is copied into the placer's uploads (their quota), so
+boards don't hot-link it. Each workspace's `gifs` policy (admin console → GIF search) caps the
+content rating at G (the default) or PG-13, or turns it off; an organisation's value is a floor.
+
+| Variable | Default | Description |
+|---|---|---|
+| `GIF_PROVIDER` | — | `giphy` or `tenor`. |
+| `GIF_API_KEY` | — | The provider's API key for this instance (GIPHY: an API key from developers.giphy.com; Tenor: a Google Cloud API key with the Tenor API enabled). |
+| `GIF_CLIENT_KEY` | `freero` | Tenor only: the `client_key` sent with each request (identifies the integration in Tenor's reports). |
+
+**Before turning it on (the operator's step, outside the code):** create the key under the
+provider's developer terms and accept them for the hosted instance; check its attribution rules
+against what the panel shows (a plain "GIFs from GIPHY" / "GIFs from Tenor" line under the
+results — add the provider's own mark if its terms require it, from its official kit); add the
+provider to the privacy policy and the subprocessor list (the search words, the person's
+interface language and the server's IP reach it — never who searched); and apply for production
+access if the provider requires it beyond its testing quota. Searches are rate limited per person
+(`RATE_LIMIT_GIF_SEARCH`).
+
 ## Marketing site
 
 The public pages at `/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`, `/support`, the legal pages,
@@ -422,6 +445,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_OAUTH_CLIENT_METADATA` | `30/10m` | OAuth client metadata documents fetched for a person's consent screens (only when no fresh copy is stored). |
 | `RATE_LIMIT_TRACKER_SEND` | `60/10m` | Per user: issues created or imported in a tracker, and tracker connections added or tested (each calls the tracker's API). |
 | `RATE_LIMIT_BOARD_RENDER` | `30/10m` | Per user: boards drawn as an image or PDF on the server (`POST /api/v1/boards/:id/export`, MCP `export_board` with png / svg / pdf, its download links) — each reads a whole board and its pictures and rasterises it (#33). |
+| `RATE_LIMIT_GIF_SEARCH` | `60/1m` | Per user: GIF searches in the sticker panel (each calls the operator's GIF provider, #139). Previews are under the general API limit; placing a GIF counts against `RATE_LIMIT_REMOTE_IMAGE` and `RATE_LIMIT_UPLOAD`. |
 | `RATE_LIMIT_BACKUP` | `30/1h` | Per user: board backups (`.freero`) downloaded or restored — each reads or writes a whole board and its files (KAI-137). |
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 | `RATE_LIMIT_SLACK_UNFURL` | `50/1m` | Per Slack workspace: link previews Freero posts with `chat.unfurl` (Slack's own limit for it is about 50 a minute); past it, links stay without a preview. |

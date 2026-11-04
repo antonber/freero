@@ -497,7 +497,10 @@
     "noLabel",
     "thisLabelLimitsTheBoard",
     "thisBoardSWorkspaceKey",
-    "itsWorkspaceEncryptsItsBoards"
+    "itsWorkspaceEncryptsItsBoards",
+    "errors.gifs_off",
+    "errors.gifs_unavailable",
+    "errors.gifs_copy_failed"
   ],
   "untitledFrame": "Moldura sem título",
   "couldNotChangeEmbedding": "Não foi possível alterar a incorporação",
@@ -996,5 +999,8 @@
   "noLabel": "Sem rótulo",
   "thisLabelLimitsTheBoard": "Este rótulo limita o quadro: {limits}.",
   "thisBoardSWorkspaceKey": "A chave do espaço de trabalho deste quadro não está disponível",
-  "itsWorkspaceEncryptsItsBoards": "O espaço de trabalho dele criptografa os quadros com uma chave própria, e essa chave não pode ser usada agora: os administradores a suspenderam, ou o serviço de chaves recusou ou não respondeu. O quadro volta a abrir assim que a chave estiver disponível."
+  "itsWorkspaceEncryptsItsBoards": "O espaço de trabalho dele criptografa os quadros com uma chave própria, e essa chave não pode ser usada agora: os administradores a suspenderam, ou o serviço de chaves recusou ou não respondeu. O quadro volta a abrir assim que a chave estiver disponível.",
+  "errors.gifs_off": "A busca de GIFs está desativada neste espaço de trabalho",
+  "errors.gifs_unavailable": "O serviço de GIFs não respondeu. Tente de novo em instantes.",
+  "errors.gifs_copy_failed": "Não foi possível copiar esse GIF. Tente outro."
 }
