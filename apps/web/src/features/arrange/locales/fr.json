@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "Sans étiquette",
+  "selectTwoOrMoreUnlocked": "Sélectionnez au moins deux éléments déverrouillés",
+  "selectThreeOrMoreUnlocked": "Sélectionnez au moins trois éléments déverrouillés",
+  "autoLayout": "Disposition automatique",
+  "selectTwoOrMoreUnlocked2": "Sélectionnez au moins deux éléments déverrouillés reliés par des connecteurs",
+  "alignAndDistribute": "Aligner et répartir",
+  "clusterStickies": "Regrouper les notes adhésives"
+}

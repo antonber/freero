@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "Ce lien est incomplet. Ouvrez de nouveau le lien de l’e-mail.",
+  "couldNotReachFreeroTry": "Impossible de joindre Freero. Réessayez.",
+  "unsubscribe": "Se désabonner",
+  "unsubscribing": "Désabonnement…",
+  "unsubscribing2": "Désabonnement",
+  "youReUnsubscribed": "Vous êtes désabonné",
+  "thatLinkDidnTWork": "Ce lien n’a pas fonctionné",
+  "emailWonTGetThe": "{email} ne recevra plus le résumé « Changements sur vos tableaux ». Les autres e-mails ne changent pas.",
+  "emailWonTGetNotification": "{email} ne recevra plus d’e-mails de notification. Vous verrez toujours les mentions et les réponses dans Freero.",
+  "chooseWhichEmailsYouGet": "Choisir les e-mails que vous recevez",
+  "logInToChooseWhich": "Connectez-vous pour choisir les e-mails que vous recevez"
+}
