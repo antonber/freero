@@ -139,6 +139,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
+| Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
@@ -1339,7 +1340,7 @@ workspace_invites, projects, project_members; organisations are directory-only `
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
-templates; content is opaque engine JSON), `stickers` (sticker_sets, stickers: a workspace's own
+templates; content is opaque engine JSON), `blueprints` (blueprints, blueprint_items: a project's boards and docs saved for reuse, #161; see "Blueprints"), `stickers` (sticker_sets, stickers: a workspace's own
 sticker sets, #138), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -1782,6 +1783,24 @@ members with roles owner / admin / member / guest (separate from board roles).
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
   role change) makes everything someone shared with a workspace personal again when they leave it
   or become a guest there (`templates/init.ts`).
+- **Blueprints** (#161; `modules/blueprints`, tables `blueprints`, `blueprint_items`; dashboard
+  `BlueprintDialogs`): a project's boards and docs saved as a reusable setup with a description and
+  steps (`POST /projects/:id/blueprints`). What is saved is what the saver may take out: the boards
+  and docs of the project they can open, each through the downloads policy (`requireBoardDownload`
+  'template'), only the SHARED content (no layers: hidden frames, drafts, ballots), with comments and
+  session collections emptied (realtime `blueprintState`; `Y_LEFT_OUT_OF_BACKUPS`), at most
+  `BLUEPRINT_MAX_ITEMS`. Shared like a team template: personal, or with one team workspace its full
+  members see (the workspace's `templatePublishing` decides who may share), unshared by its owner or
+  that team's owners / content admins, made personal again when its owner leaves or becomes a guest
+  (`blueprints/init.ts`, the membership outbox topic). **Using one** (`POST /blueprints/:id/use`,
+  the public API's `POST /workspaces/:id/projects { blueprintId }`) is ONE transaction:
+  `createProject` (its page carries the description and the steps; a `parentId` must be a project
+  they can see) and, per item, boards' `createBoardWithState` (createBoard's checks and quota) —
+  first every copy (so every new id is known), then each copy's content with links among the items
+  rewritten to the copies (realtime `rewriteObjectLinks`: `/board/`, `/doc/`, `freero://` addresses
+  in collections and a doc's fragment; links elsewhere stay). If any copy can't be made, nothing is
+  left; lifecycle events follow the commit. A blueprint outlives its boards, so the uploads sweep
+  scans its items (`blueprintUploadReferences`). Audited: `blueprint.shared`, `blueprint.used`.
 - Company templates (#155; `templates.organisation_id`, `locked`, `retired_at`): its owner
   publishes a template to the organisation of one of their workspaces (`PATCH /templates/:id
   { organisationId }`); it then reaches the full members of every attached workspace (the one

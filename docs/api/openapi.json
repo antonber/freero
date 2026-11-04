@@ -122,6 +122,106 @@
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" }
         }
+      },
+      "post": {
+        "operationId": "createProject",
+        "tags": ["boards"],
+        "summary": "A new project, or one made from a blueprint with copies of its boards and docs",
+        "description": "Without `blueprintId`: an empty project (`name` required). With `blueprintId` (see `GET /blueprints`): the project and a copy of each of the blueprint's boards and docs, made in one transaction — if any copy can't be made (the board quota, a project you can't use) nothing is created. Links between the blueprint's items lead to the copies. `parentId` puts it inside a project you can see.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "parameters": [{ "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "description": "Required without blueprintId; defaults to the blueprint's name" },
+                  "blueprintId": { "type": "string" },
+                  "parentId": { "type": "string", "description": "The project it goes in" },
+                  "access": { "type": "string", "enum": ["workspace", "private"] },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The project, and the boards and docs made in it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["project", "boards"],
+                  "properties": {
+                    "project": { "$ref": "#/components/schemas/Project" },
+                    "boards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "kind", "title", "url"],
+                        "properties": { "id": { "type": "string" }, "kind": { "type": "string", "enum": ["board", "doc"] }, "title": { "type": "string" }, "url": { "type": "string" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/blueprints": {
+      "get": {
+        "operationId": "listBlueprints",
+        "tags": ["boards"],
+        "summary": "The blueprints you can use: yours and those shared with your teams",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "responses": {
+          "200": {
+            "description": "Blueprints",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "blueprints"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "blueprints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "name", "description", "steps", "items", "workspaceId", "ownerName"],
+                        "properties": {
+                          "id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "description": { "type": "string" },
+                          "steps": { "type": "array", "items": { "type": "string" } },
+                          "items": {
+                            "type": "array",
+                            "items": { "type": "object", "required": ["kind", "title"], "properties": { "kind": { "type": "string", "enum": ["board", "doc"] }, "title": { "type": "string" } } }
+                          },
+                          "workspaceId": { "type": ["string", "null"], "description": "The team it is shared with; null: yours alone" },
+                          "ownerName": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
       }
     },
     "/workspaces/{workspaceId}/audit": {

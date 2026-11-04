@@ -351,6 +351,12 @@ export async function removeProjectMember(projectId: string, actorId: string, ta
   await refreshProjectBoards(projectId, byId);
 }
 
+/** A project the user can see (404 otherwise), for other modules (#161: saving it as a blueprint). */
+export async function projectFor(projectId: string, userId: string): Promise<{ id: string; workspaceId: string; name: string; description: string }> {
+  const { project } = await visibleProject(projectId, userId);
+  return { id: project.id, workspaceId: project.workspaceId, name: project.name, description: project.description };
+}
+
 /** The boards of a project and of every project below it (#129): whose access a change to it re-resolves. */
 export async function boardIdsUnderProject(projectId: string): Promise<string[]> {
   const p = await repo.getProject(projectId);

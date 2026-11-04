@@ -21,6 +21,7 @@ import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
 import { CreateWorkspaceDialog, DeleteProjectDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
 import { ProjectOverview } from './ProjectOverview';
+import { SaveBlueprintDialog, UseBlueprintDialog } from './BlueprintDialogs';
 import { WorkspaceMembers } from './WorkspaceMembers';
 import { WorkspaceSettings } from './WorkspaceSettings';
 import { WorkspaceBlockedNotice } from './WorkspaceBlockedNotice';
@@ -105,6 +106,9 @@ export function DashboardPage() {
   const [editingProject, setEditingProject] = useState<ProjectSummary | 'new' | null>(null);
   // #129: a new project's parent (a sub-project), null for the top.
   const [newProjectParent, setNewProjectParent] = useState<string | null>(null);
+  // #161: saving a project as a blueprint, or starting one from a blueprint (inside `parent`).
+  const [savingBlueprint, setSavingBlueprint] = useState<ProjectSummary | null>(null);
+  const [usingBlueprint, setUsingBlueprint] = useState<{ parent: ProjectSummary | null } | null>(null);
   const [deletingProject, setDeletingProject] = useState<ProjectSummary | null>(null);
   // Restoring a .freero backup (KAI-137): from the tile, a file dropped on a board, or one the
   // installed app was opened with (KAI-218).
@@ -345,6 +349,8 @@ export function DashboardPage() {
           (e) => notify(e instanceof ApiError ? e.message : 'Could not pin the project', 'error'),
         )
       }
+      onUseBlueprint={(parent) => setUsingBlueprint({ parent })}
+      onSaveBlueprint={(p) => setSavingBlueprint(p)}
       onManageProject={(p) => setEditingProject(p)}
       onDeleteProject={(p) => setDeletingProject(p)}
       onDropBoard={(id, target) => void moveBoard(id, target)}
@@ -724,6 +730,19 @@ export function DashboardPage() {
             setEditingProject(null);
             void ws.reloadProjects();
             if (created) go('project', { project: p.id });
+          }}
+        />
+      ) : null}
+      {savingBlueprint && workspace ? <SaveBlueprintDialog project={savingBlueprint} workspace={workspace} onClose={() => setSavingBlueprint(null)} /> : null}
+      {usingBlueprint && workspace ? (
+        <UseBlueprintDialog
+          workspace={workspace}
+          parent={usingBlueprint.parent}
+          onClose={() => setUsingBlueprint(null)}
+          onCreated={(p) => {
+            setUsingBlueprint(null);
+            void ws.reloadProjects();
+            go('project', { project: p.id });
           }}
         />
       ) : null}

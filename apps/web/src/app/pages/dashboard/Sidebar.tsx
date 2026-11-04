@@ -10,6 +10,7 @@ import {
   FolderLock,
   FolderPlus,
   House,
+  LayoutTemplate,
   LogOut,
   MessageSquareWarning,
   Monitor,
@@ -71,6 +72,10 @@ export interface SidebarProps {
   onDeleteProject: (p: ProjectSummary) => void;
   /** #129: a new project inside this one. */
   onCreateSubProject: (parent: ProjectSummary) => void;
+  /** #161: a new project from a blueprint (inside `parent`, or at the top). */
+  onUseBlueprint: (parent: ProjectSummary | null) => void;
+  /** #161: save the project's boards and docs as a blueprint. */
+  onSaveBlueprint: (p: ProjectSummary) => void;
   /** #129: pin / unpin a project at the top of your sidebar. */
   onPinProject: (p: ProjectSummary, pinned: boolean) => void;
   /** A board card was dropped on a project (null: the workspace root). */
@@ -133,6 +138,7 @@ export function Sidebar(props: SidebarProps) {
       onManage={() => props.onManageProject(p)}
       onDelete={() => props.onDeleteProject(p)}
       onSubProject={() => props.onCreateSubProject(p)}
+      onSaveBlueprint={guest || current?.blocked ? undefined : () => props.onSaveBlueprint(p)}
       onPin={(on) => props.onPinProject(p, on)}
       onDropBoard={props.onDropBoard}
     />
@@ -219,7 +225,12 @@ export function Sidebar(props: SidebarProps) {
           <div className="fr-dash-proj__head">
             <span className="fr-dash-proj__title">Projects</span>
             {/* Guests can't create projects, nor can anyone the workspace closed its boards to (KAI-193). */}
-            {!guest && !current.blocked ? <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} /> : null}
+            {!guest && !current.blocked ? (
+              <span className="fr-dash-proj__actions">
+                <IconButton size={32} icon={LayoutTemplate} label="New project from a blueprint" tooltipSide="right" onClick={() => props.onUseBlueprint(null)} />
+                <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} />
+              </span>
+            ) : null}
           </div>
           {projects.length === 0 ? (
             <p className="fr-dash-proj__empty">{guest ? 'No projects shared with you' : 'Group boards into projects'}</p>
@@ -365,6 +376,7 @@ function ProjectItem({
   onManage,
   onDelete,
   onSubProject,
+  onSaveBlueprint,
   onPin,
   onDropBoard,
 }: {
@@ -378,6 +390,7 @@ function ProjectItem({
   onManage: () => void;
   onDelete: () => void;
   onSubProject: () => void;
+  onSaveBlueprint?: () => void;
   onPin: (pinned: boolean) => void;
   onDropBoard: SidebarProps['onDropBoard'];
 }) {
@@ -419,6 +432,7 @@ function ProjectItem({
             ? { id: 'unpin', label: 'Unpin from the top', icon: PinOff, onSelect: () => onPin(false) }
             : { id: 'pin', label: 'Pin to the top', icon: Pin, onSelect: () => onPin(true) },
           ...(mayNest ? [{ id: 'sub', label: 'New sub-project…', icon: FolderPlus, onSelect: onSubProject }] : []),
+          ...(onSaveBlueprint ? [{ id: 'blueprint', label: 'Save as blueprint…', icon: LayoutTemplate, onSelect: onSaveBlueprint }] : []),
           ...(p.canManage
             ? [
                 { id: 'manage', label: 'Settings, access and people…', icon: SlidersHorizontal, onSelect: onManage },

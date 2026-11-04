@@ -792,3 +792,109 @@ a.fr-nav {
   font-size: 24px;
   font-weight: 700;
 }
+
+/* ---- Blueprints (#161) ---- */
+.fr-dash-proj__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.fr-dash-bp {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 240px;
+}
+
+@media (max-width: 600px) {
+  .fr-dash-bp {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fr-dash-bp__loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.fr-dash-bp__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  max-height: 360px;
+}
+
+.fr-dash-bp__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-dash-bp__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-dash-bp__item--on {
+  border-color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+.fr-dash-bp__name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.fr-dash-bp__meta {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-bp__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fr-dash-bp__steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--fr-ink-2);
+  font-size: 13.5px;
+}
+
+.fr-dash-bp__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-dash-bp__items li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+  font-size: 12.5px;
+  color: var(--fr-ink-2);
+}

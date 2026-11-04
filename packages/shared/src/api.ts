@@ -621,6 +621,36 @@ export interface ProjectSummary {
   pinned?: boolean;
 }
 
+// Blueprints (#161): a project's boards and docs saved as a reusable setup.
+// GET    /api/blueprints -> { blueprints: BlueprintSummary[] }  (yours and those shared with your teams)
+// POST   /api/projects/:id/blueprints body { name, description?, steps?: string[], workspaceId?: string | null }
+//        -> { blueprint }  (its boards and docs as you may read and copy them: downloads policy; ≤ BLUEPRINT_MAX_ITEMS)
+// PATCH  /api/blueprints/:id body { name?, description?, steps?, workspaceId? } -> { blueprint }
+//        (its owner; owners / content admins of the team it is shared with may unshare it: workspaceId null)
+// DELETE /api/blueprints/:id -> { ok: true }  (its owner)
+// POST   /api/blueprints/:id/use body { workspaceId, name?, parentId? } -> { project: ProjectSummary, boards: { id, kind, title }[] }
+//        one transaction: the project and a copy of every item, links between them pointing at the copies
+export interface BlueprintSummary {
+  id: string;
+  name: string;
+  description: string;
+  steps: string[];
+  /** Its boards and docs, in order. */
+  items: Array<{ kind: ObjectKind; title: string }>;
+  ownerId: string;
+  ownerName: string;
+  /** The team workspace it is shared with, null: its owner's alone. */
+  workspaceId: string | null;
+  /** You may change and delete it (its owner). */
+  mine: boolean;
+  /** You may stop sharing it (its owner, or an owner / content admin of the team it is shared with). */
+  canUnshare: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+/** Boards and docs a blueprint holds at most (#161). */
+export const BLUEPRINT_MAX_ITEMS = 20;
+
 /** How deep projects nest: a project, its sub-projects and theirs (#129). */
 export const PROJECT_MAX_DEPTH = 3;
 /** Boards a project page pins at most (#129). */
@@ -2396,6 +2426,8 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'blueprint.shared': 'Shared a blueprint with the team',
+  'blueprint.used': 'Made a project from a blueprint',
   'stickers.set_removed': 'Removed a team sticker set',
   'template.published': 'Published a company template',
   'template.unpublished': 'Withdrew a company template',

@@ -142,6 +142,7 @@ import type {
   User,
   ProjectAccess,
   ProjectSummary,
+  BlueprintSummary,
   WorkspaceInvite,
   WorkspaceInvitePreview,
   WorkspaceMember,
@@ -628,6 +629,15 @@ export const api = {
   /** #129: `boards` says what happens to the boards still in it (parent project / trash); without it only an empty project goes. */
   deleteProject: (id: string, boards?: 'parent' | 'trash') =>
     request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}${boards ? `?boards=${boards}` : ''}`),
+  // blueprints (#161): a project's boards and docs saved for reuse
+  listBlueprints: () => request<{ blueprints: BlueprintSummary[] }>('GET', '/api/blueprints'),
+  saveBlueprint: (projectId: string, body: { name: string; description?: string; steps?: string[]; workspaceId?: string | null }) =>
+    request<{ blueprint: BlueprintSummary }>('POST', `/api/projects/${encodeURIComponent(projectId)}/blueprints`, body),
+  updateBlueprint: (id: string, body: { name?: string; description?: string; steps?: string[]; workspaceId?: string | null }) =>
+    request<{ blueprint: BlueprintSummary }>('PATCH', `/api/blueprints/${encodeURIComponent(id)}`, body),
+  deleteBlueprint: (id: string) => request<{ ok: true }>('DELETE', `/api/blueprints/${encodeURIComponent(id)}`),
+  useBlueprint: (id: string, body: { workspaceId: string; name?: string; parentId?: string | null }) =>
+    request<{ project: ProjectSummary; boards: Array<{ id: string; kind: 'board' | 'doc'; title: string }> }>('POST', `/api/blueprints/${encodeURIComponent(id)}/use`, body),
   /** #129: pin a project to the top of your own sidebar, or unpin it. */
   setProjectPinned: (id: string, pinned: boolean) => request<{ ok: true }>(pinned ? 'PUT' : 'DELETE', `/api/projects/${encodeURIComponent(id)}/pin`),
   /** #129: a project page's recent activity (only boards you can open). */
