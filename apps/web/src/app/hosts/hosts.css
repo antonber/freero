@@ -1,0 +1,128 @@
+/* The pages of the apps on other platforms (app/hosts): Zoom, Google Meet, the board chooser. */
+.fr-hostpage {
+  min-block-size: 100%;
+  box-sizing: border-box;
+  padding: 20px 16px;
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-inline-size: 640px;
+  margin: 0 auto;
+}
+
+.fr-hostpage__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fr-hostpage__head h1 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.fr-hostpage__lead {
+  margin: 0;
+  color: var(--fr-ink-2);
+  line-height: 1.5;
+}
+
+.fr-hostpage__or {
+  color: var(--fr-ink-3);
+  font-size: 13px;
+}
+
+.fr-hostpage__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fr-hostpick {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-hostpick__filters {
+  display: flex;
+  gap: 8px;
+}
+
+.fr-hostpick__filters > :last-child {
+  flex: 1;
+}
+
+.fr-hostpick__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  max-block-size: 380px;
+  overflow: auto;
+}
+
+.fr-hostpick__list li + li {
+  border-block-start: 1px solid var(--fr-line);
+}
+
+.fr-hostpick__empty {
+  padding: 16px;
+  color: var(--fr-ink-3);
+}
+
+.fr-hostpick__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fr-hostpick__item:hover {
+  background: var(--fr-surface-2);
+}
+
+.fr-hostpick__item.is-picked {
+  background: var(--fr-primary-soft);
+}
+
+.fr-hostpick__title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.fr-hostpick__meta {
+  color: var(--fr-ink-3);
+  font-size: 13px;
+}
+
+.fr-hostpick__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-hostpick__foot .fr-boarderror__actions {
+  justify-content: flex-end;
+}
+
+.fr-hostpick__warn {
+  margin: 0;
+  color: var(--fr-ink-2);
+  line-height: 1.5;
+}

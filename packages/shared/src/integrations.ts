@@ -414,6 +414,30 @@ const TRACKERS: Integration[] = [
       description: 'Turn sticky notes and cards into monday.com items and import a board onto a kanban, statuses as columns, kept in sync both ways.',
     },
   },
+  {
+    id: 'confluence-jira-app',
+    name: 'Confluence and Jira app',
+    category: 'trackers',
+    oneLiner: 'A live board in a Confluence page (the Freero board macro) and in a Jira issue’s panel.',
+    description: [
+      'Add the Freero board macro to a Confluence page, or paste a board link into it, and the board is live in the page. In Jira, the Freero board panel shows the board an issue was linked to by tracker sync, opened at its item, or one you paste.',
+      'Each reader sees the board as Freero shares it with them: people it is shared with sign in once to edit or comment; boards anyone with the link may view show read-only to everyone else. Page exports show the board’s link, with its picture for public boards.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: [
+        'The server’s operator creates a Forge app, sets ATLASSIAN_APP_ID, downloads the app’s source from the operator console and deploys it with forge deploy and forge install.',
+        'In Confluence, add the Freero board macro (or paste a board link); in Jira, open Apps → Freero board on an issue. The board’s owner must allow embedding.',
+      ],
+      docs: { file: 'docs/integrations/atlassian.md', anchor: 'setting-it-up-owner', label: 'Confluence and Jira setup' },
+    },
+    operatorSetup: 'Off by default: needs ATLASSIAN_APP_ID (a Forge app) on the server, and the app deployed to your Atlassian site.',
+    keywords: ['confluence', 'jira', 'atlassian', 'forge', 'macro', 'issue panel', 'embed', 'wiki'],
+    seo: {
+      title: 'Freero boards in Confluence pages and Jira issues',
+      description: 'Put a live Freero board in a Confluence page with a macro, and show the board an issue was planned on in its Jira issue panel.',
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -765,6 +789,48 @@ const CALLS: Integration[] = [
     seo: {
       title: 'Jitsi integration: a video room for every board',
       description: 'Give each Freero board its own Jitsi room on meet.jit.si or your own deployment, with room names nobody can guess from the board.',
+    },
+  },
+  {
+    id: 'zoom-app',
+    name: 'Zoom App',
+    category: 'calls',
+    oneLiner: 'A live board in a Zoom meeting’s app panel; the host invites everyone to the same board.',
+    description: [
+      'Open Freero from Apps in a Zoom meeting, sign in and pick a board. Hosts invite everyone in the meeting with one click, and each person’s app opens the same board.',
+      'Each person sees the board as Freero shares it with them; a board anyone with the link may view shows read-only to guests without an account.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: ['The server’s operator creates a Zoom App in the Zoom App Marketplace, sets ZOOM_CLIENT_ID and enters the values the operator console lists.', 'In a meeting, open Apps → Freero and pick a board; its owner must allow embedding.'],
+      docs: { file: 'docs/integrations/zoom.md', anchor: 'setting-it-up-owner', label: 'Zoom App setup' },
+    },
+    operatorSetup: 'Off by default: needs ZOOM_CLIENT_ID (a Zoom App) on the server.',
+    keywords: ['zoom', 'zoom app', 'meeting', 'side panel', 'invite', 'video call'],
+    seo: {
+      title: 'Zoom App: a live whiteboard in your Zoom meeting',
+      description: 'Open a live Freero board in a Zoom meeting’s app panel and invite everyone in the meeting to the same board.',
+    },
+  },
+  {
+    id: 'google-meet-addon',
+    name: 'Google Meet add-on',
+    category: 'calls',
+    oneLiner: 'Open a board on a Meet call’s main stage; everyone else is asked to join.',
+    description: [
+      'In a Google Meet call, open Activities → Freero, pick a board in the side panel and open it on the main stage for everyone. Meet asks the others to join.',
+      'Each person sees the board as Freero shares it with them; a board anyone with the link may view shows read-only to people without an account.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: ['The server’s operator deploys the add-on from a Google Cloud project with the manifest the operator console offers, and sets GOOGLE_MEET_CLOUD_PROJECT_NUMBER.', 'In a call, open Activities → Freero, pick a board and open it on the main stage.'],
+      docs: { file: 'docs/integrations/google-meet.md', anchor: 'setting-it-up-owner', label: 'Google Meet add-on setup' },
+    },
+    operatorSetup: 'Off by default: needs GOOGLE_MEET_CLOUD_PROJECT_NUMBER and the add-on deployed from that Google Cloud project.',
+    keywords: ['google meet', 'meet', 'add-on', 'main stage', 'side panel', 'activity', 'video call'],
+    seo: {
+      title: 'Google Meet add-on: a live whiteboard on the main stage',
+      description: 'Open a live Freero board on a Google Meet call’s main stage from the side panel; everyone else in the call is asked to join.',
     },
   },
 ];

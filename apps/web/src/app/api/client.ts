@@ -87,6 +87,9 @@ import type {
   PublicEmbedInfo,
   PublicEmbedMember,
   MicrosoftIntegrationsInfo,
+  HostAppInfo,
+  MeetAddOnInfo,
+  ZoomMeetingBoard,
   PublicEmbedToken,
   GuestJoinResponse,
   AccessRequestState,
@@ -424,6 +427,11 @@ export const api = {
   publicEmbedMember: (id: string, token: string) => request<PublicEmbedMember>('POST', `/api/embed/b/${encodeURIComponent(id)}/me`, { token }),
   /** The Microsoft Teams app and Copilot agent this instance offers (#112, #114). */
   microsoftIntegrations: () => request<MicrosoftIntegrationsInfo>('GET', '/api/integrations/microsoft'),
+  // Apps on other platforms (#166–#169): what this instance offers.
+  hostApp: (host: 'atlassian' | 'zoom') => request<HostAppInfo>('GET', `/api/integrations/${host}`),
+  meetAddOn: () => request<MeetAddOnInfo>('GET', '/api/integrations/meet'),
+  zoomSetMeetingBoard: (meetingUuid: string, boardId: string, token?: string) => request<{ ok: true }>('PUT', '/api/integrations/zoom/meeting-board', { meetingUuid, boardId, token }),
+  zoomMeetingBoard: (meetingUuid: string) => request<ZoomMeetingBoard>('POST', '/api/integrations/zoom/meeting-board/lookup', { meetingUuid }),
 
   // activity
   boardActivity: (id: string, before?: number) =>

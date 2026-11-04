@@ -156,7 +156,15 @@
     "readOnlySnapshot",
     "couldNotLoadTheBoard",
     "loadingTheBoard",
-    "sentByEmailWithThe"
+    "sentByEmailWithThe",
+    "otherPlatformApps",
+    "atlassianAppSource",
+    "atlassianAppOff",
+    "zoomAppSettings",
+    "zoomAppOff",
+    "meetDeployment",
+    "meetAddOnOff",
+    "registerThemWithEach"
   ],
   "new": "新",
   "beingLookedAt": "处理中",
@@ -314,5 +322,13 @@
   "readOnlySnapshot": "只读快照",
   "couldNotLoadTheBoard": "无法加载白板",
   "loadingTheBoard": "正在加载白板",
-  "sentByEmailWithThe": "将随决定一起通过电子邮件发送。请说明问题所在及位置；这也是对方提出申诉所针对的内容。"
+  "sentByEmailWithThe": "将随决定一起通过电子邮件发送。请说明问题所在及位置；这也是对方提出申诉所针对的内容。",
+  "otherPlatformApps": "其他平台上的应用",
+  "atlassianAppSource": "Confluence 和 Jira 应用（Forge 源代码）",
+  "atlassianAppOff": "Confluence 和 Jira 应用：已关闭（设置 ATLASSIAN_APP_ID）",
+  "zoomAppSettings": "Zoom 应用设置",
+  "zoomAppOff": "Zoom 应用：已关闭（设置 ZOOM_CLIENT_ID）",
+  "meetDeployment": "Google Meet 插件部署",
+  "meetAddOnOff": "Google Meet 插件：已关闭（设置 GOOGLE_MEET_CLOUD_PROJECT_NUMBER）",
+  "registerThemWithEach": "请在各平台注册：参见 docs/integrations/。"
 }

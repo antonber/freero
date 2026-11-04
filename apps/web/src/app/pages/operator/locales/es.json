@@ -156,7 +156,15 @@
     "readOnlySnapshot",
     "couldNotLoadTheBoard",
     "loadingTheBoard",
-    "sentByEmailWithThe"
+    "sentByEmailWithThe",
+    "otherPlatformApps",
+    "atlassianAppSource",
+    "atlassianAppOff",
+    "zoomAppSettings",
+    "zoomAppOff",
+    "meetDeployment",
+    "meetAddOnOff",
+    "registerThemWithEach"
   ],
   "new": "Nuevo",
   "beingLookedAt": "En revisión",
@@ -314,5 +322,13 @@
   "readOnlySnapshot": "Instantánea de solo lectura",
   "couldNotLoadTheBoard": "No se pudo cargar el tablero",
   "loadingTheBoard": "Cargando el tablero",
-  "sentByEmailWithThe": "Se envía por correo con la decisión. Di qué estaba mal y dónde; también es contra lo que se apela."
+  "sentByEmailWithThe": "Se envía por correo con la decisión. Di qué estaba mal y dónde; también es contra lo que se apela.",
+  "otherPlatformApps": "Apps en otras plataformas",
+  "atlassianAppSource": "App de Confluence y Jira (código de Forge)",
+  "atlassianAppOff": "App de Confluence y Jira: desactivada (define ATLASSIAN_APP_ID)",
+  "zoomAppSettings": "Ajustes de la app de Zoom",
+  "zoomAppOff": "App de Zoom: desactivada (define ZOOM_CLIENT_ID)",
+  "meetDeployment": "Despliegue del complemento de Google Meet",
+  "meetAddOnOff": "Complemento de Google Meet: desactivado (define GOOGLE_MEET_CLOUD_PROJECT_NUMBER)",
+  "registerThemWithEach": "Regístralas en cada plataforma: consulta docs/integrations/."
 }

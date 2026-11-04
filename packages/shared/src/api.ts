@@ -1566,6 +1566,42 @@ export interface MicrosoftIntegrationsInfo {
   copilot: { packageUrl: string } | null;
 }
 
+// ---- Apps on other platforms: Confluence and Jira, Zoom, Google Meet (#166–#169) ----
+// Each is the public embed on that platform's page, off until the operator registers the app:
+// /atlassian/b/:id (framed by Atlassian's hosts), /zoom/home and /zoom/b/:id (Zoom's in-meeting
+// browser), /meet/sidepanel and /meet/stage/:id (framed by Google Meet).
+// GET /api/integrations/{atlassian,zoom,meet} -> HostAppInfo
+export interface HostAppInfo {
+  /** Whether this instance offers the app (the operator set its id). */
+  on: boolean;
+  /** Where the operator downloads what they register with the platform (null while off). */
+  packageUrl: string | null;
+}
+/** GET /api/integrations/meet: also the Google Cloud project the add-on's pages name to Meet's SDK (not a secret). */
+export interface MeetAddOnInfo extends HostAppInfo {
+  cloudProjectNumber: string | null;
+}
+/**
+ * What the board chooser window (/embed/choose) tells the Freero frame that opened it
+ * (window.opener, Freero's own origin only): the board, and a token for its embeds so the frame
+ * opens signed in.
+ */
+export interface EmbedChooseMessage {
+  freeroEmbedChoose: 'board';
+  boardId: string;
+  title: string;
+  token: string;
+  expiresAt: number;
+}
+/**
+ * Zoom: the board a meeting's host opened for everyone, so participants they invite open the same
+ * one. PUT /api/integrations/zoom/meeting-board { meetingUuid, boardId } (signed in, board shown
+ * through its embed), POST /api/integrations/zoom/meeting-board/lookup { meetingUuid } -> this.
+ */
+export interface ZoomMeetingBoard {
+  boardId: string | null;
+}
+
 export interface OEmbedResponse {
   version: '1.0';
   type: 'rich';

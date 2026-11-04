@@ -156,7 +156,15 @@
     "readOnlySnapshot",
     "couldNotLoadTheBoard",
     "loadingTheBoard",
-    "sentByEmailWithThe"
+    "sentByEmailWithThe",
+    "otherPlatformApps",
+    "atlassianAppSource",
+    "atlassianAppOff",
+    "zoomAppSettings",
+    "zoomAppOff",
+    "meetDeployment",
+    "meetAddOnOff",
+    "registerThemWithEach"
   ],
   "new": "新規",
   "beingLookedAt": "確認中",
@@ -314,5 +322,13 @@
   "readOnlySnapshot": "読み取り専用のスナップショット",
   "couldNotLoadTheBoard": "ボードを読み込めませんでした",
   "loadingTheBoard": "ボードを読み込み中",
-  "sentByEmailWithThe": "決定内容とともにメールで送信されます。何がどこで問題だったかを書いてください。これは相手が異議を申し立てる対象にもなります。"
+  "sentByEmailWithThe": "決定内容とともにメールで送信されます。何がどこで問題だったかを書いてください。これは相手が異議を申し立てる対象にもなります。",
+  "otherPlatformApps": "他のプラットフォームのアプリ",
+  "atlassianAppSource": "Confluence・Jira アプリ（Forge ソース）",
+  "atlassianAppOff": "Confluence・Jira アプリ: オフ（ATLASSIAN_APP_ID を設定）",
+  "zoomAppSettings": "Zoom アプリの設定",
+  "zoomAppOff": "Zoom アプリ: オフ（ZOOM_CLIENT_ID を設定）",
+  "meetDeployment": "Google Meet アドオンのデプロイ",
+  "meetAddOnOff": "Google Meet アドオン: オフ（GOOGLE_MEET_CLOUD_PROJECT_NUMBER を設定）",
+  "registerThemWithEach": "各プラットフォームに登録してください。docs/integrations/ を参照。"
 }
