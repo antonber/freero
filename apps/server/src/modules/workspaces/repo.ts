@@ -1,6 +1,7 @@
 // The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects`,
-// `project_members` and (#63) `workspace_groups`, `workspace_group_members`, `project_groups` [S4].
-import type { AdminScope, InactiveBoardAction, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
+// `project_members`, `project_pins` (#129), (#63) `workspace_groups`, `workspace_group_members`, `project_groups` and
+// (#158) `workspace_labels`, `workspace_label_settings` [S4].
+import type { AdminScope, InactiveBoardAction, LabelCaps, ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
 import { isForeignKeyViolation, isUniqueViolation, one, query, tx } from '../../platform/db';
 import { NO_FLOOR_POLICIES, strictestPolicies, strictestSettings, type InvitableWorkspaceRole, type PolicyFloor, type SettingsFloor } from './roles';
 
@@ -743,6 +744,11 @@ export interface Project {
   access: ProjectAccess;
   /** The project's own team access level (null: the workspace's). */
   teamAccess: TeamAccess | null;
+  /** The project it sits in (#129), or null at the top of the workspace. */
+  parentId: string | null;
+  description: string;
+  /** Boards its managers pinned on the project page, in order (may name boards since moved away). */
+  pinnedBoards: string[];
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
@@ -753,6 +759,9 @@ interface PRow {
   name: string;
   access: ProjectAccess;
   team_access: TeamAccess | null;
+  parent_id: string | null;
+  description: string | null;
+  pinned_boards: string[] | null;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
@@ -763,6 +772,9 @@ const toProject = (r: PRow): Project => ({
   name: r.name,
   access: r.access,
   teamAccess: r.team_access ?? null,
+  parentId: r.parent_id ?? null,
+  description: r.description ?? '',
+  pinnedBoards: r.pinned_boards ?? [],
   createdBy: r.created_by,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
@@ -772,9 +784,9 @@ const toProject = (r: PRow): Project => ({
 export async function insertProject(p: Project): Promise<boolean> {
   try {
     await query(
-      `INSERT INTO projects (id, workspace_id, name, access, created_by, created_at, updated_at, team_access)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [p.id, p.workspaceId, p.name, p.access, p.createdBy, new Date(p.createdAt), new Date(p.updatedAt), p.teamAccess],
+      `INSERT INTO projects (id, workspace_id, name, access, created_by, created_at, updated_at, team_access, parent_id, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [p.id, p.workspaceId, p.name, p.access, p.createdBy, new Date(p.createdAt), new Date(p.updatedAt), p.teamAccess, p.parentId, p.description],
     );
     if (p.createdBy) await query(`INSERT INTO project_members (project_id, user_id, created_at) VALUES ($1, $2, $3)`, [p.id, p.createdBy, new Date(p.createdAt)]);
     return true;
@@ -799,20 +811,57 @@ export async function projectsIn(workspaceIds: string[]): Promise<Project[]> {
   return (await query<PRow>(`SELECT * FROM projects WHERE workspace_id = ANY($1::text[]) ORDER BY lower(name), id`, [workspaceIds])).map(toProject);
 }
 
-/** Changes only the given fields (`teamAccess: null`: back to the workspace's level). */
+/** Changes only the given fields (`teamAccess: null`: back to the workspace's level; `parentId: null`: to the top). */
 export async function updateProject(
   id: string,
-  patch: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null },
+  patch: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null; description?: string; pinnedBoards?: string[]; parentId?: string | null },
   now: number,
 ): Promise<boolean> {
   return (
     await query(
       `UPDATE projects SET name = COALESCE($2, name), access = COALESCE($3, access), updated_at = $4,
-         team_access = CASE WHEN $5::boolean THEN $6 ELSE team_access END
+         team_access = CASE WHEN $5::boolean THEN $6 ELSE team_access END,
+         description = COALESCE($7, description), pinned_boards = COALESCE($8::text[], pinned_boards),
+         parent_id = CASE WHEN $9::boolean THEN $10 ELSE parent_id END
        WHERE id = $1 RETURNING 1`,
-      [id, patch.name ?? null, patch.access ?? null, new Date(now), patch.teamAccess !== undefined, patch.teamAccess ?? null],
+      [
+        id,
+        patch.name ?? null,
+        patch.access ?? null,
+        new Date(now),
+        patch.teamAccess !== undefined,
+        patch.teamAccess ?? null,
+        patch.description ?? null,
+        patch.pinnedBoards ?? null,
+        patch.parentId !== undefined,
+        patch.parentId ?? null,
+      ],
     )
   ).length > 0;
+}
+
+/** Ids of the projects directly inside `id` (#129). */
+export async function childProjectIds(id: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM projects WHERE parent_id = $1 ORDER BY id`, [id])).map((r) => r.id);
+}
+
+// ---- pinned projects (#129, per person) ----
+
+export async function setProjectPin(userId: string, projectId: string, pinned: boolean, now: number): Promise<void> {
+  if (pinned)
+    await query(`INSERT INTO project_pins (user_id, project_id, pinned_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [userId, projectId, new Date(now)]);
+  else await query(`DELETE FROM project_pins WHERE user_id = $1 AND project_id = $2`, [userId, projectId]);
+}
+
+/** projectId -> when the user pinned it, among `workspaceIds`. */
+export async function projectPinsOf(userId: string, workspaceIds: string[]): Promise<Map<string, number>> {
+  if (workspaceIds.length === 0) return new Map();
+  const rows = await query<{ project_id: string; pinned_at: Date }>(
+    `SELECT pp.project_id, pp.pinned_at FROM project_pins pp JOIN projects p ON p.id = pp.project_id
+     WHERE pp.user_id = $1 AND p.workspace_id = ANY($2::text[])`,
+    [userId, workspaceIds],
+  );
+  return new Map(rows.map((r) => [r.project_id, r.pinned_at.getTime()]));
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
@@ -990,4 +1039,103 @@ export async function addProjectMember(projectId: string, userId: string, now: n
 
 export async function removeProjectMember(projectId: string, userId: string): Promise<boolean> {
   return (await query(`DELETE FROM project_members WHERE project_id = $1 AND user_id = $2 RETURNING 1`, [projectId, userId])).length > 0;
+}
+
+// ---- classification labels (#158) ----
+
+export interface LabelRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  color: string;
+  description: string;
+  caps: LabelCaps;
+  position: number;
+}
+interface LabelDbRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color: string;
+  description: string;
+  caps: LabelCaps | string;
+  position: number;
+}
+const toLabel = (r: LabelDbRow): LabelRow => ({
+  id: r.id,
+  workspaceId: r.workspace_id,
+  name: r.name,
+  color: r.color,
+  description: r.description,
+  caps: typeof r.caps === 'string' ? (JSON.parse(r.caps) as LabelCaps) : (r.caps ?? {}),
+  position: r.position,
+});
+
+/** The labels defined by these places (team workspaces / organisations), in their order. */
+export async function labelsOf(placeIds: string[]): Promise<LabelRow[]> {
+  if (!placeIds.length) return [];
+  return (await query<LabelDbRow>(`SELECT * FROM workspace_labels WHERE workspace_id = ANY($1::text[]) ORDER BY position, created_at, id`, [placeIds])).map(toLabel);
+}
+
+export async function labelsById(ids: string[]): Promise<LabelRow[]> {
+  if (!ids.length) return [];
+  return (await query<LabelDbRow>(`SELECT * FROM workspace_labels WHERE id = ANY($1::text[])`, [ids])).map(toLabel);
+}
+
+/** A new label at the end of its place's list; false when the place already has a label of that name. */
+export async function insertLabel(l: Omit<LabelRow, 'position'>, now: number): Promise<boolean> {
+  try {
+    await query(
+      `INSERT INTO workspace_labels (id, workspace_id, name, color, description, caps, position, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(max(position), -1) + 1 FROM workspace_labels WHERE workspace_id = $2), $7)`,
+      [l.id, l.workspaceId, l.name, l.color, l.description, JSON.stringify(l.caps), new Date(now)],
+    );
+    return true;
+  } catch (e) {
+    if (isUniqueViolation(e)) return false;
+    throw e;
+  }
+}
+
+/** Changes the given fields of a place's label; null when there is no such label there, false on a duplicate name. */
+export async function updateLabel(placeId: string, id: string, patch: { name?: string; color?: string; description?: string; caps?: LabelCaps }): Promise<LabelRow | null | false> {
+  try {
+    const r = await one<LabelDbRow>(
+      `UPDATE workspace_labels SET name = COALESCE($3, name), color = COALESCE($4, color), description = COALESCE($5, description), caps = COALESCE($6::jsonb, caps)
+       WHERE id = $2 AND workspace_id = $1 RETURNING *`,
+      [placeId, id, patch.name ?? null, patch.color ?? null, patch.description ?? null, patch.caps ? JSON.stringify(patch.caps) : null],
+    );
+    return r ? toLabel(r) : null;
+  } catch (e) {
+    if (isUniqueViolation(e)) return false;
+    throw e;
+  }
+}
+
+/** Deletes a place's label: 'deleted', 'missing', or 'in_use' (boards carry it: the foreign key refuses). */
+export async function deleteLabel(placeId: string, id: string): Promise<'deleted' | 'missing' | 'in_use'> {
+  try {
+    return (await query(`DELETE FROM workspace_labels WHERE id = $2 AND workspace_id = $1 RETURNING 1`, [placeId, id])).length ? 'deleted' : 'missing';
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return 'in_use';
+    throw e;
+  }
+}
+
+export async function labelSettingsOf(placeIds: string[]): Promise<Map<string, { required: boolean; defaultLabelId: string | null }>> {
+  if (!placeIds.length) return new Map();
+  const rows = await query<{ workspace_id: string; required: boolean; default_label_id: string | null }>(
+    `SELECT workspace_id, required, default_label_id FROM workspace_label_settings WHERE workspace_id = ANY($1::text[])`,
+    [placeIds],
+  );
+  return new Map(rows.map((r) => [r.workspace_id, { required: r.required, defaultLabelId: r.default_label_id }]));
+}
+
+export async function setLabelSettings(placeId: string, s: { required?: boolean; defaultLabelId?: string | null }): Promise<void> {
+  await query(
+    `INSERT INTO workspace_label_settings (workspace_id, required, default_label_id) VALUES ($1, COALESCE($2, false), $3)
+     ON CONFLICT (workspace_id) DO UPDATE SET required = COALESCE($2, workspace_label_settings.required),
+       default_label_id = CASE WHEN $4 THEN $3 ELSE workspace_label_settings.default_label_id END`,
+    [placeId, s.required ?? null, s.defaultLabelId ?? null, s.defaultLabelId !== undefined],
+  );
 }

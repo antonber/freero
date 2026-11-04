@@ -7,6 +7,7 @@ import { Button, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
 export function AdminTrash({ workspace }: { workspace: WorkspaceSummary }) {
@@ -17,7 +18,7 @@ export function AdminTrash({ workspace }: { workspace: WorkspaceSummary }) {
   const load = useCallback(() => {
     api.adminTrash(workspace.id).then(
       (r) => setBoards(r.boards),
-      (e) => notify(errorText(e, 'Could not load the trash'), 'error'),
+      (e) => notify(errorText(e, t('couldNotLoadTheTrash')), 'error'),
     );
   }, [workspace.id, notify]);
   useEffect(load, [load]);
@@ -27,9 +28,9 @@ export function AdminTrash({ workspace }: { workspace: WorkspaceSummary }) {
     try {
       await api.adminRestoreBoard(workspace.id, b.boardId);
       setBoards((all) => (all ?? []).filter((x) => x.boardId !== b.boardId));
-      notify(`Restored “${b.title || 'Untitled board'}” for ${b.ownerName}`, 'success');
+      notify(t('restoredValueForOwnername', { value: b.title || t('untitledBoard'), ownerName: b.ownerName }), 'success');
     } catch (e) {
-      notify(errorText(e, 'Could not restore it'), 'error');
+      notify(errorText(e, t('couldNotRestoreIt')), 'error');
     } finally {
       setBusy(null);
     }
@@ -39,48 +40,40 @@ export function AdminTrash({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <section aria-labelledby="admin-trash-title">
       <div className="fr-admin__head">
-        <h1 id="admin-trash-title" className="fr-admin__title">
-          Trash
-        </h1>
-        <span className="fr-admin__muted">
-          Every board deleted in {workspace.name}, whoever deleted it. Restoring gives it back to its owner, where it was.
-        </span>
+        <h1 id="admin-trash-title" className="fr-admin__title">{t('trash')}</h1>
+        <span className="fr-admin__muted">{t('everyBoardDeletedInName', { name: workspace.name })}</span>
       </div>
       <div className="fr-admin-table-wrap">
         <table className="fr-admin-table">
           <thead>
             <tr>
-              <th scope="col">Board</th>
-              <th scope="col">Owner</th>
-              <th scope="col">Deleted</th>
-              <th scope="col">Deleted for good</th>
+              <th scope="col">{t('board')}</th>
+              <th scope="col">{t('owner')}</th>
+              <th scope="col">{t('deleted')}</th>
+              <th scope="col">{t('deletedForGood')}</th>
               <th scope="col">
-                <span className="fr-admin__sr">Actions</span>
+                <span className="fr-admin__sr">{t('actions')}</span>
               </th>
             </tr>
           </thead>
           <tbody>
             {boards.map((b) => (
               <tr key={b.boardId}>
-                <td className="fr-admin-person__name">{b.title || (b.kind === 'doc' ? 'Untitled doc' : 'Untitled board')}</td>
+                <td className="fr-admin-person__name">{b.title || (b.kind === 'doc' ? t('untitledDoc') : t('untitledBoard'))}</td>
                 <td>{b.ownerName}</td>
                 <td className="fr-admin__muted">
                   {relativeTime(b.deletedAt)}
-                  {b.deletedBy ? ` by ${b.deletedBy.name}` : ''}
+                  {b.deletedBy ? t('byName', { name: b.deletedBy.name }) : ''}
                 </td>
                 <td className="fr-admin__muted">{new Date(b.purgeAt).toLocaleDateString()}</td>
                 <td className="fr-admin-table__actions">
-                  <Button size="sm" icon={ArchiveRestore} loading={busy === b.boardId} onClick={() => void restore(b)}>
-                    Restore
-                  </Button>
+                  <Button size="sm" icon={ArchiveRestore} loading={busy === b.boardId} onClick={() => void restore(b)}>{t('restore')}</Button>
                 </td>
               </tr>
             ))}
             {boards.length === 0 ? (
               <tr>
-                <td colSpan={5} className="fr-admin__muted">
-                  The trash is empty.
-                </td>
+                <td colSpan={5} className="fr-admin__muted">{t('theTrashIsEmpty')}</td>
               </tr>
             ) : null}
           </tbody>

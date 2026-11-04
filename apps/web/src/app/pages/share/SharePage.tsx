@@ -8,6 +8,7 @@ import type { BoardSummary } from '@freero/shared';
 import { Button, Logo, Spinner } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { holdShare, sharedFromQuery } from '../../lib/pendingShare';
+import { t } from './messages';
 import './share.css';
 
 export function SharePage() {
@@ -39,10 +40,10 @@ export function SharePage() {
   const createAndOpen = async () => {
     setBusy(true);
     try {
-      const { board } = await api.createBoard({ title: shared.title?.slice(0, 120) || 'Shared items' });
+      const { board } = await api.createBoard({ title: shared.title?.slice(0, 120) || t('sharedItems') });
       open(board.id);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not create a board');
+      setError(e instanceof ApiError ? e.message : t('couldNotCreateABoard'));
       setBusy(false);
     }
   };
@@ -51,11 +52,11 @@ export function SharePage() {
     <div className="fr-sharein">
       <div className="fr-sharein__card">
         <Logo size={28} withWordmark />
-        <h1>Add to a board</h1>
+        <h1>{t('addToABoard')}</h1>
         {nothing ? (
-          <p className="fr-sharein__note">Nothing arrived that Freero can place: share images, a link or text.</p>
+          <p className="fr-sharein__note">{t('nothingArrivedThatFreeroCan')}</p>
         ) : (
-          <div className="fr-sharein__what" aria-label="Shared">
+          <div className="fr-sharein__what" aria-label={t('shared')}>
             {shared.images.map((src) => (
               <img key={src} src={src} alt="" />
             ))}
@@ -68,9 +69,7 @@ export function SharePage() {
           </div>
         )}
         {shared.failed ? (
-          <p className="fr-sharein__note">
-            {shared.failed === 1 ? 'One file wasn’t an image Freero could store' : `${shared.failed} files weren’t images Freero could store`} (or your upload quota is full).
-          </p>
+          <p className="fr-sharein__note">{t('failedFilesWerenTImages', { failed: shared.failed })}</p>
         ) : null}
         {error ? (
           <p className="fr-sharein__error" role="alert">
@@ -79,10 +78,8 @@ export function SharePage() {
         ) : null}
         {nothing ? null : (
           <>
-            <Button variant="primary" icon={Plus} loading={busy} onClick={() => void createAndOpen()}>
-              New board
-            </Button>
-            <h2>Or a board you can edit</h2>
+            <Button variant="primary" icon={Plus} loading={busy} onClick={() => void createAndOpen()}>{t('newBoard')}</Button>
+            <h2>{t('orABoardYouCan')}</h2>
             {boards === null ? (
               <Spinner size={20} />
             ) : boards.length ? (
@@ -90,13 +87,13 @@ export function SharePage() {
                 {boards.map((b) => (
                   <li key={b.id}>
                     <button type="button" onClick={() => open(b.id)} disabled={busy}>
-                      {b.title || 'Untitled board'}
+                      {b.title || t('untitledBoard')}
                     </button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="fr-sharein__note">No boards you can edit yet.</p>
+              <p className="fr-sharein__note">{t('noBoardsYouCanEdit')}</p>
             )}
           </>
         )}

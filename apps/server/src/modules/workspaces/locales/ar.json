@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "دعاك {inviter} إلى مساحة العمل «{workspace}» على Freero",
+  "invite.title": "انضم إلى «{workspace}» على Freero",
+  "invite.body": "{role, select, admin {دعاك {inviter} إلى الانضمام إلى مساحة عمل فريقه بصفة مسؤول.} member {دعاك {inviter} إلى الانضمام إلى مساحة عمل فريقه بصفة عضو.} other {دعاك {inviter} إلى الانضمام إلى مساحة عمل فريقه بصفة ضيف (سترى اللوحات التي تمت مشاركتها معك).}} ‏Freero سبورة بيضاء مجانية على الإنترنت؛ ستحتاج إلى حساب مجاني.",
+  "invite.action": "الانضمام إلى مساحة العمل",
+  "invite.outro": "أرسل {inviter} ‏({email}) هذه الدعوة. يعمل الرابط مرة واحدة وتنتهي صلاحيته خلال 14 يومًا."
+}

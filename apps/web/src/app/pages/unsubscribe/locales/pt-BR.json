@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "Este link está incompleto. Abra o link do e-mail novamente.",
+  "couldNotReachFreeroTry": "Não foi possível acessar o Freero. Tente novamente.",
+  "unsubscribe": "Cancelar inscrição",
+  "unsubscribing": "Cancelando inscrição…",
+  "unsubscribing2": "Cancelando inscrição",
+  "youReUnsubscribed": "Sua inscrição foi cancelada",
+  "thatLinkDidnTWork": "Esse link não funcionou",
+  "emailWonTGetThe": "{email} não vai mais receber o resumo de “alterações nos seus quadros”. Os outros e-mails continuam iguais.",
+  "emailWonTGetNotification": "{email} não vai mais receber e-mails de notificação. Você ainda verá menções e respostas no Freero.",
+  "chooseWhichEmailsYouGet": "Escolha quais e-mails você recebe",
+  "logInToChooseWhich": "Entre para escolher quais e-mails você recebe"
+}

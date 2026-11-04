@@ -144,6 +144,259 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/projects": {
+      "get": {
+        "tags": [
+          "boards"
+        ],
+        "summary": "The projects of a workspace you can see, sub-projects included",
+        "description": "Projects nest (`parentId`; null at the top, at most three levels). A sub-project reaches only people who also get through every project above it, so the list never holds a project whose parent you can't see. Boards and docs list by project with `GET /boards?project=` and `GET /docs?project=`.",
+        "operationId": "listProjects",
+        "x-freero-scope": "boards:read",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Projects",
+            "schema": {
+              "type": "object",
+              "required": [
+                "notice",
+                "projects"
+              ],
+              "properties": {
+                "notice": {
+                  "$ref": "#/definitions/Notice"
+                },
+                "projects": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Project"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "boards"
+        ],
+        "summary": "A new project, or one made from a blueprint with copies of its boards and docs",
+        "description": "Without `blueprintId`: an empty project (`name` required). With `blueprintId` (see `GET /blueprints`): the project and a copy of each of the blueprint's boards and docs, made in one transaction — if any copy can't be made (the board quota, a project you can't use) nothing is created. Links between the blueprint's items lead to the copies. `parentId` puts it inside a project you can see.",
+        "operationId": "createProject",
+        "x-freero-scope": "boards:write",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Required without blueprintId; defaults to the blueprint's name"
+                },
+                "blueprintId": {
+                  "type": "string"
+                },
+                "parentId": {
+                  "type": "string",
+                  "description": "The project it goes in"
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "workspace",
+                    "private"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The project, and the boards and docs made in it",
+            "schema": {
+              "type": "object",
+              "required": [
+                "project",
+                "boards"
+              ],
+              "properties": {
+                "project": {
+                  "$ref": "#/definitions/Project"
+                },
+                "boards": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "kind",
+                      "title",
+                      "url"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "board",
+                          "doc"
+                        ]
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/blueprints": {
+      "get": {
+        "tags": [
+          "boards"
+        ],
+        "summary": "The blueprints you can use: yours and those shared with your teams",
+        "operationId": "listBlueprints",
+        "x-freero-scope": "boards:read",
+        "responses": {
+          "200": {
+            "description": "Blueprints",
+            "schema": {
+              "type": "object",
+              "required": [
+                "notice",
+                "blueprints"
+              ],
+              "properties": {
+                "notice": {
+                  "$ref": "#/definitions/Notice"
+                },
+                "blueprints": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "name",
+                      "description",
+                      "steps",
+                      "items",
+                      "workspaceId",
+                      "ownerName"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "steps": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "title"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "board",
+                                "doc"
+                              ]
+                            },
+                            "title": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "workspaceId": {
+                        "type": "string",
+                        "description": "The team it is shared with; null: yours alone",
+                        "x-nullable": true
+                      },
+                      "ownerName": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/audit": {
       "get": {
         "tags": [
@@ -6268,6 +6521,56 @@
         "deliveredAt": {
           "type": "integer",
           "x-nullable": true
+        }
+      }
+    },
+    "Project": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "parentId",
+        "description",
+        "access",
+        "teamAccess",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": "string",
+          "description": "The project it sits in; null at the top of the workspace",
+          "x-nullable": true
+        },
+        "description": {
+          "type": "string"
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "private"
+          ]
+        },
+        "teamAccess": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "commenter",
+            "viewer",
+            null
+          ],
+          "description": "Its own team access level; null: inherited",
+          "x-nullable": true
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

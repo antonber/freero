@@ -20,6 +20,7 @@ import {
 import { createNextSticky } from './lib/actions';
 import type { Direction } from './lib/layout';
 
+import { t } from './messages';
 /** Screen px between the sticky's edge and the center of its "+" (bottom clears the rotate handle). */
 const OFFSET = 26;
 const OFFSET_BELOW = 58;
@@ -27,10 +28,10 @@ const OFFSET_BELOW = 58;
 const HOVER_PAD = 110;
 
 const SIDES: Array<{ dir: Direction; label: string; nx: number; ny: number }> = [
-  { dir: 'above', label: 'Add sticky above', nx: 0, ny: -1 },
-  { dir: 'right', label: 'Add sticky to the right', nx: 1, ny: 0 },
-  { dir: 'below', label: 'Add sticky below', nx: 0, ny: 1 },
-  { dir: 'left', label: 'Add sticky to the left', nx: -1, ny: 0 },
+  { dir: 'above', label: t('addStickyAbove'), nx: 0, ny: -1 },
+  { dir: 'right', label: t('addStickyToTheRight'), nx: 1, ny: 0 },
+  { dir: 'below', label: t('addStickyBelow'), nx: 0, ny: 1 },
+  { dir: 'left', label: t('addStickyToTheLeft'), nx: -1, ny: 0 },
 ];
 
 /** True while any pointer button is held (drags of the sticky itself: hide the buttons). */

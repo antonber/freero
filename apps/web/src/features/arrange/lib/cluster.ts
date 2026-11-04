@@ -3,6 +3,7 @@
 import { STICKY_COLORS, type StickyColor, type StickyElement, type Tag } from '@freero/shared';
 import { plainToRichText, type Editor, type NewElement, type Rect } from '@engine';
 
+import { t as tr } from '../messages';
 export type ClusterBy = 'color' | 'tag';
 
 export interface ClusterItem {
@@ -38,7 +39,7 @@ function groupsOf(items: ClusterItem[], by: ClusterBy, tags: Map<string, Tag>): 
   if (by === 'color') keys.sort((a, b) => COLOR_ORDER.indexOf(a as StickyColor) - COLOR_ORDER.indexOf(b as StickyColor));
   else keys.sort((a, b) => (a === NO_TAG ? 1 : b === NO_TAG ? -1 : tags.get(a)!.name.localeCompare(tags.get(b)!.name)));
   return keys.map((k) => ({
-    label: by === 'color' ? colorName(k as StickyColor) : k === NO_TAG ? 'No tag' : tags.get(k)!.name,
+    label: by === 'color' ? colorName(k as StickyColor) : k === NO_TAG ? tr('noTag') : tags.get(k)!.name,
     items: map.get(k)!,
   }));
 }

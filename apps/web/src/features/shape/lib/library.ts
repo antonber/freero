@@ -4,6 +4,7 @@
 import type { ShapeKind } from '@freero/shared';
 import { SHAPE_KINDS } from './constants';
 
+import { t } from '../messages';
 export const LIBRARY_COLLECTION = 'shapeLibraries';
 
 export interface LibraryShape {
@@ -31,15 +32,15 @@ const S = (kind: ShapeKind, label: string, w = 120, h = 120, keywords?: string):
 export const SHAPE_SETS: ShapeSet[] = [
   {
     id: 'basic',
-    label: 'Basic',
-    description: 'Rectangles, circles, arrows, callouts',
+    label: t('basic'),
+    description: t('rectanglesCirclesArrowsCallouts'),
     defaultOn: true,
     shapes: SHAPE_KINDS.map((s) => S(s.kind, s.label)),
   },
   {
     id: 'flowchart',
-    label: 'Flowchart',
-    description: 'Process maps and algorithms',
+    label: t('flowchart'),
+    description: t('processMapsAndAlgorithms'),
     defaultOn: true,
     shapes: [
       S('rect', 'Process', 160, 80, 'step action'),
@@ -73,7 +74,7 @@ export const SHAPE_SETS: ShapeSet[] = [
   {
     id: 'uml',
     label: 'UML',
-    description: 'Classes, actors, packages, components',
+    description: t('classesActorsPackagesComponents'),
     defaultOn: false,
     shapes: [
       S('umlClass', 'Class', 180, 140, 'object attributes methods'),
@@ -88,8 +89,8 @@ export const SHAPE_SETS: ShapeSet[] = [
   },
   {
     id: 'sequence',
-    label: 'Sequence',
-    description: 'Lifelines, activations, fragments',
+    label: t('sequence'),
+    description: t('lifelinesActivationsFragments'),
     defaultOn: false,
     shapes: [
       S('umlLifeline', 'Lifeline', 140, 360, 'participant object uml'),
@@ -102,7 +103,7 @@ export const SHAPE_SETS: ShapeSet[] = [
   {
     id: 'bpmn',
     label: 'BPMN',
-    description: 'Tasks, events, gateways, data',
+    description: t('tasksEventsGatewaysData'),
     defaultOn: false,
     shapes: [
       S('roundRect', 'Task', 160, 90, 'activity'),
@@ -124,7 +125,7 @@ export const SHAPE_SETS: ShapeSet[] = [
   {
     id: 'erd',
     label: 'ERD',
-    description: "Entities for crow's-foot diagrams",
+    description: t('entitiesForCrowSFoot'),
     defaultOn: false,
     shapes: [
       S('erdEntity', 'Entity', 200, 150, 'table attributes keys er relation'),
@@ -134,8 +135,8 @@ export const SHAPE_SETS: ShapeSet[] = [
   },
   {
     id: 'network',
-    label: 'Network',
-    description: 'Servers, devices, users',
+    label: t('network'),
+    description: t('serversDevicesUsers'),
     defaultOn: false,
     shapes: [
       S('netServer', 'Server', 100, 120, 'rack host'),
@@ -152,8 +153,8 @@ export const SHAPE_SETS: ShapeSet[] = [
   },
   {
     id: 'wireframe',
-    label: 'Wireframe',
-    description: 'Device frames and low-fi UI controls for sketching screens',
+    label: t('wireframe'),
+    description: t('deviceFramesAndLowFi'),
     defaultOn: false,
     shapes: [
       S('wfBrowser', 'Browser window', 640, 420, 'web page desktop site window chrome url address'),
@@ -181,8 +182,8 @@ export const SHAPE_SETS: ShapeSet[] = [
   },
   {
     id: 'valueStream',
-    label: 'Value stream',
-    description: 'Lean value-stream mapping: processes, inventory, flows, kaizen bursts',
+    label: t('valueStream'),
+    description: t('leanValueStreamMappingProcesses'),
     defaultOn: false,
     shapes: [
       S('vsmProcess', 'Process', 160, 120, 'vsm step operation work station lean'),
@@ -206,8 +207,8 @@ export const SHAPE_SETS: ShapeSet[] = [
   },
   {
     id: 'dataFlow',
-    label: 'Data flow',
-    description: 'Processes, data stores, external entities and trust boundaries',
+    label: t('dataFlow'),
+    description: t('processesDataStoresExternalEntities'),
     defaultOn: false,
     shapes: [
       S('dfdProcess', 'Process', 160, 110, 'dfd transform function gane sarson'),

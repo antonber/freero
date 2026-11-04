@@ -6,11 +6,12 @@ import { editSlide } from './lib/slideEditor';
 import { SLIDE_LAYOUTS, type SlideLayoutId } from './lib/layouts';
 import { PANEL_ID } from './lib/frames';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'frame.wrapSelection',
     icon: Frame,
-    label: 'Frame selection',
+    label: t('frameSelection'),
     shortcut: 'mod+alt+f',
     menus: ['context'],
     when: (editor) => editor.getSelection().some((id) => editor.getElement(id)?.type !== 'frame'),
@@ -21,7 +22,7 @@ export default defineCommands([
   {
     id: 'frame.zoomTo',
     icon: Maximize2,
-    label: 'Zoom to frame',
+    label: t('zoomToFrame'),
     menus: ['context'],
     minRole: 'viewer',
     when: (editor) => selectedFrames(editor).length === 1,
@@ -34,7 +35,7 @@ export default defineCommands([
     // One slide on its own (#135): at 100%, the rest of the board out of the way, Esc to go back.
     id: 'frame.editSlide',
     icon: SquarePen,
-    label: 'Edit slide',
+    label: t('editSlide'),
     menus: ['context'],
     when: (editor) => selectedFrames(editor).length === 1,
     run(editor) {
@@ -45,7 +46,7 @@ export default defineCommands([
   {
     id: 'frame.openPanel',
     icon: GalleryVertical,
-    label: 'Frames panel',
+    label: t('framesPanel'),
     menus: ['board'],
     minRole: 'viewer',
     run(editor) {
@@ -56,7 +57,7 @@ export default defineCommands([
     // The filmstrip under the canvas (#52); its notes button opens the side deck with speaker notes.
     id: 'frame.openDeck',
     icon: Presentation,
-    label: 'Slide deck',
+    label: t('slideDeck'),
     menus: ['board'],
     minRole: 'viewer',
     detail: (editor) => (editor.getBottomDock() === FILMSTRIP_ID ? '(on)' : ''),
@@ -67,7 +68,7 @@ export default defineCommands([
   {
     id: 'frame.skipSlide',
     icon: EyeOff,
-    label: 'Skip in presentation',
+    label: t('skipInPresentation'),
     menus: ['context'],
     when: (editor) => selectedFrames(editor).length > 0,
     detail: (editor) => (selectedFrames(editor).every((f) => f.skip) ? '(on)' : ''),
@@ -80,7 +81,7 @@ export default defineCommands([
     // Other features (templates, AI, MCP apps) give a slide a layout through this:
     // args { frameId, layout } puts the layout into that frame; { layout, after? } adds a new slide.
     id: 'frame.applyLayout',
-    label: 'Apply slide layout',
+    label: t('applySlideLayout'),
     run(editor, args) {
       const layout = SLIDE_LAYOUTS.find((l) => l.id === args?.layout)?.id as SlideLayoutId | undefined;
       if (!layout) return;

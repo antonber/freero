@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActivityEntry } from '@freero/shared';
 import type { Editor } from '@engine';
+import { formatDate } from '@ui';
 
+import { t } from '../messages';
 /** While the panel is open, new entries are fetched this often (a burst is stored after a pause). */
 export const REFRESH_MS = 30_000;
 
@@ -47,7 +49,7 @@ export function useActivity(editor: Editor): Feed {
       },
       (err: unknown) => {
         if (!live.current) return;
-        setError(err instanceof Error && err.message ? err.message : 'Activity couldn’t be loaded.');
+        setError(err instanceof Error && err.message ? err.message : t('activityCouldnTBeLoaded'));
         setLoading(false);
       },
     );
@@ -89,10 +91,10 @@ const DAY = 24 * HOUR;
 /** "just now", "5 min ago", "3 hours ago", "yesterday", "Oct 3". */
 export function ago(ts: number, now = Date.now()): string {
   const d = now - ts;
-  if (d < 45_000) return 'just now';
-  if (d < HOUR) return `${Math.max(1, Math.round(d / MIN))} min ago`;
-  if (d < DAY) return `${Math.floor(d / HOUR)} hour${d < 2 * HOUR ? '' : 's'} ago`;
-  if (d < 2 * DAY) return 'yesterday';
-  if (d < 7 * DAY) return `${Math.floor(d / DAY)} days ago`;
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (d < 45_000) return t('ago.justNow');
+  if (d < HOUR) return t('ago.minutes', { count: Math.max(1, Math.round(d / MIN)) });
+  if (d < DAY) return t('ago.hours', { count: Math.floor(d / HOUR) });
+  if (d < 2 * DAY) return t('ago.yesterday');
+  if (d < 7 * DAY) return t('ago.days', { count: Math.floor(d / DAY) });
+  return formatDate(ts, { month: 'short', day: 'numeric' });
 }

@@ -4,6 +4,7 @@ import { closeTestDb, openTestDb, outboxMails } from '../../platform/testing';
 import { createUser, markEmailVerified, onEmailVerified } from '../auth/index';
 import { createBoard, getBoardAccess } from '../boards/index';
 import { acceptInvite, convertInvitesFor, inviteByEmail, previewInvite, resendInvite } from './invites';
+import { t } from './messages';
 import * as repo from './repo';
 
 let owner: User;
@@ -89,4 +90,21 @@ it('accepting a weaker invite never lowers the role someone already has', async 
   const user = await createUser({ name: 'K', email: to, password: 'password-123' });
   await repo.upsertMember(board.id, user.id, 'editor', Date.now());
   expect((await acceptInvite(token, user)).role).toBe('editor');
+});
+
+it('an invite is worded in the language of the account the address belongs to, else in the inviter’s', async () => {
+  const inviter = await createUser({ name: 'Ines', email: email('ines'), password: 'password-123', locale: 'de' }, { emailVerified: true });
+  const vars = { inviter: 'Ines', board: 'Roadmap' };
+  const subjectTo = (to: string) => outboxMails().filter((mail) => mail.to === to).at(-1)?.subject;
+  const send = async (to: string) => {
+    const board = await createBoard(inviter.id, 'Roadmap', '');
+    await inviteByEmail(null, { boardId: board.id, boardTitle: board.title, email: to, role: 'editor', inviter, mayChangeRole: true });
+  };
+  expect(t('de', 'invite.subject', vars)).not.toBe(t('en', 'invite.subject', vars)); // German is really there
+  const stranger = email('stranger');
+  await send(stranger);
+  expect(subjectTo(stranger)).toBe(t('de', 'invite.subject', vars));
+  const known = await createUser({ name: 'Kenji', email: email('kenji'), password: 'password-123', locale: 'ja' });
+  await send(known.email);
+  expect(subjectTo(known.email)).toBe(t('ja', 'invite.subject', vars));
 });

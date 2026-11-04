@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "الإبلاغ عن اللوحة…",
+  "report": "إبلاغ…",
+  "report2": "إبلاغ",
+  "thanksForYourReportFreero": "شكرًا على بلاغك. سيراجعه مشرفو Freero.",
+  "yourReportCouldNotBe": "تعذّر إرسال بلاغك. أعد المحاولة.",
+  "reportTargetNoun": "الإبلاغ عن {target_noun}",
+  "tellFreeroSModeratorsWhat": "أخبر مشرفي Freero بما هو خاطئ. لا يُبلَّغ مالك اللوحة بهوية من أبلغ عنها.",
+  "cancel": "إلغاء",
+  "sendReport": "إرسال البلاغ",
+  "whatSTheProblem": "ما المشكلة؟",
+  "detailsOptional": "التفاصيل (اختياري)",
+  "anythingThatHelpsUsUnderstand": "أي شيء يساعدنا على الفهم، مثل مكانه على اللوحة",
+  "yourEmailOptional": "بريدك الإلكتروني (اختياري)",
+  "toHearWhatWeDecided": "لتعرف ما قررناه"
+}

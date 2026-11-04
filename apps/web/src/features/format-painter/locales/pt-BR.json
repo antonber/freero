@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "selectOneItemToCopy",
+    "copyStyle",
+    "styleCopiedPasteItWith",
+    "pasteStyle",
+    "stopPaintingFormat",
+    "formatPainterClickOtherItems",
+    "formatPainter",
+    "selectOneItemThenPick",
+    "unlockThisItemToChange"
+  ],
+  "selectOneItemToCopy": "Selecione um item para copiar o estilo dele.",
+  "copyStyle": "Copiar estilo",
+  "styleCopiedPasteItWith": "Estilo copiado. Cole com Alt+Mod+V.",
+  "pasteStyle": "Colar estilo",
+  "stopPaintingFormat": "Parar de pincelar formatação",
+  "formatPainterClickOtherItems": "Pincel de formatação: clique em outros itens para copiar este estilo",
+  "formatPainter": "Pincel de formatação",
+  "selectOneItemThenPick": "Selecione um item e escolha o pincel de formatação para copiar o estilo dele.",
+  "unlockThisItemToChange": "Desbloqueie este item para alterar o estilo."
+}

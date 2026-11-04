@@ -30,11 +30,19 @@ function freeroServiceWorker(): Plugin {
     apply: 'build',
     async generateBundle(_options, bundle) {
       const shell = new Set<string>();
+      const add = (fileName: string) => {
+        const chunk = bundle[fileName];
+        if (shell.has(fileName) || !chunk || chunk.type !== 'chunk') return;
+        shell.add(fileName);
+        for (const f of chunk.imports) add(f);
+        for (const f of chunk.viteMetadata?.importedCss ?? []) shell.add(f);
+      };
       for (const out of Object.values(bundle)) {
         if (out.type !== 'chunk' || !out.isEntry) continue;
-        shell.add(out.fileName);
-        for (const f of out.imports) shell.add(f);
-        for (const f of out.viteMetadata?.importedCss ?? []) shell.add(f);
+        add(out.fileName);
+        // main.tsx imports the app once the interface language is installed (docs/design/i18n.md):
+        // the app chunk is the shell too. Translations stay out (one language is fetched online).
+        for (const f of out.dynamicImports) if (!/(^|\/)locale-/.test(f)) add(f);
       }
       const precache = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/theme-boot.js', ...[...shell].sort().map((f) => `/${f}`)];
       const version = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);
@@ -67,8 +75,25 @@ function freeroAnalytics(): Plugin {
   };
 }
 
+/**
+ * Translations ship without their bookkeeping (docs/design/i18n.md): a catalogue's "@@unreviewed"
+ * list is for reviewers, not for the page that downloads it.
+ */
+function freeroCatalogs(): Plugin {
+  return {
+    name: 'freero-catalogs',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/[\\/]locales[\\/][A-Za-z-]+\.json$/.test(id)) return null;
+      const data = JSON.parse(code) as Record<string, unknown>;
+      for (const k of Object.keys(data)) if (k.startsWith('@@')) delete data[k];
+      return { code: JSON.stringify(data), map: null };
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), freeroServiceWorker(), freeroAnalytics()],
+  plugins: [freeroCatalogs(), react(), freeroServiceWorker(), freeroAnalytics()],
   customLogger: logger,
   resolve: {
     // Layer entry points. Features/app import '@engine' and '@ui' only — see ARCHITECTURE.md.
@@ -102,6 +127,16 @@ export default defineConfig({
     // Font files stay files: inlined into the CSS they would load with every page, whether or not
     // any text uses that face (see scripts/fonts.mjs).
     assetsInlineLimit: (file: string) => (file.endsWith('.woff2') ? false : undefined),
+    rollupOptions: {
+      output: {
+        // Each interface language's catalogues (every unit's locales/<lang>.json, found by
+        // app/i18n/catalogs.ts) in one chunk: one request when a page starts in that language.
+        manualChunks(id: string) {
+          const m = /\/locales\/([A-Za-z-]+)\.json$/.exec(id.replace(/\\/g, '/'));
+          return m && m[1] !== 'en' ? `locale-${m[1]}` : undefined;
+        },
+      },
+    },
   },
   server: {
     port: 5173,

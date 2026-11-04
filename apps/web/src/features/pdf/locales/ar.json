@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "nameIsnTAPdf",
+    "couldnTUploadNameTry",
+    "couldnTOpenThisPdf",
+    "placingTheFirstNOf",
+    "placingNPages",
+    "couldnTPlaceThePages",
+    "placeAllPages",
+    "namePagePage",
+    "couldnTOpenThisPdf2",
+    "document",
+    "previousPage",
+    "nextPage",
+    "pdfs",
+    "nextPreviousPageOfA"
+  ],
+  "nameIsnTAPdf": "«{name}» ليس ملف PDF يستطيع Freero فتحه.",
+  "couldnTUploadNameTry": "تعذّر رفع «{name}». حاول مجددًا لاحقًا.",
+  "couldnTOpenThisPdf": "تعذّر فتح ملف PDF هذا.",
+  "placingTheFirstNOf": "جارٍ وضع أول {n} من أصل {numPages} صفحة.",
+  "placingNPages": "{n, plural, zero {جارٍ وضع {n} صفحة…} one {جارٍ وضع صفحة واحدة…} two {جارٍ وضع صفحتين…} few {جارٍ وضع {n} صفحات…} many {جارٍ وضع {n} صفحة…} other {جارٍ وضع {n} صفحة…}}",
+  "couldnTPlaceThePages": "تعذّر وضع الصفحات. حاول مجددًا لاحقًا.",
+  "placeAllPages": "وضع كل الصفحات",
+  "namePagePage": "{name}، الصفحة {page}",
+  "couldnTOpenThisPdf2": "تعذّر فتح ملف PDF هذا",
+  "document": "المستند",
+  "previousPage": "الصفحة السابقة",
+  "nextPage": "الصفحة التالية",
+  "pdfs": "ملفات PDF",
+  "nextPreviousPageOfA": "الصفحة التالية / السابقة من مستند"
+}

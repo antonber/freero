@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "Éléments partagés",
+  "couldNotCreateABoard": "Impossible de créer un tableau",
+  "addToABoard": "Ajouter à un tableau",
+  "nothingArrivedThatFreeroCan": "Rien n’est arrivé que Freero puisse placer : partagez des images, un lien ou du texte.",
+  "shared": "Partagé",
+  "failedFilesWerenTImages": "{failed, plural, one {{failed} fichier n’était pas une image que Freero pouvait stocker (ou votre quota d’envoi est plein).} other {{failed} fichiers n’étaient pas des images que Freero pouvait stocker (ou votre quota d’envoi est plein).}}",
+  "newBoard": "Nouveau tableau",
+  "orABoardYouCan": "Ou un tableau que vous pouvez modifier",
+  "untitledBoard": "Tableau sans titre",
+  "noBoardsYouCanEdit": "Aucun tableau que vous pouvez modifier pour l’instant."
+}

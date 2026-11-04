@@ -6,6 +6,7 @@ import { layoutStructure, richTextToPlain, type BoardElement, type StickyElement
 import type { Editor } from '@engine';
 import { relayout, rootIdsOf } from './actions';
 
+import { t } from '../messages';
 /** The stickies of `ids` a map can be made of (unlocked ones). */
 export function stickiesOf(editor: Editor, ids: string[]): StickyElement[] {
   return ids.map((id) => editor.getElement(id)).filter((el): el is StickyElement => el?.type === 'sticky' && !el.locked);
@@ -19,7 +20,7 @@ export function mapFromStickies(editor: Editor, rootId: string, ids: string[]): 
   const root = notes.find((n) => n.id === rootId);
   if (!root || notes.length < 2 || !editor.mayAdd('mindmap')) return [];
   const others = notes.filter((n) => n.id !== rootId).sort((a, b) => a.y - b.y || a.x - b.x);
-  const laid = layoutStructure({ kind: 'mindmap', root: { text: textOf(root) || 'Central topic', children: others.map((n) => ({ text: textOf(n) || 'Idea' })) } }, { newId: nanoid });
+  const laid = layoutStructure({ kind: 'mindmap', root: { text: textOf(root) || t('centralTopic'), children: others.map((n) => ({ text: textOf(n) || t('idea') })) } }, { newId: nanoid });
   const centre = laid.elements.find((d) => d.type === 'mindmap' && !(d as { parentId?: string | null }).parentId);
   if (!centre) return [];
   // The map's central topic lands where the central note was.

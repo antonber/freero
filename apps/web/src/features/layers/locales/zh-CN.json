@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "图层",
+  "unlock": "解锁",
+  "lock": "锁定",
+  "hiddenWithItsFrameOr": "随其框架或所附加的对象一起隐藏",
+  "showHiddenForYouOnly": "显示（仅对你隐藏）",
+  "hideForMeOthersStill": "对我隐藏（其他人仍可看到）",
+  "collapse": "折叠",
+  "expand": "展开",
+  "untitledFrame": "未命名框架",
+  "notInAFrame": "不在框架中",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} 项仅对你隐藏",
+  "showAll": "全部显示",
+  "nothingOnTheBoardYet": "白板上还没有内容。",
+  "dragToRestackTheTop": "拖动以调整层级：每个列表的顶部位于最前面。"
+}

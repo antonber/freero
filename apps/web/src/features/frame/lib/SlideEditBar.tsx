@@ -7,6 +7,7 @@ import { Button, IconButton } from '@ui';
 import { isFrame, orderFrames } from './frames';
 import { focusChanged, forgetSlide, leaveSlide, stepSlide, useSlideEdit } from './slideEditor';
 
+import { t } from '../messages';
 export function SlideEditBar({ editor }: PanelProps) {
   const frameId = useSlideEdit(editor, (s) => s.frameId);
   const focus = useFocus();
@@ -42,19 +43,17 @@ export function SlideEditBar({ editor }: PanelProps) {
   const frame = order[at];
   if (!frame) return null;
   return (
-    <div className="fr-slide-editbar" data-fr-chrome="" role="toolbar" aria-label="Slide editor">
-      <IconButton icon={ChevronLeft} label="Previous slide" shortcut="PageUp" size={32} disabled={at <= 0} onClick={() => stepSlide(editor, -1)} />
+    <div className="fr-slide-editbar" data-fr-chrome="" role="toolbar" aria-label={t('slideEditor')}>
+      <IconButton icon={ChevronLeft} label={t('previousSlide')} shortcut="PageUp" size={32} disabled={at <= 0} onClick={() => stepSlide(editor, -1)} />
       <span className="fr-slide-editbar__where">
         <span className="fr-slide-editbar__pos">
           {at + 1} / {order.length}
         </span>
-        <strong title={frame.title}>{frame.title || 'Untitled slide'}</strong>
+        <strong title={frame.title}>{frame.title || t('untitledSlide')}</strong>
       </span>
-      <IconButton icon={ChevronRight} label="Next slide" shortcut="PageDown" size={32} disabled={at >= order.length - 1} onClick={() => stepSlide(editor, 1)} />
-      <span className="fr-slide-editbar__hint">Esc to go back</span>
-      <Button size="sm" variant="primary" onClick={() => leaveSlide(editor)}>
-        Done
-      </Button>
+      <IconButton icon={ChevronRight} label={t('nextSlide')} shortcut="PageDown" size={32} disabled={at >= order.length - 1} onClick={() => stepSlide(editor, 1)} />
+      <span className="fr-slide-editbar__hint">{t('escToGoBack')}</span>
+      <Button size="sm" variant="primary" onClick={() => leaveSlide(editor)}>{t('done')}</Button>
     </div>
   );
 }

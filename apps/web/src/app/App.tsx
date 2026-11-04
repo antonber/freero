@@ -28,6 +28,7 @@ import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
 import { SharePage } from './pages/share/SharePage';
 import { ProblemReportProvider } from './problems/ProblemReport';
 
+import { t } from './messages';
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
 // The operator's read-only board preview mounts the board engine too.
@@ -90,7 +91,7 @@ export function App() {
               path="/operator/boards/:id/preview"
               element={
                 <RequireAuth>
-                  <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                  <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
                     <OperatorPreviewPage />
                   </Suspense>
                 </RequireAuth>
@@ -192,7 +193,7 @@ export function App() {
               path="/decision/:id"
               element={
                 <RequireAuth>
-                  <Suspense fallback={<FullPageSpinner label="Opening the decision" />}>
+                  <Suspense fallback={<FullPageSpinner label={t('openingTheDecision')} />}>
                     <DecisionPage />
                   </Suspense>
                 </RequireAuth>
@@ -203,7 +204,7 @@ export function App() {
             <Route
               path="/respond/:boardId/:activityId"
               element={
-                <Suspense fallback={<FullPageSpinner label="Opening the activity" />}>
+                <Suspense fallback={<FullPageSpinner label={t('openingTheActivity')} />}>
                   <RespondPage />
                 </Suspense>
               }
@@ -211,7 +212,7 @@ export function App() {
             <Route
               path="/embed/board/:id"
               element={
-                <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
                   <EmbedBoardPage />
                 </Suspense>
               }
@@ -220,7 +221,7 @@ export function App() {
               path="/doc/:id"
               element={
                 <RequireAuth>
-                  <Suspense fallback={<FullPageSpinner label="Opening doc" />}>
+                  <Suspense fallback={<FullPageSpinner label={t('openingDoc')} />}>
                     <DocPage />
                   </Suspense>
                 </RequireAuth>
@@ -229,7 +230,7 @@ export function App() {
             <Route
               path="/embed/b/:id"
               element={
-                <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
                   <PublicEmbedPage />
                 </Suspense>
               }
@@ -237,7 +238,7 @@ export function App() {
             <Route
               path="/embed/connect/:id"
               element={
-                <Suspense fallback={<FullPageSpinner label="Signing in" />}>
+                <Suspense fallback={<FullPageSpinner label={t('signingIn')} />}>
                   <EmbedConnectPage />
                 </Suspense>
               }
@@ -245,7 +246,7 @@ export function App() {
             <Route
               path="/embed/signed-in"
               element={
-                <Suspense fallback={<FullPageSpinner label="Signing in" />}>
+                <Suspense fallback={<FullPageSpinner label={t('signingIn')} />}>
                   <EmbedSignedInPage />
                 </Suspense>
               }
@@ -253,7 +254,7 @@ export function App() {
             <Route
               path="/teams/b/:id"
               element={
-                <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
                   <TeamsTabPage />
                 </Suspense>
               }
@@ -261,7 +262,7 @@ export function App() {
             <Route
               path="/teams/config"
               element={
-                <Suspense fallback={<FullPageSpinner label="Connecting to Teams" />}>
+                <Suspense fallback={<FullPageSpinner label={t('connectingToTeams')} />}>
                   <TeamsConfigPage />
                 </Suspense>
               }
@@ -269,7 +270,7 @@ export function App() {
             <Route
               path="/teams/choose"
               element={
-                <Suspense fallback={<FullPageSpinner label="Connecting to Teams" />}>
+                <Suspense fallback={<FullPageSpinner label={t('connectingToTeams')} />}>
                   <TeamsChoosePage />
                 </Suspense>
               }
@@ -300,7 +301,7 @@ function BoardRoute() {
   const { id = '' } = useParams();
   const { user, loading } = useAuth();
   const board: ReactNode = (
-    <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+    <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
       <BoardPage />
     </Suspense>
   );

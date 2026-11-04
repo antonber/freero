@@ -8,6 +8,7 @@ import { getEditingCode, setEditingCode, subscribeEditingCode } from './lib/edit
 import { CodeLines } from './lib/CodeLines';
 import { DEFAULT_W, FONT_SIZE, HEAD_H, LINE_H, MIN_W, PAD_X, PAD_Y, gutterWidth, heightOf, lineCount } from './lib/layout';
 import { codeAt, copyCode } from './lib/actions';
+import { t as tr } from './messages';
 import './code.css';
 
 /** Below this zoom code is unreadable: draw grey line bars instead (cheap on big boards). */
@@ -71,7 +72,7 @@ function CodeEditor({ el, editor }: { el: CodeElement; editor: Editor }) {
       ref={ref}
       className="fr-code__input"
       data-fr-interactive=""
-      aria-label="Code"
+      aria-label={tr('code')}
       spellCheck={false}
       autoCapitalize="off"
       autoComplete="off"
@@ -99,8 +100,8 @@ function CopyButton({ code }: { code: string }) {
       type="button"
       className="fr-code__copy"
       data-fr-interactive=""
-      title="Copy code"
-      aria-label="Copy code"
+      title={tr('copyCode')}
+      aria-label={tr('copyCode')}
       onPointerDown={stop}
       onClick={(e) => {
         e.stopPropagation();
@@ -157,7 +158,7 @@ const CodeView = memo(function CodeView({ element: el, selected, zoom }: Element
             </div>
           )}
           <div className="fr-code__text" style={{ paddingLeft: el.lineNumbers ? 0 : PAD_X }}>
-            {editing ? <CodeEditor el={el} editor={editor} /> : el.code ? <CodeLines lines={result.lines} /> : <div className="fr-code__placeholder">Double-click to write code</div>}
+            {editing ? <CodeEditor el={el} editor={editor} /> : el.code ? <CodeLines lines={result.lines} /> : <div className="fr-code__placeholder">{tr('doubleClickToWriteCode')}</div>}
           </div>
         </div>
       )}
@@ -167,7 +168,7 @@ const CodeView = memo(function CodeView({ element: el, selected, zoom }: Element
 
 export default defineElement({
   type: 'code',
-  label: { one: 'Code block', many: 'Code blocks' },
+  label: { one: tr('codeBlock'), many: tr('codeBlocks') },
   icon: SquareCode,
   resize: 'width-only',
   minSize: { w: MIN_W, h: heightOf('') },
@@ -191,7 +192,7 @@ export default defineElement({
     void loadHighlighter();
     setEditingCode(el.id);
   },
-  keys: [{ shortcuts: ['enter'], label: 'Edit the code' }],
+  keys: [{ shortcuts: ['enter'], label: tr('editTheCode') }],
   onKeyDown(e, { editor, selection }) {
     if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return false;
     const el = selection.length === 1 && selection[0].type === 'code' ? selection[0] : null;

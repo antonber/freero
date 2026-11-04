@@ -4,10 +4,11 @@
 // a link or text to the paste importers (a link card, a sticky / text box) — never created here.
 import { defineCommands } from '@engine';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'share.receive',
-    label: 'Place shared content',
+    label: t('placeSharedContent'),
     urlParam: 'shared',
     run(editor) {
       const shared = editor.host.takeShared?.();
@@ -19,7 +20,7 @@ export default defineCommands([
         void editor.importData({ files: [], text, html: null }, { x: at.x, y: at.y + (shared.images.length ? 320 : 0) });
       }
       const n = shared.images.length + (text ? 1 : 0);
-      if (n) editor.host.notify(`Added what you shared${shared.title ? `: ${shared.title}` : ''}`, 'success');
+      if (n) editor.host.notify(t('addedWhatYouSharedValue', { value: shared.title ? `: ${shared.title}` : '' }), 'success');
     },
   },
 ]);

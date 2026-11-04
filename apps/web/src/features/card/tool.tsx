@@ -5,11 +5,12 @@ import { ACCENTS, ACCENT_NAMES, DEFAULT_ACCENT, TOOL_ID, type CardToolOptions } 
 import { CARD_W, cardLayout } from './lib/layout';
 import { cardAt } from './lib/actions';
 
+import { t } from './messages';
 const GHOST_H = cardLayout({ w: CARD_W, title: '', description: '' }).h;
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Card',
+  label: t('card'),
   icon: ListTodo,
   order: 40,
   placement: 'more',
@@ -27,7 +28,7 @@ export default defineTool({
     const { color = DEFAULT_ACCENT } = useToolOptions<CardToolOptions>(TOOL_ID);
     return (
       <div className="fr-card-pop">
-        <div className="fr-card-pop__label">Card color</div>
+        <div className="fr-card-pop__label">{t('cardColor')}</div>
         <ColorSwatches
           colors={ACCENTS}
           names={ACCENT_NAMES}
@@ -35,7 +36,7 @@ export default defineTool({
           onChange={(c) => editor.setToolOptions(TOOL_ID, { color: c })}
           columns={4}
           size={24}
-          aria-label="Card color"
+          aria-label={t('cardColor')}
         />
       </div>
     );

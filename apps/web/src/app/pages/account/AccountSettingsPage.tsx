@@ -11,9 +11,11 @@ import { TrackerConnections } from '../../components/TrackerConnections';
 import { ApiTokensSection, ConnectedAppsSection, DeveloperAppsSection } from './ApiSections';
 import { Section } from './Section';
 import { ThemeSwitch } from '../../components/ThemeSwitch';
+import { LanguagePicker } from '../../components/LanguagePicker';
 import { HelpMenu } from '../../problems/HelpMenu';
 import { MyProblems } from '../../problems/MyProblems';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
+import { t as tr } from './messages';
 import { SlackSection } from './SlackSection';
 import './account.css';
 
@@ -53,20 +55,22 @@ export function AccountSettingsPage() {
     <div className="fr-acct">
       <header className="fr-acct__top">
         <Link to="/app" className="fr-acct__back">
-          <ArrowLeft size={16} aria-hidden /> Back to boards
-        </Link>
+          <ArrowLeft size={16} aria-hidden />{' '}{tr('backToBoards')}</Link>
         <Logo size={26} withWordmark />
         <HelpMenu size={32} />
       </header>
       <main className="fr-acct__main">
-        <h1 className="fr-acct__title">Account settings</h1>
+        <h1 className="fr-acct__title">{tr('accountSettings')}</h1>
         <ProfileSection />
         <Section
           id="appearance"
-          title="Appearance"
-          description="Light or dark everywhere you sign in, or the same as your device. Boards keep their colours in exports and for everyone else."
+          title={tr('appearance')}
+          description={tr('lightOrDarkEverywhereYou')}
         >
           <ThemeSwitch />
+        </Section>
+        <Section id="language" title={tr('language.title')} description={tr('language.description')}>
+          <LanguagePicker />
         </Section>
         <EmailSection security={security} />
         <NotificationsSection version={slackVersion} />
@@ -77,16 +81,12 @@ export function AccountSettingsPage() {
         <SessionsSection version={sessionsVersion} />
         <Section
           id="connect-agent"
-          title="AI agents"
-          description="Connect Claude, ChatGPT, Claude Code, Cursor, VS Code or any MCP client to your boards: one click or one paste, with this server’s address filled in. Apps & agents lists everything else that connects."
+          title={tr('aiAgents')}
+          description={tr('connectClaudeChatgptClaudeCode')}
         >
           <div className="fr-acct-form__row">
-            <Button variant="primary" icon={Bot} onClick={() => navigate('/settings/connect')}>
-              Connect an agent
-            </Button>
-            <Button variant="secondary" icon={LayoutGrid} onClick={() => navigate('/apps')}>
-              Apps &amp; agents
-            </Button>
+            <Button variant="primary" icon={Bot} onClick={() => navigate('/settings/connect')}>{tr('connectAnAgent')}</Button>
+            <Button variant="secondary" icon={LayoutGrid} onClick={() => navigate('/apps')}>{tr('appsAgents')}</Button>
           </div>
         </Section>
         <ConnectedAppsSection />
@@ -94,15 +94,15 @@ export function AccountSettingsPage() {
         <DeveloperAppsSection />
         <Section
           id="trackers"
-          title="Your issue trackers"
-          description="Your own Jira, Linear, GitHub, Azure DevOps, Asana, monday.com, ClickUp or Trello connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console."
+          title={tr('yourIssueTrackers')}
+          description={tr('yourOwnJiraLinearGithub')}
         >
           <TrackerConnections workspaceId={null} />
         </Section>
         <Section
           id="problems"
-          title="Problems you reported"
-          description="What you sent with “Report a problem” and where it stands. Only Freero’s operators read reports; you get a notification when one is fixed."
+          title={tr('problemsYouReported')}
+          description={tr('whatYouSentWithReport')}
         >
           <MyProblems />
         </Section>
@@ -128,14 +128,14 @@ function ProfileSection() {
   const save = async (e: FormEvent) => {
     e.preventDefault();
     const n = name.trim();
-    if (!n) return setError('Your name can’t be empty');
-    if (n.length > 80) return setError('Keep it under 80 characters');
+    if (!n) return setError(tr('yourNameCanTBe'));
+    if (n.length > 80) return setError(tr('keepItUnder80Characters'));
     setSaving(true);
     try {
       await updateProfile({ name: n, color });
-      notify('Profile updated', 'success');
+      notify(tr('profileUpdated'), 'success');
     } catch (err) {
-      notify(errorText(err, 'Could not save your profile'), 'error');
+      notify(errorText(err, tr('couldNotSaveYourProfile')), 'error');
     } finally {
       setSaving(false);
     }
@@ -146,9 +146,9 @@ function ProfileSection() {
     setUploading(true);
     try {
       adopt((await api.uploadAvatar(f)).user);
-      notify('Photo updated', 'success');
+      notify(tr('photoUpdated'), 'success');
     } catch (err) {
-      notify(errorText(err, 'Could not upload the photo'), 'error');
+      notify(errorText(err, tr('couldNotUploadThePhoto')), 'error');
     } finally {
       setUploading(false);
       if (file.current) file.current.value = '';
@@ -159,12 +159,12 @@ function ProfileSection() {
     try {
       adopt((await api.removeAvatar()).user);
     } catch (err) {
-      notify(errorText(err, 'Could not remove the photo'), 'error');
+      notify(errorText(err, tr('couldNotRemoveThePhoto')), 'error');
     }
   };
 
   return (
-    <Section id="profile" title="Profile" description="How collaborators see you on boards, in comments and in sharing.">
+    <Section id="profile" title={tr('profile')} description={tr('howCollaboratorsSeeYouOn')}>
       <div className="fr-acct-avatar">
         <div className="fr-acct-preview">
           <Avatar name={name || user.name} color={color} src={user.avatarUrl} size={64} />
@@ -181,30 +181,24 @@ function ProfileSection() {
             type="file"
             accept="image/png,image/jpeg,image/gif"
             hidden
-            aria-label="Choose a profile photo"
+            aria-label={tr('chooseAProfilePhoto')}
             onChange={(e) => upload(e.target.files?.[0])}
           />
-          <Button icon={ImageUp} loading={uploading} onClick={() => file.current?.click()}>
-            Upload photo
-          </Button>
+          <Button icon={ImageUp} loading={uploading} onClick={() => file.current?.click()}>{tr('uploadPhoto')}</Button>
           {user.avatarUrl ? (
-            <Button variant="ghost" onClick={removePhoto}>
-              Remove
-            </Button>
+            <Button variant="ghost" onClick={removePhoto}>{tr('remove')}</Button>
           ) : null}
-          <span className="fr-acct__hint">PNG, JPEG or GIF. We crop it to a square.</span>
+          <span className="fr-acct__hint">{tr('pngJpegOrGifWe')}</span>
         </div>
       </div>
       <form className="fr-acct-form" onSubmit={save} noValidate>
-        <Input label="Name" value={name} maxLength={80} onChange={(e) => (setName(e.target.value), setError(null))} error={error ?? undefined} />
+        <Input label={tr('name')} value={name} maxLength={80} onChange={(e) => (setName(e.target.value), setError(null))} error={error ?? undefined} />
         <div className="fr-field">
-          <span className="fr-field__label">Cursor color</span>
-          <ColorSwatches colors={CURSOR_COLORS} value={color} onChange={setColor} size={28} aria-label="Cursor color" />
+          <span className="fr-field__label">{tr('cursorColor')}</span>
+          <ColorSwatches colors={CURSOR_COLORS} value={color} onChange={setColor} size={28} aria-label={tr('cursorColor')} />
         </div>
         <div className="fr-acct-form__row">
-          <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
-            Save profile
-          </Button>
+          <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>{tr('saveProfile')}</Button>
         </div>
       </form>
       <TimeZoneField />
@@ -235,18 +229,16 @@ function TimeZoneField() {
     setSaving(true);
     try {
       await updateProfile({ timeZone: zone });
-      notify('Time zone updated', 'success');
+      notify(tr('timeZoneUpdated'), 'success');
     } catch (err) {
-      notify(errorText(err, 'Could not save your time zone'), 'error');
+      notify(errorText(err, tr('couldNotSaveYourTime')), 'error');
     } finally {
       setSaving(false);
     }
   };
   return (
     <div className="fr-field fr-acct-tz">
-      <label className="fr-field__label" htmlFor="fr-acct-tz">
-        Time zone
-      </label>
+      <label className="fr-field__label" htmlFor="fr-acct-tz">{tr('timeZone')}</label>
       <select id="fr-acct-tz" className="fr-acct-tz__select" value={value} disabled={saving} onChange={(e) => void save(e.target.value)}>
         {timeZones([value, detected ?? '']).map((z) => (
           <option key={z} value={z}>
@@ -254,15 +246,11 @@ function TimeZoneField() {
           </option>
         ))}
       </select>
-      <span className="fr-acct__hint">
-        Due-date reminders and the dates in Freero’s emails follow it.
-        {detected && detected !== value ? ` This browser is set to ${detected.replace(/_/g, ' ')}.` : ''}
+      <span className="fr-acct__hint">{tr('dueDateRemindersAndThe')}{detected && detected !== value ? tr('thisBrowserIsSetTo', { replace: detected.replace(/_/g, ' ') }) : ''}
       </span>
       {detected && detected !== value && (
         <div>
-          <Button size="sm" variant="ghost" onClick={() => void save(detected)}>
-            Use {detected.replace(/_/g, ' ')}
-          </Button>
+          <Button size="sm" variant="ghost" onClick={() => void save(detected)}>{tr('useReplace', { replace: detected.replace(/_/g, ' ') })}</Button>
         </div>
       )}
     </div>
@@ -270,9 +258,9 @@ function TimeZoneField() {
 }
 
 const DIGEST_OPTIONS: Array<{ value: BoardChangesFrequency; label: string }> = [
-  { value: 'off', label: 'Off' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
+  { value: 'off', label: tr('off') },
+  { value: 'daily', label: tr('daily') },
+  { value: 'weekly', label: tr('weekly') },
 ];
 
 /**
@@ -308,7 +296,7 @@ function NotificationsSection({ version }: { version: number }) {
       setPrefs(await api.setNotificationPrefs(patch));
     } catch (err) {
       setPrefs(before);
-      notify(errorText(err, 'Could not save your email settings'), 'error');
+      notify(errorText(err, tr('couldNotSaveYourEmail')), 'error');
     }
   };
 
@@ -318,49 +306,46 @@ function NotificationsSection({ version }: { version: number }) {
     <div ref={ref} id="notifications" className="fr-acct-anchor">
       <Section
         id="notifications-settings"
-        title={slack ? 'Notification emails and Slack' : 'Notification emails'}
+        title={slack ? tr('notificationEmailsAndSlack') : tr('notificationEmails')}
         description={
           slack
-            ? 'Mentions, replies and shared boards always show under the bell. What you turned on for Slack arrives there at once as a direct message, instead of by email; the rest you haven’t seen a little later, we email you as one summary.'
-            : 'Mentions, replies and shared boards always show under the bell. What you haven’t seen there a little later, we email you as one summary.'
+            ? tr('mentionsRepliesAndSharedBoards2')
+            : tr('mentionsRepliesAndSharedBoards')
         }
       >
         {failed ? (
-          <p className="fr-acct__hint">Email settings couldn’t be loaded. Reload the page to try again.</p>
+          <p className="fr-acct__hint">{tr('emailSettingsCouldnTBe')}</p>
         ) : !prefs ? (
           <Spinner size={20} />
         ) : (
           <div className="fr-acct-prefs">
             {!user.emailVerified && (
               <p className="fr-acct-prefs__note">
-                <CircleAlert size={15} aria-hidden /> Confirm your email address above to receive these emails.
-              </p>
+                <CircleAlert size={15} aria-hidden />{' '}{tr('confirmYourEmailAddressAbove')}</p>
             )}
             <Toggle
-              label={<span className="fr-acct-prefs__label">Email me about activity I haven’t seen</span>}
+              label={<span className="fr-acct-prefs__label">{tr('emailMeAboutActivityI')}</span>}
               checked={prefs.emailAll}
               onChange={(on) => save({ emailAll: on }, { ...prefs, emailAll: on })}
             />
             <div className={`fr-acct-prefs__digest${prefs.emailAll ? '' : ' is-off'}`}>
               <span className="fr-acct-prefs__type">
-                <span className="fr-acct-prefs__label">Changes on your boards</span>
-                <span className="fr-acct__hint">
-                  A summary of what others changed on boards you own or starred, in the morning in your time zone (weekly: on Mondays).
-                </span>
+                <span className="fr-acct-prefs__label">{tr('changesOnYourBoards')}</span>
+                <span className="fr-acct__hint">{tr('aSummaryOfWhatOthers')}</span>
               </span>
               <SegmentedControl<BoardChangesFrequency>
                 size="sm"
                 value={prefs.boardChanges}
                 onChange={(v) => save({ boardChanges: v }, { ...prefs, boardChanges: v })}
                 options={DIGEST_OPTIONS}
-                aria-label="Email a summary of changes on your boards"
+                aria-label={tr('emailASummaryOfChanges')}
               />
             </div>
             {slack ? (
-              <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label="Notify me about">
+              <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label={tr('notifyMeAbout')}>
                 <li className="fr-acct-prefs__channels-head" aria-hidden>
                   <span />
-                  <span>Email</span>
+                  <span>{tr('email')}</span>
                   <span>Slack</span>
                 </li>
                 {prefs.types.map((t) => (
@@ -372,7 +357,7 @@ function NotificationsSection({ version }: { version: number }) {
                     <span className={prefs.emailAll ? undefined : 'is-off'}>
                       <Toggle
                         size="sm"
-                        aria-label={`Email: ${t.label}`}
+                        aria-label={tr('emailLabel', { label: t.label })}
                         disabled={!prefs.emailAll}
                         checked={t.email}
                         onChange={(on) =>
@@ -382,7 +367,7 @@ function NotificationsSection({ version }: { version: number }) {
                     </span>
                     <Toggle
                       size="sm"
-                      aria-label={`Slack: ${t.label}`}
+                      aria-label={tr('slackLabel', { label: t.label })}
                       checked={t.slack}
                       onChange={(on) =>
                         save({ slack: { [t.type]: on } }, { ...prefs, types: prefs.types.map((x) => (x.type === t.type ? { ...x, slack: on } : x)) })
@@ -392,7 +377,7 @@ function NotificationsSection({ version }: { version: number }) {
                 ))}
               </ul>
             ) : (
-              <ul className="fr-acct-prefs__types" aria-label="Email me about">
+              <ul className="fr-acct-prefs__types" aria-label={tr('emailMeAbout')}>
                 {prefs.types.map((t) => (
                   <li key={t.type} className={prefs.emailAll ? undefined : 'is-off'}>
                     <Toggle
@@ -436,9 +421,9 @@ function EmailSection({ security }: { security: SecurityInfo | null }) {
   const resend = async () => {
     try {
       await api.resendVerification();
-      notify(`Confirmation link sent to ${user.email}`, 'success');
+      notify(tr('confirmationLinkSentToEmail', { email: user.email }), 'success');
     } catch (err) {
-      notify(errorText(err, 'Could not send the link'), 'error');
+      notify(errorText(err, tr('couldNotSendTheLink')), 'error');
     }
   };
 
@@ -453,50 +438,42 @@ function EmailSection({ security }: { security: SecurityInfo | null }) {
       setPassword('');
     } catch (err) {
       if (isReauthRequired(err)) setReauth(true);
-      else setError(errorText(err, 'Could not start the change'));
+      else setError(errorText(err, tr('couldNotStartTheChange')));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Section id="email" title="Email address" description="Used to log in and to receive invites.">
+    <Section id="email" title={tr('emailAddress')} description={tr('usedToLogInAnd')}>
       <div className="fr-acct-email">
         <Mail size={18} aria-hidden />
         <span className="fr-acct-email__addr">{user.email}</span>
         {user.emailVerified ? (
           <span className="fr-acct-badge fr-acct-badge--ok">
-            <BadgeCheck size={14} aria-hidden /> Verified
-          </span>
+            <BadgeCheck size={14} aria-hidden />{' '}{tr('verified')}</span>
         ) : (
           <>
             <span className="fr-acct-badge fr-acct-badge--warn">
-              <CircleAlert size={14} aria-hidden /> Not verified
-            </span>
-            <Button variant="ghost" size="sm" onClick={resend}>
-              Resend link
-            </Button>
+              <CircleAlert size={14} aria-hidden />{' '}{tr('notVerified')}</span>
+            <Button variant="ghost" size="sm" onClick={resend}>{tr('resendLink')}</Button>
           </>
         )}
       </div>
       <form className="fr-acct-form" onSubmit={change} noValidate>
         <div className="fr-acct-form__grid">
-          <Input label="New email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input label={tr('newEmail')} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           {askPassword ? (
-            <Input label="Current password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Input label={tr('currentPassword')} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           ) : null}
         </div>
         {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
         {security && (reauth || needsReauth(security)) && !askPassword ? <ReauthPrompt security={security} /> : null}
         {sentTo ? (
-          <p className="fr-acct__ok" role="status">
-            We sent a confirmation link to {sentTo}. Your address changes when you open it.
-          </p>
+          <p className="fr-acct__ok" role="status">{tr('weSentAConfirmationLink', { sentTo })}</p>
         ) : null}
         <div className="fr-acct-form__row">
-          <Button type="submit" loading={busy} disabled={!email.trim() || (askPassword && !password) || (!askPassword && needsReauth(security))}>
-            Change email
-          </Button>
+          <Button type="submit" loading={busy} disabled={!email.trim() || (askPassword && !password) || (!askPassword && needsReauth(security))}>{tr('changeEmail')}</Button>
         </div>
       </form>
     </Section>
@@ -516,18 +493,18 @@ function PasswordSection({ security, onChanged }: { security: SecurityInfo | nul
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (next.length < 8) return setError('Use at least 8 characters for the new password');
+    if (next.length < 8) return setError(tr('useAtLeast8Characters'));
     setBusy(true);
     setError(null);
     try {
       await api.changePassword(current, next);
       setCurrent('');
       setNext('');
-      notify(setting ? 'Password set. You can now also log in with your email.' : 'Password changed. Other devices were signed out.', 'success');
+      notify(setting ? tr('passwordSetYouCanNow') : tr('passwordChangedOtherDevicesWere'), 'success');
       if (setting) onChanged();
     } catch (err) {
       if (isReauthRequired(err)) setReauth(true);
-      else setError(errorText(err, 'Could not change the password'));
+      else setError(errorText(err, tr('couldNotChangeThePassword')));
     } finally {
       setBusy(false);
     }
@@ -537,21 +514,21 @@ function PasswordSection({ security, onChanged }: { security: SecurityInfo | nul
   return (
     <Section
       id="password"
-      title={setting ? 'Set a password' : 'Password'}
-      description={setting ? 'Add a password to also log in with your email address. Other devices are signed out.' : 'Changing it signs you out everywhere else.'}
+      title={setting ? tr('setAPassword') : tr('password')}
+      description={setting ? tr('addAPasswordToAlso') : tr('changingItSignsYouOut')}
     >
       <form className="fr-acct-form" onSubmit={submit} noValidate>
         <div className="fr-acct-form__grid">
           {setting ? null : (
-            <Input label="Current password" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+            <Input label={tr('currentPassword')} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
           )}
-          <Input label="New password" type="password" autoComplete="new-password" placeholder="At least 8 characters" value={next} onChange={(e) => setNext(e.target.value)} />
+          <Input label={tr('newPassword')} type="password" autoComplete="new-password" placeholder={tr('atLeast8Characters')} value={next} onChange={(e) => setNext(e.target.value)} />
         </div>
         {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
         {setting && (reauth || blocked) ? <ReauthPrompt security={security} /> : null}
         <div className="fr-acct-form__row">
           <Button type="submit" loading={busy} disabled={(!setting && !current) || !next || blocked}>
-            {setting ? 'Set password' : 'Change password'}
+            {setting ? tr('setPassword') : tr('changePassword')}
           </Button>
         </div>
       </form>
@@ -562,7 +539,7 @@ function PasswordSection({ security, onChanged }: { security: SecurityInfo | nul
 /** "Google", "Password", "Reset link" — how a session signed in. */
 function methodText(s: SessionInfo): string {
   if (s.methodLabel) return s.methodLabel;
-  return s.method === 'email_link' ? 'Password reset link' : 'Password';
+  return s.method === 'email_link' ? tr('passwordResetLink') : 'Password';
 }
 
 function SessionsSection({ version }: { version: number }) {
@@ -582,9 +559,9 @@ function SessionsSection({ version }: { version: number }) {
     try {
       await api.revokeSession(s.id);
       setSessions((list) => list?.filter((x) => x.id !== s.id) ?? null);
-      notify(`Signed out ${describeDevice(s.userAgent)}`, 'info');
+      notify(tr('signedOutDescribedevice', { describeDevice: describeDevice(s.userAgent) }), 'info');
     } catch (err) {
-      notify(errorText(err, 'Could not sign that device out'), 'error');
+      notify(errorText(err, tr('couldNotSignThatDevice')), 'error');
     }
   };
 
@@ -592,19 +569,19 @@ function SessionsSection({ version }: { version: number }) {
     try {
       const { revoked } = await api.revokeOtherSessions();
       setSessions((list) => list?.filter((x) => x.current) ?? null);
-      notify(revoked === 1 ? 'Signed out 1 other session' : `Signed out ${revoked} other sessions`, 'info');
+      notify(tr('signedOutRevokedOtherSessions', { revoked }), 'info');
     } catch (err) {
-      notify(errorText(err, 'Could not sign the other devices out'), 'error');
+      notify(errorText(err, tr('couldNotSignTheOther')), 'error');
     }
   };
 
   const others = sessions?.filter((s) => !s.current).length ?? 0;
   return (
-    <Section id="sessions" title="Where you're signed in" description="Sign out a device you don't recognize; its open boards disconnect right away.">
+    <Section id="sessions" title={tr('whereYouReSignedIn')} description={tr('signOutADeviceYou')}>
       {failed ? (
-        <p className="fr-acct__error">Could not load your sessions.</p>
+        <p className="fr-acct__error">{tr('couldNotLoadYourSessions')}</p>
       ) : !sessions ? (
-        <Spinner size={20} label="Loading sessions" />
+        <Spinner size={20} label={tr('loadingSessions')} />
       ) : (
         <>
           <ul className="fr-acct-sessions">
@@ -616,34 +593,29 @@ function SessionsSection({ version }: { version: number }) {
                 <span className="fr-acct-session__who">
                   <span className="fr-acct-session__device">
                     {describeDevice(s.userAgent)}
-                    {s.current ? <span className="fr-acct-badge fr-acct-badge--ok">This device</span> : null}
+                    {s.current ? <span className="fr-acct-badge fr-acct-badge--ok">{tr('thisDevice')}</span> : null}
                   </span>
                   <span className="fr-acct-session__meta">
-                    {[s.location ?? s.network, s.current ? 'Active now' : `Last active ${relativeTime(s.lastSeenAt)}`, `Signed in ${relativeTime(s.createdAt)}`]
+                    {[s.location ?? s.network, s.current ? tr('activeNow') : tr('lastActiveValue', { value: relativeTime(s.lastSeenAt) }), tr('signedInValue', { value: relativeTime(s.createdAt) })]
                       .filter(Boolean)
                       .join(' · ')}
                   </span>
                   <span className="fr-acct-session__meta">
-                    {`Signed in with ${methodText(s)}`}
+                    {tr('signedInWithMethodtext', { methodText: methodText(s) })}
                     {s.twoFactor ? (
                       <span className="fr-acct-session__2fa">
-                        <ShieldCheck size={13} aria-hidden /> 2-step verified
-                      </span>
+                        <ShieldCheck size={13} aria-hidden />{' '}{tr('n2StepVerified')}</span>
                     ) : null}
                   </span>
                 </span>
                 {!s.current ? (
-                  <Button size="sm" variant="ghost" icon={LogOut} onClick={() => revoke(s)}>
-                    Sign out
-                  </Button>
+                  <Button size="sm" variant="ghost" icon={LogOut} onClick={() => revoke(s)}>{tr('signOut')}</Button>
                 ) : null}
               </li>
             ))}
           </ul>
           <div className="fr-acct-form__row">
-            <Button onClick={revokeOthers} disabled={others === 0}>
-              Sign out all other sessions
-            </Button>
+            <Button onClick={revokeOthers} disabled={others === 0}>{tr('signOutAllOtherSessions')}</Button>
           </div>
         </>
       )}
@@ -669,10 +641,10 @@ function DataSection() {
     setBusy(true);
     try {
       await api.requestMyExport();
-      notify('Preparing your data. We’ll email you a link when it’s ready.', 'success');
+      notify(tr('preparingYourDataWeLl'), 'success');
       void refresh();
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : 'Could not start the export', 'error');
+      notify(e instanceof ApiError ? e.message : tr('couldNotStartTheExport'), 'error');
     } finally {
       setBusy(false);
     }
@@ -680,13 +652,13 @@ function DataSection() {
   return (
     <Section
       id="data"
-      title="Your data"
-      description="Download a ZIP of your profile, memberships, comments, the boards you own (as JSON and in Freero’s format, with their images), templates, uploads and notifications. Only you can download it, for 7 days."
+      title={tr('yourData')}
+      description={tr('downloadAZipOfYour')}
     >
       <ExportList exports={exports} />
       <div>
         <Button icon={Download} loading={busy} disabled={preparing} onClick={() => void ask()}>
-          {preparing ? 'Preparing…' : 'Download my data'}
+          {preparing ? tr('preparing') : tr('downloadMyData')}
         </Button>
       </div>
     </Section>
@@ -715,44 +687,36 @@ function DeleteSection({ security }: { security: SecurityInfo | null }) {
       const day = new Date(deletionScheduledFor).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
       navigate('/login', { replace: true }); // before signing out here, or the guard adds ?next=/settings
       adopt(null);
-      notify(`Your account will be deleted on ${day}. Log in before then to restore it.`, 'info', { duration: 12_000 });
+      notify(tr('yourAccountWillBeDeleted', { day }), 'info', { duration: 12_000 });
     } catch (err) {
       if (isReauthRequired(err)) setReauth(true);
-      else setError(errorText(err, 'Could not delete the account'));
+      else setError(errorText(err, tr('couldNotDeleteTheAccount')));
       setBusy(false);
     }
   };
 
   return (
-    <Section id="delete" title="Delete account" description="Removes your account, every board you own and your profile photo." danger>
+    <Section id="delete" title={tr('deleteAccount')} description={tr('removesYourAccountEveryBoard')} danger>
       <div className="fr-acct-form__row">
-        <Button variant="danger" icon={Trash2} onClick={() => (setOpen(true), setPassword(''), setError(null))}>
-          Delete my account
-        </Button>
+        <Button variant="danger" icon={Trash2} onClick={() => (setOpen(true), setPassword(''), setError(null))}>{tr('deleteMyAccount')}</Button>
       </div>
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Delete your account?"
+        title={tr('deleteYourAccount')}
         width={460}
         footer={
           <>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-            <Button variant="danger" loading={busy} disabled={(askPassword && !password) || blocked} onClick={() => confirm()}>
-              Delete account
-            </Button>
+            <Button onClick={() => setOpen(false)}>{tr('cancel')}</Button>
+            <Button variant="danger" loading={busy} disabled={(askPassword && !password) || blocked} onClick={() => confirm()}>{tr('deleteAccount')}</Button>
           </>
         }
       >
         <form className="fr-acct-form" onSubmit={confirm} noValidate>
-          <p className="fr-acct__p">
-            You'll be signed out everywhere. For 14 days you can log in and restore everything; after that your
-            account, the boards you own and your profile photo are deleted for good. What you added to other people's
-            boards stays with those boards, and your comments there will show as “Deleted user”.
-          </p>
+          <p className="fr-acct__p">{tr('youLlBeSignedOut')}</p>
           {askPassword ? (
             <Input
-              label="Enter your password to confirm"
+              label={tr('enterYourPasswordToConfirm')}
               type="password"
               autoComplete="current-password"
               autoFocus

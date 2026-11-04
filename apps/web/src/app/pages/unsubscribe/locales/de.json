@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "Dieser Link ist unvollständig. Öffnen Sie den Link aus der E-Mail erneut.",
+  "couldNotReachFreeroTry": "Freero ist nicht erreichbar. Versuchen Sie es erneut.",
+  "unsubscribe": "Abbestellen",
+  "unsubscribing": "Wird abbestellt…",
+  "unsubscribing2": "Wird abbestellt",
+  "youReUnsubscribed": "Sie haben abbestellt",
+  "thatLinkDidnTWork": "Dieser Link hat nicht funktioniert",
+  "emailWonTGetThe": "{email} erhält die Zusammenfassung „Änderungen an Ihren Boards“ nicht mehr. Andere E-Mails bleiben unverändert.",
+  "emailWonTGetNotification": "{email} erhält keine Benachrichtigungs-E-Mails mehr. Erwähnungen und Antworten sehen Sie weiterhin in Freero.",
+  "chooseWhichEmailsYouGet": "Wählen Sie, welche E-Mails Sie erhalten",
+  "logInToChooseWhich": "Melden Sie sich an, um auszuwählen, welche E-Mails Sie erhalten"
+}

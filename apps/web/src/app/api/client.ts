@@ -4,6 +4,13 @@ import type {
   AdminBoardsResponse,
   AdminScope,
   AdminTrashedBoard,
+  BoardLabel,
+  BoardLabelInput,
+  LegalCaseChange,
+  LegalCaseDetail,
+  LegalCaseExportInfo,
+  LegalCaseInput,
+  LegalCaseSummary,
   UsageDay,
   BoardGroupGrant,
   DirectoryGroup,
@@ -143,6 +150,7 @@ import type {
   User,
   ProjectAccess,
   ProjectSummary,
+  BlueprintSummary,
   WorkspaceInvite,
   WorkspaceInvitePreview,
   WorkspaceMember,
@@ -151,7 +159,8 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
-import type { Sticker, StickerSet, StickersResponse } from '@freero/shared';
+import { serverErrorText } from '../i18n/errors';
+import type { Sticker, StickerSet, StickersResponse, WorkspaceKeyStatus } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -185,8 +194,9 @@ async function failure(res: Response): Promise<ApiError> {
   let code: string | undefined;
   try {
     const body = await res.json();
-    message = body.error ?? message;
     code = typeof body.code === 'string' ? body.code : undefined;
+    // The reader's language when the app knows the code (#5); the server's English otherwise.
+    message = serverErrorText(code, body.params, body.error ?? message);
   } catch {
     // non-JSON error body
   }
@@ -236,8 +246,9 @@ export const api = {
   login: (body: LoginRequest) => request<LoginResponse>('POST', '/api/auth/login', body),
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
-  logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
-  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) =>
+  /** `redirect` (#13): the identity provider's single logout, to visit once signed out here. */
+  logout: () => request<{ ok: true; redirect?: string }>('POST', '/api/auth/logout'),
+  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
     const res = await fetch('/api/auth/me/avatar', {
@@ -525,6 +536,12 @@ export const api = {
     request<DomainControlSettings & { started: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures`, { userIds, graceDays }),
   cancelDomainCapture: (id: string, userId: string) =>
     request<DomainControlSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures/${encodeURIComponent(userId)}`),
+  // The SAML service provider's key pairs (#13).
+  createSsoSpKey: (id: string) => request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys`),
+  promoteSsoSpKey: (id: string, keyId: string) =>
+    request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys/${encodeURIComponent(keyId)}/promote`),
+  removeSsoSpKey: (id: string, keyId: string) =>
+    request<SsoSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/sp-keys/${encodeURIComponent(keyId)}`),
   discoverSso: (email: string, next: string) =>
     request<SsoDiscovery>('GET', `/api/sso/discover?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`),
   scimSettings: (id: string) => request<ScimSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/scim`),
@@ -569,6 +586,29 @@ export const api = {
   adminTrash: (id: string) => request<{ boards: AdminTrashedBoard[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/trash`),
   adminRestoreBoard: (id: string, boardId: string) =>
     request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/trash/${encodeURIComponent(boardId)}/restore`),
+  // Legal holds (#157): a team workspace's or organisation's eDiscovery cases.
+  legalCases: (id: string) => request<{ cases: LegalCaseSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/legal-cases`),
+  legalCase: (id: string, caseId: string) =>
+    request<{ case: LegalCaseDetail }>('GET', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}`),
+  createLegalCase: (id: string, input: LegalCaseInput) => request<{ case: LegalCaseDetail }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases`, input),
+  changeLegalCase: (id: string, caseId: string, change: LegalCaseChange) =>
+    request<{ case: LegalCaseDetail }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}`, change),
+  releaseLegalCase: (id: string, caseId: string) =>
+    request<{ case: LegalCaseDetail }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/release`),
+  exportLegalCase: (id: string, caseId: string) =>
+    request<{ export: LegalCaseExportInfo }>('POST', `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/exports`),
+  legalCaseExportUrl: (id: string, caseId: string, exportId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/legal-cases/${encodeURIComponent(caseId)}/exports/${encodeURIComponent(exportId)}/download`,
+  // Classification labels (#158) of a team workspace or organisation, and a board's label.
+  boardLabels: (id: string) =>
+    request<{ labels: BoardLabel[]; required: boolean; defaultLabelId: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/labels`),
+  createBoardLabel: (id: string, input: BoardLabelInput) => request<{ label: BoardLabel }>('POST', `/api/workspaces/${encodeURIComponent(id)}/labels`, input),
+  updateBoardLabel: (id: string, labelId: string, input: Partial<BoardLabelInput>) =>
+    request<{ label: BoardLabel }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`, input),
+  deleteBoardLabel: (id: string, labelId: string) => request<void>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`),
+  setBoardLabel: (boardId: string, labelId: string | null) => request<{ board: BoardSummary }>('PUT', `/api/boards/${encodeURIComponent(boardId)}/label`, { labelId }),
+  setLabelPolicy: (id: string, patch: { required?: boolean; defaultLabelId?: string | null }) =>
+    request<{ required: boolean; defaultLabelId: string | null }>('PUT', `/api/workspaces/${encodeURIComponent(id)}/label-policy`, patch),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>
@@ -627,11 +667,29 @@ export const api = {
   // projects (folders)
   listProjects: (workspaceId: string) =>
     request<{ projects: ProjectSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`),
-  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null) =>
-    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess }),
-  updateProject: (id: string, body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null }) =>
-    request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
-  deleteProject: (id: string) => request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}`),
+  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null, parentId: string | null = null) =>
+    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess, ...(parentId ? { parentId } : {}) }),
+  updateProject: (
+    id: string,
+    body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null; description?: string; pinnedBoardIds?: string[]; parentId?: string | null },
+  ) => request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
+  /** #129: `boards` says what happens to the boards still in it (parent project / trash); without it only an empty project goes. */
+  deleteProject: (id: string, boards?: 'parent' | 'trash') =>
+    request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}${boards ? `?boards=${boards}` : ''}`),
+  // blueprints (#161): a project's boards and docs saved for reuse
+  listBlueprints: () => request<{ blueprints: BlueprintSummary[] }>('GET', '/api/blueprints'),
+  saveBlueprint: (projectId: string, body: { name: string; description?: string; steps?: string[]; workspaceId?: string | null }) =>
+    request<{ blueprint: BlueprintSummary }>('POST', `/api/projects/${encodeURIComponent(projectId)}/blueprints`, body),
+  updateBlueprint: (id: string, body: { name?: string; description?: string; steps?: string[]; workspaceId?: string | null }) =>
+    request<{ blueprint: BlueprintSummary }>('PATCH', `/api/blueprints/${encodeURIComponent(id)}`, body),
+  deleteBlueprint: (id: string) => request<{ ok: true }>('DELETE', `/api/blueprints/${encodeURIComponent(id)}`),
+  useBlueprint: (id: string, body: { workspaceId: string; name?: string; parentId?: string | null }) =>
+    request<{ project: ProjectSummary; boards: Array<{ id: string; kind: 'board' | 'doc'; title: string }> }>('POST', `/api/blueprints/${encodeURIComponent(id)}/use`, body),
+  /** #129: pin a project to the top of your own sidebar, or unpin it. */
+  setProjectPinned: (id: string, pinned: boolean) => request<{ ok: true }>(pinned ? 'PUT' : 'DELETE', `/api/projects/${encodeURIComponent(id)}/pin`),
+  /** #129: a project page's recent activity (only boards you can open). */
+  projectActivity: (workspaceId: string, projectId: string) =>
+    request<ActivityResponse>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/activity?project=${encodeURIComponent(projectId)}`),
   listProjectMembers: (id: string) =>
     request<{ members: Array<{ userId: string; name: string; color: string; avatarUrl: string | null }> }>(
       'GET',
@@ -744,6 +802,13 @@ export const api = {
   backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
 
   // audit streaming to a SIEM (#17): owners/admins; 404 when the server has none
+  // Workspace encryption key (#159; security admins, destroying: owners).
+  workspaceKey: (id: string) => request<WorkspaceKeyStatus>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/key`),
+  createWorkspaceKey: (id: string, body: { kmsKeyId?: string }) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key`, body),
+  rotateWorkspaceKey: (id: string, body: { kmsKeyId?: string | null }) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/rotate`, body),
+  suspendWorkspaceKey: (id: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/suspend`),
+  resumeWorkspaceKey: (id: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/resume`),
+  destroyWorkspaceKey: (id: string, confirm: string) => request<WorkspaceKeyStatus>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/key/destroy`, { confirm }),
   siemSinks: (id: string) => request<{ sinks: SiemSinkInfo[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`),
   createSiemSink: (id: string, body: SiemSinkInput) =>
     request<{ sink: SiemSinkInfo; signingSecret?: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`, body),
@@ -886,6 +951,16 @@ export const api = {
   /** The file of a file card / video / audio item on a board (downloads policy, audited). */
   async downloadBoardFile(boardId: string, elementId: string): Promise<Blob> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(elementId)}`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return res.blob();
+  },
+
+  /** #143: where a comment's image attachment is shown inline from (same origin; the server checks who may read it). */
+  commentFileUrl: (boardId: string, ref: { threadId: string; messageId: string; index: number }, inline = false) =>
+    `/api/boards/${encodeURIComponent(boardId)}/comment-files/${encodeURIComponent(ref.threadId)}/${encodeURIComponent(ref.messageId)}/${ref.index}${inline ? '?inline=1' : ''}`,
+  /** #143: a comment's file as a download (downloads policy, audited). */
+  async downloadCommentFile(boardId: string, ref: { threadId: string; messageId: string; index: number }): Promise<Blob> {
+    const res = await fetch(api.commentFileUrl(boardId, ref), { credentials: 'same-origin' });
     if (!res.ok) throw await failure(res);
     return res.blob();
   },

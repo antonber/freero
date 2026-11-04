@@ -2,6 +2,7 @@ import { Stamp } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
 import { CREATE_ID, LIST_ID } from './lib/ids';
 
+import { t } from './messages';
 /** The one frame selected, if that is the selection. */
 const selectedFrame = (editor: Editor) => {
   const ids = editor.getSelection();
@@ -12,7 +13,7 @@ const selectedFrame = (editor: Editor) => {
 export default defineCommands([
   {
     id: 'decisions.freezeBoard',
-    label: 'Freeze for a decision…',
+    label: t('freezeForADecision'),
     icon: Stamp,
     menus: ['board'],
     minRole: 'editor',
@@ -21,12 +22,12 @@ export default defineCommands([
   },
   {
     id: 'decisions.freezeFrame',
-    label: 'Freeze this frame for a decision…',
+    label: t('freezeThisFrameForA'),
     icon: Stamp,
     menus: ['context'],
     minRole: 'editor',
     when: (editor) => !!editor.host.decisions && selectedFrame(editor) !== null,
-    disabledReason: 'Select one frame',
+    disabledReason: t('selectOneFrame'),
     run(editor) {
       const frame = selectedFrame(editor);
       if (frame) editor.openPanel(CREATE_ID, { frameId: frame.id });
@@ -34,7 +35,7 @@ export default defineCommands([
   },
   {
     id: 'decisions.list',
-    label: 'Decisions',
+    label: t('decisions'),
     icon: Stamp,
     menus: ['board'],
     minRole: 'viewer',

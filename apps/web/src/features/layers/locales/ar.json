@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "الطبقات",
+  "unlock": "إلغاء القفل",
+  "lock": "قفل",
+  "hiddenWithItsFrameOr": "مخفي مع إطاره أو العنصر المرفق به",
+  "showHiddenForYouOnly": "إظهار (مخفي عنك فقط)",
+  "hideForMeOthersStill": "إخفاء عني (يظل الآخرون يرونه)",
+  "collapse": "طي",
+  "expand": "توسيع",
+  "untitledFrame": "إطار بلا عنوان",
+  "notInAFrame": "ليس في إطار",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} مخفية عنك فقط",
+  "showAll": "إظهار الكل",
+  "nothingOnTheBoardYet": "لا شيء على اللوحة بعد.",
+  "dragToRestackTheTop": "اسحب لإعادة الترتيب: أعلى كل قائمة هو الأمامي."
+}

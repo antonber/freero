@@ -9,7 +9,8 @@ import { Button, IconButton, Input, Modal, Spinner, useToast } from '@ui';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 
-const label = (v: BoardVersion) => v.name ?? (v.kind === 'before-restore' ? 'Before a restore' : 'Automatic version');
+import { t } from './messages';
+const label = (v: BoardVersion) => v.name ?? (v.kind === 'before-restore' ? 'Before a restore' : t('automaticVersion'));
 const when = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 function Preview({ docId, version, onClose, onRestored, renderBoardEmbed }: { docId: string; version: BoardVersion; onClose(): void; onRestored(): void; renderBoardEmbed?: (uri: string) => ReactNode }) {
@@ -21,7 +22,7 @@ function Preview({ docId, version, onClose, onRestored, renderBoardEmbed }: { do
     let cancelled = false;
     api.versionState(docId, version.id).then(
       (s) => !cancelled && setState(s),
-      (err) => notify(err instanceof Error ? err.message : 'Could not load that version', 'error'),
+      (err) => notify(err instanceof Error ? err.message : t('couldNotLoadThatVersion'), 'error'),
     );
     return () => {
       cancelled = true;
@@ -32,10 +33,10 @@ function Preview({ docId, version, onClose, onRestored, renderBoardEmbed }: { do
     setBusy(true);
     try {
       await api.restoreVersion(docId, version.id);
-      notify('Version restored. The doc as it was is kept as a version too.', 'success');
+      notify(t('versionRestoredTheDocAs'), 'success');
       onRestored();
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not restore that version', 'error');
+      notify(err instanceof Error ? err.message : t('couldNotRestoreThatVersion'), 'error');
     } finally {
       setBusy(false);
     }
@@ -49,14 +50,12 @@ function Preview({ docId, version, onClose, onRestored, renderBoardEmbed }: { do
       description={when(version.createdAt)}
       footer={
         <>
-          <Button onClick={onClose}>Close</Button>
-          <Button variant="primary" icon={RotateCcw} loading={busy} onClick={() => void restore()}>
-            Restore this version
-          </Button>
+          <Button onClick={onClose}>{t('close')}</Button>
+          <Button variant="primary" icon={RotateCcw} loading={busy} onClick={() => void restore()}>{t('restoreThisVersion')}</Button>
         </>
       }
     >
-      <div className="fr-dochistory-preview">{store && user ? <DocEditor doc={store} user={{ name: user.name, color: user.color }} editable={false} renderBoardEmbed={renderBoardEmbed} label={`Version: ${label(version)}`} /> : <Spinner />}</div>
+      <div className="fr-dochistory-preview">{store && user ? <DocEditor doc={store} user={{ name: user.name, color: user.color }} editable={false} renderBoardEmbed={renderBoardEmbed} label={t('versionLabel', { label: label(version) })} /> : <Spinner />}</div>
     </Modal>
   );
 }
@@ -70,7 +69,7 @@ export function DocHistory({ docId, onClose, renderBoardEmbed }: { docId: string
   const load = useCallback(() => {
     api.listVersions(docId).then(
       ({ versions: v }) => setVersions(v),
-      (err) => notify(err instanceof Error ? err.message : 'Could not load the versions', 'error'),
+      (err) => notify(err instanceof Error ? err.message : t('couldNotLoadTheVersions'), 'error'),
     );
   }, [docId, notify]);
   useEffect(load, [load]);
@@ -81,14 +80,14 @@ export function DocHistory({ docId, onClose, renderBoardEmbed }: { docId: string
       setName('');
       load();
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not keep this version', 'error');
+      notify(err instanceof Error ? err.message : t('couldNotKeepThisVersion'), 'error');
     }
   };
   return (
-    <aside className="fr-docpage-panel" aria-label="Version history">
+    <aside className="fr-docpage-panel" aria-label={t('versionHistory')}>
       <header className="fr-docpage-panel__head">
-        <h2>Version history</h2>
-        <IconButton icon={X} label="Close version history" onClick={onClose} />
+        <h2>{t('versionHistory')}</h2>
+        <IconButton icon={X} label={t('closeVersionHistory')} onClick={onClose} />
       </header>
       <div className="fr-docpage-panel__body">
         <form
@@ -98,15 +97,13 @@ export function DocHistory({ docId, onClose, renderBoardEmbed }: { docId: string
             void nameCurrent();
           }}
         >
-          <Input placeholder="Name this version" aria-label="Name this version" value={name} onChange={(e) => setName(e.target.value)} />
-          <Button type="submit" size="sm" disabled={!name.trim()}>
-            Keep
-          </Button>
+          <Input placeholder={t('nameThisVersion')} aria-label={t('nameThisVersion')} value={name} onChange={(e) => setName(e.target.value)} />
+          <Button type="submit" size="sm" disabled={!name.trim()}>{t('keep')}</Button>
         </form>
         {!versions ? (
           <Spinner />
         ) : !versions.length ? (
-          <p className="fr-docpage-empty">No versions yet. Freero keeps one automatically while people edit, and you can name the current one.</p>
+          <p className="fr-docpage-empty">{t('noVersionsYetFreeroKeeps')}</p>
         ) : (
           <ul className="fr-dochistory-list">
             {versions.map((v) => (

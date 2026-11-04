@@ -7,6 +7,7 @@ import { ENGAGE_MAX_QUESTION, ENGAGE_MAX_WORDS, type ActivityAnswer, type Activi
 import { Button, IconButton } from './Button';
 import { Input } from './fields';
 import { MatrixForm, QuizForm } from './ActivityKinds';
+import { t } from './messages';
 import './ActivityForm.css';
 
 /** What answering does (resolve with the new state, reject with a showable message). */
@@ -26,7 +27,7 @@ export interface ActivityFormProps {
   actions: ActivityActions;
 }
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong');
+const errorText = (e: unknown) => (e instanceof Error ? e.message : t('somethingWentWrong'));
 
 interface FormProps {
   a: ActivityInfo;
@@ -42,19 +43,19 @@ function PollForm({ a, mine, onSubmit, busy }: FormProps) {
     setPicked((p) => (max === 1 ? [id] : p.includes(id) ? p.filter((x) => x !== id) : p.length < max ? [...p, id] : p));
   return (
     <>
-      <p className="fr-actform__hint">{max === 1 ? 'Pick one' : `Pick up to ${max}`}</p>
+      <p className="fr-actform__hint">{t('pickUpToMax', { max })}</p>
       <ul className="fr-actform__choices" role={max === 1 ? 'radiogroup' : 'group'}>
         {a.options.map((o) => (
           <li key={o.id}>
             <button type="button" className="fr-actform__choice" role={max === 1 ? 'radio' : 'checkbox'} aria-checked={picked.includes(o.id)} onClick={() => toggle(o.id)}>
               {picked.includes(o.id) ? <Check size={16} aria-hidden /> : <span style={{ width: 16 }} />}
-              {o.text || 'Untitled choice'}
+              {o.text || t('untitledChoice')}
             </button>
           </li>
         ))}
       </ul>
       <Button variant="primary" size="lg" loading={busy} disabled={!picked.length} onClick={() => onSubmit({ choices: picked })}>
-        {mine ? 'Change my answer' : 'Send answer'}
+        {mine ? t('changeMyAnswer') : t('sendAnswer')}
       </Button>
     </>
   );
@@ -75,12 +76,12 @@ function WordsForm({ mine, onSubmit, busy }: Omit<FormProps, 'a'>) {
         if (filled.length) onSubmit({ words: filled });
       }}
     >
-      <p className="fr-actform__hint">Up to {ENGAGE_MAX_WORDS} words or short phrases</p>
+      <p className="fr-actform__hint">{t('upToEngageMaxWords', { engage_max_words: ENGAGE_MAX_WORDS })}</p>
       {words.map((w, i) => (
         <Input
           key={i}
-          aria-label={`Word ${i + 1}`}
-          placeholder={i === 0 ? 'Your word' : 'Another (optional)'}
+          aria-label={t('wordValue', { value: i + 1 })}
+          placeholder={i === 0 ? t('yourWord') : t('anotherOptional')}
           value={w}
           maxLength={40}
           autoFocus={i === 0}
@@ -88,7 +89,7 @@ function WordsForm({ mine, onSubmit, busy }: Omit<FormProps, 'a'>) {
         />
       ))}
       <Button type="submit" variant="primary" size="lg" loading={busy} disabled={!filled.length}>
-        {mine ? 'Change my words' : 'Send'}
+        {mine ? t('changeMyWords') : t('send')}
       </Button>
     </form>
   );
@@ -107,19 +108,19 @@ function RankForm({ a, mine, onSubmit, busy }: FormProps) {
     });
   return (
     <>
-      <p className="fr-actform__hint">Most important at the top</p>
+      <p className="fr-actform__hint">{t('mostImportantAtTheTop')}</p>
       <ol className="fr-actform__choices">
         {order.map((id, i) => (
           <li key={id} className="fr-actform__rank">
             <strong>{i + 1}</strong>
-            <span>{a.options.find((o) => o.id === id)?.text || 'Untitled item'}</span>
-            <IconButton size={32} icon={ArrowUp} label="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
-            <IconButton size={32} icon={ArrowDown} label="Move down" disabled={i === order.length - 1} onClick={() => move(i, 1)} />
+            <span>{a.options.find((o) => o.id === id)?.text || t('untitledItem')}</span>
+            <IconButton size={32} icon={ArrowUp} label={t('moveUp')} disabled={i === 0} onClick={() => move(i, -1)} />
+            <IconButton size={32} icon={ArrowDown} label={t('moveDown')} disabled={i === order.length - 1} onClick={() => move(i, 1)} />
           </li>
         ))}
       </ol>
       <Button variant="primary" size="lg" loading={busy} onClick={() => onSubmit({ order })}>
-        {mine ? 'Change my ranking' : 'Send ranking'}
+        {mine ? t('changeMyRanking') : t('sendRanking')}
       </Button>
     </>
   );
@@ -134,7 +135,7 @@ function RateForm({ a, mine, onSubmit, busy }: FormProps) {
       <ul className="fr-actform__choices">
         {a.options.map((o) => (
           <li key={o.id}>
-            <div>{o.text || 'Untitled statement'}</div>
+            <div>{o.text || t('untitledStatement')}</div>
             <div className="fr-actform__scale" role="radiogroup" aria-label={o.text}>
               {Array.from({ length: scale }, (_, i) => i + 1).map((n) => (
                 <button key={n} type="button" role="radio" aria-checked={ratings[o.id] === n} onClick={() => setRatings((r) => ({ ...r, [o.id]: n }))}>
@@ -146,7 +147,7 @@ function RateForm({ a, mine, onSubmit, busy }: FormProps) {
         ))}
       </ul>
       <Button variant="primary" size="lg" loading={busy} disabled={!Object.keys(ratings).length} onClick={() => onSubmit({ ratings })}>
-        {mine ? 'Change my ratings' : 'Send ratings'}
+        {mine ? t('changeMyRatings') : t('sendRatings')}
       </Button>
     </>
   );
@@ -179,19 +180,17 @@ function QnaForm({ a, state, onState, actions }: ActivityFormProps & { a: Activi
     <>
       {state.canAnswer ? (
         <form className="fr-actform__row" onSubmit={ask}>
-          <Input aria-label="Your question" placeholder="Ask a question" value={text} maxLength={ENGAGE_MAX_QUESTION} autoFocus onChange={(e) => setText(e.target.value)} />
-          <Button type="submit" variant="primary" loading={busy} disabled={!text.trim()}>
-            Ask
-          </Button>
+          <Input aria-label={t('yourQuestion')} placeholder={t('askAQuestion')} value={text} maxLength={ENGAGE_MAX_QUESTION} autoFocus onChange={(e) => setText(e.target.value)} />
+          <Button type="submit" variant="primary" loading={busy} disabled={!text.trim()}>{t('ask')}</Button>
         </form>
       ) : null}
-      <p className="fr-actform__hint">{a.anonymous ? 'Questions are anonymous.' : 'Your name is shown with your question.'}</p>
+      <p className="fr-actform__hint">{a.anonymous ? t('questionsAreAnonymous') : t('yourNameIsShownWith')}</p>
       {error ? (
         <p className="fr-actform__error" role="alert">
           {error}
         </p>
       ) : null}
-      {state.results?.sealed ? <p className="fr-actform__hint">Questions show once the host reveals them.</p> : null}
+      {state.results?.sealed ? <p className="fr-actform__hint">{t('questionsShowOnceTheHost')}</p> : null}
       <ul className="fr-actform__choices">
         {questions.map((q) => {
           const on = state.myUpvotes.includes(q.id);
@@ -201,7 +200,7 @@ function QnaForm({ a, state, onState, actions }: ActivityFormProps & { a: Activi
                 type="button"
                 className="fr-actform__upvote"
                 aria-pressed={on}
-                aria-label={on ? `Remove your upvote (${q.votes})` : `Upvote (${q.votes})`}
+                aria-label={on ? t('removeYourUpvoteVotes', { votes: q.votes }) : t('upvoteVotes', { votes: q.votes })}
                 disabled={!state.canAnswer}
                 onClick={() => void run(() => actions.upvote(q.id, !on))}
               >
@@ -210,12 +209,12 @@ function QnaForm({ a, state, onState, actions }: ActivityFormProps & { a: Activi
               <span>
                 {q.text}
                 <br />
-                <small>{q.answered ? 'Answered' : (q.by ?? 'Anonymous')}</small>
+                <small>{q.answered ? t('answered') : (q.by ?? t('anonymous'))}</small>
               </span>
               {moderate ? (
                 <>
-                  <IconButton size={32} icon={Check} label={q.answered ? 'Mark as not answered' : 'Mark as answered'} active={q.answered} onClick={() => void run(() => moderate(q.id, { answered: !q.answered }))} />
-                  <IconButton size={32} icon={EyeOff} label="Hide from the board" onClick={() => void run(() => moderate(q.id, { hidden: true }))} />
+                  <IconButton size={32} icon={Check} label={q.answered ? t('markAsNotAnswered') : t('markAsAnswered')} active={q.answered} onClick={() => void run(() => moderate(q.id, { answered: !q.answered }))} />
+                  <IconButton size={32} icon={EyeOff} label={t('hideFromTheBoard')} onClick={() => void run(() => moderate(q.id, { hidden: true }))} />
                 </>
               ) : null}
             </li>
@@ -257,7 +256,7 @@ export function ActivityForm(props: ActivityFormProps) {
   const form = { a, mine: state.mine, onSubmit: submit, busy };
   return (
     <div className="fr-actform" data-testid="engage-answer" style={a.color ? { ['--fr-accent' as string]: a.color } : undefined}>
-      <p className="fr-actform__question">{a.question || 'Untitled activity'}</p>
+      <p className="fr-actform__question">{a.question || t('untitledActivity')}</p>
       {!state.canAnswer && a.kind !== 'qna' && a.kind !== 'quiz' ? <p className="fr-actform__hint">{state.reason}</p> : null}
       {a.kind === 'qna' ? <QnaForm {...props} a={a} /> : null}
       {a.kind === 'quiz' ? <QuizForm a={a} state={state} onSubmit={submit} busy={busy} /> : null}
@@ -276,26 +275,22 @@ export function ActivityForm(props: ActivityFormProps) {
         </p>
       ) : null}
       {sent && a.kind !== 'quiz' ? (
-        <p className="fr-actform__hint" role="status">
-          Thanks — your answer is in. You can change it any time.
-        </p>
+        <p className="fr-actform__hint" role="status">{t('thanksYourAnswerIsIn')}</p>
       ) : null}
       {state.mine && state.canAnswer && a.kind !== 'qna' && a.kind !== 'quiz' ? (
-        <Button variant="ghost" size="sm" onClick={withdraw}>
-          Take my answer back
-        </Button>
+        <Button variant="ghost" size="sm" onClick={withdraw}>{t('takeMyAnswerBack')}</Button>
       ) : null}
       <p className="fr-actform__hint">
         {a.kind === 'qna'
           ? ''
           : a.kind === 'quiz'
             ? a.anonymous
-              ? 'Anonymous: the leaderboard shows no names.'
-              : 'Your name is on the leaderboard.'
+              ? t('anonymousTheLeaderboardShowsNo')
+              : t('yourNameIsOnThe')
             : a.anonymous
-              ? 'Anonymous: nobody sees who answered what.'
-              : 'Open: your name may be shown with your answer.'}
-        {a.results === 'reveal' && !state.revealed ? (a.kind === 'quiz' ? ' The host reveals the leaderboard at the end.' : ' Results show once the host reveals them.') : ''}
+              ? t('anonymousNobodySeesWhoAnswered')
+              : t('openYourNameMayBe')}
+        {a.results === 'reveal' && !state.revealed ? (a.kind === 'quiz' ? t('theHostRevealsTheLeaderboard') : t('resultsShowOnceTheHost')) : ''}
       </p>
     </div>
   );

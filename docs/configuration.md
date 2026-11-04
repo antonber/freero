@@ -244,6 +244,18 @@ Owners/admins of a team workspace stream its audit log to Splunk (HTTP Event Col
 | `SIEM_RETRY_BASE_MS` | `10000` | The first retry's delay after a failed batch; each further one is 4× longer, at most 6 hours. A failed batch is never skipped: the stream waits and resends from the same event. |
 | `SIEM_AZURE_AUTHORITY` | `https://login.microsoftonline.com` | Where Microsoft Sentinel streams get their Entra ID token (`<authority>/<tenant>/oauth2/v2.0/token`). Change it only for tests (sovereign clouds are not supported yet: their Azure Monitor scope differs). |
 
+## Workspace encryption keys
+
+A team workspace's security admins turn on an encryption key in the admin console (Security tab): the workspace's board content (documents, update log, versions, layers) is then stored sealed with data keys wrapped by the instance's key or by the workspace's own AWS KMS key. Design, coverage and failure modes: [design/compliance.md §3](design/compliance.md); operating it: [operations.md](operations.md#workspace-encryption-keys).
+
+| Variable | Default | Description |
+|---|---|---|
+| `WORKSPACE_KEYS` | `false` | `true`: workspace admins may turn on an encryption key for their workspace. Off (the default), no workspace can, nothing is sealed and board reads, writes and access checks do no key lookups while no workspace ever had a key; keys turned on while it was on keep working and can still be rotated, suspended and destroyed. Turn it on only once every instance runs a release that has it. |
+| `WORKSPACE_KEY_CACHE_SECONDS` | `300` | How long an instance keeps an unwrapped data key in memory (5–3600). It is also how soon a key revoked at the customer's KMS takes full effect: the `keys:check` job probes every key every half of this. Shorter: more KMS calls (one Decrypt per data key version per instance per period). |
+| `KMS_AWS_ACCESS_KEY_ID`, `KMS_AWS_SECRET_ACCESS_KEY` | — | The AWS principal Freero calls KMS as (`kms:Encrypt` and `kms:Decrypt` on customers' keys, granted by THEIR key policies, with the encryption context `freero_workspace`). Unset: only the instance's key is offered. |
+| `KMS_AWS_SESSION_TOKEN` | — | For temporary credentials. |
+| `KMS_AWS_ENDPOINT` | `https://kms.<the key's region>.amazonaws.com/` | Another KMS endpoint (a VPC endpoint, FIPS endpoint, or a test double). |
+
 ## Slack link unfurls, direct messages and /freero
 
 Previews of Freero board links in Slack, and "Connect Slack" (notifications as direct messages,

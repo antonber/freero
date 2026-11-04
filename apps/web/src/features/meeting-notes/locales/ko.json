@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "summarise",
+    "importMeetingNotes",
+    "youNeedEditAccessTo",
+    "couldNotImportThatTranscript",
+    "couldNotImportTheseNotes",
+    "importMeetingNotes2",
+    "aSummaryMarkdownOrText",
+    "cancel",
+    "importText",
+    "importing",
+    "chooseAFileMdTxt",
+    "orPasteTheNotes",
+    "forTranscriptsAddWhoSpoke",
+    "droppingAVttOrSrt"
+  ],
+  "summarise": "요약",
+  "importMeetingNotes": "회의록 가져오기…",
+  "youNeedEditAccessTo": "가져오려면 편집 권한이 필요해요",
+  "couldNotImportThatTranscript": "그 녹취록을 가져오지 못했어요",
+  "couldNotImportTheseNotes": "이 메모를 가져오지 못했어요",
+  "importMeetingNotes2": "회의록 가져오기",
+  "aSummaryMarkdownOrText": "메모 앱의 요약(Markdown 또는 텍스트)이나 녹취록(.vtt, .srt)이 하나의 프레임이 돼요. 결정 사항, 담당자와 마감일이 있는 실행 항목, 기타 요점이 담겨요. 실행 취소 한 번으로 되돌릴 수 있어요.",
+  "cancel": "취소",
+  "importText": "텍스트 가져오기",
+  "importing": "가져오는 중…",
+  "chooseAFileMdTxt": "파일 선택(.md, .txt, .vtt, .srt)",
+  "orPasteTheNotes": "또는 메모 붙여넣기",
+  "forTranscriptsAddWhoSpoke": "녹취록의 경우 누가 얼마나 말했는지 추가",
+  "droppingAVttOrSrt": ".vtt 또는 .srt 파일을 보드에 놓아도 가져올 수 있어요."
+}

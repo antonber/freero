@@ -65,7 +65,7 @@ export async function requestAccess(boardId: string, user: Account, body: { role
   // Otherwise anyone could make throwaway accounts to flood a board's owner with requests.
   if (!user.emailVerified) throw forbidden('Verify your email address before asking for access');
   const place = await placeOf(boardId);
-  if ((await getBoardAccess(boardId, user.id)).role) throw new HttpError(409, 'You already have access to this board');
+  if ((await getBoardAccess(boardId, user.id)).role) throw new HttpError(409, 'You already have access to this board', 'access_exists');
   const blocked = await blockedReason(place, user.id);
   if (blocked) throw forbidden(blocked);
   const now = Date.now();
@@ -137,7 +137,7 @@ export async function decideRequest(
   const place = await placeOf(boardId);
   if (!(await isDecider(place, decider.id))) throw forbidden('Only the board owner and workspace admins can let people in');
   const pending = await repo.getAccessRequest(boardId, requesterId);
-  if (!pending || pending.status !== 'pending') throw new HttpError(409, 'This request was already handled');
+  if (!pending || pending.status !== 'pending') throw new HttpError(409, 'This request was already handled', 'request_handled');
   const approve = body.decision === 'approve';
   const role: MemberRole = (body.role as MemberRole | undefined) ?? pending.role;
   if (approve) {
@@ -157,7 +157,7 @@ export async function decideRequest(
     if (d && approve && !(await repo.grantAtLeast(boardId, requesterId, role, Date.now(), { actorId: decider.id }))) throw notFound('Board not found');
     return d;
   });
-  if (!decided) throw new HttpError(409, 'This request was already handled');
+  if (!decided) throw new HttpError(409, 'This request was already handled', 'request_handled');
   await recordAuditQuietly({
     action: approve ? 'board.access_approved' : 'board.access_declined',
     workspaceId: place.workspaceId,

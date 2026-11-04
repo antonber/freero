@@ -7,6 +7,7 @@ import { Button, Input, Modal, Spinner, Toggle } from '@ui';
 import { START_ID } from './ids';
 import { clearRecorderError, notePointer, startRecording, stopRecording, useRecorder } from './recorder';
 
+import { t } from '../messages';
 export function StartDialog({ editor }: PanelProps) {
   const rec = useRecorder();
   const [title, setTitle] = useState(`Walkthrough of ${editor.host.board.title || 'this board'}`.slice(0, MAX_WALKTHROUGH_TITLE));
@@ -16,32 +17,26 @@ export function StartDialog({ editor }: PanelProps) {
     editor.closePanel(START_ID);
   };
   const start = async () => {
-    const ok = await startRecording(editor, { title: title.trim() || 'Walkthrough', camera });
+    const ok = await startRecording(editor, { title: title.trim() || t('walkthrough'), camera });
     if (ok) editor.closePanel(START_ID);
   };
   return (
     <Modal
       open
       onClose={close}
-      title="Record a walkthrough"
-      description="Talk people through the board. Freero records your voice (and camera, if you like) plus where you look and point — not your screen. Viewers watch it on the live board, as they’re allowed to see it."
+      title={t('recordAWalkthrough2')}
+      description={t('talkPeopleThroughTheBoard')}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={camera ? Video : Mic} loading={rec.phase === 'starting'} onClick={() => void start()}>
-            Start recording
-          </Button>
+          <Button variant="ghost" onClick={close}>{t('cancel')}</Button>
+          <Button variant="primary" icon={camera ? Video : Mic} loading={rec.phase === 'starting'} onClick={() => void start()}>{t('startRecording')}</Button>
         </>
       }
     >
       <div className="fr-walkthrough-start">
-        <Input label="Title" value={title} maxLength={MAX_WALKTHROUGH_TITLE} onChange={(e) => setTitle(e.target.value)} autoFocus />
-        <Toggle checked={camera} onChange={setCamera} label="Show my camera in a bubble" />
-        <p className="fr-walkthrough-start__note">
-          Your browser asks for the microphone{camera ? ' and camera' : ''} first. Up to {MAX_WALKTHROUGH_MS / 60000} minutes; stop any time.
-        </p>
+        <Input label={t('title')} value={title} maxLength={MAX_WALKTHROUGH_TITLE} onChange={(e) => setTitle(e.target.value)} autoFocus />
+        <Toggle checked={camera} onChange={setCamera} label={t('showMyCameraInA')} />
+        <p className="fr-walkthrough-start__note">{t('yourBrowserAsksForThe')}{camera ? t('andCamera') : ''}{' '}{t('firstUpTo')}{' '}{MAX_WALKTHROUGH_MS / 60000}{' '}{t('minutesStopAnyTime')}</p>
         {rec.error && (
           <p className="fr-walkthrough-start__error" role="alert">
             {rec.error}
@@ -58,7 +53,7 @@ function LiveBubble({ stream }: { stream: MediaStream }) {
   useEffect(() => {
     if (ref.current) ref.current.srcObject = stream;
   }, [stream]);
-  return <video ref={ref} className="fr-walkthrough-bubble__video is-mirrored" autoPlay muted playsInline aria-label="Your camera" />;
+  return <video ref={ref} className="fr-walkthrough-bubble__video is-mirrored" autoPlay muted playsInline aria-label={t('yourCamera')} />;
 }
 
 function useElapsed(startedAt: number, running: boolean): number {
@@ -88,7 +83,7 @@ export function RecordingOverlay(_: PanelProps) {
           <LiveBubble stream={rec.stream} />
         </div>
       )}
-      <div className="fr-walkthrough-bar is-recording" role="region" aria-label="Recording a walkthrough" data-fr-occludes="" data-fr-interactive="">
+      <div className="fr-walkthrough-bar is-recording" role="region" aria-label={t('recordingAWalkthrough')} data-fr-occludes="" data-fr-interactive="">
         {recording ? (
           <>
             <span className="fr-walkthrough-bar__rec" aria-hidden />
@@ -96,18 +91,14 @@ export function RecordingOverlay(_: PanelProps) {
               {formatWalkthroughTime(elapsed)}
               <span className="fr-walkthrough-bar__total"> / {formatWalkthroughTime(MAX_WALKTHROUGH_MS)}</span>
             </span>
-            <span className="fr-walkthrough-bar__hint">Recording your {rec.camera ? 'voice and camera' : 'voice'}, view and pointer</span>
-            <Button size="sm" variant="primary" icon={Square} onClick={() => void stopRecording(true)}>
-              Stop and save
-            </Button>
-            <Button size="sm" variant="ghost" icon={X} onClick={() => void stopRecording(false)}>
-              Discard
-            </Button>
+            <span className="fr-walkthrough-bar__hint">{t('recordingYour')}{' '}{rec.camera ? t('voiceAndCamera') : 'voice'}{t('viewAndPointer')}</span>
+            <Button size="sm" variant="primary" icon={Square} onClick={() => void stopRecording(true)}>{t('stopAndSave')}</Button>
+            <Button size="sm" variant="ghost" icon={X} onClick={() => void stopRecording(false)}>{t('discard')}</Button>
           </>
         ) : (
           <>
             <Spinner size={16} />
-            <span className="fr-walkthrough-bar__hint">Saving the walkthrough…</span>
+            <span className="fr-walkthrough-bar__hint">{t('savingTheWalkthrough')}</span>
           </>
         )}
       </div>

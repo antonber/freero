@@ -8,6 +8,7 @@ import { Button, IconButton, Modal, Spinner } from '@ui';
 import { PREVIEW_ID } from './ids';
 import { formatWhen, restoreVersion, useVersions, versionByline, versionTitle } from './versions';
 
+import { t } from '../messages';
 export function Preview({ editor, props }: PanelProps) {
   const ids = (props?.ids as number[] | undefined) ?? [];
   const [id, setId] = useState(Number(props?.id));
@@ -54,7 +55,7 @@ export function Preview({ editor, props }: PanelProps) {
         cache.current.set(id, bytes);
         if (alive) setState({ id, bytes });
       },
-      (e: unknown) => alive && setFailed(e instanceof Error ? e.message : 'This version could not be loaded'),
+      (e: unknown) => alive && setFailed(e instanceof Error ? e.message : t('thisVersionCouldNotBe')),
     );
     return () => {
       alive = false;
@@ -81,29 +82,27 @@ export function Preview({ editor, props }: PanelProps) {
       className="fr-history-preview"
       role="dialog"
       aria-modal="true"
-      aria-label="Version preview"
+      aria-label={t('versionPreview')}
       tabIndex={-1}
     >
       <header className="fr-history-preview__bar">
-        <IconButton icon={X} label="Close preview" onClick={close} />
+        <IconButton icon={X} label={t('closePreview')} onClick={close} />
         <div className="fr-history-preview__what">
-          <strong>{version ? versionTitle(version) : 'Version'}</strong>
+          <strong>{version ? versionTitle(version) : t('version')}</strong>
           <span>
             {version ? formatWhen(version.createdAt) : ''}
             {byline ? ` · ${byline}` : ''}
           </span>
         </div>
-        <span className="fr-history-preview__badge">Preview · read-only</span>
+        <span className="fr-history-preview__badge">{t('previewReadOnly')}</span>
         <div className="fr-history-preview__nav">
-          <IconButton icon={ChevronLeft} label="Older version" disabled={older === null} onClick={() => older !== null && setId(older)} />
-          <IconButton icon={ChevronRight} label="Newer version" disabled={newer === null} onClick={() => newer !== null && setId(newer)} />
+          <IconButton icon={ChevronLeft} label={t('olderVersion')} disabled={older === null} onClick={() => older !== null && setId(older)} />
+          <IconButton icon={ChevronRight} label={t('newerVersion')} disabled={newer === null} onClick={() => newer !== null && setId(newer)} />
         </div>
-        <Button variant="primary" icon={RotateCcw} disabled={!version || !state} onClick={() => setConfirming(true)}>
-          Restore this version
-        </Button>
+        <Button variant="primary" icon={RotateCcw} disabled={!version || !state} onClick={() => setConfirming(true)}>{t('restoreThisVersion')}</Button>
       </header>
       <div className="fr-history-preview__board">
-        {state && <StaticBoardView key={state.id} state={state.bytes} label={version ? `${versionTitle(version)}, ${formatWhen(version.createdAt)}` : 'Version'} />}
+        {state && <StaticBoardView key={state.id} state={state.bytes} label={version ? `${versionTitle(version)}, ${formatWhen(version.createdAt)}` : t('version')} />}
         {(!state || state.id !== id) && !failed && (
           <div className="fr-history-preview__status">
             <Spinner size={22} />
@@ -118,16 +117,12 @@ export function Preview({ editor, props }: PanelProps) {
       <Modal
         open={confirming}
         onClose={() => !restoring && setConfirming(false)}
-        title="Restore this version?"
-        description="Everyone on the board sees it right away. The board as it is now is kept as a version, so you can undo this. Comments, votes and the timer stay as they are."
+        title={t('restoreThisVersion2')}
+        description={t('everyoneOnTheBoardSees')}
         footer={
           <>
-            <Button variant="ghost" disabled={restoring} onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" loading={restoring} onClick={() => void restore()}>
-              Restore
-            </Button>
+            <Button variant="ghost" disabled={restoring} onClick={() => setConfirming(false)}>{t('cancel')}</Button>
+            <Button variant="primary" loading={restoring} onClick={() => void restore()}>{t('restore')}</Button>
           </>
         }
       />

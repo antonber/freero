@@ -4,7 +4,7 @@
   border: 1px solid var(--fr-line);
   border-radius: var(--fr-radius);
   background: var(--fr-surface-2);
-  text-align: left;
+  text-align: start;
 }
 
 .fr-appeal__what {
@@ -33,8 +33,8 @@
 
 .fr-appeal__statement {
   margin: 12px 0 0;
-  padding-left: 10px;
-  border-left: 3px solid var(--fr-primary-soft);
+  padding-inline-start: 10px;
+  border-inline-start: 3px solid var(--fr-primary-soft);
   font-size: 14px;
   line-height: 20px;
   color: var(--fr-ink-2);

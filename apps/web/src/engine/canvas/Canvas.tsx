@@ -15,6 +15,7 @@ import type { ToolDefinition } from '../api';
 import { publicCursor } from '../editor/layers';
 import { LONG_PRESS_MS, routePress, TOUCH_HIT_PX, TOUCH_SLOP_PX } from '../interaction/touch';
 import { LASSO_TOOL } from '../interaction/selectTool';
+import { t as tr } from '../messages';
 import './canvas.css';
 
 const DOUBLE_CLICK_MS = 400;
@@ -515,22 +516,20 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     <div
       ref={viewportRef}
       className="fr-viewport"
+      // The board never mirrors (#5): in a right-to-left interface only the chrome around it does,
+      // so element geometry and the inline layout inside elements stay exactly as authored.
+      dir="ltr"
       tabIndex={0}
       // The canvas takes the keyboard itself (Tab walks items, arrows move them), so screen readers
       // pass keys through; the live region (ui/LiveRegion) reads what gets selected.
       role="application"
       aria-roledescription="whiteboard"
-      aria-label={`Board canvas: ${core.hostRef.current.board.title}`}
+      aria-label={tr('boardCanvasTitle', { title: core.hostRef.current.board.title })}
       aria-describedby={helpId}
       // The background as shown, also for what knocks the canvas out (connector labels): theme.ts.
       style={{ background: shownBackground(settings.background, theme), cursor, ['--fr-canvas-paper' as string]: shownBackground(settings.background, theme) }}
     >
-      <p id={helpId} className="fr-sr-only">
-        Tab and Shift+Tab move through the items in reading order, a frame’s items right after it; Alt+arrow keys jump to
-        the nearest item in that direction. Enter edits the selected item, arrow keys move it and Alt+Shift+arrow keys
-        resize it. Shift+F10 opens its menu, Alt+F10 the format toolbar, F6 moves between the canvas and the toolbars.
-        With a creation tool picked, Enter places a new item next to the selection. Alt+Shift+L lists the board as text.
-      </p>
+      <p id={helpId} className="fr-sr-only">{tr('tabAndShiftTabMove')}</p>
       <Grid />
       <div ref={worldRef} className="fr-world">
         {/* Board content (and the tool's ghost of what it would add): drawn in its own colours, its

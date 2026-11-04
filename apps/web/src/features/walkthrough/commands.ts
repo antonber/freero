@@ -4,12 +4,13 @@ import { LIST_ID, START_ID } from './lib/ids';
 import { openWalkthrough } from './lib/playback';
 import { canRecord } from './lib/recorder';
 
+import { t as tr } from './messages';
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export default defineCommands([
   {
     id: 'walkthrough.record',
-    label: 'Record a walkthrough…',
+    label: tr('recordAWalkthrough'),
     icon: Mic,
     menus: ['board'],
     minRole: 'editor',
@@ -18,7 +19,7 @@ export default defineCommands([
   },
   {
     id: 'walkthrough.list',
-    label: 'Walkthroughs',
+    label: tr('walkthroughs'),
     icon: CirclePlay,
     menus: ['board'],
     minRole: 'viewer',
@@ -28,7 +29,7 @@ export default defineCommands([
   {
     // Deep link: /board/<id>?walkthrough=<wid>[&t=<ms>] (shared links, notifications about a comment).
     id: 'walkthrough.play',
-    label: 'Watch a walkthrough',
+    label: tr('watchAWalkthrough'),
     minRole: 'viewer',
     palette: false,
     urlParam: 'walkthrough',

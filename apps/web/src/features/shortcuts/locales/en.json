@@ -1,0 +1,20 @@
+{
+  "boardSettings": "Board settings",
+  "viewNavigation": "View & navigation",
+  "keyboardShortcuts": "Keyboard shortcuts",
+  "commandPalette": "Command palette",
+  "noActionsMatch": "No actions match",
+  "searchActionsToolsAndSettings": "Search actions, tools and settings",
+  "searchActions": "Search actions",
+  "nothingMatchesQuery": "Nothing matches “{query}”.",
+  "actions": "Actions",
+  "tool": "Tool",
+  "toChoose": "to choose ·",
+  "toRun": "to run ·",
+  "toClose": "to close",
+  "searchShortcuts": "Search shortcuts",
+  "noShortcutsMatchQuery": "No shortcuts match “{query}”.",
+  "or": "or",
+  "help": "Help",
+  "reportAProblem": "Report a problem…"
+}

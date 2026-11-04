@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "레이어",
+  "unlock": "잠금 해제",
+  "lock": "잠금",
+  "hiddenWithItsFrameOr": "프레임 또는 연결된 항목과 함께 숨겨짐",
+  "showHiddenForYouOnly": "표시(나에게만 숨겨짐)",
+  "hideForMeOthersStill": "나에게만 숨기기(다른 사람에게는 보여요)",
+  "collapse": "접기",
+  "expand": "펼치기",
+  "untitledFrame": "제목 없는 프레임",
+  "notInAFrame": "프레임 밖",
+  "hiddencountHiddenForYouOnly": "나에게만 숨겨진 항목 {hiddenCount}개",
+  "showAll": "모두 표시",
+  "nothingOnTheBoardYet": "아직 보드에 아무것도 없어요.",
+  "dragToRestackTheTop": "끌어서 순서를 바꾸세요. 각 목록의 맨 위가 가장 앞에 있어요."
+}

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Logo } from '@ui';
 import { announceSessionChange, useAuth } from '../auth/AuthContext';
+import { t } from '../messages';
 import '../board/BoardPage.css';
 
 export default function EmbedSignedInPage() {
@@ -16,8 +17,8 @@ export default function EmbedSignedInPage() {
     <div className="fr-boarderror">
       <div className="fr-boarderror__card">
         <Logo size={32} />
-        <h1>{user ? 'You’re signed in' : 'Signing in'}</h1>
-        <p>Go back to the Freero window to show the board. You can close this tab.</p>
+        <h1>{user ? t('youReSignedIn') : t('signingIn')}</h1>
+        <p>{t('goBackToTheFreero')}</p>
       </div>
     </div>
   );

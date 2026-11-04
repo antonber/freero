@@ -149,7 +149,7 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
               {hasIcons ? <span className="fr-menu__icon fr-icon">{item.icon ? renderIcon(item.icon, 16) : null}</span> : null}
               <span className="fr-menu__label">{item.label}</span>
               {item.shortcut ? <Kbd className="fr-menu__kbd" compact>{item.shortcut}</Kbd> : null}
-              {item.submenu ? <ChevronRight className="fr-menu__more" size={15} aria-hidden /> : null}
+              {item.submenu ? <ChevronRight className="fr-menu__more fr-rtl-flip" size={15} aria-hidden /> : null}
             </button>
           );
           return explained ? (

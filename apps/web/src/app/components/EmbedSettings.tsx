@@ -9,10 +9,11 @@ import { Button, Select, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
 import { copyText } from '../lib/hooks';
 
+import { t } from '../messages';
 /** The board's frames (nested ones too), for "Start at". */
 function framesOf(items: OutlineItem[], out: Array<{ id: string; title: string }> = []): Array<{ id: string; title: string }> {
   for (const it of items) {
-    if (it.kind === 'frame') out.push({ id: it.id, title: it.title?.trim() || 'Untitled frame' });
+    if (it.kind === 'frame') out.push({ id: it.id, title: it.title?.trim() || t('untitledFrame') });
     if (it.children) framesOf(it.children, out);
   }
   return out;
@@ -47,7 +48,7 @@ export function EmbedSettings({ board, onChange }: { board: BoardSummary; onChan
       const { board: updated } = await api.updateBoard(board.id, { embeddable: next });
       onChange(updated);
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : 'Could not change embedding', 'error');
+      notify(e instanceof ApiError ? e.message : t('couldNotChangeEmbedding'), 'error');
     } finally {
       setBusy(false);
     }
@@ -56,49 +57,45 @@ export function EmbedSettings({ board, onChange }: { board: BoardSummary; onChan
   const opts = { readonly, frame: frame || null };
   const url = boardEmbedUrl(window.location.origin, board.id, opts);
   const code = boardEmbedCode(url, board.title);
-  const frameOptions = useMemo<SelectOption<string>[]>(() => [{ value: '', label: 'Whole board' }, ...frames.map((f) => ({ value: f.id, label: f.title }))], [frames]);
+  const frameOptions = useMemo<SelectOption<string>[]>(() => [{ value: '', label: t('wholeBoard') }, ...frames.map((f) => ({ value: f.id, label: f.title }))], [frames]);
   const copy = async (text: string, what: string) => {
     const ok = await copyText(text);
-    notify(ok ? `${what} copied` : 'Could not copy', ok ? 'success' : 'error');
+    notify(ok ? t('whatCopied', { what }) : t('couldNotCopy'), ok ? 'success' : 'error');
   };
   // What the embed shows follows the sharing above: say who that is.
   const who =
     board.linkAccess === 'none'
-      ? 'Only people with access, after signing in'
+      ? t('onlyPeopleWithAccessAfter')
       : board.permissions.guestLinks && !board.linkProtection?.password
-        ? 'Anyone can view it; people who sign in get their access'
-        : 'People sign in to see it, as the link allows';
+        ? t('anyoneCanViewItPeople')
+        : t('peopleSignInToSee');
 
   return (
-    <section className="fr-share__embed" aria-label="Embed on other sites">
+    <section className="fr-share__embed" aria-label={t('embedOnOtherSites')}>
       <div className="fr-share__link">
         <span className={`fr-share__link-icon${on ? ' fr-share__link-icon--open' : ''}`}>
           <Code2 size={17} aria-hidden />
         </span>
         <div className="fr-share__who">
-          <span className="fr-share__name">Embed on other sites</span>
-          <span className="fr-share__email-text">{!allowed && !on ? 'Turned off in this workspace' : on ? who : 'Show the live board in wikis, docs and websites'}</span>
+          <span className="fr-share__name">{t('embedOnOtherSites')}</span>
+          <span className="fr-share__email-text">{!allowed && !on ? (board.label?.caps.boardEmbeds === 'off' ? t('turnedOffByItsLabel', { name: board.label.name }) : t('turnedOffInThisWorkspace')) : on ? who : t('showTheLiveBoardIn')}</span>
         </div>
         {isOwner ? (
-          <Toggle aria-label="Allow embedding on other sites" checked={on} disabled={busy || (!allowed && !on)} onChange={(v) => void toggle(v)} />
+          <Toggle aria-label={t('allowEmbeddingOnOtherSites')} checked={on} disabled={busy || (!allowed && !on)} onChange={(v) => void toggle(v)} />
         ) : (
-          <span className="fr-share__role">{on ? 'On' : 'Off'}</span>
+          <span className="fr-share__role">{on ? t('on') : t('off')}</span>
         )}
       </div>
       {on ? (
         <div className="fr-share__embed-options">
           <div className="fr-share__embed-row">
-            <Toggle size="sm" checked={readonly} onChange={setReadonly} label="View only" />
-            {frameOptions.length > 1 ? <Select<string> aria-label="Start at" size="sm" options={frameOptions} value={frame} onChange={setFrame} width={200} /> : null}
+            <Toggle size="sm" checked={readonly} onChange={setReadonly} label={t('viewOnly')} />
+            {frameOptions.length > 1 ? <Select<string> aria-label={t('startAt')} size="sm" options={frameOptions} value={frame} onChange={setFrame} width={200} /> : null}
           </div>
-          <textarea className="fr-share__embed-code" readOnly value={code} aria-label="Embed code" rows={3} onFocus={(e) => e.currentTarget.select()} />
+          <textarea className="fr-share__embed-code" readOnly value={code} aria-label={t('embedCode')} rows={3} onFocus={(e) => e.currentTarget.select()} />
           <div className="fr-share__embed-row">
-            <Button size="sm" variant="primary" icon={Copy} onClick={() => void copy(code, 'Embed code')}>
-              Copy embed code
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => void copy(url, 'Embed link')}>
-              Copy embed link
-            </Button>
+            <Button size="sm" variant="primary" icon={Copy} onClick={() => void copy(code, t('embedCode'))}>{t('copyEmbedCode')}</Button>
+            <Button size="sm" variant="ghost" onClick={() => void copy(url, t('embedLink'))}>{t('copyEmbedLink')}</Button>
           </div>
         </div>
       ) : null}

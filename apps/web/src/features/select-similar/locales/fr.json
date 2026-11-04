@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "selectAll",
+    "lengthItemsSelected",
+    "selectOnly",
+    "onlyOneKindOfItem",
+    "noNameInTheSelection",
+    "ofThisType",
+    "selectSomethingFirst",
+    "withThisColour",
+    "selectSomethingWithAColour",
+    "withThisTag",
+    "selectSomethingTagged"
+  ],
+  "selectAll": "Tout sélectionner",
+  "lengthItemsSelected": "{length} éléments sélectionnés",
+  "selectOnly": "Sélectionner uniquement",
+  "onlyOneKindOfItem": "Un seul type d’élément est sélectionné",
+  "noNameInTheSelection": "Pas de {name} dans la sélection",
+  "ofThisType": "De ce type",
+  "selectSomethingFirst": "Sélectionnez d’abord quelque chose",
+  "withThisColour": "De cette couleur",
+  "selectSomethingWithAColour": "Sélectionnez quelque chose qui a une couleur",
+  "withThisTag": "Avec cette étiquette",
+  "selectSomethingTagged": "Sélectionnez quelque chose avec une étiquette"
+}

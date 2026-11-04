@@ -5,6 +5,7 @@ import type { Editor, Point, Rect } from '@engine';
 import { pointLaser, stopLaser } from './laser';
 import { currentPosition, slides, type PresentExt } from './model';
 
+import { t } from '../messages';
 export interface PresentState {
   presenting: boolean;
   /** Current slide (frame id), null when presenting a board without frames. */
@@ -90,7 +91,7 @@ export function startPresenting(editor: Editor, fromFrameId?: string | null, opt
   if (!opts.handedOver && editor.host.presentation)
     editor.host.presentation.start(start?.id ?? null).catch((e: unknown) => {
       stopPresenting(editor, { quietly: true });
-      editor.host.notify(e instanceof Error ? e.message : 'Couldn’t start presenting', 'info');
+      editor.host.notify(e instanceof Error ? e.message : t('couldnTStartPresenting'), 'info');
     });
   publish(editor, { presenting: { frameId: start?.id ?? null, startedAt: Date.now() } });
   // The presenter sees how the room reacts (#144: features/presence counts, nothing is stored).
@@ -148,8 +149,8 @@ export async function handOff(editor: Editor, to: { id: string; name: string }):
   try {
     await p.handoff(to.id, presentStore(editor).getState().frameId);
     stopPresenting(editor, { quietly: true });
-    editor.host.notify(`${to.name} presents now`, 'success');
+    editor.host.notify(t('namePresentsNow', { name: to.name }), 'success');
   } catch (e) {
-    editor.host.notify(e instanceof Error ? e.message : 'Couldn’t hand over', 'error');
+    editor.host.notify(e instanceof Error ? e.message : t('couldnTHandOver'), 'error');
   }
 }

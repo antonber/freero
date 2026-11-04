@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "doc",
+    "thatItemIsnTOn",
+    "thisKindOfLinkHas",
+    "openYouMayBeAble",
+    "open",
+    "openLink",
+    "openTitle",
+    "smartLink",
+    "smartLinks"
+  ],
+  "doc": "문서",
+  "thatItemIsnTOn": "해당 항목이 더 이상 이 보드에 없거나 숨겨져 있어요.",
+  "thisKindOfLinkHas": "이 종류의 링크는 아직 열 수 있는 페이지가 없어요.",
+  "openYouMayBeAble": "열기(액세스를 요청할 수 있어요)",
+  "open": "열기",
+  "openLink": "링크 열기",
+  "openTitle": "{title} 열기",
+  "smartLink": "스마트 링크",
+  "smartLinks": "스마트 링크"
+}

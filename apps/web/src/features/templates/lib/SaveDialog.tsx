@@ -7,6 +7,7 @@ import { Button, Input, Modal, SegmentedControl, Spinner, TextArea, Toggle } fro
 import { DOCK_ID } from './insert';
 import { SAVE_DIALOG_ID, saveAsTemplate } from './saved';
 
+import { t } from '../messages';
 type Scope = 'board' | 'selection';
 
 function usePreview(editor: Editor, ids: string[] | undefined): string | null | 'loading' {
@@ -48,16 +49,16 @@ export function SaveTemplateDialog({ editor, props }: PanelProps) {
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     const n = name.trim();
-    if (!n) return setError('Give your template a name');
+    if (!n) return setError(t('giveYourTemplateAName'));
     setBusy(true);
     try {
       const saved = await saveAsTemplate(editor, { ids, name: n, description: description.trim(), shareWithTeam: !!team && shareWithTeam });
       close();
-      editor.host.notify(saved.shared && team ? `Saved “${saved.name}” and shared it with ${team.name}.` : `Saved “${saved.name}” to your templates.`, 'success', {
-        action: { label: 'View', run: () => editor.openDock(DOCK_ID) },
+      editor.host.notify(saved.shared && team ? t('savedNameAndSharedIt', { name: saved.name, name2: team.name }) : t('savedNameToYourTemplates', { name: saved.name }), 'success', {
+        action: { label: t('view'), run: () => editor.openDock(DOCK_ID) },
       });
     } catch (err) {
-      editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not save the template.', 'error');
+      editor.host.notify(err instanceof Error && err.message ? err.message : t('couldNotSaveTheTemplate'), 'error');
     } finally {
       setBusy(false);
     }
@@ -67,43 +68,39 @@ export function SaveTemplateDialog({ editor, props }: PanelProps) {
     <Modal
       open
       onClose={busy ? () => {} : close}
-      title="Save as template"
+      title={t('saveAsTemplate2')}
       width={480}
       footer={
         <>
-          <Button variant="secondary" onClick={close} disabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={BookmarkPlus} loading={busy} disabled={busy || count === 0} onClick={() => submit()}>
-            Save template
-          </Button>
+          <Button variant="secondary" onClick={close} disabled={busy}>{t('cancel')}</Button>
+          <Button variant="primary" icon={BookmarkPlus} loading={busy} disabled={busy || count === 0} onClick={() => submit()}>{t('saveTemplate')}</Button>
         </>
       }
     >
       <form className="fr-tpl-save" onSubmit={submit} noValidate>
         {selection.length > 0 ? (
           <SegmentedControl<Scope>
-            aria-label="What to save"
+            aria-label={t('whatToSave')}
             value={scope}
             onChange={setScope}
             options={[
-              { value: 'board', label: 'Whole board' },
-              { value: 'selection', label: 'Selection' },
+              { value: 'board', label: t('wholeBoard') },
+              { value: 'selection', label: t('selection') },
             ]}
           />
         ) : null}
-        <div className="fr-tpl-save__preview" aria-label="Preview">
-          {preview === 'loading' ? <Spinner size={20} /> : preview ? <img src={preview} alt="" /> : <span>Nothing to preview</span>}
+        <div className="fr-tpl-save__preview" aria-label={t('preview')}>
+          {preview === 'loading' ? <Spinner size={20} /> : preview ? <img src={preview} alt="" /> : <span>{t('nothingToPreview')}</span>}
         </div>
         <p className="fr-tpl-save__count">
-          {count === 0 ? 'This board is empty. Add something first.' : `${count} ${count === 1 ? 'item' : 'items'}`}
+          {count === 0 ? t('thisBoardIsEmptyAdd') : `${count} ${count === 1 ? 'item' : 'items'}`}
         </p>
         <Input
-          label="Name"
+          label={t('name')}
           autoFocus
           maxLength={80}
           value={name}
-          placeholder="e.g. Weekly team retro"
+          placeholder={t('eGWeeklyTeamRetro')}
           onChange={(e) => {
             setName(e.target.value);
             setError(null);
@@ -111,18 +108,18 @@ export function SaveTemplateDialog({ editor, props }: PanelProps) {
           error={error ?? undefined}
         />
         <TextArea
-          label="Description"
+          label={t('description')}
           maxLength={500}
           rows={3}
           value={description}
-          placeholder="What is it for? (optional)"
+          placeholder={t('whatIsItForOptional')}
           onChange={(e) => setDescription(e.target.value)}
         />
-        {team ? <Toggle checked={shareWithTeam} onChange={setShareWithTeam} label={`Share with ${team.name}`} /> : null}
+        {team ? <Toggle checked={shareWithTeam} onChange={setShareWithTeam} label={t('shareWithName', { name: team.name })} /> : null}
         <p className="fr-tpl-save__note">
           {team && shareWithTeam
-            ? `Everyone in ${team.name} (not guests) can add it to their boards. You can stop sharing it later.`
-            : 'Only you can see your templates. Add them to any board from the Templates panel.'}
+            ? t('everyoneInNameNotGuests', { name: team.name })
+            : t('onlyYouCanSeeYour')}
         </p>
       </form>
     </Modal>

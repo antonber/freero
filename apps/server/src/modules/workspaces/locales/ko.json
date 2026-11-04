@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} 님이 Freero의 “{workspace}” 워크스페이스에 초대했어요",
+  "invite.title": "Freero에서 “{workspace}”에 참여하세요",
+  "invite.body": "{role, select, admin {{inviter} 님이 팀 워크스페이스에 관리자로 참여하도록 초대했어요.} member {{inviter} 님이 팀 워크스페이스에 멤버로 참여하도록 초대했어요.} other {{inviter} 님이 팀 워크스페이스에 게스트로 참여하도록 초대했어요(나와 공유된 보드를 볼 수 있어요).}} Freero는 무료 온라인 화이트보드예요. 무료 계정이 필요해요.",
+  "invite.action": "워크스페이스 참여",
+  "invite.outro": "{inviter} 님({email})이 이 초대를 보냈어요. 링크는 한 번만 사용할 수 있으며 14일 후에 만료돼요."
+}

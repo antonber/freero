@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "Signaler le tableau…",
+  "report": "Signaler…",
+  "report2": "Signaler",
+  "thanksForYourReportFreero": "Merci pour votre signalement. Les modérateurs de Freero vont l’examiner.",
+  "yourReportCouldNotBe": "Votre signalement n’a pas pu être envoyé. Réessayez.",
+  "reportTargetNoun": "Signaler : {target_noun}",
+  "tellFreeroSModeratorsWhat": "Expliquez aux modérateurs de Freero ce qui ne va pas. Le propriétaire du tableau ne saura pas qui l’a signalé.",
+  "cancel": "Annuler",
+  "sendReport": "Envoyer le signalement",
+  "whatSTheProblem": "Quel est le problème ?",
+  "detailsOptional": "Détails (facultatif)",
+  "anythingThatHelpsUsUnderstand": "Tout ce qui nous aide à comprendre, p. ex. où cela se trouve sur le tableau",
+  "yourEmailOptional": "Votre e-mail (facultatif)",
+  "toHearWhatWeDecided": "Pour connaître notre décision"
+}

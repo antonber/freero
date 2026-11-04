@@ -110,7 +110,7 @@
 .fr-input__suffix {
   display: inline-flex;
   align-items: center;
-  margin-right: -6px;
+  margin-inline-end: -6px;
 }
 
 /* ---- TextArea ---- */
@@ -163,7 +163,7 @@
 .fr-toggle__thumb {
   position: absolute;
   top: 2px;
-  left: 2px;
+  inset-inline-start: 2px;
   width: 16px;
   height: 16px;
   background: #fff;

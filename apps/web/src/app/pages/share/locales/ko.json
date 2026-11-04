@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "공유된 항목",
+  "couldNotCreateABoard": "보드를 만들지 못했어요",
+  "addToABoard": "보드에 추가",
+  "nothingArrivedThatFreeroCan": "Freero가 배치할 수 있는 항목이 도착하지 않았어요. 이미지, 링크 또는 텍스트를 공유하세요.",
+  "shared": "공유됨",
+  "failedFilesWerenTImages": "{failed, plural, other {파일 {failed}개는 Freero가 저장할 수 있는 이미지가 아니었어요(또는 업로드 용량이 가득 찼어요).}}",
+  "newBoard": "새 보드",
+  "orABoardYouCan": "또는 편집할 수 있는 보드",
+  "untitledBoard": "제목 없는 보드",
+  "noBoardsYouCanEdit": "아직 편집할 수 있는 보드가 없어요."
+}

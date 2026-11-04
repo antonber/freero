@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "العناصر المشتركة",
+  "couldNotCreateABoard": "تعذّر إنشاء لوحة",
+  "addToABoard": "إضافة إلى لوحة",
+  "nothingArrivedThatFreeroCan": "لم يصل شيء يمكن لـ Freero وضعه: شارك صورًا أو رابطًا أو نصًا.",
+  "shared": "تمت المشاركة",
+  "failedFilesWerenTImages": "{failed, plural, zero {{failed} ملف لم يكن صورة يمكن لـ Freero تخزينها (أو أن حصة الرفع ممتلئة).} one {ملف واحد لم يكن صورة يمكن لـ Freero تخزينها (أو أن حصة الرفع ممتلئة).} two {ملفان لم يكونا صورتين يمكن لـ Freero تخزينهما (أو أن حصة الرفع ممتلئة).} few {{failed} ملفات لم تكن صورًا يمكن لـ Freero تخزينها (أو أن حصة الرفع ممتلئة).} many {{failed} ملفًا لم تكن صورًا يمكن لـ Freero تخزينها (أو أن حصة الرفع ممتلئة).} other {{failed} ملف لم تكن صورًا يمكن لـ Freero تخزينها (أو أن حصة الرفع ممتلئة).}}",
+  "newBoard": "لوحة جديدة",
+  "orABoardYouCan": "أو لوحة يمكنك تعديلها",
+  "untitledBoard": "لوحة بلا عنوان",
+  "noBoardsYouCanEdit": "لا توجد لوحات يمكنك تعديلها بعد."
+}

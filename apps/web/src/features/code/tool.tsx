@@ -4,9 +4,10 @@ import { codeAt } from './lib/actions';
 import { setEditingCode } from './lib/editing';
 import { loadHighlighter } from './lib/tokens';
 
+import { t } from './messages';
 export default defineTool({
   id: 'code',
-  label: 'Code block',
+  label: t('codeBlock'),
   icon: SquareCode,
   order: 46,
   placement: 'more',

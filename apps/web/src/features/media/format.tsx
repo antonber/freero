@@ -4,6 +4,7 @@ import { defineFormat } from '@engine';
 import { Spinner } from '@ui';
 import { downloadBlockedReason, downloadItem, type Downloadable } from './lib/download';
 
+import { t } from './messages';
 /** One selected file card or video / audio item: download it. */
 export default defineFormat({
   id: 'media.format',
@@ -29,9 +30,7 @@ export default defineFormat({
             }
           }}
         >
-          {busy ? <Spinner size={14} /> : <Download size={16} aria-hidden />}
-          Download
-        </button>
+          {busy ? <Spinner size={14} /> : <Download size={16} aria-hidden />}{t('download')}</button>
       </div>
     );
   },

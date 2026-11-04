@@ -3,7 +3,7 @@ import type { CommentMessage, CommentThread } from '@freero/shared';
 import { createTestBoard, type Editor, type TestBoard } from '@engine';
 import manifest from './feature';
 import { decodeMentions, encodeMentions, mentionQuery } from './lib/mentions';
-import { anchorFor, assembleThreads, isUnread, listThreads, threadPoint, upgradeLegacy } from './lib/model';
+import { anchorFor, areaFromDrag, assembleThreads, isUnread, listThreads, threadPoint, upgradeLegacy } from './lib/model';
 import { authorName } from './lib/people';
 import { deleteMessage, deleteThread, editMessage, getThreads, replaceInMessages, reply, setResolved, startDraft, submitDraft, toggleReaction } from './lib/state';
 
@@ -216,5 +216,40 @@ describe('who a comment is shown as', () => {
     expect(authorName({ authorId: 'guest_x', authorName: 'Ana' }, {})).toBe('Guest · Ana');
     // Accounts that are gone keep what the purge wrote.
     expect(authorName({ authorId: 'gone', authorName: 'Deleted user' }, {})).toBe('Deleted user');
+  });
+});
+
+describe('areas and files (#143)', () => {
+  it('a drag makes a thread about that area, which others see pinned at its corner (where older clients show it as a point), while a click stays a point', () => {
+    const [ann, bob] = twoPeople();
+    // A wobble of a few pixels while clicking is still a click.
+    expect(areaFromDrag({ x: 100, y: 100 }, { x: 104, y: 103 }, 1)).toBeNull();
+    const drag = areaFromDrag({ x: 300, y: 260 }, { x: 100, y: 100 }, 1)!;
+    startDraft(ann, { x: drag.x, y: drag.y, elementId: null, area: drag.area });
+    const id = submitDraft(ann, 'this whole corner needs work')!;
+    board!.sync();
+    const t = getThreads(bob).find((x) => x.id === id)!;
+    expect(t.area).toEqual({ x: 100, y: 100, w: 200, h: 160 });
+    expect({ x: t.x, y: t.y }).toEqual({ x: 300, y: 100 });
+  });
+
+  it('a reply carrying only a file is sent without any text, and the other person gets the file', () => {
+    const [ann, bob] = twoPeople();
+    const id = startThread(ann, 'see the plan');
+    board!.sync();
+    reply(bob, id, '   ', [{ src: '/uploads/abcdefghijklmnop.bin', name: 'plan.pdf', size: 1200 }]);
+    board!.sync();
+    const last = getThreads(ann).find((x) => x.id === id)!.messages.at(-1)!;
+    expect(last.authorId).toBe('bob');
+    expect(last.attachments).toEqual([{ src: '/uploads/abcdefghijklmnop.bin', name: 'plan.pdf', size: 1200 }]);
+  });
+
+  it('the author filter combines with Open: their resolved threads and threads they never wrote in stay out', () => {
+    const m = (id: string, authorId: string): CommentMessage => ({ id, authorId, authorName: authorId, text: id, createdAt: 1, reactions: {} });
+    const t = (id: string, resolved: boolean, ...messages: CommentMessage[]): CommentThread => ({
+      id, x: 0, y: 0, elementId: null, corner: null, resolved, messages, createdAt: 1, createdBy: messages[0].authorId,
+    });
+    const threads = [t('ann-open', false, m('a', 'ann')), t('ann-replied', false, m('b', 'bob'), m('c', 'ann')), t('ann-done', true, m('d', 'ann')), t('bob-only', false, m('e', 'bob'))];
+    expect(listThreads(threads, 'open', 'me', {}, 'ann').map((x) => x.id).sort()).toEqual(['ann-open', 'ann-replied']);
   });
 });

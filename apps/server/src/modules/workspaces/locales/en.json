@@ -1,0 +1,7 @@
+{
+  "invite.subject": "{inviter} invited you to the “{workspace}” workspace on Freero",
+  "invite.title": "Join “{workspace}” on Freero",
+  "invite.body": "{role, select, admin {{inviter} invited you to join their team workspace as an admin.} member {{inviter} invited you to join their team workspace as a member.} other {{inviter} invited you to join their team workspace as a guest (you’ll see the boards shared with you).}} Freero is a free online whiteboard; you’ll need a free account.",
+  "invite.action": "Join the workspace",
+  "invite.outro": "{inviter} ({email}) sent this invite. The link works once and expires in 14 days."
+}

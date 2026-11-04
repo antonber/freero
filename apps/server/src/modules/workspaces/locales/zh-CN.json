@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} 邀请你加入 Freero 上的「{workspace}」工作区",
+  "invite.title": "加入 Freero 上的「{workspace}」",
+  "invite.body": "{role, select, admin {{inviter} 邀请你以管理员身份加入其团队工作区。} member {{inviter} 邀请你以成员身份加入其团队工作区。} other {{inviter} 邀请你以访客身份加入其团队工作区（你将看到与你分享的白板）。}}Freero 是一款免费的在线白板；你需要一个免费账户。",
+  "invite.action": "加入工作区",
+  "invite.outro": "此邀请由 {inviter}（{email}）发送。链接仅可使用一次，14 天后失效。"
+}

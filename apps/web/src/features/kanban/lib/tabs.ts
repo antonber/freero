@@ -31,6 +31,7 @@ import {
 } from '@freero/shared';
 import type { Editor } from '@engine';
 
+import { t as tr } from '../messages';
 type Reader = Pick<Editor, 'getPersonalView'>;
 
 const kanbanOf = (editor: Pick<Editor, 'getElement'>, id: string): KanbanElement | null => {
@@ -86,7 +87,7 @@ export const addTableTab = (editor: Editor, kid: string, name?: string) => addTa
 export function renameTab(editor: Editor, kid: string, id: string, name: string): string | null {
   const k = kanbanOf(editor, kid);
   const tab = k && viewTabs(k).find((t) => t.id === id);
-  if (!k || !tab || !tabsEditable(editor, k, tab)) return 'You can’t rename this tab';
+  if (!k || !tab || !tabsEditable(editor, k, tab)) return tr('youCanTRenameThis');
   const problem = tabNameProblem(k, name, id);
   if (problem) return problem;
   if (name.trim() === tab.name) return null;

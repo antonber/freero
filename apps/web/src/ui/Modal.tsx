@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { focusableIn, layerZ, useDismissableLayer, useRestoreFocus } from './layers';
+import { t } from './messages';
 import './Modal.css';
 
 export interface ModalProps {
@@ -101,7 +102,7 @@ export function Modal({ open, onClose, title, width = 440, footer, children, des
               </p>
             ) : null}
           </div>
-          <button type="button" className="fr-modal__close" aria-label="Close" onClick={onClose}>
+          <button type="button" className="fr-modal__close" aria-label={t('close')} onClick={onClose}>
             <X size={18} />
           </button>
         </header>

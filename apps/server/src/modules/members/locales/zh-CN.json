@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} 邀请你加入 Freero 上的「{board}」",
+  "invite.title": "{inviter} 邀请你加入一个白板",
+  "invite.body": "{role, select, editor {你可以编辑「{board}」。} commenter {你可以评论「{board}」。} other {你可以查看「{board}」。}}Freero 是一款免费的在线白板；你需要一个免费账户才能打开它。",
+  "invite.action": "打开白板",
+  "invite.outro": "此邀请由 {inviter}（{email}）发送。链接仅可使用一次，14 天后失效。"
+}

@@ -6,18 +6,19 @@ import { AUDIT_ACTIONS, describeDevice, type AdminMember, type AuditEvent, type 
 import { Button, Input, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError, type AuditQuery } from '../../api/client';
 
+import { t } from './messages';
 const CATEGORIES: SelectOption<string>[] = [
-  { value: '', label: 'All events' },
-  { value: 'organisation.', label: 'Organisation' },
-  { value: 'auth.,account.', label: 'Sign-ins and accounts' },
-  { value: 'member.,workspace.transferred,workspace.owner_inherited', label: 'Members and roles' },
-  { value: 'workspace.policies_changed,workspace.settings_changed,board.link_sharing_changed,board.embedding_changed', label: 'Policies and sharing' },
-  { value: 'board.member_invited,board.member_role_changed,board.member_removed', label: 'Board sharing' },
-  { value: 'board.exported,board.duplicated,board.download_refused,template.saved,audit.exported', label: 'Exports and copies' },
-  { value: 'api.', label: 'API tokens, apps and calls' },
-  { value: 'board.trashed,board.restored,board.deleted,board.purged,workspace.deleted,project.deleted', label: 'Deletions and restores' },
-  { value: 'version.', label: 'Version restores' },
-  { value: 'project.', label: 'Projects' },
+  { value: '', label: t('allEvents') },
+  { value: 'organisation.', label: t('organisation') },
+  { value: 'auth.,account.', label: t('signInsAndAccounts') },
+  { value: 'member.,workspace.transferred,workspace.owner_inherited', label: t('membersAndRoles') },
+  { value: 'workspace.policies_changed,workspace.settings_changed,board.link_sharing_changed,board.embedding_changed', label: t('policiesAndSharing') },
+  { value: 'board.member_invited,board.member_role_changed,board.member_removed', label: t('boardSharing') },
+  { value: 'board.exported,board.duplicated,board.download_refused,template.saved,audit.exported', label: t('exportsAndCopies') },
+  { value: 'api.', label: t('apiTokensAppsAndCalls') },
+  { value: 'board.trashed,board.restored,board.deleted,board.purged,workspace.deleted,project.deleted', label: t('deletionsAndRestores') },
+  { value: 'version.', label: t('versionRestores') },
+  { value: 'project.', label: t('projects') },
 ];
 
 const PAGE = 50;
@@ -28,7 +29,7 @@ const dayStart = (v: string) => (v ? new Date(`${v}T00:00:00`).getTime() : undef
 
 function actorText(e: AuditEvent): string {
   if (e.actor) return e.actor.name;
-  if (typeof e.metadata.operator === 'string') return `Freero operator (${e.metadata.operator})`;
+  if (typeof e.metadata.operator === 'string') return t('freeroOperatorOperator', { operator: e.metadata.operator });
   if (e.action === 'auth.login_failed') return 'Someone';
   return 'Freero';
 }
@@ -79,7 +80,7 @@ export function AdminAudit({ workspace, workspaceNames }: { workspace: Workspace
         setEvents((prev) => (before ? [...(prev ?? []), ...page.events] : page.events));
         setNext(page.next);
       } catch (e) {
-        notify(e instanceof ApiError ? e.message : 'Could not load the audit log', 'error');
+        notify(e instanceof ApiError ? e.message : t('couldNotLoadTheAudit'), 'error');
         if (!before) setEvents([]);
       }
     },
@@ -102,20 +103,18 @@ export function AdminAudit({ workspace, workspaceNames }: { workspace: Workspace
     try {
       setIntegrity((await api.auditIntegrity(workspace.id)).integrity);
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : 'Could not check the audit log', 'error');
+      notify(e instanceof ApiError ? e.message : t('couldNotCheckTheAudit'), 'error');
     } finally {
       setChecking(false);
     }
   };
 
-  const personOptions: SelectOption<string>[] = [{ value: '', label: 'Anyone' }, ...people.map((p) => ({ value: p.userId, label: p.name, description: p.email }))];
+  const personOptions: SelectOption<string>[] = [{ value: '', label: t('anyone') }, ...people.map((p) => ({ value: p.userId, label: p.name, description: p.email }))];
 
   return (
     <section aria-labelledby="admin-audit-title">
       <div className="fr-admin__head">
-        <h1 id="admin-audit-title" className="fr-admin__title">
-          Audit log
-        </h1>
+        <h1 id="admin-audit-title" className="fr-admin__title">{t('auditLog')}</h1>
         <div className="fr-admin__head-actions">
           <a className="fr-admin__button-link" href={api.auditExportUrl(workspace.id, 'csv', filter)} download>
             <Download size={15} aria-hidden /> CSV
@@ -125,40 +124,32 @@ export function AdminAudit({ workspace, workspaceNames }: { workspace: Workspace
           </a>
         </div>
       </div>
-      <p className="fr-admin__muted fr-admin__intro">
-        Sign-ins, member and role changes, sharing and policy changes, exports, deletions and restores in {workspace.name}
-        {workspaceNames ? ' and every one of its workspaces (each also keeps its own log)' : ''}, kept for the retention you set. Events can’t be edited or
-        removed; each is linked to the one before it, so tampering shows when you check.
-      </p>
+      <p className="fr-admin__muted fr-admin__intro">{t('signInsMemberAndRole', { name: workspace.name })}{workspaceNames ? t('andEveryOneOfIts') : ''}{t('keptForTheRetentionYou')}</p>
 
       <div className="fr-admin-filters">
-        <Select<string> aria-label="Kind of event" options={CATEGORIES} value={category} onChange={setCategory} width={220} />
-        <Select<string> aria-label="Person" options={personOptions} value={actor} onChange={setActor} width={190} />
-        <label className="fr-admin-filters__date">
-          From
-          <Input type="date" aria-label="From date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <Select<string> aria-label={t('kindOfEvent')} options={CATEGORIES} value={category} onChange={setCategory} width={220} />
+        <Select<string> aria-label={t('person')} options={personOptions} value={actor} onChange={setActor} width={190} />
+        <label className="fr-admin-filters__date">{t('from')}<Input type="date" aria-label={t('fromDate')} value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label className="fr-admin-filters__date">
-          To
-          <Input type="date" aria-label="To date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <label className="fr-admin-filters__date">{t('to')}<Input type="date" aria-label={t('toDate')} value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
       </div>
 
       {events === null ? (
         <Spinner />
       ) : events.length === 0 ? (
-        <p className="fr-admin__muted">No events match these filters.</p>
+        <p className="fr-admin__muted">{t('noEventsMatchTheseFilters')}</p>
       ) : (
         <div className="fr-admin-table-wrap">
           <table className="fr-admin-table fr-admin-table--audit">
             <thead>
               <tr>
-                <th scope="col">When</th>
-                {workspaceNames ? <th scope="col">Where</th> : null}
-                <th scope="col">Who</th>
-                <th scope="col">What</th>
-                <th scope="col">Details</th>
-                <th scope="col">From</th>
+                <th scope="col">{t('when')}</th>
+                {workspaceNames ? <th scope="col">{t('where')}</th> : null}
+                <th scope="col">{t('who')}</th>
+                <th scope="col">{t('what')}</th>
+                <th scope="col">{t('details')}</th>
+                <th scope="col">{t('from')}</th>
               </tr>
             </thead>
             <tbody>
@@ -169,7 +160,7 @@ export function AdminAudit({ workspace, workspaceNames }: { workspace: Workspace
                   </td>
                   {workspaceNames ? (
                     <td className="fr-admin__muted">
-                      {!e.workspaceId ? 'Account' : e.workspaceId === workspace.id ? 'Organisation' : (workspaceNames.get(e.workspaceId) ?? 'A former workspace')}
+                      {!e.workspaceId ? t('account') : e.workspaceId === workspace.id ? t('organisation') : (workspaceNames.get(e.workspaceId) ?? t('aFormerWorkspace'))}
                     </td>
                   ) : null}
                   <td>
@@ -193,25 +184,18 @@ export function AdminAudit({ workspace, workspaceNames }: { workspace: Workspace
       )}
       {next ? (
         <div className="fr-admin__more">
-          <Button onClick={() => void more()} loading={loadingMore}>
-            Load older events
-          </Button>
+          <Button onClick={() => void more()} loading={loadingMore}>{t('loadOlderEvents')}</Button>
         </div>
       ) : null}
 
       <div className="fr-admin-card fr-admin-integrity">
         <div className="fr-admin-row">
           <div className="fr-admin-row__text">
-            <span className="fr-admin-row__label">Integrity</span>
-            <span className="fr-admin-row__hint">
-              Re-checks every stored event against the one before it, against the newest event the log recorded, and against the hourly checkpoints the
-              server signs.
-            </span>
+            <span className="fr-admin-row__label">{t('integrity')}</span>
+            <span className="fr-admin-row__hint">{t('reChecksEveryStoredEvent')}</span>
           </div>
           <div className="fr-admin-row__control">
-            <Button icon={ShieldCheck} onClick={() => void verify()} loading={checking}>
-              Check now
-            </Button>
+            <Button icon={ShieldCheck} onClick={() => void verify()} loading={checking}>{t('checkNow')}</Button>
           </div>
         </div>
         {integrity ? (
@@ -219,16 +203,13 @@ export function AdminAudit({ workspace, workspaceNames }: { workspace: Workspace
             {integrity.ok ? <ShieldCheck size={16} aria-hidden /> : <ShieldAlert size={16} aria-hidden />}
             <span>
               {integrity.ok
-                ? `Intact: ${integrity.events} event${integrity.events === 1 ? '' : 's'} checked.`
-                : `Not intact: ${integrity.problem}.`}
+                ? t('intactEventsEventsChecked', { events: integrity.events })
+                : t('notIntactProblem', { problem: integrity.problem })}
               {integrity.anchors.checked
-                ? ` Matches ${integrity.anchors.checked} signed checkpoint${integrity.anchors.checked === 1 ? '' : 's'} (newest ${new Date(integrity.anchors.lastAt ?? 0).toLocaleString()}).`
+                ? t('matchesCheckedSignedCheckpointsNewest', { checked: integrity.anchors.checked, value: new Date(integrity.anchors.lastAt ?? 0).toLocaleString() })
                 : ''}
               {integrity.headHash ? (
-                <>
-                  {' '}
-                  Newest hash <code>{integrity.headHash.slice(0, 16)}…</code> — note it down to prove later that nothing before it changed.
-                </>
+                <>{t('newestHash')}{' '}<code>{integrity.headHash.slice(0, 16)}…</code>{' '}{t('noteItDownToProve')}</>
               ) : null}
             </span>
           </div>

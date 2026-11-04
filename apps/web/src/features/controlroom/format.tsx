@@ -2,6 +2,7 @@ import { Pause, Play } from 'lucide-react';
 import { AGENT_PAUSES_COLLECTION, laneAgentOf, type AgentPauseRecord, type KanbanElement } from '@freero/shared';
 import { defineFormat, richTextToPlain, useCanEdit, useCollection, type Editor } from '@engine';
 import { ToolbarButton } from '@ui';
+import { t } from './messages';
 import './controlroom.css';
 
 /** The agent a selected kanban is the lane of ("Tasks · Builder"), or null. */
@@ -23,15 +24,15 @@ function PauseControl({ editor, lane }: { editor: Editor; lane: KanbanElement })
     <ToolbarButton
       wide
       className="fr-controlroom-fmt-btn"
-      label={paused ? `Let ${agent} change this board again` : `Stop ${agent} changing this board until you resume it`}
+      label={paused ? t('letAgentChangeThisBoard', { agent }) : t('stopAgentChangingThisBoard', { agent })}
       aria-pressed={paused}
       onClick={() => {
         setPaused(editor, lane.id, !paused);
-        editor.host.notify(paused ? `${agent} can work on this board again` : `${agent} is paused: its next change to this board will be refused`, 'info');
+        editor.host.notify(paused ? t('agentCanWorkOnThis', { agent }) : t('agentIsPausedItsNext', { agent }), 'info');
       }}
     >
       {paused ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
-      {paused ? 'Resume agent' : 'Pause agent'}
+      {paused ? t('resumeAgent') : t('pauseAgent')}
     </ToolbarButton>
   );
 }

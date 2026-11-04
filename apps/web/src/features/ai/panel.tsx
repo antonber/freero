@@ -8,62 +8,62 @@ import { definePanel, type PanelProps } from '@engine';
 import { Button, ElementsPreview, Modal, SegmentedControl, Select, TextArea } from '@ui';
 import { AI_DIALOG, applyPreview, CATCH_UP_DIALOG, clusterable, fillNote, suggestedTask } from './lib/actions';
 import { CatchUpDialog } from './lib/CatchUp';
+import { t as tr } from './messages';
 import './ai.css';
 
 const TASKS: Array<{ value: AiTask; label: string; icon: typeof Lightbulb }> = [
-  { value: 'ideas', label: 'Ideas', icon: Lightbulb },
-  { value: 'cluster', label: 'Cluster', icon: Shapes },
-  { value: 'summarize', label: 'Summarise', icon: FileText },
-  { value: 'diagram', label: 'Diagram', icon: Workflow },
+  { value: 'ideas', label: tr('ideas'), icon: Lightbulb },
+  { value: 'cluster', label: tr('cluster'), icon: Shapes },
+  { value: 'summarize', label: tr('summarise2'), icon: FileText },
+  { value: 'diagram', label: tr('diagram'), icon: Workflow },
 ];
 
 const DIAGRAMS: Array<{ value: AiDiagramKind; label: string }> = [
-  { value: 'flowchart', label: 'Flowchart' },
-  { value: 'sequence', label: 'Sequence diagram' },
-  { value: 'mindmap', label: 'Mind map' },
-  { value: 'class', label: 'Class diagram (UML)' },
-  { value: 'er', label: 'Entity-relationship diagram' },
-  { value: 'state', label: 'State diagram' },
-  { value: 'orgchart', label: 'Org chart' },
-  { value: 'kanban', label: 'Kanban board' },
+  { value: 'flowchart', label: tr('flowchart') },
+  { value: 'sequence', label: tr('sequenceDiagram') },
+  { value: 'mindmap', label: tr('mindMap') },
+  { value: 'class', label: tr('classDiagramUml') },
+  { value: 'er', label: tr('entityRelationshipDiagram') },
+  { value: 'state', label: tr('stateDiagram') },
+  { value: 'orgchart', label: tr('orgChart') },
+  { value: 'kanban', label: tr('kanbanBoard') },
 ];
 
 const CLUSTER_BY: Array<{ value: AiClusterBy; label: string }> = [
-  { value: 'theme', label: 'By theme' },
-  { value: 'sentiment', label: 'By sentiment' },
+  { value: 'theme', label: tr('byTheme') },
+  { value: 'sentiment', label: tr('bySentiment') },
 ];
 
 const isTask = (v: unknown): v is AiTask => v === 'report' || TASKS.some((t) => t.value === v);
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function hint(task: AiTask, selected: number, sortable: number, into: boolean, by: AiClusterBy): string {
   switch (task) {
     case 'expand':
-      return 'New children for a mind-map topic.';
+      return tr('newChildrenForAMind');
     case 'catchup':
-      return 'A summary of what others changed, just for you.';
+      return tr('aSummaryOfWhatOthers');
     case 'report':
-      return 'A note beside the activity with themes, notable answers and suggested next steps, from the results everyone can see.';
+      return tr('aNoteBesideTheActivity');
     case 'ideas':
-      return selected ? `Sticky notes about your prompt, with the ${plural(selected, 'selected item')} as background.` : 'Sticky notes about your prompt, next to what you’re looking at.';
+      return selected ? tr('stickyNotesAboutYourPrompt', { value: tr('countSelectedItem', { count: selected }) }) : tr('stickyNotesAboutYourPrompt2');
     case 'cluster':
-      if (sortable < 2) return 'Select two or more notes to sort them into groups.';
-      return by === 'sentiment' ? `Sorts the ${plural(sortable, 'selected note')} into positive, neutral, mixed and negative.` : `Sorts the ${plural(sortable, 'selected note')} into named groups.`;
+      if (sortable < 2) return tr('selectTwoOrMoreNotes');
+      return by === 'sentiment' ? tr('sortsTheValueIntoPositive', { value: tr('countSelectedNote', { count: sortable }) }) : tr('sortsTheValueIntoNamed', { value: tr('countSelectedNote', { count: sortable }) });
     case 'summarize':
-      if (into) return 'A written summary of the meeting, added inside its frame.';
-      return selected ? `A written summary of the ${plural(selected, 'selected item')}, placed beside them.` : 'A written summary of the whole board.';
+      if (into) return tr('aWrittenSummaryOfThe');
+      return selected ? tr('aWrittenSummaryOfThe2', { value: tr('countSelectedItem', { count: selected }) }) : tr('aWrittenSummaryOfThe3');
     case 'diagram':
-      return selected ? `A diagram built from the ${plural(selected, 'selected item')} (and your prompt).` : 'A diagram of what you describe.';
+      return selected ? tr('aDiagramBuiltFromThe', { value: tr('countSelectedItem', { count: selected }) }) : tr('aDiagramOfWhatYou');
   }
 }
 
 const PLACEHOLDER: Record<AiTask, string> = {
-  report: 'Optional: what to focus on, e.g. what to do next quarter',
-  catchup: 'Optional: what to focus on',
-  expand: 'Optional: what to focus on',
+  report: tr('optionalWhatToFocusOn'),
+  catchup: tr('optionalWhatToFocusOn2'),
+  expand: tr('optionalWhatToFocusOn2'),
   ideas: 'e.g. Icebreakers for a remote team retro',
-  cluster: 'Optional: how to group them, e.g. by customer pain',
-  summarize: 'Optional: what to focus on, e.g. decisions and owners',
+  cluster: tr('optionalHowToGroupThem'),
+  summarize: tr('optionalWhatToFocusOn3'),
   diagram: 'e.g. How a support ticket goes from new to resolved',
 };
 
@@ -111,12 +111,12 @@ function AiDialog({ editor, props }: PanelProps) {
         // the board is the preview now, with accept / reject for whoever can edit.
         close();
         editor.runCommand('suggestions.open');
-        editor.host.notify('Some of these notes are other people’s, so the AI’s sorting was added as suggestions to accept or reject.', 'info');
+        editor.host.notify(tr('someOfTheseNotesAre'), 'info');
         return;
       }
       setResult(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The AI request failed. Try again.');
+      setError(e instanceof Error ? e.message : tr('theAiRequestFailedTry'));
     } finally {
       setBusy(false);
     }
@@ -126,7 +126,7 @@ function AiDialog({ editor, props }: PanelProps) {
     if (!result) return;
     if (!(fill && into && fillNote(editor, result, fill, into))) applyPreview(editor, result, { into });
     close();
-    editor.host.notify('Added by AI. Undo takes it back.', 'success');
+    editor.host.notify(tr('addedByAiUndoTakes'), 'success');
   };
 
   const moved = useMemo(
@@ -154,45 +154,33 @@ function AiDialog({ editor, props }: PanelProps) {
       footer={
         result ? (
           <>
-            <Button variant="ghost" onClick={() => setResult(null)} disabled={busy}>
-              Back
-            </Button>
-            <Button variant="secondary" onClick={run} loading={busy}>
-              Try again
-            </Button>
-            <Button variant="primary" onClick={insert} disabled={busy} data-autofocus>
-              Insert
-            </Button>
+            <Button variant="ghost" onClick={() => setResult(null)} disabled={busy}>{tr('back')}</Button>
+            <Button variant="secondary" onClick={run} loading={busy}>{tr('tryAgain')}</Button>
+            <Button variant="primary" onClick={insert} disabled={busy} data-autofocus>{tr('insert')}</Button>
           </>
         ) : (
           <>
-            <Button variant="ghost" onClick={close} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={run} disabled={blocked} loading={busy}>
-              Preview
-            </Button>
+            <Button variant="ghost" onClick={close} disabled={busy}>{tr('cancel')}</Button>
+            <Button variant="primary" onClick={run} disabled={blocked} loading={busy}>{tr('preview')}</Button>
           </>
         )
       }
     >
       {result ? (
         <div className="fr-ai__result">
-          <ElementsPreview elements={result.snapshot?.elements ?? []} moved={moved} label="Preview of the result" />
+          <ElementsPreview elements={result.snapshot?.elements ?? []} moved={moved} label={tr('previewOfTheResult')} />
           <p className="fr-ai__summary">{result.summary}</p>
-          <p className="fr-ai__fine">
-            Nothing is on the board yet. Insert adds it as one step you can undo. AI can be wrong: check it before you rely on it.
-          </p>
+          <p className="fr-ai__fine">{tr('nothingIsOnTheBoard')}</p>
         </div>
       ) : (
         <div className="fr-ai__form">
-          {!fixed && <SegmentedControl<AiTask> aria-label="What should AI do?" options={TASKS} value={task} onChange={(t) => setTask(t)} className="fr-ai__tasks" />}
+          {!fixed && <SegmentedControl<AiTask> aria-label={tr('whatShouldAiDo')} options={TASKS} value={task} onChange={(t) => setTask(t)} className="fr-ai__tasks" />}
           <p className="fr-ai__hint">{hint(task, selection.length, sortable, !!into, by)}</p>
-          {task === 'cluster' && <SegmentedControl<AiClusterBy> aria-label="How to group" size="sm" options={CLUSTER_BY} value={by} onChange={setBy} />}
-          {task === 'diagram' && <Select<AiDiagramKind> aria-label="Kind of diagram" size="sm" options={DIAGRAMS} value={diagram} onChange={setDiagram} />}
+          {task === 'cluster' && <SegmentedControl<AiClusterBy> aria-label={tr('howToGroup')} size="sm" options={CLUSTER_BY} value={by} onChange={setBy} />}
+          {task === 'diagram' && <Select<AiDiagramKind> aria-label={tr('kindOfDiagram')} size="sm" options={DIAGRAMS} value={diagram} onChange={setDiagram} />}
           {!(task === 'cluster' && by === 'sentiment') && (
           <TextArea
-            label={needsPrompt ? 'Prompt' : 'Prompt (optional)'}
+            label={needsPrompt ? tr('prompt') : tr('promptOptional')}
             value={prompt}
             rows={3}
             maxLength={AI_LIMITS.prompt}
@@ -209,8 +197,7 @@ function AiDialog({ editor, props }: PanelProps) {
             </p>
           )}
           <p className="fr-ai__fine">
-            {task === 'ideas' && !selection.length ? 'Your prompt is' : task === 'report' ? 'Your prompt and the activity’s results (never who answered) are' : 'Your prompt and the board content it reads are'} sent to {ai.provider}, set up by{' '}
-            {ai.source === 'workspace' ? 'your workspace’s admins' : 'this Freero server’s operator'}. Board text is passed as data, never as instructions.
+            {task === 'ideas' && !selection.length ? tr('yourPromptIs') : task === 'report' ? tr('yourPromptAndTheActivity') : tr('yourPromptAndTheBoard')}{' '}{tr('sentToProviderSetUp', { provider: ai.provider })}{ai.source === 'workspace' ? tr('yourWorkspaceSAdmins') : tr('thisFreeroServerSOperator')}. Board text is passed as data, never as instructions.
           </p>
         </div>
       )}

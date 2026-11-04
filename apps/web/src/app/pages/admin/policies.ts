@@ -3,6 +3,7 @@
 import type { InactiveBoardAction, LinkAccess, WorkspacePolicies, WorkspaceSettings } from '@freero/shared';
 import type { SelectOption } from '@ui';
 
+import { t } from './messages';
 /** The policies that are a choice among words (`linkMaxDays`, a number of days, has its own field). */
 export type ChoicePolicy = Exclude<keyof WorkspacePolicies, 'linkMaxDays'>;
 
@@ -14,28 +15,28 @@ export const POLICY_FIELDS: Array<{
 }> = [
   {
     key: 'teamAccess',
-    label: 'Members on the team’s boards',
-    hint: 'What every member can do on the workspace’s boards. A project can set its own level; owners and admins always edit, and people invited to a board keep their role.',
+    label: t('membersOnTheTeamS'),
+    hint: t('whatEveryMemberCanDo'),
     options: [
-      { value: 'editor', label: 'Can edit' },
-      { value: 'commenter', label: 'Can comment' },
-      { value: 'viewer', label: 'Can view' },
+      { value: 'editor', label: t('canEdit') },
+      { value: 'commenter', label: t('canComment') },
+      { value: 'viewer', label: t('canView') },
     ],
   },
   {
     key: 'externalSharing',
-    label: 'Sharing outside the workspace',
-    hint: 'Who may invite people who aren’t in this workspace to its boards, or share them by link. “Nobody” also ends such access that exists today.',
+    label: t('sharingOutsideTheWorkspace'),
+    hint: t('whoMayInvitePeopleWho'),
     options: [
-      { value: 'anyone', label: 'Board owners and editors' },
-      { value: 'admins', label: 'Owners and admins only' },
-      { value: 'none', label: 'Nobody' },
+      { value: 'anyone', label: t('boardOwnersAndEditors') },
+      { value: 'admins', label: t('ownersAndAdminsOnly') },
+      { value: 'none', label: t('nobody') },
     ],
   },
   {
     key: 'linkSharing',
-    label: 'Links to boards',
-    hint: 'The most a board’s “anyone with the link” can grant. Existing links above it are lowered right away.',
+    label: t('linksToBoards'),
+    hint: t('theMostABoardS'),
     options: [
       { value: 'editor', label: 'Up to “can edit”' },
       { value: 'commenter', label: 'Up to “can comment”' },
@@ -45,74 +46,74 @@ export const POLICY_FIELDS: Array<{
   },
   {
     key: 'linkPassword',
-    label: 'Password on board links',
-    hint: 'Required: a board’s link can only be turned on or changed with a password. Links that are on today keep working; the list below shows them.',
+    label: t('passwordOnBoardLinks'),
+    hint: t('requiredABoardSLink'),
     options: [
-      { value: 'optional', label: 'Up to the board' },
-      { value: 'required', label: 'Required' },
+      { value: 'optional', label: t('upToTheBoard') },
+      { value: 'required', label: t('required') },
     ],
   },
   {
     key: 'publicLinks',
-    label: 'Visitors without an account',
-    hint: 'Whether a board’s link also lets in people without a Freero account, as a named guest who can view or comment for a few hours.',
+    label: t('visitorsWithoutAnAccount'),
+    hint: t('whetherABoardSLink'),
     options: [
-      { value: 'anyone', label: 'Allowed on shared links' },
-      { value: 'signedIn', label: 'Sign-in required' },
+      { value: 'anyone', label: t('allowedOnSharedLinks') },
+      { value: 'signedIn', label: t('signInRequired') },
     ],
   },
   {
     key: 'guestInvites',
-    label: 'Inviting guests',
-    hint: 'Guests see only the boards and projects shared with them.',
+    label: t('invitingGuests'),
+    hint: t('guestsSeeOnlyTheBoards'),
     options: [
-      { value: 'admins', label: 'Owners and admins' },
-      { value: 'members', label: 'Any member' },
+      { value: 'admins', label: t('ownersAndAdmins') },
+      { value: 'members', label: t('anyMember') },
     ],
   },
   {
     key: 'liveEmbeds',
-    label: 'Live embeds',
-    hint: 'Whether links to videos, design files, docs and code playgrounds can be opened as live frames on the boards (after a click). Off: every link stays a preview card.',
+    label: t('liveEmbeds'),
+    hint: t('whetherLinksToVideosDesign'),
     options: [
-      { value: 'on', label: 'Allowed' },
-      { value: 'off', label: 'Off' },
+      { value: 'on', label: t('allowed') },
+      { value: 'off', label: t('off') },
     ],
   },
   {
     key: 'templatePublishing',
-    label: 'Who shares templates',
-    hint: 'Who may share a template with the whole team — in an organisation, who may publish company templates every workspace sees. Admins can lock and retire them (Templates).',
+    label: t('whoSharesTemplates'),
+    hint: t('whoMayShareATemplate'),
     options: [
-      { value: 'members', label: 'Any member' },
-      { value: 'admins', label: 'Owners and content admins' },
+      { value: 'members', label: t('anyMember') },
+      { value: 'admins', label: t('ownersAndContentAdmins') },
     ],
   },
   {
     key: 'boardEmbeds',
-    label: 'Embedding boards on other sites',
-    hint: 'Whether board owners can embed their boards live in wikis, docs and websites. An embed never shows more than the board’s sharing allows. Off: no board shows on any other site, and embeds already placed stop working.',
+    label: t('embeddingBoardsOnOtherSites'),
+    hint: t('whetherBoardOwnersCanEmbed'),
     options: [
-      { value: 'on', label: 'Allowed' },
-      { value: 'off', label: 'Off' },
+      { value: 'on', label: t('allowed') },
+      { value: 'off', label: t('off') },
     ],
   },
   {
     key: 'downloads',
-    label: 'Export, download and copy',
-    hint: 'Who may export boards as images or PDF, duplicate them or save them as templates.',
+    label: t('exportDownloadAndCopy'),
+    hint: t('whoMayExportBoardsAs'),
     options: [
-      { value: 'anyone', label: 'Anyone with access' },
-      { value: 'members', label: 'Members (not guests)' },
-      { value: 'admins', label: 'Owners and admins only' },
+      { value: 'anyone', label: t('anyoneWithAccess') },
+      { value: 'members', label: t('membersNotGuests') },
+      { value: 'admins', label: t('ownersAndAdminsOnly') },
     ],
   },
 ];
 
 /** `linkMaxDays` (#39): '' stands for no limit. */
 export const LINK_MAX_DAYS_FIELD = {
-  label: 'Board links expire within',
-  hint: 'Turning a board’s link on or changing it needs an expiry no later than this. Links that are on today keep working; the list below shows them.',
+  label: t('boardLinksExpireWithin'),
+  hint: t('turningABoardSLink'),
   options: [
     { value: '', label: 'No limit' },
     ...[1, 7, 14, 30, 90, 180, 365].map((d) => ({ value: String(d), label: d === 1 ? '1 day' : `${d} days` })),
@@ -124,54 +125,54 @@ type NumberSetting = Exclude<keyof WorkspaceSettings, 'requireTwoFactor' | 'inac
 /** Select values are strings; '' stands for null (no limit). */
 export const SETTING_FIELDS: Record<NumberSetting, { label: string; hint: string; options: SelectOption<string>[] }> = {
   sessionMaxHours: {
-    label: 'Sign-in lasts at most',
-    hint: 'After this long, members sign in again — on every device, whatever they are doing.',
+    label: t('signInLastsAtMost'),
+    hint: t('afterThisLongMembersSign'),
     options: [
-      { value: '', label: '30 days (Freero’s default)' },
-      { value: '8', label: '8 hours' },
-      { value: '12', label: '12 hours' },
-      { value: '24', label: '1 day' },
-      { value: '168', label: '7 days' },
-      { value: '336', label: '14 days' },
+      { value: '', label: t('n30DaysFreeroSDefault') },
+      { value: '8', label: t('n8Hours') },
+      { value: '12', label: t('n12Hours') },
+      { value: '24', label: t('n1Day') },
+      { value: '168', label: t('n7Days') },
+      { value: '336', label: t('n14Days') },
     ],
   },
   sessionIdleMinutes: {
-    label: 'Sign out after inactivity',
-    hint: 'A session nobody has used for this long ends. Editing a board counts as activity.',
+    label: t('signOutAfterInactivity'),
+    hint: t('aSessionNobodyHasUsed'),
     options: [
-      { value: '', label: 'Never' },
-      { value: '15', label: '15 minutes' },
-      { value: '30', label: '30 minutes' },
-      { value: '60', label: '1 hour' },
-      { value: '240', label: '4 hours' },
-      { value: '1440', label: '1 day' },
+      { value: '', label: t('never') },
+      { value: '15', label: t('n15Minutes') },
+      { value: '30', label: t('n30Minutes') },
+      { value: '60', label: t('n1Hour') },
+      { value: '240', label: t('n4Hours') },
+      { value: '1440', label: t('n1Day') },
     ],
   },
   trashRetentionDays: {
-    label: 'Deleted boards stay in the trash for',
-    hint: 'Then they are deleted for good, with their history. Shortening it applies to boards already in the trash.',
-    options: [7, 14, 30, 60, 90, 180, 365].map((d) => ({ value: String(d), label: d === 30 ? '30 days (default)' : `${d} days` })),
+    label: t('deletedBoardsStayInThe'),
+    hint: t('thenTheyAreDeletedFor'),
+    options: [7, 14, 30, 60, 90, 180, 365].map((d) => ({ value: String(d), label: d === 30 ? t('n30DaysDefault') : t('dDays', { d }) })),
   },
   versionRetentionDays: {
-    label: 'Keep unnamed versions for',
-    hint: 'Automatic versions and “before restore” copies older than this are deleted. Named versions are always kept.',
+    label: t('keepUnnamedVersionsFor'),
+    hint: t('automaticVersionsAndBeforeRestore'),
     options: [
-      { value: '', label: 'Always (thinned out)' },
-      ...[30, 90, 180, 365, 730].map((d) => ({ value: String(d), label: `${d} days` })),
+      { value: '', label: t('alwaysThinnedOut') },
+      ...[30, 90, 180, 365, 730].map((d) => ({ value: String(d), label: t('dDays', { d }) })),
     ],
   },
   inactiveBoardDays: {
-    label: 'After',
-    hint: 'Days nobody opened or changed a board. Owners are emailed two weeks before, and any activity starts the clock again.',
+    label: t('after'),
+    hint: t('daysNobodyOpenedOrChanged'),
     options: [
-      { value: '', label: 'Choose a period' },
-      ...[90, 180, 365, 730, 1095].map((d) => ({ value: String(d), label: d % 365 === 0 ? (d === 365 ? '1 year' : `${d / 365} years`) : `${d} days` })),
+      { value: '', label: t('chooseAPeriod') },
+      ...[90, 180, 365, 730, 1095].map((d) => ({ value: String(d), label: d % 365 === 0 ? (d === 365 ? t('n1Year') : t('valueYears', { value: d / 365 })) : t('dDays', { d }) })),
     ],
   },
   auditRetentionDays: {
-    label: 'Keep audit events for',
-    hint: 'Older events are removed from the workspace’s audit log. Export the log first if you need to keep it longer.',
-    options: [90, 180, 365, 730, 1095, 2555].map((d) => ({ value: String(d), label: d === 365 ? '1 year (default)' : d % 365 === 0 ? `${d / 365} years` : d === 2555 ? '7 years' : `${d} days` })),
+    label: t('keepAuditEventsFor'),
+    hint: t('olderEventsAreRemovedFrom'),
+    options: [90, 180, 365, 730, 1095, 2555].map((d) => ({ value: String(d), label: d === 365 ? t('n1YearDefault') : d % 365 === 0 ? t('valueYears', { value: d / 365 }) : d === 2555 ? t('n7Years') : t('dDays', { d }) })),
   },
 };
 
@@ -179,8 +180,8 @@ export const settingValue = (v: number | null) => (v === null ? '' : String(v));
 
 /** #154: what happens to boards nobody uses (loosest to strictest, as the organisation's floor orders them). */
 export const INACTIVE_ACTION_OPTIONS: SelectOption<InactiveBoardAction>[] = [
-  { value: 'none', label: 'Nothing' },
-  { value: 'archive', label: 'Archive them (read-only, kept)' },
-  { value: 'trash', label: 'Move them to the trash' },
+  { value: 'none', label: t('nothing') },
+  { value: 'archive', label: t('archiveThemReadOnlyKept') },
+  { value: 'trash', label: t('moveThemToTheTrash') },
 ];
 export const parseSetting = (v: string) => (v === '' ? null : Number(v));

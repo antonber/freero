@@ -9,6 +9,7 @@ import { Button, Input, Logo } from '@ui';
 import { api, ApiError } from '../api/client';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import { loginPath } from '../lib/nav';
+import { t } from '../messages';
 import './BoardPage.css';
 
 const BoardPage = lazy(() => import('./BoardPage'));
@@ -40,11 +41,11 @@ export function GuestGate({ boardId }: { boardId: string }) {
     };
   }, [boardId]);
 
-  if (gate.status === 'loading') return <FullPageSpinner label="Opening board" />;
+  if (gate.status === 'loading') return <FullPageSpinner label={t('openingBoard')} />;
   if (gate.status === 'sign-in') return <Navigate to={loginPath(location.pathname + location.search)} replace />;
   if (gate.status === 'guest')
     return (
-      <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+      <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
         <BoardPage guest={gate.guest} onGuestEnded={() => setGate({ status: 'loading' })} />
       </Suspense>
     );
@@ -61,14 +62,14 @@ function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: Guest
 
   const join = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return setError('Enter a name so others know who you are');
-    if (info.passwordRequired && !password) return setError('Enter the link’s password');
+    if (!name.trim()) return setError(t('enterANameSoOthers'));
+    if (info.passwordRequired && !password) return setError(t('enterTheLinkSPassword'));
     setBusy(true);
     setError(null);
     try {
       onJoined((await api.joinAsGuest(boardId, name.trim(), info.passwordRequired ? password : undefined)).guest);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not join the board');
+      setError(err instanceof ApiError ? err.message : t('couldNotJoinTheBoard'));
       setBusy(false);
     }
   };
@@ -78,14 +79,13 @@ function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: Guest
     <div className="fr-boarderror">
       <div className="fr-boarderror__card fr-reqaccess">
         <Logo size={36} />
-        <h1>{info.title || 'Untitled board'}</h1>
+        <h1>{info.title || t('untitledBoard')}</h1>
         <p className="fr-guestjoin__role">
-          <Icon size={15} aria-hidden /> You can {info.role === 'commenter' ? 'view and comment' : 'view'} without an account
-        </p>
+          <Icon size={15} aria-hidden />{' '}{t('youCan')}{' '}{info.role === 'commenter' ? t('viewAndComment') : 'view'}{' '}{t('withoutAnAccount')}</p>
         <form className="fr-reqaccess__form" onSubmit={join} noValidate>
           <Input
-            aria-label="Your name"
-            placeholder="Your name"
+            aria-label={t('yourName')}
+            placeholder={t('yourName')}
             value={name}
             maxLength={MAX_GUEST_NAME}
             autoFocus
@@ -98,8 +98,8 @@ function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: Guest
           {info.passwordRequired ? (
             <Input
               type="password"
-              aria-label="Link password"
-              placeholder="Password (ask the board’s owner)"
+              aria-label={t('linkPassword')}
+              placeholder={t('passwordAskTheBoardS')}
               autoComplete="off"
               maxLength={LINK_PASSWORD_MAX}
               value={password}
@@ -109,13 +109,10 @@ function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: Guest
               }}
             />
           ) : null}
-          <span className="fr-guestjoin__hint">Others will see you as “{guestDisplayName(name.trim() || 'your name')}”. Your visit lasts a few hours.</span>
-          <Button type="submit" variant="primary" size="lg" loading={busy}>
-            Join as guest
-          </Button>
+          <span className="fr-guestjoin__hint">{t('othersWillSeeYouAs', { guestDisplayName: guestDisplayName(name.trim() || 'your name') })}</span>
+          <Button type="submit" variant="primary" size="lg" loading={busy}>{t('joinAsGuest')}</Button>
         </form>
-        <p className="fr-boarderror__account">
-          Have an account? <Link to={loginPath(next)}>Sign in</Link> · <Link to={loginPath(next, 'signup')}>Sign up free</Link>
+        <p className="fr-boarderror__account">{t('haveAnAccount')}{' '}<Link to={loginPath(next)}>{t('signIn')}</Link> · <Link to={loginPath(next, 'signup')}>{t('signUpFree')}</Link>
         </p>
       </div>
     </div>

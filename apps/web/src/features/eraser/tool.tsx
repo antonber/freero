@@ -1,6 +1,7 @@
 import { Eraser, Scissors, Trash2 } from 'lucide-react';
 import { defineTool, useCamera, usePointer, useToolOptions, type Editor, type Point } from '@engine';
 import { eraseSweep, type EraserMode } from './lib/erase';
+import { t } from './messages';
 import './eraser.css';
 
 const TOOL_ID = 'eraser';
@@ -8,8 +9,8 @@ const TOOL_ID = 'eraser';
 const RADII = [6, 12, 22] as const;
 const LABELS = ['Small eraser', 'Medium eraser', 'Large eraser'] as const;
 const MODES: Array<{ id: EraserMode; label: string; icon: typeof Scissors }> = [
-  { id: 'partial', label: 'Erase parts of strokes', icon: Scissors },
-  { id: 'stroke', label: 'Erase whole strokes', icon: Trash2 },
+  { id: 'partial', label: t('erasePartsOfStrokes'), icon: Scissors },
+  { id: 'stroke', label: t('eraseWholeStrokes'), icon: Trash2 },
 ];
 
 interface EraserOptions {
@@ -29,7 +30,7 @@ function EraserOptionsView({ editor }: { editor: Editor }) {
   const { size = 1, mode = 'partial' } = useToolOptions<EraserOptions>(TOOL_ID);
   return (
     <div className="fr-eraser-options">
-      <div className="fr-eraser-row" role="group" aria-label="Eraser mode">
+      <div className="fr-eraser-row" role="group" aria-label={t('eraserMode')}>
         {MODES.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -44,7 +45,7 @@ function EraserOptionsView({ editor }: { editor: Editor }) {
           </button>
         ))}
       </div>
-      <div className="fr-eraser-row" role="group" aria-label="Eraser size">
+      <div className="fr-eraser-row" role="group" aria-label={t('eraserSize')}>
         {RADII.map((r, i) => (
           <button
             key={r}
@@ -84,7 +85,7 @@ function EraserCursor() {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Eraser',
+  label: t('eraser'),
   icon: Eraser,
   shortcut: 'e',
   order: 52,

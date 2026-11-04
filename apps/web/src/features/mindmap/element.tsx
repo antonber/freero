@@ -33,6 +33,7 @@ import {
 } from './lib/actions';
 import { planFollow } from './lib/follow';
 import { outlineFromPaste } from './lib/outline';
+import { t } from './messages';
 import './mindmap.css';
 
 type Side = 'left' | 'right' | 'down';
@@ -94,8 +95,8 @@ function Hub({ id, side, w, h, collapsed, count, color, canEdit }: {
       data-fr-interactive=""
       className={`fr-mm__hub${collapsed ? ' is-collapsed' : ''}`}
       style={style}
-      title={collapsed ? `Expand (${count} hidden)` : 'Collapse branch'}
-      aria-label={collapsed ? `Expand ${count} hidden ideas` : 'Collapse branch'}
+      title={collapsed ? t('expandCountHidden', { count }) : t('collapseBranch')}
+      aria-label={collapsed ? t('expandCountHiddenIdeas', { count }) : t('collapseBranch')}
       disabled={!canEdit}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
@@ -148,7 +149,7 @@ const MindmapNode = memo(function MindmapNode({ element, selected, editing }: El
           color={isRoot ? readableTextColor(color) : 'var(--fr-ink)'}
           padding={0}
           style={{ padding: `${s.padY}px ${s.padX}px`, fontWeight: s.weight }}
-          placeholder={isRoot ? 'Central topic' : 'Idea'}
+          placeholder={isRoot ? t('centralTopic') : t('idea')}
         />
       </div>
       {hasKids && element.collapsed && (
@@ -188,7 +189,7 @@ function planFor(change: FollowChange): Map<string, Point> {
 
 export default defineElement({
   type: 'mindmap',
-  label: { one: 'Mind map topic', many: 'Mind map topics' },
+  label: { one: t('mindMapTopic'), many: t('mindMapTopics') },
   icon: NetworkIcon,
   resize: 'none',
   rotatable: false,
@@ -213,11 +214,11 @@ export default defineElement({
   // Never with Ctrl/Cmd held (KAI-202): Mod+Alt+↑/↓ stays the engine's bring forward / send
   // backward for a topic like for anything else; Alt+↑/↓ alone is the mind map's reorder.
   keys: [
-    { shortcuts: ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'], label: 'Go to the parent, a child or a sibling topic', minRole: 'viewer' },
-    { shortcuts: ['enter'], label: 'Add a sibling topic' },
-    { shortcuts: ['alt+arrowup', 'alt+arrowdown'], label: 'Move a topic up or down among its siblings' },
-    { shortcuts: ['space'], label: 'Collapse or expand a branch' },
-    { shortcuts: ['delete', 'backspace'], label: 'Delete a topic and its branch' },
+    { shortcuts: ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'], label: t('goToTheParentA'), minRole: 'viewer' },
+    { shortcuts: ['enter'], label: t('addASiblingTopic') },
+    { shortcuts: ['alt+arrowup', 'alt+arrowdown'], label: t('moveATopicUpOr') },
+    { shortcuts: ['space'], label: t('collapseOrExpandABranch') },
+    { shortcuts: ['delete', 'backspace'], label: t('deleteATopicAndIts') },
   ],
   onKeyDown(e, { editor, selection }) {
     if (e.ctrlKey || e.metaKey) return false;

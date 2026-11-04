@@ -56,7 +56,12 @@ app/                Shell: routing, pages, auth, REST client, Host implementatio
 - `@engine` (= `engine/index.ts`) and `@ui` (= `ui/index.ts`) are the only entry points into those
   layers from outside. Deep imports fail [W0].
 - `yjs`, `y-websocket`, `y-protocols`, `lib0` may only be imported in `engine/store/` [W5].
-- `import.meta.glob` is only allowed in `app/board/features.ts` [W6].
+- `import.meta.glob` is only allowed in the discovery roots: `app/board/features.ts` (features) and
+  `app/i18n/catalogs.ts` (translations) [W6].
+- Stylesheets use logical properties (`inset-inline-start`, `margin-inline-end`, `text-align: start` …),
+  never physical `left` / `right` (except `left: 50%` centring) [W14]: the chrome mirrors in
+  right-to-left languages, and the board is pinned `dir="ltr"`, where they resolve as before.
+- Interface text lives in catalogues, never inline (`npm run check:i18n`; see "Interface languages").
 - Only the app talks to Freero's server: `'/api/…'` / `'/ws/…'` paths in `features/`, `engine/` or
   `ui/` fail [W9]. Need server data? Add a typed method to `Host` (e.g. `serverNow()`).
 - Raw HTML sinks (`innerHTML =`, `dangerouslySetInnerHTML`, `insertAdjacentHTML`, …) are allowed only
@@ -87,6 +92,9 @@ features/<name>/
                            add to items (votes, tags, comments). Runs on the SERVER and in the
                            browser (Editor.getOutline, "Board as list"), so it is pure:
                            '@freero/shared', files of its own feature, type-only imports [W13]
+  messages.ts    optional  export const t = defineMessages('features/<name>', en) (@ui), English in
+                           locales/en.json, translations beside it (locales/<lang>.json); see
+                           "Interface languages"
   importer.ts    optional  export default defineImporter({ id, importPriority, importData }) (or an
                            array): pasted / dropped data no single element type owns — a whole file
                            of another tool (features/import), offered in the same priority order and
@@ -136,9 +144,11 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A diagram (#117, #118; `DiagramElement`, type `diagram`: title, layout, layers, `laidOut`, its box) and its members' layout — positions, `diagramPinned`, `diagramLayer` on join, layer locks (`locked` + `layerLocked`), stacking, lines between members joining it — read through `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `memberLayerId`, `hiddenByLayer`, `diagramSignature`) | `features/diagram`: its element's `arrange` (`planDiagram`, the one writer of members' positions: it reflows only when `laidOut`, the structure's signature, changes; a member moved by hand is pinned) and its commands (layout, Lay out again, unpin, layers); server `modules/structure` / `modules/api` through `withDiagramLayout` in the same change; `layoutStructure` wraps graph-like structures in one (`wrapInDiagram`) | `runCommand('diagram.setLayout' / 'diagram.relayout' / 'diagram.unpin' / 'diagram.wrap' / 'diagram.focus')`. Features that write member positions of a diagram (from-text's source edits) leave them to it. Focus is engine UI state (`Editor.setFocus`); the layer a person adds to is a personal view (`_layer`). See docs/design/diagrams.md |
+| A person's interface language (`users.locale`, `Account.locale`, #5) and the page's `<html lang dir>` | server `modules/auth` (`PATCH /api/auth/me` `{ locale }`, sign-up's `locale`); in the browser `app/i18n/locale.ts` is the only writer of `lang` / `dir` and of the language this browser remembers — decided once before the app loads (`?lang=` for the tab > the account's > this browser's > `navigator.languages` > English), a change saves and reloads | `LanguagePicker` (`app/components`): account settings → Language, under the sign-in card |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
+| Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
@@ -1301,6 +1311,34 @@ byte-for-byte what it was). When on:
   `https://www.googletagmanager.com`, `connect-src` + Google's collection hosts, `frame-src` +
   `'self'`. The privacy policy's analytics tokens (`modules/site/legal.ts`) describe exactly this.
 
+## Interface languages (#5; docs/design/i18n.md)
+
+- Ten languages (`LOCALES` in `@freero/shared`): English (the source), German, French, Spanish,
+  Portuguese (Brazil), Japanese, Korean, Simplified Chinese, Arabic and Hebrew (right to left).
+- Every owned unit keeps its English in `<unit>/locales/en.json`, translations in
+  `locales/<lang>.json` beside it, bound once by its `messages.ts`
+  (`export const t = defineMessages('<unit path>', en)`): each feature, `engine/`, `ui/`, `app/`
+  and each `app/pages/<page>/`; on the server each module that words emails
+  (`modules/<m>/messages.ts` with `platform/i18n.ts`'s `defineMessages(import.meta.url, en)`,
+  called as `t(locale, key, vars)`). Messages are ICU (`{count, plural, one {# vote} other {# votes}}`),
+  formatted by `@freero/shared` `formatMessage` with the platform's Intl. Never build plurals or
+  dates by hand: `formatDate` / `formatNumber` / `formatRelative` / `formatList` from `@ui`.
+- The language is fixed for a page: `main.tsx` awaits `bootLocale()` (which loads that language's
+  chunk, found by `app/i18n/catalogs.ts`) before importing the app, so module-level labels are
+  translated too. Choosing a language reloads.
+- Board content is never translated: `t()` is for interface text only; defaults written into a
+  board are written in the writer's language and belong to the board. The canvas, exports and
+  text measuring are `dir="ltr"` whatever the interface's direction.
+- Server errors keep their English `error` and add a `code` (+ `params`); `app/api/client.ts`
+  shows `errors.<code>` from the app catalogue when it has one. Emails are worded in the
+  recipient's language (invites: the invitee's account language, else the inviter's).
+- `npm run check:i18n` (in `npm run check`): keys used but missing in English, English keys unused,
+  namespaces that aren't their unit's path, stale / argument-changing / invalid translations, and
+  new hard-coded JSX text or label props beyond `i18n.baseline.json` (it only goes down).
+  `npm run i18n:extract -- <files>` moves hard-coded text into catalogues; `npm run i18n:status`
+  shows coverage. Machine translations are listed in each file's `"@@unreviewed"` until a person
+  checks them.
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
@@ -1361,16 +1399,16 @@ auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
 user_recovery_codes: two-step verification; auth_two_factor_recoveries: delayed "lost my
 authenticator" recoveries; guest_sessions: visitors without an account),
-`boards` (boards, stars, opens; trash; the guest join routes), `members` (board_members,
+`boards` (boards, stars, opens; trash; the guest join routes; board_legal_holds, board_owner_legal_holds: legal holds; boards.label_id), `members` (board_members,
 board_invites: pending invites for addresses without an account; board_access_requests; role
 resolution), `workspaces` (workspaces, workspace_members,
-workspace_invites, projects, project_members; organisations are directory-only `workspaces` rows; see
+workspace_invites, projects, project_members; workspace_labels, workspace_label_settings: classification labels; organisations are directory-only `workspaces` rows; see
 "Workspaces" and "Organisations" below), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors; y-websocket
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors, board_sealed_refs; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
 modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
-templates; content is opaque engine JSON), `stickers` (sticker_sets, stickers: a workspace's own
+templates; content is opaque engine JSON), `blueprints` (blueprints, blueprint_items: a project's boards and docs saved for reuse, #161; see "Blueprints"), `stickers` (sticker_sets, stickers: a workspace's own
 sticker sets, #138), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -1378,7 +1416,7 @@ period, orchestrating the owning modules' exports), `notifications` (notificatio
 notification_prefs, pending_mentions, card_due_watch, board_change_digests: inbox, live delivery,
 email digests, due-date reminders, the "changes on your boards" email), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on;
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache, sso_sp_keys, sso_sessions: per-workspace single sign-on;
 sso_domain_policies, sso_domain_captures: domain control),
 `scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
@@ -1414,7 +1452,8 @@ Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copi
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
-board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), and `problems` (problem_reports: “Report a problem”, see "Problem
+board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
+encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
@@ -1591,6 +1630,22 @@ reports" below).
   Size caps are per kind (`MAX_UPLOAD_MB` images / PDF, `MAX_MEDIA_UPLOAD_MB`,
   `MAX_ATTACHMENT_UPLOAD_MB`), refused before the body is read when `Content-Length` says so; every
   kind counts toward the one per-account quota. Moderation removal answers 410 on both paths.
+- Files on comments (#143; `uploads/commentFiles.ts`, `GET /api/boards/:id/comment-files/:threadId/:messageId/:index`):
+  a comment message's `attachments` (`@freero/shared` `CommentAttachment`, at most
+  `COMMENT_MAX_ATTACHMENTS`) are ATTACHMENT uploads of the message's author, so nothing serves them
+  at `/uploads/`. The route reads the message in the board AS THAT PERSON SEES IT (a thread in a
+  hidden frame or someone's draft isn't theirs; tombstoned threads / messages are gone), requires
+  a `.bin` that is its author's OWN upload (a message can't point at another person's file and
+  launder it out of the board it belongs to), and then: `?inline=1` shows a picture to anyone who
+  can open the board, only when its first bytes are PNG / JPEG / GIF / WebP (`Content-Disposition:
+  inline`, the sandbox CSP, `nosniff`); otherwise it is a download — the downloads policy applies
+  and it is audited (`board.file_downloaded`), like a file card. The uploads sweep keeps them
+  through the board-doc scan (the `/uploads/` URL is in the comments collection). On the web,
+  `Host.commentFile` (`imageUrl`, `download`) is the only way the comments feature reaches them.
+  Thread AREAS (#143, `CommentThreadRecord.area`): a drag with the comment tool stores the world
+  rectangle and pins the thread at its top-right corner (x, y), which is all older clients read —
+  they show it as a point thread there. The comments list filters by author too, combined with
+  Open / Unread / @Me / Resolved / Mine.
 
 ### Moderation (`modules/moderation`, KAI-142)
 
@@ -1718,7 +1773,7 @@ first in the app.
 ### Workspaces (`modules/workspaces`)
 
 Every board belongs to a workspace (`boards.workspace_id`) and optionally a project in it
-(`boards.project_id`). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
+(`boards.project_id`; projects nest, #129). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
 first use by `ensurePersonalWorkspace`, so signup — or any future sign-in path — needs no hook;
 deleted with the account row) that only ever holds its owner's boards. TEAM workspaces have
 members with roles owner / admin / member / guest (separate from board roles).
@@ -1746,6 +1801,32 @@ members with roles owner / admin / member / guest (separate from board roles).
   transfers) re-resolves the live sockets of the affected boards on every instance through
   realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
   that workspace and hands boards they owned there to the remover.
+- **Nested projects** (#129; `projects.parent_id`, `description`, `pinned_boards`, `project_pins`;
+  `workspaces/projects.ts`, `roles.ts` `projectChain` / `passesProject` / `teamAccessOf`): a project
+  may sit in another, `PROJECT_MAX_DEPTH` (3) levels at most. **Access only narrows on the way down**:
+  a project — and every board in it — reaches only someone who gets through EVERY project from it up
+  to the top (a private one: its members and groups; an open one: every full member; a guest: only
+  projects they were added to; owners / content admins: all). So a private sub-project narrows an
+  open parent, an "open" sub-project of a private parent is open only to the parent's people, and the
+  team access level is the strictest set on the way up (a lone project still overrides the
+  workspace's, as before). One resolver serves it all: `boardAccessLoader`, `teamMembers`,
+  `openToWholeTeam`, `boardGatekeepers`, the object registry and the project list walk the chain; a
+  broken chain (a parent that isn't there) fails closed. Adding someone to a sub-project whom its
+  parent shuts out is refused with the reason. **Moving** a project (`PATCH /projects/:id
+  { parentId }`) needs its manager, who also manages the project it LEAVES (or a content admin) —
+  leaving can open it wider — and who sees the one it enters; never into itself or below itself,
+  never deeper than the limit counting what it carries; both rows locked (moved: update, target:
+  share; creating a sub-project shares the parent's lock), so cycles can't race in. **Deleting**
+  refuses while it holds sub-projects (no `ON DELETE` action on `parent_id`: nothing may lift a
+  child to the top); its boards — without `?boards=` still 409 — move to the parent (`parent`; the
+  trash's boards too, so a restore never lands wider than the project was) or go to the trash
+  (`trash`: only boards the caller owns, unless a content admin). Every change re-resolves the boards
+  of the whole subtree (`boardIdsUnderProject`, also for groups and directory mappings). Pins are
+  per person (`PUT/DELETE /projects/:id/pin`, anyone who sees it); the project page (dashboard
+  `ProjectOverview`: path, description, sub-projects, the boards its managers pinned — ids, read
+  against the list the reader already gets — and `GET /workspaces/:id/activity?project=`). Public
+  API: `GET /api/v1/workspaces/:workspaceId/projects` (nested, `parentId`). Older clients list
+  sub-projects flat and keep working; the access rule is the server's.
 - **User groups** (#63; `workspaces/groups.ts`, tables `workspace_groups`, `workspace_group_members`,
   `project_groups`; members' `board_group_grants`): members admins make groups of the workspace's
   members (leaving the workspace leaves its groups, in `repo.removeMember`); directory (SCIM) groups
@@ -1778,6 +1859,24 @@ members with roles owner / admin / member / guest (separate from board roles).
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
   role change) makes everything someone shared with a workspace personal again when they leave it
   or become a guest there (`templates/init.ts`).
+- **Blueprints** (#161; `modules/blueprints`, tables `blueprints`, `blueprint_items`; dashboard
+  `BlueprintDialogs`): a project's boards and docs saved as a reusable setup with a description and
+  steps (`POST /projects/:id/blueprints`). What is saved is what the saver may take out: the boards
+  and docs of the project they can open, each through the downloads policy (`requireBoardDownload`
+  'template'), only the SHARED content (no layers: hidden frames, drafts, ballots), with comments and
+  session collections emptied (realtime `blueprintState`; `Y_LEFT_OUT_OF_BACKUPS`), at most
+  `BLUEPRINT_MAX_ITEMS`. Shared like a team template: personal, or with one team workspace its full
+  members see (the workspace's `templatePublishing` decides who may share), unshared by its owner or
+  that team's owners / content admins, made personal again when its owner leaves or becomes a guest
+  (`blueprints/init.ts`, the membership outbox topic). **Using one** (`POST /blueprints/:id/use`,
+  the public API's `POST /workspaces/:id/projects { blueprintId }`) is ONE transaction:
+  `createProject` (its page carries the description and the steps; a `parentId` must be a project
+  they can see) and, per item, boards' `createBoardWithState` (createBoard's checks and quota) —
+  first every copy (so every new id is known), then each copy's content with links among the items
+  rewritten to the copies (realtime `rewriteObjectLinks`: `/board/`, `/doc/`, `freero://` addresses
+  in collections and a doc's fragment; links elsewhere stay). If any copy can't be made, nothing is
+  left; lifecycle events follow the commit. A blueprint outlives its boards, so the uploads sweep
+  scans its items (`blueprintUploadReferences`). Audited: `blueprint.shared`, `blueprint.used`.
 - Company templates (#155; `templates.organisation_id`, `locked`, `retired_at`): its owner
   publishes a template to the organisation of one of their workspaces (`PATCH /templates/:id
   { organisationId }`); it then reaches the full members of every attached workspace (the one
@@ -1862,8 +1961,22 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   `idp_initiated` switch is on (off by default); then its `Destination` must also be this ACS, its
   RelayState counts only as a same-origin path (`unsolicitedReturnPath`), and the claims are parked
   on a new flow bound by cookie to the browser that posted, finished by the same same-site GET
-  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). Single logout and encrypted
-  assertions: #13. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). **SP keys, encryption,
+  signed requests, single logout** (#13; docs/design/compliance.md §4): a workspace's own RSA key
+  pairs (`sso/spKeys.ts`, `sso_sp_keys`: at most a current and a next one, self-signed certificate
+  DER-built there, private key sealed `sso-sp-key-v1`, never returned) are published in the SP
+  metadata we build (`saml.ts` `serviceProviderMetadata`: every key for signing and encryption, SLO
+  in both bindings); each decrypts encrypted assertions (tried in turn, rotation), the current one
+  signs AuthnRequests and logout messages with "Sign requests"; "Require encrypted assertions"
+  refuses one that arrived in the clear. Single logout (`sso/logout.ts`,
+  `/api/sso/:ws/saml/slo`, cross-site POST allowed): an IdP LogoutRequest must be signed (redirect:
+  over the query), from the IdP, addressed to this SLO URL, recent and used once (`sso_saml_cache`);
+  it ends only `sso_sessions` rows of that workspace + NameID (+ SessionIndex) through auth's
+  `endSessionsByKeys`. Those rows are written by auth's `onSessionStarted` from the opaque
+  `sessionTag` the SAML sign-in passes to `completeSignIn` (kept on `auth_challenges` across the
+  second step) and cascade with the session. Signing out here asks auth's `onSignOutRedirect`
+  (before the session row goes) and the logout answer's `redirect` sends the browser to the IdP
+  with a LogoutRequest. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
   `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
   a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
   started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
@@ -1912,10 +2025,61 @@ provisioning, baseline policies, the audit log and its SIEM streams are set once
   enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
   mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
   workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409),
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (an organisation with an open legal case: modules/ediscovery; refused deletion with 409),
   `workspaces.onTeamWorkspaceCreation` (domain control), `auth.onSignupExpected` (invite-only).
 - **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
   under Data (pages/admin/AdminIdentity.tsx).
+
+### Legal holds and classification labels (`modules/ediscovery`, `boards/legalHolds.ts`, `workspaces/labels.ts`; #157, #158; docs/design/compliance.md)
+
+- **Legal holds**: an eDiscovery case (`modules/ediscovery`) belongs to a team workspace or an
+  organisation (covering the workspaces attached when it is placed; "refresh" adds later ones) and
+  names custodians (every board a person owns in a covered workspace, now and later, trash
+  included) and boards. Owners and admins with BOTH the security and content scopes manage cases
+  (`requireCaseManager`): a case reveals and exports every board in it. Audited
+  `legal_hold.created / scope_changed / released / export_requested / export_downloaded` in the
+  place's log.
+- **Boards keeps the hold** (the only module that deletes boards): `board_legal_holds` (hold id =
+  case id, board, `via_owner` when carried from a custodian) and `board_owner_legal_holds` (hold,
+  workspace, custodian), written only by boards' repo through `placeLegalHold` / `narrowLegalHold` /
+  `releaseLegalHold`. The database refuses deleting a held board on ANY path — foreign keys
+  RESTRICT and the `boards_legal_hold_guard` trigger (owner holds; SQLSTATE `FH001`,
+  `repo.isLegalHoldViolation`), so even cascades from a deleted account or workspace fail — and the
+  same trigger gives a board its own hold row before it leaves a held owner (transfer, hand-over,
+  move). Every purge path honours it without reaching the trigger: the trash purge skips held
+  boards (`purgeTrashedBefore … NOT HELD`) and marks expired ones `discarded_at` (out of everyone's
+  trash, kept); "delete forever" on a held board only discards it (the hold is silent to its people;
+  audited `board.deleted` with `keptBy`); both are purged on the first round after release;
+  retention rules (`heldAmong`) skip held boards; realtime's snapshot pruning skips them
+  (`pruneSnapshots({ heldAmong })`, fail closed); the account purge waits (`underLegalHold({
+  ownerId })`, before any hand-over); a team workspace with held content can't be deleted (409
+  `legal_hold`), nor can its encryption key be destroyed (#159); an operator's "delete for good"
+  answers 409 (the board stays taken down). Audit retention skips the chains of open cases' places,
+  covered workspaces and custodians (`audit.onAuditRetentionHold`, registered by ediscovery's init;
+  fail closed).
+- **Case export**: a ZIP (`ediscovery/archive.ts`) of every held board in full — realtime's
+  `exportBoardForReview`: the shared doc, EVERY layer and every version as JSON — the audit events
+  of the place's chain about those boards and custodians, and `manifest.json` with the sha256 of
+  every file. Built by the `ediscovery:exports` job into uploads' private files, downloadable by
+  whoever manages the case until `DATA_EXPORT_TTL_HOURS`.
+- **Classification labels** (`workspace_labels`, `workspace_label_settings`, workspaces' repo; a
+  board's `boards.label_id`, boards' repo): a team workspace or organisation defines labels (an
+  organisation's reach all its workspaces) with `caps` — a partial set of the floored policies plus
+  `viewerExports: 'off'`. **One place applies them**: `boardAccessLoader` raises the board's
+  effective policies by its label's caps (`withLabelCaps`, the stricter wins key by key, like an
+  organisation's floor), so `maxLink`, `anonymousLinks`, `outsidersBlocked`, downloads, embedding
+  and link policies follow it on REST, lists, search, the public API, MCP, embeds, guests and
+  socket admission — including links and embeds turned on before the label (the stored setting is
+  kept; removing the label restores it). `BoardPlace.labelId` carries it, so a caller that passes a
+  `Board` gets it for free; a label id nothing defines caps everything (`UNKNOWN_LABEL_CAPS`).
+  `boardLetsCopy` reads `viewerExports`. `PUT /boards/:id/label` (owners, co-owners, content
+  admins; audited `board.label_changed`; live sockets re-resolved); a workspace can require a label
+  and set the default new boards get (an organisation's requirement is a floor). Copies keep their
+  label, and a labelled board can't be copied or moved where its label doesn't apply (403
+  `label_restricted`; a label with no caps simply drops). Changing a label's caps re-resolves every
+  board carrying it. A label in use can't be deleted (409 `label_in_use`); detaching a workspace
+  drops the organisation's labels from its boards (they take the workspace's own default).
+  Sensitive-data scanning is not built (compliance.md §2).
 
 ### Request access (`members/accessRequests.ts`, KAI-40)
 
@@ -3062,9 +3226,59 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   still inactive, still noticed), so the job is idempotent and never races an open. Audited
   `board.archived` / `board.trashed` with no actor and `reason: 'retention'`. Never touched:
   archived boards (archiving is how a board is kept), taken-down boards, boards a hold check names
-  (`boards.onBoardRetentionHold`, the seam for legal holds, #157; a failing check holds them all)
+  (`boards.onBoardRetentionHold`; boards' own legal-hold rows, #157, are checked first; a failing check holds them all)
   and every board of a workspace with a deletion hold (`workspaceHoldOn`). Board events with no
   actor reach the event stream as `actor: { kind: 'system' }`.
+
+### Workspace encryption keys (`modules/keys`, #159)
+
+A team workspace may keep its board content under its own key (design, coverage, failure modes:
+docs/design/compliance.md §3; operating it: docs/operations.md "Workspace encryption keys").
+
+- **Envelope**: `workspace_keys` (provider 'instance' — platform/secrets `seal`, purpose
+  `workspace-kek-v1`, the workspace id sealed in — or 'aws-kms', the workspace's KMS key ARN; state
+  active / suspended / unavailable / destroyed) and versioned `workspace_data_keys` (a 256-bit DEK
+  wrapped by that KEK). `keys/kek.ts` wraps / unwraps (AWS: TrentService JSON over a hand-written
+  SigV4, `keys/sigv4.ts`, encryption context `freero_workspace`); `keys/envelope.ts` seals blobs
+  (AES-256-GCM, additional data = workspace, board, table, layer). Single writer of both tables:
+  keys' repo, through the console's routes (`/workspaces/:id/admin/key…`, security scope;
+  destroy: owners with the workspace's name) and its jobs.
+- **Off by default** (`WORKSPACE_KEYS=false`): no workspace can turn a key on, and while no workspace
+  ever had one, keys' `keysInUse` lets board reads, writes and access checks skip every key lookup —
+  a deploy changes nothing. Keys turned on while it was on keep working.
+- **SESSION_SECRET rotation**: an instance-wrapped DEK opens under `SESSION_SECRET_PREVIOUS`, is
+  wrapped again on use, and the `keys:rewrap-instance` job (hourly while a previous secret is set)
+  wraps every one again, logging when all are done and how many open with no configured secret.
+- **One boundary for content**: `realtime/repo.ts` seals every blob it writes for a board whose
+  workspace has a key (`realtime/sealing.ts` `sealerFor` → keys' `sealerFor`; throws — nothing is
+  written — when that key can't be used, never a plaintext fallback) and opens every sealed blob it
+  reads with the data key the row names (`sealed_with` = `<workspaceId>:<version>`; NULL = stored as
+  is). A sealed blob starts with `SEALED_PREFIX` (an unreadable Yjs varint), so a release without
+  this code fails on it instead of misreading it. Upload names in sealed rows go to
+  `board_sealed_refs` in the same transaction; the uploads sweep and usage read them there, so a
+  file of an encrypted board — or one whose key is unavailable — is never swept.
+- **Gate**: workspaces' one `blocked` rule answers `key_unavailable` for a workspace whose key isn't
+  active (keys' `unusableKeysAmong`, always from the database), so REST, lists, search, MCP, embeds
+  and socket admission refuse it; `requireAccess` answers 403 `workspace_key_unavailable` to whoever
+  could otherwise open the board (the board page and dashboard say why). The admin console never
+  asks it (break-glass: an admin can always resume).
+- **Derived plaintext**: realtime's stored readers (`storedBoardView`, `storedDocContent`) read a
+  board under a suspended / destroyed / refused key as empty (a merely unreachable KMS throws and is
+  retried), and every state change appends each of the workspace's boards' `board.content` event in
+  its transaction — search and references derive nothing while the key is unavailable and
+  everything again once it is back; the event deriver records nothing for such a board (an
+  unreadable board is no deletion of its items). Board thumbnails are not kept
+  for keyed workspaces.
+- **Caches**: unwrapped DEKs and key rows per instance for `WORKSPACE_KEY_CACHE_SECONDS`; a state
+  change invalidates key rows on every instance (pubsub `freero:keys`), so opening stops at once;
+  an already-cached DEK may still SEAL (an open room's last save as it closes). `keys:check` probes
+  each KMS key every half cache period (a customer's revocation → `unavailable`; an answer again →
+  `active`); `keys:seal` seals content stored before the key, under an older data key, or under
+  another workspace's key (realtime `resealBoard`, compare-and-swap per row).
+- **Moves** (#124): boards' `moveToWorkspace` reseals the board for the target (or opens it, for a
+  target without a key) before the move and again after it; refused when either key can't be used.
+- Audited: `key.created` / `rotated` / `suspended` / `resumed` / `destroyed` / `unavailable` /
+  `available` (never key material).
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 

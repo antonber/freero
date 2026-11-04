@@ -8,8 +8,10 @@
 // passes buckets only get coarser. The newest snapshot is never removed (newest in its bucket).
 //
 // The job runs on every instance (init.ts). One instance prunes at a time (advisory lock); a
-// round that loses the lock, or misses a run, only delays the thinning. Deleting is safe even
+// round that loses the lock, or misses a run, only delays the thinning. Boards under a legal hold
+// (#157) keep every version. Deleting is safe even
 // from a stale read: a snapshot is only deleted in favour of a NEWER one kept by the same plan.
+import { logError } from '../../platform/log';
 import * as repo from './repo';
 
 const HOUR = 3_600_000;
@@ -81,6 +83,8 @@ export async function pruneSnapshots(
     policyFor?: RetentionPolicyFor;
     /** The shortest maxAgeMs any board's policy has: boards with a single snapshot older than that are visited too. */
     shortestMaxAgeMs?: number | null;
+    /** Boards that keep every version (legal holds, #157). A failing check keeps every board of the batch. */
+    heldAmong?: (boardIds: string[]) => Promise<Set<string>>;
   } = {},
 ): Promise<number | null> {
   const now = opts.now ?? Date.now();
@@ -93,8 +97,16 @@ export async function pruneSnapshots(
     const batch = await repo.transaction(async () => {
       if (!(await repo.tryLockSnapshotPrune())) return null;
       const boards = await repo.boardsWithPrunableSnapshots(after, BOARDS_PER_TRANSACTION, loneBefore);
+      let held: Set<string>;
+      try {
+        held = opts.heldAmong ? await opts.heldAmong(boards) : new Set();
+      } catch (e) {
+        logError('realtime: the legal hold check failed; keeping these boards’ versions', e);
+        held = new Set(boards);
+      }
       let n = 0;
       for (const boardId of boards) {
+        if (held.has(boardId)) continue;
         const drop = snapshotsToPrune(await repo.snapshotTimeline(boardId), now, await policyFor(boardId));
         n += await repo.deleteSnapshots(boardId, drop);
       }

@@ -1,0 +1,20 @@
+{
+  "@@unreviewed": [
+    "letAgentChangeThisBoard",
+    "stopAgentChangingThisBoard",
+    "agentCanWorkOnThis",
+    "agentIsPausedItsNext",
+    "resumeAgent",
+    "pauseAgent",
+    "agentPausedByBy",
+    "agentPaused"
+  ],
+  "letAgentChangeThisBoard": "לאפשר ל־{agent} לשנות את הלוח הזה שוב",
+  "stopAgentChangingThisBoard": "לעצור את {agent} מלשנות את הלוח הזה עד לחידוש",
+  "agentCanWorkOnThis": "{agent} יכול לעבוד על הלוח הזה שוב",
+  "agentIsPausedItsNext": "{agent} מושהה: השינוי הבא שלו בלוח הזה יידחה",
+  "resumeAgent": "חידוש הסוכן",
+  "pauseAgent": "השהיית הסוכן",
+  "agentPausedByBy": "הסוכן הושהה על ידי {by}",
+  "agentPaused": "הסוכן מושהה"
+}

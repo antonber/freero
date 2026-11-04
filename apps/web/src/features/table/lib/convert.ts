@@ -36,6 +36,7 @@ import { CELLS, cellText, setCellText } from './cells';
 import { fitColumnWidths, newTable } from './model';
 import { fitRows } from './actions';
 
+import { t as tr } from '../messages';
 /** The dialog that converts a table (panel.tsx). Props: { id }. */
 export const CONVERT_DIALOG = 'table.convert';
 
@@ -163,7 +164,7 @@ export function tableToKanbanRows(
 ): { rows: KanbanRowsInput; fates: ColumnFate[] } | { error: string } {
   const by = el.cols.find((c) => c.id === choice.columnsFrom);
   const titleCol = el.cols.find((c) => c.id === choice.titleFrom);
-  if (!by || !titleCol || by === titleCol) return { error: 'Pick a column for the kanban’s columns and another for the card titles' };
+  if (!by || !titleCol || by === titleCol) return { error: tr('pickAColumnForThe') };
   const names = columnNames(el, get);
   const nameOf = (c: TableColumn) => names[el.cols.indexOf(c)];
   const rows = bodyRows(el, get);
@@ -184,7 +185,7 @@ export function tableToKanbanRows(
   if (typeOf(by) === 'select') for (const o of by.options ?? []) add(o.label, toKanbanColor(o.color));
   const columnOf = columnWords.map((w) => (w ? add(w) : 0));
   if (columns.length > MAX_KANBAN_COLUMNS)
-    return { error: `“${nameOf(by)}” has ${columns.length} different values; a kanban has at most ${MAX_KANBAN_COLUMNS} columns. Pick another column.` };
+    return { error: tr('nameofHasLengthDifferentValues', { nameOf: nameOf(by), length: columns.length, max_kanban_columns: MAX_KANBAN_COLUMNS }) };
 
   const fates: ColumnFate[] = [];
   const fields: KanbanRowsInput['fields'] = [];
@@ -233,7 +234,7 @@ export function tableToKanbanRows(
       if (read.values[i] !== null && read.values[i] !== undefined) c.values = { ...c.values, [fieldName]: read.values[i] };
     });
   }
-  return { rows: { title: 'Kanban', columnsName: nameOf(by), columns, fields, cards }, fates };
+  return { rows: { title: tr('kanban'), columnsName: nameOf(by), columns, fields, cards }, fates };
 }
 
 /**

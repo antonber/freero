@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "タグ名でアイテムにタグを付ける",
+  "searchOrCreateATag": "タグを検索または作成",
+  "nameYourFirstTag": "最初のタグに名前を付けてください",
+  "tags": "タグ",
+  "tagsGroupStickiesAndCards": "タグを使うと、付箋やカードをトピック、担当者、優先度でまとめられます。",
+  "createName": "「{name}」を作成",
+  "newTagColor": "新しいタグの色",
+  "manageTags": "タグを管理",
+  "colorOfName": "{name}の色",
+  "renameName": "{name}の名前を変更",
+  "deleteUses": "削除（{uses}）",
+  "deleteTagUsedOnUses": "タグを削除（{uses}で使用中）",
+  "deleteTag": "タグを削除",
+  "backToTags": "タグに戻る"
+}

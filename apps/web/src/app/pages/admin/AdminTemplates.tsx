@@ -9,6 +9,7 @@ import { Button, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 
+import { t as tr } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
 export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
@@ -20,7 +21,7 @@ export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
   const load = useCallback(() => {
     api.placeTemplates(workspace.id).then(
       (r) => setTemplates(r.templates),
-      (e) => notify(errorText(e, 'Could not load the templates'), 'error'),
+      (e) => notify(errorText(e, tr('couldNotLoadTheTemplates')), 'error'),
     );
   }, [workspace.id, notify]);
   useEffect(load, [load]);
@@ -32,7 +33,7 @@ export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
       notify(done, 'success');
       load();
     } catch (e) {
-      notify(errorText(e, 'Could not change it'), 'error');
+      notify(errorText(e, tr('couldNotChangeIt')), 'error');
     } finally {
       setBusy(null);
     }
@@ -43,23 +44,23 @@ export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
     <section aria-labelledby="admin-templates-title">
       <div className="fr-admin__head">
         <h1 id="admin-templates-title" className="fr-admin__title">
-          {org ? 'Company templates' : 'Team templates'}
+          {org ? tr('companyTemplates') : tr('teamTemplates')}
         </h1>
         <span className="fr-admin__muted">
           {org
-            ? `Templates published to ${workspace.name}: every workspace in it finds them in its template picker, under ${workspace.name}.`
-            : `Templates shared with ${workspace.name}: every member finds them in the template picker.`}
+            ? tr('templatesPublishedToNameEvery', { name: workspace.name })
+            : tr('templatesSharedWithNameEvery', { name: workspace.name })}
         </span>
       </div>
       <div className="fr-admin-table-wrap">
         <table className="fr-admin-table">
           <thead>
             <tr>
-              <th scope="col">Template</th>
-              <th scope="col">Shared by</th>
-              <th scope="col">Updated</th>
+              <th scope="col">{tr('template')}</th>
+              <th scope="col">{tr('sharedBy')}</th>
+              <th scope="col">{tr('updated')}</th>
               <th scope="col">
-                <span className="fr-admin__sr">Actions</span>
+                <span className="fr-admin__sr">{tr('actions')}</span>
               </th>
             </tr>
           </thead>
@@ -69,10 +70,10 @@ export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
                 <td>
                   <div className="fr-admin-person__name">
                     {t.name}
-                    {t.locked ? <span className="fr-admin-pill">Locked</span> : null}
-                    {t.retiredAt ? <span className="fr-admin-pill fr-admin-pill--off">Retired</span> : null}
+                    {t.locked ? <span className="fr-admin-pill">{tr('locked')}</span> : null}
+                    {t.retiredAt ? <span className="fr-admin-pill fr-admin-pill--off">{tr('retired')}</span> : null}
                   </div>
-                  <div className="fr-admin__muted">{t.description || `${t.elementCount} items`}</div>
+                  <div className="fr-admin__muted">{t.description || tr('elementcountItems', { elementCount: t.elementCount })}</div>
                 </td>
                 <td>{t.ownerName}</td>
                 <td className="fr-admin__muted">{relativeTime(t.updatedAt)}</td>
@@ -82,9 +83,9 @@ export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
                     variant="ghost"
                     icon={t.locked ? LockOpen : Lock}
                     loading={busy === `${t.id}:lock`}
-                    onClick={() => void act(t, 'lock', () => api.setTemplateLocked(t.id, !t.locked), t.locked ? `“${t.name}” is unlocked` : `“${t.name}” is locked`)}
+                    onClick={() => void act(t, 'lock', () => api.setTemplateLocked(t.id, !t.locked), t.locked ? tr('nameIsUnlocked', { name: t.name }) : tr('nameIsLocked', { name: t.name }))}
                   >
-                    {t.locked ? 'Unlock' : 'Lock'}
+                    {t.locked ? tr('unlock') : tr('lock')}
                   </Button>
                   <Button
                     size="sm"
@@ -92,10 +93,10 @@ export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
                     icon={t.retiredAt ? ArchiveRestore : Archive}
                     loading={busy === `${t.id}:retire`}
                     onClick={() =>
-                      void act(t, 'retire', () => api.setTemplateRetired(t.id, !t.retiredAt), t.retiredAt ? `“${t.name}” is back in the picker` : `“${t.name}” is retired`)
+                      void act(t, 'retire', () => api.setTemplateRetired(t.id, !t.retiredAt), t.retiredAt ? tr('nameIsBackInThe', { name: t.name }) : tr('nameIsRetired', { name: t.name }))
                     }
                   >
-                    {t.retiredAt ? 'Bring back' : 'Retire'}
+                    {t.retiredAt ? tr('bringBack') : tr('retire')}
                   </Button>
                   <Button
                     size="sm"
@@ -103,18 +104,16 @@ export function AdminTemplates({ workspace }: { workspace: WorkspaceSummary }) {
                     icon={Undo2}
                     loading={busy === `${t.id}:withdraw`}
                     onClick={() =>
-                      void act(t, 'withdraw', () => (org ? api.publishTemplate(t.id, null) : api.shareTemplate(t.id, null)), `“${t.name}” is back with ${t.ownerName} only`)
+                      void act(t, 'withdraw', () => (org ? api.publishTemplate(t.id, null) : api.shareTemplate(t.id, null)), tr('nameIsBackWithOwnername', { name: t.name, ownerName: t.ownerName }))
                     }
-                  >
-                    Withdraw
-                  </Button>
+                  >{tr('withdraw')}</Button>
                 </td>
               </tr>
             ))}
             {templates.length === 0 ? (
               <tr>
                 <td colSpan={4} className="fr-admin__muted">
-                  {org ? 'Nothing published yet. Members publish a template from a board’s template picker.' : 'Nothing shared yet.'}
+                  {org ? tr('nothingPublishedYetMembersPublish') : tr('nothingSharedYet')}
                 </td>
               </tr>
             ) : null}

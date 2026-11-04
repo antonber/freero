@@ -6,6 +6,7 @@ import type { EngineCore } from '../runtime/core';
 import { describeElement } from '../editor/typeLabel';
 import { readingOrderByFrame } from '../geometry/order';
 
+import { t as tr } from '../messages';
 /** Selection changes settle this long (ms) before they are read (a drag-select fires many). */
 export const SELECTION_SETTLE_MS = 150;
 /** Joins / leaves are gathered this long (ms) into one sentence. */
@@ -34,7 +35,7 @@ export function selectionMessage(core: EngineCore, ids: string[]): string {
   if (!els.length) return '';
   if (els.length > 1) {
     const grouped = !!els[0].groupId && els.every((el) => el.groupId === els[0].groupId);
-    return grouped ? `Group of ${els.length} items selected.` : `${els.length} items selected.`;
+    return grouped ? tr('groupOfLengthItemsSelected', { length: els.length }) : `${els.length} items selected.`;
   }
   const el = els[0];
   const walk = readingOrderByFrame(editor.getVisibleElements().filter((e) => e.type !== 'connector'));

@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "以列表查看白板",
+  "everyItemInReadingOrder": "按阅读顺序列出所有项目，框架中的项目显示在框架下方。用方向键移动，向右键和向左键展开和收起框架，Enter 在白板上显示该项目。",
+  "thisBoardIsEmpty": "此白板为空。",
+  "boardItems": "白板项目",
+  "connections": "连接线"
+}

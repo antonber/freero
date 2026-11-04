@@ -13,6 +13,7 @@ import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from '../editor/boardSettings';
 
 import { commandItem, groupCommands } from './ContextMenu';
 
+import { t } from '../messages';
 const BACKGROUND_COLORS = BACKGROUNDS.map((b) => b.color);
 const BACKGROUND_NAMES: Record<string, string> = Object.fromEntries(BACKGROUNDS.map((b) => [b.color, b.name]));
 
@@ -41,11 +42,11 @@ function BoardTitle() {
 
   const commit = () => {
     setEditing(false);
-    const next = title.trim() || 'Untitled board';
+    const next = title.trim() || t('untitledBoard');
     setTitle(next);
     if (next !== host.board.title) {
       host.renameBoard(next).catch(() => {
-        host.notify('Could not rename the board', 'error');
+        host.notify(t('couldNotRenameTheBoard'), 'error');
         setTitle(host.board.title);
       });
     }
@@ -58,7 +59,7 @@ function BoardTitle() {
         className="fr-title fr-title--input"
         value={title}
         maxLength={120}
-        aria-label="Board name"
+        aria-label={t('boardName')}
         onChange={(e) => setTitle(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -71,14 +72,14 @@ function BoardTitle() {
       />
     );
   return (
-    <Tooltip content={canRename ? 'Rename board' : title} side="bottom">
+    <Tooltip content={canRename ? t('renameBoard') : title} side="bottom">
       <button
         type="button"
         className="fr-title"
         onClick={() => canRename && setEditing(true)}
         style={{ cursor: canRename ? 'text' : 'default' }}
       >
-        {title || 'Untitled board'}
+        {title || t('untitledBoard')}
       </button>
     </Tooltip>
   );
@@ -129,7 +130,7 @@ function BoardMenu() {
 
   return (
     <>
-      <IconButton ref={ref} icon={Ellipsis} label="Board menu" size={32} active={open} onClick={() => setOpen((o) => !o)} />
+      <IconButton ref={ref} icon={Ellipsis} label={t('boardMenu')} size={32} active={open} onClick={() => setOpen((o) => !o)} />
       <Popover open={open} onClose={close} anchor={ref.current} side="bottom" align="start" width={280} className="fr-boardmenu">
         {canEdit && (
           <>
@@ -144,39 +145,37 @@ function BoardMenu() {
               <span className="fr-boardmenu__text">
                 <span className="fr-boardmenu__icon">
                   <PencilLine size={16} />
-                </span>
-                Rename board
-              </span>
+                </span>{t('renameBoard')}</span>
             </button>
             <div className="fr-boardmenu__section">
-              <div className="fr-boardmenu__label">Background</div>
+              <div className="fr-boardmenu__label">{t('background')}</div>
               <ColorSwatches
                 colors={BACKGROUND_COLORS}
                 names={BACKGROUND_NAMES}
                 value={settings.background}
                 onChange={(c) => set({ background: c })}
                 size={22}
-                aria-label="Board background"
+                aria-label={t('boardBackground')}
               />
             </div>
             <div className="fr-boardmenu__section">
-              <div className="fr-boardmenu__label">Grid</div>
+              <div className="fr-boardmenu__label">{t('grid')}</div>
               <SegmentedControl
                 size="sm"
                 value={settings.grid}
                 onChange={(grid) => set({ grid })}
                 options={[...GRID_STYLES]}
-                aria-label="Grid style"
+                aria-label={t('gridStyle')}
               />
             </div>
             <div className="fr-boardmenu__section">
-              <div className="fr-boardmenu__label">Grid size</div>
+              <div className="fr-boardmenu__label">{t('gridSize')}</div>
               <SegmentedControl
                 size="sm"
                 value={String(settings.gridSize)}
                 onChange={(v) => set({ gridSize: Number(v) })}
                 options={GRID_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
-                aria-label="Grid size"
+                aria-label={t('gridSize')}
               />
             </div>
             <div className="fr-boardmenu__section">
@@ -184,20 +183,20 @@ function BoardMenu() {
                 size="sm"
                 checked={settings.snapToGrid}
                 onChange={(snapToGrid) => set({ snapToGrid })}
-                label="Snap to grid"
-                aria-label="Snap to grid"
+                label={t('snapToGrid')}
+                aria-label={t('snapToGrid')}
               />
-              <span className="fr-boardmenu__hint">Hold {isMac ? '⌘' : 'Ctrl'} while dragging to switch it for one move</span>
+              <span className="fr-boardmenu__hint">{t('hold')}{' '}{isMac ? '⌘' : 'Ctrl'}{' '}{t('whileDraggingToSwitchIt')}</span>
             </div>
             <div className="fr-boardmenu__section">
               <Toggle
                 size="sm"
                 checked={settings.lineJumps}
                 onChange={(lineJumps) => set({ lineJumps })}
-                label="Line jumps"
-                aria-label="Line jumps"
+                label={t('lineJumps')}
+                aria-label={t('lineJumps')}
               />
-              <span className="fr-boardmenu__hint">Where connectors cross, the one on top hops over the other</span>
+              <span className="fr-boardmenu__hint">{t('whereConnectorsCrossTheOne')}</span>
             </div>
 
             <div className="fr-boardmenu__divider" />
@@ -221,16 +220,14 @@ function BoardMenu() {
             close();
             navigator.clipboard
               ?.writeText(`${window.location.origin}/board/${editor.boardId}`)
-              .then(() => editor.host.notify('Board link copied', 'success'))
+              .then(() => editor.host.notify(t('boardLinkCopied'), 'success'))
               .catch(() => undefined);
           }}
         >
           <span className="fr-boardmenu__text">
             <span className="fr-boardmenu__icon">
               <Link2 size={16} />
-            </span>
-            Copy board link
-          </span>
+            </span>{t('copyBoardLink')}</span>
         </button>
         <button
           type="button"
@@ -243,9 +240,7 @@ function BoardMenu() {
           <span className="fr-boardmenu__text">
             <span className="fr-boardmenu__icon">
               <Maximize size={16} />
-            </span>
-            Zoom to fit
-          </span>
+            </span>{t('zoomToFit')}</span>
           <span className="fr-boardmenu__kbd">{formatShortcut('shift+1')}</span>
         </button>
         <button
@@ -259,9 +254,7 @@ function BoardMenu() {
           <span className="fr-boardmenu__text">
             <span className="fr-boardmenu__icon">
               <ArrowLeft size={16} />
-            </span>
-            Back to dashboard
-          </span>
+            </span>{t('backToDashboard')}</span>
         </button>
       </Popover>
     </>
@@ -272,10 +265,10 @@ export function TopLeft() {
   const core = useCore();
   const role = useRole();
   return (
-    <div className="fr-topleft" data-fr-chrome="" data-fr-occludes="" data-fr-region="board" role="region" aria-label="Board">
+    <div className="fr-topleft" data-fr-chrome="" data-fr-occludes="" data-fr-region="board" role="region" aria-label={t('board')}>
       <div className="fr-chrome-card fr-topleft__card">
-        <Tooltip content="Back to dashboard" side="bottom">
-          <button type="button" className="fr-logo-btn" aria-label="Back to dashboard" onClick={() => core.hostRef.current.navigate('/app')}>
+        <Tooltip content={t('backToDashboard')} side="bottom">
+          <button type="button" className="fr-logo-btn" aria-label={t('backToDashboard')} onClick={() => core.hostRef.current.navigate('/app')}>
             <Logo size={26} />
           </button>
         </Tooltip>
@@ -284,13 +277,11 @@ export function TopLeft() {
         <BoardMenu />
         {role === 'viewer' && (
           <span className="fr-rolebadge">
-            <Eye size={13} /> View only
-          </span>
+            <Eye size={13} />{' '}{t('viewOnly')}</span>
         )}
         {role === 'commenter' && (
           <span className="fr-rolebadge">
-            <MessageSquare size={13} /> Can comment
-          </span>
+            <MessageSquare size={13} />{' '}{t('canComment')}</span>
         )}
       </div>
       <PanelSlotView slot="topbar-left" className="fr-slot-row" />
@@ -302,12 +293,10 @@ export function TopRight() {
   const core = useCore();
   const { topbarAccessory } = useContext(AppChromeContext);
   return (
-    <div className="fr-topright" data-fr-chrome="" data-fr-occludes="" data-fr-region="people" role="region" aria-label="People and sharing">
+    <div className="fr-topright" data-fr-chrome="" data-fr-occludes="" data-fr-region="people" role="region" aria-label={t('peopleAndSharing')}>
       <PanelSlotView slot="topbar-right" className="fr-chrome-card fr-slot-row fr-topright__panels" />
       {topbarAccessory ? <div className="fr-chrome-card fr-topright__app">{topbarAccessory}</div> : null}
-      <Button variant="primary" icon={Share2} onClick={() => core.hostRef.current.openShareDialog()}>
-        Share
-      </Button>
+      <Button variant="primary" icon={Share2} onClick={() => core.hostRef.current.openShareDialog()}>{t('share')}</Button>
     </div>
   );
 }

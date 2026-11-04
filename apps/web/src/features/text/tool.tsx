@@ -5,6 +5,7 @@ import { CLICK_SLOP_PX, DEFAULT_FONT_SIZE, TOOL_ID } from './lib/constants';
 import { textAtCaret } from './lib/actions';
 import { textPadding } from './lib/layout';
 
+import { t } from './messages';
 // The width being dragged out (world rect), shown by the Preview; module-level because only
 // one pointer gesture runs at a time.
 let drag: { start: Point; screen: Point; cur: Point | null } | null = null;
@@ -29,7 +30,7 @@ function place(editor: Editor, id: string) {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Text',
+  label: t('text'),
   icon: Type,
   shortcut: 't',
   order: 20,
@@ -105,7 +106,7 @@ export default defineTool({
     return (
       <div className="fr-textbox-ghost" style={{ height: lh, fontSize: DEFAULT_FONT_SIZE, transform: `translate(${p.x - 1}px, ${p.y - lh / 2}px)` }}>
         <span className="fr-textbox-ghost__caret" style={{ height: lh }} />
-        <span className="fr-textbox-ghost__label">Text</span>
+        <span className="fr-textbox-ghost__label">{t('text')}</span>
       </div>
     );
   },

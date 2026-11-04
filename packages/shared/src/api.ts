@@ -2,6 +2,7 @@
 // All REST endpoints live under /api, send/receive JSON, and authenticate via
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
+import type { BoardLabelSummary } from './compliance';
 import type { ActivityElement, BoardElement, TableCopyContent } from './elements';
 import type { ChartCopyContent } from './charts';
 import type { Rect } from './geometry';
@@ -66,6 +67,8 @@ export interface BoardSummary {
    * reads at most 'viewer') and out of the default lists until someone unarchives it. Absent: live.
    */
   archivedAt?: number;
+  /** [additive, #158] Its classification label: its caps are already in `permissions` (the server enforces them). */
+  label?: BoardLabelSummary;
   /** The workspace the board belongs to, and its project (folder) there, if any. */
   workspaceId: string;
   projectId: string | null;
@@ -348,7 +351,15 @@ export const LINK_PASSWORD_MAX = 128;
 // GET    /api/workspaces/:id/projects          -> { projects: ProjectSummary[] }  (the ones you can see)
 // POST   /api/workspaces/:id/projects  body { name, access? } -> { project }   (members, not guests)
 // PATCH  /api/projects/:id   body { name?, access?, teamAccess?: TeamAccess | null } -> { project }   (its creator or workspace owner/admin)
-// DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
+//        [additive, #129] also { description?, pinnedBoardIds?: string[] (its own boards, ≤ 12, in order),
+//        parentId?: string | null } — moving it needs its manager, who also manages the project it
+//        leaves (or a content admin) and sees the one it enters; 400 past PROJECT_MAX_DEPTH or into itself
+// DELETE /api/projects/:id?boards=parent|trash -> { ok: true }   (same; 409 while it holds sub-projects,
+//        and — without `boards` — while it still holds boards. `parent`: its boards move to the parent
+//        project (the workspace root at the top); `trash`: they go to the trash, when the caller owns
+//        each of them or is a content admin)
+// PUT    /api/projects/:id/pin  DELETE … -> { ok: true }   [#129] pin it to the top of your sidebar (anyone who sees it)
+// GET    /api/workspaces/:id/activity?project=<id> -> ActivityResponse   [#129] the project page's recent activity
 // GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
 // PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
 /**
@@ -599,7 +610,54 @@ export interface ProjectSummary {
   /** You may rename it, change its access, manage its members and delete it. */
   canManage: boolean;
   createdAt: number;
+  /**
+   * [additive, #129] The project it sits in (null: the top of the workspace). Access is inherited:
+   * its boards reach only people who get through every project above it too, so a sub-project can
+   * narrow its parent's audience but never widen it; its own team access level can only be stricter.
+   */
+  parentId?: string | null;
+  /** [additive, #129] What the project is for (its landing page; plain text). */
+  description?: string;
+  /** [additive, #129] Boards its managers pinned on its page, in order (some may since have moved away). */
+  pinnedBoardIds?: string[];
+  /** [additive, #129] You pinned it to the top of your sidebar. */
+  pinned?: boolean;
 }
+
+// Blueprints (#161): a project's boards and docs saved as a reusable setup.
+// GET    /api/blueprints -> { blueprints: BlueprintSummary[] }  (yours and those shared with your teams)
+// POST   /api/projects/:id/blueprints body { name, description?, steps?: string[], workspaceId?: string | null }
+//        -> { blueprint }  (its boards and docs as you may read and copy them: downloads policy; ≤ BLUEPRINT_MAX_ITEMS)
+// PATCH  /api/blueprints/:id body { name?, description?, steps?, workspaceId? } -> { blueprint }
+//        (its owner; owners / content admins of the team it is shared with may unshare it: workspaceId null)
+// DELETE /api/blueprints/:id -> { ok: true }  (its owner)
+// POST   /api/blueprints/:id/use body { workspaceId, name?, parentId? } -> { project: ProjectSummary, boards: { id, kind, title }[] }
+//        one transaction: the project and a copy of every item, links between them pointing at the copies
+export interface BlueprintSummary {
+  id: string;
+  name: string;
+  description: string;
+  steps: string[];
+  /** Its boards and docs, in order. */
+  items: Array<{ kind: ObjectKind; title: string }>;
+  ownerId: string;
+  ownerName: string;
+  /** The team workspace it is shared with, null: its owner's alone. */
+  workspaceId: string | null;
+  /** You may change and delete it (its owner). */
+  mine: boolean;
+  /** You may stop sharing it (its owner, or an owner / content admin of the team it is shared with). */
+  canUnshare: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+/** Boards and docs a blueprint holds at most (#161). */
+export const BLUEPRINT_MAX_ITEMS = 20;
+
+/** How deep projects nest: a project, its sub-projects and theirs (#129). */
+export const PROJECT_MAX_DEPTH = 3;
+/** Boards a project page pins at most (#129). */
+export const PROJECT_MAX_PINNED_BOARDS = 12;
 
 /** Days a deleted board stays in its owner's trash (restorable) before it is deleted for good. */
 export const TRASH_RETENTION_DAYS = 30;
@@ -625,10 +683,10 @@ export interface BoardMember {
 // ---- Auth ----
 // POST /api/auth/signup   body SignupRequest -> AuthResponse  (sets cookie; emails a verification link)
 // POST /api/auth/login    body LoginRequest  -> AuthResponse  (sets cookie)
-// POST /api/auth/logout   -> { ok: true }                     (clears cookie)
+// POST /api/auth/logout   -> { ok: true, redirect? }          (clears cookie; redirect: the IdP's single logout, #13)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
-// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone?, theme? } -> AuthResponse
+// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone?, theme?, locale? } -> AuthResponse
 // PUT  /api/auth/me/avatar raw image body (PNG/JPEG/GIF/WebP) -> AuthResponse (resized server-side)
 // DELETE /api/auth/me/avatar -> AuthResponse
 //
@@ -692,7 +750,8 @@ export interface BoardMember {
 // POST /api/auth/two-factor/recovery/cancel-link body { token } -> { ok: true } (the link in the recovery mails)
 // POST /api/auth/two-factor/recovery/cancel -> SecurityInfo (signed in)
 // Any accepted second-factor code also cancels a recovery in progress.
-export interface SignupRequest { name: string; email: string; password: string }
+/** `locale` [additive, #5]: the language the sign-up page is in (the account's language from the start). */
+export interface SignupRequest { name: string; email: string; password: string; locale?: string }
 export interface LoginRequest { email: string; password: string }
 export type LoginResponse = AuthResponse | { twoFactorRequired: true };
 
@@ -793,6 +852,11 @@ export interface Account extends User {
   /** [additive] Their app theme, kept with the account so it follows them to every device (absent: 'system'). */
   theme?: ColorThemePreference;
   /**
+   * [additive, #5] Their interface language (an entry of LOCALES): the app's language on every
+   * device and the language of their emails. Null until chosen or set once by the app.
+   */
+  locale?: string | null;
+  /**
    * IANA time zone ("Europe/Berlin"): due-date reminders, the "changes on your boards" email and
    * dates in emails follow it. Null until the app detects it from the browser (or you pick one).
    */
@@ -847,6 +911,15 @@ export const ACCOUNT_SUSPENDED = 'account_suspended';
 // same ACS only while the connection's `idpInitiated` is on (off by default; refused with
 // /login?error=sso_unsolicited otherwise); its RelayState is honoured only as a same-origin path.
 // With it off, a tile can link to /start instead (SP-initiated).
+// [additive, #13] SAML service-provider keys, encrypted assertions, signed requests, single logout:
+// POST   /api/workspaces/:id/sso/sp-keys                 -> SsoSettings (a new key pair; the first is current, a second waits as "next")
+// POST   /api/workspaces/:id/sso/sp-keys/:keyId/promote  -> SsoSettings (sign with it from now on; both still decrypt)
+// DELETE /api/workspaces/:id/sso/sp-keys/:keyId          -> SsoSettings (not the current one while it is in use)
+// GET|POST /api/sso/:workspaceId/saml/slo                <- the IdP's LogoutRequest (ends the SAML sessions of
+//                                                           that NameID here; answers a LogoutResponse) or its
+//                                                           LogoutResponse to ours (lands on /login)
+// POST /api/auth/logout -> { ok: true, redirect?: string }: after the session ended here, the
+//                          browser goes on to `redirect` (the IdP's single logout) when it is set.
 export interface SsoDomain {
   id: string;
   domain: string;
@@ -864,7 +937,17 @@ export interface SsoConnectionInfo {
   breakGlassUserId: string | null;
   /** Role of people who join through their first SSO sign-in. */
   defaultRole: Exclude<WorkspaceRole, 'owner'>;
-  saml: { entityId: string; ssoUrl: string; certificates: Array<{ subject: string; validTo: string; fingerprint: string }> } | null;
+  saml: {
+    entityId: string;
+    ssoUrl: string;
+    certificates: Array<{ subject: string; validTo: string; fingerprint: string }>;
+    /** [additive, #13] The IdP's SingleLogoutService (HTTP-Redirect); null: no single logout. */
+    sloUrl?: string | null;
+    /** [additive, #13] Assertions must arrive encrypted to one of the service provider's keys. */
+    requireEncryptedAssertions?: boolean;
+    /** [additive, #13] AuthnRequests and logout messages are signed with the current key. */
+    signRequests?: boolean;
+  } | null;
   oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
   /** When a sign-in last went through it (enforcing needs one). */
   testedAt: number | null;
@@ -877,6 +960,11 @@ export interface SsoConnectionInput {
   defaultRole?: Exclude<WorkspaceRole, 'owner'>;
   /** SAML: accept sign-ins started at the identity provider. Omitted: unchanged. */
   idpInitiated?: boolean;
+  /** [additive, #13] SAML: require encrypted assertions / sign requests (need a key). Omitted: unchanged. */
+  requireEncryptedAssertions?: boolean;
+  signRequests?: boolean;
+  /** [additive, #13] SAML: the IdP's single logout URL ('' clears it). Omitted: unchanged, or from the metadata. */
+  samlSloUrl?: string;
   /** SAML: the IdP's metadata XML, or its parts. */
   samlMetadataXml?: string;
   samlEntityId?: string;
@@ -890,8 +978,22 @@ export interface SsoConnectionInput {
 export interface SsoSettings {
   domains: SsoDomain[];
   connection: SsoConnectionInfo | null;
-  /** What to configure at the identity provider. */
-  serviceProvider: { entityId: string; acsUrl: string; metadataUrl: string; oidcRedirectUri: string; startUrl: string };
+  /** What to configure at the identity provider. `sloUrl` [additive, #13]: its single logout endpoint. */
+  serviceProvider: { entityId: string; acsUrl: string; metadataUrl: string; oidcRedirectUri: string; startUrl: string; sloUrl?: string };
+  /** [additive, #13] The SAML service provider's key pairs (certificates are public; private keys never leave the server). */
+  spKeys?: SsoSpKey[];
+}
+/** A SAML service-provider key pair: published in the metadata (signing + encryption) while it exists. */
+export interface SsoSpKey {
+  id: string;
+  /** Signs requests; the others only decrypt (rotation). */
+  current: boolean;
+  createdAt: number;
+  subject: string;
+  validTo: string;
+  fingerprint: string;
+  /** PEM, to give the identity provider. */
+  certificate: string;
 }
 export interface SsoDiscovery {
   sso: { workspaceName: string; startUrl: string; enforced: boolean } | null;
@@ -2395,6 +2497,8 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'blueprint.shared': 'Shared a blueprint with the team',
+  'blueprint.used': 'Made a project from a blueprint',
   'stickers.set_removed': 'Removed a team sticker set',
   'template.published': 'Published a company template',
   'template.unpublished': 'Withdrew a company template',
@@ -2449,6 +2553,12 @@ export const AUDIT_ACTIONS = {
   'sso.login': 'Signed in with single sign-on',
   'sso.login_refused': 'Single sign-on refused',
   'sso.member_provisioned': 'Joined through single sign-on (just in time)',
+  // SAML service-provider keys and single logout (#13).
+  'sso.sp_key_created': 'Created a SAML service-provider key',
+  'sso.sp_key_rotated': 'Made a SAML service-provider key current',
+  'sso.sp_key_removed': 'Removed a SAML service-provider key',
+  'sso.logout': 'Signed out through single logout',
+  'sso.logout_refused': 'Single logout refused',
   // Domain control (#64): accounts at a verified domain.
   'sso.domain_control_changed': 'Changed domain control',
   'sso.domain_capture_started': 'Told someone at a verified domain they will join the workspace',
@@ -2469,6 +2579,17 @@ export const AUDIT_ACTIONS = {
   'account.export_downloaded': 'Downloaded a copy of their data',
   'workspace.export_requested': 'Asked for an export of the workspace',
   'workspace.export_downloaded': 'Downloaded an export of the workspace',
+  // Legal holds and eDiscovery cases (modules/ediscovery, #157).
+  'legal_hold.created': 'Placed a legal hold',
+  'legal_hold.scope_changed': 'Changed what a legal hold covers',
+  'legal_hold.released': 'Released a legal hold',
+  'legal_hold.export_requested': 'Asked for an export of a legal case',
+  'legal_hold.export_downloaded': 'Downloaded an export of a legal case',
+  // Classification labels (#158).
+  'label.created': 'Created a classification label',
+  'label.updated': 'Changed a classification label',
+  'label.deleted': 'Deleted a classification label',
+  'board.label_changed': 'Changed a board’s classification label',
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
@@ -2495,6 +2616,14 @@ export const AUDIT_ACTIONS = {
   'tracker.synced': 'Synced a tracker issue',
   'tracker.sync_failed': 'A tracker sync failed',
   'tracker.unlinked': 'Unlinked a tracker issue',
+  // Workspace encryption keys (modules/keys, #159). Never key material: provider, key ARN, versions.
+  'key.created': 'Turned on a workspace encryption key',
+  'key.rotated': 'Rotated the workspace encryption key',
+  'key.suspended': 'Suspended the workspace encryption key',
+  'key.resumed': 'Resumed the workspace encryption key',
+  'key.destroyed': 'Destroyed the workspace encryption key',
+  'key.unavailable': 'The workspace encryption key became unusable',
+  'key.available': 'The workspace encryption key is usable again',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];
@@ -2695,7 +2824,33 @@ export const WORKSPACE_SETTING_LIMITS = {
 } as const;
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 /** Why the workspace's boards are closed to you right now (see WorkspaceSummary.blocked). */
-export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed';
+/** `key_unavailable` (#159): the workspace's encryption key is suspended, destroyed or unreachable at its KMS. */
+export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed' | 'key_unavailable';
+
+// ---- Workspace encryption keys (#159; docs/design/compliance.md §3) ----
+export type WorkspaceKeyProvider = 'instance' | 'aws-kms';
+/** active: content is sealed and opened; suspended: an owner or security admin stopped it (reversible);
+ * unavailable: the KMS refused or could not be reached (back to active once it answers); destroyed: the data keys are gone for good. */
+export type WorkspaceKeyState = 'active' | 'suspended' | 'unavailable' | 'destroyed';
+export interface WorkspaceKeyStatus {
+  /** Whether this server offers workspace keys at all, and which providers it can use. */
+  providers: WorkspaceKeyProvider[];
+  key: {
+    provider: WorkspaceKeyProvider;
+    /** The AWS KMS key (ARN) for 'aws-kms'. */
+    kmsKeyId: string | null;
+    state: WorkspaceKeyState;
+    /** Why it is unavailable (the KMS's answer), when it is. */
+    reason: string | null;
+    /** The data-key version new content is sealed with. */
+    dataKeyVersion: number;
+    createdAt: number;
+    stateChangedAt: number;
+    kekRotatedAt: number | null;
+    /** Stored board content not yet sealed with the current data key (sealed in the background). */
+    pendingBoards: number;
+  } | null;
+}
 export interface AdminMember extends WorkspaceMember {
   deactivated: boolean;
   twoFactor: boolean;

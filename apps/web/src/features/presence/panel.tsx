@@ -20,6 +20,7 @@ import {
   type PresenceExt,
 } from './lib/model';
 import { bringEveryone, burstOrigin, sendReaction, showBurst, showView, usePresenceUi, presenceStore } from './lib/state';
+import { t as tr } from './messages';
 import './presence.css';
 
 const MAX_SHOWN = 4;
@@ -55,29 +56,29 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
   // An app writing through the API or MCP for someone (server-published, KAI-168): no view to follow.
   const agent = client?.agent;
   const subtitle = agent
-    ? 'An app working on this board for someone'
+    ? tr('anAppWorkingOnThis')
     : person.isMe
     ? followers
       ? `${followers} ${followers === 1 ? 'person is' : 'people are'} following you`
       : `${ROLE_LABEL[editor.getRole()]}${tabs ? ` · also open in ${tabs} other tab${tabs === 1 ? '' : 's'}` : ''}`
     : client?.viewport
       ? isFollowed
-        ? 'You are following their view'
-        : 'Viewing this board'
-      : 'Just joined';
+        ? tr('youAreFollowingTheirView')
+        : tr('viewingThisBoard')
+      : tr('justJoined');
   return (
     <div className="fr-presence-card">
       <div className="fr-presence-card__who">
         <span className="fr-presence-card__avatar">
           <Avatar name={person.name} color={person.color} src={person.avatarUrl} size={36} />
           {agent ? (
-            <span className="fr-presence-card__agent" title="App" aria-label="App">
+            <span className="fr-presence-card__agent" title={tr('app')} aria-label={tr('app')}>
               <Bot size={12} aria-hidden />
             </span>
           ) : null}
         </span>
         <div className="fr-presence-card__text">
-          <div className="fr-presence-card__name">{person.isMe ? `${person.name} (you)` : person.name}</div>
+          <div className="fr-presence-card__name">{person.isMe ? tr('nameYou', { name: person.name }) : person.name}</div>
           <div className="fr-presence-card__sub">{subtitle}</div>
         </div>
       </div>
@@ -91,13 +92,9 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
               jumpTo(editor, person);
               onDone();
             }}
-          >
-            Go to view
-          </Button>
+          >{tr('goToView')}</Button>
           {isFollowed && editor.getFollowing()?.locked ? null : isFollowed ? (
-            <Button size="sm" icon={EyeOff} onClick={() => editor.follow(null)}>
-              Stop following
-            </Button>
+            <Button size="sm" icon={EyeOff} onClick={() => editor.follow(null)}>{tr('stopFollowing')}</Button>
           ) : (
             <Button
               size="sm"
@@ -108,9 +105,7 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
                 follow(editor, person);
                 onDone();
               }}
-            >
-              Follow
-            </Button>
+            >{tr('follow')}</Button>
           )}
         </div>
       )}
@@ -129,7 +124,7 @@ function BringEveryone({ editor, onDone }: { editor: Editor; onDone: () => void 
       }}
     >
       <Megaphone size={16} />
-      <span>Bring everyone to me</span>
+      <span>{tr('bringEveryoneToMe')}</span>
     </button>
   );
 }
@@ -138,7 +133,7 @@ function PeopleList({ editor, people, onDone }: { editor: Editor; people: Person
   const following = useFollowing();
   return (
     <div className="fr-presence-list">
-      <div className="fr-presence-list__heading">On this board · {people.length}</div>
+      <div className="fr-presence-list__heading">{tr('onThisBoardLength', { length: people.length })}</div>
       <div className="fr-presence-list__rows" data-fr-scrollable="">
         {people.map((p) => {
           const c = primaryClient(p);
@@ -148,13 +143,13 @@ function PeopleList({ editor, people, onDone }: { editor: Editor; people: Person
               <Avatar name={p.name} color={p.color} src={p.avatarUrl} size={28} />
               <span className="fr-presence-row__name">
                 {p.name}
-                {p.isMe && <span className="fr-presence-row__you"> (you)</span>}
+                {p.isMe && <span className="fr-presence-row__you">{' '}{tr('you')}</span>}
               </span>
               {!p.isMe && (
                 <span className="fr-presence-row__actions">
                   <IconButton
                     icon={Crosshair}
-                    label={`Go to ${p.name}'s view`}
+                    label={tr('goToNameSView', { name: p.name })}
                     size={32}
                     disabled={!c?.viewport}
                     onClick={() => {
@@ -164,7 +159,7 @@ function PeopleList({ editor, people, onDone }: { editor: Editor; people: Person
                   />
                   <IconButton
                     icon={isFollowed ? EyeOff : Eye}
-                    label={isFollowed ? 'Stop following' : `Follow ${p.name}`}
+                    label={isFollowed ? tr('stopFollowing') : tr('followName', { name: p.name })}
                     size={32}
                     active={isFollowed}
                     disabled={!c?.viewport}
@@ -209,14 +204,14 @@ function AvatarsPanel({ editor }: { editor: Editor }) {
   }, [personGone]);
 
   return (
-    <div className="fr-presence-stack" role="group" aria-label="People on this board">
+    <div className="fr-presence-stack" role="group" aria-label={tr('peopleOnThisBoard')}>
       {shown.map((p) => (
-        <Tooltip key={p.userId} content={p.isMe ? `${p.name} (you)` : p.name} side="bottom">
+        <Tooltip key={p.userId} content={p.isMe ? tr('nameYou', { name: p.name }) : p.name} side="bottom">
           <button
             type="button"
             className={`fr-presence-stack__item${following?.userId === p.userId ? ' is-followed' : ''}`}
             style={{ ['--fr-presence-color' as string]: p.color }}
-            aria-label={p.isMe ? `${p.name} (you)` : p.name}
+            aria-label={p.isMe ? tr('nameYou', { name: p.name }) : p.name}
             aria-expanded={open?.userId === p.userId}
             onClick={(e) => {
               const el = e.currentTarget;
@@ -230,11 +225,11 @@ function AvatarsPanel({ editor }: { editor: Editor }) {
         </Tooltip>
       ))}
       {rest > 0 && (
-        <Tooltip content="Everyone on this board" side="bottom">
+        <Tooltip content={tr('everyoneOnThisBoard')} side="bottom">
           <button
             type="button"
             className="fr-presence-stack__item fr-presence-stack__more"
-            aria-label={`${rest} more people`}
+            aria-label={tr('restMorePeople', { rest })}
             aria-expanded={open?.userId === '*'}
             onClick={(e) => (open?.userId === '*' ? close() : setOpen({ userId: '*', el: e.currentTarget }))}
           >
@@ -242,7 +237,7 @@ function AvatarsPanel({ editor }: { editor: Editor }) {
           </button>
         </Tooltip>
       )}
-      <Popover open={!!openPerson} onClose={close} anchor={open?.el ?? null} side="bottom" align="end" width={280} aria-label="Person">
+      <Popover open={!!openPerson} onClose={close} anchor={open?.el ?? null} side="bottom" align="end" width={280} aria-label={tr('person')}>
         {openPerson && (
           <>
             <PersonCard editor={editor} person={openPerson} onDone={close} />
@@ -255,7 +250,7 @@ function AvatarsPanel({ editor }: { editor: Editor }) {
           </>
         )}
       </Popover>
-      <Popover open={open?.userId === '*'} onClose={close} anchor={open?.el ?? null} side="bottom" align="end" width={300} aria-label="Everyone on this board">
+      <Popover open={open?.userId === '*'} onClose={close} anchor={open?.el ?? null} side="bottom" align="end" width={300} aria-label={tr('everyoneOnThisBoard')}>
         <PeopleList editor={editor} people={people} onDone={close} />
       </Popover>
     </div>
@@ -291,23 +286,21 @@ function ReactionsPanel({ editor }: { editor: Editor }) {
   return (
     <>
       <PointerMemory target={lastCursor} />
-      <IconButton ref={ref} icon={SmilePlus} label="React" size={32} active={open} onClick={() => (open ? close() : setOpen(true))} />
-      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" align="end" aria-label="Send a reaction">
+      <IconButton ref={ref} icon={SmilePlus} label={tr('react')} size={32} active={open} onClick={() => (open ? close() : setOpen(true))} />
+      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" align="end" aria-label={tr('sendAReaction')}>
         {more ? (
           <div className={`fr-presence-reactions-more${denied ? ' is-denied' : ''}`} key={denied}>
-            <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={() => setMore(false)}>
-              Back
-            </Button>
+            <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={() => setMore(false)}>{tr('back')}</Button>
             <EmojiPicker onPick={react} recent={recent} autoFocus />
           </div>
         ) : (
           <div className={`fr-presence-reactions${denied ? ' is-denied' : ''}`} key={denied}>
             {[...REACTIONS, ...recent.slice(0, 2)].map((emoji) => (
-              <button key={emoji} type="button" className="fr-presence-reactions__btn" aria-label={`React ${emoji}`} onClick={() => react(emoji)}>
+              <button key={emoji} type="button" className="fr-presence-reactions__btn" aria-label={tr('reactEmoji', { emoji })} onClick={() => react(emoji)}>
                 {emoji}
               </button>
             ))}
-            <IconButton icon={Plus} label="More emoji" size={32} onClick={() => setMore(true)} />
+            <IconButton icon={Plus} label={tr('moreEmoji')} size={32} onClick={() => setMore(true)} />
           </div>
         )}
       </Popover>
@@ -342,8 +335,8 @@ function ReactionCounts({ editor }: { editor: Editor }) {
   if (!counting) return null;
   const counts = tallyCounts(tally, Math.max(now, tally.events.at(-1)?.at ?? 0));
   return (
-    <div className={`fr-presence-tally${presenting ? ' is-presenting' : ''}`} data-fr-interactive="" role="status" aria-label={`Reactions in the last ${TALLY_WINDOW_MS / 60_000} minutes`}>
-      <span className="fr-presence-tally__title">Reactions · {TALLY_WINDOW_MS / 60_000} min</span>
+    <div className={`fr-presence-tally${presenting ? ' is-presenting' : ''}`} data-fr-interactive="" role="status" aria-label={tr('reactionsInTheLastValue', { value: TALLY_WINDOW_MS / 60_000 })}>
+      <span className="fr-presence-tally__title">{tr('reactions')}{' '}{TALLY_WINDOW_MS / 60_000}{' '}{tr('min')}</span>
       {counts.length ? (
         counts.slice(0, 8).map((c) => (
           <span key={c.emoji} className="fr-presence-tally__item">
@@ -351,7 +344,7 @@ function ReactionCounts({ editor }: { editor: Editor }) {
           </span>
         ))
       ) : (
-        <span className="fr-presence-tally__none">None yet</span>
+        <span className="fr-presence-tally__none">{tr('noneYet')}</span>
       )}
     </div>
   );
@@ -387,7 +380,7 @@ function FollowIndicator({ editor }: { editor: Editor }) {
         const was = last.current;
         if (editor.getFollowing() || !was) return;
         last.current = null;
-        if (!editor.getPeers().some((p) => p.user?.id === was.userId)) editor.host.notify(`${was.name} left the board`);
+        if (!editor.getPeers().some((p) => p.user?.id === was.userId)) editor.host.notify(tr('nameLeftTheBoard', { name: was.name }));
       }),
     [editor],
   );
@@ -408,14 +401,12 @@ function FollowIndicator({ editor }: { editor: Editor }) {
       <div className="fr-presence-frame" style={{ borderColor: color }} aria-hidden />
       <div ref={pill} className={`fr-presence-pill${atTop ? ' is-top' : ''}`} data-fr-interactive="" style={{ background: color }} role="status">
         <Eye size={14} />
-        <span>Following {who.user.name}</span>
+        <span>{tr('followingName', { name: who.user.name })}</span>
         {/* A facilitator's "follow me" (FollowTarget.locked) ends when they release it. */}
         {!following.locked && (
           <>
             <span className="fr-presence-pill__dot">·</span>
-            <button type="button" onClick={() => editor.follow(null)}>
-              Stop
-            </button>
+            <button type="button" onClick={() => editor.follow(null)}>{tr('stop')}</button>
           </>
         )}
       </div>
@@ -486,9 +477,9 @@ function SignalWatcher({ editor }: { editor: Editor }) {
     for (const { peer } of newSignals(seenSummons.current, peers, (e: PresenceExt) => e.summon)) {
       if (peer.user.id === editor.user.id) continue; // your own other tab
       const clientId = peer.clientId;
-      editor.host.notify(`${peer.user.name} is asking everyone to join their view`, 'info', {
+      editor.host.notify(tr('nameIsAskingEveryoneTo', { name: peer.user.name }), 'info', {
         action: {
-          label: 'Go',
+          label: tr('go'),
           run: () => {
             // Their live view if they're still here, else where they were when they asked.
             const live = editor.getPeers().find((p) => p.clientId === clientId);

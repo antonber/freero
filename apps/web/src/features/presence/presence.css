@@ -20,7 +20,7 @@
 }
 
 .fr-presence-stack__item + .fr-presence-stack__item {
-  margin-left: -7px;
+  margin-inline-start: -7px;
 }
 
 .fr-presence-stack__item:hover {
@@ -107,7 +107,7 @@
   border-radius: var(--fr-radius-sm);
   background: none;
   color: var(--fr-ink);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -190,7 +190,7 @@
 .fr-presence-tally {
   position: absolute;
   top: 72px;
-  right: 16px;
+  inset-inline-end: 16px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -326,7 +326,7 @@
 
 .fr-presence-burst {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 0;
   height: 0;
@@ -334,7 +334,7 @@
 
 .fr-presence-burst__p {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   line-height: 1;
   opacity: 0;
@@ -345,7 +345,7 @@
 
 .fr-presence-burst__name {
   position: absolute;
-  left: 10px;
+  inset-inline-start: 10px;
   top: 12px;
   padding: 0 7px;
   border-radius: 9px;
@@ -384,7 +384,7 @@
 
 .fr-presence-card__agent {
   position: absolute;
-  right: -3px;
+  inset-inline-end: -3px;
   bottom: -3px;
   display: grid;
   place-items: center;

@@ -7,6 +7,7 @@ import { Focus, Layers, Workflow } from 'lucide-react';
 import { DIAGRAM_LAYOUT, DIAGRAM_LAYOUT_NAMES, diagramLayers, hiddenByLayer, planDiagram, type DiagramElement } from '@freero/shared';
 import { defineElement, ElementText, richTextToPlain, sanitizeRichText, useEditor, useFocus, type ElementRenderProps, type NewElement } from '@engine';
 import { activeLayer, addStep, focusDiagram } from './lib/actions';
+import { t as tr } from './messages';
 import './diagram.css';
 
 const TITLE_PART = 'title';
@@ -41,15 +42,15 @@ const DiagramView = memo(function DiagramView({ element: d, selected, zoom }: El
                 color="var(--fr-canvas-ink, #17162b)"
                 padding={{ top: 0, right: 8, bottom: 0, left: 4 }}
                 style={{ fontWeight: 650 }}
-                placeholder="Diagram"
+                placeholder={tr('diagram')}
               />
             </div>
-            <span className="fr-diagram__chip">{DIAGRAM_LAYOUT_NAMES[d.layout] ?? 'Manual'}</span>
+            <span className="fr-diagram__chip">{DIAGRAM_LAYOUT_NAMES[d.layout] ?? tr('manual')}</span>
             {layers.length > 1 && (
-              <span className="fr-diagram__chip" title={hidden ? `${hidden} hidden` : undefined}>
+              <span className="fr-diagram__chip" title={hidden ? tr('hiddenHidden', { hidden }) : undefined}>
                 <Layers size={12} aria-hidden />
                 {layers.length}
-                {hidden ? ` · ${hidden} hidden` : ''}
+                {hidden ? tr('hiddenHidden2', { hidden }) : ''}
               </span>
             )}
             {!focused && (
@@ -57,8 +58,8 @@ const DiagramView = memo(function DiagramView({ element: d, selected, zoom }: El
                 type="button"
                 className="fr-diagram__focus"
                 data-fr-interactive=""
-                aria-label={`Focus on ${richTextToPlain(d.title) || 'this diagram'}`}
-                title="Focus on this diagram (Esc to leave)"
+                aria-label={tr('focusOnValue', { value: richTextToPlain(d.title) || tr('thisDiagram') })}
+                title={tr('focusOnThisDiagramEsc')}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => focusDiagram(editor, d.id)}
               >
@@ -74,14 +75,14 @@ const DiagramView = memo(function DiagramView({ element: d, selected, zoom }: El
 
 export default defineElement({
   type: 'diagram',
-  label: { one: 'Diagram', many: 'Diagrams' },
+  label: { one: tr('diagram'), many: tr('diagrams') },
   icon: Workflow,
   // The box hugs the members: no handles (the layout and the members decide its size).
   resize: 'none',
   rotatable: false,
   container: true,
   minSize: { w: DIAGRAM_LAYOUT.minW, h: DIAGRAM_LAYOUT.minH },
-  defaults: (): Omit<NewElement<'diagram'>, 'x' | 'y'> => ({ type: 'diagram', w: DIAGRAM_LAYOUT.minW, h: DIAGRAM_LAYOUT.minH, title: 'Diagram', layout: 'down' }),
+  defaults: (): Omit<NewElement<'diagram'>, 'x' | 'y'> => ({ type: 'diagram', w: DIAGRAM_LAYOUT.minW, h: DIAGRAM_LAYOUT.minH, title: tr('diagram'), layout: 'down' }),
   Component: DiagramView,
   swatch: () => null,
   toPlainText: (d) => [d.title, ...diagramLayers(d).map((l) => l.name)].map((t, i) => (i === 0 ? richTextToPlain(t) : t)).filter(Boolean).join('\n'),

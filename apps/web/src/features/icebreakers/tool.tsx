@@ -3,13 +3,14 @@ import { defineTool, useToolGhost, useToolOptions } from '@engine';
 import { SegmentedControl } from '@ui';
 import { COLORS, KINDS, SIZE, STARTER_ENTRIES, TITLES, TOOL_ID, type Kind } from './lib/model';
 
+import { t } from './messages';
 interface Options {
   kind?: Kind;
 }
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Icebreaker (wheel, dice, speaking order)',
+  label: t('icebreakerWheelDiceSpeakingOrder'),
   icon: Disc3,
   order: 47,
   placement: 'more',
@@ -43,7 +44,7 @@ export default defineTool({
     const { kind = 'wheel' } = useToolOptions<Options>(TOOL_ID);
     return (
       <div style={{ padding: 8 }}>
-        <SegmentedControl<Kind> aria-label="Icebreaker" size="sm" options={KINDS.map((k) => ({ value: k.value, label: k.label }))} value={kind} onChange={(k) => editor.setToolOptions(TOOL_ID, { kind: k })} />
+        <SegmentedControl<Kind> aria-label={t('icebreaker')} size="sm" options={KINDS.map((k) => ({ value: k.value, label: k.label }))} value={kind} onChange={(k) => editor.setToolOptions(TOOL_ID, { kind: k })} />
       </div>
     );
   },

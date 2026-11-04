@@ -17,8 +17,8 @@
 
 .fr-diagram__head {
   position: absolute;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   top: 0;
   display: flex;
   align-items: center;
@@ -188,7 +188,7 @@
   min-width: 18px;
   font-size: 12px;
   color: var(--fr-ink-3);
-  text-align: right;
+  text-align: end;
 }
 
 .fr-diagram-layers__actions {

@@ -3,10 +3,11 @@ import { defineCommands } from '@engine';
 import { PANEL_ID } from './lib/ids';
 import { showChanges } from './lib/catchUp';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'activity.togglePanel',
-    label: 'Activity',
+    label: t('activity'),
     icon: Activity,
     menus: ['board'],
     // Everyone who can open the board sees what happened on it (the server leaves out what they
@@ -18,7 +19,7 @@ export default defineCommands([
   {
     // "See what changed" in the "changes on your boards" email opens /board/<id>?changes=1.
     id: 'activity.showChanges',
-    label: 'Recent changes',
+    label: t('recentChanges'),
     icon: History,
     menus: ['board'],
     minRole: 'viewer',

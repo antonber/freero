@@ -2,14 +2,15 @@
 // moment of the SERVER's clock — so every client draws the same frame of the same spin.
 import type { IcebreakerElement, IcebreakerResult } from '@freero/shared';
 
+import { t } from '../messages';
 export const RESULTS = 'icebreakerResults';
 export const TOOL_ID = 'icebreakers';
 export type Kind = IcebreakerElement['kind'];
 
 export const KINDS: ReadonlyArray<{ value: Kind; label: string }> = [
-  { value: 'wheel', label: 'Wheel of names' },
-  { value: 'dice', label: 'Dice' },
-  { value: 'speakers', label: 'Speaking order' },
+  { value: 'wheel', label: t('wheelOfNames') },
+  { value: 'dice', label: t('dice') },
+  { value: 'speakers', label: t('speakingOrder') },
 ];
 
 export const SIZE: Record<Kind, { w: number; h: number }> = {
@@ -18,7 +19,7 @@ export const SIZE: Record<Kind, { w: number; h: number }> = {
   speakers: { w: 300, h: 380 },
 };
 
-export const TITLES: Record<Kind, string> = { wheel: 'Who goes next?', dice: 'Roll the dice', speakers: 'Speaking order' };
+export const TITLES: Record<Kind, string> = { wheel: t('whoGoesNext'), dice: t('rollTheDice'), speakers: t('speakingOrder') };
 export const STARTER_ENTRIES = ['Ann', 'Bo', 'Cy', 'Dee'];
 export const COLORS = ['#5B3FF0', '#2E9BF0', '#14B8A6', '#1FA463', '#F5A524', '#F97316', '#E5484D', '#E64DA6'];
 /** Full turns a wheel makes before landing. */

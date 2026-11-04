@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { initials, readableTextColor } from './color';
 import { Tooltip } from './Tooltip';
+import { t } from './messages';
 import './Avatar.css';
 
 export interface AvatarProps {
@@ -81,7 +82,7 @@ export function AvatarStack({ users, max = 4, size = 32, className, onUserClick 
           <span
             className="fr-avatar-stack__item fr-avatar fr-avatar--ring fr-avatar--more"
             style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.36)) }}
-            aria-label={`${rest.length} more`}
+            aria-label={t('lengthMore', { length: rest.length })}
           >
             +{rest.length}
           </span>

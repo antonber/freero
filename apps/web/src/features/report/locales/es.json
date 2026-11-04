@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "reportBoard",
+    "report",
+    "report2",
+    "thanksForYourReportFreero",
+    "yourReportCouldNotBe",
+    "reportTargetNoun",
+    "tellFreeroSModeratorsWhat",
+    "cancel",
+    "sendReport",
+    "whatSTheProblem",
+    "detailsOptional",
+    "anythingThatHelpsUsUnderstand",
+    "yourEmailOptional",
+    "toHearWhatWeDecided"
+  ],
+  "reportBoard": "Denunciar tablero…",
+  "report": "Denunciar…",
+  "report2": "Denunciar",
+  "thanksForYourReportFreero": "Gracias por tu denuncia. Los moderadores de Freero la revisarán.",
+  "yourReportCouldNotBe": "No se pudo enviar tu denuncia. Inténtalo de nuevo.",
+  "reportTargetNoun": "Denunciar: {target_noun}",
+  "tellFreeroSModeratorsWhat": "Cuéntales a los moderadores de Freero qué pasa. Al propietario del tablero no se le dice quién lo denunció.",
+  "cancel": "Cancelar",
+  "sendReport": "Enviar denuncia",
+  "whatSTheProblem": "¿Cuál es el problema?",
+  "detailsOptional": "Detalles (opcional)",
+  "anythingThatHelpsUsUnderstand": "Cualquier cosa que nos ayude a entenderlo, p. ej., en qué parte del tablero está",
+  "yourEmailOptional": "Tu correo electrónico (opcional)",
+  "toHearWhatWeDecided": "Para saber qué decidimos"
+}

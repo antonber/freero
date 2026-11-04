@@ -3,12 +3,13 @@ import { defineCommands } from '@engine';
 import { createNextSticky, selectedSticky } from './lib/actions';
 import { authorLabelsShown, setAuthorLabels } from './lib/authors';
 
+import { t } from './messages';
 export default defineCommands([
   {
     // Tab while typing in a sticky (or with one selected) chains a fresh sticky to the right.
     id: 'sticky.nextRight',
     icon: SquareArrowRight,
-    label: 'Add sticky to the right',
+    label: t('addStickyToTheRight'),
     shortcut: 'tab',
     menus: ['context'],
     when: (editor) => !!selectedSticky(editor),
@@ -19,7 +20,7 @@ export default defineCommands([
   },
   {
     id: 'sticky.nextBelow',
-    label: 'Add sticky below',
+    label: t('addStickyBelow'),
     shortcut: 'mod+enter',
     when: (editor) => !!selectedSticky(editor),
     run(editor) {
@@ -30,7 +31,7 @@ export default defineCommands([
   {
     id: 'sticky.duplicateRight',
     icon: SquareStack,
-    label: 'Duplicate sticky to the right',
+    label: t('duplicateStickyToTheRight'),
     shortcut: 'mod+shift+d',
     menus: ['context'],
     when: (editor) => !!selectedSticky(editor),
@@ -43,7 +44,7 @@ export default defineCommands([
     // A board setting for everyone on the board (KAI-112); hidden while private mode runs.
     id: 'sticky.toggleAuthors',
     icon: UserRound,
-    label: 'Show sticky authors',
+    label: t('showStickyAuthors'),
     menus: ['board'],
     detail: (editor) => (authorLabelsShown(editor) ? 'on' : 'off'),
     run: (editor) => setAuthorLabels(editor, !authorLabelsShown(editor)),

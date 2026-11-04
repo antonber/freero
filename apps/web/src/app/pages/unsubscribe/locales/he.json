@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "הקישור הזה חלקי. יש לפתוח שוב את הקישור מהאימייל.",
+  "couldNotReachFreeroTry": "לא ניתן היה להתחבר ל־Freero. יש לנסות שוב.",
+  "unsubscribe": "ביטול המינוי",
+  "unsubscribing": "מבטל את המינוי…",
+  "unsubscribing2": "מבטל את המינוי",
+  "youReUnsubscribed": "המינוי בוטל",
+  "thatLinkDidnTWork": "הקישור לא עבד",
+  "emailWonTGetThe": "{email} לא יקבל יותר את הסיכום ”שינויים בלוחות שלך“. שאר האימיילים לא השתנו.",
+  "emailWonTGetNotification": "{email} לא יקבל יותר אימיילים של התראות. אזכורים ותשובות עדיין יופיעו ב־Freero.",
+  "chooseWhichEmailsYouGet": "בחירת האימיילים שמתקבלים",
+  "logInToChooseWhich": "יש להתחבר כדי לבחור אילו אימיילים יתקבלו"
+}

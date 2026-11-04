@@ -9,18 +9,19 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
 
+import { t } from './messages';
 const ROLE_OPTIONS: Array<{ value: WorkspaceRole; label: string }> = [
-  { value: 'owner', label: 'Owner' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'member', label: 'Member' },
-  { value: 'guest', label: 'Guest' },
+  { value: 'owner', label: t('owner') },
+  { value: 'admin', label: t('admin') },
+  { value: 'member', label: t('member') },
+  { value: 'guest', label: t('guest') },
 ];
 
 const SCOPE_LABELS: Record<AdminScope, string> = { members: 'Members', content: 'Content', security: 'Security' };
 const SCOPE_HINTS: Record<AdminScope, string> = {
-  members: 'People, invites, roles and deactivation',
-  content: 'Sharing policies and every board: inventory, trash, archive, retention, templates',
-  security: 'Sign-in, single sign-on, provisioning, IP allowlist, integrations, exports and the audit log',
+  members: t('peopleInvitesRolesAndDeactivation'),
+  content: t('sharingPoliciesAndEveryBoard'),
+  security: t('signInSingleSignOn'),
 };
 
 /**
@@ -29,9 +30,9 @@ const SCOPE_HINTS: Record<AdminScope, string> = {
  */
 function AdminScopes({ member, editable, onChange }: { member: AdminMember; editable: boolean; onChange: (s: AdminScope[] | null) => void }) {
   const scopes = member.adminScopes ?? ADMIN_SCOPES;
-  if (!editable) return <div className="fr-admin__muted fr-admin-scopes">{scopes.length === ADMIN_SCOPES.length ? 'All admin areas' : scopes.map((s) => SCOPE_LABELS[s]).join(', ')}</div>;
+  if (!editable) return <div className="fr-admin__muted fr-admin-scopes">{scopes.length === ADMIN_SCOPES.length ? t('allAdminAreas') : scopes.map((s) => SCOPE_LABELS[s]).join(', ')}</div>;
   return (
-    <div className="fr-admin-scopes" role="group" aria-label={`What ${member.name} administers`}>
+    <div className="fr-admin-scopes" role="group" aria-label={t('whatNameAdministers', { name: member.name })}>
       {ADMIN_SCOPES.map((s) => {
         const on = scopes.includes(s);
         return (
@@ -73,7 +74,7 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
   const load = useCallback(() => {
     api.adminMembers(workspace.id).then(
       (r) => setMembers(r.members),
-      (e) => notify(errorText(e, 'Could not load the members'), 'error'),
+      (e) => notify(errorText(e, t('couldNotLoadTheMembers')), 'error'),
     );
   }, [workspace.id, notify]);
   useEffect(load, [load]);
@@ -89,20 +90,20 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
   const setRole = async (m: AdminMember, role: WorkspaceRole) => {
     try {
       await api.setWorkspaceRole(workspace.id, m.userId, role);
-      notify(`${m.name} is now ${role === 'admin' || role === 'owner' ? 'an' : 'a'} ${role}`, 'success');
+      notify(t('nameIsNowValueRole', { name: m.name, value: role === 'admin' || role === 'owner' ? t('an') : t('a'), role }), 'success');
       load();
     } catch (e) {
-      notify(errorText(e, 'Could not change the role'), 'error');
+      notify(errorText(e, t('couldNotChangeTheRole')), 'error');
     }
   };
 
   const setScopes = async (m: AdminMember, scopes: AdminScope[] | null) => {
     try {
       await api.setWorkspaceRole(workspace.id, m.userId, 'admin', scopes);
-      notify(scopes ? `${m.name} now administers ${scopes.map((s) => SCOPE_LABELS[s].toLowerCase()).join(' and ')}` : `${m.name} administers everything`, 'success');
+      notify(scopes ? t('nameNowAdministersJoin', { name: m.name, join: scopes.map((s) => SCOPE_LABELS[s].toLowerCase()).join(' and ') }) : t('nameAdministersEverything', { name: m.name }), 'success');
       load();
     } catch (e) {
-      notify(errorText(e, 'Could not change what they administer'), 'error');
+      notify(errorText(e, t('couldNotChangeWhatThey')), 'error');
     }
   };
 
@@ -111,10 +112,10 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
     try {
       const { member } = await api.setMemberDeactivated(workspace.id, m.userId, deactivated);
       setMembers((all) => (all ?? []).map((x) => (x.userId === member.userId ? member : x)));
-      notify(deactivated ? `${m.name} can no longer open this workspace’s boards` : `${m.name} is active again`, 'success');
+      notify(deactivated ? t('nameCanNoLongerOpen', { name: m.name }) : t('nameIsActiveAgain', { name: m.name }), 'success');
       setConfirm(null);
     } catch (e) {
-      notify(errorText(e, deactivated ? 'Could not deactivate them' : 'Could not reactivate them'), 'error');
+      notify(errorText(e, deactivated ? t('couldNotDeactivateThem') : t('couldNotReactivateThem')), 'error');
     } finally {
       setBusy(false);
     }
@@ -125,11 +126,11 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
     setBusy(true);
     try {
       const { member } = await api.addOrganisationMember(workspace.id, email.trim(), addRole);
-      notify(`${member.name} is in ${workspace.name}`, 'success');
+      notify(t('nameIsInName2', { name: member.name, name2: workspace.name }), 'success');
       setEmail('');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not add them'), 'error');
+      notify(errorText(err, t('couldNotAddThem')), 'error');
     } finally {
       setBusy(false);
     }
@@ -140,43 +141,41 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
     <section aria-labelledby="admin-members-title">
       <div className="fr-admin__head">
         <h1 id="admin-members-title" className="fr-admin__title">
-          {org ? 'People' : 'Members'}
+          {org ? t('people') : t('members')}
         </h1>
         <span className="fr-admin__muted">
           {members.length} {members.length === 1 ? 'person' : 'people'} ·{' '}
-          {org ? 'its owners and admins, and everyone its single sign-on, provisioning or domain control brought in' : 'invite people from the workspace’s Members page'}
+          {org ? t('itsOwnersAndAdminsAnd') : t('invitePeopleFromTheWorkspace')}
         </span>
       </div>
       {org ? (
         <form className="fr-admin-org__add" onSubmit={add}>
-          <Input aria-label="Email of someone with a Freero account" placeholder="name@company.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input aria-label={t('emailOfSomeoneWithA')} placeholder="name@company.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Select<'admin' | 'member'>
-            aria-label="Their role in the organisation"
+            aria-label={t('theirRoleInTheOrganisation')}
             options={[
-              { value: 'member', label: 'Member' },
-              { value: 'admin', label: 'Admin', disabled: !owner },
+              { value: 'member', label: t('member') },
+              { value: 'admin', label: t('admin'), disabled: !owner },
             ]}
             value={addRole}
             onChange={setAddRole}
             width={130}
           />
-          <Button type="submit" loading={busy} disabled={!email.trim()}>
-            Add
-          </Button>
+          <Button type="submit" loading={busy} disabled={!email.trim()}>{t('add')}</Button>
         </form>
       ) : null}
-      <Input aria-label="Search members" placeholder="Search by name or email" value={q} onChange={(e) => setQ(e.target.value)} className="fr-admin__search" />
+      <Input aria-label={t('searchMembers')} placeholder={t('searchByNameOrEmail')} value={q} onChange={(e) => setQ(e.target.value)} className="fr-admin__search" />
       <div className="fr-admin-table-wrap">
         <table className="fr-admin-table">
           <thead>
             <tr>
-              <th scope="col">Person</th>
-              <th scope="col">Role</th>
-              <th scope="col">Two-step</th>
-              <th scope="col">Last active</th>
-              {org ? null : <th scope="col">Boards</th>}
+              <th scope="col">{t('person')}</th>
+              <th scope="col">{t('role')}</th>
+              <th scope="col">{t('twoStep')}</th>
+              <th scope="col">{t('lastActive')}</th>
+              {org ? null : <th scope="col">{t('boards')}</th>}
               <th scope="col">
-                <span className="fr-admin__sr">Actions</span>
+                <span className="fr-admin__sr">{t('actions')}</span>
               </th>
             </tr>
           </thead>
@@ -189,8 +188,8 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
                     <div>
                       <div className="fr-admin-person__name">
                         {m.name}
-                        {m.userId === user?.id ? <span className="fr-admin__muted"> (you)</span> : null}
-                        {m.deactivated ? <span className="fr-admin-pill fr-admin-pill--off">Deactivated</span> : null}
+                        {m.userId === user?.id ? <span className="fr-admin__muted">{' '}{t('you')}</span> : null}
+                        {m.deactivated ? <span className="fr-admin-pill fr-admin-pill--off">{t('deactivated')}</span> : null}
                       </div>
                       <div className="fr-admin__muted">{m.email}</div>
                     </div>
@@ -199,7 +198,7 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
                 <td>
                   {manageable(m) && !m.deactivated ? (
                     <Select<WorkspaceRole>
-                      aria-label={`Role of ${m.name}`}
+                      aria-label={t('roleOfName', { name: m.name })}
                       size="sm"
                       options={roleOptions.map((o) => ({ ...o, disabled: !owner && (o.value === 'owner' || o.value === 'admin') }))}
                       value={m.role}
@@ -216,26 +215,20 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
                 <td>
                   {m.twoFactor ? (
                     <span className="fr-admin-pill fr-admin-pill--ok">
-                      <ShieldCheck size={13} aria-hidden /> On
-                    </span>
+                      <ShieldCheck size={13} aria-hidden />{' '}{t('on')}</span>
                   ) : (
                     <span className="fr-admin-pill fr-admin-pill--warn">
-                      <ShieldAlert size={13} aria-hidden /> Off
-                    </span>
+                      <ShieldAlert size={13} aria-hidden />{' '}{t('off')}</span>
                   )}
                 </td>
-                <td className="fr-admin__muted">{m.lastActiveAt ? relativeTime(m.lastActiveAt) : 'Signed out'}</td>
+                <td className="fr-admin__muted">{m.lastActiveAt ? relativeTime(m.lastActiveAt) : t('signedOut')}</td>
                 {org ? null : <td>{m.boards}</td>}
                 <td className="fr-admin-table__actions">
                   {manageable(m) ? (
                     m.deactivated ? (
-                      <Button size="sm" icon={UserCheck} onClick={() => void setDeactivated(m, false)} loading={busy && confirm === null}>
-                        Reactivate
-                      </Button>
+                      <Button size="sm" icon={UserCheck} onClick={() => void setDeactivated(m, false)} loading={busy && confirm === null}>{t('reactivate')}</Button>
                     ) : (
-                      <Button size="sm" variant="ghost" icon={UserX} onClick={() => setConfirm(m)}>
-                        Deactivate
-                      </Button>
+                      <Button size="sm" variant="ghost" icon={UserX} onClick={() => setConfirm(m)}>{t('deactivate')}</Button>
                     )
                   ) : null}
                 </td>
@@ -243,9 +236,7 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
             ))}
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={org ? 5 : 6} className="fr-admin__muted">
-                  Nobody matches “{q}”.
-                </td>
+                <td colSpan={org ? 5 : 6} className="fr-admin__muted">{t('nobodyMatchesQ', { q })}</td>
               </tr>
             ) : null}
           </tbody>
@@ -255,21 +246,19 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
       <Modal
         open={confirm !== null}
         onClose={() => setConfirm(null)}
-        title={`Deactivate ${confirm?.name ?? ''}?`}
+        title={t('deactivateValue', { value: confirm?.name ?? '' })}
         width={440}
         footer={
           <>
-            <Button onClick={() => setConfirm(null)}>Cancel</Button>
-            <Button variant="danger" loading={busy} onClick={() => confirm && void setDeactivated(confirm, true)}>
-              Deactivate
-            </Button>
+            <Button onClick={() => setConfirm(null)}>{t('cancel')}</Button>
+            <Button variant="danger" loading={busy} onClick={() => confirm && void setDeactivated(confirm, true)}>{t('deactivate')}</Button>
           </>
         }
       >
         <p className="fr-admin__modal-text">
           {org
-            ? `They keep their roles and boards, but can’t open anything in any of ${workspace.name}’s workspaces — boards that are open now close at once. You can reactivate them any time.`
-            : `They keep their role and the boards they own, but can’t open anything in ${workspace.name} — boards that are open now close at once. You can reactivate them any time.`}
+            ? t('theyKeepTheirRolesAnd', { name: workspace.name })
+            : t('theyKeepTheirRoleAnd', { name: workspace.name })}
         </p>
       </Modal>
     </section>

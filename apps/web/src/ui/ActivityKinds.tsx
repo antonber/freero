@@ -5,6 +5,7 @@ import { Check, Timer, X } from 'lucide-react';
 import type { ActivityAnswer, ActivityInfo, ActivityState } from '@freero/shared';
 import { Button } from './Button';
 
+import { t as tr } from './messages';
 const DOT_COLORS = ['#5B3FF0', '#E5484D', '#1FA463', '#F5A524', '#2E9BF0', '#E64DA6', '#14B8A6', '#F97316', '#8B5CF6', '#84CC16', '#8A89A3', '#17162B'];
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
@@ -43,8 +44,8 @@ export function MatrixForm({ a, mine, onSubmit, busy }: { a: ActivityInfo; mine:
   };
   return (
     <>
-      <p className="fr-actform__hint">{active ? `Tap where “${a.options.find((o) => o.id === active)?.text || 'this item'}” goes` : 'Drag an item to move it'}</p>
-      <div className="fr-actform__chips" role="group" aria-label="Items">
+      <p className="fr-actform__hint">{active ? tr('tapWhereValueGoes', { value: a.options.find((o) => o.id === active)?.text || tr('thisItem') }) : tr('dragAnItemToMove')}</p>
+      <div className="fr-actform__chips" role="group" aria-label={tr('items')}>
         {a.options.map((o, i) => (
           <button
             key={o.id}
@@ -55,7 +56,7 @@ export function MatrixForm({ a, mine, onSubmit, busy }: { a: ActivityInfo; mine:
             onClick={() => setActive(o.id)}
           >
             <span className="fr-actform__chipdot" aria-hidden />
-            {o.text || 'Untitled item'}
+            {o.text || tr('untitledItem')}
             {placed[o.id] ? <Check size={13} aria-label="placed" /> : null}
           </button>
         ))}
@@ -66,7 +67,7 @@ export function MatrixForm({ a, mine, onSubmit, busy }: { a: ActivityInfo; mine:
           ref={plane}
           className="fr-actform__plane"
           role="application"
-          aria-label={`Matrix: ${ax.x[0]} to ${ax.x[1]} across, ${ax.y[0]} to ${ax.y[1]} up`}
+          aria-label={tr('matrixValueToValue2Across', { value: ax.x[0], value2: ax.x[1], value3: ax.y[0], value4: ax.y[1] })}
           onPointerDown={onPlaneDown}
           onPointerMove={(e) => drag.current && place(drag.current, at(e))}
           onPointerUp={() => (drag.current = null)}
@@ -79,7 +80,7 @@ export function MatrixForm({ a, mine, onSubmit, busy }: { a: ActivityInfo; mine:
                 type="button"
                 data-item={o.id}
                 className="fr-actform__pin"
-                aria-label={`${o.text || 'Item'}: ${Math.round(placed[o.id].x * 100)}% across, ${Math.round(placed[o.id].y * 100)}% up (arrow keys move it)`}
+                aria-label={tr('valueRoundAcrossRound2Up', { value: o.text || tr('item'), round: Math.round(placed[o.id].x * 100), round2: Math.round(placed[o.id].y * 100) })}
                 style={{ left: `${placed[o.id].x * 100}%`, top: `${(1 - placed[o.id].y) * 100}%`, ['--dot' as string]: DOT_COLORS[i % DOT_COLORS.length] }}
                 onKeyDown={(e) => {
                   const d = { ArrowLeft: [-0.05, 0], ArrowRight: [0.05, 0], ArrowUp: [0, 0.05], ArrowDown: [0, -0.05] }[e.key];
@@ -98,7 +99,7 @@ export function MatrixForm({ a, mine, onSubmit, busy }: { a: ActivityInfo; mine:
         </span>
       </div>
       <Button variant="primary" size="lg" loading={busy} disabled={!Object.keys(placed).length} onClick={() => onSubmit({ positions: placed })}>
-        {mine ? 'Change my placement' : 'Send'}
+        {mine ? tr('changeMyPlacement') : tr('send')}
       </Button>
     </>
   );
@@ -129,11 +130,11 @@ export function QuizForm({ a, state, onSubmit, busy }: { a: ActivityInfo; state:
   useEffect(() => setPicked(mineNow ?? []), [q?.id]);
   const left = useSecondsLeft(a, state);
   const total = a.questions?.length ?? 0;
-  const score = <p className="fr-actform__score">Your score: {state.myScore ?? 0}</p>;
+  const score = <p className="fr-actform__score">{tr('yourScore')}{' '}{state.myScore ?? 0}</p>;
   if (!q)
     return (
       <>
-        <p className="fr-actform__hint">{state.reason ?? 'The quiz starts when the host opens the first question.'}</p>
+        <p className="fr-actform__hint">{state.reason ?? tr('theQuizStartsWhenThe')}</p>
         {state.mine ? score : null}
       </>
     );
@@ -145,17 +146,14 @@ export function QuizForm({ a, state, onSubmit, busy }: { a: ActivityInfo; state:
   return (
     <>
       <div className="fr-actform__quizhead">
-        <span>
-          Question {a.quiz!.step + 1} of {total}
-        </span>
+        <span>{tr('question')}{' '}{a.quiz!.step + 1}{' '}{tr('ofTotal', { total })}</span>
         {left !== null && !shown ? (
           <span className={`fr-actform__timer${left <= 5 ? ' is-low' : ''}`}>
-            <Timer size={14} aria-hidden /> {left}s
-          </span>
+            <Timer size={14} aria-hidden />{' '}{tr('leftS', { left })}</span>
         ) : null}
       </div>
-      <p className="fr-actform__question">{q.text || 'Untitled question'}</p>
-      {multi && open ? <p className="fr-actform__hint">Pick all that are right</p> : null}
+      <p className="fr-actform__question">{q.text || tr('untitledQuestion')}</p>
+      {multi && open ? <p className="fr-actform__hint">{tr('pickAllThatAreRight')}</p> : null}
       <ul className="fr-actform__choices" role={multi ? 'group' : 'radiogroup'}>
         {q.options.map((o) => {
           const isRight = correct?.includes(o.id);
@@ -170,8 +168,8 @@ export function QuizForm({ a, state, onSubmit, busy }: { a: ActivityInfo; state:
                 onClick={() => setPicked((p) => (multi ? (p.includes(o.id) ? p.filter((x) => x !== o.id) : [...p, o.id]) : [o.id]))}
               >
                 {picked.includes(o.id) ? <Check size={16} aria-hidden /> : <span style={{ width: 16 }} />}
-                {o.text || 'Untitled answer'}
-                {isRight ? <span className="fr-actform__tag">Right answer</span> : null}
+                {o.text || tr('untitledAnswer')}
+                {isRight ? <span className="fr-actform__tag">{tr('rightAnswer')}</span> : null}
               </button>
             </li>
           );
@@ -179,16 +177,16 @@ export function QuizForm({ a, state, onSubmit, busy }: { a: ActivityInfo; state:
       </ul>
       {open ? (
         <Button variant="primary" size="lg" loading={busy} disabled={!picked.length} onClick={() => onSubmit({ quiz: { [q.id]: { choices: picked } } })}>
-          {mineNow ? 'Change my answer' : 'Send answer'}
+          {mineNow ? tr('changeMyAnswer') : tr('sendAnswer')}
         </Button>
       ) : null}
       {shown ? (
         <p className={`fr-actform__verdict${right ? ' is-right' : ''}`} role="status">
-          {right ? <Check size={16} aria-hidden /> : <X size={16} aria-hidden />} {mineNow ? (right ? 'Right!' : 'Not this time') : 'You didn’t answer this one'}
+          {right ? <Check size={16} aria-hidden /> : <X size={16} aria-hidden />} {mineNow ? (right ? tr('right') : tr('notThisTime')) : tr('youDidnTAnswerThis')}
         </p>
       ) : !open ? (
         <p className="fr-actform__hint" role="status">
-          {mineNow ? 'Answer in — the host shows the right answer next.' : (state.reason ?? 'Time’s up for this question.')}
+          {mineNow ? tr('answerInTheHostShows') : (state.reason ?? tr('timeSUpForThis'))}
         </p>
       ) : null}
       {score}

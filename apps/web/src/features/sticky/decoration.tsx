@@ -3,6 +3,7 @@ import { isAnonymousAuthor, stickyInk, type BoardElement, type PrivateModeSessio
 import { defineDecoration, useCollection, useEditor, useGonePeople, usePeople } from '@engine';
 import { COLLECTION, authorLabel, authorLabelsOn, privateModeRunning, type AuthorLabels } from './lib/authors';
 
+import { t } from './messages';
 /** Below this zoom the label is an unreadable speck. */
 const MIN_ZOOM = 0.3;
 
@@ -19,7 +20,7 @@ const Label = memo(function Label({ element }: { element: BoardElement }) {
     <div
       className="fr-sticky-author"
       style={{ ['--s' as string]: s, color: element.type === 'sticky' ? stickyInk(element.color) : undefined }}
-      title={`Written by ${text}`}
+      title={t('writtenByText', { text })}
     >
       {text}
     </div>

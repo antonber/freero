@@ -16,6 +16,7 @@ import { FullPageSpinner } from '../components/FullPageSpinner';
 import '../board/BoardPage.css';
 import { setThemeOverride } from '../lib/theme';
 
+import { t as tr } from '../messages';
 type Theme = 'light' | 'dark';
 const asTheme = (v: unknown): Theme | null => (v === 'light' || v === 'dark' ? v : null);
 
@@ -78,7 +79,7 @@ export default function EmbedBoardPage() {
   useEffect(() => {
     const ticket = takeTicket();
     if (!ticket) {
-      setState({ status: 'error', message: 'This live view has expired. Ask the assistant to show the board again.' });
+      setState({ status: 'error', message: tr('thisLiveViewHasExpired') });
       ended('expired');
       return;
     }
@@ -88,7 +89,7 @@ export default function EmbedBoardPage() {
     p.then(
       (view) => {
         if (cancelled) return;
-        if (view.board.id !== id) setState({ status: 'error', message: 'This live view is for another board.' });
+        if (view.board.id !== id) setState({ status: 'error', message: tr('thisLiveViewIsFor') });
         else setState({ status: 'ready', view });
       },
       (err) => {
@@ -118,11 +119,11 @@ export default function EmbedBoardPage() {
       <div className="fr-boarderror">
         <div className="fr-boarderror__card">
           <Logo size={36} />
-          <h1>This live view has ended</h1>
+          <h1>{tr('thisLiveViewHasEnded')}</h1>
           <p>{state.message}</p>
         </div>
       </div>
     );
-  if (!host) return <FullPageSpinner label="Opening board" />;
+  if (!host) return <FullPageSpinner label={tr('openingBoard')} />;
   return <BoardEngine host={host} features={features} location={location} />;
 }

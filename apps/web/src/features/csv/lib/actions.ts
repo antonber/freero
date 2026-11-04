@@ -5,6 +5,7 @@ import type { Editor } from '@engine';
 import { exportRows, toCsv } from './csv';
 import { itemsToExport, toRows } from './board';
 
+import { t } from '../messages';
 export const CSV_IMPORT_DIALOG = 'csv.import';
 
 /** A file name safe everywhere, from the board's title. */
@@ -16,7 +17,7 @@ export function csvFileName(title: string): string {
 export async function exportCsv(editor: Editor): Promise<void> {
   const items = itemsToExport(editor);
   if (!items.length) {
-    editor.host.notify(editor.getSelection().length ? 'The selection has no stickies or cards' : 'This board has no stickies or cards yet', 'info');
+    editor.host.notify(editor.getSelection().length ? t('theSelectionHasNoStickies') : t('thisBoardHasNoStickies'), 'info');
     return;
   }
   // Assignees by name: the board's member directory (presence as a fallback).
@@ -38,5 +39,5 @@ export async function exportCsv(editor: Editor): Promise<void> {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
   editor.host.reportExport?.('csv');
-  editor.host.notify(`Exported ${items.length} ${items.length === 1 ? 'item' : 'items'} as CSV`, 'success');
+  editor.host.notify(t('exportedLengthItemsAsCsv', { length: items.length }), 'success');
 }

@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "وسم العناصر بالاسم",
+  "searchOrCreateATag": "ابحث عن وسم أو أنشئه",
+  "nameYourFirstTag": "سمِّ وسمك الأول",
+  "tags": "الوسوم",
+  "tagsGroupStickiesAndCards": "تجمع الوسوم الملاحظات اللاصقة والبطاقات حسب الموضوع أو المسؤول أو الأولوية.",
+  "createName": "إنشاء «{name}»",
+  "newTagColor": "لون الوسم الجديد",
+  "manageTags": "إدارة الوسوم",
+  "colorOfName": "لون {name}",
+  "renameName": "إعادة تسمية {name}",
+  "deleteUses": "حذف ({uses})",
+  "deleteTagUsedOnUses": "حذف الوسم (مستخدم في {uses})",
+  "deleteTag": "حذف الوسم",
+  "backToTags": "العودة إلى الوسوم"
+}

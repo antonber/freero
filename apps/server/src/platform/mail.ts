@@ -12,7 +12,10 @@ import type { Request } from 'express';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { getConfig } from './config';
 import { newId } from './ids';
+import { isRtlLocale } from '@freero/shared';
+import { localeOrDefault } from './i18n';
 import { log, logError } from './log';
+import { t } from './messages';
 
 export interface Mail {
   to: string;
@@ -117,7 +120,10 @@ export function renderMail(m: {
   action?: { label: string; url: string };
   outro?: string;
   unsubscribe?: { label: string; url: string; oneClickUrl: string };
+  /** The recipient's interface language (#5): the layout's own words and the page direction. The caller words the rest. */
+  locale?: string | null;
 }): Omit<Mail, 'to'> {
+  const locale = localeOrDefault(m.locale);
   const items = m.items ?? [];
   const text = [
     m.title,
@@ -135,7 +141,7 @@ export function renderMail(m: {
 ${i.quote ? `<div style="margin:6px 0 0;padding-left:10px;border-left:3px solid #d9d4fb;font-size:14px;line-height:20px;color:#4a4a55">${escapeHtml(i.quote)}</div>` : ''}
 <a href="${escapeHtml(i.link.url)}" style="display:inline-block;margin-top:8px;font-size:14px;color:#5b3ff0;font-weight:600;text-decoration:none">${escapeHtml(i.link.label)}</a>
 </div>`;
-  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  const html = `<!doctype html><html lang="${locale}" dir="${isRtlLocale(locale) ? 'rtl' : 'ltr'}"><body style="margin:0;padding:24px;background:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
 <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px">
 <div style="font-weight:700;font-size:18px;color:#5b3ff0;margin-bottom:24px">Freero</div>
 <h1 style="margin:0 0 16px;font-size:20px;color:#17171c">${escapeHtml(m.title)}</h1>
@@ -144,7 +150,7 @@ ${items.map(item).join('\n')}
 ${
   m.action
     ? `<p style="margin:24px 0"><a href="${escapeHtml(m.action.url)}" style="display:inline-block;background:#5b3ff0;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">${escapeHtml(m.action.label)}</a></p>
-<p style="margin:0 0 16px;font-size:13px;color:#6b6b76">Or paste this link into your browser: ${escapeHtml(m.action.url)}</p>`
+<p style="margin:0 0 16px;font-size:13px;color:#6b6b76">${escapeHtml(t(locale, 'mail.pasteLink', { url: m.action.url }))}</p>`
     : ''
 }
 ${m.outro ? `<p style="margin:16px 0 0;font-size:13px;color:#6b6b76">${escapeHtml(m.outro)}</p>` : ''}

@@ -9,8 +9,8 @@
 
 .fr-swim__title {
   position: absolute;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   top: 0;
   border-bottom: 1.5px solid #4b4a63;
 }
@@ -27,7 +27,7 @@
 }
 
 .fr-swim.is-vertical .fr-swim__lane {
-  border-left: 1px solid #8a89a3;
+  border-inline-start: 1px solid #8a89a3;
 }
 
 .fr-swim__phase-line {
@@ -36,7 +36,7 @@
 }
 
 .fr-swim__phase-line.is-col {
-  border-left-width: 1.5px;
+  border-inline-start-width: 1.5px;
 }
 
 .fr-swim__phase-line.is-row {
@@ -51,27 +51,27 @@
 }
 
 .fr-swim__head.is-lanes {
-  border-right-width: 1.5px;
+  border-inline-end-width: 1.5px;
   border-top-width: 1px;
 }
 
 .fr-swim.is-vertical .fr-swim__head.is-lanes {
-  border-right-width: 0;
-  border-left-width: 1px;
+  border-inline-end-width: 0;
+  border-inline-start-width: 1px;
   border-top-width: 0;
   border-bottom-width: 1.5px;
 }
 
 .fr-swim__head.is-phases {
   border-bottom-width: 1.5px;
-  border-left-width: 1px;
+  border-inline-start-width: 1px;
 }
 
 .fr-swim.is-vertical .fr-swim__head.is-phases {
   border-bottom-width: 0;
-  border-left-width: 0;
+  border-inline-start-width: 0;
   border-top-width: 1px;
-  border-right-width: 1.5px;
+  border-inline-end-width: 1.5px;
 }
 
 .fr-swim__head-text {
@@ -82,7 +82,7 @@
 .fr-swim__menu {
   position: absolute;
   top: 6px;
-  right: 4px;
+  inset-inline-end: 4px;
   display: grid;
   place-items: center;
   width: 22px;
@@ -122,8 +122,8 @@
 }
 
 .fr-swim__edge.is-row:hover::after {
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   top: 3px;
   height: 2px;
 }
@@ -131,7 +131,7 @@
 .fr-swim__edge.is-col:hover::after {
   top: 0;
   bottom: 0;
-  left: 3px;
+  inset-inline-start: 3px;
   width: 2px;
 }
 

@@ -1,0 +1,13 @@
+{
+  "thisLinkIsIncompleteOpen": "This link is incomplete. Open the link from the email again.",
+  "couldNotReachFreeroTry": "Could not reach Freero. Try again.",
+  "unsubscribe": "Unsubscribe",
+  "unsubscribing": "Unsubscribing…",
+  "unsubscribing2": "Unsubscribing",
+  "youReUnsubscribed": "You’re unsubscribed",
+  "thatLinkDidnTWork": "That link didn’t work",
+  "emailWonTGetThe": "{email} won’t get the “changes on your boards” summary any more. Other emails are unchanged.",
+  "emailWonTGetNotification": "{email} won’t get notification emails any more. You’ll still see mentions and replies in Freero.",
+  "chooseWhichEmailsYouGet": "Choose which emails you get",
+  "logInToChooseWhich": "Log in to choose which emails you get"
+}

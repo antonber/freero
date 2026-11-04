@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "erasePartsOfStrokes",
+    "eraseWholeStrokes",
+    "eraserMode",
+    "eraserSize",
+    "eraser"
+  ],
+  "erasePartsOfStrokes": "擦除部分笔画",
+  "eraseWholeStrokes": "擦除整条笔画",
+  "eraserMode": "橡皮擦模式",
+  "eraserSize": "橡皮擦大小",
+  "eraser": "橡皮擦"
+}

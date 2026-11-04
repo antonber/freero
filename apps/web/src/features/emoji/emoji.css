@@ -13,7 +13,7 @@
 /* Ghost under the cursor while the emoji tool is active. */
 .fr-emoji-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   opacity: 0.6;
   pointer-events: none;
@@ -140,7 +140,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  padding-right: 2px;
+  padding-inline-end: 2px;
 }
 
 .fr-emoji-picker__scroll > section {
@@ -193,7 +193,7 @@
 .fr-emoji-team__remove {
   position: absolute;
   top: -3px;
-  right: -3px;
+  inset-inline-end: -3px;
   display: none;
   place-items: center;
   width: 16px;

@@ -6,13 +6,14 @@ import { BACKUP_EXTENSION } from '@freero/shared';
 import { ImportError, type ImportReport } from './lib/common';
 import { IMPORT_DIALOG, importFile, kindOfFile, kindOfText, parseImport, placeImport, summary } from './lib/insert';
 
+import { t } from './messages';
 function announce(editor: Editor, report: ImportReport) {
-  const details = report.skipped.length ? { action: { label: 'Details', run: () => editor.openPanel(IMPORT_DIALOG, { report }) } } : undefined;
+  const details = report.skipped.length ? { action: { label: t('details'), run: () => editor.openPanel(IMPORT_DIALOG, { report }) } } : undefined;
   editor.host.notify(summary(report), 'success', details);
 }
 
 const failed = (editor: Editor) => (e: unknown) =>
-  editor.host.notify(e instanceof ImportError ? e.message : 'Could not import that file', 'error');
+  editor.host.notify(e instanceof ImportError ? e.message : t('couldNotImportThatFile'), 'error');
 
 export default [
   defineImporter({
@@ -23,7 +24,7 @@ export default [
       if (!backup) return false;
       // A backup is a whole board: restored as a new one, never poured into this one.
       if (editor.host.openBackup) editor.host.openBackup(backup);
-      else editor.host.notify('Restore board backups from your dashboard (Restore backup).', 'info');
+      else editor.host.notify(t('restoreBoardBackupsFromYour'), 'info');
       return [backup];
     },
   }),
@@ -37,7 +38,7 @@ export default [
       if (!files.length || !editor.can('editor')) return false;
       for (const f of files) {
         if (f.size > 1024 * 1024) {
-          editor.host.notify(`${f.name} is larger than Freero reads as a diagram.`, 'error');
+          editor.host.notify(t('nameIsLargerThanFreero', { name: f.name }), 'error');
           continue;
         }
         editor.runCommand('from-text.insert', { kind: kindOf(f.name), text: await f.text(), ...(data.alongside ? {} : { at }) });

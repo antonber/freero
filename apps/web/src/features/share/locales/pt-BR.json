@@ -1,0 +1,8 @@
+{
+  "@@unreviewed": [
+    "placeSharedContent",
+    "addedWhatYouSharedValue"
+  ],
+  "placeSharedContent": "Inserir conteúdo compartilhado",
+  "addedWhatYouSharedValue": "O que você compartilhou foi adicionado{value}"
+}

@@ -47,3 +47,6 @@ export type { Side, Align, Box, PositionInput, PositionResult } from './position
 export { formatShortcut, shortcutKeys, isApplePlatform } from './shortcut';
 export { readableTextColor, initials } from './color';
 export { useDismissableLayer, useFloatingPosition } from './layers';
+// Interface languages (docs/design/i18n.md)
+export { defineMessages, installLocale, getLocale, isRtl, formatNumber, formatDate, formatTime, formatRelative, formatList, formatBytes } from './i18n';
+export type { Catalog, Catalogs, Translate } from './i18n';

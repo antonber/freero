@@ -9,6 +9,7 @@ import { currentPosition, slides } from './model';
 import { useNotes } from './NotesPanel';
 import { presentStore, step, usePresent } from './session';
 
+import { t as tr } from '../messages';
 const FEATURES = 'popup=yes,width=520,height=680';
 /** Closing waits a tick: a remount right away (React's development double-mount) keeps the same window. */
 const closing = new Map<string, ReturnType<typeof setTimeout>>();
@@ -42,24 +43,20 @@ function Notes({ editor, startedAt }: { editor: Editor; startedAt: number }) {
   return (
     <div className="fr-present-window">
       <header className="fr-present-window__head">
-        <span>{list.length ? `Slide ${pos + 1} of ${list.length}` : 'Whole board'}</span>
-        <span className="fr-present-window__clock" aria-label="Time presenting">
+        <span>{list.length ? tr('slideValueOfLength', { value: pos + 1, length: list.length }) : tr('wholeBoard')}</span>
+        <span className="fr-present-window__clock" aria-label={tr('timePresenting')}>
           {clock}
         </span>
       </header>
-      <h1 className="fr-present-window__title">{current?.title || (list.length ? 'Untitled frame' : 'No frames')}</h1>
+      <h1 className="fr-present-window__title">{current?.title || (list.length ? tr('untitledFrame2') : tr('noFrames'))}</h1>
       <div className={`fr-present-window__notes${text.trim() ? '' : ' is-empty'}`} aria-live="polite">
-        {text.trim() ? text : 'No notes for this slide.'}
+        {text.trim() ? text : tr('noNotesForThisSlide')}
       </div>
       <footer className="fr-present-window__foot">
-        <span>Next: {next ? next.title || 'Untitled frame' : 'the end'}</span>
+        <span>{tr('next')}{' '}{next ? next.title || tr('untitledFrame2') : tr('theEnd')}</span>
         <span className="fr-present-window__nav">
-          <button type="button" disabled={pos <= 0} onClick={() => step(editor, -1)}>
-            ← Previous
-          </button>
-          <button type="button" disabled={pos < 0 || pos >= list.length - 1} onClick={() => step(editor, 1)}>
-            Next →
-          </button>
+          <button type="button" disabled={pos <= 0} onClick={() => step(editor, -1)}>{tr('previous')}</button>
+          <button type="button" disabled={pos < 0 || pos >= list.length - 1} onClick={() => step(editor, 1)}>{tr('next2')}</button>
         </span>
       </footer>
     </div>
@@ -79,7 +76,7 @@ export function NotesWindow({ editor }: { editor: Editor }) {
     closing.delete(name);
     const w = window.open('', name, FEATURES);
     if (!w) {
-      editor.host.notify('Your browser blocked the notes window. Allow pop-ups for Freero and try again.', 'error');
+      editor.host.notify(tr('yourBrowserBlockedTheNotes'), 'error');
       presentStore(editor).setState({ notesWindow: false });
       return;
     }

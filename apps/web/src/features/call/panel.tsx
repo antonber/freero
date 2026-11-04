@@ -6,6 +6,7 @@ import type { BoardCall, BoardCallResponse } from '@freero/shared';
 import { definePanel, useCollection, usePeers, type Editor, type PanelProps } from '@engine';
 import { AvatarStack, Button, IconButton, Input, Modal, SegmentedControl, Tooltip } from '@ui';
 import { CALL_COLLECTION, CALL_DIALOG, REV_KEY, callHost, callers, openCall, type CallPresence } from './lib/call';
+import { t } from './messages';
 import './call.css';
 
 /** The board's call: as the board opened, then re-read whenever someone changes it (the `call` collection's rev). */
@@ -36,7 +37,7 @@ function CallButton({ editor }: { editor: Editor }) {
   );
   const join = () => {
     if (!call) return;
-    if (!openCall(call)) return editor.host.notify('This call link can’t be opened.', 'error');
+    if (!openCall(call)) return editor.host.notify(t('thisCallLinkCanT'), 'error');
     editor.setPresenceExt({ since: editor.host.serverNow() } satisfies CallPresence);
     setJoined(true);
   };
@@ -49,11 +50,11 @@ function CallButton({ editor }: { editor: Editor }) {
     <div className="fr-call" data-testid="call-button">
       {people.length ? <AvatarStack users={people.map((u) => ({ ...u, src: u.avatarUrl ?? null }))} max={3} size={24} className="fr-call__people" /> : null}
       {joined ? (
-        <IconButton icon={PhoneOff} label="Leave call (on the board)" size={32} onClick={leave} />
+        <IconButton icon={PhoneOff} label={t('leaveCallOnTheBoard')} size={32} onClick={leave} />
       ) : (
-        <Tooltip content={`Opens ${callHost(call)} in a new tab`}>
+        <Tooltip content={t('opensCallhostInANew', { callHost: callHost(call) })}>
           <Button size="sm" variant="secondary" icon={Phone} onClick={join}>
-            {people.length ? `Join call (${people.length})` : 'Join call'}
+            {people.length ? t('joinCallLength', { length: people.length }) : t('joinCall')}
           </Button>
         </Tooltip>
       )}
@@ -78,7 +79,7 @@ function CallDialog({ editor }: PanelProps) {
         setMode(r.call?.kind ?? (r.jitsiAvailable ? 'jitsi' : 'link'));
         if (r.call?.kind === 'link') setUrl(r.call.url);
       },
-      (e) => setError(e instanceof Error ? e.message : 'Could not load the call link'),
+      (e) => setError(e instanceof Error ? e.message : t('couldNotLoadTheCall')),
     );
   }, [editor]);
 
@@ -89,41 +90,39 @@ function CallDialog({ editor }: PanelProps) {
     try {
       await editor.host.call.set(mode === 'jitsi' ? { jitsi: true } : mode === 'link' ? { url: url.trim() } : { url: null });
       editor.collection<number>(CALL_COLLECTION).set(REV_KEY, editor.host.serverNow()); // everyone on the board fetches the new link
-      editor.host.notify(mode === 'none' ? 'Call link removed' : 'Call link saved', 'success');
+      editor.host.notify(mode === 'none' ? t('callLinkRemoved') : t('callLinkSaved'), 'success');
       close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save the call link');
+      setError(e instanceof Error ? e.message : t('couldNotSaveTheCall'));
     } finally {
       setBusy(false);
     }
   };
 
   const options = [
-    { value: 'link' as const, label: 'Meeting link' },
-    ...(state?.jitsiAvailable ? [{ value: 'jitsi' as const, label: 'Jitsi room' }] : []),
-    { value: 'none' as const, label: 'No call' },
+    { value: 'link' as const, label: t('meetingLink') },
+    ...(state?.jitsiAvailable ? [{ value: 'jitsi' as const, label: t('jitsiRoom') }] : []),
+    { value: 'none' as const, label: t('noCall') },
   ];
   return (
     <Modal
       open
       onClose={close}
-      title="Call link"
-      description="Freero has no built-in audio or video: people join your board’s call in their meeting tool."
+      title={t('callLink2')}
+      description={t('freeroHasNoBuiltIn')}
       width={480}
       footer={
         <>
-          <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" loading={busy} disabled={!state || (mode === 'link' && !url.trim())} onClick={save}>
-            Save
-          </Button>
+          <Button onClick={close}>{t('cancel')}</Button>
+          <Button variant="primary" loading={busy} disabled={!state || (mode === 'link' && !url.trim())} onClick={save}>{t('save')}</Button>
         </>
       }
     >
       <div className="fr-call-form">
-        <SegmentedControl<Mode> aria-label="Call" options={options} value={mode} onChange={setMode} />
+        <SegmentedControl<Mode> aria-label={t('call')} options={options} value={mode} onChange={setMode} />
         {mode === 'link' ? (
           <Input
-            aria-label="Meeting link"
+            aria-label={t('meetingLink')}
             placeholder="https://meet.example.com/your-room"
             value={url}
             autoFocus
@@ -131,11 +130,11 @@ function CallDialog({ editor }: PanelProps) {
               setUrl(e.target.value);
               setError(null);
             }}
-            hint="Google Meet, Zoom, Microsoft Teams, Jitsi… any https link."
+            hint={t('googleMeetZoomMicrosoftTeams')}
           />
         ) : null}
-        {mode === 'jitsi' ? <p className="fr-call-form__hint">A Jitsi room only this board’s people are sent to. Its name can’t be guessed from the board.</p> : null}
-        {mode === 'none' ? <p className="fr-call-form__hint">The Join call button goes away.</p> : null}
+        {mode === 'jitsi' ? <p className="fr-call-form__hint">{t('aJitsiRoomOnlyThis')}</p> : null}
+        {mode === 'none' ? <p className="fr-call-form__hint">{t('theJoinCallButtonGoes')}</p> : null}
         {error ? (
           <p className="fr-call-form__error" role="alert">
             {error}

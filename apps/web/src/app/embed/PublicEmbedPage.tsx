@@ -29,6 +29,7 @@ import '../board/BoardPage.css';
 import './PublicEmbedPage.css';
 import { embedTheme, setThemeOverride, type ColorTheme } from '../lib/theme';
 
+import { t } from '../messages';
 type Card = 'off' | 'signin' | 'no-access' | 'full' | 'popup-blocked' | 'error';
 type State = { status: 'loading' } | { status: 'card'; card: Card; info?: PublicEmbedInfo } | { status: 'live'; view: PublicEmbedView };
 
@@ -136,7 +137,7 @@ export function PublicEmbed({ id, readonly, signIn: signInWith, theme, editDirec
 
   const startEditing = useCallback(async () => {
     if (!editDirectly && !(await frameIsUncovered(document.documentElement))) {
-      toast('Part of this board is covered on this page, so editing stays off here. Open it in Freero to edit.', 'error');
+      toast(t('partOfThisBoardIs'), 'error');
       return;
     }
     setEditing(true);
@@ -147,32 +148,26 @@ export function PublicEmbed({ id, readonly, signIn: signInWith, theme, editDirec
     return createPublicEmbedHost({ ...view, viewOnly: !editing }, { notify: toast, onConnectionEnded });
   }, [view, editing, toast, onConnectionEnded]);
 
-  if (state.status === 'loading') return <FullPageSpinner label="Opening board" />;
+  if (state.status === 'loading') return <FullPageSpinner label={t('openingBoard')} />;
   if (state.status === 'card') return <EmbedCard card={state.card} onSignIn={() => void signIn()} onOpen={openInFreero} onRetry={() => void start()} />;
-  if (!host || !view) return <FullPageSpinner label="Opening board" />;
+  if (!host || !view) return <FullPageSpinner label={t('openingBoard')} />;
 
   const mayEdit = !readonly && canWrite(view.board.role);
   const accessory = (
     <div className="fr-embedbar">
       {extra}
       {view.token === null ? (
-        <Button size="sm" variant="ghost" icon={LogIn} onClick={() => void signIn()}>
-          Sign in
-        </Button>
+        <Button size="sm" variant="ghost" icon={LogIn} onClick={() => void signIn()}>{t('signIn')}</Button>
       ) : mayEdit ? (
         editing ? (
-          <Button size="sm" variant="ghost" icon={Eye} onClick={() => setEditing(false)}>
-            Stop editing
-          </Button>
+          <Button size="sm" variant="ghost" icon={Eye} onClick={() => setEditing(false)}>{t('stopEditing')}</Button>
         ) : (
           <Button size="sm" variant="primary" icon={Pencil} onClick={() => void startEditing()}>
-            {view.board.role === 'commenter' ? 'Comment' : 'Edit'}
+            {view.board.role === 'commenter' ? t('comment') : t('edit')}
           </Button>
         )
       ) : null}
-      <Button size="sm" variant="ghost" icon={ExternalLink} onClick={openInFreero}>
-        Open in Freero
-      </Button>
+      <Button size="sm" variant="ghost" icon={ExternalLink} onClick={openInFreero}>{t('openInFreero')}</Button>
     </div>
   );
   // A new socket when editing starts or stops (the server caps a read-only socket itself).
@@ -222,12 +217,12 @@ function embedderHost(): string | null {
 }
 
 const CARDS: Record<Card, { title: string; text: string }> = {
-  off: { title: 'This board can’t be shown here', text: 'Its owner hasn’t turned on embedding, or its workspace doesn’t allow it.' },
-  signin: { title: 'Sign in to see this board', text: 'It’s shared with specific people. Sign in with your Freero account to see it here.' },
-  'no-access': { title: 'You don’t have access to this board', text: 'Open it in Freero to ask its owner for access, or sign in with another account.' },
-  full: { title: 'Lots of people are watching', text: 'Too many visitors are viewing this board here right now. Open it in Freero, or try again in a moment.' },
-  'popup-blocked': { title: 'Allow the sign-in window', text: 'Your browser blocked the window Freero opens to sign you in. Allow pop-ups for this page and try again.' },
-  error: { title: 'Couldn’t open this board', text: 'Freero couldn’t be reached. Check your connection and try again.' },
+  off: { title: t('thisBoardCanTBe'), text: t('itsOwnerHasnTTurned') },
+  signin: { title: t('signInToSeeThis'), text: t('itSSharedWithSpecific') },
+  'no-access': { title: t('youDonTHaveAccess2'), text: t('openItInFreeroTo') },
+  full: { title: t('lotsOfPeopleAreWatching'), text: t('tooManyVisitorsAreViewing') },
+  'popup-blocked': { title: t('allowTheSignInWindow'), text: t('yourBrowserBlockedTheWindow') },
+  error: { title: t('couldnTOpenThisBoard'), text: t('freeroCouldnTBeReached') },
 };
 
 function EmbedCard({ card, onSignIn, onOpen, onRetry }: { card: Card; onSignIn: () => void; onOpen: () => void; onRetry: () => void }) {
@@ -241,17 +236,13 @@ function EmbedCard({ card, onSignIn, onOpen, onRetry }: { card: Card; onSignIn: 
         <div className="fr-boarderror__actions">
           {card === 'signin' || card === 'no-access' || card === 'popup-blocked' ? (
             <Button variant="primary" icon={LogIn} onClick={onSignIn}>
-              {card === 'no-access' ? 'Use another account' : 'Sign in'}
+              {card === 'no-access' ? t('useAnotherAccount') : t('signIn')}
             </Button>
           ) : null}
           {card === 'full' || card === 'error' ? (
-            <Button variant="primary" onClick={onRetry}>
-              Try again
-            </Button>
+            <Button variant="primary" onClick={onRetry}>{t('tryAgain')}</Button>
           ) : null}
-          <Button icon={ExternalLink} onClick={onOpen}>
-            Open in Freero
-          </Button>
+          <Button icon={ExternalLink} onClick={onOpen}>{t('openInFreero')}</Button>
         </div>
       </div>
     </div>

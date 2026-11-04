@@ -46,7 +46,7 @@
 }
 
 .fr-engage__count {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-variant-numeric: tabular-nums;
 }
 
@@ -136,7 +136,7 @@
 
 .fr-engage__dotlabel {
   position: absolute;
-  left: 9px;
+  inset-inline-start: 9px;
   top: -8px;
   white-space: nowrap;
   font-size: 12px;
@@ -295,7 +295,7 @@
 
 .fr-engage__num {
   min-width: 64px;
-  text-align: right;
+  text-align: end;
   font-size: 13px;
   color: var(--fr-ink-2);
   font-variant-numeric: tabular-nums;
@@ -589,7 +589,7 @@
 .fr-engage-stage__close {
   position: absolute;
   top: 16px;
-  right: 16px;
+  inset-inline-end: 16px;
 }
 
 /* Phones and narrow windows: the QR code goes under the results. */

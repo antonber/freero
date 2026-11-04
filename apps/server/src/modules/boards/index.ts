@@ -1,11 +1,12 @@
 // Public API of modules/boards [S2].
 import type { BoardSummary, ObjectKind, Role } from '@freero/shared';
 import { forbidden, notFound } from '../../platform/http';
-import { closeBoardDoc } from '../realtime/index';
+import { closeBoardDoc, initBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
 import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayInviteToWorkspace, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
+import { boardLifecycle } from './events';
 import {
   boardLetsCopy,
   cleanDescription,
@@ -34,6 +35,18 @@ import {
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
 // Legal holds (#157) keep boards from retention rules (#154).
 export { onBoardRetentionHold, type BoardHoldCheck } from './retention';
+// Legal holds themselves (#157; modules/ediscovery places and releases them): nothing deletes a held board.
+export {
+  placeLegalHold,
+  narrowLegalHold,
+  releaseLegalHold,
+  legalHoldScope,
+  boardsUnderLegalHold,
+  legallyHeldAmong,
+  underLegalHold,
+  type LegalHoldScope,
+  type HeldBoard,
+} from './legalHolds';
 // The admin inventory (#152; modules/admin checks the scope).
 export { inventoryBoards, turnOffLinkForWorkspace, transferForWorkspace, workspaceBoard } from './service';
 // The workspace's trash for its content admins (#153; modules/admin checks the scope).
@@ -195,9 +208,9 @@ export async function linksOutOfPolicy(
 ): Promise<Array<{ id: string; title: string; ownerId: string; linkAccess: string; expiresAt: number | null; problems: Array<'no_password' | 'no_expiry' | 'expiry_too_late'> }>> {
   const boards = await repo.linkedBoardsIn(workspaceId);
   if (!boards.length) return [];
-  const policies = (await boardAccessLoader('', [workspaceId]))(boards[0]).policies;
+  const accessOf = await boardAccessLoader('', [workspaceId]); // per board: a label (#158) may ask more of its link
   return boards
-    .map((b) => ({ b, problems: linkProblems(b, policies) }))
+    .map((b) => ({ b, problems: linkProblems(b, accessOf(b).policies) }))
     .filter((x) => x.problems.length > 0)
     .map(({ b, problems }) => ({ id: b.id, title: b.title, ownerId: b.ownerId, linkAccess: b.storedLinkAccess, expiresAt: b.linkExpiresAt, problems }));
 }
@@ -227,8 +240,8 @@ export async function requireBoardDownload(boardId: string, userId: string, via:
  * The boards of a workspace the user can open, with their role (in their personal workspace also
  * boards shared with them from outside, like the dashboard's "all"). 404 unless they are in it.
  */
-export async function boardsOpenableIn(userId: string, workspaceId: string): Promise<Array<{ id: string; title: string; role: Role }>> {
-  return (await listBoards(userId, 'all', '', { workspaceId })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
+export async function boardsOpenableIn(userId: string, workspaceId: string, projectId?: string): Promise<Array<{ id: string; title: string; role: Role }>> {
+  return (await listBoards(userId, 'all', '', { workspaceId, ...(projectId ? { projectId } : {}) })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
 }
 
 /**
@@ -328,7 +341,7 @@ export async function boardReadPolicies(userId: string, boardIds: string[]): Pro
   for (const b of boards) {
     const allowed = mayDownload(accessOf(b).workspaceRole, accessOf(b).policies);
     // Only a board that keeps its content from viewers and commenters needs the person's role.
-    const copies = allowed && (b.viewersCanExport || boardLetsCopy(b, (await describeAccess(b, userId)).role));
+    const copies = allowed && boardLetsCopy(b, b.viewersCanExport && accessOf(b).label?.caps.viewerExports !== 'off' ? null : (await describeAccess(b, userId)).role, accessOf(b));
     out.set(b.id, { workspaceId: b.workspaceId, mayDownload: copies });
   }
   return out;
@@ -354,6 +367,18 @@ export function allBoardIds(): Promise<string[]> {
 // ---- for modules/workspaces ----
 
 /** Every board of a workspace (trash included): whose access to re-check when the workspace changes. */
+/** #158: the boards carrying a label (whose access to re-check when its caps change), and how many carry each. */
+export function boardIdsWithLabel(labelId: string): Promise<string[]> {
+  return repo.idsWithLabel(labelId);
+}
+export function labelUse(labelIds: string[]): Promise<Map<string, number>> {
+  return repo.labelUse(labelIds);
+}
+/** #158: a workspace left the organisation whose labels these are: its boards carrying one get `to` (its default, or none). */
+export function replaceBoardLabels(workspaceId: string, labelIds: string[], to: string | null): Promise<string[]> {
+  return repo.replaceLabels(workspaceId, labelIds, to);
+}
+
 export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
   return repo.idsInWorkspace(workspaceId);
 }
@@ -374,6 +399,42 @@ export function boardIdsInProject(projectId: string): Promise<string[]> {
 
 export function countLiveBoardsInProject(projectId: string): Promise<number> {
   return repo.countLiveInProject(projectId);
+}
+
+/** The live boards and docs of a project with their owners (#129: deleting a project, its boards to the trash). */
+export async function liveBoardsInProject(projectId: string): Promise<Array<{ id: string; ownerId: string; title: string }>> {
+  return (await repo.getBoards(await repo.idsInProject(projectId))).filter((b) => b.deletedAt === null).map((b) => ({ id: b.id, ownerId: b.ownerId, title: b.title }));
+}
+
+/**
+ * Inside the caller's transaction (deleting a project, #129): every board of the project — trash
+ * included, so restoring one later lands in `to` and not at the top of the workspace — moves to
+ * `to` (null: the workspace root). Returns the ids moved; the caller re-resolves access after commit.
+ */
+export function moveAllBoardsOfProject(projectId: string, to: string | null): Promise<string[]> {
+  return repo.moveAllInProject(projectId, to);
+}
+
+/**
+ * Inside the caller's transaction (#161: using a blueprint): a new board or doc for `userId` in
+ * `place`, holding `state` — under every check and the quota a new board has (createBoard). If
+ * the caller's transaction fails, nothing of it is left. Call `announce()` after the commit.
+ */
+export async function createBoardWithState(
+  userId: string,
+  fields: { title: string; description: string; kind: ObjectKind },
+  place: { workspaceId: string; projectId: string | null },
+  state: Uint8Array | null,
+): Promise<{ id: string; title: string; kind: ObjectKind; announce: () => Promise<void> }> {
+  const board = await createBoard(userId, fields.title.slice(0, 200) || 'Untitled', fields.description.slice(0, 2000), 'none', place, undefined, fields.kind);
+  if (state) await initBoardDoc(board.id, state);
+  return { id: board.id, title: board.title, kind: board.kind, announce: () => boardLifecycle({ boardId: board.id, actorId: userId, action: 'created' }) };
+}
+
+/** Trashes a live board for a project's deletion (#129): the board's owner or the workspace's content admins only (`mayTrash`). */
+export async function trashBoardForProject(boardId: string, actorId: string): Promise<void> {
+  const board = await repo.getBoard(boardId);
+  if (board) await moveToTrash(board, actorId);
 }
 
 /**

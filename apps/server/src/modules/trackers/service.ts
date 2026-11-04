@@ -1506,7 +1506,7 @@ function roadmapTarget(v: unknown): { id: string; groupBy: RoadmapGroupBy } | nu
   if (v === undefined || v === null) return null;
   const t = v as { id?: unknown; groupBy?: unknown };
   if (typeof t.id !== 'string' || !t.id || t.id.length > 64) throw badRequest('timeline.id must name a timeline');
-  if (t.groupBy !== undefined && !GROUPS.has(t.groupBy as RoadmapGroupBy)) throw badRequest('timeline.groupBy must be none, team, epic, label or quarter');
+  if (t.groupBy !== undefined && !GROUPS.has(t.groupBy as RoadmapGroupBy)) throw badRequest('timeline.groupBy must be none, team, epic, label or quarter', 'tracker_group_by_invalid');
   return { id: t.id, groupBy: (t.groupBy as RoadmapGroupBy | undefined) ?? 'none' };
 }
 

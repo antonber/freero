@@ -3,6 +3,7 @@ import type { ShapeElement, ShapeKind } from '@freero/shared';
 import type { Editor, NewElement, Rect } from '@engine';
 import { TOOL_ID, type ShapeToolOptions } from './constants';
 
+import { t } from '../messages';
 type ShapeStyle = Omit<NewElement<'shape'>, 'x' | 'y' | 'w' | 'h'>;
 
 export function shapeDefaults(kind: ShapeKind): ShapeStyle {
@@ -39,10 +40,10 @@ const KIND_STYLE: Partial<Record<ShapeKind, Partial<ShapeStyle>>> = {
   wfTablet: wire('<b>Screen title</b>', { fontSize: 16 }),
   wfDesktop: wire('<b>Screen title</b>', { fontSize: 16 }),
   wfButton: wire('Button', { fill: '#F2F1F7', align: 'center' }),
-  wfInput: wire('Email address', { textColor: HINT }),
+  wfInput: wire(t('emailAddress'), { textColor: HINT }),
   wfSearch: wire('Search', { textColor: HINT }),
   wfTextArea: wire('Write a message…', { textColor: HINT, vAlign: 'top' }),
-  wfCheckbox: wire('Remember me'),
+  wfCheckbox: wire(t('rememberMe')),
   wfRadio: wire('Option'),
   wfToggle: wire('Notifications'),
   wfDropdown: wire('Choose…'),
@@ -61,7 +62,7 @@ const KIND_STYLE: Partial<Record<ShapeKind, Partial<ShapeStyle>>> = {
   // names itself, a trust boundary is a dashed see-through zone with its name in the corner.
   vsmDataBox: { text: 'C/T =<br>C/O =<br>Uptime =<br>Shifts =', fontSize: 14, align: 'left', vAlign: 'top' },
   vsmFifo: { text: '<b>FIFO</b>', fontSize: 14 },
-  dfdBoundary: { fill: 'transparent', fillOpacity: 0, strokeStyle: 'dashed', fontSize: 14, align: 'left', vAlign: 'top', text: 'Trust boundary' },
+  dfdBoundary: { fill: 'transparent', fillOpacity: 0, strokeStyle: 'dashed', fontSize: 14, align: 'left', vAlign: 'top', text: t('trustBoundary') },
   erdEntity: {
     text: '<b>Entity</b><br>PK&nbsp; id<br>FK&nbsp; owner_id<br>name',
     fontSize: 14,

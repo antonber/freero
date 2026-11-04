@@ -8,6 +8,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { api, ApiError } from '../../api/client';
 import { safeNext } from '../../lib/nav';
 import { ProviderButtons, providerErrorText } from './ProviderButtons';
+import { t as tr } from './messages';
 import './AuthPage.css';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -128,9 +129,9 @@ export function AuthPage({ mode }: { mode: Mode }) {
       setServerError(
         err instanceof ApiError
           ? err.status >= 500
-            ? 'Freero is having trouble right now. Please try again in a moment.'
+            ? tr('freeroIsHavingTroubleRight')
             : err.message
-          : 'Could not reach Freero. Check your connection and try again.',
+          : tr('couldNotReachFreeroCheck'),
       );
       setBusy(false);
     }
@@ -148,36 +149,36 @@ export function AuthPage({ mode }: { mode: Mode }) {
   return (
     <div className="fr-authpage">
       <div className="fr-authpage__deco" aria-hidden>
-        <span className="fr-authpage__sticky fr-authpage__sticky--a">plan the launch</span>
-        <span className="fr-authpage__sticky fr-authpage__sticky--b">ideas welcome</span>
+        <span className="fr-authpage__sticky fr-authpage__sticky--a">{tr('planTheLaunch')}</span>
+        <span className="fr-authpage__sticky fr-authpage__sticky--b">{tr('ideasWelcome')}</span>
         <span className="fr-authpage__blob" />
       </div>
       <main className="fr-authcard">
-        <a href="/" className="fr-authcard__logo" aria-label="Freero home">
+        <a href="/" className="fr-authcard__logo" aria-label={tr('freeroHome')}>
           <Logo size={36} />
         </a>
-        <h1 className="fr-authcard__title">{isLogin ? 'Welcome back' : 'Create your Freero account'}</h1>
+        <h1 className="fr-authcard__title">{isLogin ? tr('welcomeBack') : tr('createYourFreeroAccount')}</h1>
         <p className="fr-authcard__sub">
           {toBoard
             ? isLogin
-              ? 'Log in to open the board that was shared with you.'
-              : 'Create a free account to open the board that was shared with you.'
+              ? tr('logInToOpenThe')
+              : tr('createAFreeAccountTo')
             : isLogin
-              ? 'Log in to pick up where your team left off.'
-              : 'Free forever for your first boards. No card needed.'}
+              ? tr('logInToPickUp')
+              : tr('freeForeverForYourFirst')}
         </p>
 
-        <ProviderButtons next={next} verb={isLogin ? 'Continue' : 'Sign up'} />
+        <ProviderButtons next={next} verb={isLogin ? tr('continue') : tr('signUp')} />
 
         <form className="fr-authcard__form" onSubmit={submit} noValidate>
           {!isLogin ? (
             <Input
               ref={firstRef}
-              label="Name"
+              label={tr('name')}
               icon={UserRound}
               size="lg"
               autoComplete="name"
-              placeholder="Ada Lovelace"
+              placeholder={tr('adaLovelace')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               error={errors.name}
@@ -185,7 +186,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
           ) : null}
           <Input
             ref={isLogin ? firstRef : undefined}
-            label="Work email"
+            label={tr('workEmail')}
             icon={Mail}
             size="lg"
             type="email"
@@ -198,14 +199,13 @@ export function AuthPage({ mode }: { mode: Mode }) {
           {sso ? (
             <div className="fr-authcard__sso" data-testid="sso-route">
               <span>
-                <strong>{sso.workspaceName}</strong> {sso.enforced ? 'signs you in with single sign-on.' : 'uses single sign-on.'}
+                <strong>{sso.workspaceName}</strong> {sso.enforced ? tr('signsYouInWithSingle') : tr('usesSingleSignOn')}
               </span>
               <a className="fr-authcard__sso-btn" href={sso.startUrl} onClick={() => noteProviderSignIn('sso')}>
-                <KeyRound size={16} aria-hidden /> Continue with SSO
-              </a>
+                <KeyRound size={16} aria-hidden />{' '}{tr('continueWithSso')}</a>
               {sso.enforced && isLogin ? (
                 <button type="button" className="fr-authcard__sso-alt" onClick={() => setBreakGlass((b) => !b)}>
-                  {breakGlass ? 'Hide password sign-in' : 'Workspace owner? Sign in with your password'}
+                  {breakGlass ? tr('hidePasswordSignIn') : tr('workspaceOwnerSignInWith')}
                 </button>
               ) : null}
             </div>
@@ -213,12 +213,12 @@ export function AuthPage({ mode }: { mode: Mode }) {
           {ssoOnly ? null : (
             <>
               <Input
-                label="Password"
+                label={tr('password')}
                 icon={Lock}
                 size="lg"
                 type={showPw ? 'text' : 'password'}
                 autoComplete={isLogin ? 'current-password' : 'new-password'}
-                placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
+                placeholder={isLogin ? tr('yourPassword') : tr('atLeast8Characters')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 error={errors.password}
@@ -226,7 +226,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
                   <IconButton
                     size={32}
                     icon={showPw ? EyeOff : Eye}
-                    label={showPw ? 'Hide password' : 'Show password'}
+                    label={showPw ? tr('hidePassword') : tr('showPassword')}
                     tooltip={false}
                     onClick={() => setShowPw((s) => !s)}
                   />
@@ -234,9 +234,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
               />
 
               {isLogin ? (
-                <Link className="fr-authcard__forgot" to={`/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}>
-                  Forgot password?
-                </Link>
+                <Link className="fr-authcard__forgot" to={`/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}>{tr('forgotPassword')}</Link>
               ) : null}
             </>
           )}
@@ -250,7 +248,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
 
           {ssoOnly ? null : (
             <Button type="submit" variant={sso ? 'secondary' : 'primary'} size="lg" block loading={busy}>
-              {isLogin ? 'Log in' : 'Create account'}
+              {isLogin ? tr('logIn') : tr('createAccount')}
             </Button>
           )}
         </form>
@@ -258,32 +256,25 @@ export function AuthPage({ mode }: { mode: Mode }) {
         {import.meta.env.DEV ? (
           <div className="fr-authcard__demo">
             <Sparkles size={16} aria-hidden />
-            <span>
-              Demo account: <code>{DEMO.email}</code> / <code>{DEMO.password}</code>
+            <span>{tr('demoAccount')}{' '}<code>{DEMO.email}</code> / <code>{DEMO.password}</code>
             </span>
             {isLogin ? (
-              <button type="button" className="fr-authcard__demo-btn" onClick={fillDemo}>
-                Fill in
-              </button>
+              <button type="button" className="fr-authcard__demo-btn" onClick={fillDemo}>{tr('fillIn')}</button>
             ) : null}
           </div>
         ) : null}
 
         {!isLogin && terms ? (
-          <p className="fr-authcard__terms" data-testid="signup-terms">
-            By signing up you agree to the <a href={terms.termsUrl}>Terms of service</a> and the <a href={terms.acceptableUseUrl}>Acceptable use policy</a>,
-            and acknowledge the <a href={terms.privacyUrl}>Privacy policy</a>.
+          <p className="fr-authcard__terms" data-testid="signup-terms">{tr('bySigningUpYouAgree')}{' '}<a href={terms.termsUrl}>{tr('termsOfService')}</a>{' '}{tr('andThe')}{' '}<a href={terms.acceptableUseUrl}>{tr('acceptableUsePolicy')}</a>{tr('andAcknowledgeThe')}{' '}<a href={terms.privacyUrl}>{tr('privacyPolicy')}</a>.
           </p>
         ) : null}
 
         <p className="fr-authcard__switch">
           {isLogin ? (
-            <>
-              New to Freero? <Link to={`/signup${nextQuery}`}>Create an account</Link>
+            <>{tr('newToFreero')}{' '}<Link to={`/signup${nextQuery}`}>{tr('createAnAccount')}</Link>
             </>
           ) : (
-            <>
-              Already have an account? <Link to={`/login${nextQuery}`}>Log in</Link>
+            <>{tr('alreadyHaveAnAccount')}{' '}<Link to={`/login${nextQuery}`}>{tr('logIn')}</Link>
             </>
           )}
         </p>

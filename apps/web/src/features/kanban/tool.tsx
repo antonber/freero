@@ -3,9 +3,10 @@ import { defineTool } from '@engine';
 import { TOOL_ID } from './lib/constants';
 import { newKanban } from './lib/actions';
 
+import { t } from './messages';
 export default defineTool({
   id: TOOL_ID,
-  label: 'Kanban board',
+  label: t('kanbanBoard'),
   icon: SquareKanban,
   order: 41,
   placement: 'more',

@@ -64,7 +64,7 @@
 /* Ghost shown under the cursor while the sticky tool is active. */
 .fr-sticky-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   border-radius: 3px;
   opacity: 0.55;
@@ -107,7 +107,7 @@
    own paper, so it reads as "another sticky here" and never as a connector handle. */
 .fr-sticky-add {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 22px;
   height: 22px;
@@ -147,8 +147,8 @@
 .fr-sticky-author {
   position: absolute;
   top: calc(4px * var(--s, 1));
-  left: calc(8px * var(--s, 1));
-  right: calc(8px * var(--s, 1));
+  inset-inline-start: calc(8px * var(--s, 1));
+  inset-inline-end: calc(8px * var(--s, 1));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

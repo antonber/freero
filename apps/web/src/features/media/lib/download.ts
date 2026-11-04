@@ -3,14 +3,15 @@
 import type { FileElement, MediaElement } from '@freero/shared';
 import type { Editor } from '@engine';
 
+import { t } from '../messages';
 export type Downloadable = FileElement | MediaElement;
 
 export const isDownloadable = (el: { type: string } | undefined): el is Downloadable => el?.type === 'file' || el?.type === 'media';
 
 /** Why this person can't download here, or null when they can. */
 export function downloadBlockedReason(editor: Editor): string | null {
-  if (!editor.host.downloadFile) return 'Downloads aren’t available here';
-  if (editor.host.board.canExport === false) return 'This workspace doesn’t allow you to download its files';
+  if (!editor.host.downloadFile) return t('downloadsArenTAvailableHere');
+  if (editor.host.board.canExport === false) return t('thisWorkspaceDoesnTAllow');
   return null;
 }
 
@@ -23,6 +24,6 @@ export async function downloadItem(editor: Editor, el: Downloadable): Promise<vo
   try {
     await editor.host.downloadFile!({ id: el.id, src: el.src, name: el.name });
   } catch (e) {
-    editor.host.notify(e instanceof Error && e.message ? e.message : `Couldn't download “${el.name}”. Try again later.`, 'error');
+    editor.host.notify(e instanceof Error && e.message ? e.message : t('couldnTDownloadNameTry', { name: el.name }), 'error');
   }
 }

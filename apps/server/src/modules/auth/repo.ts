@@ -18,6 +18,7 @@ interface UserRow {
   password_via_link_at: Date | null;
   time_zone: string | null;
   color_theme: ColorThemePreference;
+  locale: string | null;
 }
 
 export interface UserWithHash extends Account {
@@ -41,6 +42,7 @@ const toUser = (r: UserRow): UserWithHash => ({
   deletionScheduledFor: r.deletion_scheduled_for?.getTime() ?? null,
   timeZone: r.time_zone ?? null,
   theme: r.color_theme,
+  locale: r.locale ?? null,
   passwordHash: r.password_hash,
   passwordViaLink: r.password_via_link_at !== null,
 });
@@ -53,9 +55,9 @@ export async function insertUser(u: UserWithHash, identity?: Omit<IdentityRecord
   try {
     await tx(async () => {
       await query(
-        `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at, email_verified_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, new Date(u.createdAt), u.emailVerified ? new Date(u.createdAt) : null],
+        `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at, email_verified_at, locale)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, new Date(u.createdAt), u.emailVerified ? new Date(u.createdAt) : null, u.locale ?? null],
       );
       if (identity) await insertIdentity({ ...identity, userId: u.id, createdAt: u.createdAt });
     });
@@ -87,16 +89,16 @@ export async function countUsers(): Promise<number> {
 /** Changes only the given fields, in one statement (no read-modify-write that could drop a concurrent edit). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string; theme?: ColorThemePreference },
+  patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string; theme?: ColorThemePreference; locale?: string },
 ): Promise<void> {
   await query(
     `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
        avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END, time_zone = COALESCE($6, time_zone),
-       color_theme = COALESCE($7, color_theme),
+       color_theme = COALESCE($7, color_theme), locale = COALESCE($8, locale),
        previous_names = CASE WHEN $2 IS NULL OR $2 = name THEN previous_names
                              ELSE (ARRAY[name] || array_remove(previous_names, name))[1:5] END
      WHERE id = $1`,
-    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null, patch.timeZone ?? null, patch.theme ?? null],
+    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null, patch.timeZone ?? null, patch.theme ?? null, patch.locale ?? null],
   );
 }
 
@@ -105,6 +107,19 @@ export async function timeZonesOf(ids: string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const rows = await query<{ id: string; time_zone: string }>(`SELECT id, time_zone FROM users WHERE id = ANY($1::text[]) AND time_zone IS NOT NULL`, [ids]);
   return new Map(rows.map((r) => [r.id, r.time_zone]));
+}
+
+/** Interface languages of these accounts (absent: none chosen yet, or no such account). */
+export async function localesOf(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await query<{ id: string; locale: string }>(`SELECT id, locale FROM users WHERE id = ANY($1::text[]) AND locale IS NOT NULL`, [ids]);
+  return new Map(rows.map((r) => [r.id, r.locale]));
+}
+
+/** The interface language of whoever has this address, if they have an account and chose one. */
+export async function localeOfEmail(email: string): Promise<string | null> {
+  const r = await one<{ locale: string | null }>(`SELECT locale FROM users WHERE email = $1`, [email]);
+  return r?.locale ?? null;
 }
 
 /** The account's current name and the few it had before (comment authorship, KAI-187). */
@@ -377,6 +392,13 @@ export async function deleteSessionReturningUser(tokenHash: string): Promise<str
   return (await one<{ user_id: string }>(`DELETE FROM sessions WHERE token_hash = $1 RETURNING user_id`, [tokenHash]))?.user_id ?? null;
 }
 
+/** Deletes the sessions with these keys (token hashes); returns those that existed, with their account. */
+export async function deleteSessionsByKeys(keys: string[]): Promise<Array<{ key: string; userId: string }>> {
+  if (!keys.length) return [];
+  const rows = await query<{ token_hash: string; user_id: string }>(`DELETE FROM sessions WHERE token_hash = ANY($1::text[]) RETURNING token_hash, user_id`, [keys]);
+  return rows.map((r) => ({ key: r.token_hash, userId: r.user_id }));
+}
+
 /** Deletes one of the user's sessions by its public id; returns its token hash, or null. */
 export async function deleteSessionById(userId: string, id: string): Promise<string | null> {
   const r = await one<{ token_hash: string }>(`DELETE FROM sessions WHERE user_id = $1 AND id = $2 RETURNING token_hash`, [userId, id]);
@@ -619,12 +641,14 @@ export interface Challenge {
   link: PendingLink | null;
   /** The session this sign-in starts ends at this instant at the latest (single sign-on); null/absent: the usual lifetime. */
   sessionExpiresAt?: number | null;
+  /** Opaque, from the directory sign-in that started it (#13); handed on when the session opens. */
+  sessionTag?: string | null;
 }
 
 export async function insertChallenge(tokenHash: string, c: Challenge, now: number, expiresAt: number): Promise<void> {
   await query(
-    `INSERT INTO auth_challenges (token_hash, user_id, method, link, created_at, expires_at, session_expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    `INSERT INTO auth_challenges (token_hash, user_id, method, link, created_at, expires_at, session_expires_at, session_tag)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       tokenHash,
       c.userId,
@@ -633,6 +657,7 @@ export async function insertChallenge(tokenHash: string, c: Challenge, now: numb
       new Date(now),
       new Date(expiresAt),
       c.sessionExpiresAt == null ? null : new Date(c.sessionExpiresAt),
+      c.sessionTag ?? null,
     ],
   );
 }
@@ -642,14 +667,14 @@ export async function insertChallenge(tokenHash: string, c: Challenge, now: numb
  * of attempts. One statement, so parallel guesses can't exceed `maxAttempts`.
  */
 export async function attemptChallenge(tokenHash: string, now: number, maxAttempts: number): Promise<Challenge | null> {
-  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null; session_expires_at: Date | null }>(
+  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null; session_expires_at: Date | null; session_tag: string | null }>(
     `UPDATE auth_challenges SET attempts = attempts + 1
-     WHERE token_hash = $1 AND expires_at > $2 AND attempts < $3 RETURNING user_id, method, link, session_expires_at`,
+     WHERE token_hash = $1 AND expires_at > $2 AND attempts < $3 RETURNING user_id, method, link, session_expires_at, session_tag`,
     [tokenHash, new Date(now), maxAttempts],
   );
   if (!r) return null;
   const link = typeof r.link === 'string' ? (JSON.parse(r.link) as PendingLink) : r.link;
-  return { userId: r.user_id, method: r.method, link, sessionExpiresAt: r.session_expires_at?.getTime() ?? null };
+  return { userId: r.user_id, method: r.method, link, sessionExpiresAt: r.session_expires_at?.getTime() ?? null, sessionTag: r.session_tag };
 }
 
 /** A live challenge (not expired, attempts left), without counting an attempt. */

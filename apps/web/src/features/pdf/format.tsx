@@ -5,6 +5,7 @@ import { defineFormat } from '@engine';
 import { Spinner } from '@ui';
 import { placeAllPages } from './lib/actions';
 
+import { t } from './messages';
 /** One selected PDF: lay all its pages out as images. */
 export default defineFormat({
   id: 'pdf.format',
@@ -28,9 +29,7 @@ export default defineFormat({
             }
           }}
         >
-          {busy ? <Spinner size={14} /> : <LayoutGrid size={16} aria-hidden />}
-          Place all pages
-        </button>
+          {busy ? <Spinner size={14} /> : <LayoutGrid size={16} aria-hidden />}{t('placeAllPages')}</button>
       </div>
     );
   },

@@ -24,7 +24,10 @@ const FEATURE_RESERVED = new Set([
   'decoration.tsx',
   'outline.ts',
   'importer.ts',
+  'messages.ts',
 ]);
+// The web app's discovery roots: the only files that may use import.meta.glob [W6].
+const DISCOVERY_ROOTS = new Set(['app/board/features.ts', 'app/i18n/catalogs.ts']);
 
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 const errors = [];
@@ -133,8 +136,8 @@ function checkWebFile(file) {
   }
   for (const { spec, line, kind } of parseImports(src)) {
     if (kind === 'glob') {
-      if (meRel !== 'app/board/features.ts')
-        report('W6', file, line, `import.meta.glob is only allowed in apps/web/src/app/board/features.ts (the feature discovery root). Add a reserved file to your feature instead of a new registry.`, spec);
+      if (!DISCOVERY_ROOTS.has(meRel))
+        report('W6', file, line, `import.meta.glob is only allowed in the discovery roots (apps/web/src/app/board/features.ts for features, app/i18n/catalogs.ts for translations). Add a reserved file to your feature instead of a new registry.`, spec);
       continue;
     }
     const t = resolveWeb(file, spec);
@@ -311,6 +314,28 @@ function checkCssOwnership() {
     const names = [...owners.keys()];
     if (names.length > 1)
       report('W12', owners.get(names[1]), 1, `.${cls} is styled by ${names.join(' and ')}. CSS stays loaded across routes, so these leak into each other; prefix classes by owner (fr-<feature>-…, fr-dash-…).`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// [W14] The chrome mirrors in right-to-left languages (#5; docs/design/i18n.md) through CSS logical
+// properties; the board is pinned dir="ltr", so inside it they resolve to the same sides as
+// before. A physical left / right would stay put while the rest of the interface flips.
+// `left: 50%` / `right: 50%` (centring with a translate) is direction-free and allowed.
+// ---------------------------------------------------------------------------
+const PHYSICAL_CSS = [
+  [/(^|[;{\s])(left|right)\s*:(?!\s*(?:50%|calc\([^)]*50%))/g, (m) => `${m[2]}: use inset-inline-${m[2] === 'left' ? 'start' : 'end'}`],
+  [/(^|[;{\s])(margin|padding)-(left|right)\s*:/g, (m) => `${m[2]}-${m[3]}: use ${m[2]}-inline-${m[3] === 'left' ? 'start' : 'end'}`],
+  [/(^|[;{\s])border-(left|right)(-width|-color|-style)?\s*:/g, (m) => `border-${m[2]}${m[3] ?? ''}: use border-inline-${m[2] === 'left' ? 'start' : 'end'}${m[3] ?? ''}`],
+  [/(^|[;{\s])border-(top|bottom)-(left|right)-radius\s*:/g, (m) => `border-${m[2]}-${m[3]}-radius: use border-${m[2] === 'top' ? 'start' : 'end'}-${m[3] === 'left' ? 'start' : 'end'}-radius`],
+  [/(text-align|float)\s*:\s*(left|right)\b/g, (m) => `${m[1]}: ${m[2]}: use ${m[1] === 'float' ? 'inline-' : ''}${m[2] === 'left' ? 'start' : 'end'}`],
+];
+function checkLogicalCss() {
+  for (const file of walk(WEB).filter((f) => f.endsWith('.css') && !f.includes(`${path.sep}fonts${path.sep}`))) {
+    const css = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+    for (const [re, say] of PHYSICAL_CSS)
+      for (const m of css.matchAll(re))
+        report('W14', file, css.slice(0, m.index).split('\n').length, `Physical CSS (${say(m)}). The chrome mirrors in right-to-left languages; the board is pinned LTR, so logical properties are right everywhere.`);
   }
 }
 
@@ -527,6 +552,7 @@ for (const f of walk(WEB).filter(isCode)) checkWebFile(f);
 checkFeatureFolders();
 checkOutlineFiles();
 checkCssOwnership();
+checkLogicalCss();
 const schema = serverMigrations();
 checkMigrations(schema);
 for (const f of walk(SERVER).filter(isCode)) checkServerFile(f, schema.owners);

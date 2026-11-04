@@ -1,0 +1,20 @@
+{
+  "@@unreviewed": [
+    "letAgentChangeThisBoard",
+    "stopAgentChangingThisBoard",
+    "agentCanWorkOnThis",
+    "agentIsPausedItsNext",
+    "resumeAgent",
+    "pauseAgent",
+    "agentPausedByBy",
+    "agentPaused"
+  ],
+  "letAgentChangeThisBoard": "السماح لـ {agent} بتغيير هذه اللوحة مجددًا",
+  "stopAgentChangingThisBoard": "منع {agent} من تغيير هذه اللوحة حتى تستأنفه",
+  "agentCanWorkOnThis": "يمكن لـ {agent} العمل على هذه اللوحة مجددًا",
+  "agentIsPausedItsNext": "تم إيقاف {agent} مؤقتًا: سيُرفض تغييره التالي على هذه اللوحة",
+  "resumeAgent": "استئناف الوكيل",
+  "pauseAgent": "إيقاف الوكيل مؤقتًا",
+  "agentPausedByBy": "أوقف {by} الوكيل مؤقتًا",
+  "agentPaused": "الوكيل متوقف مؤقتًا"
+}

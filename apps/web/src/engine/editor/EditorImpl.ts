@@ -91,6 +91,7 @@ import {
   type ArrangeState,
 } from './arrange';
 
+import { t as tr } from '../messages';
 const EMPTY_OPTIONS = Object.freeze({}) as Record<string, unknown>;
 const CAMERA_ANIM_MS = 320;
 /** Screen room a fit keeps above a pending proposal for its "… suggests N changes" label. */
@@ -282,8 +283,8 @@ export class EditorImpl implements Editor {
       limits?.locked
         ? `${limits.byName} has locked the board for now. You can still comment.`
         : role === 'commenter'
-          ? 'You can comment on this board, but not edit it.'
-          : 'This board is view-only for you.',
+          ? tr('youCanCommentOnThis')
+          : tr('thisBoardIsViewOnly'),
     );
     return false;
   }
@@ -1052,7 +1053,7 @@ export class EditorImpl implements Editor {
    */
   buildClipboard(ids: string[]): { html: string; text: string; payload: ClipboardPayload } | null {
     if (this.host.board.canCopy === false) {
-      if (ids.length) this.host.notify('The board’s owner doesn’t let viewers and commenters copy its content.', 'info');
+      if (ids.length) this.host.notify(tr('theBoardSOwnerDoesn'), 'info');
       return null;
     }
     const snapshot = this.exportElements(ids);
@@ -1263,7 +1264,7 @@ export class EditorImpl implements Editor {
       offer = { files: left, text: null, html: null, alongside: true };
     }
     if (took) return true;
-    if (data.files.length || data.text || data.html) this.host.notify("Freero can't paste that here yet.", 'info');
+    if (data.files.length || data.text || data.html) this.host.notify(tr('freeroCanTPasteThat'), 'info');
     return false;
   }
 
@@ -1345,7 +1346,7 @@ export class EditorImpl implements Editor {
     if (!def || (!def.textField && !part)) return;
     if (!this.guardWrite([id])) return;
     if (el.locked) {
-      this.host.notify('Unlock this item to edit it.', 'info');
+      this.host.notify(tr('unlockThisItemToEdit'), 'info');
       return;
     }
     const cur = this.getEditingId();

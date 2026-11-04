@@ -7,12 +7,13 @@ import type { EngineCore } from '../runtime/core';
 import { LassoOptions } from '../ui/LassoOptions';
 import { createSelectTool } from './selectTool';
 
+import { t } from '../messages';
 export function createBuiltinTools(core: EngineCore): ToolDefinition[] {
   return [
     createSelectTool(core),
     {
       id: 'hand',
-      label: 'Hand',
+      label: t('hand'),
       icon: Hand,
       shortcut: 'h',
       order: 1,

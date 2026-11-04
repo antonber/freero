@@ -2,6 +2,7 @@ import { Download } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
 import { downloadBlockedReason, downloadItem, isDownloadable } from './lib/download';
 
+import { t } from './messages';
 const selectedItem = (editor: Editor) => {
   const sel = editor.getSelection();
   const el = sel.length === 1 ? editor.getElement(sel[0]) : undefined;
@@ -11,7 +12,7 @@ const selectedItem = (editor: Editor) => {
 export default defineCommands([
   {
     id: 'media.download',
-    label: 'Download',
+    label: t('download'),
     icon: Download,
     menus: ['context'],
     // Viewers too: the server decides by the workspace's downloads policy.

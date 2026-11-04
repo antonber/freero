@@ -48,7 +48,7 @@
 /* Catch me up (#126): points with the items they cite. */
 .fr-ai-catchup__points {
   margin: 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;

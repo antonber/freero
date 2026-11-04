@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "תיוג פריטים לפי שם",
+  "searchOrCreateATag": "חיפוש או יצירה של תגית",
+  "nameYourFirstTag": "מתן שם לתגית הראשונה",
+  "tags": "תגיות",
+  "tagsGroupStickiesAndCards": "תגיות מקבצות פתקים דביקים וכרטיסים לפי נושא, אחראי או עדיפות.",
+  "createName": "יצירת \"{name}\"",
+  "newTagColor": "צבע התגית החדשה",
+  "manageTags": "ניהול תגיות",
+  "colorOfName": "הצבע של {name}",
+  "renameName": "שינוי השם של {name}",
+  "deleteUses": "מחיקה ({uses})",
+  "deleteTagUsedOnUses": "מחיקת התגית (בשימוש ב־{uses})",
+  "deleteTag": "מחיקת התגית",
+  "backToTags": "חזרה לתגיות"
+}

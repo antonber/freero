@@ -1,7 +1,7 @@
 /* Connector line: an SVG drawn in world coordinates from the element frame's origin. */
 .fr-cx {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   overflow: visible;
   pointer-events: none;
@@ -41,7 +41,7 @@
 
 .fr-cx-ov__target {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   box-sizing: border-box;
   border: 2px solid var(--fr-select);
@@ -51,7 +51,7 @@
 
 .fr-cx-ov__dot {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 10px;
   height: 10px;
@@ -70,7 +70,7 @@
 
 .fr-cx-ov__plus {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 20px;
   height: 20px;
@@ -108,7 +108,7 @@
 .fr-cx-ov__end,
 .fr-cx-ov__mid {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   box-sizing: border-box;
   pointer-events: auto;

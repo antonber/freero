@@ -308,9 +308,9 @@ function fieldMapPatch(c: StoredConnection, v: unknown): Partial<repo.Connection
   if (b.startDateField !== undefined) out.startDateField = fieldId(b.startDateField, 'fieldMap.startDateField');
   if (out.estimateField !== undefined || out.startDateField !== undefined) out.fieldsPicked = true;
   if (b.planningProject !== undefined) {
-    if (c.provider !== 'github') throw badRequest('Only GitHub connections have a planning Project');
+    if (c.provider !== 'github') throw badRequest('Only GitHub connections have a planning Project', 'tracker_planning_project_github_only');
     if (b.planningProject !== null && b.planningProject !== '' && (typeof b.planningProject !== 'string' || !/^[\w.-]{1,100}\/\d{1,9}$/.test(b.planningProject.trim())))
-      throw badRequest('fieldMap.planningProject must be a GitHub Project as owner/number (acme/3)');
+      throw badRequest('fieldMap.planningProject must be a GitHub Project as owner/number (acme/3)', 'tracker_planning_project_invalid');
     out.planningProject = typeof b.planningProject === 'string' && b.planningProject.trim() ? b.planningProject.trim() : null;
   }
   if (b.issueTypes !== undefined) {
@@ -402,7 +402,7 @@ function trelloKeysOf(b: Record<string, unknown>): { key: string; secret?: strin
   const own = typeof b.apiKey === 'string' && b.apiKey.trim() ? str(b.apiKey, 'apiKey', 200) : null;
   const t = getConfig().trackers;
   if (!own) {
-    if (!t.trelloKey) throw badRequest('apiKey is required: the Trello API key the token was made for (trello.com/power-ups/admin)');
+    if (!t.trelloKey) throw badRequest('apiKey is required: the Trello API key the token was made for (trello.com/power-ups/admin)', 'tracker_trello_key_required');
     return { key: t.trelloKey, ...(t.trelloSecret ? { secret: t.trelloSecret } : {}) };
   }
   const secret = typeof b.apiSecret === 'string' && b.apiSecret.trim() ? str(b.apiSecret, 'apiSecret', 200) : null;

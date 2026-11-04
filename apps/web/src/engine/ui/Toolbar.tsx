@@ -11,6 +11,7 @@ import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
 import { useCompactLayout } from './compact';
 
+import { t as tr } from '../messages';
 /** Gap kept between the tool Options flyout and the window edges (px). */
 const FLYOUT_MARGIN = 12;
 
@@ -101,8 +102,8 @@ export function Toolbar() {
   );
 
   return (
-    <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="" data-fr-region="tools" role="region" aria-label="Tools and history">
-      <div className="fr-toolbar__group" role="toolbar" aria-label="Tools" aria-orientation={compact ? 'horizontal' : 'vertical'}>
+    <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="" data-fr-region="tools" role="region" aria-label={tr('toolsAndHistory')}>
+      <div className="fr-toolbar__group" role="toolbar" aria-label={tr('tools')} aria-orientation={compact ? 'horizontal' : 'vertical'}>
         {main.map(toolButton)}
         {more.length > 0 && (
           <>
@@ -116,7 +117,7 @@ export function Toolbar() {
                 else buttons.current.delete(activeMore.def.id);
               }}
               icon={activeMore?.def.icon ?? Plus}
-              label={activeMore ? `${activeMore.def.label} · More tools` : 'More tools'}
+              label={activeMore ? tr('labelMoreTools', { label: activeMore.def.label }) : tr('moreTools')}
               shortcut={activeMore?.def.shortcut?.toUpperCase()}
               tooltipSide={compact ? 'top' : 'right'}
               active={moreOpen || !!activeMore}
@@ -130,9 +131,9 @@ export function Toolbar() {
               align="start"
               offset={14}
               className="fr-moretools"
-              aria-label="More tools"
+              aria-label={tr('moreTools')}
             >
-              <div className="fr-moretools__title">More tools</div>
+              <div className="fr-moretools__title">{tr('moreTools')}</div>
               <div className="fr-moretools__grid">
                 {more.map((t) => (
                   <button
@@ -157,7 +158,7 @@ export function Toolbar() {
         <div className="fr-toolbar__group fr-toolbar__mode">
           <IconButton
             icon={phoneEditing ? Check : PencilLine}
-            label={phoneEditing ? 'Done editing' : 'Edit board'}
+            label={phoneEditing ? tr('doneEditing') : tr('editBoard')}
             tooltipSide="top"
             active={phoneEditing}
             onClick={() => core.ui.setState({ phoneEditing: !phoneEditing })}
@@ -168,7 +169,7 @@ export function Toolbar() {
         <div className="fr-toolbar__group">
           <IconButton
             icon={Undo2}
-            label="Undo"
+            label={tr('undo')}
             shortcut="Mod+Z"
             tooltipSide={compact ? 'top' : 'right'}
             disabled={!editor.canUndo()}
@@ -176,7 +177,7 @@ export function Toolbar() {
           />
           <IconButton
             icon={Redo2}
-            label="Redo"
+            label={tr('redo')}
             shortcut="Mod+Shift+Z"
             tooltipSide={compact ? 'top' : 'right'}
             disabled={!editor.canRedo()}

@@ -3,9 +3,10 @@ import { defineTool, useToolGhost } from '@engine';
 import { COL_W, ROW_H } from './lib/model';
 import { placeTable } from './lib/actions';
 
+import { t } from './messages';
 export default defineTool({
   id: 'table',
-  label: 'Table',
+  label: t('table'),
   icon: Table2,
   order: 58,
   placement: 'more',

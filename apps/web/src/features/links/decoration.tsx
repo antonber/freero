@@ -4,6 +4,7 @@ import type { BoardElement } from '@freero/shared';
 import { defineDecoration, useEditor, useIsExporting } from '@engine';
 import { followLink } from './lib/follow';
 import { describeLink, resolveLink } from './lib/link';
+import { t } from './messages';
 import './links.css';
 
 /** Badge size on screen (px); it shrinks on items too small to carry it. */
@@ -21,7 +22,7 @@ const LinkBadge = memo(function LinkBadge({ element, zoom }: { element: BoardEle
   const size = Math.min(BADGE_PX / zoom, Math.min(element.w, element.h) * 0.5);
   // Inset from the corner, so the selection's corner resize handle stays grabbable.
   const inset = Math.min(8 / zoom, Math.min(element.w, element.h) * 0.08);
-  const label = target.kind === 'item' ? 'Go to linked item' : `Open ${describeLink(target)}`;
+  const label = target.kind === 'item' ? t('goToLinkedItem') : `Open ${describeLink(target)}`;
   const Icon = target.kind === 'item' ? Crosshair : ArrowUpRight;
   return (
     <button

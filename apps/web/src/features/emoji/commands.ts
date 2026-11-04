@@ -3,6 +3,7 @@ import { defineCommands, type CommandDefinition, type Editor, type NewElement, t
 import { canCarryStamp, reactionSize, reactionSlot } from './lib/reactions';
 import { STAMP_PREFIX, STAMPS, stampIcon } from './lib/stamps';
 
+import { t } from './messages';
 /** Elements a reaction can be attached to: the selection minus stamps/emoji themselves. */
 function reactable(editor: Editor): BoardElement[] {
   return editor
@@ -36,7 +37,7 @@ export default defineCommands(
   STAMPS.map((stamp): CommandDefinition => ({
     id: `emoji.react.${stamp.id}`,
     label: stamp.label,
-    group: 'React with',
+    group: t('reactWith'),
     icon: stampIcon(stamp),
     menus: ['context'],
     when: (editor) => reactable(editor).length > 0,

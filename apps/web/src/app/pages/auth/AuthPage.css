@@ -1,6 +1,7 @@
 .fr-authpage {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100%;
@@ -36,14 +37,14 @@
 
 .fr-authpage__sticky--a {
   top: 12%;
-  left: max(4vw, calc(50% - 460px));
+  inset-inline-start: max(4vw, calc(50% - 460px));
   background: #ffe36e;
   transform: rotate(-6deg);
 }
 
 .fr-authpage__sticky--b {
   bottom: 12%;
-  right: max(4vw, calc(50% - 470px));
+  inset-inline-end: max(4vw, calc(50% - 470px));
   background: #b5a4ff;
   transform: rotate(5deg);
 }
@@ -51,7 +52,7 @@
 .fr-authpage__blob {
   position: absolute;
   top: 18%;
-  right: max(6vw, calc(50% - 420px));
+  inset-inline-end: max(6vw, calc(50% - 420px));
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -355,4 +356,13 @@
   .fr-authcard {
     padding: 28px 22px 22px;
   }
+}
+
+/* The language picker under the card (#5). */
+.fr-authpage__lang {
+  position: relative;
+  z-index: 1;
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
 }

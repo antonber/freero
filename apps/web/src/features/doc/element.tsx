@@ -24,6 +24,7 @@ import {
 } from '@engine';
 import { docIdOf, getEditingDoc, resolveDoc, setEditingDoc, subscribeEditingDoc } from './lib/state';
 import { createDocFrom, isMarkdownFile, looksLikeMarkdownDoc } from './lib/create';
+import { t } from './messages';
 import './doc.css';
 
 export const DOC_W = 560;
@@ -41,8 +42,7 @@ function NestedBoard({ uri }: { uri: string }) {
   if (status === 'denied' || status === 'removed')
     return (
       <div className="fr-doc-item__nested fr-doc-item__nested--blocked">
-        <Lock size={16} aria-hidden /> No access to this board
-      </div>
+        <Lock size={16} aria-hidden />{' '}{t('noAccessToThisBoard')}</div>
     );
   return (
     <div className="fr-doc-item__nested">
@@ -120,12 +120,10 @@ function NoAccess({ editor, id, removed }: { editor: Editor; id: string; removed
   return (
     <div className="fr-doc-item__denied">
       <Lock size={28} aria-hidden />
-      <strong>{removed ? 'This doc was removed for review' : 'No access to this doc'}</strong>
-      {!removed && <span>Its owner hasn’t shared it with you.</span>}
+      <strong>{removed ? t('thisDocWasRemovedFor') : t('noAccessToThisDoc')}</strong>
+      {!removed && <span>{t('itsOwnerHasnTShared')}</span>}
       {!removed && editor.host.docs && (
-        <button type="button" className="fr-doc-item__btn" data-fr-interactive="" onPointerDown={stop} onClick={() => editor.host.docs!.requestAccess(id)}>
-          Request access
-        </button>
+        <button type="button" className="fr-doc-item__btn" data-fr-interactive="" onPointerDown={stop} onClick={() => editor.host.docs!.requestAccess(id)}>{t('requestAccess')}</button>
       )}
     </div>
   );
@@ -138,7 +136,7 @@ const DocView = memo(function DocView({ element: el, zoom }: ElementRenderProps<
   // Inside a board that is itself embedded live (a doc's board embed), a card: embeds never nest without end.
   const live = !exporting && !!id && !!editor.host.docs && !editor.host.board.embedded;
   const res = useResolved(editor, el.uri, live);
-  const title = res?.status === 'ok' ? res.object.title || 'Untitled doc' : 'Doc';
+  const title = res?.status === 'ok' ? res.object.title || t('untitledDoc') : 'Doc';
   const denied = res?.status === 'unavailable' || res?.status === 'invalid';
   const editingId = useSyncExternalStore(subscribeEditingDoc, getEditingDoc);
 
@@ -146,28 +144,28 @@ const DocView = memo(function DocView({ element: el, zoom }: ElementRenderProps<
     <div className={`fr-doc-item${denied ? ' is-denied' : ''}`} style={{ width: el.w, height: el.h }}>
       <div className="fr-doc-item__bar">
         <FileText size={16} aria-hidden />
-        <span className="fr-doc-item__title">{exporting || !live ? 'Doc' : title}</span>
+        <span className="fr-doc-item__title">{exporting || !live ? t('doc') : title}</span>
         {live && !denied && res?.status === 'ok' && (
           <>
             {editingId !== el.id && res.object.access !== 'view' && res.object.access !== 'comment' && (
-              <button type="button" className="fr-doc-item__icon" data-fr-interactive="" aria-label="Edit here" title="Edit here" onPointerDown={stop} onClick={() => (editor.select([el.id]), setEditingDoc(el.id))}>
+              <button type="button" className="fr-doc-item__icon" data-fr-interactive="" aria-label={t('editHere')} title={t('editHere')} onPointerDown={stop} onClick={() => (editor.select([el.id]), setEditingDoc(el.id))}>
                 <PencilLine size={15} />
               </button>
             )}
-            <button type="button" className="fr-doc-item__icon" data-fr-interactive="" aria-label="Open the doc" title="Open the doc" onPointerDown={stop} onClick={() => editor.host.navigate(res.object.path ?? `/doc/${id}`)}>
+            <button type="button" className="fr-doc-item__icon" data-fr-interactive="" aria-label={t('openTheDoc')} title={t('openTheDoc')} onPointerDown={stop} onClick={() => editor.host.navigate(res.object.path ?? `/doc/${id}`)}>
               <ExternalLink size={15} />
             </button>
           </>
         )}
       </div>
       {!live ? (
-        <div className="fr-doc-item__card">A Freero doc</div>
+        <div className="fr-doc-item__card">{t('aFreeroDoc')}</div>
       ) : denied ? (
         <NoAccess editor={editor} id={id!} />
       ) : res?.status === 'ok' && zoom >= LIVE_ZOOM ? (
         <LiveDoc el={el} editor={editor} title={title} />
       ) : (
-        <div className="fr-doc-item__card">{res ? title : 'Loading…'}</div>
+        <div className="fr-doc-item__card">{res ? title : t('loading')}</div>
       )}
     </div>
   );
@@ -175,7 +173,7 @@ const DocView = memo(function DocView({ element: el, zoom }: ElementRenderProps<
 
 export default defineElement<'doc'>({
   type: 'doc',
-  label: { one: 'Doc', many: 'Docs' },
+  label: { one: t('doc'), many: t('docs') },
   icon: FileText,
   resize: 'free',
   minSize: { w: 240, h: 160 },

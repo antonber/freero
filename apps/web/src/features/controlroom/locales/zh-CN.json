@@ -1,0 +1,20 @@
+{
+  "@@unreviewed": [
+    "letAgentChangeThisBoard",
+    "stopAgentChangingThisBoard",
+    "agentCanWorkOnThis",
+    "agentIsPausedItsNext",
+    "resumeAgent",
+    "pauseAgent",
+    "agentPausedByBy",
+    "agentPaused"
+  ],
+  "letAgentChangeThisBoard": "允许 {agent} 再次修改此白板",
+  "stopAgentChangingThisBoard": "阻止 {agent} 修改此白板，直到你恢复它",
+  "agentCanWorkOnThis": "{agent} 可以再次处理此白板",
+  "agentIsPausedItsNext": "{agent} 已暂停：它对此白板的下一次更改将被拒绝",
+  "resumeAgent": "恢复代理",
+  "pauseAgent": "暂停代理",
+  "agentPausedByBy": "代理已被 {by} 暂停",
+  "agentPaused": "代理已暂停"
+}

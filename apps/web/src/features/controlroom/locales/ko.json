@@ -1,0 +1,20 @@
+{
+  "@@unreviewed": [
+    "letAgentChangeThisBoard",
+    "stopAgentChangingThisBoard",
+    "agentCanWorkOnThis",
+    "agentIsPausedItsNext",
+    "resumeAgent",
+    "pauseAgent",
+    "agentPausedByBy",
+    "agentPaused"
+  ],
+  "letAgentChangeThisBoard": "{agent}이(가) 이 보드를 다시 변경하도록 허용",
+  "stopAgentChangingThisBoard": "다시 시작할 때까지 {agent}이(가) 이 보드를 변경하지 못하게 하기",
+  "agentCanWorkOnThis": "{agent}이(가) 이 보드에서 다시 작업할 수 있어요",
+  "agentIsPausedItsNext": "{agent}이(가) 일시 중지됐어요: 이 보드에 대한 다음 변경은 거부돼요",
+  "resumeAgent": "에이전트 다시 시작",
+  "pauseAgent": "에이전트 일시 중지",
+  "agentPausedByBy": "{by} 님이 에이전트를 일시 중지함",
+  "agentPaused": "에이전트 일시 중지됨"
+}

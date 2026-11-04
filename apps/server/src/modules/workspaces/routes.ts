@@ -5,6 +5,9 @@ import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser } from '../auth/index';
 import { createGroup, deleteGroup, listGroupMembers, listGroups, renameGroup, setGroupMember } from './groups';
 import { acceptInvite, inviteToWorkspace, listInvites, previewInvite, resendInvite, revokeInvite } from './invites';
+import { createLabel, deleteLabel, listLabels, setLabelPolicy, updateLabel } from './labels';
+import { boardIdsWithLabel, labelUse } from '../boards/index';
+import { refreshBoardAccess } from '../realtime/index';
 import {
   addOrganisationMember,
   attachWorkspace,
@@ -24,6 +27,7 @@ import {
   listProjectMembers,
   listProjects,
   removeProjectMember,
+  setProjectPinned,
   updateProject,
 } from './projects';
 import {
@@ -256,7 +260,25 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
     '/projects/:id',
     requireUser,
     handle(async (req, res) => {
-      await deleteProject(req.params.id, currentUser(req).id);
+      await deleteProject(req.params.id, currentUser(req).id, { boards: req.query.boards });
+      res.json({ ok: true });
+    }),
+  );
+
+  // Pinned to the top of your own sidebar (#129).
+  r.put(
+    '/projects/:id/pin',
+    requireUser,
+    handle(async (req, res) => {
+      await setProjectPinned(req.params.id, currentUser(req).id, true);
+      res.json({ ok: true });
+    }),
+  );
+  r.delete(
+    '/projects/:id/pin',
+    requireUser,
+    handle(async (req, res) => {
+      await setProjectPinned(req.params.id, currentUser(req).id, false);
       res.json({ ok: true });
     }),
   );
@@ -353,6 +375,49 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
         res.json({ groups: await setProjectGroup(req.params.id, currentUser(req).id, req.params.groupId, shared) });
       }),
     );
+
+  // #158: classification labels of a team workspace or organisation (members list; content admins edit).
+  r.get(
+    '/workspaces/:id/labels',
+    requireUser,
+    handle(async (req, res) => {
+      const listed = await listLabels(req.params.id, currentUser(req).id);
+      const use = await labelUse(listed.labels.map((l) => l.id));
+      res.json({ ...listed, labels: listed.labels.map((l) => ({ ...l, boards: use.get(l.id) ?? 0 })) });
+    }),
+  );
+  r.post(
+    '/workspaces/:id/labels',
+    requireUser,
+    handle(async (req, res) => {
+      res.status(201).json({ label: await createLabel(req.params.id, currentUser(req).id, req.body ?? {}) });
+    }),
+  );
+  r.patch(
+    '/workspaces/:id/labels/:labelId',
+    requireUser,
+    handle(async (req, res) => {
+      const label = await updateLabel(req.params.id, req.params.labelId, currentUser(req).id, req.body ?? {});
+      // New caps apply to every board carrying it: re-check everyone connected, on every instance.
+      for (const boardId of await boardIdsWithLabel(label.id)) await refreshBoardAccess(boardId);
+      res.json({ label });
+    }),
+  );
+  r.delete(
+    '/workspaces/:id/labels/:labelId',
+    requireUser,
+    handle(async (req, res) => {
+      await deleteLabel(req.params.id, req.params.labelId, currentUser(req).id);
+      res.status(204).end();
+    }),
+  );
+  r.put(
+    '/workspaces/:id/label-policy',
+    requireUser,
+    handle(async (req, res) => {
+      res.json(await setLabelPolicy(req.params.id, currentUser(req).id, req.body ?? {}));
+    }),
+  );
 
   return r;
 }

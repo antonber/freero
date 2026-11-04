@@ -7,14 +7,15 @@
 import { FACILITATION_COLLECTION, FACILITATION_KEY } from '@freero/shared';
 import type { Editor } from '@engine';
 
+import { t } from '../messages';
 export type RetroPhase = 'write' | 'group' | 'vote' | 'discuss' | 'act';
 
 export const PHASES: Array<{ id: RetroPhase; label: string; hint: string; next?: string }> = [
-  { id: 'write', label: 'Write', hint: 'Add stickies on your own: nobody sees them until they are revealed.', next: 'Reveal and group' },
-  { id: 'group', label: 'Group', hint: 'Read everything, then move similar stickies together.', next: 'Start voting' },
-  { id: 'vote', label: 'Vote', hint: 'Vote on what to talk about. Votes stay hidden until the end.', next: 'Show results' },
-  { id: 'discuss', label: 'Discuss', hint: 'Talk through the topics with the most votes, top first.', next: 'Agree on actions' },
-  { id: 'act', label: 'Act', hint: 'Turn what you agreed into action items, each with an owner.' },
+  { id: 'write', label: t('write'), hint: t('addStickiesOnYourOwn'), next: t('revealAndGroup') },
+  { id: 'group', label: t('group'), hint: t('readEverythingThenMoveSimilar'), next: t('startVoting') },
+  { id: 'vote', label: t('vote'), hint: t('voteOnWhatToTalk'), next: t('showResults') },
+  { id: 'discuss', label: t('discuss'), hint: t('talkThroughTheTopicsWith'), next: t('agreeOnActions') },
+  { id: 'act', label: t('act'), hint: t('turnWhatYouAgreedInto') },
 ];
 
 export const RETRO_COLLECTION = 'retro';
@@ -43,10 +44,10 @@ export interface RetroOptions {
 }
 
 export const FORMATS: Array<{ id: string | null; label: string }> = [
-  { id: 'retro-start-stop-continue', label: 'Start, stop, continue' },
-  { id: 'retrospective', label: 'Went well, to improve, actions' },
-  { id: 'retro-4ls', label: 'Liked, learned, lacked, longed for' },
-  { id: null, label: 'Use what is on the board' },
+  { id: 'retro-start-stop-continue', label: t('startStopContinue') },
+  { id: 'retrospective', label: t('wentWellToImproveActions') },
+  { id: 'retro-4ls', label: t('likedLearnedLackedLongedFor') },
+  { id: null, label: t('useWhatIsOnThe') },
 ];
 
 const store = (editor: Pick<Editor, 'collection'>) => editor.collection<RetroSession>(RETRO_COLLECTION);
@@ -100,7 +101,7 @@ export function advance(editor: Editor): void {
       editor.runCommand('timer.stop'); // writing is over: its countdown would only distract
       break;
     case 'vote':
-      editor.runCommand('voting.start', { votesPerUser: s.votes, hideResults: true, title: 'What should we talk about?' });
+      editor.runCommand('voting.start', { votesPerUser: s.votes, hideResults: true, title: t('whatShouldWeTalkAbout') });
       break;
     case 'discuss':
       editor.runCommand('voting.end');

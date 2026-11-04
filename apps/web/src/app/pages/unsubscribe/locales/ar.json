@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "هذا الرابط غير مكتمل. افتح الرابط من البريد الإلكتروني مرة أخرى.",
+  "couldNotReachFreeroTry": "تعذّر الوصول إلى Freero. حاول مرة أخرى.",
+  "unsubscribe": "إلغاء الاشتراك",
+  "unsubscribing": "جارٍ إلغاء الاشتراك…",
+  "unsubscribing2": "جارٍ إلغاء الاشتراك",
+  "youReUnsubscribed": "تم إلغاء اشتراكك",
+  "thatLinkDidnTWork": "لم يعمل هذا الرابط",
+  "emailWonTGetThe": "لن يتلقى {email} ملخص «التغييرات على لوحاتك» بعد الآن. لم تتغير رسائل البريد الإلكتروني الأخرى.",
+  "emailWonTGetNotification": "لن يتلقى {email} رسائل الإشعارات بعد الآن. ستظل ترى الإشارات والردود في Freero.",
+  "chooseWhichEmailsYouGet": "اختر رسائل البريد الإلكتروني التي تتلقاها",
+  "logInToChooseWhich": "سجّل الدخول لاختيار رسائل البريد الإلكتروني التي تتلقاها"
+}

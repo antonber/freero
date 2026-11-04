@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "erasePartsOfStrokes",
+    "eraseWholeStrokes",
+    "eraserMode",
+    "eraserSize",
+    "eraser"
+  ],
+  "erasePartsOfStrokes": "מחיקת חלקים מהקווים",
+  "eraseWholeStrokes": "מחיקת קווים שלמים",
+  "eraserMode": "מצב מחק",
+  "eraserSize": "גודל המחק",
+  "eraser": "מחק"
+}

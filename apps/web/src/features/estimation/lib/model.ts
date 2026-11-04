@@ -11,6 +11,7 @@
 // the same person replaces their pick instead of adding one.
 import { ESTIMATION_ROUND_KEY, estimateKey, estimatePrefix } from '@freero/shared';
 
+import { t } from '../messages';
 export type DeckKind = 'fibonacci' | 'tshirt' | 'custom';
 
 export interface Deck {
@@ -19,8 +20,8 @@ export interface Deck {
 }
 
 export const DECKS: Record<Exclude<DeckKind, 'custom'>, { label: string; values: string[] }> = {
-  fibonacci: { label: 'Fibonacci', values: ['0', '1', '2', '3', '5', '8', '13', '21', '?'] },
-  tshirt: { label: 'T-shirt sizes', values: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '?'] },
+  fibonacci: { label: t('fibonacci'), values: ['0', '1', '2', '3', '5', '8', '13', '21', '?'] },
+  tshirt: { label: t('tShirtSizes'), values: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '?'] },
 };
 
 export const MAX_VALUES = 16;

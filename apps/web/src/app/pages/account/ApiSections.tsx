@@ -7,6 +7,7 @@ import { Button, Input, Select, Spinner, TextArea, Toggle, useToast } from '@ui'
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 import { Section } from './Section';
+import { t as tr } from './messages';
 import './api.css';
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
@@ -22,32 +23,28 @@ const hostOf = (clientId: string) => {
 /** Reserved scopes grant nothing yet: not offered. Operator scopes only to operators (below). */
 export const OFFERED = SCOPES.filter((s) => s !== 'boards:suggest' && !isOperatorScope(s));
 export const EXPIRY = [
-  { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
-  { value: '365', label: '1 year' },
-  { value: 'never', label: 'No expiry' },
+  { value: '7', label: tr('n7Days') },
+  { value: '30', label: tr('n30Days') },
+  { value: '90', label: tr('n90Days') },
+  { value: '365', label: tr('n1Year') },
+  { value: 'never', label: tr('noExpiry') },
 ];
 
 export function Secret({ label, value, onDone }: { label: string; value: string; onDone: () => void }) {
   const notify = useToast();
   return (
     <div className="fr-acct-api__secret" role="status">
-      <p className="fr-acct__p">{label} Copy it now: it won’t be shown again.</p>
+      <p className="fr-acct__p">{tr('labelCopyItNowIt', { label })}</p>
       <div className="fr-acct-api__secret-row">
         <code data-testid="api-secret">{value}</code>
         <Button
           size="sm"
           icon={Copy}
           onClick={() => {
-            void navigator.clipboard?.writeText(value).then(() => notify('Copied', 'success'));
+            void navigator.clipboard?.writeText(value).then(() => notify(tr('copied'), 'success'));
           }}
-        >
-          Copy
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDone}>
-          Done
-        </Button>
+        >{tr('copy')}</Button>
+        <Button size="sm" variant="ghost" onClick={onDone}>{tr('done')}</Button>
       </div>
     </div>
   );
@@ -75,7 +72,7 @@ export function ApiTokensSection() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => {
-    api.listApiTokens().then(({ tokens }) => setTokens(tokens), () => setError('Could not load your tokens'));
+    api.listApiTokens().then(({ tokens }) => setTokens(tokens), () => setError(tr('couldNotLoadYourTokens')));
   }, []);
   useEffect(load, [load]);
   // Freero's operators (OPERATOR_EMAILS) may also make a token that triages problem reports.
@@ -86,8 +83,8 @@ export function ApiTokensSection() {
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return setError('Give the token a name, so you can tell it apart later');
-    if (!scopes.length) return setError('Pick at least one permission');
+    if (!name.trim()) return setError(tr('giveTheTokenAName'));
+    if (!scopes.length) return setError(tr('pickAtLeastOnePermission'));
     setBusy(true);
     setError(null);
     try {
@@ -96,7 +93,7 @@ export function ApiTokensSection() {
       setName('');
       load();
     } catch (err) {
-      setError(errorText(err, 'Could not create the token'));
+      setError(errorText(err, tr('couldNotCreateTheToken')));
     } finally {
       setBusy(false);
     }
@@ -104,31 +101,31 @@ export function ApiTokensSection() {
   const pause = async (t: PersonalToken) => {
     try {
       await api.pauseApiToken(t.id, !t.paused);
-      notify(t.paused ? `“${t.name}” works again` : `“${t.name}” is paused: it’s refused until you resume it`, 'info');
+      notify(t.paused ? tr('nameWorksAgain', { name: t.name }) : tr('nameIsPausedItS', { name: t.name }), 'info');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not change the token'), 'error');
+      notify(errorText(err, tr('couldNotChangeTheToken')), 'error');
     }
   };
   const revoke = async (t: PersonalToken) => {
     try {
       await api.revokeApiToken(t.id);
-      notify(`Revoked “${t.name}”`, 'info');
+      notify(tr('revokedName', { name: t.name }), 'info');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not revoke the token'), 'error');
+      notify(errorText(err, tr('couldNotRevokeTheToken')), 'error');
     }
   };
 
   return (
     <Section
       id="api-tokens"
-      title="API tokens"
-      description="Let scripts and integrations use the Freero API as you, with only the permissions you pick. They never do more than you can."
+      title={tr('apiTokens')}
+      description={tr('letScriptsAndIntegrationsUse')}
     >
-      {secret ? <Secret label="This is your new token." value={secret} onDone={() => setSecret(null)} /> : null}
+      {secret ? <Secret label={tr('thisIsYourNewToken')} value={secret} onDone={() => setSecret(null)} /> : null}
       {!tokens ? (
-        error ? <p className="fr-acct__error">{error}</p> : <Spinner size={20} label="Loading tokens" />
+        error ? <p className="fr-acct__error">{error}</p> : <Spinner size={20} label={tr('loadingTokens')} />
       ) : tokens.length ? (
         <ul className="fr-acct-sessions">
           {tokens.map((t) => (
@@ -140,8 +137,8 @@ export function ApiTokensSection() {
                 <span className="fr-acct-session__device">
                   {t.name}
                   <span className="fr-acct-api__hint">…{t.hint}</span>
-                  {t.paused ? <span className="fr-acct-badge fr-acct-badge--warn">Paused</span> : null}
-                  {t.expiresAt !== null && t.expiresAt < Date.now() ? <span className="fr-acct-badge fr-acct-badge--warn">Expired</span> : null}
+                  {t.paused ? <span className="fr-acct-badge fr-acct-badge--warn">{tr('paused')}</span> : null}
+                  {t.expiresAt !== null && t.expiresAt < Date.now() ? <span className="fr-acct-badge fr-acct-badge--warn">{tr('expired')}</span> : null}
                 </span>
                 <Scopes scopes={t.scopes} />
                 <span className="fr-acct-session__meta">
@@ -153,27 +150,25 @@ export function ApiTokensSection() {
                 </span>
               </span>
               <Button size="sm" variant="ghost" icon={t.paused ? Play : Pause} onClick={() => pause(t)}>
-                {t.paused ? 'Resume' : 'Pause'}
+                {t.paused ? tr('resume') : tr('pause')}
               </Button>
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => revoke(t)}>
-                Revoke
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => revoke(t)}>{tr('revoke')}</Button>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="fr-acct__p">No tokens yet.</p>
+        <p className="fr-acct__p">{tr('noTokensYet')}</p>
       )}
       <form className="fr-acct-form fr-acct-api__new" onSubmit={create} noValidate>
         <div className="fr-acct-form__grid">
-          <Input label="Token name" placeholder="e.g. Release notes script" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+          <Input label={tr('tokenName')} placeholder={tr('eGReleaseNotesScript')} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
           <div className="fr-acct-api__field">
-            <span className="fr-acct-api__label">Expires</span>
-            <Select options={EXPIRY} value={expiry} onChange={setExpiry} aria-label="Expires" />
+            <span className="fr-acct-api__label">{tr('expires')}</span>
+            <Select options={EXPIRY} value={expiry} onChange={setExpiry} aria-label={tr('expires')} />
           </div>
         </div>
         <fieldset className="fr-acct-api__perms">
-          <legend className="fr-acct-api__label">Permissions</legend>
+          <legend className="fr-acct-api__label">{tr('permissions')}</legend>
           {offered.map((s) => (
             <label key={s} className="fr-acct-api__perm">
               <input
@@ -189,9 +184,7 @@ export function ApiTokensSection() {
         </fieldset>
         {error && tokens ? <p className="fr-acct__error" role="alert">{error}</p> : null}
         <div className="fr-acct-form__row">
-          <Button type="submit" loading={busy}>
-            Create token
-          </Button>
+          <Button type="submit" loading={busy}>{tr('createToken')}</Button>
         </div>
       </form>
     </Section>
@@ -210,28 +203,28 @@ export function ConnectedAppsSection() {
   const revoke = async (a: AuthorizedApp) => {
     try {
       await api.revokeAuthorizedApp(a.clientId);
-      notify(`${a.name} can no longer use your account`, 'info');
+      notify(tr('nameCanNoLongerUse', { name: a.name }), 'info');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not revoke the app'), 'error');
+      notify(errorText(err, tr('couldNotRevokeTheApp')), 'error');
     }
   };
   const revokeAll = async () => {
     try {
       const n = await api.revokeAllApiAccess();
-      notify(`Disconnected ${n.apps} app${n.apps === 1 ? '' : 's'} and revoked ${n.tokens} token${n.tokens === 1 ? '' : 's'}`, 'info');
+      notify(tr('disconnectedNAppsAndRevoked', { apps: n.apps, tokens: n.tokens }), 'info');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not disconnect everything'), 'error');
+      notify(errorText(err, tr('couldNotDisconnectEverything')), 'error');
     }
   };
 
   return (
-    <Section id="connected-apps" title="Connected apps" description="Apps and AI assistants you allowed to act for you. Revoking one stops it at once.">
+    <Section id="connected-apps" title={tr('connectedApps')} description={tr('appsAndAiAssistantsYou')}>
       {failed ? (
-        <p className="fr-acct__error">Could not load your apps.</p>
+        <p className="fr-acct__error">{tr('couldNotLoadYourApps')}</p>
       ) : !apps ? (
-        <Spinner size={20} label="Loading apps" />
+        <Spinner size={20} label={tr('loadingApps')} />
       ) : apps.length ? (
         <ul className="fr-acct-sessions">
           {apps.map((a) => (
@@ -242,7 +235,7 @@ export function ConnectedAppsSection() {
               <span className="fr-acct-session__who">
                 <span className="fr-acct-session__device">
                   {a.name}
-                  {a.registration === 'dynamic' ? <span className="fr-acct-badge fr-acct-badge--warn">Not reviewed by Freero</span> : null}
+                  {a.registration === 'dynamic' ? <span className="fr-acct-badge fr-acct-badge--warn">{tr('notReviewedByFreero')}</span> : null}
                   {a.registration === 'metadata' ? <span className="fr-acct-badge">{hostOf(a.clientId)}</span> : null}
                 </span>
                 <Scopes scopes={a.scopes} />
@@ -250,19 +243,15 @@ export function ConnectedAppsSection() {
                   {[`Allowed ${relativeTime(a.authorizedAt)}`, a.lastUsedAt ? `last used ${relativeTime(a.lastUsedAt)}` : 'not used yet', a.website].filter(Boolean).join(' · ')}
                 </span>
               </span>
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => revoke(a)}>
-                Revoke
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => revoke(a)}>{tr('revoke')}</Button>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="fr-acct__p">No apps can use your account.</p>
+        <p className="fr-acct__p">{tr('noAppsCanUseYour')}</p>
       )}
       <div className="fr-acct-form__row">
-        <Button variant="danger" onClick={revokeAll}>
-          Disconnect all apps and tokens
-        </Button>
+        <Button variant="danger" onClick={revokeAll}>{tr('disconnectAllAppsAndTokens')}</Button>
       </div>
     </Section>
   );
@@ -279,7 +268,7 @@ export function DeveloperAppsSection() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => {
-    api.listOAuthClients().then(({ clients }) => setClients(clients), () => setError('Could not load your apps'));
+    api.listOAuthClients().then(({ clients }) => setClients(clients), () => setError(tr('couldNotLoadYourApps2')));
   }, []);
   useEffect(load, [load]);
 
@@ -291,13 +280,13 @@ export function DeveloperAppsSection() {
     try {
       const out = await api.registerOAuthClient({ name: name.trim(), website: website.trim() || null, redirectUris, confidential });
       if (out.clientSecret) setSecret({ clientId: out.client.clientId, secret: out.clientSecret });
-      else notify(`Registered ${out.client.name}`, 'success');
+      else notify(tr('registeredName', { name: out.client.name }), 'success');
       setName('');
       setWebsite('');
       setRedirects('');
       load();
     } catch (err) {
-      setError(errorText(err, 'Could not register the app'));
+      setError(errorText(err, tr('couldNotRegisterTheApp')));
     } finally {
       setBusy(false);
     }
@@ -305,20 +294,20 @@ export function DeveloperAppsSection() {
   const remove = async (c: OAuthClientInfo) => {
     try {
       await api.deleteOAuthClient(c.clientId);
-      notify(`Deleted ${c.name}: its users’ access ended`, 'info');
+      notify(tr('deletedNameItsUsersAccess', { name: c.name }), 'info');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not delete the app'), 'error');
+      notify(errorText(err, tr('couldNotDeleteTheApp')), 'error');
     }
   };
 
   return (
     <Section
       id="developer-apps"
-      title="Your OAuth apps"
-      description="For developers: register an app so other people can connect it to their Freero account (authorization code with PKCE). AI clients that register themselves don’t need this."
+      title={tr('yourOauthApps')}
+      description={tr('forDevelopersRegisterAnApp')}
     >
-      {secret ? <Secret label={`This is the client secret of ${secret.clientId}.`} value={secret.secret} onDone={() => setSecret(null)} /> : null}
+      {secret ? <Secret label={tr('thisIsTheClientSecret', { clientId: secret.clientId })} value={secret.secret} onDone={() => setSecret(null)} /> : null}
       {clients?.length ? (
         <ul className="fr-acct-sessions">
           {clients.map((c) => (
@@ -329,38 +318,32 @@ export function DeveloperAppsSection() {
               <span className="fr-acct-session__who">
                 <span className="fr-acct-session__device">
                   {c.name}
-                  <span className="fr-acct-badge fr-acct-badge--ok">{c.confidential ? 'Confidential' : 'Public (PKCE)'}</span>
+                  <span className="fr-acct-badge fr-acct-badge--ok">{c.confidential ? tr('confidential') : tr('publicPkce')}</span>
                 </span>
-                <span className="fr-acct-session__meta">
-                  Client ID <code>{c.clientId}</code> · {c.users} {c.users === 1 ? 'person' : 'people'} connected
-                </span>
+                <span className="fr-acct-session__meta">{tr('clientId')}{' '}<code>{c.clientId}</code>{' '}{tr('usersPeopleConnected', { users: c.users })}</span>
                 <span className="fr-acct-session__meta">{c.redirectUris.join(' · ')}</span>
               </span>
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => remove(c)}>
-                Delete
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => remove(c)}>{tr('delete')}</Button>
             </li>
           ))}
         </ul>
       ) : null}
       <form className="fr-acct-form fr-acct-api__new" onSubmit={register} noValidate>
         <div className="fr-acct-form__grid">
-          <Input label="App name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
-          <Input label="Website (optional)" placeholder="https://" value={website} onChange={(e) => setWebsite(e.target.value)} />
+          <Input label={tr('appName')} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+          <Input label={tr('websiteOptional')} placeholder="https://" value={website} onChange={(e) => setWebsite(e.target.value)} />
         </div>
         <TextArea
-          label="Redirect URIs"
-          hint="One per line: https, http on localhost (any port), or your app’s own scheme."
+          label={tr('redirectUris')}
+          hint={tr('onePerLineHttpsHttp')}
           rows={2}
           value={redirects}
           onChange={(e) => setRedirects(e.target.value)}
         />
-        <Toggle label="Confidential app (gets a client secret; for apps with a server)" checked={confidential} onChange={setConfidential} />
+        <Toggle label={tr('confidentialAppGetsAClient')} checked={confidential} onChange={setConfidential} />
         {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
         <div className="fr-acct-form__row">
-          <Button type="submit" loading={busy}>
-            Register app
-          </Button>
+          <Button type="submit" loading={busy}>{tr('registerApp')}</Button>
         </div>
       </form>
     </Section>

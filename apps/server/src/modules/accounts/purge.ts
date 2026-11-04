@@ -12,12 +12,13 @@
 // Legal hold (KAI-178): while the account owns a board an operator took down (or is the last
 // member of a team holding one), the purge waits after the hand-over — nothing is deleted — until
 // an operator restores the board or deletes it for good; the account stays signed out meanwhile.
+// The same while a legal hold (#157) names them as a custodian or keeps a board they own.
 // Other files they uploaded are not deleted here: images they placed on other people's boards stay
 // part of those boards, and files nothing references any more are removed by the uploads sweep.
 import { runExclusive } from '../../platform/jobs';
 import { log, logError } from '../../platform/log';
 import { accountsDueForPurge, deleteAccountIfDue, getUser, isDueForPurge } from '../auth/index';
-import { boardIdsOpenedBy, countHeldBoards, deleteBoardsOwnedBy, forgetLinkUnlocksOf } from '../boards/index';
+import { boardIdsOpenedBy, countHeldBoards, deleteBoardsOwnedBy, forgetLinkUnlocksOf, underLegalHold } from '../boards/index';
 import { membershipsOf } from '../members/index';
 import { forgetEngageRespondent } from '../engage/index';
 import { deleteProblemsOf } from '../problems/index';
@@ -36,6 +37,12 @@ export const DELETED_USER_COLOR = '#868E96';
  */
 export async function purgeAccount(userId: string, now: number): Promise<boolean | 'held'> {
   if (!(await isDueForPurge(userId, now))) return false;
+  // A legal hold (#157) names them as a custodian or keeps a board they own: nothing of theirs goes
+  // or changes hands (not even the hand-over) until it is released.
+  if (await underLegalHold({ ownerId: userId })) {
+    log(`accounts: purge of ${userId} waits for a legal hold`);
+    return 'held';
+  }
   const commentedOn = new Set([...(await membershipsOf(userId)).keys(), ...(await boardIdsOpenedBy(userId))]);
   const teams = await auditScopeOf(userId); // before the memberships go with the account
   const email = (await getUser(userId))?.email ?? null;

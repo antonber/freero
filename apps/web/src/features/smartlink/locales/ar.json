@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "doc",
+    "thatItemIsnTOn",
+    "thisKindOfLinkHas",
+    "openYouMayBeAble",
+    "open",
+    "openLink",
+    "openTitle",
+    "smartLink",
+    "smartLinks"
+  ],
+  "doc": "مستند",
+  "thatItemIsnTOn": "لم يعد هذا العنصر على هذه اللوحة، أو أنه مخفي.",
+  "thisKindOfLinkHas": "لا توجد صفحة لفتحها لهذا النوع من الروابط بعد.",
+  "openYouMayBeAble": "فتح (قد تتمكن من طلب الوصول)",
+  "open": "فتح",
+  "openLink": "فتح الرابط",
+  "openTitle": "فتح {title}",
+  "smartLink": "رابط ذكي",
+  "smartLinks": "الروابط الذكية"
+}

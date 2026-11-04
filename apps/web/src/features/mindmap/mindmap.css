@@ -6,7 +6,7 @@
 
 .fr-mm__edge {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   overflow: visible;
   pointer-events: none;
@@ -92,7 +92,7 @@
 /* Ghost node under the cursor while the mind-map tool is active. */
 .fr-mm-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   display: grid;
   place-items: center;

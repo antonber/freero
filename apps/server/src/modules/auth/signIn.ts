@@ -48,19 +48,26 @@ export async function completeSignIn(
     link = null,
     newAccount = false,
     sessionExpiresAt = null,
-  }: { link?: repo.PendingLink | null; newAccount?: boolean; sessionExpiresAt?: number | null } = {},
+    sessionTag = null,
+  }: {
+    link?: repo.PendingLink | null;
+    newAccount?: boolean;
+    sessionExpiresAt?: number | null;
+    /** Opaque, handed to onSessionStarted listeners when the session opens (SAML: the IdP session, for single logout). */
+    sessionTag?: string | null;
+  } = {},
 ): Promise<LoginResponse> {
   await refuseIfSuspended(userId); // before asking for a second step it could never finish
   await assertSignInAllowed({ email: (await getAccount(userId)).email, userId, method });
   if (await repo.twoFactorEnabled(userId)) {
     const token = newToken();
     const now = Date.now();
-    await repo.insertChallenge(hashToken(token), { userId, method, link, sessionExpiresAt }, now, now + CHALLENGE_TTL_MS);
+    await repo.insertChallenge(hashToken(token), { userId, method, link, sessionExpiresAt, sessionTag }, now, now + CHALLENGE_TTL_MS);
     res.cookie(CHALLENGE_COOKIE, token, cookieOptions(req, CHALLENGE_PATH, CHALLENGE_TTL_MS));
     return { twoFactorRequired: true };
   }
   if (link) await connectIdentity(req, userId, link);
-  await openSession(req, res, userId, { method, newAccount, expiresAt: sessionExpiresAt });
+  await openSession(req, res, userId, { method, newAccount, expiresAt: sessionExpiresAt, tag: sessionTag });
   return { user: await getAccount(userId) };
 }
 
@@ -73,7 +80,7 @@ async function openSession(
   req: Request,
   res: Response,
   userId: string,
-  how: { method: string; twoFactor?: boolean; newAccount?: boolean; expiresAt?: number | null },
+  how: { method: string; twoFactor?: boolean; newAccount?: boolean; expiresAt?: number | null; tag?: string | null },
 ): Promise<void> {
   const { knownDevice } = await startSession(req, res, userId, how);
   await recordAuditQuietly({
@@ -87,7 +94,7 @@ async function openSession(
   sendSecurityNotice(req, user.email, { kind: 'new_sign_in', method: how.method === 'password' ? 'password' : providerLabel(how.method) });
 }
 
-const signInExpired = () => unauthorized('Your sign-in expired. Please log in again.');
+const signInExpired = () => unauthorized('Your sign-in expired. Please log in again.', 'sign_in_expired');
 
 /**
  * The pending sign-in of this browser (first factor proven, second not yet), without counting an
@@ -122,7 +129,7 @@ export async function finishTwoFactorSignIn(req: Request, res: Response, code: u
   // The policy may have changed while the code was being typed.
   await assertSignInAllowed({ email: (await getAccount(challenge.userId)).email, userId: challenge.userId, method: challenge.method });
   if (challenge.link) await connectIdentity(req, challenge.userId, challenge.link);
-  await openSession(req, res, challenge.userId, { method: challenge.method, twoFactor: true, expiresAt: challenge.sessionExpiresAt });
+  await openSession(req, res, challenge.userId, { method: challenge.method, twoFactor: true, expiresAt: challenge.sessionExpiresAt, tag: challenge.sessionTag });
   return getAccount(challenge.userId);
 }
 

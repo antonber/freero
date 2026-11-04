@@ -6,11 +6,12 @@ import { ColorSwatches, IconButton, Popover, SegmentedControl, ToolbarButton } f
 import { BAR_COLORS, addBar, addLane, patchBars, setRange, setScale, setView } from './lib/actions';
 import { formatRange, isISODate } from './lib/dates';
 
+import { t as tr } from './messages';
 const SCALES: Array<{ value: TimelineScale; label: string }> = [
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'quarter', label: 'Quarter' },
+  { value: 'day', label: tr('day') },
+  { value: 'week', label: tr('week') },
+  { value: 'month', label: tr('month') },
+  { value: 'quarter', label: tr('quarter') },
 ];
 
 /** Two date fields in a popover: a timeline's range, or a bar's dates. */
@@ -26,13 +27,11 @@ function DatesControl({ label, start, end, onChange, single }: { label: string; 
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={label}>
         <div className="fr-timeline-pop">
           <label className="fr-timeline-pop__label">
-            {single ? 'Date' : 'Start'}
+            {single ? tr('date') : tr('start')}
             <input type="date" value={start} max={single ? undefined : end} onChange={(e) => isISODate(e.target.value) && onChange(single ? { start: e.target.value, end: e.target.value } : { start: e.target.value })} />
           </label>
           {!single && (
-            <label className="fr-timeline-pop__label">
-              End
-              <input type="date" value={end} min={start} onChange={(e) => isISODate(e.target.value) && onChange({ end: e.target.value })} />
+            <label className="fr-timeline-pop__label">{tr('end')}<input type="date" value={end} min={start} onChange={(e) => isISODate(e.target.value) && onChange({ end: e.target.value })} />
             </label>
           )}
         </div>
@@ -46,22 +45,20 @@ function TimelineControls({ editor, t }: { editor: Editor; t: TimelineElement })
     <div className="fr-timeline-fmt">
       <SegmentedControl<'dates' | 'horizons'>
         size="sm"
-        aria-label="View"
+        aria-label={tr('view')}
         value={t.view ?? 'dates'}
         options={[
-          { value: 'dates', label: 'Dates' },
-          { value: 'horizons', label: 'Now · Next · Later' },
+          { value: 'dates', label: tr('dates') },
+          { value: 'horizons', label: tr('nowNextLater') },
         ]}
         onChange={(v) => setView(editor, t.id, v)}
       />
-      <SegmentedControl<TimelineScale> size="sm" aria-label="Scale" value={t.scale} options={SCALES} onChange={(v) => setScale(editor, t.id, v)} />
-      {t.view !== 'horizons' && <DatesControl label="Date range" start={t.start} end={t.end} onChange={(p) => setRange(editor, t.id, p)} />}
+      <SegmentedControl<TimelineScale> size="sm" aria-label={tr('scale')} value={t.scale} options={SCALES} onChange={(v) => setScale(editor, t.id, v)} />
+      {t.view !== 'horizons' && <DatesControl label={tr('dateRange')} start={t.start} end={t.end} onChange={(p) => setRange(editor, t.id, p)} />}
       <button type="button" className="fr-timeline-fmt__btn" onClick={() => addLane(editor, t.id)}>
-        <Plus size={16} aria-hidden />
-        Lane
-      </button>
-      <IconButton icon={ChartGantt} label="Add bar" size={32} onClick={() => addBar(editor, t.id)} />
-      <IconButton icon={Diamond} label="Add milestone" size={32} onClick={() => addBar(editor, t.id, { milestone: true, color: BAR_COLORS[6] })} />
+        <Plus size={16} aria-hidden />{tr('lane')}</button>
+      <IconButton icon={ChartGantt} label={tr('addBar')} size={32} onClick={() => addBar(editor, t.id)} />
+      <IconButton icon={Diamond} label={tr('addMilestone')} size={32} onClick={() => addBar(editor, t.id, { milestone: true, color: BAR_COLORS[6] })} />
     </div>
   );
 }
@@ -72,11 +69,11 @@ function BarColor({ editor, bars }: { editor: Editor; bars: TimelineBarElement[]
   const color = bars.every((b) => b.color === bars[0].color) ? bars[0].color : null;
   return (
     <>
-      <ToolbarButton ref={ref} className="fr-timeline-fmt__btn" label="Colour" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-timeline-fmt__btn" label={tr('colour')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="fr-timeline-fmt__dot" style={{ background: color ?? 'conic-gradient(#5B3FF0, #1FA463, #F5A524, #E5484D, #5B3FF0)' }} />
       </ToolbarButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Bar colour">
-        <ColorSwatches colors={BAR_COLORS} value={color} columns={5} size={26} allowCustom onChange={(c) => patchBars(editor, bars, { color: c })} aria-label="Bar colour" />
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={tr('barColour')}>
+        <ColorSwatches colors={BAR_COLORS} value={color} columns={5} size={26} allowCustom onChange={(c) => patchBars(editor, bars, { color: c })} aria-label={tr('barColour')} />
       </Popover>
     </>
   );
@@ -89,7 +86,7 @@ function BarControls({ editor, bars }: { editor: Editor; bars: TimelineBarElemen
     <div className="fr-timeline-fmt">
       {one && (
         <DatesControl
-          label={one.milestone ? 'Date' : 'Dates'}
+          label={one.milestone ? tr('date') : tr('dates')}
           single={!!one.milestone}
           start={one.start}
           end={one.end}
@@ -103,7 +100,7 @@ function BarControls({ editor, bars }: { editor: Editor; bars: TimelineBarElemen
       <BarColor editor={editor} bars={bars} />
       <IconButton
         icon={Diamond}
-        label={milestone ? 'Make it a bar' : 'Make it a milestone'}
+        label={milestone ? tr('makeItABar') : tr('makeItAMilestone')}
         size={32}
         active={milestone}
         onClick={() => editor.updateMany(bars.map((b) => ({ id: b.id, patch: (milestone ? { milestone: false } : { milestone: true, end: b.start }) as Partial<TimelineBarElement> })))}

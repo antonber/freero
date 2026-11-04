@@ -3,6 +3,7 @@
 // idempotent — false when the board already was in that state — so a retried or doubled request
 // changes nothing twice.
 import type { LinkAccess } from '@freero/shared';
+import { HttpError } from '../../platform/http';
 import { closeBoardDoc, refreshBoardAccess } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
 import * as repo from './repo';
@@ -75,6 +76,10 @@ export function restoreTakenDownBoard(boardId: string): Promise<boolean> {
  * a review that keeps it from its owner ends. False when it isn't taken down.
  */
 export async function deleteTakenDownBoard(boardId: string): Promise<boolean> {
+  // A legal hold (#157) outranks the operator's deletion: the board stays taken down (nobody sees
+  // it) until the case releases it; the database would refuse the delete anyway.
+  if ((await repo.heldAmong([boardId])).has(boardId))
+    throw new HttpError(409, 'This board is under a legal hold. It stays taken down; it can be deleted once the hold is released.', 'legal_hold');
   const thumbnail = await repo.deleteTakenDown(boardId);
   if (thumbnail === undefined) return false;
   await closeBoardDoc(boardId); // nobody is connected (taken down); make sure nothing saves after

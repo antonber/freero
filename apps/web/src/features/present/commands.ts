@@ -3,11 +3,12 @@ import { defineCommands } from '@engine';
 import { presentStore, startPresenting, stopPresenting } from './lib/session';
 import { NOTES_PANEL_ID, setNote } from './lib/notes';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'present.start',
     icon: MonitorPlay,
-    label: 'Present',
+    label: t('present'),
     menus: ['board'],
     minRole: 'viewer',
     when: (editor) => !presentStore(editor).getState().presenting,
@@ -16,7 +17,7 @@ export default defineCommands([
   {
     id: 'present.notes',
     icon: NotebookText,
-    label: 'Presenter notes',
+    label: t('presenterNotes'),
     menus: ['board', 'context'],
     minRole: 'viewer',
     // In the context menu only for a frame (its notes); always in the board menu.
@@ -29,7 +30,7 @@ export default defineCommands([
   {
     // The slide deck (features/frame) edits speaker notes through this: present owns the notes.
     id: 'present.setNote',
-    label: 'Set presenter notes',
+    label: t('setPresenterNotes'),
     run(editor, args) {
       const frameId = typeof args?.frameId === 'string' ? args.frameId : null;
       const text = typeof args?.text === 'string' ? args.text : null;
@@ -39,7 +40,7 @@ export default defineCommands([
   {
     id: 'present.stop',
     icon: X,
-    label: 'Exit presentation',
+    label: t('exitPresentation'),
     minRole: 'viewer',
     when: (editor) => presentStore(editor).getState().presenting,
     run: stopPresenting,

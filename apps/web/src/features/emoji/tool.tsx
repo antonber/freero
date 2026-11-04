@@ -10,6 +10,7 @@ import { isCustom } from './lib/custom';
 import { stampTargetAt } from './lib/reactions';
 import { TeamStickers, useTeamStickers } from './lib/TeamStickers';
 
+import { t as tr } from './messages';
 /** World size that shows as PLACE_SIZE px on screen right now. */
 function placeSize(zoom: number): number {
   return Math.round(Math.max(16, Math.min(1024, PLACE_SIZE / zoom)));
@@ -73,12 +74,12 @@ function Picker({ editor }: { editor: Editor }) {
     <div className="fr-emoji-picker">
       <SegmentedControl
         size="sm"
-        aria-label="Stickers or emoji"
+        aria-label={tr('stickersOrEmoji')}
         value={mode}
         onChange={setMode}
         options={[
-          { value: 'stickers', label: 'Stickers' },
-          { value: 'emoji', label: 'Emoji' },
+          { value: 'stickers', label: tr('stickers') },
+          { value: 'emoji', label: tr('emoji') },
         ]}
       />
       {mode === 'emoji' ? (
@@ -89,8 +90,8 @@ function Picker({ editor }: { editor: Editor }) {
           <Input
             size="sm"
             icon={Search}
-            placeholder="Search stickers and emoji"
-            aria-label="Search stickers and emoji"
+            placeholder={tr('searchStickersAndEmoji')}
+            aria-label={tr('searchStickersAndEmoji')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -111,14 +112,14 @@ function Picker({ editor }: { editor: Editor }) {
             {q ? (
               <>
                 {teamHits.length > 0 && (
-                  <section aria-label="Team stickers">
-                    <div className="fr-emoji-picker__section">Team stickers</div>
+                  <section aria-label={tr('teamStickers')}>
+                    <div className="fr-emoji-picker__section">{tr('teamStickers')}</div>
                     <TeamStickers.Grid stickers={teamHits} current={current} onPick={pick} />
                   </section>
                 )}
                 {emojiHits && emojiHits.length > 0 && (
-                  <section aria-label="Emoji">
-                    <div className="fr-emoji-picker__section">Emoji</div>
+                  <section aria-label={tr('emoji')}>
+                    <div className="fr-emoji-picker__section">{tr('emoji')}</div>
                     <div className="fr-emoji-picker__grid">
                       {emojiHits.map((it) => (
                         <Item key={it.emoji} value={it.emoji} label={it.words.split(' ')[0]} active={current === it.emoji} onPick={() => pick(it.emoji)} />
@@ -126,7 +127,7 @@ function Picker({ editor }: { editor: Editor }) {
                     </div>
                   </section>
                 )}
-                {!packHits.length && !teamHits.length && !emojiHits?.length && <div className="fr-emoji-picker__empty">Nothing matches “{query.trim()}”</div>}
+                {!packHits.length && !teamHits.length && !emojiHits?.length && <div className="fr-emoji-picker__empty">{tr('nothingMatchesQuery', { query: query.trim() })}</div>}
               </>
             ) : (
               <TeamStickers editor={editor} team={team} current={current} onPick={pick} />
@@ -153,7 +154,7 @@ function Ghost() {
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Stickers & emoji',
+  label: tr('stickersEmoji'),
   icon: Stamp,
   order: 60,
   placement: 'more',

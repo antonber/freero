@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "Calques",
+  "unlock": "Déverrouiller",
+  "lock": "Verrouiller",
+  "hiddenWithItsFrameOr": "Masqué avec son cadre ou l’élément auquel il est rattaché",
+  "showHiddenForYouOnly": "Afficher (masqué pour vous uniquement)",
+  "hideForMeOthersStill": "Masquer pour moi (les autres le voient toujours)",
+  "collapse": "Réduire",
+  "expand": "Développer",
+  "untitledFrame": "Cadre sans titre",
+  "notInAFrame": "Hors cadre",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} masqués pour vous uniquement",
+  "showAll": "Tout afficher",
+  "nothingOnTheBoardYet": "Rien sur le tableau pour l’instant.",
+  "dragToRestackTheTop": "Faites glisser pour réordonner : le haut de chaque liste est au premier plan."
+}

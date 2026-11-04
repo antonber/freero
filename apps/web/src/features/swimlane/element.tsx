@@ -32,6 +32,7 @@ import {
   type Grid,
 } from './lib/layout';
 import { LANE_COLORS, addBand, bandPart, moveBand, parseBandPart, patchBand, removeBand, renameBand, resizeBand, type BandKind } from './lib/actions';
+import { t } from './messages';
 import './swimlane.css';
 
 const sameBands = (a: SwimlaneElement, b: SwimlaneElement) => {
@@ -83,10 +84,10 @@ function BandMenu({ editor, p, cell }: { editor: Editor; p: SwimlaneElement; cel
   const rows = (kind === 'lanes') !== !!p.vertical;
   const noun = kind === 'lanes' ? 'lane' : 'phase';
   const items: MenuItem[] = [
-    { id: 'rename', label: 'Rename', icon: Pencil, onSelect: () => renameBand(editor, p.id, kind, band.id) },
+    { id: 'rename', label: t('rename'), icon: Pencil, onSelect: () => renameBand(editor, p.id, kind, band.id) },
     {
       id: 'color',
-      label: 'Colour',
+      label: t('colour'),
       icon: Palette,
       onSelect: () => undefined,
       submenu: LANE_COLORS.map((c, i) => ({
@@ -97,18 +98,18 @@ function BandMenu({ editor, p, cell }: { editor: Editor; p: SwimlaneElement; cel
       })),
     },
     { divider: true },
-    { id: 'prev', label: rows ? 'Move up' : 'Move left', icon: rows ? ArrowUp : ArrowLeft, disabled: index === 0, onSelect: () => moveBand(editor, p.id, kind, band.id, -1) },
-    { id: 'next', label: rows ? 'Move down' : 'Move right', icon: rows ? ArrowDown : ArrowRight, disabled: index === list.length - 1, onSelect: () => moveBand(editor, p.id, kind, band.id, 1) },
-    { id: 'before', label: `Add ${noun} ${rows ? 'above' : 'before'}`, icon: Plus, onSelect: () => addBand(editor, p.id, kind, index) },
-    { id: 'after', label: `Add ${noun} ${rows ? 'below' : 'after'}`, icon: Plus, onSelect: () => addBand(editor, p.id, kind, index + 1) },
+    { id: 'prev', label: rows ? t('moveUp') : t('moveLeft'), icon: rows ? ArrowUp : ArrowLeft, disabled: index === 0, onSelect: () => moveBand(editor, p.id, kind, band.id, -1) },
+    { id: 'next', label: rows ? t('moveDown') : t('moveRight'), icon: rows ? ArrowDown : ArrowRight, disabled: index === list.length - 1, onSelect: () => moveBand(editor, p.id, kind, band.id, 1) },
+    { id: 'before', label: t('addNounValue', { noun, value: rows ? t('above') : t('before') }), icon: Plus, onSelect: () => addBand(editor, p.id, kind, index) },
+    { id: 'after', label: t('addNounValue', { noun, value: rows ? t('below') : t('after') }), icon: Plus, onSelect: () => addBand(editor, p.id, kind, index + 1) },
     { divider: true },
     {
       id: 'delete',
-      label: `Delete ${noun}`,
+      label: t('deleteNoun', { noun }),
       icon: Trash2,
       danger: true,
       disabled: list.length < 2,
-      disabledReason: `A pool keeps at least one ${noun}`,
+      disabledReason: t('aPoolKeepsAtLeast', { noun }),
       onSelect: () => removeBand(editor, p.id, kind, band.id),
     },
   ];
@@ -119,7 +120,7 @@ function BandMenu({ editor, p, cell }: { editor: Editor; p: SwimlaneElement; cel
         type="button"
         className={`fr-swim__menu${open ? ' is-open' : ''}`}
         data-fr-interactive=""
-        aria-label={`${noun[0].toUpperCase()}${noun.slice(1)} options: ${richTextToPlain(band.title) || 'Untitled'}`}
+        aria-label={t('touppercaseSliceOptionsValue', { toUpperCase: noun[0].toUpperCase(), slice: noun.slice(1), value: richTextToPlain(band.title) || t('untitled') })}
         aria-haspopup="menu"
         aria-expanded={open}
         onPointerDown={(e) => e.stopPropagation()}
@@ -127,7 +128,7 @@ function BandMenu({ editor, p, cell }: { editor: Editor; p: SwimlaneElement; cel
       >
         <MoreHorizontal size={14} aria-hidden />
       </button>
-      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label={`${noun} options`} />
+      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label={t('nounOptions', { noun })} />
     </>
   );
 }
@@ -188,7 +189,7 @@ function BandEdge({ editor, p, kind, index, g }: { editor: Editor; p: SwimlaneEl
     <div
       className={`fr-swim__edge ${alongX ? 'is-col' : 'is-row'}`}
       data-fr-interactive=""
-      title={`Drag to resize the ${kind === 'lanes' ? 'lane' : 'phase'}`}
+      title={t('dragToResizeTheValue', { value: kind === 'lanes' ? t('lane') : t('phase') })}
       style={style}
       onPointerDown={onPointerDown}
     />
@@ -217,7 +218,7 @@ const SwimlaneView = memo(function SwimlaneView({ element: p, selected, zoom }: 
             color="var(--fr-ink)"
             padding={{ top: 0, right: 12, bottom: 0, left: 16 }}
             style={{ fontWeight: 650 }}
-            placeholder="Pool"
+            placeholder={t('pool')}
           />
         )}
       </div>
@@ -259,7 +260,7 @@ const SwimlaneView = memo(function SwimlaneView({ element: p, selected, zoom }: 
                 color="var(--fr-ink)"
                 padding={{ top: 10, right: 28, bottom: 8, left: 12 }}
                 style={{ fontWeight: 600 }}
-                placeholder={cell.kind === 'lanes' ? 'Lane' : 'Phase'}
+                placeholder={cell.kind === 'lanes' ? t('lane2') : t('phase2')}
               />
             </div>
           )}
@@ -274,7 +275,7 @@ const SwimlaneView = memo(function SwimlaneView({ element: p, selected, zoom }: 
 
 export default defineElement({
   type: 'swimlane',
-  label: { one: 'Swimlane', many: 'Swimlanes' },
+  label: { one: t('swimlane'), many: t('swimlanes') },
   icon: Rows3,
   // Handles resize the edge band (the first when the start edge moves, else the last).
   resize: 'free',
@@ -283,9 +284,9 @@ export default defineElement({
   textField: 'title',
   minSize: { w: LANE_HEAD_W + MIN_BAND, h: TITLE_H + MIN_BAND },
   defaults: (): Omit<NewElement<'swimlane'>, 'x' | 'y'> => {
-    const lanes = [{ id: 'lane', title: 'Lane', size: DEFAULT_LANE, color: LANE_COLORS[0] }];
-    const phases = [{ id: 'phase', title: 'Phase', size: DEFAULT_PHASE, color: LANE_COLORS[5] }];
-    return { type: 'swimlane', title: 'Swimlanes', lanes, phases, ...sizeOf({ lanes, phases }) };
+    const lanes = [{ id: 'lane', title: t('lane2'), size: DEFAULT_LANE, color: LANE_COLORS[0] }];
+    const phases = [{ id: 'phase', title: t('phase2'), size: DEFAULT_PHASE, color: LANE_COLORS[5] }];
+    return { type: 'swimlane', title: t('swimlanes'), lanes, phases, ...sizeOf({ lanes, phases }) };
   },
   Component: SwimlaneView,
   toPlainText: (p) => [p.title, ...p.lanes.map((b) => b.title), ...p.phases.map((b) => b.title)].map(richTextToPlain).filter(Boolean).join('\n'),
