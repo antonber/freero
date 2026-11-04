@@ -20,7 +20,11 @@ without contacting support while the Claude listing slug is permanent, so it mus
 
 **Claude connectors directory: submitted 2026-11-02** (listing "Freero", slug `freero`, MCP URL
 `https://freero.app/mcp`), awaiting review. **ChatGPT app directory: not submitted** (needs
-developer mode in a workspace that allows it, and OpenAI organization verification).
+developer mode in a workspace that allows it, and OpenAI organization verification; the upload is
+built by `npm run chatgpt:plugin`). **Official MCP Registry: published 2026-11-04** as
+`io.github.antonber/freero` 0.1.0 from [`server.json`](../../server.json) (GitHub sign-in as
+antonber). To change it, raise `version` there and run `mcp-publisher publish` again (a version can
+be published only once).
 
 | | Ready | Missing |
 |---|---|---|
