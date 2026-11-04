@@ -1,14 +1,16 @@
-// Settings: sign-in methods (password + connected providers) and two-step verification.
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+// Settings → Sign-in & security: the email address, sign-in methods (password + connected
+// providers), the password, two-step verification and where you're signed in.
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Copy, Download, KeyRound, Link2, ShieldCheck, ShieldOff, Unlink } from 'lucide-react';
-import { REAUTH_REQUIRED, type SecurityInfo, type TwoFactorSetup } from '@freero/shared';
-import { Button, Input, Modal, useToast } from '@ui';
+import { BadgeCheck, CircleAlert, Copy, Download, KeyRound, Link2, LogOut, Mail, Monitor, ShieldCheck, ShieldOff, Unlink } from 'lucide-react';
+import { describeDevice, REAUTH_REQUIRED, type SecurityInfo, type SessionInfo, type TwoFactorSetup } from '@freero/shared';
+import { Button, Input, Modal, Spinner, useToast } from '@ui';
 import { api, ApiError, providerUrl } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
 import { ProviderMark, providerErrorText } from '../auth/ProviderButtons';
-import { Section } from './Section';
+import { SettingsSection } from './Section';
+import { groupPath, SECTION_GROUP, type SettingsSectionId } from './sections';
 
 import { t } from './messages';
 export const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
@@ -19,14 +21,14 @@ export function needsReauth(security: SecurityInfo | null): boolean {
   return !!security && !security.hasPassword && Date.now() > security.recentAuthUntil;
 }
 
-/** "Confirm with Google": signs in with a connected provider again and comes back here. */
-export function ReauthPrompt({ security, children }: { security: SecurityInfo; children?: ReactNode }) {
+/** "Confirm with Google": signs in with a connected provider again and comes back to `section`. */
+export function ReauthPrompt({ security, section, children }: { security: SecurityInfo; section: SettingsSectionId; children?: ReactNode }) {
   const identity = security.identities.find((i) => security.providers.some((p) => p.id === i.provider));
   return (
     <div className="fr-acct-reauth" role="status">
       <span>{children ?? t('forYourSecurityConfirmIt')}</span>
       {identity ? (
-        <a className="fr-acct-reauth__btn" href={providerUrl(identity.provider, 'reauth', '/settings')}>
+        <a className="fr-acct-reauth__btn" href={providerUrl(identity.provider, 'reauth', `${groupPath(SECTION_GROUP[section])}#${section}`)}>
           <ProviderMark label={identity.providerLabel} />{' '}{t('confirmWithProviderlabel', { providerLabel: identity.providerLabel })}</a>
       ) : null}
     </div>
@@ -80,7 +82,7 @@ export function SignInMethodsSection({
   ];
 
   return (
-    <Section id="sign-in" title={t('signInMethods')} description={t('waysYouCanLogIn')}>
+    <SettingsSection id="sign-in" title={t('signInMethods')} description={t('waysYouCanLogIn')}>
       <ul className="fr-acct-methods">
         <li className="fr-acct-method">
           <span className="fr-acct-method__icon" aria-hidden>
@@ -98,7 +100,7 @@ export function SignInMethodsSection({
               <span className="fr-acct-method__name">{label}</span>
               <span className="fr-acct-method__meta">
                 {identity
-                  ? [identity.email ? t('connectedAsEmail', { email: identity.email }) : 'Connected', `last used ${relativeTime(identity.lastUsedAt)}`].join(' · ')
+                  ? [identity.email ? t('connectedAsEmail', { email: identity.email }) : t('connectedPlain'), t('lastUsedValue', { value: relativeTime(identity.lastUsedAt) })].join(' · ')
                   : t('notConnected')}
               </span>
             </span>
@@ -126,7 +128,7 @@ export function SignInMethodsSection({
           {error}
         </p>
       ) : null}
-    </Section>
+    </SettingsSection>
   );
 }
 
@@ -313,11 +315,7 @@ export function TwoFactorSection({
   ) : null;
 
   return (
-    <Section
-      id="two-factor"
-      title={t('twoStepVerification')}
-      description={t('whenYouLogInFreero')}
-    >
+    <SettingsSection id="two-factor" title={t('twoStepVerification')} description={t('twoFactor.description')}>
       <div className="fr-acct-email">
         {tf.enabled ? <ShieldCheck size={18} aria-hidden /> : <ShieldOff size={18} aria-hidden />}
         <span className="fr-acct-email__addr">{tf.enabled ? t('authenticatorApp') : t('off')}</span>
@@ -339,7 +337,7 @@ export function TwoFactorSection({
           </div>
         </div>
       ) : null}
-      {reauth ? <ReauthPrompt security={security} /> : null}
+      {reauth ? <ReauthPrompt security={security} section="two-factor" /> : null}
       <div className="fr-acct-form__row">
         {tf.enabled ? (
           <>
@@ -444,7 +442,7 @@ export function TwoFactorSection({
       >
         <form className="fr-acct-form" onSubmit={verify} noValidate>
           {step.kind === 'verify' && step.purpose === 'disable' ? (
-            <p className="fr-acct__p">{t('yourAccountWillBeProtected')}{' '}{askPassword ? 'password' : t('signInProvider')}{' '}{t('alone')}</p>
+            <p className="fr-acct__p">{askPassword ? t('twoFactor.offPassword') : t('twoFactor.offProvider')}</p>
           ) : (
             <p className="fr-acct__p">{t('yourCurrentRecoveryCodesWill')}</p>
           )}
@@ -454,6 +452,224 @@ export function TwoFactorSection({
           <button type="submit" hidden />
         </form>
       </Modal>
-    </Section>
+    </SettingsSection>
+  );
+}
+
+export function EmailSection({ security }: { security: SecurityInfo | null }) {
+  const { user } = useAuth();
+  const notify = useToast();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [reauth, setReauth] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!user) return null;
+  // Accounts without a password confirm with a recent provider sign-in instead.
+  const askPassword = security?.hasPassword ?? true;
+
+  const resend = async () => {
+    try {
+      await api.resendVerification();
+      notify(t('confirmationLinkSentToEmail', { email: user.email }), 'success');
+    } catch (err) {
+      notify(errorText(err, t('couldNotSendTheLink')), 'error');
+    }
+  };
+
+  const change = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.changeEmail(email.trim(), password);
+      setSentTo(email.trim());
+      setEmail('');
+      setPassword('');
+    } catch (err) {
+      if (isReauthRequired(err)) setReauth(true);
+      else setError(errorText(err, t('couldNotStartTheChange')));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SettingsSection id="email" title={t('emailAddress')} description={t('usedToLogInAnd')}>
+      <div className="fr-acct-email">
+        <Mail size={18} aria-hidden />
+        <span className="fr-acct-email__addr">{user.email}</span>
+        {user.emailVerified ? (
+          <span className="fr-acct-badge fr-acct-badge--ok">
+            <BadgeCheck size={14} aria-hidden />{' '}{t('verified')}</span>
+        ) : (
+          <>
+            <span className="fr-acct-badge fr-acct-badge--warn">
+              <CircleAlert size={14} aria-hidden />{' '}{t('notVerified')}</span>
+            <Button variant="ghost" size="sm" onClick={resend}>{t('resendLink')}</Button>
+          </>
+        )}
+      </div>
+      <form className="fr-acct-form" onSubmit={change} noValidate>
+        <div className="fr-acct-form__grid">
+          <Input label={t('newEmail')} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {askPassword ? (
+            <Input label={t('currentPassword')} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          ) : null}
+        </div>
+        {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
+        {security && (reauth || needsReauth(security)) && !askPassword ? <ReauthPrompt security={security} section="email" /> : null}
+        {sentTo ? (
+          <p className="fr-acct__ok" role="status">{t('weSentAConfirmationLink', { sentTo })}</p>
+        ) : null}
+        <div className="fr-acct-form__row">
+          <Button type="submit" loading={busy} disabled={!email.trim() || (askPassword && !password) || (!askPassword && needsReauth(security))}>{t('changeEmail')}</Button>
+        </div>
+      </form>
+    </SettingsSection>
+  );
+}
+
+export function PasswordSection({ security, onChanged }: { security: SecurityInfo | null; onChanged: () => void }) {
+  const notify = useToast();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [reauth, setReauth] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!security) return null;
+  // Signed up with a provider: no password yet. A recent sign-in stands in for the current one.
+  const setting = !security.hasPassword;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (next.length < 8) return setError(t('useAtLeast8Characters'));
+    setBusy(true);
+    setError(null);
+    try {
+      await api.changePassword(current, next);
+      setCurrent('');
+      setNext('');
+      notify(setting ? t('passwordSetYouCanNow') : t('passwordChangedOtherDevicesWere'), 'success');
+      if (setting) onChanged();
+    } catch (err) {
+      if (isReauthRequired(err)) setReauth(true);
+      else setError(errorText(err, t('couldNotChangeThePassword')));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const blocked = setting && needsReauth(security);
+  return (
+    <SettingsSection
+      id="password"
+      title={setting ? t('setAPassword') : t('password')}
+      description={setting ? t('addAPasswordToAlso') : t('changingItSignsYouOut')}
+    >
+      <form className="fr-acct-form" onSubmit={submit} noValidate>
+        <div className="fr-acct-form__grid">
+          {setting ? null : (
+            <Input label={t('currentPassword')} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          )}
+          <Input label={t('newPassword')} type="password" autoComplete="new-password" placeholder={t('atLeast8Characters')} value={next} onChange={(e) => setNext(e.target.value)} />
+        </div>
+        {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
+        {setting && (reauth || blocked) ? <ReauthPrompt security={security} section="password" /> : null}
+        <div className="fr-acct-form__row">
+          <Button type="submit" loading={busy} disabled={(!setting && !current) || !next || blocked}>
+            {setting ? t('setPassword') : t('changePassword')}
+          </Button>
+        </div>
+      </form>
+    </SettingsSection>
+  );
+}
+
+/** "Google", "Password", "Reset link" — how a session signed in. */
+function methodText(s: SessionInfo): string {
+  if (s.methodLabel) return s.methodLabel;
+  return s.method === 'email_link' ? t('passwordResetLink') : t('password');
+}
+
+export function SessionsSection({ version }: { version: number }) {
+  const notify = useToast();
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(() => {
+    api.listSessions().then(
+      ({ sessions }) => setSessions(sessions),
+      () => setFailed(true),
+    );
+  }, []);
+  useEffect(load, [load, version]);
+
+  const revoke = async (s: SessionInfo) => {
+    try {
+      await api.revokeSession(s.id);
+      setSessions((list) => list?.filter((x) => x.id !== s.id) ?? null);
+      notify(t('signedOutDescribedevice', { describeDevice: describeDevice(s.userAgent) }), 'info');
+    } catch (err) {
+      notify(errorText(err, t('couldNotSignThatDevice')), 'error');
+    }
+  };
+
+  const revokeOthers = async () => {
+    try {
+      const { revoked } = await api.revokeOtherSessions();
+      setSessions((list) => list?.filter((x) => x.current) ?? null);
+      notify(t('signedOutRevokedOtherSessions', { revoked }), 'info');
+    } catch (err) {
+      notify(errorText(err, t('couldNotSignTheOther')), 'error');
+    }
+  };
+
+  const others = sessions?.filter((s) => !s.current).length ?? 0;
+  return (
+    <SettingsSection id="sessions" title={t('whereYouReSignedIn')} description={t('signOutADeviceYou')}>
+      {failed ? (
+        <p className="fr-acct__error">{t('couldNotLoadYourSessions')}</p>
+      ) : !sessions ? (
+        <Spinner size={20} label={t('loadingSessions')} />
+      ) : (
+        <>
+          <ul className="fr-acct-sessions">
+            {sessions.map((s) => (
+              <li key={s.id} className="fr-acct-session" data-testid="session-row">
+                <span className="fr-acct-session__icon" aria-hidden>
+                  <Monitor size={18} />
+                </span>
+                <span className="fr-acct-session__who">
+                  <span className="fr-acct-session__device">
+                    {describeDevice(s.userAgent)}
+                    {s.current ? <span className="fr-acct-badge fr-acct-badge--ok">{t('thisDevice')}</span> : null}
+                  </span>
+                  <span className="fr-acct-session__meta">
+                    {[s.location ?? s.network, s.current ? t('activeNow') : t('lastActiveValue', { value: relativeTime(s.lastSeenAt) }), t('signedInValue', { value: relativeTime(s.createdAt) })]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                  <span className="fr-acct-session__meta">
+                    {t('signedInWithMethodtext', { methodText: methodText(s) })}
+                    {s.twoFactor ? (
+                      <span className="fr-acct-session__2fa">
+                        <ShieldCheck size={13} aria-hidden />{' '}{t('n2StepVerified')}</span>
+                    ) : null}
+                  </span>
+                </span>
+                {!s.current ? (
+                  <Button size="sm" variant="ghost" icon={LogOut} onClick={() => revoke(s)}>{t('signOut')}</Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <div className="fr-acct-form__row">
+            <Button onClick={revokeOthers} disabled={others === 0}>{t('signOutAllOtherSessions')}</Button>
+          </div>
+        </>
+      )}
+    </SettingsSection>
   );
 }

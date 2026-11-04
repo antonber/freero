@@ -116,8 +116,17 @@ export function App() {
                 </RequireAuth>
               }
             />
+            {/* Account settings: /settings opens Profile, /settings/<group> the others (pages/account/sections.ts). */}
             <Route
               path="/settings"
+              element={
+                <RequireAuth>
+                  <AccountSettingsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/:group"
               element={
                 <RequireAuth>
                   <AccountSettingsPage />

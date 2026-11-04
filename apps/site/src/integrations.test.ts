@@ -29,7 +29,11 @@ describe('every catalog entry’s connect step works', () => {
   it('each in-app link opens a page of the web app, and the tab or section it names exists there', () => {
     const connectTabs = all(web('app/pages/connect/clients.ts'), /\{ id: '([a-z-]+)', label:/g);
     const adminTabs = all(web('app/pages/admin/AdminConsolePage.tsx'), /\{ id: '([a-z-]+)', label:/g);
-    const settingsSections = ['AccountSettingsPage.tsx', 'ApiSections.tsx', 'SecuritySections.tsx', 'SlackSection.tsx'].flatMap((f) => all(web(`app/pages/account/${f}`), /\bid="([a-z-]+)"/g));
+    // Account settings' sections are SettingsSections, whose ids name their group (sections.ts), so /settings#<id> opens it.
+    const settingsSections = fs
+      .readdirSync(path.join(repo, 'apps/web/src/app/pages/account'))
+      .filter((f) => f.endsWith('.tsx') && !f.endsWith('.test.tsx'))
+      .flatMap((f) => all(web(`app/pages/account/${f}`), /<SettingsSection\s+id="([a-z-]+)"/g));
     expect(connectTabs.length).toBeGreaterThan(3);
     expect(adminTabs.length).toBeGreaterThan(3);
     let checked = 0;

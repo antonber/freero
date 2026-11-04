@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AppWindow, Copy, KeyRound, Pause, Play, Plug, Trash2 } from 'lucide-react';
 import { API_SCOPES, isOperatorScope, OPERATOR_SCOPES, type ApiScope, type AuthorizedApp, type OAuthClientInfo, type PersonalToken } from '@freero/shared';
-import { Button, Input, Select, Spinner, TextArea, Toggle, useToast } from '@ui';
+import { Button, formatDate, Input, Select, Spinner, TextArea, Toggle, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
-import { Section } from './Section';
+import { SettingsSection } from './Section';
 import { t as tr } from './messages';
 import './api.css';
 
@@ -118,11 +118,7 @@ export function ApiTokensSection() {
   };
 
   return (
-    <Section
-      id="api-tokens"
-      title={tr('apiTokens')}
-      description={tr('letScriptsAndIntegrationsUse')}
-    >
+    <SettingsSection id="api-tokens" title={tr('apiTokens')} description={tr('tokens.description')}>
       {secret ? <Secret label={tr('thisIsYourNewToken')} value={secret} onDone={() => setSecret(null)} /> : null}
       {!tokens ? (
         error ? <p className="fr-acct__error">{error}</p> : <Spinner size={20} label={tr('loadingTokens')} />
@@ -143,9 +139,9 @@ export function ApiTokensSection() {
                 <Scopes scopes={t.scopes} />
                 <span className="fr-acct-session__meta">
                   {[
-                    `Created ${relativeTime(t.createdAt)}`,
-                    t.expiresAt === null ? 'never expires' : `expires ${new Date(t.expiresAt).toLocaleDateString()}`,
-                    t.lastUsedAt ? `last used ${relativeTime(t.lastUsedAt)}` : 'never used',
+                    tr('tokens.created', { value: relativeTime(t.createdAt) }),
+                    t.expiresAt === null ? tr('tokens.neverExpires') : tr('tokens.expiresOn', { date: formatDate(t.expiresAt) }),
+                    t.lastUsedAt ? tr('lastUsedValue', { value: relativeTime(t.lastUsedAt) }) : tr('tokens.neverUsed'),
                   ].join(' · ')}
                 </span>
               </span>
@@ -187,7 +183,7 @@ export function ApiTokensSection() {
           <Button type="submit" loading={busy}>{tr('createToken')}</Button>
         </div>
       </form>
-    </Section>
+    </SettingsSection>
   );
 }
 
@@ -220,7 +216,7 @@ export function ConnectedAppsSection() {
   };
 
   return (
-    <Section id="connected-apps" title={tr('connectedApps')} description={tr('appsAndAiAssistantsYou')}>
+    <SettingsSection id="connected-apps" title={tr('connectedApps')} description={tr('appsAndAiAssistantsYou')}>
       {failed ? (
         <p className="fr-acct__error">{tr('couldNotLoadYourApps')}</p>
       ) : !apps ? (
@@ -240,7 +236,7 @@ export function ConnectedAppsSection() {
                 </span>
                 <Scopes scopes={a.scopes} />
                 <span className="fr-acct-session__meta">
-                  {[`Allowed ${relativeTime(a.authorizedAt)}`, a.lastUsedAt ? `last used ${relativeTime(a.lastUsedAt)}` : 'not used yet', a.website].filter(Boolean).join(' · ')}
+                  {[tr('apps.allowed', { value: relativeTime(a.authorizedAt) }), a.lastUsedAt ? tr('lastUsedValue', { value: relativeTime(a.lastUsedAt) }) : tr('apps.notUsedYet'), a.website].filter(Boolean).join(' · ')}
                 </span>
               </span>
               <Button size="sm" variant="ghost" icon={Trash2} onClick={() => revoke(a)}>{tr('revoke')}</Button>
@@ -253,7 +249,7 @@ export function ConnectedAppsSection() {
       <div className="fr-acct-form__row">
         <Button variant="danger" onClick={revokeAll}>{tr('disconnectAllAppsAndTokens')}</Button>
       </div>
-    </Section>
+    </SettingsSection>
   );
 }
 
@@ -302,11 +298,7 @@ export function DeveloperAppsSection() {
   };
 
   return (
-    <Section
-      id="developer-apps"
-      title={tr('yourOauthApps')}
-      description={tr('forDevelopersRegisterAnApp')}
-    >
+    <SettingsSection id="developer-apps" title={tr('yourOauthApps')} description={tr('oauthApps.description')}>
       {secret ? <Secret label={tr('thisIsTheClientSecret', { clientId: secret.clientId })} value={secret.secret} onDone={() => setSecret(null)} /> : null}
       {clients?.length ? (
         <ul className="fr-acct-sessions">
@@ -346,6 +338,6 @@ export function DeveloperAppsSection() {
           <Button type="submit" loading={busy}>{tr('registerApp')}</Button>
         </div>
       </form>
-    </Section>
+    </SettingsSection>
   );
 }
