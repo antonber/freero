@@ -13,9 +13,12 @@ import {
   MAX_REPORT_NOTE,
   REPORT_REASONS,
   type AppealInfo,
+  type GalleryForReview,
+  type GalleryStatus,
   type ListingForReview,
   type ListingStatus,
   type ModeratedBoard,
+  type ModeratedGalleryTemplate,
   type ModeratedListing,
   type ModeratedUpload,
   type ModeratedUser,
@@ -46,6 +49,7 @@ import {
   unblockBoardLink,
   type ModerationBoardState,
 } from '../boards/index';
+import { decideGalleryTemplate, galleryForModeration, galleryForReview, moderatedGalleryTemplates, reportableGalleryTemplate, type GalleryDecision } from '../gallery/index';
 import { decideListing, listingForModeration, listingsForReview, moderatedListings, reportableListing, type ListingDecision } from '../marketplace/index';
 import { notify } from '../notifications/index';
 import { snapshotBoardDoc } from '../realtime/index';
@@ -78,9 +82,13 @@ const ACTIONS: ModerationActionKind[] = [
   'listing.restore',
   'listing.feature',
   'listing.unfeature',
+  'gallery.approve',
+  'gallery.reject',
+  'gallery.remove',
+  'gallery.restore',
 ];
-/** Listing decisions that take no report reason: a reason says what abuse something is, and these are reviews (a decline says why in its statement). */
-const NEEDS_NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature'];
+/** Listing and template decisions that take no report reason: a reason says what abuse something is, and these are reviews (a decline says why in its statement). */
+const NEEDS_NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature', 'gallery.approve', 'gallery.reject', 'gallery.restore'];
 /** What undoes an action (an appeal against an action that was undone since is moot). */
 const REVERSAL: Partial<Record<ModerationActionKind, ModerationActionKind>> = {
   'board.disable_link': 'board.restore_link',
@@ -88,6 +96,7 @@ const REVERSAL: Partial<Record<ModerationActionKind, ModerationActionKind>> = {
   'upload.remove': 'upload.restore',
   'user.suspend': 'user.restore',
   'listing.remove': 'listing.restore',
+  'gallery.remove': 'gallery.restore',
 };
 
 const isReason = (v: unknown): v is ReportReason => REPORT_REASONS.some((r) => r.id === v);
@@ -117,6 +126,7 @@ export async function submitReport(body: Record<string, unknown>, who: { userId:
   const boardId = typeof body.boardId === 'string' ? body.boardId : '';
   const t = (body.target ?? { kind: 'board' }) as { kind?: unknown; id?: unknown };
   if (t.kind === 'listing') return submitListingReport(t.id, body, who.userId);
+  if (t.kind === 'gallery') return submitGalleryReport(t.id, body, who.userId);
   const kind = t.kind as ReportTargetKind;
   if (!TARGET_KINDS.includes(kind)) throw badRequest(`target.kind must be one of ${TARGET_KINDS.join(', ')}`);
   let targetId: string | null = null;
@@ -188,6 +198,37 @@ async function submitListingReport(id: unknown, body: Record<string, unknown>, u
   }
 }
 
+/**
+ * A report about a community template (#162): public ones only, from someone signed in (anything
+ * else — pending, removed, withdrawn, unknown — gets the same 404).
+ */
+async function submitGalleryReport(id: unknown, body: Record<string, unknown>, userId: string | null): Promise<void> {
+  if (!isReason(body.reason)) throw badRequest(`reason must be one of ${REPORT_REASONS.map((r) => r.id).join(', ')}`);
+  const note = text(body.note, 'note', MAX_REPORT_NOTE);
+  const t = userId && typeof id === 'string' ? await reportableGalleryTemplate(id) : null;
+  if (!t) throw notFound('Template not found');
+  const added = await repo.insertItem({
+    id: newId(16),
+    kind: 'report',
+    boardId: null,
+    boardTitle: t.title,
+    targetKind: 'gallery',
+    targetId: t.id,
+    reason: body.reason,
+    message: note,
+    reporterId: userId,
+    reporterKey: null,
+    contactEmail: null,
+    actionId: null,
+    createdAt: Date.now(),
+    dedupeKey: `report:gallery:${t.id}:u:${userId}`,
+  });
+  if (added) {
+    log(`moderation: report on community template ${t.id} (${body.reason})`);
+    if ((await repo.countOpenFor('gallery', t.id)) === 1) alertOperators({ kind: 'report', boardTitle: t.title, reason: body.reason });
+  }
+}
+
 // ---- presenting the queue ----
 
 const moderatedUser = (u: User | undefined, suspended: Set<string>): ModeratedUser | null =>
@@ -239,6 +280,7 @@ async function presentItems(items: repo.ItemRow[]): Promise<ModerationItem[]> {
   }
   const actions = new Map((await repo.getActions(items.flatMap((i) => (i.actionId ? [i.actionId] : [])))).map((a) => [a.id, a]));
   const listings: Map<string, ModeratedListing> = await moderatedListings(items.flatMap((i) => (i.targetKind === 'listing' && i.targetId ? [i.targetId] : [])));
+  const templates: Map<string, ModeratedGalleryTemplate> = await moderatedGalleryTemplates(items.flatMap((i) => (i.targetKind === 'gallery' && i.targetId ? [i.targetId] : [])));
   const p = await people([
     ...items.map((i) => i.reporterId),
     ...[...boards.values()].map((b) => b.ownerId),
@@ -265,6 +307,7 @@ async function presentItems(items: repo.ItemRow[]): Promise<ModerationItem[]> {
       resolutionNote: i.resolutionNote,
       board: board ? presentBoard(board, p) : null,
       listing: i.targetKind === 'listing' && i.targetId ? (listings.get(i.targetId) ?? null) : null,
+      galleryTemplate: i.targetKind === 'gallery' && i.targetId ? (templates.get(i.targetId) ?? null) : null,
     };
   });
 }
@@ -273,6 +316,12 @@ async function presentItems(items: repo.ItemRow[]): Promise<ModerationItem[]> {
 export async function listingQueue(status: unknown): Promise<ListingForReview[]> {
   const s: ListingStatus = status === 'approved' || status === 'rejected' || status === 'removed' ? status : 'pending';
   return listingsForReview(s, repo.openReportsAboutListings);
+}
+
+/** Community templates in one status, for review (#162): pending submissions by default. */
+export async function galleryQueue(status: unknown): Promise<GalleryForReview[]> {
+  const s: GalleryStatus = status === 'approved' || status === 'rejected' || status === 'removed' ? status : 'pending';
+  return galleryForReview(s, repo.openReportsAboutGallery);
 }
 
 export async function queue(status: 'open' | 'closed'): Promise<ModerationItem[]> {
@@ -353,6 +402,10 @@ const nothingToDo: Record<ModerationActionKind, string> = {
   'listing.restore': 'This listing isn’t removed.',
   'listing.feature': 'This listing isn’t live, or is featured already.',
   'listing.unfeature': 'This listing isn’t featured.',
+  'gallery.approve': 'This template isn’t waiting for review (it is public already, removed or withdrawn).',
+  'gallery.reject': 'Only a template waiting for review can be declined.',
+  'gallery.remove': 'This template isn’t public.',
+  'gallery.restore': 'This template isn’t removed.',
 };
 
 /** Runs the action through the owning module; who it affects and which board it is about. */
@@ -369,6 +422,13 @@ async function execute(
     if (!l) throw notFound('No such listing (its submitter may have withdrawn it)');
     const changed = await decideListing(l.id, kind.slice('listing.'.length) as ListingDecision, statement);
     return { changed, boardId: null, boardTitle: l.name, subjects: [l.submitterId], targetId: l.id };
+  }
+  if (kind.startsWith('gallery.')) {
+    // The template's state is gallery's: it applies the decision, this module records it.
+    const t = await galleryForModeration(targetId);
+    if (!t) throw notFound('No such template (its submitter may have withdrawn it)');
+    const changed = await decideGalleryTemplate(t.id, kind.slice('gallery.'.length) as GalleryDecision, statement);
+    return { changed, boardId: null, boardTitle: t.title, subjects: [t.submitterId], targetId: t.id };
   }
   if (kind.startsWith('board.')) {
     const b = await boardForModeration(targetId);
@@ -676,11 +736,12 @@ export async function appealInfo(token: unknown): Promise<AppealInfo> {
   const a = await appealedAction(token);
   const board = a.boardId ? await boardForModeration(a.boardId) : null;
   const listing = a.action.startsWith('listing.') ? await listingForModeration(a.targetId) : null;
+  const template = a.action.startsWith('gallery.') ? await galleryForModeration(a.targetId) : null;
   return {
     action: a.action,
     reason: a.reason,
     statement: a.statement,
-    boardTitle: board?.title ?? listing?.name ?? null,
+    boardTitle: board?.title ?? listing?.name ?? template?.title ?? null,
     createdAt: a.createdAt,
     pending: await repo.openAppealFor(a.id),
     reversed: await reversed(a),
@@ -695,12 +756,14 @@ export async function submitAppeal(body: Record<string, unknown>): Promise<void>
   if (await reversed(a)) throw new HttpError(409, 'This decision was already reversed');
   const board = a.boardId ? await boardForModeration(a.boardId) : null;
   const listing = a.action.startsWith('listing.') ? await listingForModeration(a.targetId) : null;
-  const targetKind = a.action.startsWith('user.') ? 'user' : a.action.startsWith('upload.') ? 'upload' : a.action.startsWith('listing.') ? 'listing' : 'board';
+  const template = a.action.startsWith('gallery.') ? await galleryForModeration(a.targetId) : null;
+  const title = board?.title ?? listing?.name ?? template?.title ?? '';
+  const targetKind = a.action.startsWith('user.') ? 'user' : a.action.startsWith('upload.') ? 'upload' : a.action.startsWith('listing.') ? 'listing' : a.action.startsWith('gallery.') ? 'gallery' : 'board';
   const added = await repo.insertItem({
     id: newId(16),
     kind: 'appeal',
     boardId: a.boardId,
-    boardTitle: board?.title ?? listing?.name ?? '',
+    boardTitle: title,
     targetKind,
     targetId: a.targetId,
     reason: a.reason,
@@ -714,5 +777,5 @@ export async function submitAppeal(body: Record<string, unknown>): Promise<void>
   });
   if (!added) throw new HttpError(409, 'An appeal against this decision is already waiting for review');
   log(`moderation: appeal against ${a.action} ${a.targetId}`);
-  alertOperators({ kind: 'appeal', boardTitle: board?.title ?? listing?.name ?? '', reason: a.reason });
+  alertOperators({ kind: 'appeal', boardTitle: title, reason: a.reason });
 }

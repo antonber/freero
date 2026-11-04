@@ -15,6 +15,7 @@ function contactLine(): string | undefined {
 }
 
 const listing = (title: string | null) => `“${title || 'your listing'}”`;
+const template = (title: string | null) => `“${title || 'your template'}”`;
 
 /** `reason: false`: the notice doesn't name a report reason (declining a submission isn't about abuse). */
 const WHAT: Record<ModerationActionKind, { subject: (t: string | null) => string; did: (t: string | null) => string; adverse: boolean; reason?: false }> = {
@@ -94,6 +95,30 @@ const WHAT: Record<ModerationActionKind, { subject: (t: string | null) => string
   },
   'listing.feature': { subject: (t) => `${listing(t)} is featured`, did: (t) => `Your listing ${listing(t)} is featured on the Apps & agents page.`, adverse: false },
   'listing.unfeature': { subject: (t) => `${listing(t)} is no longer featured`, did: (t) => `Your listing ${listing(t)} is no longer featured.`, adverse: false },
+  // Community templates (#162): the title is the template's.
+  'gallery.approve': {
+    subject: (t) => `${template(t)} is in the community gallery`,
+    did: (t) => `Freero’s reviewers approved your template ${template(t)}. It is public now: anyone can find it in the community template gallery and use a copy of it, under the licence you chose.`,
+    adverse: false,
+    reason: false,
+  },
+  'gallery.reject': {
+    subject: (t) => `${template(t)} wasn’t approved`,
+    did: (t) => `Freero’s reviewers didn’t approve your template ${template(t)}, so it isn’t shown to anyone. You can withdraw it and submit it again once the points below are addressed.`,
+    adverse: true,
+    reason: false,
+  },
+  'gallery.remove': {
+    subject: (t) => `${template(t)} was removed from the community gallery`,
+    did: (t) => `Freero’s moderators removed your template ${template(t)} from the community gallery. Its page is gone and nobody can use it now; copies people already made are their own boards.`,
+    adverse: true,
+  },
+  'gallery.restore': {
+    subject: (t) => `${template(t)} is public again`,
+    did: (t) => `Freero’s moderators restored your template ${template(t)}. It is in the community gallery again.`,
+    adverse: false,
+    reason: false,
+  },
 };
 
 /** Whether the action works against someone (so it can be appealed). */

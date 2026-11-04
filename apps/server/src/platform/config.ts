@@ -53,6 +53,7 @@ export type RateLimitName =
   | 'teamsUnfurl'
   | 'zoomMeetingBoard'
   | 'listingSubmit'
+  | 'gallerySubmit'
   | 'problemReport'
   | 'boardRender'
   | 'gifSearch';
@@ -554,6 +555,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   teamsUnfurl: '120/1m', // per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes; #113)
   zoomMeetingBoard: '120/10m', // per IP: a Zoom meeting's board set or looked up (the Zoom app opens it once per participant; #168)
   listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
+  gallerySubmit: '10/1d', // per person: boards submitted to the community template gallery (each copies a board and mails the operators, #162)
   problemReport: '10/1h', // per person: problem reports sent with "Report a problem" (each may carry a screenshot)
   boardRender: '30/10m', // per person: boards drawn as PNG / SVG / PDF on the server (the API, MCP export_board; #33)
   gifSearch: '60/1m', // per person: GIF searches (each one calls the operator's GIF provider, #139)
@@ -604,6 +606,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   teamsUnfurl: 'RATE_LIMIT_TEAMS_UNFURL',
   zoomMeetingBoard: 'RATE_LIMIT_ZOOM_MEETING_BOARD',
   listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
+  gallerySubmit: 'RATE_LIMIT_GALLERY_SUBMIT',
   problemReport: 'RATE_LIMIT_PROBLEM_REPORT',
   boardRender: 'RATE_LIMIT_BOARD_RENDER',
   gifSearch: 'RATE_LIMIT_GIF_SEARCH',

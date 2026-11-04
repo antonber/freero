@@ -1418,6 +1418,92 @@ export const SHAPE_PACK_LIMITS = {
   personalChars: 4_000_000,
 } as const;
 
+// ---- Community template gallery (#162; server modules/gallery) ----
+// Anyone signed in with a verified address submits a board they can edit as a public template: a
+// title, a description, a category, a licence (CC BY 4.0 or CC0) and the name to credit. The server
+// copies the board's SHARED content only — never comments, hidden frames' contents, anyone's private
+// drafts, who made or is assigned what, links to other boards or files — and it waits for this
+// server's operators (moderation) before anyone sees it. Approved templates are public: listed and
+// searchable at /gallery (indexable pages), installable as a new board, reportable; a rejected,
+// removed or withdrawn one answers 404 everywhere.
+// GET    /api/gallery?q=&category=          -> { templates: GalleryTemplate[] }  (approved; no sign-in)
+// GET    /api/gallery/:id                   -> { template: GalleryTemplate }  (approved only, else 404)
+// GET    /api/gallery/mine                  -> { templates: OwnGalleryTemplate[] }  (yours, any status)
+// POST   /api/gallery  body GallerySubmitRequest -> 201 { template: OwnGalleryTemplate }  (pending)
+// DELETE /api/gallery/:id                   -> { ok: true }  (yours: withdraws it)
+// POST   /api/gallery/:id/install  body { workspaceId? } -> 201 { boardId }  (a copy as a new board
+//                                             in that workspace, default your personal one)
+// GET    /gallery, /gallery/:id             public pages (approved only); /gallery/:id/preview.svg
+// Reports: POST /api/reports { target: { kind: 'gallery', id }, reason, note? } (signed in).
+// Moderation: GET /api/moderation/gallery?status= -> { templates: GalleryForReview[] }; actions
+// 'gallery.approve' | 'gallery.reject' | 'gallery.remove' | 'gallery.restore'.
+export type GalleryLicence = 'cc-by-4.0' | 'cc0-1.0';
+export const GALLERY_LICENCES: ReadonlyArray<{ id: GalleryLicence; name: string; url: string }> = [
+  { id: 'cc-by-4.0', name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/' },
+  { id: 'cc0-1.0', name: 'CC0 1.0', url: 'https://creativecommons.org/publicdomain/zero/1.0/' },
+];
+export type GalleryCategory = 'brainstorming' | 'planning' | 'retrospectives' | 'meetings' | 'diagrams' | 'research' | 'strategy' | 'education' | 'other';
+/** Categories (the labels are the public pages' English; the app translates them). */
+export const GALLERY_CATEGORIES: ReadonlyArray<{ id: GalleryCategory; label: string }> = [
+  { id: 'brainstorming', label: 'Brainstorming' },
+  { id: 'planning', label: 'Planning' },
+  { id: 'retrospectives', label: 'Retrospectives' },
+  { id: 'meetings', label: 'Meetings and workshops' },
+  { id: 'diagrams', label: 'Diagrams and mapping' },
+  { id: 'research', label: 'Research' },
+  { id: 'strategy', label: 'Strategy' },
+  { id: 'education', label: 'Education' },
+  { id: 'other', label: 'Other' },
+];
+export type GalleryStatus = 'pending' | 'approved' | 'rejected' | 'removed';
+export const GALLERY_LIMITS = { title: 80, description: 1000, author: 60, query: 100 } as const;
+/** Submissions one person may have waiting or live at once. */
+export const MAX_GALLERY_PER_USER = 20;
+export interface GalleryTemplate {
+  id: string;
+  title: string;
+  description: string;
+  category: GalleryCategory;
+  licence: GalleryLicence;
+  /** Who to credit, as the submitter asked (plain text). */
+  author: string;
+  items: number;
+  /** When it was approved (the public pages' date). */
+  publishedAt: number | null;
+  /**
+   * Its public page ("/gallery/<id>") and preview picture ("/gallery/<id>/preview.svg"; for your
+   * own and for operators "/api/gallery/<id>/preview.svg", which also shows one not public).
+   */
+  url: string;
+  previewUrl: string;
+}
+export interface OwnGalleryTemplate extends GalleryTemplate {
+  status: GalleryStatus;
+  /** What the reviewers said with their decision (empty when none). */
+  statusNote: string;
+  createdAt: number;
+}
+export interface GallerySubmitRequest {
+  boardId: string;
+  title: string;
+  description: string;
+  category: GalleryCategory;
+  licence: GalleryLicence;
+  author: string;
+}
+export interface GalleryForReview extends OwnGalleryTemplate {
+  submitter: { id: string; name: string; email: string } | null;
+  /** The board it was copied from (it may be gone since). */
+  sourceBoardId: string | null;
+  openReports: number;
+}
+export interface ModeratedGalleryTemplate {
+  id: string;
+  title: string;
+  status: GalleryStatus;
+  submitter: ModeratedUser | null;
+}
+
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a
 // guest) of.
@@ -2536,6 +2622,7 @@ export interface WorkspaceAiAdmin {
 // POST /api/moderation/actions body ModerationActionRequest -> { action: ModerationActionRecord }
 // POST /api/moderation/items/:id/resolve body { outcome, note? } -> { item: ModerationItem }
 // GET  /api/moderation/listings?status=pending|approved|rejected|removed -> { listings: ListingForReview[] } (#87, integrations.ts)
+// GET  /api/moderation/gallery?status=pending|approved|rejected|removed -> { templates: GalleryForReview[] } (#162)
 // GET  /.well-known/security.txt (RFC 9116, from SECURITY_CONTACT / ABUSE_CONTACT_EMAIL)
 export type ReportReason = 'spam' | 'phishing' | 'malware' | 'harassment' | 'violence' | 'sexual' | 'illegal' | 'copyright' | 'other';
 export const REPORT_REASONS: ReadonlyArray<{ id: ReportReason; label: string }> = [
@@ -2593,7 +2680,12 @@ export type ModerationActionKind =
   | 'listing.remove'
   | 'listing.restore'
   | 'listing.feature'
-  | 'listing.unfeature';
+  | 'listing.unfeature'
+  /** Community templates (#162): a pending submission is approved (public at /gallery) or rejected; a public one removed (appealable; its pages answer 404) or restored. */
+  | 'gallery.approve'
+  | 'gallery.reject'
+  | 'gallery.remove'
+  | 'gallery.restore';
 export interface ModerationActionRequest {
   action: ModerationActionKind;
   /** Board id, upload name or user id, by the action's kind. */
@@ -2640,7 +2732,7 @@ export interface ModerationItem {
   boardId: string | null;
   boardTitle: string;
   /** What it is about (appeals against a suspension: the account, `user`; a community listing: `listing`). */
-  target: { kind: ReportTargetKind | 'user' | 'listing'; id?: string };
+  target: { kind: ReportTargetKind | 'user' | 'listing' | 'gallery'; id?: string };
   reason: ReportReason | null;
   /** The reporter's note, or the appeal's message. */
   message: string;
@@ -2655,6 +2747,8 @@ export interface ModerationItem {
   board: ModeratedBoard | null;
   /** A community listing it is about, as it is now (null when withdrawn or not about one). */
   listing: ModeratedListing | null;
+  /** A community template it is about, as it is now (#162; absent from older servers, null when withdrawn or not about one). */
+  galleryTemplate?: ModeratedGalleryTemplate | null;
 }
 export interface ModeratedListing {
   id: string;
@@ -2815,6 +2909,7 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'gallery.submitted': 'Submitted a board to the community template gallery',
   'blueprint.shared': 'Shared a blueprint with the team',
   'blueprint.used': 'Made a project from a blueprint',
   'stickers.set_removed': 'Removed a team sticker set',
@@ -2862,6 +2957,10 @@ export const AUDIT_ACTIONS = {
   'moderation.listing.restore': 'Freero restored a community listing (moderation)',
   'moderation.listing.feature': 'Freero featured a community listing (moderation)',
   'moderation.listing.unfeature': 'Freero stopped featuring a community listing (moderation)',
+  'moderation.gallery.approve': 'Freero approved a community template (moderation)',
+  'moderation.gallery.reject': 'Freero declined a community template (moderation)',
+  'moderation.gallery.remove': 'Freero removed a community template (moderation)',
+  'moderation.gallery.restore': 'Freero restored a community template (moderation)',
   // Single sign-on (modules/sso).
   'sso.domain_added': 'Added a domain for single sign-on',
   'sso.domain_verified': 'Verified a domain (DNS)',

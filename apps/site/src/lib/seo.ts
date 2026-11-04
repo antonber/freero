@@ -161,5 +161,6 @@ ${DISALLOWED.map((d) => `Disallow: ${d}`).join('\n')}
 Allow: /
 
 Sitemap: ${abs('/sitemap.xml')}
+Sitemap: ${abs('/sitemap-community.xml')}
 `;
 }

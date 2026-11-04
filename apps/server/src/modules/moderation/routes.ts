@@ -10,6 +10,7 @@ import {
   boardDetail,
   boardPreview,
   isOperator,
+  galleryQueue,
   listingQueue,
   queue,
   resolve,
@@ -132,6 +133,13 @@ export default function moderationRoutes(_ctx: ServerContext): Router {
     '/listings',
     handle(async (req, res) => {
       res.json({ listings: await listingQueue(req.query.status) });
+    }),
+  );
+  // Community templates (#162): pending submissions to approve or decline, public ones to remove.
+  ops.get(
+    '/gallery',
+    handle(async (req, res) => {
+      res.json({ templates: await galleryQueue(req.query.status) });
     }),
   );
   ops.get(

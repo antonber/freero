@@ -163,5 +163,22 @@
   "zoomAppOff": "Zoom App: off (set ZOOM_CLIENT_ID)",
   "meetDeployment": "Google Meet add-on deployment",
   "meetAddOnOff": "Google Meet add-on: off (set GOOGLE_MEET_CLOUD_PROJECT_NUMBER)",
-  "registerThemWithEach": "Register them with each platform: see docs/integrations/."
+  "registerThemWithEach": "Register them with each platform: see docs/integrations/.",
+  "approveTemplate": "Approve template",
+  "declineTemplate": "Decline template",
+  "removeTemplate": "Remove template",
+  "restoreTemplate": "Restore template",
+  "templatesTab": "Templates",
+  "communityTemplates": "Community templates",
+  "aCommunityTemplate": "A community template (public gallery)",
+  "aWithdrawnTemplate": "A withdrawn template",
+  "theTemplateName": "the template “{name}”",
+  "galleryPublic": "Public",
+  "galleryPublicPage": "Public page",
+  "galleryCredit": "Credit",
+  "galleryLicence": "Licence",
+  "galleryItems": "Items",
+  "gallerySuspendSubmitter": "Suspend submitter",
+  "previewOfName": "Preview of “{name}”",
+  "noTemplateIsWaiting": "No template is waiting for review."
 }

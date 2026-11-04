@@ -493,6 +493,17 @@ Operators get an email when a board gets its first open report and for every app
   and at most 10 waiting or live at once). Every decision is an action like the others below:
   recorded, audited (`moderation.listing.*`, in the submitter's account log and their teams'),
   and emailed to the developer.
+- **Community templates** (#162, the **Templates** tab): boards people submitted to the public
+  template gallery. Each card shows the preview drawn from the copy Freero made (only the board's
+  shared content: no comments, hidden frames, private drafts or people's names), its title,
+  description, category, licence (CC BY 4.0 or CC0), who to credit, the submitter and open reports.
+  **Approve** puts it on the public `/gallery` pages (indexable, in `/sitemap-community.xml`) and
+  lets anyone install a copy; **Decline** (with a statement) keeps it hidden; **Remove** takes a
+  public one down — its page, preview and install answer 404 at once — and is appealable;
+  **Restore** undoes it. Reports about public templates arrive in the queue. Submissions need a
+  verified address and are limited per person (`RATE_LIMIT_GALLERY_SUBMIT`, at most 20 waiting or
+  public at once). Decisions are audited as `moderation.gallery.*` and emailed to the submitter.
+  Nothing is public on a server whose operators never approve anything (no `OPERATOR_EMAILS`).
 
 ### Actions
 

@@ -49,7 +49,9 @@ export interface SvgInput {
 }
 
 const MARGIN = 40;
-const FONT = 'Inter';
+// Inter first (the server's rasteriser has it); a viewer showing the SVG itself (an exported file,
+// a community template's preview in an <img>) falls back to its own sans-serif, never a serif.
+const FONT = 'Inter, Arial, Helvetica, sans-serif';
 const INK = '#17162B';
 const MUTED = '#6B6A85';
 const LINE = '#D9D8E5';

@@ -4,6 +4,7 @@
 // action is recorded on the server and its subject is emailed the statement written here.
 // "Listings" (#87): community submissions for Apps & agents, approved or declined here; live ones
 // can be featured or removed (and a removal appealed), with the same record and audit trail.
+// "Templates" (#162): boards submitted to the public community template gallery (GalleryView).
 // "Problems": what people sent with "Report a problem" (bugs, not abuse; ProblemsView).
 // "Microsoft 365 apps" (#112, #114): this instance's Teams app and Copilot agent packages, to upload
 // in Teams (docs/integrations/teams.md).
@@ -31,6 +32,7 @@ import { Button, Input, Logo, Modal, SegmentedControl, Select, Spinner, TextArea
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 import { NotFoundPage } from '../NotFoundPage';
+import { GalleryView } from './GalleryView';
 import { ProblemsView } from './ProblemsView';
 import { t as tr } from './messages';
 import './operator.css';
@@ -52,12 +54,16 @@ const ACTION_LABEL: Record<ModerationActionKind, string> = {
   'listing.restore': 'Restore listing',
   'listing.feature': 'Feature listing',
   'listing.unfeature': 'Stop featuring',
+  'gallery.approve': tr('approveTemplate'),
+  'gallery.reject': tr('declineTemplate'),
+  'gallery.remove': tr('removeTemplate'),
+  'gallery.restore': tr('restoreTemplate'),
 };
 /** Actions against someone: they get the statement (required) and, where it can be undone, an appeal link. */
-const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'board.delete', 'upload.remove', 'upload.purge', 'user.suspend', 'listing.reject', 'listing.remove'];
+const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'board.delete', 'upload.remove', 'upload.purge', 'user.suspend', 'listing.reject', 'listing.remove', 'gallery.reject', 'gallery.remove'];
 /** Reviews of a listing, not findings of abuse: no report reason to pick. */
-const NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature'];
-type View = 'open' | 'closed' | 'listings' | 'problems';
+const NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature', 'gallery.approve', 'gallery.reject', 'gallery.restore'];
+type View = 'open' | 'closed' | 'listings' | 'gallery' | 'problems';
 const LISTING_STATUSES: Array<{ value: ListingStatus; label: string }> = [
   { value: 'pending', label: tr('waitingForReview') },
   { value: 'approved', label: tr('live') },
@@ -80,8 +86,9 @@ export function OperatorPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [params, setParams] = useSearchParams();
   const asked = params.get('view');
-  const view: View = asked === 'listings' || asked === 'closed' || asked === 'problems' ? asked : 'open';
+  const view: View = asked === 'listings' || asked === 'closed' || asked === 'problems' || asked === 'gallery' ? asked : 'open';
   const [problemsVersion, setProblemsVersion] = useState(0);
+  const [galleryVersion, setGalleryVersion] = useState(0);
   const setView = (v: View) => setParams(v === 'open' ? {} : { view: v }, { replace: true });
   const status = view === 'closed' ? 'closed' : 'open';
   const [listingStatus, setListingStatus] = useState<ListingStatus>('pending');
@@ -101,6 +108,7 @@ export function OperatorPage() {
 
   const load = useCallback(() => {
     if (view === 'problems') return setProblemsVersion((v) => v + 1);
+    if (view === 'gallery') return setGalleryVersion((v) => v + 1);
     if (view === 'listings') {
       setListings(null);
       api.moderationListings(listingStatus).then(
@@ -154,6 +162,7 @@ export function OperatorPage() {
             { value: 'open', label: tr('open') },
             { value: 'closed', label: tr('closed') },
             { value: 'listings', label: tr('listings') },
+            { value: 'gallery', label: tr('templatesTab') },
             { value: 'problems', label: tr('problems') },
           ]}
         />
@@ -165,7 +174,9 @@ export function OperatorPage() {
         </div>
       ) : (
       <div className="fr-op__body">
-        {view === 'listings' ? (
+        {view === 'gallery' ? (
+          <GalleryView version={galleryVersion} onAct={setPending} />
+        ) : view === 'listings' ? (
           <main className="fr-op__queue" aria-label={tr('communityListings')}>
             <div className="fr-op-listings__bar">
               <Select<ListingStatus> aria-label={tr('listings')} value={listingStatus} onChange={setListingStatus} options={LISTING_STATUSES} />
@@ -244,6 +255,7 @@ function targetText(item: ModerationItem): string {
   if (t.kind === 'upload') return `File ${t.id}`;
   if (t.kind === 'comment') return tr('commentValueInThreadValue2', { value: t.id?.split(':')[1] ?? '', value2: t.id?.split(':')[0] ?? '' });
   if (t.kind === 'listing') return tr('aCommunityListingAppsAgents');
+  if (t.kind === 'gallery') return tr('aCommunityTemplate');
   return tr('theirAccount');
 }
 
@@ -273,7 +285,7 @@ function ItemCard({
     <article className={`fr-op-card${item.kind === 'appeal' ? ' fr-op-card--appeal' : ''}`}>
       <div className="fr-op-card__head">
         <Chip tone={item.kind === 'appeal' ? 'warn' : 'danger'}>{item.kind === 'appeal' ? tr('appeal') : reasonLabel(item.reason)}</Chip>
-        <h2 className="fr-op-card__board">{item.boardTitle || (item.target.kind === 'user' ? tr('accountSuspension') : item.target.kind === 'listing' ? tr('aWithdrawnListing') : tr('untitledBoard'))}</h2>
+        <h2 className="fr-op-card__board">{item.boardTitle || (item.target.kind === 'user' ? tr('accountSuspension') : item.target.kind === 'listing' ? tr('aWithdrawnListing') : item.target.kind === 'gallery' ? tr('aWithdrawnTemplate') : tr('untitledBoard'))}</h2>
         {b && <BoardState board={b} />}
         {item.listing && <ListingChips status={item.listing.status} featured={item.listing.featured} />}
         <span className="fr-op-card__when" title={new Date(item.createdAt).toLocaleString()}>
@@ -360,6 +372,19 @@ function ItemCard({
           ) : item.listing.status === 'approved' ? (
             <Button size="sm" variant="danger" onClick={() => act('listing.remove', item.listing!.id, tr('theListingName', { name: item.listing!.name }))}>{tr('removeListing')}</Button>
           ) : null)}
+        {item.galleryTemplate &&
+          (item.galleryTemplate.status === 'removed' ? (
+            <Button size="sm" icon={ShieldCheck} onClick={() => act('gallery.restore', item.galleryTemplate!.id, tr('theTemplateName', { name: item.galleryTemplate!.title }))}>{tr('restoreTemplate')}</Button>
+          ) : item.galleryTemplate.status === 'approved' ? (
+            <Button size="sm" variant="danger" onClick={() => act('gallery.remove', item.galleryTemplate!.id, tr('theTemplateName', { name: item.galleryTemplate!.title }))}>{tr('removeTemplate')}</Button>
+          ) : null)}
+        {item.galleryTemplate?.status === 'approved' && (
+          <a className="fr-op-btnlink" href={`/gallery/${encodeURIComponent(item.galleryTemplate.id)}`} target="_blank" rel="noopener noreferrer">
+            <Eye size={15} aria-hidden />{' '}{tr('galleryPublicPage')}</a>
+        )}
+        {item.galleryTemplate?.submitter && !item.galleryTemplate.submitter.suspended && (
+          <Button size="sm" variant="ghost" icon={UserX} onClick={() => act('user.suspend', item.galleryTemplate!.submitter!.id, `${item.galleryTemplate!.submitter!.name} <${item.galleryTemplate!.submitter!.email}>`)}>{tr('gallerySuspendSubmitter')}</Button>
+        )}
         {item.listing?.submitter && !item.listing.submitter.suspended && (
           <Button
             size="sm"

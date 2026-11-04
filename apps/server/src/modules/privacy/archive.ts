@@ -15,6 +15,7 @@ import { exportAccountData, getUser } from '../auth/index';
 import { decisionsExportOf } from '../decisions/index';
 import { engageExportOf } from '../engage/index';
 import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, getBoardAccess, type BoardRecord } from '../boards/index';
+import { galleryExportOf } from '../gallery/index';
 import { listingsExportOf } from '../marketplace/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
@@ -106,6 +107,7 @@ decisions.json      decision snapshots you made (title, note, board)
 trackers.json       your own issue-tracker connections (tracker, name, address, account, field map;
                     never tokens or secrets) and the issues you linked to board items
 listings.json       community listings you submitted to Apps & agents, with their review status
+gallery.json        boards you submitted to the community template gallery, with their review status
 problems/           problems you reported with "Report a problem": index.json (your note, the
                     diagnostics sent with it, its status) and the screenshots you attached
 templates/          templates you saved (Freero's own JSON; insertable again)
@@ -146,6 +148,8 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   a.addJson('account.json', account);
   a.addJson('api.json', await apiDataOf(userId));
   a.addJson('listings.json', await listingsExportOf(userId));
+  // Boards they submitted to the community template gallery (#162), with their review status.
+  a.addJson('gallery.json', await galleryExportOf(userId));
 
   const [workspaces, boardRoles, sso, scim] = await Promise.all([exportMembershipsOf(userId), membershipsOf(userId), ssoRolesOf(userId), scimRecordsOf(userId)]);
   const invited = await boardRecords([...boardRoles.keys()]);

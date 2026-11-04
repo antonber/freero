@@ -8,7 +8,7 @@ export interface ItemRow {
   status: ModerationItemStatus;
   boardId: string | null;
   boardTitle: string;
-  targetKind: ReportTargetKind | 'user' | 'listing';
+  targetKind: ReportTargetKind | 'user' | 'listing' | 'gallery';
   targetId: string | null;
   reason: ReportReason | null;
   message: string;
@@ -28,7 +28,7 @@ interface ItemDb {
   status: ModerationItemStatus;
   board_id: string | null;
   board_title: string;
-  target_kind: ReportTargetKind | 'user' | 'listing';
+  target_kind: ReportTargetKind | 'user' | 'listing' | 'gallery';
   target_id: string | null;
   reason: ReportReason | null;
   message: string;
@@ -216,22 +216,25 @@ export async function childActions(parentId: string): Promise<ActionRow[]> {
   return (await query<ActionDb>(`SELECT * FROM moderation_actions WHERE parent_id = $1 ORDER BY created_at, id`, [parentId])).map(toAction);
 }
 
-/** Open reports per community listing among these (#87). */
-export async function openReportsAboutListings(ids: string[]): Promise<Map<string, number>> {
+/** Open reports per community listing (#87) or community template (#162) among these. */
+export async function openReportsAbout(kind: 'listing' | 'gallery', ids: string[]): Promise<Map<string, number>> {
   if (!ids.length) return new Map();
   const rows = await query<{ target_id: string; n: number }>(
     `SELECT target_id, count(*)::int AS n FROM moderation_items
-     WHERE status = 'open' AND kind = 'report' AND target_kind = 'listing' AND target_id = ANY($1::text[]) GROUP BY target_id`,
-    [ids],
+     WHERE status = 'open' AND kind = 'report' AND target_kind = $1 AND target_id = ANY($2::text[]) GROUP BY target_id`,
+    [kind, ids],
   );
   return new Map(rows.map((r) => [r.target_id, r.n]));
 }
+export const openReportsAboutListings = (ids: string[]) => openReportsAbout('listing', ids);
+export const openReportsAboutGallery = (ids: string[]) => openReportsAbout('gallery', ids);
 
-/** How many open items are about the listing (operators are mailed for the first one only). */
-export async function countOpenForListing(id: string): Promise<number> {
-  const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM moderation_items WHERE target_kind = 'listing' AND target_id = $1 AND status = 'open'`, [id]);
+/** How many open items are about the listing or template (operators are mailed for the first one only). */
+export async function countOpenFor(kind: 'listing' | 'gallery', id: string): Promise<number> {
+  const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM moderation_items WHERE target_kind = $1 AND target_id = $2 AND status = 'open'`, [kind, id]);
   return r?.n ?? 0;
 }
+export const countOpenForListing = (id: string) => countOpenFor('listing', id);
 
 /** Upload names among these with an open report or appeal about them: their kept copy is on hold (KAI-179). */
 export async function uploadsUnderReview(names: string[]): Promise<Set<string>> {

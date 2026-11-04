@@ -111,6 +111,12 @@ import type {
   ReportRequest,
   CommunityListing,
   ListingForReview,
+  GalleryForReview,
+  GallerySubmitRequest,
+  GalleryStatus,
+  GalleryTemplate,
+  OwnGalleryTemplate,
+  ReportReason,
   ListingReportRequest,
   ListingStatus,
   ListingSubmission,
@@ -903,6 +909,14 @@ export const api = {
     }
     return ((await res.json()) as { sticker: Sticker }).sticker;
   },
+  // the community template gallery (#162): public templates people submitted, reviewed by operators
+  galleryTemplate: (id: string) => request<{ template: GalleryTemplate }>('GET', `/api/gallery/${encodeURIComponent(id)}`),
+  myGalleryTemplates: () => request<{ templates: OwnGalleryTemplate[] }>('GET', '/api/gallery/mine'),
+  submitGalleryTemplate: (body: GallerySubmitRequest) => request<{ template: OwnGalleryTemplate }>('POST', '/api/gallery', body),
+  withdrawGalleryTemplate: (id: string) => request<{ ok: true }>('DELETE', `/api/gallery/${encodeURIComponent(id)}`),
+  installGalleryTemplate: (id: string, workspaceId: string) => request<{ boardId: string }>('POST', `/api/gallery/${encodeURIComponent(id)}/install`, { workspaceId }),
+  reportGalleryTemplate: (id: string, reason: ReportReason, note: string) => request<{ ok: true }>('POST', '/api/reports', { target: { kind: 'gallery', id }, reason, note }),
+  moderationGallery: (status: GalleryStatus) => request<{ templates: GalleryForReview[] }>('GET', `/api/moderation/gallery?status=${status}`),
   // shape packs (#4): the board's workspace's own icon sets, and the person's own library
   shapePacks: (boardId: string) => request<ShapePacksResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/shape-packs`),
   createShapePack: (boardId: string, name: string, upload: string, personal = false) =>

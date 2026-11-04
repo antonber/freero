@@ -25,6 +25,8 @@ import type {
   AssistantAsk,
   AssistantMessage,
   AssistantTurn,
+  GallerySubmitRequest,
+  OwnGalleryTemplate,
   AiWorkflow,
   AiWorkflowInput,
   AiWorkflowList,
@@ -177,6 +179,17 @@ export interface HostShapePacks {
   remove(packId: string): Promise<void>;
 }
 
+/**
+ * [additive, #162] The community template gallery (wire: @freero/shared "Community template
+ * gallery"): submit this board as a public template (the server copies only its shared content and
+ * holds it for review), and see or withdraw your submissions. Rejections carry a message to show.
+ */
+export interface HostGallery {
+  submit(request: Omit<GallerySubmitRequest, 'boardId'>): Promise<OwnGalleryTemplate>;
+  mine(): Promise<OwnGalleryTemplate[]>;
+  withdraw(id: string): Promise<void>;
+}
+
 /** [additive] Light, dark, or whatever the device uses. */
 export type ColorThemeChoice = 'system' | 'light' | 'dark';
 /** [additive] See Host.colorTheme. */
@@ -276,6 +289,8 @@ export interface Host {
    * without an account, embeds): no packs. Rejections carry a message that can be shown.
    */
   shapePacks?: HostShapePacks;
+  /** [additive, #162] Absent for guests without an account, embeds and the offline sandbox: nothing to publish. */
+  gallery?: HostGallery;
   /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).

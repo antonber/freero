@@ -23,6 +23,7 @@ import { storage } from '../../platform/storage';
 import { runExclusive } from '../../platform/jobs';
 import { avatarUploadReferences } from '../auth/index';
 import { blueprintUploadReferences } from '../blueprints/index';
+import { galleryUploadReferences } from '../gallery/index';
 import { thumbnailUploadReferences } from '../boards/index';
 import { boardUploadReferences } from '../realtime/index';
 import { stickerUploadReferences } from '../stickers/index';
@@ -52,6 +53,8 @@ const SCANS: ReferenceScan[] = [
   walkthroughUploadReferences,
   stickerUploadReferences,
   blueprintUploadReferences,
+  // Community templates (#162): their copy outlives the board it came from.
+  galleryUploadReferences,
 ];
 
 export async function referencedUploads(among?: readonly string[]): Promise<Set<string>> {

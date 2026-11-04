@@ -180,6 +180,12 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     stickers: stickersOf(board.id),
     ...(board.permissions.gifs ? { gifs: { search: (q: string, pos: string | null) => api.searchGifs(board.id, q, pos), place: (media: string) => api.placeGif(board.id, media) } } : {}),
     shapePacks: shapePacksOf(board.id),
+    // #162: publish this board to the community template gallery (reviewed before it is public).
+    gallery: {
+      submit: async (request) => (await api.submitGalleryTemplate({ ...request, boardId: board.id })).template,
+      mine: async () => (await api.myGalleryTemplates()).templates,
+      withdraw: async (id) => void (await api.withdrawGalleryTemplate(id)),
+    },
     uploadImage,
     uploadFile,
     uploadAttachment,

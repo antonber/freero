@@ -1,67 +1,27 @@
 // The marketing site at `/`, `/claude`, `/chatgpt`, `/vs/*`… (apps/site, built to static files).
 // Everything else (the app's /app, /board/*, /login…) falls through to the web app. A signed-in
 // visitor at `/` goes to their boards at /app; with SITE=false (or no site build) everyone does.
-import express, { Router, type Request, type Response } from 'express';
+import express, { Router } from 'express';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
-import { log } from '../../platform/log';
-import { contentSecurityPolicy } from '../../platform/security';
-import { withAnalyticsRuntime } from '../analytics/index';
 import { userFromCookieHeader } from '../auth/index';
 import type { SiteLegal } from '@freero/shared';
-import { legalFill, withLegal } from './legal';
-import { cspWithAnalytics, loadSite, ROBOTS_NO_SITE, withAnalytics, withOrigin } from './site';
+import { servedSite } from './served';
+import { ROBOTS_NO_SITE } from './site';
 
 // Mounted at the root: it serves `/`, the marketing pages, robots.txt and the sitemaps.
 export const mountPath = '/';
 
 export default function siteRoutes({ config }: ServerContext): Router {
   const r = Router();
-  const site = config.site.enabled ? loadSite(config.site.dist) : null;
-  if (config.site.enabled) log(site ? `serving the marketing site from ${config.site.dist}` : `no marketing site build at ${config.site.dist}: / goes to the app`);
-  const legal = legalFill(config);
-  if (site && site.legal.size) {
-    const l = config.site.legal;
-    if (!legal.inEffect) log('site: the legal pages are drafts (not in effect, noindex) until SITE_LEGAL_OPERATOR is set');
-    else if (!l.contactEmail || !l.address || !l.jurisdiction)
-      log('site: SITE_LEGAL_OPERATOR is set but SITE_LEGAL_CONTACT_EMAIL, SITE_LEGAL_ADDRESS or SITE_LEGAL_JURISDICTION is not: the legal pages show placeholders for them');
-  }
-
-  // Built once per origin: PUBLIC_URL in production (one entry), the request's own host in development.
-  const cache = new Map<string, Map<string, string>>();
-  const originOf = (req: Request) => config.publicUrl ?? `${req.protocol}://${req.get('host') ?? 'localhost'}`;
-  const textFor = (req: Request, key: string, raw: string): string => {
-    const origin = originOf(req);
-    let byKey = cache.get(origin);
-    if (!byKey) {
-      byKey = new Map();
-      // Only the configured origin is kept; a development Host header is rendered per request.
-      if (origin === config.publicUrl) cache.set(origin, byKey);
-    }
-    let text = byKey.get(key);
-    if (text === undefined) {
-      text = withLegal(withOrigin(raw, origin), legal, !!site?.legal.has(key), !!site?.underReview.has(key));
-      byKey.set(key, text);
-    }
-    return text;
-  };
-
-  const sendPage = (req: Request, res: Response, key: string, raw: string, status = 200) => {
-    const analytics = config.site.analytics;
-    if (analytics) res.setHeader('Content-Security-Policy', cspWithAnalytics(contentSecurityPolicy(config, req.headers.host, req.secure), analytics.src));
-    res.setHeader('Cache-Control', 'no-cache');
-    // A draft of terms, or a page the operator hasn't approved, is never a search result, whatever a
-    // cached copy of its markup says.
-    if ((site?.legal.has(key) && !legal.inEffect) || site?.underReview.has(key)) res.setHeader('X-Robots-Tag', 'noindex');
-    // Google Analytics (GA_MEASUREMENT_ID): Google's script unless this browser opted out, and the opt-out control.
-    res.status(status).type('html').send(withAnalyticsRuntime(withAnalytics(textFor(req, key, raw), analytics), config));
-  };
+  const served = servedSite(config);
+  const { site, textFor, sendPage } = served;
 
   // For the app's sign-up page: the terms people agree to, once they are in effect.
   r.get('/api/site/legal', (_req, res) => {
-    const served = !!site && ['/terms', '/privacy', '/acceptable-use'].every((p) => site.legal.has(p) && site.pages.has(p));
+    const ready = !!site && ['/terms', '/privacy', '/acceptable-use'].every((p) => site.legal.has(p) && site.pages.has(p));
     const body: SiteLegal = {
-      legal: served && config.site.legal.operator ? { operator: config.site.legal.operator, termsUrl: '/terms', privacyUrl: '/privacy', acceptableUseUrl: '/acceptable-use' } : null,
+      legal: ready && config.site.legal.operator ? { operator: config.site.legal.operator, termsUrl: '/terms', privacyUrl: '/privacy', acceptableUseUrl: '/acceptable-use' } : null,
     };
     res.setHeader('Cache-Control', 'no-cache');
     res.json(body);

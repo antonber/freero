@@ -100,6 +100,7 @@ function SiteFooter() {
         ['/pricing', 'Pricing'],
         ['/security', 'Security'],
         ['/templates', 'Templates'],
+        ['/gallery', 'Community templates'],
         ['/use-cases', 'Use cases'],
         ['/open-source', 'Open source'],
         ['/vs', 'Compare'],

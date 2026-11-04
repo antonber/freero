@@ -131,6 +131,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
 | A doc's document (Yjs fragment `document-store`, KAI-162) | the doc editor (`engine/docs`, through `engine/store/ObjectDocStore`); on requests, realtime's `docContent.ts` (`appendDocBlocks`, `initDocContent`) | the editor, or `modules/docs` / the public API |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
+| Community templates (`gallery_templates`, #162): a cleaned copy of a board's shared content, its preview, title, description, category, licence, credit, and review status | server `modules/gallery` (`submitTemplate`: an editor who may share outside the workspace and copy content out; the copy is made ONCE by `gallery/content.ts` from the shared doc only — no comments, votes, hidden frames, drafts, links to other boards, files or anyone's ids; withdraw); the status is moderation's decision, applied through `decideGalleryTemplate` | its routes; operators' actions (`gallery.approve` / `reject` / `remove` / `restore`); installing makes a board through boards' `createBoardWithState` |
 | Community listings (`marketplace_listings`) and their review status | server `modules/marketplace`; decisions are moderation's, applied through `decideListing` | `submitListing` / withdraw (its routes); operators' actions (`modules/moderation`) |
 | API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
 | A board's "allow embedding on other sites" (`boards.embeddable`) and the workspace's `boardEmbeds` policy | server `modules/boards` (the share dialog's PATCH `embeddable`, `setBoardEmbeddable`: owner only) and `modules/workspaces` (policies) | boards' `boardEmbedding(id)` is the one read of "may other sites frame it now, and what may a visitor do" |
@@ -1202,6 +1203,10 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   from data. Each entry brings its own title / description (the length and uniqueness checks apply),
   a HowTo of its connect steps, a link to its connect step in the app (`/apps/<id>`) and links to
   its category's other entries. Community listings never appear on the site (below).
+- **Community templates** (`/gallery`, `/gallery/<id>`, #162) are the one place the site shows a
+  server's own data: the build makes the hub page with a slot and a page shell, and the server's
+  `modules/gallery` fills them per request with templates its operators approved (see "Community
+  template gallery"). Only reviewed templates, only as plain text, never a link a submitter wrote.
 - **Templates** (`/templates`, `/templates/<id>`, #74) are generated from the app's built-in catalog
   (`features/templates`), read by path at build time like `modules/outline` reads the features'
   `outline.ts` (`src/lib/templates.tsx`; the site doesn't type-check the web app, so it declares
@@ -1474,7 +1479,8 @@ meeting opened for everyone, by the hash of its UUID, for a day), `meet` (no tab
 manifest, its pages framed by Meet) — see "Apps that run on other platforms" below, `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
-agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
+agents; see "Apps & agents" below), `gallery` (gallery_templates: the community template gallery,
+#162; see "Community template gallery" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
 encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports: “Report a problem”, see "Problem
 reports" below).
@@ -1725,6 +1731,11 @@ reports" below).
   (`GET /api/moderation/listings`) and reports about them (`target.kind: 'listing'`, no board;
   signed in, live listings only, else 404). marketplace imports nothing from moderation (it mails
   operators about a new submission itself), so the dependency goes one way.
+- Community templates (#162, `modules/gallery`): the same pattern as listings — their status is
+  gallery's, written only through `decideGalleryTemplate`; moderation owns the decisions
+  (`gallery.approve` / `reject` / `remove` / `restore`; a removal is appealable), the console's
+  Templates view (`GET /api/moderation/gallery`) and reports (`target.kind: 'gallery'`, signed in,
+  public templates only, else 404). gallery imports nothing from moderation.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
@@ -1800,6 +1811,41 @@ rendered as text (never markup) and linked with `rel="noopener noreferrer nofoll
 while listings are one server's data approved by that server's operator, and developers' words and
 links on indexable pages under Freero's name would invite link spam. Featuring lists a listing
 first in the app.
+
+### Community template gallery (`modules/gallery`, `features/gallery`; #162)
+
+People publish boards as public templates; this server's operators review them first.
+
+- **Submitting** (board menu "Publish to the community gallery…", `Host.gallery`): a verified
+  account that can EDIT the board, whose workspace lets it share outside (`canShareExternally`) and
+  copy content out (downloads policy, audited `gallery.submitted` in the board's workspace).
+  `gallery/content.ts` copies the board ONCE from realtime's `boardBackupContent` without layers —
+  so private drafts and hidden frames' contents (layers) never arrive — and keeps only: items that
+  aren't hidden frames, things inside or attached to them, links to other boards / docs, files,
+  embeds, live activities or icebreakers; no field naming a person (`createdBy`, `createdVia`,
+  `suggestedBy`, `assigneeId`, person-field values, protected locks, tracker links); collections
+  only as item content of kept items (table / chart cells), tags, kept diagrams' sources and the
+  board settings — never comments, votes, notes, results or badges. The preview SVG is drawn once
+  from that copy by render's `renderContentSvg`. Pending until approved; operators are mailed.
+  `RATE_LIMIT_GALLERY_SUBMIT`, at most `MAX_GALLERY_PER_USER` waiting or public. A submission goes
+  with its submitter's account (cascade) and is in their data export (`gallery.json`); the uploads
+  sweep keeps the files its copy uses (`galleryUploadReferences`).
+- **Public** (approved only; everything else is the same 404 everywhere): `/gallery` (the site's
+  page, its `data-freero-slot="gallery"` filled with search, categories and cards; a search or a
+  filter is `noindex`), `/gallery/:id` (the site build's `gallery-template` shell filled by
+  modules/site's `fillShell`: title, description, canonical and JSON-LD escaped per context),
+  `/gallery/:id/preview.svg` (sandbox CSP, nosniff, `max-age=300` so a takedown is quick),
+  `/sitemap-community.xml` (named in robots.txt) and `GET /api/gallery`. Nothing a submitter wrote
+  becomes a link. "Use this template" → sign-up / in → `/app?gallery=<id>`: the dashboard's
+  `GalleryDialog` shows it and installs a copy (`POST /api/gallery/:id/install`: a new board in the
+  workspace open there, through `createBoardWithState`, every item created by the installer, the
+  credit and licence in its description); `&report=1` opens its report form.
+- **Moderation**: see "Moderation" (Templates view; `gallery.*` actions).
+- **modules/site** exposes `fillShell`, `fillSlot`, `sitePageText`, `siteShellText`,
+  `sendSiteHtml`, `sendSiteNotFound` (site/index.ts) so another module's public page goes out with
+  the site's head, CSP, analytics and legal state (`site/served.ts` is the one place that reads the
+  build and fills origin / legal tokens). The build writes shells to `dist/shells/` and lists them
+  in the manifest's `shells`.
 
 ### Workspaces (`modules/workspaces`)
 
