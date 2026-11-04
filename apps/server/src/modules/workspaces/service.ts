@@ -39,6 +39,7 @@ import {
   countHeldBoards,
   deleteBoardRowsInWorkspace,
   transferBoardsOwnedIn,
+  underLegalHold,
 } from '../boards/index';
 import { removeBoardMemberships } from '../members/index';
 import { refreshBoardAccess } from '../realtime/index';
@@ -492,6 +493,8 @@ export async function deleteWorkspace(req: Request | null, workspaceId: string, 
   if (hold) throw new HttpError(409, `This workspace can’t be deleted: ${hold}`);
   const owners = (await repo.listMembers(workspaceId)).filter((m) => m.role === 'owner').map((m) => m.userId);
   const boards = await deleteTeamWorkspaceNow(workspace, userId);
+  if (boards === 'legal_hold')
+    throw new HttpError(409, 'This workspace can’t be deleted: a legal hold keeps some of its content. It can be deleted once the hold is released.', 'legal_hold');
   if (boards === 'held')
     throw new HttpError(
       409,
@@ -524,11 +527,13 @@ export async function deleteWorkspace(req: Request | null, workspaceId: string, 
  * (kept for the default retention after the workspace is gone) and in the account log of whoever
  * deleted it (null: the account purge).
  */
-async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<number | null | 'held'> {
+async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<number | null | 'held' | 'legal_hold'> {
   const workspaceId = workspace.id;
   const gone = await repo.transaction(async () => {
     if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
     if (await countHeldBoards({ workspaceId })) return 'held' as const;
+    // A legal hold (#157) on a board or custodian here: the database would refuse the delete anyway.
+    if (await underLegalHold({ workspaceId })) return 'legal_hold' as const;
     const boards = await deleteBoardRowsInWorkspace(workspaceId);
     await repo.deleteTeam(workspaceId);
     await recordAudit({
@@ -542,7 +547,7 @@ async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | nu
     });
     return boards;
   });
-  if (gone === 'held') return 'held';
+  if (gone === 'held' || gone === 'legal_hold') return gone;
   if (gone) await cleanUpDeletedBoards(gone);
   return gone ? gone.length : null;
 }
@@ -1102,7 +1107,10 @@ export async function handOverTeamWorkspaces(userId: string): Promise<{ held: nu
         });
       return null;
     });
-    if (orphaned && (await deleteTeamWorkspaceNow(orphaned, null)) === 'held') held++;
+    if (orphaned) {
+      const r = await deleteTeamWorkspaceNow(orphaned, null);
+      if (r === 'held' || r === 'legal_hold') held++;
+    }
   }
   return { held };
 }
