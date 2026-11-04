@@ -275,8 +275,10 @@ What is sealed by the app today (audit, KAI-143):
 A team workspace may turn on its own encryption key (admin console → Security → Encryption key;
 design: [design/compliance.md §3](design/compliance.md)). Its board content is then stored sealed
 (AES-256-GCM) under versioned data keys, each wrapped by the workspace's key-encryption key: the
-instance's (derived from `SESSION_SECRET`) or the workspace's own AWS KMS key (`KMS_AWS_*` in
-[configuration.md](configuration.md#workspace-encryption-keys)).
+instance's (derived from `SESSION_SECRET`) or the workspace's own key at AWS KMS, Google Cloud KMS,
+Azure Key Vault or Vault Transit (`KMS_*` in [configuration.md](configuration.md#workspace-encryption-keys)).
+Files uploaded to its boards are sealed with the same data keys (in 64 KiB chunks, so video still
+seeks) and served only through the server, never by a bucket URL.
 
 - **Rolling out.** Turn the feature on only once every instance runs a release that has it: an
   older instance can't open sealed rows (it fails on them — the stored form starts with bytes no
@@ -285,7 +287,17 @@ instance's (derived from `SESSION_SECRET`) or the workspace's own AWS KMS key (`
 - **A customer's own key.** They create a symmetric KMS key and allow your `KMS_AWS_*` principal
   `kms:Encrypt` and `kms:Decrypt` on it, conditioned on `kms:EncryptionContext:freero_workspace`
   = their workspace id; then paste its ARN. Freero checks the key both ways before it seals anything.
-  Every use shows in their CloudTrail with that context.
+  Every use shows in their CloudTrail with that context. Google Cloud KMS: a symmetric key, its
+  resource name pasted, `roles/cloudkms.cryptoKeyEncrypterDecrypter` for your service account.
+  Azure Key Vault: an RSA key (2048+), its URL pasted, wrap key / unwrap key for your app; a key URL
+  without a version wraps with its current version and keeps unwrapping older data keys with the
+  version that wrapped them. Vault Transit (your own Vault, e.g. self-hosted): one Transit key per
+  workspace, its path (`transit/keys/<name>`) pasted.
+- **Files.** A file uploaded to a keyed workspace's board is sealed when it is stored; files uploaded
+  before the key was turned on, or under an older data key, are sealed again by the `uploads:seal`
+  job (every minute, a batch at a time). A board moved to another workspace takes the files only it
+  uses to the target's key (a file other boards of the source still show stays the source's). Old
+  clients upload without naming the board: those files stay under storage encryption only.
 - **Rotation, no downtime.** "Rotate key" re-wraps every data key (under a new KMS key, if one is
   given) and adds a new data key for new content; older content keeps opening and is sealed again
   under the newest data key by the `keys:seal` job (a few boards a minute). Rotating `SESSION_SECRET`

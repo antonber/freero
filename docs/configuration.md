@@ -246,7 +246,7 @@ Owners/admins of a team workspace stream its audit log to Splunk (HTTP Event Col
 
 ## Workspace encryption keys
 
-A team workspace's security admins turn on an encryption key in the admin console (Security tab): the workspace's board content (documents, update log, versions, layers) is then stored sealed with data keys wrapped by the instance's key or by the workspace's own AWS KMS key. Design, coverage and failure modes: [design/compliance.md §3](design/compliance.md); operating it: [operations.md](operations.md#workspace-encryption-keys).
+A team workspace's security admins turn on an encryption key in the admin console (Security tab): the workspace's board content (documents, update log, versions, layers) and the files uploaded to its boards are then stored sealed with data keys wrapped by the instance's key or by the workspace's own key at AWS KMS, Google Cloud KMS, Azure Key Vault or a HashiCorp Vault Transit engine (each offered only when its credentials below are set). Design, coverage and failure modes: [design/compliance.md §3](design/compliance.md); operating it: [operations.md](operations.md#workspace-encryption-keys).
 
 | Variable | Default | Description |
 |---|---|---|
@@ -255,6 +255,13 @@ A team workspace's security admins turn on an encryption key in the admin consol
 | `KMS_AWS_ACCESS_KEY_ID`, `KMS_AWS_SECRET_ACCESS_KEY` | — | The AWS principal Freero calls KMS as (`kms:Encrypt` and `kms:Decrypt` on customers' keys, granted by THEIR key policies, with the encryption context `freero_workspace`). Unset: only the instance's key is offered. |
 | `KMS_AWS_SESSION_TOKEN` | — | For temporary credentials. |
 | `KMS_AWS_ENDPOINT` | `https://kms.<the key's region>.amazonaws.com/` | Another KMS endpoint (a VPC endpoint, FIPS endpoint, or a test double). |
+| `KMS_GCP_CREDENTIALS` | — | The Google Cloud service account Freero calls Cloud KMS as: its JSON key, as is or base64. Customers grant it `roles/cloudkms.cryptoKeyEncrypterDecrypter` on their key; Freero binds `freero_workspace=<id>` as additional authenticated data. Unset: Google Cloud KMS keys are not offered. |
+| `KMS_GCP_ENDPOINT` | `https://cloudkms.googleapis.com/` | Another Cloud KMS endpoint (Private Service Connect, a test double). The token endpoint is the key file's `token_uri`. |
+| `KMS_AZURE_TENANT_ID`, `KMS_AZURE_CLIENT_ID`, `KMS_AZURE_CLIENT_SECRET` | — | The Entra ID app registration Freero calls Azure Key Vault as (client credentials). Customers give it wrap key / unwrap key on their RSA key (an access policy, or the Key Vault Crypto Service Encryption User role). Unset: Azure Key Vault keys are not offered. |
+| `KMS_AZURE_AUTHORITY` | `https://login.microsoftonline.com/` | Another Entra ID authority (a national cloud, a test double). |
+| `KMS_AZURE_ENDPOINT` | — | Send Key Vault calls to this origin instead of the key URL's (a private endpoint, a test double). |
+| `KMS_VAULT_ADDR`, `KMS_VAULT_TOKEN` | — | A HashiCorp Vault whose Transit engine holds one key per workspace, and a token whose policy allows `update` on `<mount>/encrypt/<key>` and `<mount>/decrypt/<key>` (a periodic token, renewed by your Vault agent). Unset: Vault Transit keys are not offered. |
+| `KMS_VAULT_NAMESPACE` | — | Vault Enterprise / HCP namespace. |
 
 ## Slack link unfurls, direct messages and /freero
 

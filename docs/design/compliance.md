@@ -172,12 +172,40 @@ modules/boards       boards.label_id → workspace_labels ON DELETE RESTRICT
   would shed its caps. A label that caps nothing simply drops (the target's default applies).
 - **Deleting a label** in use is refused (409, with how many boards carry it): relabel first.
 
-### Sensitive-data scan (optional, lower priority)
+### Sensitive-data scan (optional)
 
 A workspace setting (off by default) runs a detector over board text when boards change (the
 outbox, like search): payment card numbers (Luhn-checked), IBANs (mod-97), US SSNs and UK NI
 numbers in their formats. Findings — board, item, kind, never the matched text — go to the
 workspace's admins (a notification and a list in the console). Nothing leaves the instance.
+
+Built as `modules/dlp` (it owns `dlp_settings`, `dlp_board_scans`, `dlp_findings`):
+
+- **What is scanned**: search's rows (`searchRowsOf`) — what every reader of the board sees: items,
+  comments, the title; never private drafts or hidden frames' contents (they are someone's, not the
+  board's). A board in a keyed workspace whose key is unavailable reads as empty, so its findings
+  clear and come back with the key.
+- **What it looks for** (`dlp/detect.ts`, only formats that are unambiguous on their own): payment
+  cards (13–19 digits in any grouping, a card network's prefix and length, Luhn), IBANs (the
+  country's length, mod-97), US SSNs (AAA-GG-SSSS without the reserved areas, groups and serials)
+  and UK NI numbers (valid prefixes and suffix), credentials by their issuer's prefix (AWS access key
+  ids, GitHub, GitLab, Slack, Stripe live, Google API, npm, SendGrid, OpenAI / Anthropic keys, PEM and
+  OpenSSH private key blocks) and, opt-in, email addresses and international phone numbers. Other
+  national IDs are not detected: their formats collide with ordinary numbers.
+- **What a finding does** (the workspace's action): `notify` — its owners and content admins get a
+  `sensitive_data.found` notification (board title and kinds; once per board and set of kinds) and
+  the console lists it; `suggest` — also, the board's managers see a "Sensitive data" chip beside
+  its title with the suggested label (one click gives it); `require` — also, Freero gives the board
+  the label (boards' `applyLabelByPolicy`, audited `board.label_changed` with `reason:
+  sensitive_data`, no actor) unless its label is already at least as strict (caps key by key), and
+  while the board holds findings boards' `onLabelChange` guard refuses relabelling it to anything
+  less strict (409 `label_required_by_scan`). Once the data is gone the label stays, and can be
+  changed again.
+- **Never the text**: findings keep item key, kind and count; notifications, the audit record
+  (`sensitive_data.settings_changed`, `board.label_changed`) and logs carry no matched text — a test
+  asserts the card number, key and IBAN appear in none of them.
+- Turning the scan on (or changing what it looks for) scans every board of the workspace in the
+  background; turning it off deletes every finding.
 
 ### Built / left
 
@@ -191,9 +219,14 @@ Tests: `boards/labels.test.ts` (every way in capped at once — link, visitors, 
 share, embed — for settings made before the label; copies, moves, required labels, who may relabel,
 the audit record).
 
-Left: **the sensitive-data scan is not built** (the issue marks it optional and lower priority;
-the design above stands). The label is shown in the share dialog only — not yet as a badge on the
-board's top bar or the dashboard cards.
+Also built: the sensitive-data scan above (`modules/dlp`; tests `dlp/detect.test.ts`,
+`dlp/scan.test.ts`), the console's "Sensitive-data scan" card in the Classification tab, and the
+label as a badge beside the board's title (with the scan's chip for its managers) and on dashboard
+cards and rows.
+
+Left: organisations can't run the scan for all their workspaces (each team workspace sets its
+own); findings are listed for content admins in the console only (no export, no API); a board's
+chip refreshes when the board is opened, not live as findings appear.
 
 ---
 
@@ -230,8 +263,10 @@ data                     each sealed row names its DEK (`sealed_with` = '<worksp
   comments, version history, private drafts and the editors layer. All of it goes through
   `realtime/repo.ts`, which seals on write (`realtime/sealing.ts`) and opens on read; a write for a
   keyed workspace whose key can't be used throws and writes nothing.
-- **Not covered (metadata)**: board titles and descriptions, members, the audit log, and uploaded
-  files (still storage-encrypted only; see "Left"). Thumbnails are not stored for keyed
+- **Uploaded files** of the workspace's boards: see "Files" below.
+- **Not covered (metadata)**: board titles and descriptions, members, the audit log, and files
+  uploaded without a board (avatars, imports by URL outside a board, files from older clients) —
+  storage-encrypted only. Thumbnails are not stored for keyed
   workspaces. Offline copies on devices (#178) are not kept for keyed workspaces either,
   unless their `offlineCopies` policy is 'all' (the device's own key can't be suspended by the
   workspace's KMS; a suspended key closes the board, and the device deletes its copy the next time
@@ -260,6 +295,57 @@ data                     each sealed row names its DEK (`sealed_with` = '<worksp
   compacting it away). `WORKSPACE_KEYS` is off by default — off, nothing is sealed and, while no
   workspace ever had a key, board reads, writes and access checks do no key lookups (`keysInUse`);
   turn it on after every instance runs the release.
+
+### Files
+
+- **Whose**: a file uploaded to a board (`POST /api/uploads?board=<id>`, placing a GIF, a backup
+  restored into the workspace) is that board's workspace's (`uploads.workspace_id`). Uploading needs
+  comment access to the board. With a key, the file is stored sealed (`uploads.sealed_with`); a
+  workspace whose key can't seal refuses the upload (403) rather than store it in the clear.
+- **Format** (`uploads/sealedFiles.ts`): a header (a magic that is no image, document or media
+  signature; the data-key reference; chunk size; size) and 64 KiB chunks, each sealed with the
+  workspace's data key and additional data naming the workspace, the file, the chunk's index and
+  the chunk count — a chunk moved, dropped, repeated or copied into another file never opens. The
+  header names the data key, so a file being sealed again reads right whichever version a reader
+  finds.
+- **Serving**: every read of an upload goes through `openStoredUpload` — `/uploads/<name>`, board
+  and comment downloads, exports, backups, renders, moderation. A sealed file is never redirected
+  to the bucket (which holds only ciphertext), is sent `Cache-Control: private, no-cache` so no
+  shared cache keeps it, opens only the chunks a byte range covers, and answers 403
+  `workspace_key_unavailable` while the key can't be used — a revalidation (304) included. The first
+  chunk is opened before anything is answered, so a file that doesn't open fails with a status.
+  Readers that leave files out when gone (`readUpload`: exports, backups, renders) leave out a file
+  whose key is unavailable.
+- **Moves**: a board moved to another workspace hands it the files that are only that board's in the
+  source (`onBoardMovedWorkspace`), sealed again for the target's key (or opened, for a target
+  without one); a file other boards of the source still show stays the source's, so moving one board
+  never puts another board's picture under a key the source doesn't control. A file pasted into
+  another workspace's board stays its own workspace's, and shows there while that key is usable.
+- **The `uploads:seal` job** (every minute) seals files again whose workspace now seals
+  differently: a key turned on after they were uploaded, a newer data key, a move whose resealing
+  didn't finish. Files of a workspace whose key can't be used wait.
+- **Unaffected**: the uploads sweep and usage work on names (sealed boards' references are in
+  `board_sealed_refs`); quotas count the size uploaded. A sealed file's row outlives its uploader's
+  account (the purge detaches it like a removed file's), so it never loses the mark that it is sealed.
+
+### Other key services
+
+Google Cloud KMS, Azure Key Vault and HashiCorp Vault Transit sit behind the same provider
+interface as AWS KMS (`keys/kek.ts` `KmsProvider`: wrap, unwrap, which key ids are its own, whether
+this server has credentials), one file each, no SDKs:
+
+| Provider | Key id pasted | Auth (operator's credentials) | Workspace binding | Refused vs outage |
+|---|---|---|---|---|
+| AWS KMS | key ARN | SigV4 (`sigv4.ts`) | encryption context | KMS error types; 5xx / throttling = outage |
+| Google Cloud KMS | `projects/…/cryptoKeys/…` | OAuth token for a JWT signed RS256 with the service account's key | additional authenticated data | 4xx (but 408 / 429) refused, 401 = token renewed; 5xx outage |
+| Azure Key Vault | `https://<vault>.vault.azure.net/keys/<name>[/<version>]` | client-credentials token | `<workspaceId>.` prefixed to the wrapped key | 4xx refused (disabled key, access removed); 5xx outage; the version that wrapped is stored with the wrapped key |
+| Vault Transit | `<mount>/keys/<name>` | `X-Vault-Token` (+ namespace) | `<workspaceId>.` prefixed to the plaintext | 403 / 400 refused; 503 (sealed) and 5xx outage |
+
+Tested against stand-ins that check what the services check (`keys/providers.test.ts`: the Google
+token endpoint verifies the JWT's signature, audience and scope; Key Vault wraps with a real
+RSA-OAEP-256 key; Transit encrypts with AES-GCM): a refusal makes the key unavailable and closes the
+boards although the data key is cached, an outage changes nothing, restored access reopens them,
+and a wrapped key copied to another workspace never unwraps.
 
 ### Rotation and revocation
 
@@ -312,14 +398,17 @@ doesn't touch it; out to an unkeyed workspace), `keys/kms.test.ts` (a customer's
 closes boards despite a cached DEK and recovery reopens them; an unusable KMS key can't be turned
 on; SigV4 against AWS's published test vectors).
 
+Also built: files under the workspace key ("Files" above; `uploads/keyedFiles.test.ts`: ciphertext
+at rest, served opened with byte ranges, nothing served — not a 304, a download or an export —
+while suspended, another file's bytes or one altered byte never served, files sealed after the key
+is turned on and again after a rotation; `boards/keyedMove.test.ts`: a moved board's own files go
+to the target's key, a shared one stays) and the other key services ("Other key services" above).
+
 Left:
-- **Uploaded files under the workspace key.** Uploads are made without a board (`POST /api/uploads`),
-  are shared between boards and workspaces by URL, and raster images are served by redirect to the
-  bucket; sealing them needs a board context on upload, serving through the server with ranges,
-  and a rule for a file pasted into another workspace. Files stay under storage encryption
-  (`S3_SSE`, possibly `aws:kms` with the operator's key).
-- **Other external KMSs** (Google Cloud KMS, Azure Key Vault, HashiCorp Vault Transit): the
-  provider interface (`keys/kek.ts` wrap / unwrap, refused vs unreachable) takes them; none built.
+- Files uploaded without a board (avatars, the workspace's sticker images, images
+  imported by URL through the public API) and files uploaded by clients older than this release
+  stay under storage encryption only.
+- Vault Transit uses one Vault the operator configures (a token per instance, not per workspace).
 - A workspace's own key can't be turned off again (only destroyed); organisations can't hold a key
   for all their workspaces.
 
