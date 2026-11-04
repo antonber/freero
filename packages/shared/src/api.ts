@@ -1526,8 +1526,8 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 // GET  /api/notifications?before=<ms>&limit=<n> -> NotificationsResponse  (newest first; 30 by default)
 // POST /api/notifications/read   body { ids?: string[] } -> { unread }  (no ids: mark all read)
 // GET  /api/notifications/prefs  -> NotificationPrefs
-// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, emailAll?: boolean,
-//      boardChanges?: BoardChangesFrequency } -> NotificationPrefs
+// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, slack?: { [type]: boolean },
+//      emailAll?: boolean, boardChanges?: BoardChangesFrequency } -> NotificationPrefs
 // POST /api/notifications/unsubscribe?token=<t>[&list=board-changes]  (no session needed: the signed
 //      link from a digest email, also its RFC 8058 one-click target) -> { ok: true, email, list } | 400
 //      (list 'board-changes': the "changes on your boards" email only; else every notification email)
@@ -1579,7 +1579,14 @@ export interface AppNotification {
   };
 }
 export interface NotificationsResponse { notifications: AppNotification[]; unread: number; hasMore: boolean }
-export interface NotificationTypePref { type: NotificationType; label: string; description: string; email: boolean }
+export interface NotificationTypePref {
+  type: NotificationType;
+  label: string;
+  description: string;
+  email: boolean;
+  /** [additive, #105] Sent to Slack as a direct message, while a Slack account is connected (instead of the email). */
+  slack: boolean;
+}
 export interface NotificationPrefs {
   /** Master switch for notification emails (the one-click unsubscribe turns it off). */
   emailAll: boolean;
@@ -1590,9 +1597,26 @@ export interface NotificationPrefs {
    * your time zone). Its own unsubscribe link turns only it off; `emailAll` off stops it too.
    */
   boardChanges: BoardChangesFrequency;
+  /**
+   * [additive, #105] Personal Slack: null when this server offers no "Connect Slack"; `linked`: the
+   * person connected a Slack account, so the types' `slack` switches apply.
+   */
+  slack: { linked: boolean } | null;
 }
 export type BoardChangesFrequency = 'off' | 'daily' | 'weekly';
 export type NotificationsLiveMessage = { type: 'changed'; unread: number };
+
+// ---- Personal Slack (modules/slack, #105; docs/integrations/slack.md) ----
+// GET    /api/integrations/slack/me                 -> SlackAccountInfo
+// DELETE /api/integrations/slack/me                 -> { ok: true }   disconnects (404 when not offered)
+// GET    /api/integrations/slack/oauth/start        -> 302 to Slack's consent (signed in; 404 when not offered)
+// GET    /api/integrations/slack/oauth/callback     -> 302 /settings?slack=connected#slack | ?slack_error=<message>#slack
+// POST   /api/integrations/slack/commands           Slack's slash command request URL (signed by Slack)
+export interface SlackAccountInfo {
+  /** The server's operator turned "Connect Slack" on. */
+  offered: boolean;
+  link: { teamName: string; slackName: string; linkedAt: number } | null;
+}
 
 // ---- Uploads ----
 // POST /api/uploads  raw body (image/png|jpeg|gif|webp|svg+xml), header Content-Type,
@@ -2414,6 +2438,9 @@ export const AUDIT_ACTIONS = {
   'siem.sink_created': 'Started streaming the audit log to a SIEM',
   'siem.sink_updated': 'Changed an audit log stream',
   'siem.sink_deleted': 'Stopped streaming the audit log to a SIEM',
+  // Personal Slack (modules/slack, #105): the Slack account and workspace ids, never a token.
+  'slack.account_linked': 'Connected a Slack account',
+  'slack.account_unlinked': 'Disconnected a Slack account',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',

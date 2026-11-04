@@ -1,6 +1,9 @@
 // The only writer of `notifications`, `notification_prefs`, `pending_mentions`, `card_due_watch` and
 // `board_change_digests` [S4].
 import { isForeignKeyViolation, one, query } from '../../platform/db';
+
+/** Runs `cb` once the caller's transaction committed (platform/db), e.g. to send what it created. */
+export { afterCommit } from '../../platform/db';
 import type { NotificationData } from './types';
 
 export interface NotificationRow {
@@ -12,6 +15,8 @@ export interface NotificationRow {
   data: NotificationData;
   createdAt: number;
   readAt: number | null;
+  /** Claimed for (or sent to) Slack as a direct message (#105): the digest leaves it out. */
+  slackedAt: number | null;
 }
 
 interface Row {
@@ -23,9 +28,10 @@ interface Row {
   data: NotificationData | string;
   created_at: Date;
   read_at: Date | null;
+  slacked_at: Date | null;
 }
 
-const COLUMNS = 'id, user_id, type, actor_id, board_id, data, created_at, read_at';
+const COLUMNS = 'id, user_id, type, actor_id, board_id, data, created_at, read_at, slacked_at';
 
 const toRow = (r: Row): NotificationRow => ({
   id: r.id,
@@ -36,10 +42,11 @@ const toRow = (r: Row): NotificationRow => ({
   data: typeof r.data === 'string' ? (JSON.parse(r.data) as NotificationData) : r.data,
   createdAt: r.created_at.getTime(),
   readAt: r.read_at ? r.read_at.getTime() : null,
+  slackedAt: r.slacked_at ? r.slacked_at.getTime() : null,
 });
 
 /** False when it already exists (same dedupe key) or its recipient / board is gone. */
-export async function insert(n: Omit<NotificationRow, 'readAt'> & { dedupeKey: string | null }): Promise<boolean> {
+export async function insert(n: Omit<NotificationRow, 'readAt' | 'slackedAt'> & { dedupeKey: string | null }): Promise<boolean> {
   try {
     const rows = await query(
       `INSERT INTO notifications (id, user_id, type, actor_id, board_id, data, dedupe_key, created_at)
@@ -103,6 +110,24 @@ export async function unclaim(ids: string[]): Promise<void> {
   if (ids.length) await query(`UPDATE notifications SET emailed_at = NULL WHERE id = ANY($1::text[])`, [ids]);
 }
 
+// ---- Slack direct messages (#105) ----
+
+/**
+ * Claims a notification for Slack: false when it already went to Slack or the digest job has
+ * dealt with it (so one notification is one message: a DM or part of an email, never both).
+ */
+export async function claimForSlack(id: string, now: number): Promise<boolean> {
+  return (await query(`UPDATE notifications SET slacked_at = $2 WHERE id = $1 AND slacked_at IS NULL AND emailed_at IS NULL RETURNING 1`, [id, new Date(now)])).length > 0;
+}
+
+/**
+ * Slack refused it: hands it to the email digest. A digest that claimed it meanwhile skipped it as
+ * sent to Slack, so its claim is undone too.
+ */
+export async function unclaimSlack(id: string): Promise<void> {
+  await query(`UPDATE notifications SET slacked_at = NULL, emailed_at = NULL WHERE id = $1 AND slacked_at IS NOT NULL`, [id]);
+}
+
 // ---- mentions of invited addresses (pending_mentions) ----
 
 export interface PendingMention {
@@ -155,8 +180,26 @@ export async function sweepPendingMentions(before: number): Promise<void> {
 
 /** type ('*' = all emails) -> email on/off, for the rows the user changed from the default. */
 export async function prefs(userId: string): Promise<Map<string, boolean>> {
-  const rows = await query<{ type: string; email: boolean }>(`SELECT type, email FROM notification_prefs WHERE user_id = $1`, [userId]);
-  return new Map(rows.map((r) => [r.type, r.email]));
+  const rows = await query<{ type: string; email: boolean | null }>(`SELECT type, email FROM notification_prefs WHERE user_id = $1 AND email IS NOT NULL`, [userId]);
+  return new Map(rows.map((r) => [r.type, r.email === true]));
+}
+
+/** type -> Slack on/off (#105), for the types the user changed from the default. */
+export async function slackPrefs(userId: string): Promise<Map<string, boolean>> {
+  const rows = await query<{ type: string; slack: boolean | null }>(`SELECT type, slack FROM notification_prefs WHERE user_id = $1 AND slack IS NOT NULL`, [userId]);
+  return new Map(rows.map((r) => [r.type, r.slack === true]));
+}
+
+export async function setSlackPref(userId: string, type: string, slack: boolean): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO notification_prefs (user_id, type, slack) VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, type) DO UPDATE SET slack = excluded.slack`,
+      [userId, type, slack],
+    );
+  } catch (e) {
+    if (!isForeignKeyViolation(e)) throw e; // the account was deleted meanwhile
+  }
 }
 
 export async function setPref(userId: string, type: string, email: boolean): Promise<void> {

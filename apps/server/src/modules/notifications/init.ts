@@ -31,6 +31,7 @@ export default function initNotifications(ctx: ServerContext): void {
   ctx.onShutdown(async () => {
     stops.forEach((stop) => stop());
     await cards.flushCardNotifications();
+    await service.slackDeliveriesSettled();
   });
   scheduleExclusiveJob(ctx, {
     name: 'notifications:digest',

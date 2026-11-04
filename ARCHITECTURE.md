@@ -1375,7 +1375,7 @@ marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Anal
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
-"Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+"Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (slack_teams, slack_user_links, slack_oauth_flows: the operator's Slack app — link unfurls, and personal Slack: people's linked Slack accounts, direct messages, `/freero`; see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
 Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
@@ -1426,6 +1426,12 @@ reports" below).
   `NOTIFY_EMAIL_DELAY_SECONDS` as ONE digest (claim-then-send; a failed send is handed back),
   only to verified addresses, honoring per-type opt-outs and the master switch that the signed,
   session-less unsubscribe link (`List-Unsubscribe` one-click too) turns off.
+  Slack (#105): `notify` hands each NEW notification, once committed (`repo.afterCommit`), to
+  slack's `sendSlackDm` when the person connected Slack and wants that type there
+  (`notification_prefs.slack`, else the type's `slackByDefault`; `direct` types never). It is
+  claimed first (`slacked_at`, only while `emailed_at` is null too), so it is one direct message
+  at most and the digest leaves it out; a refused message is unclaimed (both columns) and goes into
+  the next digest. A notification is delivered by Slack or by email, never both.
   "Changes on your boards" (`notifications/boardChanges.ts`, #46): opt-in per person, daily or
   weekly (Monday), sent from 08:00 in their time zone (`next_at` is worked out when the window
   moves; `nextDigestAt` steps by quarter hours so half-hour zones work). It summarises what OTHERS
@@ -2498,7 +2504,7 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   team can open" rule; a new chat app is a `WEBHOOK_FORMATS` value plus a renderer, never more
   content than the `json` event. Mattermost has its own renderer (Slack's body isn't safe there:
   Mattermost ignores `blocks` and pings on a plain `@channel`). Matrix has no standard incoming hook.
-- **Slack link unfurls** (`modules/slack`, no table, off unless `SLACK_SIGNING_SECRET` +
+- **Slack link unfurls** (`modules/slack`, off unless `SLACK_SIGNING_SECRET` +
   `SLACK_BOT_TOKEN`): `POST /api/integrations/slack/events` (cross-site POST: Slack's servers, proven
   by the v0 signature only — five-minute window, constant-time compare; the URL challenge too).
   `link_shared` is acknowledged at once and answered with `chat.unfurl`, deduplicated per event id,
@@ -2507,6 +2513,22 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   account may open by its link (no password, guests allowed); everything else, including "no such
   board", is one generic card, so previews never reveal a private board's name or existence. The app
   manifest is built by `slack/manifest.ts` (`npm run admin -- slack:manifest`; deploy/ ships it).
+- **Personal Slack** (`modules/slack`, #105; off unless `SLACK_CLIENT_ID` + `SLACK_CLIENT_SECRET` on
+  top of the above — `slackConnectOffered()` gates every piece, so removing them turns it all off
+  and keeps the links). `oauth.ts`: Slack OAuth v2 with bot scopes only (no user token); the state
+  is single use, ten minutes, hashed in `slack_oauth_flows` and bound to the account and an HttpOnly
+  cookie (trackers' pattern); `oauth.v2.access`'s answer names the Slack team and user that the
+  link (`slack_user_links`, one per Freero account and per Slack account) stores, its bot token is
+  sealed per Slack team in `slack_teams` (`links.ts` `botTokenFor`: that, else `SLACK_BOT_TOKEN`).
+  Unlinking the last person of a team deletes and `auth.revoke`s that team's token unless it is
+  `SLACK_BOT_TOKEN`; `app_uninstalled` / `tokens_revoked` forget the team. `dm.ts` writes in the
+  DM channel `conversations.open` gave at connect time; modules/notifications decides what and
+  when. `commands.ts`: `POST /api/integrations/slack/commands` (cross-site, form body read raw and
+  v0-verified over its exact bytes) acts only as the Freero account linked to that Slack user:
+  `new` → boards' `createBoardFor` (personal workspace), words → `listBoardsIn` over their
+  workspaces. Unfurls: a link posted by a linked Slack user (`link_shared.user`) to a board they
+  can open (`boardSummaryFor`) shows its title / description / thumbnail; for everyone else
+  `publicLinkPreview`'s rule stands. Untrusted text is mrkdwn-escaped everywhere.
 - **Meeting notes** are a structure kind, `meeting` (`@freero/shared` `layout/meeting.ts`: a pure
   reader of Markdown / text / WebVTT / SRT — headings, bullets, check boxes, owner and due phrases,
   speaker labels, cue times; no AI — and its one-frame layout). So the web (`features/meeting-notes`:

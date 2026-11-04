@@ -6,7 +6,7 @@ import * as repo from './repo';
 /** For a person's data export: every notification they have (newest first) and their email settings. */
 export async function notificationsExportOf(
   userId: string,
-): Promise<{ notifications: unknown[]; emailSettings: Record<string, boolean>; boardChangesEmail: string }> {
+): Promise<{ notifications: unknown[]; emailSettings: Record<string, boolean>; slackSettings: Record<string, boolean>; boardChangesEmail: string }> {
   const rows = await repo.list(userId, 100_000, null);
   return {
     notifications: rows.map((n) => ({
@@ -18,6 +18,7 @@ export async function notificationsExportOf(
       readAt: n.readAt === null ? null : new Date(n.readAt).toISOString(),
     })),
     emailSettings: Object.fromEntries(await repo.prefs(userId)),
+    slackSettings: Object.fromEntries(await repo.slackPrefs(userId)),
     boardChangesEmail: (await repo.boardChangeDigestOf(userId))?.frequency ?? 'off',
   };
 }
