@@ -75,8 +75,25 @@ function freeroAnalytics(): Plugin {
   };
 }
 
+/**
+ * Translations ship without their bookkeeping (docs/design/i18n.md): a catalogue's "@@unreviewed"
+ * list is for reviewers, not for the page that downloads it.
+ */
+function freeroCatalogs(): Plugin {
+  return {
+    name: 'freero-catalogs',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/[\\/]locales[\\/][A-Za-z-]+\.json$/.test(id)) return null;
+      const data = JSON.parse(code) as Record<string, unknown>;
+      for (const k of Object.keys(data)) if (k.startsWith('@@')) delete data[k];
+      return { code: JSON.stringify(data), map: null };
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), freeroServiceWorker(), freeroAnalytics()],
+  plugins: [freeroCatalogs(), react(), freeroServiceWorker(), freeroAnalytics()],
   customLogger: logger,
   resolve: {
     // Layer entry points. Features/app import '@engine' and '@ui' only — see ARCHITECTURE.md.
