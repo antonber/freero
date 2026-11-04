@@ -289,5 +289,10 @@
   "keepItUnder120Characters": "Keep it under 120 characters",
   "couldNotRenameTheBoard": "Could not rename the board",
   "renameBoard": "Rename board",
-  "somethingWentWrong": "Something went wrong"
+  "somethingWentWrong": "Something went wrong",
+  "itKeepsItsLinkComments": "It keeps its link, comments, files and history. People who had access through its current workspace lose it; people invited to the board keep their access as the new workspace allows.",
+  "pickSomeoneThisBoardIs": "Pick someone this board is shared with. It moves to their personal workspace; the current owner keeps edit access.",
+  "peopleInNameMembersSee": "People in {name}. Members see every board the team shares; guests only what’s shared with them.",
+  "handTheWorkspaceToAnother": "Hand the workspace to another member. They become an owner; you stay on as an admin.",
+  "deletesTheWorkspaceAndEvery": "Deletes the workspace and every board in it, for everyone. This can’t be undone. Export it first if you need a copy; every owner gets a receipt."
 }

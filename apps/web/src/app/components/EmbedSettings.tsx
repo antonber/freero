@@ -67,7 +67,7 @@ export function EmbedSettings({ board, onChange }: { board: BoardSummary; onChan
     board.linkAccess === 'none'
       ? t('onlyPeopleWithAccessAfter')
       : board.permissions.guestLinks && !board.linkProtection?.password
-        ? 'Anyone can view it; people who sign in get their access'
+        ? t('anyoneCanViewItPeople')
         : t('peopleSignInToSee');
 
   return (

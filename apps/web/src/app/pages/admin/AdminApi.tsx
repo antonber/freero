@@ -110,7 +110,7 @@ export function AdminApi({ workspace }: { workspace: WorkspaceSummary }) {
           </table>
         </div>
       )}
-      <p className="fr-admin__muted">A block applies to this workspace only; the person can still use the token or app elsewhere. Revoking it is up to them.</p>
+      <p className="fr-admin__muted">{t('aBlockAppliesToThis')}</p>
     </section>
   );
 }

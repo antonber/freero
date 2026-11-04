@@ -548,7 +548,7 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
         )}
         <TextArea
           label={adverse ? tr('statementToThePersonAffected') : tr('messageToThePersonAffected')}
-          hint="Sent by email with the decision. Say what was wrong and where; it is also what they appeal against."
+          hint={tr('sentByEmailWithThe')}
           value={statement}
           rows={4}
           maxLength={2000}

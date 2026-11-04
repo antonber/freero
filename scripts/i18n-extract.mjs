@@ -59,7 +59,8 @@ const codeish = (s) =>
   /^\s*[MmLlCcQqAaHhVvZz]\s*(-?[\d.]|x\b|,)/.test(s) || // SVG path data
   /(^|\s)x(px|%)?$/.test(s.trim()) && !/\p{L}{2,}/u.test(s.replace(/ x /g, ' ')) || // just a number and a unit
   PROPER.test(s.trim()) ||
-  /[{};<>=\\]|\$\(|=>|\bfunction\b/.test(s) ||
+  /[{}<>=\\]|\$\(|=>|\bfunction\b/.test(s) ||
+  /[\w-]+:[^\s;]+;|^\s*[\w-]+\s*:\s*[^;]+;\s*[\w-]+\s*:/.test(s) || // CSS declarations
   /^[A-Z0-9_]+$/.test(s.trim()) ||
   /^[a-z][a-zA-Z0-9]*([.:/-][a-zA-Z0-9]+)+$/.test(s.trim()) || // ids, keys, mime types
   /^(Mod|Shift|Alt|Ctrl|Meta|Arrow|Escape|Enter|Tab|Backspace|Delete)\b[+A-Za-z]*$/.test(s.trim());
@@ -207,7 +208,9 @@ function processFile(sf, checker, unit) {
     ts.forEachChild(n, visitDecl);
   };
   visitDecl(sf);
-  const T = declaresT.has('t') ? (declaresT.has('tr') ? 'tx' : 'tr') : 't';
+  // A file that already shows its unit's messages keeps the name it imports them under.
+  const existing = /import\s*\{\s*t(?:\s+as\s+(\w+))?\s*\}\s*from\s*['"][^'"]*\bmessages['"]/.exec(src);
+  const T = existing ? existing[1] ?? 't' : declaresT.has('t') ? (declaresT.has('tr') ? 'tx' : 'tr') : 't';
 
   const isTextual = (e) => ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) || ts.isTemplateExpression(e);
   const strip = (e) => {
@@ -504,7 +507,8 @@ function processFile(sf, checker, unit) {
       }
       if (ts.isJsxExpression(k) && k.expression && !k.dotDotDotToken) {
         const ex = strip(k.expression);
-        if (pluralConditional(ex) || ts.isStringLiteral(ex) || ts.isNoSubstitutionTemplateLiteral(ex) || (!ts.isConditionalExpression(ex) && !ts.isBinaryExpression(ex) && !ts.isJsxElement(ex) && !ts.isJsxSelfClosingElement(ex) && !ts.isJsxFragment(ex) && !ts.isTemplateExpression(ex) && isStringish(ex))) {
+        const alreadyT = ts.isCallExpression(ex) && ts.isIdentifier(ex.expression) && ['t', 'tr', 'tx'].includes(ex.expression.text);
+        if (!alreadyT && (pluralConditional(ex) || ts.isStringLiteral(ex) || ts.isNoSubstitutionTemplateLiteral(ex) || (!ts.isConditionalExpression(ex) && !ts.isBinaryExpression(ex) && !ts.isJsxElement(ex) && !ts.isJsxSelfClosingElement(ex) && !ts.isJsxFragment(ex) && !ts.isTemplateExpression(ex) && isStringish(ex)))) {
           run.push(k);
           continue;
         }
@@ -575,7 +579,7 @@ function processFile(sf, checker, unit) {
   let rel = slash(path.relative(fileDir, path.join(WEB, unit, 'messages')));
   if (!rel.startsWith('.')) rel = `./${rel}`;
   const imp = T === 't' ? `import { t } from '${rel}';` : `import { t as ${T} } from '${rel}';`;
-  if (!out.includes(imp)) {
+  if (!existing && !out.includes(imp)) {
     const imports = [...out.matchAll(/^import[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm)];
     if (imports.length) {
       const last = imports[imports.length - 1];

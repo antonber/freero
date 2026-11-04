@@ -387,7 +387,7 @@ function VotingWorld({ editor }: { editor: Editor }) {
 function votesLeftText(v: VotingView, role: Role, closed: boolean): string {
   if (closed) return tr('timeSUpNoMore');
   if (!v.canVote)
-    return role === 'commenter' ? 'You can comment; voting is open to editors on this board' : tr('viewOnlyYouCanWatch');
+    return role === 'commenter' ? tr('youCanCommentVotingIs') : tr('viewOnlyYouCanWatch');
   if (!v.eligible.length) return tr('nothingToVoteOnYet');
   if (v.votesLeft === 0) return tr('youVeUsedAllYour');
   return tr('youHaveVotesleftVotesLeft', { votesLeft: v.votesLeft });

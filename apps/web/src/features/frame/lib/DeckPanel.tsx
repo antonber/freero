@@ -208,7 +208,7 @@ export function DeckPanel({ editor }: { editor: Editor }) {
         <div className="fr-frames__empty">
           <Presentation size={28} strokeWidth={1.5} />
           <strong>{tr('noSlidesYet')}</strong>
-          <span>Each frame is a slide. Add one with a layout to start a deck; presenting and PDF export follow this order.</span>
+          <span>{tr('eachFrameIsASlide')}</span>
         </div>
       )}
       {canEdit && (

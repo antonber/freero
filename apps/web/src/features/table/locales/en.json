@@ -92,5 +92,7 @@
   "cardTitlesFrom": "Card titles from",
   "tableColumnTheCardTitles": "Table column the card titles come from",
   "nCardsInNColumns": "{length, plural, one {# card} other {# cards}} in {length2, plural, one {# column} other {# columns}}:  {join}",
-  "whatTheOtherColumnsBecome": "What the other columns become"
+  "whatTheOtherColumnsBecome": "What the other columns become",
+  "nameofHasLengthDifferentValues": "“{nameOf}” has {length} different values; a kanban has at most {max_kanban_columns} columns. Pick another column.",
+  "eachRowBecomesACard": "Each row becomes a card. The kanban takes the table’s place; undo brings the table back."
 }

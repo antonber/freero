@@ -185,7 +185,7 @@ export function tableToKanbanRows(
   if (typeOf(by) === 'select') for (const o of by.options ?? []) add(o.label, toKanbanColor(o.color));
   const columnOf = columnWords.map((w) => (w ? add(w) : 0));
   if (columns.length > MAX_KANBAN_COLUMNS)
-    return { error: `“${nameOf(by)}” has ${columns.length} different values; a kanban has at most ${MAX_KANBAN_COLUMNS} columns. Pick another column.` };
+    return { error: tr('nameofHasLengthDifferentValues', { nameOf: nameOf(by), length: columns.length, max_kanban_columns: MAX_KANBAN_COLUMNS }) };
 
   const fates: ColumnFate[] = [];
   const fields: KanbanRowsInput['fields'] = [];

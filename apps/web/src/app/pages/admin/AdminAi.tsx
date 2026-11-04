@@ -135,11 +135,7 @@ export function AdminAi({ workspace }: { workspace: WorkspaceSummary }) {
             width={230}
           />
         </Row>
-        <p className="fr-admin-card__note">
-          What happens to your data: when someone uses AI, their prompt and the board content the action reads (the selection, or the whole board for a
-          summary) are sent to the provider below and processed under that provider’s terms. Freero doesn’t store prompts or answers; the audit log
-          records who used AI, on which board, the task, model and tokens. Board text is always passed to the model as data, never as instructions.
-        </p>
+        <p className="fr-admin-card__note">{t('whatHappensToYourData')}</p>
       </div>
 
       <div className="fr-admin-card">

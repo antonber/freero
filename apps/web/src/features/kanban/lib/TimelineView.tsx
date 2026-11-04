@@ -378,9 +378,7 @@ export function TimelineBody(p: TimelineBodyProps) {
 
   return (
     <div className={`fr-kanban-tl${p.compact ? ' is-compact' : ''}${interactive ? ' is-interactive' : ''}`} role="group" aria-label={p.label} {...(interactive ? { 'data-fr-interactive': '', 'data-fr-keyboard-trap': '' } : {})}>
-      <span id={hintId} hidden>
-        Alt and the left or right arrow moves it a day; with Shift too, its end. Enter sets its dates.
-      </span>
+      <span id={hintId} hidden>{tr('altAndTheLeftOr')}</span>
       <div
         ref={scroll}
         role="grid"

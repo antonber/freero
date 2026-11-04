@@ -58,5 +58,6 @@
   "lengthWithText": "· {length} with text",
   "theFirstMaxRowsAre": " (the first {max_rows} are imported)",
   "assigneesAreMatchedToBoard": " · assignees are matched to board members by name",
-  "preview": "Preview"
+  "preview": "Preview",
+  "eachRowBecomesASticky": "Each row becomes a sticky or a task card. Tags, status, assignee and due date come from their columns; on a kanban, the other columns become fields."
 }

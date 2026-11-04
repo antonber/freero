@@ -246,7 +246,7 @@ export function FilterSection({ editor, k, schema, mine, saved, mayShare }: { ed
         {own
           ? t('yourFilterFadesTheCards', { value: saved ? t('cardsTheSavedFilterHides') : '', value2: mayShare ? t('saveForEveryoneToHide') : '' })
           : saved
-            ? 'The saved filter hides cards it leaves out from everyone; they still count toward WIP limits.'
+            ? t('theSavedFilterHidesCards')
             : t('aFilterYouSetHere')}
       </p>
     </section>
@@ -315,7 +315,7 @@ export function SortSection({ editor, k, schema, sort, mayShare }: { editor: Edi
           <SortRules schema={schema} sort={sort} onChange={(next) => setSort(editor, k.id, next)} />
           <p className="fr-kanban-fields__hint">
             {sort.length
-              ? 'Sorting moves the cards for everyone. Cards still move between columns; back to manual order puts every card where it was.'
+              ? t('sortingMovesTheCardsFor')
               : t('cardsAreInTheOrder')}
           </p>
         </>

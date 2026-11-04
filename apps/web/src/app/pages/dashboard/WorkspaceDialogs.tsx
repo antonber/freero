@@ -327,7 +327,7 @@ export function TransferBoardDialog({
       <p style={{ margin: '0 0 12px', color: 'var(--fr-ink-2)' }}>
         {team
           ? t('pickAMemberOfThis')
-          : 'Pick someone this board is shared with. It moves to their personal workspace; the current owner keeps edit access.'}
+          : t('pickSomeoneThisBoardIs')}
       </p>
       {candidates && candidates.length === 0 ? (
         <p style={{ margin: 0, color: 'var(--fr-ink-3)' }}>{team ? t('inviteSomeoneToTheWorkspace') : t('shareTheBoardWithSomeone')}</p>

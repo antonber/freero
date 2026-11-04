@@ -79,5 +79,6 @@
   "nVotesLengthVoters": "· {totalVotes, plural, one {# vote} other {# votes}} · {length}  {length, plural, one {voter} other {voters}}",
   "inProgress": "In progress",
   "ended": "Ended",
-  "dateofTotalVotes": "{total, plural, one {{dateOf} · {total} vote} other {{dateOf} · {total} votes}}"
+  "dateofTotalVotes": "{total, plural, one {{dateOf} · {total} vote} other {{dateOf} · {total} votes}}",
+  "youCanCommentVotingIs": "You can comment; voting is open to editors on this board"
 }

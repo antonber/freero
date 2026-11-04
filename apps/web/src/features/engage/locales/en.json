@@ -150,5 +150,6 @@
   "visitorsWithoutAnAccountCan": "Visitors without an account can answer",
   "answersAreClosed": "Answers are closed",
   "liveActivity": "Live activity",
-  "activityKind": "Activity kind"
+  "activityKind": "Activity kind",
+  "rightAnswersStayOnThe": "Right answers stay on the server until you show them; nobody else can read them from the board."
 }

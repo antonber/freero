@@ -97,7 +97,7 @@ function FrameTitle({ frame, zoom, selected }: { frame: FrameElement; zoom: numb
         </span>
       )}
       {frame.hidden && !editing && (
-        <span className="fr-frame__hidden-tag" title={canEdit ? 'Viewers and commenters see this frame empty; its contents never reach them' : undefined}>
+        <span className="fr-frame__hidden-tag" title={canEdit ? t('viewersAndCommentersSeeThis') : undefined}>
           <EyeOff size={Math.round(Math.max(px, TITLE_MIN_PX))} strokeWidth={2.25} aria-hidden />
           {canEdit ? t('hiddenFromViewers') : t('contentsHidden')}
         </span>

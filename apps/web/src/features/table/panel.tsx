@@ -91,7 +91,7 @@ function ConvertDialog({ editor, props }: PanelProps) {
       open
       onClose={close}
       title={t('convertToKanban2')}
-      description="Each row becomes a card. The kanban takes the table’s place; undo brings the table back."
+      description={t('eachRowBecomesACard')}
       width={520}
       footer={
         <>

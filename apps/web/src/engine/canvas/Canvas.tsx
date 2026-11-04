@@ -526,12 +526,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       // The background as shown, also for what knocks the canvas out (connector labels): theme.ts.
       style={{ background: shownBackground(settings.background, theme), cursor, ['--fr-canvas-paper' as string]: shownBackground(settings.background, theme) }}
     >
-      <p id={helpId} className="fr-sr-only">
-        Tab and Shift+Tab move through the items in reading order, a frame’s items right after it; Alt+arrow keys jump to
-        the nearest item in that direction. Enter edits the selected item, arrow keys move it and Alt+Shift+arrow keys
-        resize it. Shift+F10 opens its menu, Alt+F10 the format toolbar, F6 moves between the canvas and the toolbars.
-        With a creation tool picked, Enter places a new item next to the selection. Alt+Shift+L lists the board as text.
-      </p>
+      <p id={helpId} className="fr-sr-only">{tr('tabAndShiftTabMove')}</p>
       <Grid />
       <div ref={worldRef} className="fr-world">
         {/* Board content (and the tool's ghost of what it would add): drawn in its own colours, its

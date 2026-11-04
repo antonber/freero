@@ -121,7 +121,7 @@ export function ExactControls({ editor, selection }: { editor: Editor; selection
             />
           ))}
         </div>
-        {selection.length > 1 && <p className="fr-exact__note">X and Y move the whole selection; size and rotation apply to each item.</p>}
+        {selection.length > 1 && <p className="fr-exact__note">{t('xAndYMoveThe')}</p>}
       </Popover>
     </>
   );

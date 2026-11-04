@@ -158,8 +158,8 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
           <Select
             aria-label={t('changesFromTheTracker')}
             options={[
-              { value: 'webhook', label: t('webhooks'), description: SELF_HOOKED.has(provider) ? 'Instant; Freero registers them itself' : 'Instant; the tracker must reach this server' },
-              { value: 'polling', label: t('polling'), description: 'Every minute; for trackers that can’t reach Freero' },
+              { value: 'webhook', label: t('webhooks'), description: SELF_HOOKED.has(provider) ? t('instantFreeroRegistersThemItself') : t('instantTheTrackerMustReach') },
+              { value: 'polling', label: t('polling'), description: t('everyMinuteForTrackersThat') },
             ]}
             value={inbound}
             onChange={setInbound}
@@ -180,9 +180,7 @@ function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | 
           </Button>
         )}
       </div>
-      <p className="fr-trackerconn__fine">
-        Freero tests the token right away and keeps it encrypted; it is never shown again. Issues are created as that account.
-      </p>
+      <p className="fr-trackerconn__fine">{t('freeroTestsTheTokenRight')}</p>
     </form>
   );
 }
@@ -232,7 +230,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
     }
   };
   const remove = async (c: TrackerConnectionInfo) => {
-    if (!window.confirm(`Remove ${c.name}? Its ${c.links} linked issue${c.links === 1 ? '' : 's'} stop syncing; board items and issues stay as they are.`)) return;
+    if (!window.confirm(t('removeNameItsLinksLinked', { links: c.links, name: c.name }))) return;
     try {
       await api.deleteTrackerConnection(c.id);
       setList((l) => l?.filter((x) => x.id !== c.id) ?? null);

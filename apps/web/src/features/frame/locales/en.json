@@ -98,5 +98,7 @@
   "deleteFrame": "Delete frame",
   "noFramesYet": "No frames yet",
   "framesTurnAreasOfThe": "Frames turn areas of the board into slides you can present, in this order.",
-  "addFrame": "Add frame"
+  "addFrame": "Add frame",
+  "eachFrameIsASlide": "Each frame is a slide. Add one with a layout to start a deck; presenting and PDF export follow this order.",
+  "viewersAndCommentersSeeThis": "Viewers and commenters see this frame empty; its contents never reach them"
 }

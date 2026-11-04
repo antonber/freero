@@ -70,7 +70,7 @@ function CreateDialog({ editor, props }: PanelProps) {
       open
       onClose={close}
       title={frame ? t('freezeSubjectForADecision', { subject }) : t('freezeTheBoardForA')}
-      description="A read-only copy of exactly what’s here now, with its own link to cite in tickets and docs. Later edits never change it. Everyone who can open this board can see it; hidden frames and private drafts are never included."
+      description={t('aReadOnlyCopyOf')}
       footer={
         <>
           <Button variant="ghost" onClick={close}>{t('cancel')}</Button>

@@ -144,10 +144,7 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
       <div className="fr-trackerconn__actions">
         <Button size="sm" variant="primary" icon={Save} loading={busy} onClick={() => void save()}>{tr('saveFieldMap')}</Button>
       </div>
-      <p className="fr-trackerconn__fine">
-        A mapped field syncs on every kanban that has a field of that name and kind; importing into a kanban without one adds it. Renaming the kanban field pauses it (nothing is cleared) until the
-        names match again.
-      </p>
+      <p className="fr-trackerconn__fine">{tr('aMappedFieldSyncsOn')}</p>
     </div>
   );
 }

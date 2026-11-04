@@ -13,5 +13,6 @@
   "lasso": "Lasso",
   "highlighterColor": "Highlighter color",
   "penColor": "Pen color",
-  "smartDrawing": "Smart drawing"
+  "smartDrawing": "Smart drawing",
+  "roughRectanglesCirclesTrianglesDiamonds": "Rough rectangles, circles, triangles, diamonds, lines and arrows become clean ones. Rest the pen at the end of a stroke to straighten it; scribble over items to erase them."
 }

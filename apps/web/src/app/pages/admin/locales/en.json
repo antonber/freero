@@ -692,5 +692,15 @@
   "anAdmin": "an admin",
   "onlyOwnersAndAdminsOf2": "Only owners and admins of an organisation can open its console.",
   "organisationConsole": "Organisation console",
-  "organisationYouRe": "Organisation · you’re"
+  "organisationYouRe": "Organisation · you’re",
+  "passwordResetLinkAndPersonal": "Password, reset-link and personal Google/Microsoft sign-in stop working for your domains; signed-in browsers that didn’t use SSO are signed out. One owner keeps password sign-in to fix the connection if it ever breaks.",
+  "whatHappensToYourData": "What happens to your data: when someone uses AI, their prompt and the board content the action reads (the selection, or the whole board for a summary) are sent to the provider below and processed under that provider’s terms. Freero doesn’t store prompts or answers; the audit log records who used AI, on which board, the task, model and tokens. Board text is always passed to the model as data, never as instructions.",
+  "aBlockAppliesToThis": "A block applies to this workspace only; the person can still use the token or app elsewhere. Revoking it is up to them.",
+  "keptForTheRetentionYou": ", kept for the retention you set. Events can’t be edited or removed; each is linked to the one before it, so tampering shows when you check.",
+  "everyWorkspaceHereUsesThe": "Every workspace here uses the organisation’s single sign-on, provisioning and domains, gets at least its policies, and records its audit events in both logs. You see who is in each workspace; what is on its boards stays with the people it was shared with.",
+  "whatEveryMemberCanDo": "What every member can do on the workspace’s boards. A project can set its own level; owners and admins always edit, and people invited to a board keep their role.",
+  "requiredABoardSLink": "Required: a board’s link can only be turned on or changed with a password. Links that are on today keep working; the list below shows them.",
+  "turningABoardSLink": "Turning a board’s link on or changing it needs an expiry no later than this. Links that are on today keep working; the list below shows them.",
+  "aSignInBelongsTo": "A sign-in belongs to a person, not to a workspace: someone in several workspaces gets the strictest of their session policies on all their devices. Guests keep their own account’s settings. Single sign-on follows the same policy; an identity provider’s own session end can only make one sign-in shorter.",
+  "sendWhatHappensOnThis": "Send what happens on this workspace’s boards to other tools: your own service (signed JSON) or a Slack or Microsoft Teams channel. Only boards everyone in the workspace can open are ever sent — never personal boards, private projects, private drafts or hidden frames. Failed deliveries are retried with growing gaps for a few hours; a webhook that keeps failing is turned off and its creator is emailed."
 }

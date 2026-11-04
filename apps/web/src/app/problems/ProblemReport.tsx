@@ -161,7 +161,7 @@ function ProblemDialog({ pending, onClose }: { pending: Pending; onClose: () => 
       >
         <div>
           <p className="fr-problem__p">{t('freeroSTeamReadsEvery')}</p>
-          {sent.screenshotFailed ? <p className="fr-problem__warn">The screenshot couldn’t be attached; your note and the details were sent.</p> : null}
+          {sent.screenshotFailed ? <p className="fr-problem__warn">{t('theScreenshotCouldnTBe')}</p> : null}
         </div>
       </Modal>
     );
@@ -230,7 +230,7 @@ function Screenshot({ captured, preview, included, onToggle }: { captured: boole
     <figure className="fr-problem__shot">
       {preview ? <img className="fr-problem__img" src={preview} alt={t('screenshotOfWhatYouWere')} /> : <div className="fr-problem__img" />}
       <figcaption className="fr-problem__caption">
-        <span>A screenshot of your screen is attached. It may show board content; only Freero’s operators see it.</span>
+        <span>{t('aScreenshotOfYourScreen')}</span>
         <Button size="sm" variant="ghost" icon={Trash2} onClick={() => onToggle(false)}>{t('remove')}</Button>
       </figcaption>
     </figure>
@@ -280,7 +280,7 @@ function Diagnostics({ d }: { d: ProblemDiagnostics }) {
           ))}
         </ol>
       ) : null}
-      <p className="fr-problem__fine">Web addresses are sent without their query strings; tokens and email addresses are removed.</p>
+      <p className="fr-problem__fine">{t('webAddressesAreSentWithout')}</p>
     </details>
   );
 }

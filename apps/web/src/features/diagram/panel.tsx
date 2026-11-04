@@ -110,7 +110,7 @@ function LayersPanel({ editor }: PanelProps) {
       <DockHeader className="fr-diagram-layers__dockhead">
         <h2 className="fr-diagram-layers__title">{t('layers2')}{' '}{richTextToPlain(d.title) || t('diagram')}</h2>
       </DockHeader>
-      <p className="fr-diagram-layers__hint">Top of the list is drawn on top. Hiding or locking a layer does it for everyone; the layer you pick is where your new items go.</p>
+      <p className="fr-diagram-layers__hint">{t('topOfTheListIs')}</p>
       {[...layers].reverse().map((layer) => {
         const index = layers.indexOf(layer);
         return <LayerRow key={layer.id} editor={editor} d={d} layer={layer} index={index} count={layers.length} active={layer.id === mine} members={counts.get(layer.id) ?? 0} canEdit={editable} />;

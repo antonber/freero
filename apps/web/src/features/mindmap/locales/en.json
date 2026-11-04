@@ -63,5 +63,6 @@
   "makeAMindMap2": "Make a mind map",
   "makeMindMap": "Make mind map",
   "emptyNote": "(empty note)",
-  "mindMap": "Mind map"
+  "mindMap": "Mind map",
+  "theNoteYouPickBecomes": "The note you pick becomes the central topic; the others become its ideas. One undo puts the notes back."
 }

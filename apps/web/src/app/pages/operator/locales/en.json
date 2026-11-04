@@ -154,5 +154,6 @@
   "deleteKeptCopy": "Delete kept copy",
   "readOnlySnapshot": "Read-only snapshot",
   "couldNotLoadTheBoard": "Could not load the board",
-  "loadingTheBoard": "Loading the board"
+  "loadingTheBoard": "Loading the board",
+  "sentByEmailWithThe": "Sent by email with the decision. Say what was wrong and where; it is also what they appeal against."
 }

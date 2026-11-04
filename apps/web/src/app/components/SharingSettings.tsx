@@ -48,7 +48,7 @@ export function SharingSettings({ board, onChange }: { board: BoardSummary; onCh
         onChange={(on) => void set({ viewersCanExport: on }, on ? t('viewersAndCommentersCanCopy2') : t('viewersAndCommentersCanNo'))}
       />
       <p className="fr-share__settings-note">
-        {manages ? 'Only the owner and co-owners change these; the workspace’s policies still apply on top. ' : ''}{t('nothingStopsSomeoneFromTaking')}</p>
+        {manages ? t('onlyTheOwnerAndCo') : ''}{t('nothingStopsSomeoneFromTaking')}</p>
     </section>
   );
 }

@@ -93,7 +93,7 @@ export function BoardPlaceDialog({
       description={
         mode === 'duplicate'
           ? t('theCopyIsYoursWith')
-          : 'It keeps its link, comments, files and history. People who had access through its current workspace lose it; people invited to the board keep their access as the new workspace allows.'
+          : t('itKeepsItsLinkComments')
       }
       width={520}
       footer={

@@ -342,7 +342,7 @@ export function DeveloperAppsSection() {
           value={redirects}
           onChange={(e) => setRedirects(e.target.value)}
         />
-        <Toggle label="Confidential app (gets a client secret; for apps with a server)" checked={confidential} onChange={setConfidential} />
+        <Toggle label={tr('confidentialAppGetsAClient')} checked={confidential} onChange={setConfidential} />
         {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
         <div className="fr-acct-form__row">
           <Button type="submit" loading={busy}>{tr('registerApp')}</Button>

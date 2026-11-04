@@ -52,7 +52,7 @@ export function QuizEditor({ editor, a }: { editor: Editor; a: ActivityElement }
 
   return (
     <div className="fr-engage-quizedit">
-      <p className="fr-engage-quizedit__note">Right answers stay on the server until you show them; nobody else can read them from the board.</p>
+      <p className="fr-engage-quizedit__note">{t('rightAnswersStayOnThe')}</p>
       {questions.map((q, qi) => (
         <fieldset key={q.id} className="fr-engage-quizedit__q">
           <legend>{t('question')}{' '}{qi + 1}</legend>

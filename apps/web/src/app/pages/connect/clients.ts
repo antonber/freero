@@ -62,9 +62,9 @@ export function clientSetup(id: Exclude<ClientId, 'http'>, mcpUrl: string): Setu
       return [
         { text: t('inClaudeOpenCustomizeConnectors') },
         { text: t('nameItFreeroPasteThis'), copy: { label: t('connectorUrl'), value: mcpUrl } },
-        { text: 'Select Connect. Freero’s consent screen opens: sign in, tick what Claude may do (reading and suggesting are on; changing boards and commenting are yours to add) and select Allow.' },
+        { text: t('selectConnectFreeroSConsent') },
         { text: t('inAChatTurnFreero') },
-        { text: 'On Team and Enterprise plans, an owner adds the connector first (Organization settings → Connectors → Add → Custom → Web, with the same URL); then each member selects Connect under Customize → Connectors.' },
+        { text: t('onTeamAndEnterprisePlans') },
       ];
     case 'chatgpt':
       return [

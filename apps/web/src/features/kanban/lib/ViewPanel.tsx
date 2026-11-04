@@ -340,7 +340,7 @@ function LinkedViewPanel({ editor, lv }: { editor: Editor; lv: KanbanViewElement
                 <span>{tr('showAs')}</span>
                 <Select<ProjectionLayout> size="sm" aria-label={tr('showTheCardsAs')} value={saved.layout} options={PROJECTION_LAYOUTS.map((l) => ({ value: l, label: LAYOUT_NAMES[l] }))} onChange={(l) => setLinkedLayout(editor, lv.id, l)} />
               </label>
-              <p className="fr-kanban-fields__hint">Changes the view for everyone. Its filter and sort stay; edits in it change the kanban’s real cards.</p>
+              <p className="fr-kanban-fields__hint">{tr('changesTheViewForEveryone')}</p>
             </section>
           )}
           <ProjectionSettings k={k} mine={mine} scope="view" set={(patch) => setMyLinkedView(editor, lv.id, patch)} />
@@ -424,7 +424,7 @@ function ProjectionSettings({ k, mine, set, scope }: { k: KanbanElement; mine: P
             <span>{tr('swimlanes')}</span>
             <Select size="sm" aria-label={tr('swimlanesBy')} value={timelineFields(mine, schema).lanes?.id ?? NONE} options={[{ value: NONE, label: tr('none') }, ...groups]} onChange={(id) => set({ lanesBy: id || null })} />
           </label>
-          <p className="fr-kanban-fields__hint">Dragging a bar moves both dates; dragging an end changes that one.</p>
+          <p className="fr-kanban-fields__hint">{tr('draggingABarMovesBoth')}</p>
         </section>
       )}
       {mine.layout === 'list' && (

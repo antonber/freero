@@ -134,7 +134,7 @@ export function WorkspaceMembers({ workspace, onChanged, onLeft }: { workspace: 
       <header className="fr-dash-page__head">
         <h1 className="fr-collection__title">{t('members')}{members ? <span className="fr-collection__count">{members.length}</span> : null}
         </h1>
-        <p className="fr-dash-page__lead">People in {workspace.name}. Members see every board the team shares; guests only what’s shared with them.</p>
+        <p className="fr-dash-page__lead">{t('peopleInNameMembersSee', { name: workspace.name })}</p>
       </header>
 
       {roles.length > 0 ? (

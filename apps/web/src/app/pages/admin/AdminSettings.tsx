@@ -149,11 +149,7 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
         </Row>
         <SettingSelect field="sessionMaxHours" settings={settings} save={save} floor={floor?.settings.sessionMaxHours ?? null} by={floor?.name} />
         <SettingSelect field="sessionIdleMinutes" settings={settings} save={save} floor={floor?.settings.sessionIdleMinutes ?? null} by={floor?.name} />
-        <p className="fr-admin-card__note">
-          A sign-in belongs to a person, not to a workspace: someone in several workspaces gets the strictest of their session policies
-          on all their devices. Guests keep their own account’s settings. Single sign-on follows the same policy; an identity provider’s own
-          session end can only make one sign-in shorter.
-        </p>
+        <p className="fr-admin-card__note">{t('aSignInBelongsTo')}</p>
       </div>
       ) : null}
       {scopes.includes('security') ? <AdminNetworks workspace={workspace} /> : null}

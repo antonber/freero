@@ -286,7 +286,7 @@ export function AdminSso({ workspace }: { workspace: WorkspaceSummary }) {
               <>
                 <ShieldCheck size={14} aria-hidden />{' '}{tr('enforceSingleSignOn')}</>
             }
-            hint="Password, reset-link and personal Google/Microsoft sign-in stop working for your domains; signed-in browsers that didn’t use SSO are signed out. One owner keeps password sign-in to fix the connection if it ever breaks."
+            hint={tr('passwordResetLinkAndPersonal')}
           >
             <Toggle
               aria-label={tr('enforceSingleSignOn')}

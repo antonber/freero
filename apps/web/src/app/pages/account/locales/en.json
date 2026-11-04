@@ -225,5 +225,9 @@
   "deleteYourAccount": "Delete your account?",
   "enterYourPasswordToConfirm": "Enter your password to confirm",
   "language.title": "Language",
-  "language.description": "The language of Freero’s menus, buttons and emails, on every device you sign in on. What boards say stays as it was written."
+  "language.description": "The language of Freero’s menus, buttons and emails, on every device you sign in on. What boards say stays as it was written.",
+  "confidentialAppGetsAClient": "Confidential app (gets a client secret; for apps with a server)",
+  "whatYouSentWithReport": "What you sent with “Report a problem” and where it stands. Only Freero’s operators read reports; you get a notification when one is fixed.",
+  "signOutADeviceYou": "Sign out a device you don't recognize; its open boards disconnect right away.",
+  "youLlBeSignedOut": "You'll be signed out everywhere. For 14 days you can log in and restore everything; after that your account, the boards you own and your profile photo are deleted for good. What you added to other people's boards stays with those boards, and your comments there will show as “Deleted user”."
 }

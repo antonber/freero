@@ -98,7 +98,7 @@ function ImportDialog({ editor }: PanelProps) {
       open
       onClose={close}
       title={tr('importFromCsv')}
-      description="Each row becomes a sticky or a task card. Tags, status, assignee and due date come from their columns; on a kanban, the other columns become fields."
+      description={tr('eachRowBecomesASticky')}
       width={620}
       footer={
         <>

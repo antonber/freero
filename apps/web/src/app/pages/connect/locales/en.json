@@ -99,5 +99,9 @@
   "onceConnectedPasteOneOf": "Once connected, paste one of these into your agent.",
   "promptCopied": "Prompt copied",
   "copyThePromptTitle": "Copy the prompt “{title}”",
-  "needs": "Needs:"
+  "needs": "Needs:",
+  "selectConnectFreeroSConsent": "Select Connect. Freero’s consent screen opens: sign in, tick what Claude may do (reading and suggesting are on; changing boards and commenting are yours to add) and select Allow.",
+  "onTeamAndEnterprisePlans": "On Team and Enterprise plans, an owner adds the connector first (Organization settings → Connectors → Add → Custom → Web, with the same URL); then each member selects Connect under Customize → Connectors.",
+  "appsYouAllowedAndTokens": "Apps you allowed and tokens you made. A client shows as connected once it has called Freero; revoking stops it on its next request.",
+  "nothingIsConnectedYetFollow": "Nothing is connected yet. Follow the steps for your client above; it shows up here when you approve it."
 }

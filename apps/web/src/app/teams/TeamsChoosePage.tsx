@@ -120,7 +120,7 @@ export default function TeamsChoosePage() {
   if (!user)
     return (
       <Shell title={tr('signInToFreero')}>
-        <p>{tr('signInToChooseOne')}{signInHere ? '' : ' A new tab opens; come back here when you’re signed in.'}</p>
+        <p>{tr('signInToChooseOne')}{signInHere ? '' : tr('aNewTabOpensCome')}</p>
         <div className="fr-boarderror__actions">
           <Button variant="primary" onClick={() => signInFromWindow('login', signInHere)}>{tr('signIn')}</Button>
           <Button onClick={() => signInFromWindow('signup', signInHere)}>{tr('createAnAccount')}</Button>

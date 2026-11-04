@@ -323,5 +323,10 @@
   "addField": "Add field",
   "fieldType": "Field type",
   "itsFieldsShowHereWhat": "Its fields show here: what every card on it can hold, like a priority, an owner or points.",
-  "thisKanbanIsLockedUnlock": "This kanban is locked: unlock it to change its fields."
+  "thisKanbanIsLockedUnlock": "This kanban is locked: unlock it to change its fields.",
+  "altAndTheLeftOr": "Alt and the left or right arrow moves it a day; with Shift too, its end. Enter sets its dates.",
+  "theSavedFilterHidesCards": "The saved filter hides cards it leaves out from everyone; they still count toward WIP limits.",
+  "sortingMovesTheCardsFor": "Sorting moves the cards for everyone. Cards still move between columns; back to manual order puts every card where it was.",
+  "changesTheViewForEveryone": "Changes the view for everyone. Its filter and sort stay; edits in it change the kanban’s real cards.",
+  "draggingABarMovesBoth": "Dragging a bar moves both dates; dragging an end changes that one."
 }

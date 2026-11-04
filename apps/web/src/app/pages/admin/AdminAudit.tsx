@@ -124,9 +124,7 @@ export function AdminAudit({ workspace, workspaceNames }: { workspace: Workspace
           </a>
         </div>
       </div>
-      <p className="fr-admin__muted fr-admin__intro">{t('signInsMemberAndRole', { name: workspace.name })}{workspaceNames ? t('andEveryOneOfIts') : ''}, kept for the retention you set. Events can’t be edited or
-        removed; each is linked to the one before it, so tampering shows when you check.
-      </p>
+      <p className="fr-admin__muted fr-admin__intro">{t('signInsMemberAndRole', { name: workspace.name })}{workspaceNames ? t('andEveryOneOfIts') : ''}{t('keptForTheRetentionYou')}</p>
 
       <div className="fr-admin-filters">
         <Select<string> aria-label={t('kindOfEvent')} options={CATEGORIES} value={category} onChange={setCategory} width={220} />

@@ -297,7 +297,7 @@ function ConnectionsSection({ version }: { version: number }) {
   };
 
   return (
-    <Section id="connections" title={tr('connectedNow')} description="Apps you allowed and tokens you made. A client shows as connected once it has called Freero; revoking stops it on its next request.">
+    <Section id="connections" title={tr('connectedNow')} description={tr('appsYouAllowedAndTokens')}>
       {failed && !list ? (
         <p className="fr-acct__error">{tr('couldNotLoadYourConnections')}</p>
       ) : !list ? (
@@ -329,7 +329,7 @@ function ConnectionsSection({ version }: { version: number }) {
           ))}
         </ul>
       ) : (
-        <p className="fr-acct__p">Nothing is connected yet. Follow the steps for your client above; it shows up here when you approve it.</p>
+        <p className="fr-acct__p">{tr('nothingIsConnectedYetFollow')}</p>
       )}
       <p className="fr-acct__hint">{tr('pauseTokensRegisterYourOwn')}{' '}<Link to="/settings#connected-apps">{tr('settings')}</Link>.
       </p>

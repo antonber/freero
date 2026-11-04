@@ -166,10 +166,7 @@ export function OrgWorkspaces({ organisation, onChanged }: { organisation: Organ
         <h1 id="org-workspaces-title" className="fr-admin__title">{t('workspaces')}</h1>
         <span className="fr-admin__muted">{t('lengthTeamWorkspacesInName', { length: list.length, name: organisation.name })}</span>
       </div>
-      <p className="fr-admin__intro">
-        Every workspace here uses the organisation’s single sign-on, provisioning and domains, gets at least its policies, and records its audit events in
-        both logs. You see who is in each workspace; what is on its boards stays with the people it was shared with.
-      </p>
+      <p className="fr-admin__intro">{t('everyWorkspaceHereUsesThe')}</p>
 
       <div className="fr-admin-table-wrap">
         <table className="fr-admin-table">

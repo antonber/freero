@@ -202,7 +202,7 @@ function PenOptions({ editor }: { editor: Editor }) {
         })}
       </div>
       {!o.highlighter && (
-        <div className="fr-pen-options__smart" title="Rough rectangles, circles, triangles, diamonds, lines and arrows become clean ones. Rest the pen at the end of a stroke to straighten it; scribble over items to erase them.">
+        <div className="fr-pen-options__smart" title={t('roughRectanglesCirclesTrianglesDiamonds')}>
           <Toggle size="sm" label={t('smartDrawing')} checked={o.smart} onChange={(smart) => set({ smart })} />
         </div>
       )}

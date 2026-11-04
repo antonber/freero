@@ -98,7 +98,7 @@ export function AccountSettingsPage() {
         <Section
           id="problems"
           title={tr('problemsYouReported')}
-          description="What you sent with “Report a problem” and where it stands. Only Freero’s operators read reports; you get a notification when one is fixed."
+          description={tr('whatYouSentWithReport')}
         >
           <MyProblems />
         </Section>
@@ -528,7 +528,7 @@ function SessionsSection({ version }: { version: number }) {
 
   const others = sessions?.filter((s) => !s.current).length ?? 0;
   return (
-    <Section id="sessions" title={tr('whereYouReSignedIn')} description="Sign out a device you don't recognize; its open boards disconnect right away.">
+    <Section id="sessions" title={tr('whereYouReSignedIn')} description={tr('signOutADeviceYou')}>
       {failed ? (
         <p className="fr-acct__error">{tr('couldNotLoadYourSessions')}</p>
       ) : !sessions ? (
@@ -664,11 +664,7 @@ function DeleteSection({ security }: { security: SecurityInfo | null }) {
         }
       >
         <form className="fr-acct-form" onSubmit={confirm} noValidate>
-          <p className="fr-acct__p">
-            You'll be signed out everywhere. For 14 days you can log in and restore everything; after that your
-            account, the boards you own and your profile photo are deleted for good. What you added to other people's
-            boards stays with those boards, and your comments there will show as “Deleted user”.
-          </p>
+          <p className="fr-acct__p">{tr('youLlBeSignedOut')}</p>
           {askPassword ? (
             <Input
               label={tr('enterYourPasswordToConfirm')}

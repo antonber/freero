@@ -49,5 +49,6 @@
   "moveSelectionTo": "Move selection to",
   "focusingOn": "Focusing on",
   "escToLeave": "Esc to leave",
-  "exitFocus": "Exit focus"
+  "exitFocus": "Exit focus",
+  "topOfTheListIs": "Top of the list is drawn on top. Hiding or locking a layer does it for everyone; the layer you pick is where your new items go."
 }

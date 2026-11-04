@@ -142,7 +142,7 @@ export default function TeamsConfigPage() {
         <Logo size={28} />
         <h1>{tr('showAFreeroBoardHere')}</h1>
       </div>
-      <p className="fr-teams-config__lead">Everyone here sees the board as Freero shares it with them: people it’s shared with sign in once to edit or comment; others see it only if anyone with the link may view it.</p>
+      <p className="fr-teams-config__lead">{tr('everyoneHereSeesTheBoard')}</p>
       <Button variant="primary" icon={LayoutGrid} onClick={() => void choose()}>{tr('chooseFromYourBoards')}</Button>
       <div className="fr-teams-config__or">{tr('or')}</div>
       <Input label={tr('pasteABoardLink')} icon={Link2} placeholder={tr('originBoard', { origin: window.location.origin })} value={link} onChange={(e) => onPaste(e.target.value)} />

@@ -16,7 +16,7 @@ export const POLICY_FIELDS: Array<{
   {
     key: 'teamAccess',
     label: t('membersOnTheTeamS'),
-    hint: 'What every member can do on the workspace’s boards. A project can set its own level; owners and admins always edit, and people invited to a board keep their role.',
+    hint: t('whatEveryMemberCanDo'),
     options: [
       { value: 'editor', label: t('canEdit') },
       { value: 'commenter', label: t('canComment') },
@@ -47,7 +47,7 @@ export const POLICY_FIELDS: Array<{
   {
     key: 'linkPassword',
     label: t('passwordOnBoardLinks'),
-    hint: 'Required: a board’s link can only be turned on or changed with a password. Links that are on today keep working; the list below shows them.',
+    hint: t('requiredABoardSLink'),
     options: [
       { value: 'optional', label: t('upToTheBoard') },
       { value: 'required', label: t('required') },
@@ -113,7 +113,7 @@ export const POLICY_FIELDS: Array<{
 /** `linkMaxDays` (#39): '' stands for no limit. */
 export const LINK_MAX_DAYS_FIELD = {
   label: t('boardLinksExpireWithin'),
-  hint: 'Turning a board’s link on or changing it needs an expiry no later than this. Links that are on today keep working; the list below shows them.',
+  hint: t('turningABoardSLink'),
   options: [
     { value: '', label: 'No limit' },
     ...[1, 7, 14, 30, 90, 180, 365].map((d) => ({ value: String(d), label: d === 1 ? '1 day' : `${d} days` })),

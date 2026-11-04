@@ -110,7 +110,7 @@ export function WorkspaceSettings({
         <>
           <div className="fr-dash-settings__block">
             <h2 className="fr-dash-settings__title">{t('ownership')}</h2>
-            <p className="fr-dash-settings__hint">Hand the workspace to another member. They become an owner; you stay on as an admin.</p>
+            <p className="fr-dash-settings__hint">{t('handTheWorkspaceToAnother')}</p>
             <div className="fr-dash-settings__row">
               <Select<string>
                 aria-label={t('newOwner')}
@@ -125,9 +125,7 @@ export function WorkspaceSettings({
 
           <div className="fr-dash-settings__block fr-dash-settings__block--danger">
             <h2 className="fr-dash-settings__title">{t('deleteWorkspace')}</h2>
-            <p className="fr-dash-settings__hint">
-              Deletes the workspace and every board in it, for everyone. This can’t be undone. Export it first if you need a copy; every owner gets a receipt.
-            </p>
+            <p className="fr-dash-settings__hint">{t('deletesTheWorkspaceAndEvery')}</p>
             <Button variant="danger" icon={Trash2} onClick={() => setDeleting(true)}>{t('deleteWorkspace2')}</Button>
           </div>
         </>

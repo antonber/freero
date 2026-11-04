@@ -39,7 +39,7 @@ const STATUS_TEXT: Record<OwnListing['status'], { label: string; tone: string; s
   pending: { label: t('waitingForReview'), tone: 'pending', say: t('onlyYouAndFreeroS') },
   approved: { label: t('live'), tone: 'live', say: t('everyoneSignedInToThis') },
   rejected: { label: t('notApproved'), tone: 'off', say: t('nobodyElseSeesItWithdraw') },
-  removed: { label: t('removed'), tone: 'off', say: 'Freero’s moderators removed it; nobody else sees it. The email they sent has a link to appeal.' },
+  removed: { label: t('removed'), tone: 'off', say: t('freeroSModeratorsRemovedIt') },
 };
 
 function ListingStatus({ listing }: { listing: OwnListing }) {
@@ -108,7 +108,7 @@ export function CommunityListingPage() {
             <ShieldAlert size={15} aria-hidden />
             {listing.oauthApp
               ? t('itSignsInWithIts', { name: listing.oauthApp.name })
-              : ' Freero reviewed this listing, not the integration’s code. Give it only the permissions it needs; you can revoke them any time in Settings.'}
+              : t('freeroReviewedThisListingNot')}
           </p>
         </section>
         {listing.description ? (
@@ -248,7 +248,7 @@ export function SubmitListingPage() {
         oauthClientId: oauthClientId || null,
         contactEmail: contactEmail.trim() || null,
       });
-      notify('Submitted. A reviewer will look at it; you’ll get an email with the decision.', 'success');
+      notify(t('submittedAReviewerWillLook'), 'success');
       navigate(`/apps/community/${encodeURIComponent(listing.id)}`);
     } catch (err) {
       setError(errorText(err, t('couldNotSubmitItTry')));
@@ -270,10 +270,7 @@ export function SubmitListingPage() {
     <AppsFrame back={{ to: '/apps?category=community', label: t('appsAgents') }}>
       <div className="fr-apps__intro">
         <h1 className="fr-acct__title">{t('submitAnIntegration')}</h1>
-        <p className="fr-apps__lead">
-          Built something on Freero’s MCP server, REST API or webhooks? List it on the Apps &amp; agents page. A reviewer checks each submission first; until
-          then only you see it. Approved listings carry a Community label.
-        </p>
+        <p className="fr-apps__lead">{t('builtSomethingOnFreeroS')}</p>
       </div>
       <YourListings listings={mine} onWithdraw={withdraw} />
       <form className="fr-acct-card fr-apps-form" onSubmit={submit} noValidate aria-labelledby="submit-title">

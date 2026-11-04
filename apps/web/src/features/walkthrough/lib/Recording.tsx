@@ -36,8 +36,7 @@ export function StartDialog({ editor }: PanelProps) {
       <div className="fr-walkthrough-start">
         <Input label={t('title')} value={title} maxLength={MAX_WALKTHROUGH_TITLE} onChange={(e) => setTitle(e.target.value)} autoFocus />
         <Toggle checked={camera} onChange={setCamera} label={t('showMyCameraInA')} />
-        <p className="fr-walkthrough-start__note">{t('yourBrowserAsksForThe')}{camera ? t('andCamera') : ''}{' '}{t('firstUpTo')}{' '}{MAX_WALKTHROUGH_MS / 60000} minutes; stop any time.
-        </p>
+        <p className="fr-walkthrough-start__note">{t('yourBrowserAsksForThe')}{camera ? t('andCamera') : ''}{' '}{t('firstUpTo')}{' '}{MAX_WALKTHROUGH_MS / 60000}{' '}{t('minutesStopAnyTime')}</p>
         {rec.error && (
           <p className="fr-walkthrough-start__error" role="alert">
             {rec.error}

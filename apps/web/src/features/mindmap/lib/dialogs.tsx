@@ -136,7 +136,7 @@ export function FromStickiesDialog({ editor, props }: PanelProps) {
         <span className="fr-mm-dialog__title">
           <Network size={18} aria-hidden />{' '}{tr('makeAMindMap2')}</span>
       }
-      description="The note you pick becomes the central topic; the others become its ideas. One undo puts the notes back."
+      description={tr('theNoteYouPickBecomes')}
       width={460}
       footer={
         <>

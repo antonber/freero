@@ -77,5 +77,9 @@
   "loadingYourListings": "Loading your listings",
   "submittedValue": "submitted {value}",
   "withdraw": "Withdraw",
-  "withdrawName": "Withdraw {name}"
+  "withdrawName": "Withdraw {name}",
+  "freeroSModeratorsRemovedIt": "Freero’s moderators removed it; nobody else sees it. The email they sent has a link to appeal.",
+  "freeroReviewedThisListingNot": " Freero reviewed this listing, not the integration’s code. Give it only the permissions it needs; you can revoke them any time in Settings.",
+  "submittedAReviewerWillLook": "Submitted. A reviewer will look at it; you’ll get an email with the decision.",
+  "builtSomethingOnFreeroS": "Built something on Freero’s MCP server, REST API or webhooks? List it on the Apps & agents page. A reviewer checks each submission first; until then only you see it. Approved listings carry a Community label."
 }

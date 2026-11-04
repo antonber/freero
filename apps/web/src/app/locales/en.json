@@ -468,5 +468,18 @@
   "errors.rate_limited": "{unit, select, minutes {Too many requests. Please try again in {count, plural, one {# minute} other {# minutes}}.} other {Too many requests. Please try again in {count, plural, one {# second} other {# seconds}}.}}",
   "errors.locale_unknown": "That language isn’t available",
   "language.label": "Language",
-  "language.couldNotSave": "Could not change the language"
+  "language.couldNotSave": "Could not change the language",
+  "anyoneCanViewItPeople": "Anyone can view it; people who sign in get their access",
+  "onlyTheOwnerAndCo": "Only the owner and co-owners change these; the workspace’s policies still apply on top. ",
+  "theScreenshotCouldnTBe": "The screenshot couldn’t be attached; your note and the details were sent.",
+  "aScreenshotOfYourScreen": "A screenshot of your screen is attached. It may show board content; only Freero’s operators see it.",
+  "webAddressesAreSentWithout": "Web addresses are sent without their query strings; tokens and email addresses are removed.",
+  "aMappedFieldSyncsOn": "A mapped field syncs on every kanban that has a field of that name and kind; importing into a kanban without one adds it. Renaming the kanban field pauses it (nothing is cleared) until the names match again.",
+  "instantFreeroRegistersThemItself": "Instant; Freero registers them itself",
+  "instantTheTrackerMustReach": "Instant; the tracker must reach this server",
+  "everyMinuteForTrackersThat": "Every minute; for trackers that can’t reach Freero",
+  "freeroTestsTheTokenRight": "Freero tests the token right away and keeps it encrypted; it is never shown again. Issues are created as that account.",
+  "removeNameItsLinksLinked": "{links, plural, one {Remove {name}? Its {links} linked issue stop syncing; board items and issues stay as they are.} other {Remove {name}? Its {links} linked issues stop syncing; board items and issues stay as they are.}}",
+  "aNewTabOpensCome": " A new tab opens; come back here when you’re signed in.",
+  "everyoneHereSeesTheBoard": "Everyone here sees the board as Freero shares it with them: people it’s shared with sign in once to edit or comment; others see it only if anyone with the link may view it."
 }
