@@ -1,0 +1,16 @@
+{
+  "tagItemsByName": "Tag items by name",
+  "searchOrCreateATag": "Search or create a tag",
+  "nameYourFirstTag": "Name your first tag",
+  "tags": "Tags",
+  "tagsGroupStickiesAndCards": "Tags group stickies and cards by topic, owner or priority.",
+  "createName": "Create “{name}”",
+  "newTagColor": "New tag color",
+  "manageTags": "Manage tags",
+  "colorOfName": "Color of {name}",
+  "renameName": "Rename {name}",
+  "deleteUses": "Delete ({uses})",
+  "deleteTagUsedOnUses": "Delete tag (used on {uses})",
+  "deleteTag": "Delete tag",
+  "backToTags": "Back to tags"
+}

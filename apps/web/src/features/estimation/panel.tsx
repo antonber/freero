@@ -8,6 +8,7 @@ import { AvatarStack, Button, Input, Modal, SegmentedControl, Tooltip } from '@u
 import { accept, canManage, COLLECTION, currentItem, end, goTo, itemsToEstimate, pick, reveal, revote, start } from './lib/actions';
 import { DECKS, ROUND_KEY, estimatesOf, parseCustomDeck, readRound, results, voteKey, type DeckKind, type Estimate, type EstimationValue, type Round } from './lib/model';
 import { START_DIALOG_ID } from './lib/ids';
+import { t } from './messages';
 import './estimation.css';
 
 function useRound(): { round: Round | undefined; entries: Array<[string, EstimationValue]> } {
@@ -17,11 +18,11 @@ function useRound(): { round: Round | undefined; entries: Array<[string, Estimat
 }
 
 function titleOf(el: BoardElement | undefined): string {
-  if (!el) return 'Removed item';
-  if (el.type === 'card') return (el as { title?: string }).title?.trim() || 'Untitled card';
+  if (!el) return t('removedItem');
+  if (el.type === 'card') return (el as { title?: string }).title?.trim() || t('untitledCard');
   const text = (el as { text?: string }).text ?? '';
   const plain = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-  return plain || 'Empty sticky';
+  return plain || t('emptySticky');
 }
 
 // ---------------------------------------------------------------- start dialog
@@ -42,17 +43,13 @@ function StartDialog({ editor }: { editor: Editor }) {
     <Modal
       open
       onClose={close}
-      title="Planning poker"
-      description={`${items.length} ${items.length === 1 ? 'item' : 'items'} to estimate${selected ? ' (your selection)' : ' (every card on the board)'}, one at a time. Picks stay hidden until you reveal them.`}
+      title={t('planningPoker')}
+      description={t('lengthItemsToEstimateValue', { length: items.length, value: selected ? t('yourSelection') : t('everyCardOnTheBoard') })}
       width={460}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" icon={Spade} onClick={submit} disabled={!values || !items.length}>
-            Start estimating
-          </Button>
+          <Button variant="ghost" onClick={close}>{t('cancel')}</Button>
+          <Button variant="primary" icon={Spade} onClick={submit} disabled={!values || !items.length}>{t('startEstimating')}</Button>
         </>
       }
     >
@@ -64,25 +61,25 @@ function StartDialog({ editor }: { editor: Editor }) {
         }}
       >
         <SegmentedControl
-          aria-label="Deck"
+          aria-label={t('deck')}
           value={kind}
           onChange={(v) => setKind(v as DeckKind)}
           options={[
             { value: 'fibonacci', label: DECKS.fibonacci.label },
             { value: 'tshirt', label: DECKS.tshirt.label },
-            { value: 'custom', label: 'Custom' },
+            { value: 'custom', label: t('custom') },
           ]}
         />
         {kind === 'custom' && (
           <Input
-            label="Values, separated by commas"
+            label={t('valuesSeparatedByCommas')}
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
-            error={customValues ? undefined : 'Give at least two values'}
+            error={customValues ? undefined : t('giveAtLeastTwoValues')}
             maxLength={160}
           />
         )}
-        <div className="fr-est-deckpreview" aria-label="Deck preview">
+        <div className="fr-est-deckpreview" aria-label={t('deckPreview')}>
           {(values ?? []).map((v) => (
             <span key={v} className="fr-est-chip">
               {v}
@@ -115,16 +112,15 @@ function RoundBar({ editor }: { editor: Editor }) {
   const isCard = item?.type === 'card';
 
   return (
-    <div className="fr-est-bar" data-fr-interactive="" role="region" aria-label="Planning poker">
+    <div className="fr-est-bar" data-fr-interactive="" role="region" aria-label={t('planningPoker')}>
       <div className="fr-est-bar__row">
         <span className="fr-est-bar__icon">
           <Spade size={16} />
         </span>
         <div className="fr-est-bar__text">
           <strong>{titleOf(item)}</strong>
-          <span>
-            Item {round.index + 1} of {round.itemIds.length} · {round.revealed ? 'revealed' : `${estimates.length} of ${here} picked`}
-            {manage ? '' : ` · ${round.startedByName} reveals`}
+          <span>{t('item')}{' '}{round.index + 1}{' '}{t('ofLength', { length: round.itemIds.length })}{' '}{round.revealed ? 'revealed' : t('lengthOfHerePicked', { length: estimates.length, here })}
+            {manage ? '' : t('startedbynameReveals', { startedByName: round.startedByName })}
           </span>
         </div>
         {voters.length > 0 && !round.revealed && (
@@ -136,25 +132,23 @@ function RoundBar({ editor }: { editor: Editor }) {
         )}
         {manage && (
           <span className="fr-est-bar__nav">
-            <Button size="sm" variant="ghost" icon={ChevronLeft} aria-label="Previous item" disabled={round.index === 0} onClick={() => goTo(editor, round.index - 1)} />
+            <Button size="sm" variant="ghost" icon={ChevronLeft} aria-label={t('previousItem')} disabled={round.index === 0} onClick={() => goTo(editor, round.index - 1)} />
             <Button
               size="sm"
               variant="ghost"
               icon={ChevronRight}
-              aria-label="Next item"
+              aria-label={t('nextItem')}
               disabled={round.index >= round.itemIds.length - 1}
               onClick={() => goTo(editor, round.index + 1)}
             />
           </span>
         )}
         {manage && !round.revealed && (
-          <Button size="sm" variant="primary" icon={Eye} disabled={!estimates.length} onClick={() => reveal(editor)}>
-            Reveal
-          </Button>
+          <Button size="sm" variant="primary" icon={Eye} disabled={!estimates.length} onClick={() => reveal(editor)}>{t('reveal')}</Button>
         )}
         {manage && (
-          <Tooltip content="End planning poker" side="bottom">
-            <button type="button" className="fr-est-bar__close" aria-label="End planning poker" onClick={() => end(editor)}>
+          <Tooltip content={t('endPlanningPoker')} side="bottom">
+            <button type="button" className="fr-est-bar__close" aria-label={t('endPlanningPoker')} onClick={() => end(editor)}>
               <X size={16} />
             </button>
           </Tooltip>
@@ -162,7 +156,7 @@ function RoundBar({ editor }: { editor: Editor }) {
       </div>
 
       {!round.revealed && (
-        <div className="fr-est-bar__deck" role="group" aria-label="Your estimate">
+        <div className="fr-est-bar__deck" role="group" aria-label={t('yourEstimate')}>
           {canPick ? (
             round.deck.values.map((v) => (
               <button key={v} type="button" className={`fr-est-card${mine === v ? ' is-mine' : ''}`} aria-pressed={mine === v} onClick={() => pick(editor, v)}>
@@ -170,14 +164,14 @@ function RoundBar({ editor }: { editor: Editor }) {
               </button>
             ))
           ) : (
-            <span className="fr-est-bar__muted">You can watch: picking cards is not open to you on this board.</span>
+            <span className="fr-est-bar__muted">{t('youCanWatchPickingCards')}</span>
           )}
         </div>
       )}
 
       {res && (
         <div className="fr-est-bar__results">
-          <div className="fr-est-dist" aria-label="Estimates">
+          <div className="fr-est-dist" aria-label={t('estimates')}>
             {res.distribution.map((d) => (
               <Tooltip key={d.value} content={d.voters.map((v) => v.userName).join(', ')} side="bottom">
                 <span className={`fr-est-dist__col${d.value === res.suggestion ? ' is-top' : ''}`}>
@@ -187,35 +181,29 @@ function RoundBar({ editor }: { editor: Editor }) {
                 </span>
               </Tooltip>
             ))}
-            {!res.distribution.length && <span className="fr-est-bar__muted">Nobody picked a card.</span>}
+            {!res.distribution.length && <span className="fr-est-bar__muted">{t('nobodyPickedACard')}</span>}
           </div>
           <div className="fr-est-stats">
             {res.consensus ? (
-              <strong className="fr-est-stats__agree">Everyone agrees</strong>
+              <strong className="fr-est-stats__agree">{t('everyoneAgrees')}</strong>
             ) : (
               <>
-                {res.average !== null && <span>Average {res.average}</span>}
-                {res.median !== null && <span>Median {res.median}</span>}
+                {res.average !== null && <span>{t('averageAverage', { average: res.average })}</span>}
+                {res.median !== null && <span>{t('medianMedian', { median: res.median })}</span>}
                 {res.min !== null && res.max !== null && res.min !== res.max && (
-                  <span>
-                    Spread {res.min}–{res.max}
-                  </span>
+                  <span>{t('spreadMinMax', { min: res.min, max: res.max })}</span>
                 )}
                 {res.outliers.length > 0 && (
-                  <span className="fr-est-stats__outliers">
-                    Hear from {estimates.filter((e) => res.outliers.includes(e.userId)).map((e) => e.userName).join(', ')}
-                  </span>
+                  <span className="fr-est-stats__outliers">{t('hearFromJoin', { join: estimates.filter((e) => res.outliers.includes(e.userId)).map((e) => e.userName).join(', ') })}</span>
                 )}
               </>
             )}
           </div>
           {manage && (
             <div className="fr-est-actions">
-              <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => revote(editor)}>
-                Re-vote
-              </Button>
+              <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => revote(editor)}>{t('reVote')}</Button>
               {isCard && res.suggestion && <AcceptButtons editor={editor} round={round} suggestion={res.suggestion} />}
-              {!isCard && <span className="fr-est-bar__muted">Estimates are saved on cards.</span>}
+              {!isCard && <span className="fr-est-bar__muted">{t('estimatesAreSavedOnCards')}</span>}
             </div>
           )}
         </div>
@@ -234,7 +222,7 @@ function AcceptButtons({ editor, round, suggestion }: { editor: Editor; round: R
   };
   if (other)
     return (
-      <span className="fr-est-other" role="group" aria-label="Save another value">
+      <span className="fr-est-other" role="group" aria-label={t('saveAnotherValue')}>
         {round.deck.values
           .filter((v) => v !== '?')
           .map((v) => (
@@ -246,12 +234,8 @@ function AcceptButtons({ editor, round, suggestion }: { editor: Editor; round: R
     );
   return (
     <>
-      <Button size="sm" variant="ghost" onClick={() => setOther(true)}>
-        Other value
-      </Button>
-      <Button size="sm" variant="primary" icon={Check} onClick={() => save(suggestion)}>
-        Save {suggestion}
-        {last ? '' : ' & next'}
+      <Button size="sm" variant="ghost" onClick={() => setOther(true)}>{t('otherValue')}</Button>
+      <Button size="sm" variant="primary" icon={Check} onClick={() => save(suggestion)}>{t('saveSuggestion', { suggestion })}{last ? '' : t('next')}
       </Button>
     </>
   );

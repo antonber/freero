@@ -19,8 +19,10 @@ import {
 import { Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { AdminNetworks } from './AdminNetworks';
+import { AdminEncryptionKey } from './AdminEncryptionKey';
 import { INACTIVE_ACTION_OPTIONS, LINK_MAX_DAYS_FIELD, parseSetting, POLICY_FIELDS, SETTING_FIELDS, settingValue } from './policies';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
 function useSettings(workspaceId: string) {
@@ -29,7 +31,7 @@ function useSettings(workspaceId: string) {
   useEffect(() => {
     api.workspaceSettings(workspaceId).then(
       (r) => setSettings(r.settings),
-      (e) => notify(errorText(e, 'Could not load the settings'), 'error'),
+      (e) => notify(errorText(e, t('couldNotLoadTheSettings')), 'error'),
     );
   }, [workspaceId, notify]);
   const save = async (patch: Partial<WorkspaceSettings>, done: string) => {
@@ -40,7 +42,7 @@ function useSettings(workspaceId: string) {
       notify(done, 'success');
     } catch (e) {
       setSettings(prev);
-      notify(errorText(e, 'Could not save the setting'), 'error');
+      notify(errorText(e, t('couldNotSaveTheSetting')), 'error');
     }
   };
   return { settings, save };
@@ -82,7 +84,7 @@ function SettingSelect({
   const hint = floor === null ? f.hint : `${f.hint} ${by} allows at most ${all.find((o) => o.value === String(floor))?.label ?? floor}.`;
   return (
     <Row label={f.label} hint={hint}>
-      <Select<string> aria-label={f.label} options={options} value={value} onChange={(v) => void save({ [field]: parseSetting(v) }, 'Saved — it applies right away')} width={230} />
+      <Select<string> aria-label={f.label} options={options} value={value} onChange={(v) => void save({ [field]: parseSetting(v) }, t('savedItAppliesRightAway'))} width={230} />
     </Row>
   );
 }
@@ -102,14 +104,14 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
     setPolicies({ ...policies, [key]: value });
     try {
       onChanged((await api.updateWorkspace(workspace.id, { policies: { [key]: value } })).workspace);
-      notify('Policy updated — it applies to everyone right away', 'success');
+      notify(t('policyUpdatedItAppliesTo'), 'success');
     } catch (e) {
       setPolicies(prev);
-      notify(errorText(e, 'Could not update the policy'), 'error');
+      notify(errorText(e, t('couldNotUpdateThePolicy')), 'error');
     }
   };
   const maxDays = settingValue(policies.linkMaxDays);
-  const maxDaysOptions = LINK_MAX_DAYS_FIELD.options.some((o) => o.value === maxDays) ? LINK_MAX_DAYS_FIELD.options : [...LINK_MAX_DAYS_FIELD.options, { value: maxDays, label: `${maxDays} days` }];
+  const maxDaysOptions = LINK_MAX_DAYS_FIELD.options.some((o) => o.value === maxDays) ? LINK_MAX_DAYS_FIELD.options : [...LINK_MAX_DAYS_FIELD.options, { value: maxDays, label: t('maxdaysDays', { maxDays }) }];
 
   // #151: sign-in is the security admins', sharing the content admins' (a server from before sends no scopes).
   const scopes = workspace.adminScopes ?? ['members', 'content', 'security'];
@@ -117,64 +119,53 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
   return (
     <section aria-labelledby="admin-security-title">
       <h1 id="admin-security-title" className="fr-admin__title">
-        {org ? 'Policies' : 'Security'}
+        {org ? t('policies') : t('security')}
       </h1>
       {org ? (
-        <p className="fr-admin__intro">
-          What you set here is the least every workspace in {workspace.name} gets: a workspace can choose something stricter, never looser,
-          and a stricter choice here applies to all of them at once.
-        </p>
+        <p className="fr-admin__intro">{t('whatYouSetHereIs', { name: workspace.name })}</p>
       ) : floor ? (
-        <p className="fr-admin__intro">
-          {floor.name} sets the least this workspace gets: choices looser than its policies are greyed out. You can still be stricter.
-        </p>
+        <p className="fr-admin__intro">{t('nameSetsTheLeastThis', { name: floor.name })}</p>
       ) : null}
 
       {scopes.includes('security') ? (
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">Sign-in</h2>
+        <h2 className="fr-admin-card__title">{t('signIn')}</h2>
         <Row
-          label="Require two-step verification"
+          label={t('requireTwoStepVerification')}
           hint={
             org ? (
-              <>Nobody without it can open the boards of the organisation’s workspaces, and their members can’t turn it off. Turn it on for yourself first.</>
+              <>{t('nobodyWithoutItCanOpen')}</>
             ) : (
-              <>
-                Anyone without it — members, guests and people invited from outside — can’t open this workspace’s boards until they turn it on
-                in <Link to="/settings#two-factor">their settings</Link>, and members can’t turn it off. Turn it on for yourself first.
-                {floor?.settings.requireTwoFactor ? ` ${floor.name} requires it.` : ''}
+              <>{t('anyoneWithoutItMembersGuests')}{' '}<Link to="/settings#two-factor">{t('theirSettings')}</Link>{t('andMembersCanTTurn')}{floor?.settings.requireTwoFactor ? t('nameRequiresIt', { name: floor.name }) : ''}
               </>
             )
           }
         >
           <Toggle
-            aria-label="Require two-step verification"
+            aria-label={t('requireTwoStepVerification')}
             checked={settings.requireTwoFactor}
             disabled={!!floor?.settings.requireTwoFactor}
-            onChange={(on) => void save({ requireTwoFactor: on }, on ? 'Two-step verification is now required' : 'Two-step verification is no longer required')}
+            onChange={(on) => void save({ requireTwoFactor: on }, on ? t('twoStepVerificationIsNow') : t('twoStepVerificationIsNo'))}
           />
         </Row>
         <SettingSelect field="sessionMaxHours" settings={settings} save={save} floor={floor?.settings.sessionMaxHours ?? null} by={floor?.name} />
         <SettingSelect field="sessionIdleMinutes" settings={settings} save={save} floor={floor?.settings.sessionIdleMinutes ?? null} by={floor?.name} />
-        <p className="fr-admin-card__note">
-          A sign-in belongs to a person, not to a workspace: someone in several workspaces gets the strictest of their session policies
-          on all their devices. Guests keep their own account’s settings. Single sign-on follows the same policy; an identity provider’s own
-          session end can only make one sign-in shorter.
-        </p>
+        <p className="fr-admin-card__note">{t('aSignInBelongsTo')}</p>
       </div>
       ) : null}
       {scopes.includes('security') ? <AdminNetworks workspace={workspace} /> : null}
+      {scopes.includes('security') && workspace.kind === 'team' ? <AdminEncryptionKey workspace={workspace} /> : null}
 
       {scopes.includes('content') ? (
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">Sharing</h2>
+        <h2 className="fr-admin-card__title">{t('sharing')}</h2>
         {POLICY_FIELDS.filter((f) => !org || f.key !== 'teamAccess').map((f) => {
           const least = floorOf(f.key);
           const key = f.key as OrderedPolicyKey;
           const options = least === null ? f.options : f.options.map((o) => ({ ...o, disabled: looserPolicy(key, o.value as never, least as never) }));
           // Only a floor that rules something out is worth a word (the loosest value is no floor).
           const binding = least !== null && least !== POLICY_STRICTNESS[key][0];
-          const hint = binding ? `${f.hint} Set by ${floor!.name}: ${f.options.find((o) => o.value === least)?.label} at most.` : f.hint;
+          const hint = binding ? t('hintSetByNameLabel', { hint: f.hint, name: floor!.name, label: String(f.options.find((o) => o.value === least)?.label ?? '') }) : f.hint;
           return (
             <Row key={f.key} label={f.label} hint={hint}>
               <Select<string>
@@ -187,7 +178,7 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
             </Row>
           );
         })}
-        <Row label={LINK_MAX_DAYS_FIELD.label} hint={maxDaysFloor === null ? LINK_MAX_DAYS_FIELD.hint : `${LINK_MAX_DAYS_FIELD.hint} Set by ${floor!.name}: ${maxDaysFloor} days at most.`}>
+        <Row label={LINK_MAX_DAYS_FIELD.label} hint={maxDaysFloor === null ? LINK_MAX_DAYS_FIELD.hint : t('hintSetByNameMaxdaysfloor', { hint: LINK_MAX_DAYS_FIELD.hint, name: floor!.name, maxDaysFloor })}>
           <Select<string>
             aria-label={LINK_MAX_DAYS_FIELD.label}
             options={maxDaysFloor === null ? maxDaysOptions : maxDaysOptions.map((o) => ({ ...o, disabled: o.value === '' || Number(o.value) > maxDaysFloor }))}
@@ -225,13 +216,13 @@ function LinkCompliance({ workspaceId, policies }: { workspaceId: string; polici
   }, [workspaceId, active, policies.linkPassword, policies.linkMaxDays]);
   if (!active || !boards) return null;
   return (
-    <div className="fr-admin-compliance" aria-label="Board links outside the policy">
-      <span className="fr-admin-row__label">{boards.length ? `${boards.length} board ${boards.length === 1 ? 'link doesn’t' : 'links don’t'} meet the link policy yet` : 'Every board link meets the policy'}</span>
+    <div className="fr-admin-compliance" aria-label={t('boardLinksOutsideThePolicy')}>
+      <span className="fr-admin-row__label">{boards.length ? t('lengthBoardLinksDonT', { length: boards.length }) : t('everyBoardLinkMeetsThe')}</span>
       {boards.length ? (
         <ul className="fr-admin-compliance__list">
           {boards.map((b) => (
             <li key={b.boardId}>
-              <Link to={`/board/${encodeURIComponent(b.boardId)}?share=1`}>{b.title || 'Untitled board'}</Link>
+              <Link to={`/board/${encodeURIComponent(b.boardId)}?share=1`}>{b.title || t('untitledBoard')}</Link>
               <span className="fr-admin-row__hint">
                 {' '}
                 · {b.ownerName} · {b.problems.map((p) => PROBLEM_TEXT[p]).join(', ')}
@@ -240,7 +231,7 @@ function LinkCompliance({ workspaceId, policies }: { workspaceId: string; polici
           ))}
         </ul>
       ) : null}
-      <span className="fr-admin-row__hint">They keep working until their owner changes the link, which then has to meet the policy.</span>
+      <span className="fr-admin-row__hint">{t('theyKeepWorkingUntilTheir')}</span>
     </div>
   );
 }
@@ -255,14 +246,12 @@ export function AdminRetention({ workspace }: { workspace: WorkspaceSummary }) {
   const content = !org && scopes.includes('content');
   return (
     <section aria-labelledby="admin-retention-title">
-      <h1 id="admin-retention-title" className="fr-admin__title">
-        Data retention
-      </h1>
+      <h1 id="admin-retention-title" className="fr-admin__title">{t('dataRetention')}</h1>
       <div className="fr-admin-card">
         {content ? <SettingSelect field="trashRetentionDays" settings={settings} save={save} /> : null}
         {content ? <SettingSelect field="versionRetentionDays" settings={settings} save={save} /> : null}
         {scopes.includes('security') ? <SettingSelect field="auditRetentionDays" settings={settings} save={save} /> : null}
-        <p className="fr-admin-card__note">Freero applies these every hour. What is removed can’t be brought back.</p>
+        <p className="fr-admin-card__note">{t('freeroAppliesTheseEveryHour')}</p>
       </div>
       {scopes.includes('content') ? <InactiveBoards workspace={workspace} settings={settings} save={save} /> : null}
     </section>
@@ -284,30 +273,28 @@ function InactiveBoards({ workspace, settings, save }: { workspace: WorkspaceSum
   const days = settings.inactiveBoardDays ?? null;
   const daysField = SETTING_FIELDS.inactiveBoardDays;
   const value = settingValue(days);
-  const dayOptions = (daysField.options.some((o) => o.value === value) ? daysField.options : [...daysField.options, { value, label: `${value} days` }]).map((o) => ({
+  const dayOptions = (daysField.options.some((o) => o.value === value) ? daysField.options : [...daysField.options, { value, label: t('valueDays', { value }) }]).map((o) => ({
     ...o,
     disabled: o.value === '' || (leastDays !== null && Number(o.value) > leastDays),
   }));
   const done = (a: InactiveBoardAction, d: number | null) =>
-    a === 'none' || d === null ? 'Boards are no longer archived or trashed for being unused' : `Saved — owners hear ${RETENTION_NOTICE_DAYS} days before anything happens`;
+    a === 'none' || d === null ? t('boardsAreNoLongerArchived') : t('savedOwnersHearRetentionNotice', { retention_notice_days: RETENTION_NOTICE_DAYS });
   return (
     <div className="fr-admin-card">
-      <h2 className="fr-admin-card__title">Boards nobody uses</h2>
+      <h2 className="fr-admin-card__title">{t('boardsNobodyUses')}</h2>
       <Row
-        label="What happens to them"
+        label={t('whatHappensToThem')}
         hint={
           <>
             {org
-              ? `The least every workspace in ${workspace.name} does. `
+              ? t('theLeastEveryWorkspaceIn', { name: workspace.name })
               : floor && leastAction !== 'none'
-                ? `${floor.name} requires at least “${INACTIVE_ACTION_OPTIONS.find((o) => o.value === leastAction)?.label}”. `
-                : ''}
-            Owners are emailed {RETENTION_NOTICE_DAYS} days before. Archived boards and boards under a legal hold are never moved to the trash.
-          </>
+                ? t('nameRequiresAtLeastLabel', { name: floor.name, label: String(INACTIVE_ACTION_OPTIONS.find((o) => o.value === leastAction)?.label ?? '') })
+                : ''}{t('ownersAreEmailedRetentionNotice', { retention_notice_days: RETENTION_NOTICE_DAYS })}</>
         }
       >
         <Select<InactiveBoardAction>
-          aria-label="What happens to boards nobody uses"
+          aria-label={t('whatHappensToBoardsNobody')}
           options={INACTIVE_ACTION_OPTIONS.map((o) => ({ ...o, disabled: rank(o.value) < rank(leastAction) }))}
           value={action}
           onChange={(a) => {
@@ -318,9 +305,9 @@ function InactiveBoards({ workspace, settings, save }: { workspace: WorkspaceSum
         />
       </Row>
       {action !== 'none' ? (
-        <Row label={daysField.label} hint={leastDays !== null && !org ? `${daysField.hint} ${floor!.name} allows at most ${leastDays} days.` : daysField.hint}>
+        <Row label={daysField.label} hint={leastDays !== null && !org ? t('hintNameAllowsAtMost', { hint: daysField.hint, name: floor!.name, leastDays }) : daysField.hint}>
           <Select<string>
-            aria-label="Days without activity"
+            aria-label={t('daysWithoutActivity')}
             options={dayOptions}
             value={value}
             onChange={(v) => void save({ inactiveBoardDays: parseSetting(v) }, done(action, parseSetting(v)))}

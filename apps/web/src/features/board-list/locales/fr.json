@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "Tableau sous forme de liste",
+  "everyItemInReadingOrder": "Tous les éléments dans l’ordre de lecture, les éléments d’un cadre en dessous de celui-ci. Les flèches déplacent, Droite et Gauche ouvrent et ferment un cadre, Entrée affiche l’élément sur le tableau.",
+  "thisBoardIsEmpty": "Ce tableau est vide.",
+  "boardItems": "Éléments du tableau",
+  "connections": "Connexions"
+}

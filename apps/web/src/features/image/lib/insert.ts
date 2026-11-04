@@ -5,6 +5,7 @@ import { dataUrlToBlob, isImageFile, naturalSizeOf, readAsDataUrl } from './file
 import { fitGridLayout, fitSize } from './layout';
 import { addPending } from './pending';
 
+import { t } from '../messages';
 /** When the upload service fails, images up to this size are kept inline as data URLs. */
 export const INLINE_FALLBACK_MAX_BYTES = 512 * 1024;
 const MAX_FILES = 30;
@@ -40,12 +41,10 @@ export async function storeImage(editor: Editor, blob: Blob): Promise<{ url: str
 function reportFailures(editor: Editor, tooLarge: number, unreadable: number) {
   if (tooLarge)
     editor.host.notify(
-      tooLarge === 1
-        ? `Couldn't upload that image, and it's too large to keep offline (max ${kb(INLINE_FALLBACK_MAX_BYTES)}). Try again later.`
-        : `Couldn't upload ${tooLarge} images, and they're too large to keep offline (max ${kb(INLINE_FALLBACK_MAX_BYTES)} each).`,
+      t('couldnTUploadToolargeImages', { tooLarge, kb: kb(INLINE_FALLBACK_MAX_BYTES) }),
       'error',
     );
-  if (unreadable) editor.host.notify(unreadable === 1 ? "That file isn't an image Freero can read." : `${unreadable} files aren't images Freero can read.`, 'error');
+  if (unreadable) editor.host.notify(t('unreadableFilesArenTImages', { unreadable }), 'error');
 }
 
 /**

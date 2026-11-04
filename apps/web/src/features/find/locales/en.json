@@ -1,0 +1,22 @@
+{
+  "untitledFrame": "Untitled frame",
+  "findOnBoard": "Find on board",
+  "commentByAuthor": "Comment by {author}",
+  "onlyAuthorCanEditTheir": "Only {author} can edit their comment.",
+  "unlockThisItemToReplace": "Unlock this item to replace its text.",
+  "thisMatchCanTBe": "This match can’t be replaced here.",
+  "replacedInNItemsLeft": "{n, plural, one {Replaced in {n} item{left}} other {Replaced in {n} items{left}}}",
+  "nothingToReplaceLeft": "Nothing to replace{left}",
+  "matchCase": "Match case",
+  "replace": "Replace",
+  "searchTextTitlesComments": "Search text, titles, comments",
+  "previousMatch": "Previous match",
+  "nextMatch": "Next match",
+  "replaceWith": "Replace with",
+  "all": "All",
+  "searchEveryStickyShapeCard": "Search every sticky, shape, card, table, mind map, frame title, connector label and comment.",
+  "noResults": "No results",
+  "nothingOnThisBoardMatches": "Nothing on this board matches “{query}”.",
+  "results": "Results",
+  "moreRefineTheSearch": "more — refine the search"
+}

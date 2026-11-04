@@ -155,6 +155,13 @@ open boards drop them at once (KAI-224).
   changes (`scope`: one board or item; `projectId`: one project), removes, rotates, tests a team
   workspace's webhooks and reads / redelivers their delivery log — for its owners and admins with
   `webhooks:manage` ([../events.md](../events.md)).
+- Projects (#129): `GET /workspaces/{workspaceId}/projects` lists the projects you can see there,
+  sub-projects included (`parentId`, null at the top). A sub-project never reaches more people than
+  the projects above it, so the list holds no project whose parent you can't see.
+  `POST /workspaces/{workspaceId}/projects` makes one (`name`, `parentId`); with `blueprintId` (#161,
+  `GET /blueprints` lists yours and your teams') it makes the project and a copy of each of the
+  blueprint's boards and docs in one transaction — all of it or nothing — with links between them
+  pointed at the copies.
 - Boards (#170): `PATCH /boards/{boardId}` renames a board or changes its description (owners and
   editors); `POST /boards/{boardId}/copy` copies it with its content (`workspaceId`, `projectId`,
   `title`; refused like an export where its content may not be taken out). `POST /boards/{boardId}/groups`

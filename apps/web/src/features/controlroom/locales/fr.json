@@ -1,0 +1,20 @@
+{
+  "@@unreviewed": [
+    "letAgentChangeThisBoard",
+    "stopAgentChangingThisBoard",
+    "agentCanWorkOnThis",
+    "agentIsPausedItsNext",
+    "resumeAgent",
+    "pauseAgent",
+    "agentPausedByBy",
+    "agentPaused"
+  ],
+  "letAgentChangeThisBoard": "Autoriser à nouveau {agent} à modifier ce tableau",
+  "stopAgentChangingThisBoard": "Empêcher {agent} de modifier ce tableau jusqu’à ce que vous le relanciez",
+  "agentCanWorkOnThis": "{agent} peut de nouveau travailler sur ce tableau",
+  "agentIsPausedItsNext": "{agent} est en pause : sa prochaine modification de ce tableau sera refusée",
+  "resumeAgent": "Relancer l’agent",
+  "pauseAgent": "Mettre l’agent en pause",
+  "agentPausedByBy": "Agent mis en pause par {by}",
+  "agentPaused": "Agent en pause"
+}

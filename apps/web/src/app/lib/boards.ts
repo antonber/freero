@@ -1,6 +1,7 @@
 // Client-side ordering/filtering of the dashboard's board collection.
 import type { BoardSummary } from '@freero/shared';
 
+import { t } from '../messages';
 /** Where a board or a doc (KAI-162) opens. */
 export const objectHref = (b: Pick<BoardSummary, 'id' | 'kind'>): string => `/${b.kind === 'doc' ? 'doc' : 'board'}/${encodeURIComponent(b.id)}`;
 
@@ -30,6 +31,6 @@ export function filterByOwner(boards: readonly BoardSummary[], owner: OwnerFilte
 
 /** Timestamp shown on a card for the given sort. */
 export function boardTime(b: BoardSummary, sort: BoardSort): { label: string; at: number } {
-  if (sort === 'opened' && b.lastOpenedAt) return { label: 'Opened', at: b.lastOpenedAt };
-  return { label: 'Edited', at: b.updatedAt };
+  if (sort === 'opened' && b.lastOpenedAt) return { label: t('opened'), at: b.lastOpenedAt };
+  return { label: t('edited'), at: b.updatedAt };
 }

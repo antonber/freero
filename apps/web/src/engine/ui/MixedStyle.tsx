@@ -15,14 +15,15 @@ import {
   type Mixed,
 } from './TextStyleControls';
 
+import { t } from '../messages';
 /** Light fills that read well under text on every type (the sticky papers map exactly). */
 const FILL_PALETTE = Object.values(STICKY_COLORS);
-const SIZES: readonly FontSizeOption[] = [{ value: 'auto', label: 'Auto (fit)' }, 12, 14, 18, 24, 32, 48, 64];
+const SIZES: readonly FontSizeOption[] = [{ value: 'auto', label: t('autoFit') }, 12, 14, 18, 24, 32, 48, 64];
 const WIDTHS = [1, 2, 4, 8] as const;
 const STYLES: ReadonlyArray<{ value: StrokeStyle; label: string }> = [
-  { value: 'solid', label: 'Solid' },
-  { value: 'dashed', label: 'Dashed' },
-  { value: 'dotted', label: 'Dotted' },
+  { value: 'solid', label: t('solid') },
+  { value: 'dashed', label: t('dashed') },
+  { value: 'dotted', label: t('dotted') },
 ];
 
 function Swatch({ color, ring }: { color: Mixed<string>; ring?: boolean }) {
@@ -74,7 +75,7 @@ export function MixedStyleSection({ editor, selection }: { editor: Editor; selec
   return (
     <>
       {fill !== null && (
-        <Pop label="Fill color" face={<Swatch color={fill} />} width={240}>
+        <Pop label={t('fillColor')} face={<Swatch color={fill} />} width={240}>
           <ColorSwatches
             colors={FILL_PALETTE}
             value={fill === MIXED ? null : fill}
@@ -82,12 +83,12 @@ export function MixedStyleSection({ editor, selection }: { editor: Editor; selec
             columns={6}
             size={26}
             onChange={(c) => set({ fill: c })}
-            aria-label="Fill color"
+            aria-label={t('fillColor')}
           />
         </Pop>
       )}
       {(stroke !== null || strokeWidth !== null || strokeStyle !== null) && (
-        <Pop label="Line and border" face={<Swatch color={stroke ?? MIXED} ring />} width={240}>
+        <Pop label={t('lineAndBorder')} face={<Swatch color={stroke ?? MIXED} ring />} width={240}>
           <div className="fr-textstyle-pop">
             {stroke !== null && (
               <ColorSwatches
@@ -97,7 +98,7 @@ export function MixedStyleSection({ editor, selection }: { editor: Editor; selec
                 columns={6}
                 size={26}
                 onChange={(c) => set({ stroke: c })}
-                aria-label="Line color"
+                aria-label={t('lineColor')}
               />
             )}
             {strokeWidth !== null && (
@@ -105,8 +106,8 @@ export function MixedStyleSection({ editor, selection }: { editor: Editor; selec
                 size="sm"
                 value={strokeWidth === MIXED ? '' : String(strokeWidth)}
                 onChange={(w) => w && set({ strokeWidth: Number(w) })}
-                options={WIDTHS.map((w) => ({ value: String(w), label: `${w}px` }))}
-                aria-label="Line width"
+                options={WIDTHS.map((w) => ({ value: String(w), label: t('wPx', { w }) }))}
+                aria-label={t('lineWidth')}
               />
             )}
             {strokeStyle !== null && (
@@ -115,7 +116,7 @@ export function MixedStyleSection({ editor, selection }: { editor: Editor; selec
                 value={strokeStyle === MIXED ? '' : strokeStyle}
                 onChange={(s) => s && set({ strokeStyle: s })}
                 options={[...STYLES]}
-                aria-label="Line style"
+                aria-label={t('lineStyle')}
               />
             )}
           </div>
@@ -126,7 +127,7 @@ export function MixedStyleSection({ editor, selection }: { editor: Editor; selec
       {textColor !== null && (
         // Not TextColorControl: that clears per-word colours in EVERY selected text, including
         // items that don't take a text colour (a sticky would lose its coloured words).
-        <Pop label="Text color" face={<span className="fr-textstyle-a">A<span className={`fr-textstyle-bar${textColor === MIXED ? ' is-mixed' : ''}`} style={textColor !== MIXED ? { background: textColor } : undefined} /></span>} width={240}>
+        <Pop label={t('textColor')} face={<span className="fr-textstyle-a">A<span className={`fr-textstyle-bar${textColor === MIXED ? ' is-mixed' : ''}`} style={textColor !== MIXED ? { background: textColor } : undefined} /></span>} width={240}>
           <ColorSwatches
             colors={[...TEXT_COLOR_PALETTE]}
             value={textColor === MIXED ? null : textColor}
@@ -134,7 +135,7 @@ export function MixedStyleSection({ editor, selection }: { editor: Editor; selec
             columns={6}
             size={26}
             onChange={(c) => set({ textColor: c })}
-            aria-label="Text color"
+            aria-label={t('textColor')}
           />
         </Pop>
       )}

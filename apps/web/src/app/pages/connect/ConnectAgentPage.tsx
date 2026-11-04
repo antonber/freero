@@ -15,6 +15,7 @@ import { Section } from '../account/Section';
 import { CLIENTS, clientFromHash, clientSetup, curlExamples, reachableFromTheInternet, type ClientId, type SetupBlock } from './clients';
 import { connectionStates, type Connection } from './connections';
 import { starterPrompts } from './prompts';
+import { t as tr } from './messages';
 import '../account/account.css';
 import '../account/api.css';
 import './connect.css';
@@ -26,10 +27,10 @@ const POLL_MS = 4000;
 function useCopy() {
   const notify = useToast();
   return (text: string, what = 'Copied') => {
-    if (!navigator.clipboard) return notify('Your browser doesn’t allow copying here: select the text instead', 'error');
+    if (!navigator.clipboard) return notify(tr('yourBrowserDoesnTAllow'), 'error');
     navigator.clipboard.writeText(text).then(
       () => notify(what, 'success'),
-      () => notify('Could not copy: select the text instead', 'error'),
+      () => notify(tr('couldNotCopySelectThe'), 'error'),
     );
   };
 }
@@ -42,9 +43,7 @@ function CopyField({ label, value, block }: { label: string; value: string; bloc
       <span className="fr-connect-copy__label">{label}</span>
       <div className={`fr-connect-copy__row${block ? ' fr-connect-copy__row--block' : ''}`}>
         {block ? <pre className="fr-connect-copy__value">{value}</pre> : <code className="fr-connect-copy__value">{value}</code>}
-        <Button size="sm" icon={Copy} onClick={() => copy(value, `${label} copied`)} aria-label={`Copy ${label.toLowerCase()}`}>
-          Copy
-        </Button>
+        <Button size="sm" icon={Copy} onClick={() => copy(value, `${label} copied`)} aria-label={tr('copyLabel', { label: label.toLowerCase() })}>{tr('copy')}</Button>
       </div>
     </div>
   );
@@ -69,33 +68,28 @@ export function ConnectAgentPage() {
     <div className="fr-acct">
       <header className="fr-acct__top">
         <Link to="/settings" className="fr-acct__back">
-          <ArrowLeft size={16} aria-hidden /> Settings
-        </Link>
+          <ArrowLeft size={16} aria-hidden />{' '}{tr('settings')}</Link>
         <Logo size={26} withWordmark />
       </header>
       <main className="fr-acct__main">
-        <h1 className="fr-acct__title">Connect an agent</h1>
-        <p className="fr-connect-lead">
-          Let Claude, ChatGPT, your coding agent or a script work on your boards. It acts as you, with only the permissions you give it: reading and
-          suggesting by default. Trackers, chat, embeds and everything else that connects are in <Link to="/apps">Apps &amp; agents</Link>.
+        <h1 className="fr-acct__title">{tr('connectAnAgent')}</h1>
+        <p className="fr-connect-lead">{tr('letClaudeChatgptYourCoding')}{' '}<Link to="/apps">{tr('appsAgents')}</Link>.
         </p>
         {failed ? (
-          <p className="fr-acct__error">Could not load this server’s address. Reload the page to try again.</p>
+          <p className="fr-acct__error">{tr('couldNotLoadThisServer')}</p>
         ) : !info ? (
-          <Spinner size={20} label="Loading" />
+          <Spinner size={20} label={tr('loading')} />
         ) : !info.enabled ? (
-          <Section id="connect-off" title="Agents are turned off here">
-            <p className="fr-acct__p">The operator of this Freero server turned off its MCP server and API, so no agent or script can connect.</p>
+          <Section id="connect-off" title={tr('agentsAreTurnedOffHere')}>
+            <p className="fr-acct__p">{tr('theOperatorOfThisFreero')}</p>
           </Section>
         ) : (
           <>
-            <Section id="connect-address" title="Your Freero MCP server" description="Every MCP client connects to this one address. It signs in with your Freero account the first time.">
-              <CopyField label="MCP server URL" value={info.mcpUrl} />
+            <Section id="connect-address" title={tr('yourFreeroMcpServer')} description={tr('everyMcpClientConnectsTo')}>
+              <CopyField label={tr('mcpServerUrl')} value={info.mcpUrl} />
               {!reachableFromTheInternet(info.mcpUrl) ? (
                 <p className="fr-connect-warn" role="note">
-                  <CircleAlert size={15} aria-hidden /> This address isn’t public https, so Claude and ChatGPT, which connect from their own servers, can’t
-                  reach it. Clients on this computer (Claude Code, Cursor, VS Code) can.
-                </p>
+                  <CircleAlert size={15} aria-hidden />{' '}{tr('thisAddressIsnTPublic')}</p>
               ) : null}
             </Section>
             <ClientTabs info={info} onTokenCreated={() => setConnectionsVersion((v) => v + 1)} />
@@ -131,10 +125,10 @@ function ClientTabs({ info, onTokenCreated }: { info: McpConnectInfo; onTokenCre
   return (
     <section className="fr-acct-card" aria-labelledby="connect-clients-title">
       <header className="fr-acct-card__head">
-        <h2 id="connect-clients-title">Pick your client</h2>
-        <p>The steps for each, with this server’s address already in them.</p>
+        <h2 id="connect-clients-title">{tr('pickYourClient')}</h2>
+        <p>{tr('theStepsForEachWith')}</p>
       </header>
-      <div className="fr-connect-tabs" role="tablist" aria-label="Client" onKeyDown={onKey}>
+      <div className="fr-connect-tabs" role="tablist" aria-label={tr('client')} onKeyDown={onKey}>
         {CLIENTS.map((c, i) => (
           <button
             key={c.id}
@@ -195,8 +189,8 @@ function HttpClientPanel({ apiUrl, onCreated }: { apiUrl: string; onCreated: () 
   const [busy, setBusy] = useState(false);
   const create = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return setError('Give the token a name, so you can tell it apart later');
-    if (!scopes.length) return setError('Pick at least one permission');
+    if (!name.trim()) return setError(tr('giveTheTokenAName'));
+    if (!scopes.length) return setError(tr('pickAtLeastOnePermission'));
     setBusy(true);
     setError(null);
     try {
@@ -204,7 +198,7 @@ function HttpClientPanel({ apiUrl, onCreated }: { apiUrl: string; onCreated: () 
       setSecret(out.secret);
       onCreated();
     } catch (err) {
-      setError(errorText(err, 'Could not create the token'));
+      setError(errorText(err, tr('couldNotCreateTheToken')));
     } finally {
       setBusy(false);
     }
@@ -212,31 +206,26 @@ function HttpClientPanel({ apiUrl, onCreated }: { apiUrl: string; onCreated: () 
   const examples = curlExamples(apiUrl, secret ?? 'frp_…');
   return (
     <>
-      <p className="fr-acct__p">
-        Scripts, CI jobs and agents without OAuth send a personal access token. It can do what you can, limited to the permissions you tick, and stops
-        when it expires or you revoke it below. The same token works as a bearer token on the MCP server.
-      </p>
+      <p className="fr-acct__p">{tr('scriptsCiJobsAndAgents')}</p>
       {secret ? (
         <div className="fr-acct-api__secret" role="status">
-          <p className="fr-acct__p">This is your new token. Copy it now: it won’t be shown again.</p>
-          <CopyField label="Token" value={secret} />
+          <p className="fr-acct__p">{tr('thisIsYourNewToken')}</p>
+          <CopyField label={tr('token')} value={secret} />
           <div className="fr-acct-form__row">
-            <Button size="sm" variant="ghost" onClick={() => setSecret(null)}>
-              Done
-            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSecret(null)}>{tr('done')}</Button>
           </div>
         </div>
       ) : (
         <form className="fr-acct-form" onSubmit={create} noValidate>
           <div className="fr-acct-form__grid">
-            <Input label="Token name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+            <Input label={tr('tokenName')} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
             <div className="fr-acct-api__field">
-              <span className="fr-acct-api__label">Expires</span>
-              <Select options={EXPIRY} value={expiry} onChange={setExpiry} aria-label="Expires" />
+              <span className="fr-acct-api__label">{tr('expires')}</span>
+              <Select options={EXPIRY} value={expiry} onChange={setExpiry} aria-label={tr('expires')} />
             </div>
           </div>
           <fieldset className="fr-acct-api__perms">
-            <legend className="fr-acct-api__label">Permissions</legend>
+            <legend className="fr-acct-api__label">{tr('permissions')}</legend>
             {OFFERED.map((s) => (
               <label key={s} className="fr-acct-api__perm">
                 <input type="checkbox" checked={scopes.includes(s)} onChange={(e) => setScopes((cur) => (e.target.checked ? [...cur, s] : cur.filter((x) => x !== s)))} />
@@ -252,9 +241,7 @@ function HttpClientPanel({ apiUrl, onCreated }: { apiUrl: string; onCreated: () 
             </p>
           ) : null}
           <div className="fr-acct-form__row">
-            <Button type="submit" variant="primary" icon={KeyRound} loading={busy}>
-              Create token
-            </Button>
+            <Button type="submit" variant="primary" icon={KeyRound} loading={busy}>{tr('createToken')}</Button>
           </div>
         </form>
       )}
@@ -295,26 +282,26 @@ function ConnectionsSection({ version }: { version: number }) {
     const before = seen.current;
     seen.current = new Map(list.map((c) => [c.key, c.connected]));
     if (!before) return;
-    for (const c of list) if (c.connected && before.get(c.key) !== true) notify(`${c.name} is connected`, 'success');
+    for (const c of list) if (c.connected && before.get(c.key) !== true) notify(tr('nameIsConnected', { name: c.name }), 'success');
   }, [list, notify]);
 
   const revoke = async (c: Connection) => {
     try {
       if (c.kind === 'app') await api.revokeAuthorizedApp(c.id);
       else await api.revokeApiToken(c.id);
-      notify(c.kind === 'app' ? `${c.name} can no longer use your account` : `Revoked “${c.name}”`, 'info');
+      notify(c.kind === 'app' ? tr('nameCanNoLongerUse', { name: c.name }) : tr('revokedName', { name: c.name }), 'info');
       load();
     } catch (err) {
-      notify(errorText(err, 'Could not revoke it'), 'error');
+      notify(errorText(err, tr('couldNotRevokeIt')), 'error');
     }
   };
 
   return (
-    <Section id="connections" title="Connected now" description="Apps you allowed and tokens you made. A client shows as connected once it has called Freero; revoking stops it on its next request.">
+    <Section id="connections" title={tr('connectedNow')} description={tr('appsYouAllowedAndTokens')}>
       {failed && !list ? (
-        <p className="fr-acct__error">Could not load your connections.</p>
+        <p className="fr-acct__error">{tr('couldNotLoadYourConnections')}</p>
       ) : !list ? (
-        <Spinner size={20} label="Loading connections" />
+        <Spinner size={20} label={tr('loadingConnections')} />
       ) : list.length ? (
         <ul className="fr-acct-sessions" aria-live="polite">
           {list.map((c) => (
@@ -327,28 +314,24 @@ function ConnectionsSection({ version }: { version: number }) {
                 <span className="fr-connect-status">
                   {c.connected ? (
                     <span className="fr-acct-badge fr-acct-badge--ok" data-testid="connected-badge">
-                      <Check size={13} aria-hidden /> Connected
-                    </span>
+                      <Check size={13} aria-hidden />{' '}{tr('connected')}</span>
                   ) : c.problem ? (
                     <span className="fr-acct-badge fr-acct-badge--warn">{c.problem}</span>
                   ) : (
-                    <span className="fr-connect-waiting">Waiting for its first call…</span>
+                    <span className="fr-connect-waiting">{tr('waitingForItsFirstCall')}</span>
                   )}
                 </span>
                 <Scopes scopes={c.scopes} />
                 <span className="fr-acct-session__meta">{[c.via, c.lastUsedAt ? `last used ${relativeTime(c.lastUsedAt)}` : null, `added ${relativeTime(c.addedAt)}`].filter(Boolean).join(' · ')}</span>
               </span>
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => revoke(c)} aria-label={`Revoke ${c.name}`}>
-                Revoke
-              </Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => revoke(c)} aria-label={tr('revokeName', { name: c.name })}>{tr('revoke')}</Button>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="fr-acct__p">Nothing is connected yet. Follow the steps for your client above; it shows up here when you approve it.</p>
+        <p className="fr-acct__p">{tr('nothingIsConnectedYetFollow')}</p>
       )}
-      <p className="fr-acct__hint">
-        Pause tokens, register your own OAuth app or disconnect everything at once in <Link to="/settings#connected-apps">Settings</Link>.
+      <p className="fr-acct__hint">{tr('pauseTokensRegisterYourOwn')}{' '}<Link to="/settings#connected-apps">{tr('settings')}</Link>.
       </p>
     </Section>
   );
@@ -357,18 +340,16 @@ function ConnectionsSection({ version }: { version: number }) {
 function PromptsSection({ board }: { board: string | null }) {
   const copy = useCopy();
   return (
-    <Section id="prompts" title="Try it" description="Once connected, paste one of these into your agent.">
+    <Section id="prompts" title={tr('tryIt')} description={tr('onceConnectedPasteOneOf')}>
       <ul className="fr-connect-prompts">
         {starterPrompts(board).map((p) => (
           <li key={p.id} className="fr-connect-prompt">
             <div className="fr-connect-prompt__head">
               <h3>{p.title}</h3>
-              <Button size="sm" variant="ghost" icon={Copy} onClick={() => copy(p.text, 'Prompt copied')} aria-label={`Copy the prompt “${p.title}”`}>
-                Copy
-              </Button>
+              <Button size="sm" variant="ghost" icon={Copy} onClick={() => copy(p.text, tr('promptCopied'))} aria-label={tr('copyThePromptTitle', { title: p.title })}>{tr('copy')}</Button>
             </div>
             <p className="fr-connect-prompt__text">{p.text}</p>
-            {p.needs ? <p className="fr-connect-prompt__needs">Needs: {p.needs.charAt(0).toLowerCase() + p.needs.slice(1)}</p> : null}
+            {p.needs ? <p className="fr-connect-prompt__needs">{tr('needs')}{' '}{p.needs.charAt(0).toLowerCase() + p.needs.slice(1)}</p> : null}
           </li>
         ))}
       </ul>

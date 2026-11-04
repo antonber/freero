@@ -9,7 +9,7 @@ import { getConfig } from '../../platform/config';
 import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
-import { getAccount, getGuests, getUsers } from '../auth/index';
+import { getAccount, getGuests, getUsers, localesOf } from '../auth/index';
 import { boardFollowerIds, boardWorkspaceId, getBoardAccess, getBoardTitle } from '../boards/index';
 import {
   accessRequestOutcomes,
@@ -26,6 +26,7 @@ import * as live from './live';
 import { slackDeliveries } from './metrics';
 import * as repo from './repo';
 import { isNotificationType, NOTIFICATION_TYPES, type NotificationData } from './types';
+import { t } from './messages';
 
 export interface NewNotification {
   userId: string;
@@ -101,11 +102,13 @@ async function toSlack(n: { id: string; userId: string; type: NotificationType; 
     if (workspaceId && !(await slackMayReach(n.userId, workspaceId))) return;
     if (!(await repo.claimForSlack(n.id, Date.now()))) return;
     const actor = n.actorId ? (await getUsers([n.actorId])).get(n.actorId)?.name : undefined;
+    // In the recipient's language (#5), like the inbox and the digest.
+    const locale = (await localesOf([n.userId])).get(n.userId) ?? null;
     const sent = await sendSlackDm(n.userId, {
-      title: def.title(actor ?? n.data.actorName ?? 'Someone', n.data),
+      title: def.title(locale, actor ?? n.data.actorName ?? t(locale, 'someone'), n.data),
       quote: n.data.excerpt,
       url: appUrl(null, def.link(n.boardId, n.data)),
-      linkLabel: def.linkLabel,
+      linkLabel: def.linkLabel(locale),
     });
     if (sent === 'sent') outcome = 'sent';
     else {
@@ -243,6 +246,7 @@ function present(
   r: repo.NotificationRow,
   actors: Map<string, { id: string; name: string; color: string; avatarUrl: string | null }>,
   outcomes: Outcomes,
+  locale: string | null,
 ): AppNotification | null {
   if (!isNotificationType(r.type)) return null; // a type this version does not know (newer instance)
   const def = NOTIFICATION_TYPES[r.type];
@@ -254,7 +258,7 @@ function present(
     createdAt: r.createdAt,
     readAt: r.readAt,
     actor: actor ? { id: actor.id, name: actor.name, color: actor.color, avatarUrl: actor.avatarUrl } : null,
-    title: def.title(actor?.name ?? r.data.actorName ?? 'Someone', r.data),
+    title: def.title(locale, actor?.name ?? r.data.actorName ?? t(locale, 'someone'), r.data),
     body: r.data.excerpt ?? '',
     link: def.link(r.boardId, r.data),
     boardId: r.boardId,
@@ -263,6 +267,8 @@ function present(
 }
 
 export async function listFor(userId: string, opts: { before?: number | null; limit?: number } = {}): Promise<NotificationsResponse> {
+  // Worded in the reader's language (#5).
+  const locale = (await localesOf([userId])).get(userId) ?? null;
   const limit = Math.min(MAX_PAGE, Math.max(1, opts.limit ?? DEFAULT_PAGE));
   const [rows, unread] = await Promise.all([repo.list(userId, limit, opts.before ?? null), repo.unreadCount(userId)]);
   const page = rows.slice(0, limit);
@@ -273,7 +279,7 @@ export async function listFor(userId: string, opts: { before?: number | null; li
     requests.map((r) => ({ boardId: r.boardId!, requesterId: r.actorId!, createdAt: r.createdAt })),
   );
   return {
-    notifications: page.map((r) => present(r, actors, outcomes)).filter((n): n is AppNotification => n !== null),
+    notifications: page.map((r) => present(r, actors, outcomes, locale)).filter((n): n is AppNotification => n !== null),
     unread,
     hasMore: rows.length > limit,
   };
@@ -292,12 +298,13 @@ export const BOARD_CHANGES_LIST = 'board-changes';
 
 export async function prefsFor(userId: string): Promise<NotificationPrefs> {
   const [p, slack] = await Promise.all([repo.prefs(userId), repo.slackPrefs(userId)]);
+  const locale = (await localesOf([userId])).get(userId) ?? null;
   return {
     emailAll: p.get(ALL) ?? true,
     types: (Object.keys(NOTIFICATION_TYPES) as NotificationType[]).filter((type) => !NOTIFICATION_TYPES[type].direct).map((type) => ({
       type,
-      label: NOTIFICATION_TYPES[type].label,
-      description: NOTIFICATION_TYPES[type].description,
+      label: NOTIFICATION_TYPES[type].label(locale),
+      description: NOTIFICATION_TYPES[type].description(locale),
       email: p.get(type) ?? true,
       slack: slack.get(type) ?? NOTIFICATION_TYPES[type].slackByDefault === true,
     })),
@@ -403,7 +410,7 @@ export async function sendDigests(now = Date.now()): Promise<number> {
     }
     if (!account.emailVerified || account.deletionScheduledFor) continue;
     try {
-      await sendMail({ to: account.email, ...(await renderDigest(userId, due)) });
+      await sendMail({ to: account.email, ...(await renderDigest(userId, due, account.locale ?? null)) });
       sent++;
     } catch (e) {
       await repo.unclaim(due.map((r) => r.id));
@@ -414,29 +421,30 @@ export async function sendDigests(now = Date.now()): Promise<number> {
   return sent;
 }
 
-async function renderDigest(userId: string, rows: repo.NotificationRow[]) {
+async function renderDigest(userId: string, rows: repo.NotificationRow[], locale: string | null) {
   const actors = await getUsers(rows.flatMap((r) => (r.actorId ? [r.actorId] : [])));
   const shown = rows.slice(-DIGEST_MAX_ITEMS);
   const items = shown.map((r) => {
     const def = NOTIFICATION_TYPES[r.type as NotificationType];
     return {
-      heading: def.title(actors.get(r.actorId ?? '')?.name ?? r.data.actorName ?? 'Someone', r.data),
+      heading: def.title(locale, actors.get(r.actorId ?? '')?.name ?? r.data.actorName ?? t(locale, 'someone'), r.data),
       quote: r.data.excerpt || undefined,
-      link: { label: def.linkLabel, url: appUrl(null, def.link(r.boardId, r.data)) },
+      link: { label: def.linkLabel(locale), url: appUrl(null, def.link(r.boardId, r.data)) },
     };
   });
   const more = rows.length - shown.length;
   const token = unsubscribeToken(userId);
-  const subject = rows.length === 1 ? items[0].heading : `${rows.length} new notifications on Freero`;
+  const subject = rows.length === 1 ? items[0].heading : t(locale, 'digest.subjectMany', { count: rows.length });
   return renderMail({
+    locale,
     subject,
-    title: rows.length === 1 ? 'You have a new notification' : `You have ${rows.length} new notifications`,
-    paragraphs: more > 0 ? [`Here are the latest ${shown.length}; ${more} more are waiting in Freero.`] : [],
+    title: t(locale, 'digest.title', { count: rows.length }),
+    paragraphs: more > 0 ? [t(locale, 'digest.more', { shown: shown.length, more })] : [],
     items,
-    action: { label: 'Open Freero', url: appUrl(null, '/app') },
-    outro: 'You get these emails for activity you haven’t seen in Freero yet. Choose which ones in your account settings.',
+    action: { label: t(locale, 'digest.action'), url: appUrl(null, '/app') },
+    outro: t(locale, 'digest.outro'),
     unsubscribe: {
-      label: 'Unsubscribe from notification emails',
+      label: t(locale, 'digest.unsubscribe'),
       url: appUrl(null, `/unsubscribe?token=${encodeURIComponent(token)}`),
       oneClickUrl: appUrl(null, `/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`),
     },

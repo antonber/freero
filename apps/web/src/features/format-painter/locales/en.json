@@ -1,0 +1,11 @@
+{
+  "selectOneItemToCopy": "Select one item to copy its style.",
+  "copyStyle": "Copy style",
+  "styleCopiedPasteItWith": "Style copied. Paste it with Alt+Mod+V.",
+  "pasteStyle": "Paste style",
+  "stopPaintingFormat": "Stop painting format",
+  "formatPainterClickOtherItems": "Format painter: click other items to copy this style",
+  "formatPainter": "Format painter",
+  "selectOneItemThenPick": "Select one item, then pick the format painter to copy its style.",
+  "unlockThisItemToChange": "Unlock this item to change its style."
+}

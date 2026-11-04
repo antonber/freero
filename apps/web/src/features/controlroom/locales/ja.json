@@ -1,0 +1,20 @@
+{
+  "@@unreviewed": [
+    "letAgentChangeThisBoard",
+    "stopAgentChangingThisBoard",
+    "agentCanWorkOnThis",
+    "agentIsPausedItsNext",
+    "resumeAgent",
+    "pauseAgent",
+    "agentPausedByBy",
+    "agentPaused"
+  ],
+  "letAgentChangeThisBoard": "{agent}がこのボードを再び変更できるようにする",
+  "stopAgentChangingThisBoard": "再開するまで{agent}がこのボードを変更できないようにする",
+  "agentCanWorkOnThis": "{agent}は再びこのボードで作業できます",
+  "agentIsPausedItsNext": "{agent}は一時停止中です: このボードへの次の変更は拒否されます",
+  "resumeAgent": "エージェントを再開",
+  "pauseAgent": "エージェントを一時停止",
+  "agentPausedByBy": "{by}がエージェントを一時停止しました",
+  "agentPaused": "エージェントは一時停止中"
+}

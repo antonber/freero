@@ -5,6 +5,7 @@ import { Check, EyeOff, ThumbsUp, Timer, Trophy } from 'lucide-react';
 import type { ActivityElement, ActivityResults } from '@freero/shared';
 import { currentQuestion, optionText, shares, wordSize } from './activity';
 
+import { t as tr } from '../messages';
 function Poll({ a, r }: { a: ActivityElement; r: ActivityResults }) {
   const rows = a.options.map((o) => r.poll?.find((p) => p.optionId === o.id) ?? { optionId: o.id, count: 0 });
   const pct = shares(rows.map((x) => x.count));
@@ -58,7 +59,7 @@ function Ranking({ a, r }: { a: ActivityElement; r: ActivityResults }) {
           <span className="fr-engage__track">
             <span className="fr-engage__fill" style={{ width: `${(row.points / best) * 100}%` }} />
           </span>
-          <span className="fr-engage__num">{row.points ? `avg #${row.avgRank}` : '—'}</span>
+          <span className="fr-engage__num">{row.points ? tr('avgNAvgrank', { avgRank: row.avgRank }) : '—'}</span>
         </li>
       ))}
     </ol>
@@ -94,11 +95,11 @@ function Questions({ r }: { r: ActivityResults }) {
           </span>
           <span className="fr-engage__qtext">
             {q.text}
-            <span className="fr-engage__by">{q.answered ? 'Answered' : q.by ?? 'Anonymous'}</span>
+            <span className="fr-engage__by">{q.answered ? tr('answered') : q.by ?? tr('anonymous')}</span>
           </span>
         </li>
       ))}
-      {qs.length > 8 && <li className="fr-engage__more">+{qs.length - 8} more</li>}
+      {qs.length > 8 && <li className="fr-engage__more">+{qs.length - 8}{' '}{tr('more')}</li>}
     </ul>
   );
 }
@@ -112,7 +113,7 @@ function Matrix({ a, r }: { a: ActivityElement; r: ActivityResults }) {
   return (
     <div className="fr-engage__matrix">
       <span className="fr-engage__axis is-top">{ax.y[1]}</span>
-      <div className="fr-engage__plane" role="img" aria-label={`${ax.x[0]} to ${ax.x[1]} across, ${ax.y[0]} to ${ax.y[1]} up`}>
+      <div className="fr-engage__plane" role="img" aria-label={tr('valueToValue2AcrossValue3', { value: ax.x[0], value2: ax.x[1], value3: ax.y[0], value4: ax.y[1] })}>
         {a.options.map((o, i) => {
           const m = rows.find((x) => x.optionId === o.id);
           if (!m?.count) return null;
@@ -122,12 +123,12 @@ function Matrix({ a, r }: { a: ActivityElement; r: ActivityResults }) {
               <span className="fr-engage__halo" style={{ width: `${Math.max(0.04, m.sx * 2) * 100}cqw`, height: `${Math.max(0.04, m.sy * 2) * 100}cqh` }} />
               <span className="fr-engage__pin" />
               <span className="fr-engage__dotlabel">
-                {o.text || 'Untitled item'} <small>· {m.count}</small>
+                {o.text || tr('untitledItem')} <small>· {m.count}</small>
               </span>
             </div>
           );
         })}
-        {!rows.some((m) => m.count) ? <span className="fr-engage__planehint">Items appear here as people place them</span> : null}
+        {!rows.some((m) => m.count) ? <span className="fr-engage__planehint">{tr('itemsAppearHereAsPeople')}</span> : null}
       </div>
       <span className="fr-engage__axis is-bottom">
         {ax.y[0]} · {ax.x[0]} → {ax.x[1]}
@@ -172,15 +173,13 @@ function Quiz({ a, r, now }: { a: ActivityElement; r: ActivityResults; now: () =
             </li>
           ))
         ) : (
-          <li className="fr-engage__empty">Nobody answered</li>
+          <li className="fr-engage__empty">{tr('nobodyAnswered')}</li>
         )}
       </ol>
     );
   if (!q)
     return (
-      <div className="fr-engage__empty">
-        {total} question{total === 1 ? '' : 's'} · starts when the host opens the first one
-      </div>
+      <div className="fr-engage__empty">{tr('totalQuestionsStartsWhenThe', { total })}</div>
     );
   const counts = r.quiz?.questionId === q.id ? r.quiz.counts : undefined;
   const correct = r.quiz?.questionId === q.id ? r.quiz.correct : undefined;
@@ -188,22 +187,19 @@ function Quiz({ a, r, now }: { a: ActivityElement; r: ActivityResults; now: () =
   return (
     <div className="fr-engage__quiz">
       <div className="fr-engage__quizhead">
-        <span>
-          Question {a.quiz!.step + 1} of {total}
-        </span>
+        <span>{tr('question')}{' '}{a.quiz!.step + 1}{' '}{tr('ofTotal', { total })}</span>
         {left !== null ? (
           <span className={`fr-engage__timer${left <= 5 ? ' is-low' : ''}`} aria-live="off">
-            <Timer size={13} aria-hidden /> {left}s
-          </span>
+            <Timer size={13} aria-hidden />{' '}{tr('leftS', { left })}</span>
         ) : null}
-        <span className="fr-engage__count">{r.quiz?.questionId === q.id ? r.quiz.answered : 0} answered</span>
+        <span className="fr-engage__count">{r.quiz?.questionId === q.id ? r.quiz.answered : 0}{' '}{tr('answered2')}</span>
       </div>
-      <div className="fr-engage__quizq">{q.text || 'Untitled question'}</div>
+      <div className="fr-engage__quizq">{q.text || tr('untitledQuestion')}</div>
       <ul className="fr-engage__bars">
         {q.options.map((o, i) => (
           <li key={o.id} className={correct?.includes(o.id) ? 'is-top is-right' : undefined}>
             <span className="fr-engage__label">
-              {correct?.includes(o.id) ? <Check size={13} aria-label="Right answer" /> : null} {o.text || 'Untitled answer'}
+              {correct?.includes(o.id) ? <Check size={13} aria-label={tr('rightAnswer')} /> : null} {o.text || tr('untitledAnswer')}
             </span>
             {counts ? (
               <>
@@ -225,7 +221,7 @@ export function Body({ a, r, now = Date.now }: { a: ActivityElement; r: Activity
     return (
       <div className="fr-engage__sealed">
         <EyeOff size={22} aria-hidden />
-        <span>Results are hidden until they’re revealed</span>
+        <span>{tr('resultsAreHiddenUntilThey')}</span>
       </div>
     );
   const results: ActivityResults = r ?? { activityId: a.id, respondents: 0, sealed: false, updatedAt: 0 };
@@ -233,13 +229,13 @@ export function Body({ a, r, now = Date.now }: { a: ActivityElement; r: Activity
     case 'poll':
       return <Poll a={a} r={results} />;
     case 'wordcloud':
-      return results.words?.length ? <WordCloud r={results} /> : <div className="fr-engage__empty">Words appear here as people answer</div>;
+      return results.words?.length ? <WordCloud r={results} /> : <div className="fr-engage__empty">{tr('wordsAppearHereAsPeople')}</div>;
     case 'ranking':
       return results.ranking?.length ? <Ranking a={a} r={results} /> : <Ranking a={a} r={{ ...results, ranking: a.options.map((o) => ({ optionId: o.id, points: 0, avgRank: 0 })) }} />;
     case 'rating':
       return <Rating a={a} r={{ ...results, rating: results.rating ?? a.options.map((o) => ({ optionId: o.id, avg: 0, count: 0, dist: [] })) }} />;
     case 'qna':
-      return results.questions?.length ? <Questions r={results} /> : <div className="fr-engage__empty">Questions appear here as people ask them</div>;
+      return results.questions?.length ? <Questions r={results} /> : <div className="fr-engage__empty">{tr('questionsAppearHereAsPeople')}</div>;
     case 'matrix':
       return <Matrix a={a} r={results} />;
     case 'quiz':

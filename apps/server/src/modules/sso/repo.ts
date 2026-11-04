@@ -1,4 +1,5 @@
-// The only writer of `sso_domains`, `sso_connections`, `sso_flows` and `sso_saml_cache` [S4].
+// The only writer of `sso_domains`, `sso_connections`, `sso_flows`, `sso_saml_cache`, `sso_sp_keys`
+// and `sso_sessions` [S4].
 import type { DirectoryRole } from '../workspaces/index';
 import { isUniqueViolation, one, query, tx } from '../../platform/db';
 
@@ -108,6 +109,12 @@ export interface ConnectionRecord {
   testedAt: number | null;
   /** SAML: unsolicited (IdP-initiated) responses are accepted. */
   idpInitiated: boolean;
+  /** SAML (#13): the IdP's SingleLogoutService. */
+  samlSloUrl: string | null;
+  /** SAML (#13): assertions must arrive encrypted. */
+  requireEncrypted: boolean;
+  /** SAML (#13): AuthnRequests and logout messages are signed with the current SP key. */
+  signRequests: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -126,6 +133,9 @@ interface ConnectionRow {
   oidc_client_secret: string | null;
   tested_at: Date | null;
   idp_initiated: boolean;
+  saml_slo_url: string | null;
+  require_encrypted: boolean;
+  sign_requests: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -144,6 +154,9 @@ const toConnection = (r: ConnectionRow): ConnectionRecord => ({
   oidcClientSecret: r.oidc_client_secret,
   testedAt: r.tested_at?.getTime() ?? null,
   idpInitiated: r.idp_initiated,
+  samlSloUrl: r.saml_slo_url,
+  requireEncrypted: r.require_encrypted,
+  signRequests: r.sign_requests,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
 });
@@ -166,8 +179,9 @@ export async function saveConnection(
 ): Promise<void> {
   await query(
     `INSERT INTO sso_connections (workspace_id, protocol, enabled, default_role,
-       saml_entity_id, saml_sso_url, saml_certs, oidc_issuer, oidc_client_id, oidc_client_secret, created_at, updated_at, idp_initiated)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $13)
+       saml_entity_id, saml_sso_url, saml_certs, oidc_issuer, oidc_client_id, oidc_client_secret, created_at, updated_at, idp_initiated,
+       saml_slo_url, require_encrypted, sign_requests)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $13, $14, $15, $16)
      ON CONFLICT (workspace_id) DO UPDATE SET
        protocol = excluded.protocol, enabled = excluded.enabled,
        enforced = sso_connections.enforced AND excluded.enabled AND NOT $12::boolean,
@@ -176,6 +190,7 @@ export async function saveConnection(
        saml_certs = excluded.saml_certs, oidc_issuer = excluded.oidc_issuer, oidc_client_id = excluded.oidc_client_id,
        oidc_client_secret = excluded.oidc_client_secret,
        idp_initiated = excluded.idp_initiated,
+       saml_slo_url = excluded.saml_slo_url, require_encrypted = excluded.require_encrypted, sign_requests = excluded.sign_requests,
        tested_at = CASE WHEN $12::boolean THEN NULL ELSE sso_connections.tested_at END,
        updated_at = excluded.updated_at`,
     [
@@ -192,6 +207,9 @@ export async function saveConnection(
       new Date(now),
       providerChanged,
       c.idpInitiated,
+      c.samlSloUrl,
+      c.requireEncrypted,
+      c.signRequests,
     ],
   );
 }
@@ -360,6 +378,104 @@ export async function cacheSaveIfAbsent(workspaceId: string, key: string, value:
     [workspaceId, key, value, new Date(expiresAt), new Date(now)],
   );
   return rows.length > 0;
+}
+
+// ---- the SAML service provider's key pairs (#13) ----
+
+export interface SpKeyRecord {
+  id: string;
+  workspaceId: string;
+  /** Sealed. */
+  privateKey: string;
+  certificate: string;
+  current: boolean;
+  createdAt: number;
+}
+interface SpKeyRow {
+  id: string;
+  workspace_id: string;
+  private_key: string;
+  certificate: string;
+  current: boolean;
+  created_at: Date;
+}
+const toSpKey = (r: SpKeyRow): SpKeyRecord => ({
+  id: r.id,
+  workspaceId: r.workspace_id,
+  privateKey: r.private_key,
+  certificate: r.certificate,
+  current: r.current,
+  createdAt: r.created_at.getTime(),
+});
+
+export async function listSpKeys(workspaceId: string): Promise<SpKeyRecord[]> {
+  return (await query<SpKeyRow>(`SELECT * FROM sso_sp_keys WHERE workspace_id = $1 ORDER BY created_at, id`, [workspaceId])).map(toSpKey);
+}
+
+/** The workspace's keys, locked for the caller's transaction (key changes are serialized per workspace). */
+export async function lockSpKeys(workspaceId: string): Promise<SpKeyRecord[]> {
+  await query(`SELECT pg_advisory_xact_lock(hashtext('sso.sp_keys'), hashtext($1))`, [workspaceId]);
+  return listSpKeys(workspaceId);
+}
+
+export async function insertSpKey(k: Omit<SpKeyRecord, 'createdAt'>, now: number): Promise<void> {
+  await query(`INSERT INTO sso_sp_keys (id, workspace_id, private_key, certificate, current, created_at) VALUES ($1, $2, $3, $4, $5, $6)`, [
+    k.id,
+    k.workspaceId,
+    k.privateKey,
+    k.certificate,
+    k.current,
+    new Date(now),
+  ]);
+}
+
+/** Makes one key current and the others not, in one statement. */
+export async function makeSpKeyCurrent(workspaceId: string, keyId: string): Promise<void> {
+  await query(`UPDATE sso_sp_keys SET current = false WHERE workspace_id = $1 AND current AND id <> $2`, [workspaceId, keyId]);
+  await query(`UPDATE sso_sp_keys SET current = true WHERE workspace_id = $1 AND id = $2`, [workspaceId, keyId]);
+}
+
+export async function deleteSpKey(workspaceId: string, keyId: string): Promise<boolean> {
+  return (await query(`DELETE FROM sso_sp_keys WHERE workspace_id = $1 AND id = $2 RETURNING 1`, [workspaceId, keyId])).length > 0;
+}
+
+export async function resealSpKey(id: string, sealed: string, resealed: string): Promise<void> {
+  await query(`UPDATE sso_sp_keys SET private_key = $3 WHERE id = $1 AND private_key = $2`, [id, sealed, resealed]);
+}
+
+// ---- sessions a SAML sign-in started (#13, single logout) ----
+
+export interface SamlSessionRecord {
+  sessionKey: string;
+  workspaceId: string;
+  nameId: string;
+  nameIdFormat: string | null;
+  sessionIndex: string | null;
+}
+
+export async function insertSamlSession(s: SamlSessionRecord, now: number): Promise<void> {
+  await query(
+    `INSERT INTO sso_sessions (session_key, workspace_id, name_id, name_id_format, session_index, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [s.sessionKey, s.workspaceId, s.nameId, s.nameIdFormat, s.sessionIndex, new Date(now)],
+  );
+}
+
+export async function getSamlSession(sessionKey: string): Promise<SamlSessionRecord | null> {
+  const r = await one<{ session_key: string; workspace_id: string; name_id: string; name_id_format: string | null; session_index: string | null }>(
+    `SELECT * FROM sso_sessions WHERE session_key = $1`,
+    [sessionKey],
+  );
+  return r ? { sessionKey: r.session_key, workspaceId: r.workspace_id, nameId: r.name_id, nameIdFormat: r.name_id_format, sessionIndex: r.session_index } : null;
+}
+
+/** Keys of the sessions this workspace's SAML sign-in started for `nameId` (and `sessionIndex`, when given). */
+export async function samlSessionKeys(workspaceId: string, nameId: string, sessionIndex: string | null): Promise<string[]> {
+  return (
+    await query<{ session_key: string }>(
+      `SELECT session_key FROM sso_sessions WHERE workspace_id = $1 AND name_id = $2 AND ($3::text IS NULL OR session_index = $3)`,
+      [workspaceId, nameId, sessionIndex],
+    )
+  ).map((r) => r.session_key);
 }
 
 // ---- domain control (#64) ----

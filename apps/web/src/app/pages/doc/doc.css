@@ -54,7 +54,7 @@
 .fr-docpage-badge {
   position: absolute;
   top: 4px;
-  right: 2px;
+  inset-inline-end: 2px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
@@ -97,7 +97,7 @@
   width: 340px;
   flex: none;
   background: var(--fr-surface);
-  border-left: 1px solid var(--fr-line);
+  border-inline-start: 1px solid var(--fr-line);
 }
 .fr-docpage-panel__head {
   display: flex;
@@ -221,7 +221,7 @@
   background: transparent;
   color: var(--fr-ink);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .fr-dochistory-item:hover {

@@ -7,6 +7,7 @@ import { definePanel, type PanelProps } from '@engine';
 import { Button, Modal } from '@ui';
 import { ImportError, type ImportReport } from './lib/common';
 import { IMPORT_DIALOG, importFile, summary } from './lib/insert';
+import { t } from './messages';
 import './import.css';
 
 function ReportList({ report }: { report: ImportReport }) {
@@ -15,7 +16,7 @@ function ReportList({ report }: { report: ImportReport }) {
       <p>{summary(report)}.</p>
       {report.skipped.length ? (
         <>
-          <p className="fr-import__report-head">Not mapped exactly:</p>
+          <p className="fr-import__report-head">{t('notMappedExactly')}</p>
           <ul>
             {report.skipped.map((s) => (
               <li key={s.what}>
@@ -26,7 +27,7 @@ function ReportList({ report }: { report: ImportReport }) {
           </ul>
         </>
       ) : (
-        <p>Everything in the file has a Freero counterpart.</p>
+        <p>{t('everythingInTheFileHas')}</p>
       )}
     </div>
   );
@@ -49,7 +50,7 @@ function ImportDialog({ editor, props }: PanelProps) {
         close();
       } else setReport(r);
     } catch (e) {
-      setError(e instanceof ImportError ? e.message : 'Could not import that file');
+      setError(e instanceof ImportError ? e.message : t('couldNotImportThatFile'));
     } finally {
       setBusy(false);
     }
@@ -59,13 +60,13 @@ function ImportDialog({ editor, props }: PanelProps) {
     <Modal
       open
       onClose={close}
-      title={report ? `Imported from ${report.source}` : 'Import a file'}
-      description={report ? undefined : 'Shapes, text, connectors, frames, freehand and images from a draw.io (.drawio), Excalidraw (.excalidraw) or Visio (.vsdx, also Lucidchart’s Visio export) file, or a PowerPoint deck (.pptx) as slides with their speaker notes. One undo takes it all back.'}
+      title={report ? t('importedFromSource', { source: report.source }) : t('importAFile')}
+      description={report ? undefined : t('shapesTextConnectorsFramesFreehand')}
       width={520}
       footer={
         // Keyed: a new button for the report, so it doesn't fade from Cancel's colours into Done's.
         <Button key={report ? 'done' : 'cancel'} variant={report ? 'primary' : 'secondary'} onClick={close}>
-          {report ? 'Done' : 'Cancel'}
+          {report ? t('done') : t('cancel')}
         </Button>
       }
     >
@@ -75,10 +76,10 @@ function ImportDialog({ editor, props }: PanelProps) {
         <div className="fr-import">
           <label className={`fr-import__file${busy ? ' fr-import__file--busy' : ''}`}>
             <FileInput size={18} aria-hidden />
-            <span>{busy ? 'Importing…' : 'Choose a .drawio, .excalidraw, .vsdx or .pptx file'}</span>
+            <span>{busy ? t('importing') : t('chooseADrawioExcalidrawVsdx')}</span>
             <input type="file" disabled={busy} accept=".drawio,.dio,.xml,.excalidraw,.json,.vsdx,.vsdm,.pptx,.pptm,.ppsx,.potx" onChange={(e) => void pick(e.target.files?.[0])} />
           </label>
-          <p className="fr-import__hint">You can also drop the file on the board, or paste a diagram copied from draw.io or Excalidraw.</p>
+          <p className="fr-import__hint">{t('youCanAlsoDropThe')}</p>
           {error ? (
             <p className="fr-import__error" role="alert">
               {error}

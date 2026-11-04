@@ -3,6 +3,7 @@
 // it still works (not paused, not expired).
 import type { ApiScope, AuthorizedApp, PersonalToken } from '@freero/shared';
 
+import { t as tr } from './messages';
 export interface Connection {
   key: string;
   kind: 'app' | 'token';
@@ -43,7 +44,7 @@ export function connectionStates(apps: AuthorizedApp[], tokens: PersonalToken[],
         id: t.id,
         name: t.name,
         scopes: t.scopes,
-        via: `Personal token …${t.hint}`,
+        via: tr('personalTokenHint', { hint: t.hint }),
         addedAt: t.createdAt,
         lastUsedAt: t.lastUsedAt,
         connected: t.lastUsedAt !== null && problem === null,

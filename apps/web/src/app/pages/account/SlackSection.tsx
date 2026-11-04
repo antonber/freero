@@ -9,6 +9,7 @@ import { Button, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { Section } from './Section';
 
+import { t } from './messages';
 const CONNECT_URL = '/api/integrations/slack/oauth/start';
 
 export function SlackSection({ onChange }: { onChange: () => void }) {
@@ -27,7 +28,7 @@ export function SlackSection({ onChange }: { onChange: () => void }) {
     const err = q.get('slack_error');
     if (!err && !q.get('slack')) return;
     if (err) notify(err, 'error');
-    else if (q.get('slack') === 'connected') notify('Slack connected', 'success');
+    else if (q.get('slack') === 'connected') notify(t('slackConnected'), 'success');
     q.delete('slack_error');
     q.delete('slack');
     const rest = q.toString();
@@ -46,11 +47,11 @@ export function SlackSection({ onChange }: { onChange: () => void }) {
     setBusy(true);
     try {
       await api.disconnectSlack();
-      notify('Slack disconnected', 'success');
+      notify(t('slackDisconnected'), 'success');
       load();
       onChange();
     } catch (e) {
-      notify(e instanceof ApiError && e.status < 500 ? e.message : 'Could not disconnect Slack', 'error');
+      notify(e instanceof ApiError && e.status < 500 ? e.message : t('couldNotDisconnectSlack'), 'error');
     } finally {
       setBusy(false);
     }
@@ -59,28 +60,20 @@ export function SlackSection({ onChange }: { onChange: () => void }) {
     <Section
       id="slack"
       title="Slack"
-      description="Get your notifications as direct messages from Freero’s Slack app, show what a board is when you paste a link to it in Slack, and create or find boards with /freero."
+      description={t('getYourNotificationsAsDirect')}
     >
       {info.link ? (
         <div className="fr-acct-slack">
-          <p className="fr-acct-slack__who">
-            Connected as <strong>{info.link.slackName}</strong> in <strong>{info.link.teamName}</strong>.
+          <p className="fr-acct-slack__who">{t('connectedAs')}{' '}<strong>{info.link.slackName}</strong>{' '}{t('in')}{' '}<strong>{info.link.teamName}</strong>.
           </p>
-          <p className="fr-acct__hint">
-            In Slack, type <code>/freero new Sprint review</code> to create a board, or <code>/freero roadmap</code> to find yours. Choose which notifications
-            come to Slack under Notification emails and Slack above — those arrive in Slack instead of by email.
-          </p>
+          <p className="fr-acct__hint">{t('inSlackType')}{' '}<code>/freero new Sprint review</code>{' '}{t('toCreateABoardOr')}{' '}<code>/freero roadmap</code>{' '}{t('toFindYoursChooseWhich')}</p>
           <div className="fr-acct-form__row">
-            <Button variant="secondary" icon={Unplug} onClick={disconnect} disabled={busy}>
-              Disconnect Slack
-            </Button>
+            <Button variant="secondary" icon={Unplug} onClick={disconnect} disabled={busy}>{t('disconnectSlack')}</Button>
           </div>
         </div>
       ) : (
         <div className="fr-acct-form__row">
-          <Button variant="primary" icon={MessageSquareShare} onClick={() => window.location.assign(CONNECT_URL)}>
-            Connect Slack
-          </Button>
+          <Button variant="primary" icon={MessageSquareShare} onClick={() => window.location.assign(CONNECT_URL)}>{t('connectSlack')}</Button>
         </div>
       )}
     </Section>

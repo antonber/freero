@@ -32,6 +32,7 @@ import { coord, ImportError, imageDraft, MAX_FILE_BYTES, MAX_ITEMS, MAX_UNPACKED
 import { base64, kid, kids, OpcPackage, relAttr, sniffImage, type Rel } from './opc';
 import { ZipPackage } from './zip';
 
+import { t as tx } from '../messages';
 /** EMU per board unit (96 a inch). */
 const EMU = 9525;
 /** Parts a package may hold, how big one picture may be, slides one deck may have, reading time. */
@@ -294,12 +295,12 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
   const picture = async (part: Part, blip: Element | null): Promise<string | null> => {
     if (!blip) return null;
     if (relAttr(blip, 'link') && !relAttr(blip, 'embed')) {
-      skips.add('Linked pictures (left out)');
+      skips.add(tx('linkedPicturesLeftOut'));
       return null;
     }
     const rel = part.rels.get(relAttr(blip, 'embed') ?? '');
     if (!rel || rel.external) {
-      if (rel?.external) skips.add('Linked pictures (left out)');
+      if (rel?.external) skips.add(tx('linkedPicturesLeftOut'));
       return null;
     }
     if (pictureCache.has(rel.target)) return pictureCache.get(rel.target)!;
@@ -309,7 +310,7 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
     });
     const mime = b ? sniffImage(b) : null;
     const url = b && mime ? `data:${mime};base64,${base64(b)}` : null;
-    if (!url) skips.add('Pictures in formats Freero doesn’t show, such as EMF (left out)');
+    if (!url) skips.add(tx('picturesInFormatsFreeroDoesn2'));
     pictureCache.set(rel.target, url);
     return url;
   };
@@ -508,7 +509,7 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
         return;
       }
       if (local === 'contentPart') {
-        skips.add('Ink drawings (left out)');
+        skips.add(tx('inkDrawingsLeftOut'));
         return;
       }
       if (local === 'sp' || local === 'cxnSp') {
@@ -578,7 +579,7 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
         }
         if (!text && (!fill || fill === 'transparent') && !hasLine) return; // an empty placeholder or an invisible box
         const kind = geom === 'custom' ? null : (PRESETS[geom] ?? null);
-        if (!kind) skips.add(geom === 'custom' ? 'Freeform shapes (drawn as rectangles)' : `“${geom}” shapes (drawn as rectangles)`);
+        if (!kind) skips.add(geom === 'custom' ? tx('freeformShapesDrawnAsRectangles') : tx('geomShapesDrawnAsRectangles', { geom }));
         const fontSize = Math.max(8, Math.min(400, Math.round(text?.size ?? (ph && isTitle(ph.type) ? 44 : 18) * (96 / 72))));
         const box = { x: Math.round(r.x + ox), y: Math.round(r.y), w: Math.max(1, Math.round(r.w)), h: Math.max(1, Math.round(r.h)) };
         const id = newId();
@@ -633,9 +634,9 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
         const media = [...(nvPr?.getElementsByTagName('*') ?? [])].find((e) => e.localName === 'videoFile' || e.localName === 'audioFile' || e.localName === 'media');
         const blipFill = kid(el, 'blipFill');
         const src = await picture(part, kid(blipFill, 'blip'));
-        if (media) skips.add(src ? 'Videos and sounds (placed as their poster picture)' : 'Videos and sounds (placed as a labelled box)');
+        if (media) skips.add(src ? tx('videosAndSoundsPlacedAs') : tx('videosAndSoundsPlacedAs2'));
         if (!src) {
-          if (media) labelledBox({ ...r, x: r.x + ox }, 'Video (not imported)', at.rot, groupId);
+          if (media) labelledBox({ ...r, x: r.x + ox }, tx('videoNotImported'), at.rot, groupId);
           return;
         }
         const crop = kid(blipFill, 'srcRect');
@@ -671,16 +672,16 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
             const id = newId();
             images.push({ id, source: src });
             put({ ...imageDraft(id, { ...r, x: r.x + ox }, 0, ''), naturalW: Math.max(1, Math.round(r.w)), naturalH: Math.max(1, Math.round(r.h)) } as ElementDraft, groupId);
-            skips.add('Embedded objects (placed as their picture)');
+            skips.add(tx('embeddedObjectsPlacedAsTheir'));
           } else {
-            labelledBox({ ...r, x: r.x + ox }, 'Embedded object (not imported)', 0, groupId);
-            skips.add('Embedded objects (placed as a labelled box)');
+            labelledBox({ ...r, x: r.x + ox }, tx('embeddedObjectNotImported'), 0, groupId);
+            skips.add(tx('embeddedObjectsPlacedAsA'));
           }
           return;
         }
         const what = uri.endsWith(NS_CHART) ? 'Chart' : uri.endsWith(NS_DIAGRAM) ? 'SmartArt' : 'Object';
-        labelledBox({ ...r, x: r.x + ox }, `${what} (not imported)`, 0, groupId);
-        skips.add(what === 'Chart' ? 'Charts (placed as a labelled box)' : what === 'SmartArt' ? 'SmartArt (placed as a labelled box)' : 'Other objects (placed as a labelled box)');
+        labelledBox({ ...r, x: r.x + ox }, tx('whatNotImported', { what }), 0, groupId);
+        skips.add(what === 'Chart' ? tx('chartsPlacedAsALabelled') : what === 'SmartArt' ? tx('smartartPlacedAsALabelled') : tx('otherObjectsPlacedAsA'));
       }
     };
 
@@ -706,7 +707,7 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
             if (t || (f && f !== 'transparent')) cells[`${rows[ri].id}:${cols[ci].id}`] = { ...(t ? { t: t.html } : {}), ...(f && f !== 'transparent' ? { f } : {}) };
           });
       });
-      if (merged) skips.add('Merged table cells (split again)');
+      if (merged) skips.add(tx('mergedTableCellsSplitAgain'));
       const id = newId();
       const w = cols.reduce((s, c) => s + c.w, 0);
       const h = rows.reduce((s, c) => s + c.h, 0);
@@ -767,7 +768,7 @@ export async function parsePptx(bytes: Uint8Array, newId: () => string, opts: { 
       w: slideW,
       h: slideH,
       rotation: 0,
-      title: title || `Slide ${si + 1}`,
+      title: title || tx('slideValue', { value: si + 1 }),
       fill: background,
       index: si,
       preset,

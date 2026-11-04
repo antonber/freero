@@ -1,5 +1,6 @@
 // The languages a code block can be highlighted as, and how a pasted fence names them. Pure.
 // The grammars themselves are in ./highlighter.ts, which is only ever loaded with import().
+import { t as tr } from '../messages';
 
 export interface Language {
   /** Grammar id stored on the element. */
@@ -13,30 +14,30 @@ export const AUTO = 'auto';
 export const PLAIN = 'plaintext';
 
 export const LANGUAGES: Language[] = [
-  { id: 'typescript', label: 'TypeScript', aliases: ['ts', 'tsx', 'mts', 'cts'] },
-  { id: 'javascript', label: 'JavaScript', aliases: ['js', 'jsx', 'mjs', 'cjs', 'node'] },
-  { id: 'python', label: 'Python', aliases: ['py', 'python3'] },
-  { id: 'java', label: 'Java', aliases: [] },
-  { id: 'kotlin', label: 'Kotlin', aliases: ['kt', 'kts'] },
-  { id: 'go', label: 'Go', aliases: ['golang'] },
-  { id: 'rust', label: 'Rust', aliases: ['rs'] },
+  { id: 'typescript', label: tr('typescript'), aliases: ['ts', 'tsx', 'mts', 'cts'] },
+  { id: 'javascript', label: tr('javascript'), aliases: ['js', 'jsx', 'mjs', 'cjs', 'node'] },
+  { id: 'python', label: tr('python'), aliases: ['py', 'python3'] },
+  { id: 'java', label: tr('java'), aliases: [] },
+  { id: 'kotlin', label: tr('kotlin'), aliases: ['kt', 'kts'] },
+  { id: 'go', label: tr('go'), aliases: ['golang'] },
+  { id: 'rust', label: tr('rust'), aliases: ['rs'] },
   { id: 'c', label: 'C', aliases: ['h'] },
   { id: 'cpp', label: 'C++', aliases: ['c++', 'cc', 'cxx', 'hpp'] },
   { id: 'csharp', label: 'C#', aliases: ['cs', 'c#'] },
-  { id: 'swift', label: 'Swift', aliases: [] },
-  { id: 'ruby', label: 'Ruby', aliases: ['rb'] },
+  { id: 'swift', label: tr('swift'), aliases: [] },
+  { id: 'ruby', label: tr('ruby'), aliases: ['rb'] },
   { id: 'php', label: 'PHP', aliases: [] },
   { id: 'sql', label: 'SQL', aliases: ['postgres', 'postgresql', 'mysql', 'sqlite'] },
-  { id: 'bash', label: 'Shell', aliases: ['sh', 'shell', 'zsh', 'console', 'shellsession'] },
+  { id: 'bash', label: tr('shell'), aliases: ['sh', 'shell', 'zsh', 'console', 'shellsession'] },
   { id: 'json', label: 'JSON', aliases: ['jsonc', 'json5'] },
   { id: 'yaml', label: 'YAML', aliases: ['yml'] },
-  { id: 'xml', label: 'HTML / XML', aliases: ['html', 'xhtml', 'svg', 'xml', 'vue'] },
+  { id: 'xml', label: tr('htmlXml'), aliases: ['html', 'xhtml', 'svg', 'xml', 'vue'] },
   { id: 'css', label: 'CSS', aliases: [] },
   { id: 'scss', label: 'SCSS', aliases: ['sass'] },
   { id: 'markdown', label: 'Markdown', aliases: ['md', 'mdx'] },
-  { id: 'dockerfile', label: 'Dockerfile', aliases: ['docker'] },
-  { id: 'ini', label: 'INI / TOML', aliases: ['toml', 'conf', 'cfg'] },
-  { id: 'diff', label: 'Diff', aliases: ['patch'] },
+  { id: 'dockerfile', label: tr('dockerfile'), aliases: ['docker'] },
+  { id: 'ini', label: tr('iniToml'), aliases: ['toml', 'conf', 'cfg'] },
+  { id: 'diff', label: tr('diff'), aliases: ['patch'] },
 ];
 
 const byTag = new Map<string, string>();
@@ -51,8 +52,8 @@ export function languageForTag(tag: string | null | undefined): string {
 }
 
 export function languageLabel(id: string): string {
-  if (id === AUTO) return 'Auto-detect';
-  if (id === PLAIN) return 'Plain text';
+  if (id === AUTO) return tr('autoDetect');
+  if (id === PLAIN) return tr('plainText');
   return LANGUAGES.find((l) => l.id === id)?.label ?? id;
 }
 

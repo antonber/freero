@@ -36,7 +36,7 @@
 .fr-decision-changes {
   position: fixed;
   top: 64px;
-  right: 12px;
+  inset-inline-end: 12px;
   bottom: 12px;
   z-index: var(--fr-z-popover);
   display: flex;
@@ -82,7 +82,7 @@
 .fr-decision-changes__note {
   margin: 0 0 12px;
   padding: 8px 12px;
-  border-left: 3px solid var(--fr-warning);
+  border-inline-start: 3px solid var(--fr-warning);
   border-radius: var(--fr-radius-sm);
   background: var(--fr-surface-2);
   white-space: pre-wrap;

@@ -4,6 +4,7 @@
 import type { ReactNode } from 'react';
 import { STAMP_PREFIX, STAMPS, type StampDef } from './stamps';
 
+import { t } from '../messages';
 export interface StickerPack {
   id: string;
   label: string;
@@ -91,7 +92,7 @@ function rays(cx: number, cy: number, r0: number, r1: number, color: string, wid
 const WORKSHOP: StampDef[] = [
   {
     id: 'idea',
-    label: 'Great idea',
+    label: t('greatIdea'),
     words: 'idea lightbulb bulb insight eureka bright',
     art: (
       <Tile fill="#FFF5E2">
@@ -105,7 +106,7 @@ const WORKSHOP: StampDef[] = [
   },
   {
     id: 'blocker',
-    label: 'Blocker',
+    label: t('blocker'),
     words: 'blocker blocked stop risk impediment halt',
     art: (
       <>
@@ -118,7 +119,7 @@ const WORKSHOP: StampDef[] = [
   },
   {
     id: 'ship-it',
-    label: 'Ship it',
+    label: t('shipIt'),
     words: 'ship it launch rocket release go live deploy',
     art: (
       <Round fill="#EAF3FF">
@@ -135,7 +136,7 @@ const WORKSHOP: StampDef[] = [
   },
   {
     id: 'needs-data',
-    label: 'Needs data',
+    label: t('needsData'),
     words: 'needs data evidence numbers chart metrics research',
     art: (
       <Tile fill="#F1EEFF">
@@ -148,7 +149,7 @@ const WORKSHOP: StampDef[] = [
   },
   {
     id: 'parking-lot',
-    label: 'Parking lot',
+    label: t('parkingLot'),
     words: 'parking lot later park it off topic come back',
     art: (
       <Tile fill="#2F80ED">
@@ -160,7 +161,7 @@ const WORKSHOP: StampDef[] = [
   },
   {
     id: 'hot-topic',
-    label: 'Hot topic',
+    label: t('hotTopic'),
     words: 'hot topic fire flame trending urgent burning',
     art: (
       <Round fill="#FFEFED">
@@ -174,7 +175,7 @@ const WORKSHOP: StampDef[] = [
 const MOODS: StampDef[] = [
   {
     id: 'mood-happy',
-    label: 'Happy',
+    label: t('happy'),
     words: 'happy smile glad good pleased face mood',
     art: (
       <Round fill={face}>
@@ -186,7 +187,7 @@ const MOODS: StampDef[] = [
   },
   {
     id: 'mood-love',
-    label: 'Adore it',
+    label: t('adoreIt'),
     words: 'love adore heart eyes crush face mood',
     art: (
       <Round fill={face}>
@@ -200,7 +201,7 @@ const MOODS: StampDef[] = [
   },
   {
     id: 'mood-wow',
-    label: 'Wow',
+    label: t('wow'),
     words: 'wow surprised amazed shocked omg face mood',
     art: (
       <Round fill={face}>
@@ -213,7 +214,7 @@ const MOODS: StampDef[] = [
   },
   {
     id: 'mood-thinking',
-    label: 'Hmm',
+    label: t('hmm'),
     words: 'thinking hmm unsure considering doubt face mood',
     art: (
       <Round fill={face}>
@@ -227,7 +228,7 @@ const MOODS: StampDef[] = [
   },
   {
     id: 'mood-sad',
-    label: 'Sad',
+    label: t('sad'),
     words: 'sad unhappy down disappointed tear cry face mood',
     art: (
       <Round fill={face}>
@@ -240,18 +241,14 @@ const MOODS: StampDef[] = [
   },
   {
     id: 'mood-sleepy',
-    label: 'Sleepy',
+    label: t('sleepy'),
     words: 'sleepy tired bored zzz sleep low energy face mood',
     art: (
       <Round fill={face}>
         <path d="M30 45q7 6 14 0M56 45q7 6 14 0" {...stroke} />
         <circle cx="50" cy="65" r="4.5" fill={INK} />
-        <text x="72" y="26" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="16">
-          z
-        </text>
-        <text x="81" y="15" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="11">
-          z
-        </text>
+        <text x="72" y="26" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="16">z</text>
+        <text x="81" y="15" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="11">z</text>
       </Round>
     ),
   },
@@ -263,7 +260,7 @@ const CLOUD = { fill: '#fff', stroke: '#7FA6D6', strokeWidth: 3 };
 const WEATHER: StampDef[] = [
   {
     id: 'weather-sunny',
-    label: 'Sunny',
+    label: t('sunny'),
     words: 'sunny sun great clear bright weather health check',
     art: (
       <Tile fill={SKY_TILE}>
@@ -274,7 +271,7 @@ const WEATHER: StampDef[] = [
   },
   {
     id: 'weather-partly',
-    label: 'Partly sunny',
+    label: t('partlySunny'),
     words: 'partly sunny cloud mostly fine ok weather health check',
     art: (
       <Tile fill={SKY_TILE}>
@@ -286,7 +283,7 @@ const WEATHER: StampDef[] = [
   },
   {
     id: 'weather-cloudy',
-    label: 'Cloudy',
+    label: t('cloudy'),
     words: 'cloudy cloud grey meh unclear weather health check',
     art: (
       <Tile fill={SKY_TILE}>
@@ -296,7 +293,7 @@ const WEATHER: StampDef[] = [
   },
   {
     id: 'weather-rainy',
-    label: 'Rainy',
+    label: t('rainy'),
     words: 'rainy rain wet struggling weather health check',
     art: (
       <Tile fill={SKY_TILE}>
@@ -307,7 +304,7 @@ const WEATHER: StampDef[] = [
   },
   {
     id: 'weather-stormy',
-    label: 'Stormy',
+    label: t('stormy'),
     words: 'stormy storm thunder lightning trouble crisis weather health check',
     art: (
       <Tile fill="#DCD4FF">
@@ -318,7 +315,7 @@ const WEATHER: StampDef[] = [
   },
   {
     id: 'weather-rainbow',
-    label: 'Rainbow',
+    label: t('rainbow'),
     words: 'rainbow better after storm hope recovery weather health check',
     art: (
       <Tile fill={SKY_TILE}>
@@ -334,10 +331,10 @@ const WEATHER: StampDef[] = [
 
 /** Every built-in pack, in the order the picker shows them. */
 export const PACKS: StickerPack[] = [
-  { id: 'stamps', label: 'Stamps', stickers: STAMPS },
-  { id: 'workshop', label: 'Workshop', stickers: WORKSHOP },
-  { id: 'moods', label: 'Moods', stickers: MOODS },
-  { id: 'weather', label: 'Team weather', stickers: WEATHER },
+  { id: 'stamps', label: t('stamps'), stickers: STAMPS },
+  { id: 'workshop', label: t('workshop'), stickers: WORKSHOP },
+  { id: 'moods', label: t('moods'), stickers: MOODS },
+  { id: 'weather', label: t('teamWeather'), stickers: WEATHER },
 ];
 
 const BY_ID = new Map(PACKS.flatMap((p) => p.stickers).map((s) => [s.id, s]));

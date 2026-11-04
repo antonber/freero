@@ -4,6 +4,7 @@ import type { IconElement } from '@freero/shared';
 import { canvasInk, defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { IconSvg } from './lib/nodes';
 import { DEFAULT_COLOR, DEFAULT_STROKE, ICON_SIZE, insertIcon, parseDragPayload } from './lib/insert';
+import { t } from './messages';
 import './icons.css';
 
 /** Vector, so it stays crisp at any zoom; the drawing lives in the element (see IconElement). */
@@ -13,7 +14,7 @@ const IconView = memo(function IconView({ element }: ElementRenderProps<IconElem
 
 export default defineElement({
   type: 'icon',
-  label: { one: 'Icon', many: 'Icons' },
+  label: { one: t('icon'), many: t('icons') },
   icon: SmileIcon,
   resize: 'aspect',
   minSize: { w: 12, h: 12 },

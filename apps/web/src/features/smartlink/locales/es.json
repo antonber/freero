@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "doc",
+    "thatItemIsnTOn",
+    "thisKindOfLinkHas",
+    "openYouMayBeAble",
+    "open",
+    "openLink",
+    "openTitle",
+    "smartLink",
+    "smartLinks"
+  ],
+  "doc": "Documento",
+  "thatItemIsnTOn": "Ese elemento ya no está en este tablero o está oculto.",
+  "thisKindOfLinkHas": "Este tipo de enlace aún no tiene una página que abrir.",
+  "openYouMayBeAble": "Abrir (quizá puedas pedir acceso)",
+  "open": "Abrir",
+  "openLink": "Abrir enlace",
+  "openTitle": "Abrir {title}",
+  "smartLink": "Enlace inteligente",
+  "smartLinks": "Enlaces inteligentes"
+}

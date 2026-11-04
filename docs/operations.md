@@ -197,7 +197,11 @@ Single instance:
 3. Shortly after startup the re-sealing job logs
    `auth: every readable two-step verification secret is sealed under the current SESSION_SECRET …`
    (anyone signing in in the meantime is re-sealed on the spot). It repeats hourly while
-   `SESSION_SECRET_PREVIOUS` is set.
+   `SESSION_SECRET_PREVIOUS` is set. Workspace encryption keys on the instance's key (#159) work the
+   same way: their data keys open under the previous secret, are wrapped again on use and by the
+   `keys:rewrap-instance` job, which logs `keys: every readable workspace data key is wrapped under
+   the current SESSION_SECRET …` (and an error naming how many open with no configured secret —
+   then put the missing secret back before going on: those workspaces' content depends on it).
 4. Remove `SESSION_SECRET_PREVIOUS` and restart. Signed links made before step 2 (in emails sent
    earlier) stop working from then on, so keep the previous secret for a few days if that matters;
    keeping it longer costs nothing.
@@ -247,6 +251,7 @@ The data-store table (what is encrypted where, by whom) is in
      for two-step secrets, on use for AI keys / webhooks / tracker credentials, the hourly
      `boards:seal-call-links` job for call links). **Losing it** loses what it sealed: two-step
      secrets (people sign in with a recovery code and set it up again), AI keys, SSO client secrets,
+     SAML service-provider keys (admins create a new key and give its certificate to their IdP),
      tracker connections and webhook secrets (admins enter them again), call links (editors paste
      them again). Board content, accounts and files are not affected.
    - The backup private key (GPG / age) never goes on the servers; store it offline with at least
@@ -258,11 +263,49 @@ What is sealed by the app today (audit, KAI-143):
 
 | Column | Protection |
 |---|---|
-| `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `siem_sinks.secrets_sealed` (HEC token / Entra client secret / bearer token, the HTTPS collector URL, the signing secret), `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
+| `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `sso_sp_keys.private_key` (SAML service-provider keys, #13), `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `siem_sinks.secrets_sealed` (HEC token / Entra client secret / bearer token, the HTTPS collector URL, the signing secret), `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
 | `users.password_hash`, board link passwords | scrypt |
 | `sessions`, `guest_sessions`, `auth_tokens`, `auth_challenges`, `auth_devices`, `api_tokens`, `embed_member_tokens`, `oauth_codes`, OAuth client secrets, `scim_tokens`, `user_recovery_codes`, OIDC / SSO flow `state` | sha256 only |
 | `auth_oidc_flows` / `sso_flows` PKCE verifier and nonce | plain, by decision: single use, deleted within minutes, and useless without the authorization code, which is never stored |
-| Board documents, layers, comments, search index, events, audit log, notifications, emails and names | plain in the database, protected by storage encryption (deployment.md explains why) |
+| Board documents, layers, comments, search index, events, audit log, notifications, emails and names | plain in the database, protected by storage encryption (deployment.md explains why) — except board documents, update logs, versions and layers of workspaces with an encryption key (next section) |
+| `workspace_data_keys.wrapped` | wrapped by the workspace's KEK: sealed under `SESSION_SECRET` (purpose `workspace-kek-v1`) or encrypted by the workspace's AWS KMS key |
+
+## Workspace encryption keys
+
+A team workspace may turn on its own encryption key (admin console → Security → Encryption key;
+design: [design/compliance.md §3](design/compliance.md)). Its board content is then stored sealed
+(AES-256-GCM) under versioned data keys, each wrapped by the workspace's key-encryption key: the
+instance's (derived from `SESSION_SECRET`) or the workspace's own AWS KMS key (`KMS_AWS_*` in
+[configuration.md](configuration.md#workspace-encryption-keys)).
+
+- **Rolling out.** Turn the feature on only once every instance runs a release that has it: an
+  older instance can't open sealed rows (it fails on them — the stored form starts with bytes no
+  Yjs decoder accepts, so it never mistakes them for content), so boards of a keyed workspace
+  wouldn't open there. `WORKSPACE_KEYS` is off by default: leave it off through the rollout, then set it to `true`.
+- **A customer's own key.** They create a symmetric KMS key and allow your `KMS_AWS_*` principal
+  `kms:Encrypt` and `kms:Decrypt` on it, conditioned on `kms:EncryptionContext:freero_workspace`
+  = their workspace id; then paste its ARN. Freero checks the key both ways before it seals anything.
+  Every use shows in their CloudTrail with that context.
+- **Rotation, no downtime.** "Rotate key" re-wraps every data key (under a new KMS key, if one is
+  given) and adds a new data key for new content; older content keeps opening and is sealed again
+  under the newest data key by the `keys:seal` job (a few boards a minute). Rotating `SESSION_SECRET`
+  ("Rotating SESSION_SECRET" above) rotates the instance key: data keys wrapped under the previous
+  secret are wrapped again the first time they are used, so keep `SESSION_SECRET_PREVIOUS` until
+  every keyed workspace's boards were opened (or rotate those keys from the console).
+- **Revocation.** A security admin suspends the key in the console (reversible: Resume), or the
+  customer disables the key / revokes the grant at their KMS. Either way the workspace's boards
+  close (`key_unavailable` on the dashboard, `workspace_key_unavailable` from the API) and the
+  search index and backlinks drop their content. In-app suspension takes effect at once on every
+  instance (with `REDIS_URL`); a KMS-side revocation within `WORKSPACE_KEY_CACHE_SECONDS` (the
+  `keys:check` probe). When the KMS answers again, the key becomes active by itself.
+- **Destroying** (owners, typing the workspace's name) deletes every wrapped data key: the
+  workspace's sealed content can never be read again, by anyone, from any backup. That is the
+  intended crypto-shredding of a workspace; there is no undo.
+- **Loss.** For 'instance' keys, losing `SESSION_SECRET` loses every keyed workspace's content —
+  keep it in a secrets manager with a recovery copy. For a KMS key, a key the customer deletes (after
+  KMS's waiting period) is gone with everything sealed under it; disabling it only pauses.
+- **Database restores** (`pg_dump`) carry the wrapped keys with the content: a restored keyed
+  workspace opens as long as its KEK still works (the same `SESSION_SECRET`, or the KMS key).
 
 ## Workspace single sign-on and provisioning
 
@@ -280,6 +323,15 @@ the resolver).
   workspace_id = '<id>';` (then everyone at the domain can use their password or a reset link).
 - **Certificate rollover**: paste the IdP's new metadata (it may list both certificates); every
   listed signing certificate is accepted until the next save.
+- **Freero's own SAML key** (#13; encrypted assertions, signed requests): created per workspace in
+  the console, 10-year self-signed certificate in the SP metadata. Rotation needs no downtime: add
+  the next key (both are published and both decrypt), give its certificate to the IdP, make it
+  current, remove the old one. Nothing for operators to do, except that the private keys are sealed
+  under `SESSION_SECRET` (rotating it re-seals them on use; losing it loses them — see "Keys").
+- **Single logout** (#13): the IdP's LogoutRequest at `/api/sso/<workspace>/saml/slo` ends the
+  Freero sessions that its SAML sign-in started for that NameID (refusals: `sso.logout_refused`,
+  with the reason — unsigned, another key or issuer, another Destination, too old, replayed); signing
+  out of Freero sends the browser to the IdP's SingleLogoutService when the connection has one.
 - **What is refused** (`sso.login_refused` in the workspace's audit log, with the reason):
   responses that fail signature, audience, recipient, timestamps, InResponseTo or replay checks;
   IdP-initiated (unsolicited) responses unless the workspace turned on "Allow sign-in from the
@@ -342,6 +394,7 @@ workspace (modules/workspaces).
 | Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
 | Problem reports they sent with “Report a problem”: the note, whether they may be contacted, a screenshot of their screen (unless they removed it), diagnostics (page path, board and role, release, browser, window size, scrubbed recent errors), the status and operators' note | `problem_reports` (problems) + screenshots in the private storage area (`confidential.<random>.<ext>`, never under `/uploads/`) | `problems/index.json` + `problems/<id>.<ext>` (the operators' note is not included) | deleted with their screenshots | — |
 | API tokens (sha256 only, name, scopes, times), apps they authorised (consents, codes, access/refresh tokens), apps they registered; where their credentials were used in team workspaces | `api_tokens`, `oauth_grants`, `oauth_codes`, `oauth_clients`, `api_workspace_credentials` (apiauth) | `api.json` (never a secret or hash) | deleted (cascade); revoked already when deletion is scheduled (signed out everywhere) | usage rows deleted (cascade) |
+| Legal holds (#157): eDiscovery cases naming them as a custodian (case name, notes, who opened / released it), the holds on their boards, and case exports (every board in scope in full, with versions and the audit events about it and the custodians) | `legal_cases`, `legal_case_subjects`, `legal_case_workspaces`, `legal_case_exports` + private ZIP files (ediscovery); `board_legal_holds`, `board_owner_legal_holds` (boards) | no: a legal matter of the workspace, not the person's data (a hold is kept silent from its custodians) | **waits** while a hold names them or keeps a board they own: nothing is deleted or handed over until the case is released; the account stays signed out | refused (409 `legal_hold`) while anything there is held; a case's own record has no foreign key and outlives the workspace |
 | Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
 | Request logs | stdout (pino) → your log pipeline | no | not touched: user ids and IP addresses (never emails, bodies, query strings or tokens) — expire them in your log retention | — |
 | Audit log (sign-ins, sharing, exports, every API / MCP call: actor, IP, target, outcome) — and what was streamed to a workspace's SIEM (a copy outside Freero, under the customer's retention) | `audit_events`, `audit_chains`, `audit_anchors` (audit) | no (team admins read and export the workspace's log in the admin console) | kept until retention (`DEFAULT_AUDIT_RETENTION_DAYS`, a workspace's `auditRetentionDays`); actor read as "Deleted user"; no foreign keys | the workspace's chain kept until the default retention |
@@ -375,8 +428,16 @@ workspace (modules/workspaces).
 - **Workspace**: owners, in Workspace settings (type the name). Immediate; every owner is mailed a
   receipt of what was deleted. **Retention / legal holds**: a module registers
   `onWorkspaceDeletionHold` (`modules/workspaces/index.ts`); while any hold applies, deletion is
-  refused (409) and nothing is removed. Nothing registers one yet (legal holds; time-based
-  retention is the Data tab's settings).
+  refused (409) and nothing is removed — ediscovery registers it for organisations with an open
+  case. **Legal holds** (#157, admin console → Legal holds; owners and admins with both the
+  security and content scopes): while a case keeps a board, no path deletes it — the trash purge
+  and retention rules skip it, "delete forever" only hides it, version thinning and audit
+  retention keep everything, the account purge waits, a team workspace holding it can't be deleted
+  and its encryption key can't be destroyed; the database itself refuses `DELETE FROM boards` of a
+  held board (trigger `boards_legal_hold_guard`, error code `FH001`). An operator who must remove a
+  held board (illegal content) takes it down — nobody sees it then — and has the case released or
+  narrowed by the workspace's admins before deleting it for good (`board.delete` answers 409
+  `legal_hold` meanwhile).
 - **Audit trail** (the workspace's audit log, admin console): workspace export requests and
   downloads, workspace deletion, every SSO configuration change, SSO sign-ins and refusals,
   just-in-time joins, SCIM tokens, group mappings, provisioning and deprovisioning. A person's own

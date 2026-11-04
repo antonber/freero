@@ -13,6 +13,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { createBoardInDocHost, toastNotify } from '../../board/host';
 import { features } from '../../board/features';
 
+import { t } from './messages';
 export default function BoardEmbed({ uri }: { uri: string }) {
   const navigate = useNavigate();
   const notify = useToast();
@@ -41,20 +42,18 @@ export default function BoardEmbed({ uri }: { uri: string }) {
   );
   const open = () => boardId && navigate(frameId ? `/board/${encodeURIComponent(boardId)}?item=${encodeURIComponent(frameId)}` : `/board/${encodeURIComponent(boardId)}`);
 
-  if (!boardId) return <div className="fr-docpage-embed fr-docpage-embed--blocked">This embed’s address isn’t a Freero board.</div>;
+  if (!boardId) return <div className="fr-docpage-embed fr-docpage-embed--blocked">{t('thisEmbedSAddressIsn')}</div>;
   const denied = resolved?.status === 'unavailable' || resolved?.status === 'invalid' || status === 'denied' || status === 'removed';
   if (denied)
     return (
       <div className="fr-docpage-embed fr-docpage-embed--blocked" role="note">
         <Lock size={20} aria-hidden />
         <div>
-          <strong>No access to this board</strong>
-          <p>{status === 'removed' ? 'It was removed for review.' : 'You can ask its owner to let you in.'}</p>
+          <strong>{t('noAccessToThisBoard')}</strong>
+          <p>{status === 'removed' ? t('itWasRemovedForReview') : t('youCanAskItsOwner')}</p>
         </div>
         {status !== 'removed' && (
-          <Button size="sm" onClick={open}>
-            Request access
-          </Button>
+          <Button size="sm" onClick={open}>{t('requestAccess')}</Button>
         )}
       </div>
     );
@@ -63,15 +62,13 @@ export default function BoardEmbed({ uri }: { uri: string }) {
   return (
     <figure className="fr-docpage-embed">
       <div className="fr-docpage-embed__view" onDoubleClick={open}>
-        {resolved?.status === 'ok' && host ? <LiveBoardView boardId={boardId} frameId={frameId} host={host} features={features} onStatus={setStatus} label={`Live board: ${title}`} /> : null}
-        {status === 'missing' && <div className="fr-docpage-embed__note">This frame is no longer on the board.</div>}
+        {resolved?.status === 'ok' && host ? <LiveBoardView boardId={boardId} frameId={frameId} host={host} features={features} onStatus={setStatus} label={t('liveBoardTitle', { title })} /> : null}
+        {status === 'missing' && <div className="fr-docpage-embed__note">{t('thisFrameIsNoLonger')}</div>}
       </div>
       <figcaption className="fr-docpage-embed__bar">
         <span className="fr-docpage-embed__live" aria-hidden />
         <span className="fr-docpage-embed__title">{frameId && boardTitle && boardTitle !== title ? `${title} · ${boardTitle}` : title}</span>
-        <Button size="sm" variant="ghost" icon={ExternalLink} onClick={open}>
-          Open board
-        </Button>
+        <Button size="sm" variant="ghost" icon={ExternalLink} onClick={open}>{t('openBoard')}</Button>
       </figcaption>
     </figure>
   );

@@ -64,7 +64,7 @@
   background: transparent;
   color: var(--fr-primary);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 

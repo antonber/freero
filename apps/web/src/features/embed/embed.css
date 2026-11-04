@@ -55,7 +55,7 @@
 }
 
 .fr-embed__play svg {
-  margin-left: 4px;
+  margin-inline-start: 4px;
 }
 
 .fr-embed__play:hover {

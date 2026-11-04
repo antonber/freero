@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { MAX_VERSION_NAME } from '@freero/shared';
 import { Button, Input } from '@ui';
 
+import { t } from '../messages';
 export function NameField({
   initial = '',
   placeholder,
@@ -39,7 +40,7 @@ export function NameField({
         value={value}
         maxLength={MAX_VERSION_NAME}
         placeholder={placeholder}
-        aria-label="Version name"
+        aria-label={t('versionName')}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
@@ -50,12 +51,8 @@ export function NameField({
         }}
       />
       <div className="fr-history-name__actions">
-        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button size="sm" variant="primary" type="submit" disabled={!name} loading={busy}>
-          Save
-        </Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>{t('cancel')}</Button>
+        <Button size="sm" variant="primary" type="submit" disabled={!name} loading={busy}>{t('save')}</Button>
       </div>
     </form>
   );

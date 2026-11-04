@@ -1,0 +1,7 @@
+{
+  "invite.subject": "{inviter} invited you to “{board}” on Freero",
+  "invite.title": "{inviter} invited you to a board",
+  "invite.body": "{role, select, editor {You can edit “{board}”.} commenter {You can comment on “{board}”.} other {You can view “{board}”.}} Freero is a free online whiteboard; you’ll need a free account to open it.",
+  "invite.action": "Open the board",
+  "invite.outro": "{inviter} ({email}) sent this invite. The link works once and expires in 14 days."
+}

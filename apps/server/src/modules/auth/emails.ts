@@ -7,6 +7,7 @@ import type { Account } from '@freero/shared';
 import { appUrl, renderMail, sendMail, sendMailLater } from '../../platform/mail';
 import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
+import { t } from './messages';
 import { sendSecurityNotice } from './notices';
 import { auditOwnAccount } from './service';
 import { hashPassword } from './password';
@@ -30,7 +31,7 @@ export const RESET_TTL_MS = 30 * 60_000;
 export const CHANGE_EMAIL_TTL_MS = 24 * HOUR;
 const REVERT_EMAIL_DAYS = 7;
 
-const invalidLink = () => badRequest('This link is invalid or has expired. Request a new one.');
+const invalidLink = () => badRequest('This link is invalid or has expired. Request a new one.', 'link_invalid');
 
 async function issue(userId: string, purpose: repo.TokenPurpose, email: string, ttlMs: number): Promise<string> {
   // One live link per purpose: asking again invalidates the previous one.
@@ -50,11 +51,12 @@ export async function sendVerification(req: Request | null, user: Account): Prom
   await sendMail({
     to: user.email,
     ...renderMail({
-      subject: 'Confirm your email for Freero',
-      title: `Welcome to Freero, ${user.name}`,
-      paragraphs: ['Confirm that this is your email address so you can invite people and share boards.'],
-      action: { label: 'Confirm email', url: appUrl(req, `/verify-email?token=${token}`) },
-      outro: 'The link works once and expires in 48 hours. If you did not create a Freero account, ignore this message.',
+      locale: user.locale,
+      subject: t(user.locale, 'verify.subject'),
+      title: t(user.locale, 'verify.title', { name: user.name }),
+      paragraphs: [t(user.locale, 'verify.body')],
+      action: { label: t(user.locale, 'verify.action'), url: appUrl(req, `/verify-email?token=${token}`) },
+      outro: t(user.locale, 'verify.outro'),
     }),
   });
 }
@@ -82,11 +84,12 @@ export function requestPasswordReset(req: Request | null, emailIn: unknown): voi
     sendMailLater({
       to: user.email,
       ...renderMail({
-        subject: 'Reset your Freero password',
-        title: 'Reset your password',
-        paragraphs: [`Someone (hopefully you) asked to reset the password of the Freero account for ${user.email}.`],
-        action: { label: 'Choose a new password', url: appUrl(req, `/reset-password?token=${token}`) },
-        outro: 'The link works once and expires in 30 minutes. If you did not ask for this, ignore this message: your password stays the same.',
+        locale: user.locale,
+        subject: t(user.locale, 'reset.subject'),
+        title: t(user.locale, 'reset.title'),
+        paragraphs: [t(user.locale, 'reset.body', { email: user.email })],
+        action: { label: t(user.locale, 'reset.action'), url: appUrl(req, `/reset-password?token=${token}`) },
+        outro: t(user.locale, 'reset.outro'),
       }),
     });
   })().catch((e) => logError('auth: password reset request failed', e));
@@ -142,29 +145,28 @@ export async function requestEmailChange(
   sessionAuthAt?: number,
 ): Promise<void> {
   const email = normalizeEmail(emailIn);
-  if (!validEmail(email)) throw badRequest('Please enter a valid email address');
+  if (!validEmail(email)) throw badRequest('Please enter a valid email address', 'email_invalid');
   const user = await confirmPassword(userId, password, sessionAuthAt);
-  if (email === user.email) throw badRequest('That is already your email address');
+  if (email === user.email) throw badRequest('That is already your email address', 'email_same');
   const token = await issue(user.id, 'change_email', email, CHANGE_EMAIL_TTL_MS);
   await sendMail({
     to: email,
     ...renderMail({
-      subject: 'Confirm your new Freero email address',
-      title: 'Confirm your new email address',
-      paragraphs: [`${user.name} asked to use this address for their Freero account.`],
-      action: { label: 'Use this address', url: appUrl(req, `/confirm-email?token=${token}`) },
-      outro: 'The link works once and expires in 24 hours. If this was not you, ignore this message.',
+      locale: user.locale,
+      subject: t(user.locale, 'changeEmail.subject'),
+      title: t(user.locale, 'changeEmail.title'),
+      paragraphs: [t(user.locale, 'changeEmail.body', { name: user.name })],
+      action: { label: t(user.locale, 'changeEmail.action'), url: appUrl(req, `/confirm-email?token=${token}`) },
+      outro: t(user.locale, 'changeEmail.outro'),
     }),
   });
   sendMailLater({
     to: user.email,
     ...renderMail({
-      subject: 'Your Freero email address is being changed',
-      title: 'Email change requested',
-      paragraphs: [
-        `We sent a confirmation link to ${email}. Your account keeps using ${user.email} until that link is opened.`,
-        'If this was not you, change your password now: it also signs out every other device.',
-      ],
+      locale: user.locale,
+      subject: t(user.locale, 'changing.subject'),
+      title: t(user.locale, 'changing.title'),
+      paragraphs: [t(user.locale, 'changing.sent', { email, current: user.email }), t(user.locale, 'changing.notYou')],
     }),
   });
 }
@@ -183,7 +185,7 @@ export async function confirmEmailChange(req: Request | null, tokenIn: unknown):
   try {
     if (!before || !(await repo.changeEmail(t.userId, t.email, now))) throw invalidLink();
   } catch (e) {
-    if (e instanceof repo.EmailTakenError) throw new HttpError(409, 'Another account uses that address now');
+    if (e instanceof repo.EmailTakenError) throw new HttpError(409, 'Another account uses that address now', 'email_taken');
     throw e;
   }
   await repo.deleteTokens(t.userId, 'verify_email'); // links for the old address
@@ -222,7 +224,7 @@ export async function revertEmailChange(tokenIn: unknown, passwordIn: unknown): 
   try {
     if (!(await repo.changeEmail(t.userId, t.email, Date.now()))) throw invalidLink();
   } catch (e) {
-    if (e instanceof repo.EmailTakenError) throw new HttpError(409, 'Another account uses that address now');
+    if (e instanceof repo.EmailTakenError) throw new HttpError(409, 'Another account uses that address now', 'email_taken');
     throw e;
   }
   await repo.setPasswordHash(t.userId, await hashPassword(password), { viaLink: true });

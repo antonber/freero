@@ -6,16 +6,17 @@ import type { UsageDay, WorkspaceSummary } from '@freero/shared';
 import { Spinner } from '@ui';
 import { api } from '../../api/client';
 
+import { t as tr } from './messages';
 const W = 300;
 const H = 84;
 const PAD = { top: 8, right: 6, bottom: 18, left: 30 };
 
 type Measure = { id: string; label: string; form: 'line' | 'bars'; value: (d: UsageDay) => number };
 const MEASURES: Measure[] = [
-  { id: 'active', label: 'Active people, last 7 days', form: 'line', value: (d) => d.activeUsers7d },
-  { id: 'boards', label: 'Boards and docs created', form: 'bars', value: (d) => d.boardsCreated + d.docsCreated },
-  { id: 'guests', label: 'Guests', form: 'line', value: (d) => d.guests },
-  { id: 'api', label: 'API and MCP calls', form: 'bars', value: (d) => Object.values(d.apiCalls).reduce((a, b) => a + b, 0) },
+  { id: 'active', label: tr('activePeopleLast7Days'), form: 'line', value: (d) => d.activeUsers7d },
+  { id: 'boards', label: tr('boardsAndDocsCreated'), form: 'bars', value: (d) => d.boardsCreated + d.docsCreated },
+  { id: 'guests', label: tr('guests'), form: 'line', value: (d) => d.guests },
+  { id: 'api', label: tr('apiAndMcpCalls'), form: 'bars', value: (d) => Object.values(d.apiCalls).reduce((a, b) => a + b, 0) },
 ];
 
 const niceMax = (v: number) => {
@@ -46,7 +47,7 @@ function Chart({ m, days }: { m: Measure; days: UsageDay[] }) {
           <span className="fr-admin__muted"> · {days[shown] ? shortDay(days[shown].day) : ''}</span>
         </span>
       </figcaption>
-      <svg viewBox={`0 0 ${W} ${H}`} className="fr-admin-trend__svg" role="img" aria-label={`${m.label}, ${days.length} days`} onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="fr-admin-trend__svg" role="img" aria-label={tr('labelLengthDays', { label: m.label, length: days.length })} onMouseLeave={() => setHover(null)}>
         {[0, max].map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="fr-admin-trend__grid" />
@@ -124,15 +125,12 @@ export function AdminTrends({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <section aria-labelledby="admin-trends-title">
       <div className="fr-admin__head">
-        <h2 id="admin-trends-title" className="fr-admin__subtitle">
-          Over the last 90 days
-        </h2>
+        <h2 id="admin-trends-title" className="fr-admin__subtitle">{tr('overTheLast90Days')}</h2>
         <a className="fr-admin-trends__csv" href={api.usageHistoryCsvUrl(workspace.id, 90)} download>
-          <Download size={14} aria-hidden /> Download CSV
-        </a>
+          <Download size={14} aria-hidden />{' '}{tr('downloadCsv')}</a>
       </div>
       {days.length === 0 ? (
-        <p className="fr-admin__muted">Freero records the workspace’s usage once a day. The first point appears within the hour.</p>
+        <p className="fr-admin__muted">{tr('freeroRecordsTheWorkspaceS')}</p>
       ) : (
         <>
           <div className="fr-admin-trends">
@@ -141,12 +139,12 @@ export function AdminTrends({ workspace }: { workspace: WorkspaceSummary }) {
             ))}
           </div>
           <details className="fr-admin-trends__table">
-            <summary>Show as a table (last 14 days)</summary>
+            <summary>{tr('showAsATableLast')}</summary>
             <div className="fr-admin-table-wrap">
               <table className="fr-admin-table">
                 <thead>
                   <tr>
-                    <th scope="col">Day</th>
+                    <th scope="col">{tr('day')}</th>
                     {MEASURES.map((m) => (
                       <th key={m.id} scope="col">
                         {m.label}

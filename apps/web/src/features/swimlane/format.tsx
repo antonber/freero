@@ -4,6 +4,7 @@ import { defineFormat } from '@engine';
 import { SegmentedControl } from '@ui';
 import { addBand, setVertical } from './lib/actions';
 
+import { t } from './messages';
 /** One selected pool: add a lane or a phase, lanes as rows or columns. */
 export default defineFormat({
   id: 'swimlane.format',
@@ -15,20 +16,16 @@ export default defineFormat({
     return (
       <div className="fr-swim-format">
         <button type="button" className="fr-swim-format__btn" onClick={() => addBand(editor, p.id, 'lanes')}>
-          <Plus size={16} aria-hidden />
-          Lane
-        </button>
+          <Plus size={16} aria-hidden />{t('lane2')}</button>
         <button type="button" className="fr-swim-format__btn" onClick={() => addBand(editor, p.id, 'phases')}>
-          <Plus size={16} aria-hidden />
-          Phase
-        </button>
+          <Plus size={16} aria-hidden />{t('phase2')}</button>
         <SegmentedControl<'rows' | 'columns'>
           size="sm"
-          aria-label="Lane direction"
+          aria-label={t('laneDirection')}
           value={p.vertical ? 'columns' : 'rows'}
           options={[
-            { value: 'rows', icon: Rows3, title: 'Lanes as rows' },
-            { value: 'columns', icon: Columns3, title: 'Lanes as columns' },
+            { value: 'rows', icon: Rows3, title: t('lanesAsRows') },
+            { value: 'columns', icon: Columns3, title: t('lanesAsColumns') },
           ]}
           onChange={(v) => setVertical(editor, p.id, v === 'columns')}
         />

@@ -21,6 +21,7 @@ import { commitCell, createFromGrid, editCell, gridItemsOf, moveCell, rememberCe
 import { gridItems, typeOf, visibleRows, type PeopleLookup } from './lib/columns';
 import { BoardView, ColumnMenu, TypedEditor, TypedValue } from './lib/views';
 import { TimelineView } from './lib/timeline';
+import { t } from './messages';
 import './table.css';
 
 const KEY_MOVES: Record<string, Move> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
@@ -205,7 +206,7 @@ const TableView = memo(function TableView({ element: el, selected, editing, zoom
                 key={`dc-${c.id}`}
                 className="fr-table__divider fr-table__divider--col"
                 data-fr-interactive=""
-                title="Drag to resize the column"
+                title={t('dragToResizeTheColumn')}
                 style={{ left: xs[ci] + c.w, height: gridH }}
                 onPointerDown={(e) => startDividerDrag(editor, el, e, 'col', c.id, c.w)}
               />
@@ -218,7 +219,7 @@ const TableView = memo(function TableView({ element: el, selected, editing, zoom
                 key={`dr-${r.id}`}
                 className="fr-table__divider fr-table__divider--row"
                 data-fr-interactive=""
-                title="Drag to resize the row"
+                title={t('dragToResizeTheRow')}
                 style={{ top: ys[ri] + r.h, width: el.w }}
                 onPointerDown={(e) => startDividerDrag(editor, el, e, 'row', r.id, r.h)}
               />
@@ -228,11 +229,9 @@ const TableView = memo(function TableView({ element: el, selected, editing, zoom
       {hidden > 0 && !exporting && (
         <div className="fr-table__filtered" style={{ top: gridH }}>
           <Filter size={12} aria-hidden />
-          {hidden === 1 ? '1 row hidden by the filter' : `${hidden} rows hidden by the filter`}
+          {t('hiddenRowsHiddenByThe', { hidden })}
           {writable && (
-            <button type="button" data-fr-interactive="" onPointerDown={(e) => e.stopPropagation()} onClick={() => setFilter(editor, el.id, null)}>
-              Show all
-            </button>
+            <button type="button" data-fr-interactive="" onPointerDown={(e) => e.stopPropagation()} onClick={() => setFilter(editor, el.id, null)}>{t('showAll')}</button>
           )}
         </div>
       )}
@@ -242,7 +241,7 @@ const TableView = memo(function TableView({ element: el, selected, editing, zoom
 
 export default defineElement({
   type: 'table',
-  label: { one: 'Table', many: 'Tables' },
+  label: { one: t('table'), many: t('tables') },
   icon: TableIcon,
   resize: 'free',
   minSize: { w: 96, h: 32 },
@@ -274,9 +273,9 @@ export default defineElement({
   // Shift+Tab and the arrows at the text's edge move between cells (the cell's ElementText
   // onKeyDown above). `keys` lists both in the shortcut sheet: keep it in step.
   keys: [
-    { shortcuts: ['enter'], label: 'Edit the first cell of a table' },
-    { shortcuts: ['tab', 'shift+tab'], label: 'In a table cell: next / previous cell' },
-    { shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], label: 'In a table cell, at the edge of its text: the next cell that way' },
+    { shortcuts: ['enter'], label: t('editTheFirstCellOf') },
+    { shortcuts: ['tab', 'shift+tab'], label: t('inATableCellNext') },
+    { shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], label: t('inATableCellAt') },
   ],
   onKeyDown(e, { editor, selection }) {
     if (selection.length !== 1 || e.ctrlKey || e.metaKey || e.altKey || !editor.can('editor')) return false;

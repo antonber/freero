@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "Étiqueter les éléments par nom",
+  "searchOrCreateATag": "Rechercher ou créer une étiquette",
+  "nameYourFirstTag": "Nommez votre première étiquette",
+  "tags": "Étiquettes",
+  "tagsGroupStickiesAndCards": "Les étiquettes regroupent les notes adhésives et les cartes par sujet, responsable ou priorité.",
+  "createName": "Créer « {name} »",
+  "newTagColor": "Couleur de la nouvelle étiquette",
+  "manageTags": "Gérer les étiquettes",
+  "colorOfName": "Couleur de {name}",
+  "renameName": "Renommer {name}",
+  "deleteUses": "Supprimer ({uses})",
+  "deleteTagUsedOnUses": "Supprimer l’étiquette (utilisée sur {uses})",
+  "deleteTag": "Supprimer l’étiquette",
+  "backToTags": "Retour aux étiquettes"
+}

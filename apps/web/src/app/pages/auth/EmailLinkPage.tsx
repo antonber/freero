@@ -5,6 +5,7 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AuthNotice, AuthShell } from './AuthShell';
 
+import { t } from './messages';
 type Mode = 'verify' | 'change' | 'cancelRecovery';
 
 const SUBMIT: Record<Mode, (token: string) => Promise<unknown>> = {
@@ -27,22 +28,22 @@ function submitOnce(mode: Mode, token: string): Promise<unknown> {
 
 const COPY: Record<Mode, { doc: string; working: string; done: string; doneBody: string }> = {
   verify: {
-    doc: 'Confirm email',
-    working: 'Confirming your email…',
-    done: 'Email confirmed',
-    doneBody: 'Thanks! You can now invite people and share boards.',
+    doc: t('confirmEmail'),
+    working: t('confirmingYourEmail'),
+    done: t('emailConfirmed'),
+    doneBody: t('thanksYouCanNowInvite'),
   },
   change: {
-    doc: 'Confirm new email',
-    working: 'Confirming your new address…',
-    done: 'Email address changed',
-    doneBody: 'Use your new address the next time you log in.',
+    doc: t('confirmNewEmail'),
+    working: t('confirmingYourNewAddress'),
+    done: t('emailAddressChanged'),
+    doneBody: t('useYourNewAddressThe'),
   },
   cancelRecovery: {
-    doc: 'Cancel account recovery',
-    working: 'Cancelling the recovery…',
-    done: 'Recovery cancelled',
-    doneBody: 'Two-step verification stays on. If you didn’t start the recovery, change your password: whoever did knows it.',
+    doc: t('cancelAccountRecovery'),
+    working: t('cancellingTheRecovery'),
+    done: t('recoveryCancelled'),
+    doneBody: t('twoStepVerificationStaysOn'),
   },
 };
 
@@ -55,7 +56,7 @@ export function EmailLinkPage({ mode }: { mode: Mode }) {
   const token = params.get('token') ?? '';
   const { user, refresh } = useAuth();
   const [state, setState] = useState<{ status: 'working' } | { status: 'done' } | { status: 'failed'; message: string }>(
-    token ? { status: 'working' } : { status: 'failed', message: 'This link is incomplete. Open the link from the email again.' },
+    token ? { status: 'working' } : { status: 'failed', message: t('thisLinkIsIncompleteOpen') },
   );
 
   useEffect(() => {
@@ -68,7 +69,7 @@ export function EmailLinkPage({ mode }: { mode: Mode }) {
         void refresh(); // this tab (and the others) pick up the verified / changed address
       },
       (err) => {
-        if (live) setState({ status: 'failed', message: err instanceof ApiError ? err.message : 'Could not reach Freero. Try again.' });
+        if (live) setState({ status: 'failed', message: err instanceof ApiError ? err.message : t('couldNotReachFreeroTry') });
       },
     );
     return () => {
@@ -84,15 +85,15 @@ export function EmailLinkPage({ mode }: { mode: Mode }) {
       </AuthShell>
     );
   return (
-    <AuthShell docTitle={copy.doc} title={state.status === 'done' ? copy.done : 'That link didn’t work'}>
+    <AuthShell docTitle={copy.doc} title={state.status === 'done' ? copy.done : t('thatLinkDidnTWork')}>
       {state.status === 'done' ? <AuthNotice kind="success">{copy.doneBody}</AuthNotice> : <AuthNotice kind="error">{state.message}</AuthNotice>}
       <p className="fr-authcard__switch">
         {user ? (
           <>
-            <Link to="/app">Go to your boards</Link> · <Link to="/settings">Account settings</Link>
+            <Link to="/app">{t('goToYourBoards')}</Link> · <Link to="/settings">{t('accountSettings')}</Link>
           </>
         ) : (
-          <Link to="/login">Log in</Link>
+          <Link to="/login">{t('logIn')}</Link>
         )}
       </p>
     </AuthShell>

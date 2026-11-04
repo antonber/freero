@@ -8,7 +8,7 @@ import type { WorkspaceRole } from '@freero/shared';
 import { HttpError, notFound } from '../../platform/http';
 import { recordAudit } from '../audit/index';
 import { getUser } from '../auth/index';
-import { boardIdsInProject } from '../boards/index';
+import { boardIdsUnderProject } from './projects';
 import { refreshBoardAccess } from '../realtime/index';
 import { membershipChanged, recordMembershipChange } from './events';
 import * as repo from './repo';
@@ -128,5 +128,5 @@ export async function setDirectoryProjectMembership(projectId: string, userId: s
   const changed = member
     ? (await repo.getRole(project.workspaceId, userId)) !== null && (await repo.addProjectMember(projectId, userId, Date.now()))
     : await repo.removeProjectMember(projectId, userId);
-  if (changed) for (const id of await boardIdsInProject(projectId)) await refreshBoardAccess(id);
+  if (changed) for (const id of await boardIdsUnderProject(projectId)) await refreshBoardAccess(id);
 }

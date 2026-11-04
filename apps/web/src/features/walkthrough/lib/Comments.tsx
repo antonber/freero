@@ -7,13 +7,14 @@ import { formatWalkthroughTime, MAX_WALKTHROUGH_COMMENT, mentionedUserIds, menti
 import { useDock, usePeople, useRole, type Editor, type HostUser } from '@engine';
 import { Avatar, Button, IconButton, Popover, TextArea } from '@ui';
 
+import { t as tr } from '../messages';
 export interface CommentsState {
   list: WalkthroughComment[] | null;
   error: string | null;
   refresh(): void;
 }
 
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong');
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : tr('somethingWentWrong'));
 
 /** The walkthrough's comments, read again whenever the board says their number changed. */
 export function useWalkthroughComments(editor: Editor, id: string, count: number): CommentsState {
@@ -110,16 +111,16 @@ export function Comments({
   };
 
   return (
-    <section className="fr-walkthrough-comments" style={{ right }} aria-label="Comments on this walkthrough" data-fr-interactive="">
+    <section className="fr-walkthrough-comments" style={{ right }} aria-label={tr('commentsOnThisWalkthrough')} data-fr-interactive="">
       <header className="fr-walkthrough-comments__head">
-        <h2>Comments</h2>
-        <IconButton icon={X} label="Close comments" onClick={onClose} />
+        <h2>{tr('comments')}</h2>
+        <IconButton icon={X} label={tr('closeComments')} onClick={onClose} />
       </header>
       <ol className="fr-walkthrough-comments__list" data-fr-scrollable="">
         {state.error && <li className="fr-walkthrough-comments__empty" role="alert">{state.error}</li>}
-        {state.list && !state.list.length && <li className="fr-walkthrough-comments__empty">No comments yet. Pause where something needs a word and write it here.</li>}
+        {state.list && !state.list.length && <li className="fr-walkthrough-comments__empty">{tr('noCommentsYetPauseWhere')}</li>}
         {state.list?.map((c) => {
-          const who = c.author ? (people[c.author.id]?.name ?? c.author.name) : 'Deleted user';
+          const who = c.author ? (people[c.author.id]?.name ?? c.author.name) : tr('deletedUser');
           const mine = c.author?.id === editor.user.id;
           return (
             <li key={c.id} className="fr-walkthrough-comments__item">
@@ -127,13 +128,13 @@ export function Comments({
               <div className="fr-walkthrough-comments__body">
                 <div className="fr-walkthrough-comments__meta">
                   <strong>{who}</strong>
-                  <button type="button" className="fr-walkthrough-comments__at" onClick={() => onSeek(c.atMs)} aria-label={`Go to ${formatWalkthroughTime(c.atMs)}`}>
+                  <button type="button" className="fr-walkthrough-comments__at" onClick={() => onSeek(c.atMs)} aria-label={tr('goToValue', { value: formatWalkthroughTime(c.atMs) })}>
                     {formatWalkthroughTime(c.atMs)}
                   </button>
                 </div>
                 <p>{mentionsAsNames(c.text, nameOf)}</p>
               </div>
-              {(mine || editor.can('editor')) && <IconButton icon={Trash2} label="Delete comment" size={32} onClick={() => void remove(c)} />}
+              {(mine || editor.can('editor')) && <IconButton icon={Trash2} label={tr('deleteComment')} size={32} onClick={() => void remove(c)} />}
             </li>
           );
         })}
@@ -145,8 +146,8 @@ export function Comments({
             rows={2}
             value={text}
             maxLength={MAX_WALKTHROUGH_COMMENT}
-            placeholder={`Comment at ${formatWalkthroughTime(t)}…`}
-            aria-label={`Comment at ${formatWalkthroughTime(t)}`}
+            placeholder={tr('commentAtValue', { value: formatWalkthroughTime(t) })}
+            aria-label={tr('commentAtValue2', { value: formatWalkthroughTime(t) })}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               e.stopPropagation();
@@ -154,9 +155,9 @@ export function Comments({
             }}
           />
           <div className="fr-walkthrough-comments__actions">
-            <IconButton ref={atButton} icon={AtSign} label="Mention someone" onClick={() => setPicking((p) => !p)} />
+            <IconButton ref={atButton} icon={AtSign} label={tr('mentionSomeone')} onClick={() => setPicking((p) => !p)} />
             <Popover open={picking} anchor={atButton.current} onClose={() => setPicking(false)} side="top">
-              <ul className="fr-walkthrough-mentions" role="listbox" aria-label="People on this board">
+              <ul className="fr-walkthrough-mentions" role="listbox" aria-label={tr('peopleOnThisBoard')}>
                 {(members ?? []).map((u) => (
                   <li key={u.id}>
                     <button type="button" onClick={() => pick(u)}>
@@ -164,12 +165,10 @@ export function Comments({
                     </button>
                   </li>
                 ))}
-                {members && !members.length && <li className="fr-walkthrough-mentions__empty">Nobody to mention yet</li>}
+                {members && !members.length && <li className="fr-walkthrough-mentions__empty">{tr('nobodyToMentionYet')}</li>}
               </ul>
             </Popover>
-            <Button size="sm" variant="primary" icon={Send} loading={sending} disabled={!text.trim()} onClick={() => void send()}>
-              Comment at {formatWalkthroughTime(t)}
-            </Button>
+            <Button size="sm" variant="primary" icon={Send} loading={sending} disabled={!text.trim()} onClick={() => void send()}>{tr('commentAtValue2', { value: formatWalkthroughTime(t) })}</Button>
           </div>
         </div>
       )}

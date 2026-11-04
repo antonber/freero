@@ -6,10 +6,11 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AuthNotice, AuthShell } from './AuthShell';
 
+import { t } from './messages';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const message = (err: unknown, fallback: string) =>
-  err instanceof ApiError ? (err.status >= 500 ? fallback : err.message) : 'Could not reach Freero. Check your connection and try again.';
+  err instanceof ApiError ? (err.status >= 500 ? fallback : err.message) : t('couldNotReachFreeroCheck');
 
 /** /forgot-password — asks for a reset link. The answer is the same whether or not the account exists. */
 export function ForgotPasswordPage() {
@@ -21,29 +22,27 @@ export function ForgotPasswordPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!EMAIL_RE.test(email.trim())) return setError("That doesn't look like an email address");
+    if (!EMAIL_RE.test(email.trim())) return setError(t('thatDoesnTLookLike'));
     setBusy(true);
     setError(null);
     try {
       await api.forgotPassword(email.trim());
       setSent(true);
     } catch (err) {
-      setError(message(err, 'Could not send the link. Please try again.'));
+      setError(message(err, t('couldNotSendTheLink')));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <AuthShell docTitle="Reset password" title="Forgot your password?" sub="We'll email you a link to choose a new one.">
+    <AuthShell docTitle={t('resetPassword')} title={t('forgotYourPassword')} sub={t('weLlEmailYouA')}>
       {sent ? (
-        <AuthNotice kind="success">
-          If an account uses <strong>{email.trim()}</strong>, a reset link is on its way. It works for 30 minutes.
-        </AuthNotice>
+        <AuthNotice kind="success">{t('ifAnAccountUses')}{' '}<strong>{email.trim()}</strong>{t('aResetLinkIsOn')}</AuthNotice>
       ) : (
         <form className="fr-authcard__form" onSubmit={submit} noValidate>
           <Input
-            label="Email"
+            label={t('email')}
             icon={Mail}
             size="lg"
             type="email"
@@ -54,13 +53,10 @@ export function ForgotPasswordPage() {
             onChange={(e) => setEmail(e.target.value)}
             error={error ?? undefined}
           />
-          <Button type="submit" variant="primary" size="lg" block loading={busy}>
-            Send reset link
-          </Button>
+          <Button type="submit" variant="primary" size="lg" block loading={busy}>{t('sendResetLink')}</Button>
         </form>
       )}
-      <p className="fr-authcard__switch">
-        Remembered it? <Link to="/login">Back to log in</Link>
+      <p className="fr-authcard__switch">{t('rememberedIt')}{' '}<Link to="/login">{t('backToLogIn')}</Link>
       </p>
     </AuthShell>
   );
@@ -70,32 +66,32 @@ type LinkMode = 'reset' | 'revert' | 'undo' | 'recover';
 
 const LINK_COPY: Record<LinkMode, { doc: string; title: string; sub: string; submit: string; failed: string }> = {
   reset: {
-    doc: 'Choose a new password',
-    title: 'Choose a new password',
-    sub: "You'll be signed out on every other device.",
-    submit: 'Save password and log in',
-    failed: 'Could not reset the password. Please try again.',
+    doc: t('chooseANewPassword'),
+    title: t('chooseANewPassword'),
+    sub: t('youLlBeSignedOut'),
+    submit: t('savePasswordAndLogIn'),
+    failed: t('couldNotResetThePassword'),
   },
   revert: {
-    doc: 'Restore your email address',
-    title: 'Take your account back',
-    sub: 'Your account moves back to this email address, every device is signed out, and two-step verification or sign-in providers added since the change are removed. Choose a new password to finish.',
-    submit: 'Restore my account and log in',
-    failed: 'Could not restore your address. Please try again.',
+    doc: t('restoreYourEmailAddress'),
+    title: t('takeYourAccountBack'),
+    sub: t('yourAccountMovesBackTo'),
+    submit: t('restoreMyAccountAndLog'),
+    failed: t('couldNotRestoreYourAddress'),
   },
   undo: {
-    doc: 'Remove two-step verification',
-    title: 'Take your account back',
-    sub: 'The authenticator that was just added and every connected sign-in provider are removed, and every device is signed out. Choose a new password to finish.',
-    submit: 'Remove it and log in',
-    failed: 'Could not take the account back. Please try again.',
+    doc: t('removeTwoStepVerification'),
+    title: t('takeYourAccountBack'),
+    sub: t('theAuthenticatorThatWasJust'),
+    submit: t('removeItAndLogIn'),
+    failed: t('couldNotTakeTheAccount'),
   },
   recover: {
-    doc: 'Finish account recovery',
-    title: 'Finish recovering your account',
-    sub: 'Two-step verification and every connected sign-in provider are removed, and every device is signed out. Choose a new password to finish, then turn two-step verification on again in settings.',
-    submit: 'Finish and log in',
-    failed: 'Could not finish the recovery. Please try again.',
+    doc: t('finishAccountRecovery'),
+    title: t('finishRecoveringYourAccount'),
+    sub: t('twoStepVerificationAndEvery'),
+    submit: t('finishAndLogIn'),
+    failed: t('couldNotFinishTheRecovery'),
   },
 };
 
@@ -121,8 +117,8 @@ export function ResetPasswordPage({ mode = 'reset' }: { mode?: LinkMode }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) return setError('Use at least 8 characters');
-    if (password !== confirm) return setError('The passwords don’t match');
+    if (password.length < 8) return setError(t('useAtLeast8Characters'));
+    if (password !== confirm) return setError(t('thePasswordsDonTMatch'));
     setBusy(true);
     setError(null);
     try {
@@ -150,22 +146,22 @@ export function ResetPasswordPage({ mode = 'reset' }: { mode?: LinkMode }) {
   return (
     <AuthShell docTitle={copy.doc} title={copy.title} sub={copy.sub}>
       {!token ? (
-        <AuthNotice kind="error">This link is incomplete. Open the link from the email again.</AuthNotice>
+        <AuthNotice kind="error">{t('thisLinkIsIncompleteOpen')}</AuthNotice>
       ) : (
         <form className="fr-authcard__form" onSubmit={submit} noValidate>
           <Input
-            label="New password"
+            label={t('newPassword')}
             icon={Lock}
             size="lg"
             type="password"
             autoComplete="new-password"
             autoFocus
-            placeholder="At least 8 characters"
+            placeholder={t('atLeast8Characters')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
           <Input
-            label="Repeat it"
+            label={t('repeatIt')}
             icon={Lock}
             size="lg"
             type="password"
@@ -182,15 +178,11 @@ export function ResetPasswordPage({ mode = 'reset' }: { mode?: LinkMode }) {
       <p className="fr-authcard__switch">
         {revert ? (
           // A reset link would go to the address that replaced this one.
-          <>Link expired or already used? Ask whoever runs your Freero for help.</>
+          <>{t('linkExpiredOrAlreadyUsed')}</>
         ) : mode !== 'reset' ? (
-          <>
-            Link expired or already used? Log in, and at the code step choose “Can’t use your app?” → “Lost your recovery codes
-            too?”, or ask whoever runs your Freero for help.
-          </>
+          <>{t('linkExpiredOrAlreadyUsed2')}</>
         ) : (
-          <>
-            Link expired? <Link to="/forgot-password">Send a new one</Link>
+          <>{t('linkExpired')}{' '}<Link to="/forgot-password">{t('sendANewOne')}</Link>
           </>
         )}
       </p>

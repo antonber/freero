@@ -16,6 +16,7 @@ import {
   versionByline,
   versionTitle,
 } from './lib/versions';
+import { t } from './messages';
 import './history.css';
 
 function Row({ editor, v, list }: { editor: Editor; v: BoardVersion; list: BoardVersion[] }) {
@@ -26,7 +27,7 @@ function Row({ editor, v, list }: { editor: Editor; v: BoardVersion; list: Board
       <li className="fr-history__row is-editing">
         <NameField
           initial={v.name ?? ''}
-          placeholder="Name this version"
+          placeholder={t('nameThisVersion')}
           onSave={(name) => renameVersion(editor, v, name)}
           onCancel={() => setRenaming(false)}
         />
@@ -43,7 +44,7 @@ function Row({ editor, v, list }: { editor: Editor; v: BoardVersion; list: Board
         <span className="fr-history__label">
           <span className="fr-history__name">
             {v.kind === 'named' && <Bookmark size={13} className="fr-history__mark" aria-hidden />}
-            {v.kind === 'decision' && <Stamp size={13} className="fr-history__mark" aria-label="Decision" />}
+            {v.kind === 'decision' && <Stamp size={13} className="fr-history__mark" aria-label={t('decision')} />}
             {versionTitle(v)}
           </span>
           {byline && <span className="fr-history__by">{byline}</span>}
@@ -53,7 +54,7 @@ function Row({ editor, v, list }: { editor: Editor; v: BoardVersion; list: Board
         className="fr-history__rename"
         icon={Pencil}
         size={32}
-        label={v.kind === 'named' || v.kind === 'decision' ? 'Rename version' : 'Name this version'}
+        label={v.kind === 'named' || v.kind === 'decision' ? t('renameVersion') : t('nameThisVersion')}
         onClick={() => setRenaming(true)}
       />
     </li>
@@ -68,32 +69,26 @@ function HistoryPanel({ editor }: PanelProps) {
   return (
     <div className="fr-history">
       <DockHeader className="fr-history__head">
-        <h2 className="fr-history__title">
-          Version history
-          <IconButton icon={RotateCw} size={32} label="Refresh" disabled={loading} onClick={() => void refreshVersions(editor)} />
+        <h2 className="fr-history__title">{t('versionHistory')}<IconButton icon={RotateCw} size={32} label={t('refresh')} disabled={loading} onClick={() => void refreshVersions(editor)} />
         </h2>
       </DockHeader>
 
-      <section className="fr-history__current" aria-label="Current version">
+      <section className="fr-history__current" aria-label={t('currentVersion')}>
         <div className="fr-history__currenthead">
           <span className="fr-history__live" aria-hidden />
-          <span>Current version</span>
+          <span>{t('currentVersion')}</span>
         </div>
         {naming ? (
-          <NameField placeholder="e.g. Before the workshop" onSave={(name) => nameCurrentVersion(editor, name)} onCancel={() => setNaming(false)} />
+          <NameField placeholder={t('eGBeforeTheWorkshop')} onSave={(name) => nameCurrentVersion(editor, name)} onCancel={() => setNaming(false)} />
         ) : (
-          <Button size="sm" variant="secondary" icon={Bookmark} onClick={() => setNaming(true)}>
-            Name this version
-          </Button>
+          <Button size="sm" variant="secondary" icon={Bookmark} onClick={() => setNaming(true)}>{t('nameThisVersion')}</Button>
         )}
       </section>
 
       {error && (
         <div className="fr-history__error" role="alert">
           {error}
-          <Button size="sm" variant="ghost" onClick={() => void refreshVersions(editor)}>
-            Try again
-          </Button>
+          <Button size="sm" variant="ghost" onClick={() => void refreshVersions(editor)}>{t('tryAgain')}</Button>
         </div>
       )}
       {!versions && loading && (
@@ -104,7 +99,7 @@ function HistoryPanel({ editor }: PanelProps) {
       {versions && !versions.length && (
         <div className="fr-history__empty">
           <History size={22} aria-hidden />
-          <p>No earlier versions yet. Freero keeps one about every half hour while people edit, and you can name the current version any time.</p>
+          <p>{t('noEarlierVersionsYetFreero')}</p>
         </div>
       )}
       {groups.map((g) => (

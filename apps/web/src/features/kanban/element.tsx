@@ -74,6 +74,7 @@ import { TabStrip } from './lib/TabStrip';
 import { ProjectionTab } from './lib/ProjectionTab';
 import { LinkedViewElement } from './lib/LinkedView';
 import { sourceOf } from './lib/linked';
+import { t as tr } from './messages';
 import './kanban.css';
 
 /** Below this zoom text is unreadable: draw only the column blocks. */
@@ -91,10 +92,10 @@ function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor;
   // checkbox values and "No <field>" are what the cards say, so only their look and limits change.
   const isOption = options && col.id !== NO_GROUP;
   const items: MenuItem[] = [
-    ...(isOption ? [{ id: 'rename', label: 'Rename', icon: Pencil, onSelect: () => renameColumn(editor, k.id, col.id) }] : []),
+    ...(isOption ? [{ id: 'rename', label: tr('rename'), icon: Pencil, onSelect: () => renameColumn(editor, k.id, col.id) }] : []),
     {
       id: 'status',
-      label: 'Sets card status',
+      label: tr('setsCardStatus'),
       icon: Tag,
       onSelect: () => undefined,
       submenu: [
@@ -104,12 +105,12 @@ function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor;
           checked: col.status === s,
           onSelect: () => patchColumn(editor, k.id, col.id, { status: s }),
         })),
-        { id: 'none', label: 'Leave status as is', checked: !col.status, onSelect: () => patchColumn(editor, k.id, col.id, { status: null }) },
+        { id: 'none', label: tr('leaveStatusAsIs'), checked: !col.status, onSelect: () => patchColumn(editor, k.id, col.id, { status: null }) },
       ],
     },
     {
       id: 'color',
-      label: 'Colour',
+      label: tr('colour'),
       icon: Palette,
       onSelect: () => undefined,
       submenu: COLUMN_PALETTE.map((c) => ({
@@ -126,11 +127,11 @@ function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor;
     },
     {
       id: 'wip',
-      label: 'WIP limit',
+      label: tr('wipLimit'),
       icon: Gauge,
       onSelect: () => undefined,
       submenu: [
-        { id: 'wip-0', label: 'No limit', checked: !col.wip, onSelect: () => patchColumn(editor, k.id, col.id, { wip: 0 }) },
+        { id: 'wip-0', label: tr('noLimit'), checked: !col.wip, onSelect: () => patchColumn(editor, k.id, col.id, { wip: 0 }) },
         ...WIP_CHOICES.map((n) => ({
           id: `wip-${n}`,
           label: `${n} ${n === 1 ? 'item' : 'items'}`,
@@ -141,14 +142,14 @@ function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor;
     },
     {
       id: 'limit',
-      label: 'Cards shown',
+      label: tr('cardsShown'),
       icon: ListEnd,
       onSelect: () => undefined,
       submenu: [
-        { id: 'limit-0', label: 'All', checked: !col.limit, onSelect: () => setColumnLimit(editor, k.id, col.id, 0) },
+        { id: 'limit-0', label: tr('all'), checked: !col.limit, onSelect: () => setColumnLimit(editor, k.id, col.id, 0) },
         ...CARD_LIMITS.map((n) => ({
           id: `limit-${n}`,
-          label: `First ${n}`,
+          label: tr('firstN', { n }),
           checked: col.limit === n,
           onSelect: () => setColumnLimit(editor, k.id, col.id, n),
         })),
@@ -156,20 +157,20 @@ function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor;
     },
     {
       id: 'collapse',
-      label: col.collapsed ? 'Expand column' : 'Collapse column',
+      label: col.collapsed ? tr('expandColumn') : tr('collapseColumn'),
       icon: col.collapsed ? UnfoldHorizontal : FoldHorizontal,
       onSelect: () => setCollapsed(editor, k.id, col.id, !col.collapsed),
     },
     { divider: true },
-    { id: 'left', label: 'Move left', icon: ArrowLeft, disabled: index === 0, onSelect: () => moveColumn(editor, k.id, col.id, -1) },
-    { id: 'right', label: 'Move right', icon: ArrowRight, disabled: index === k.columns.length - 1, onSelect: () => moveColumn(editor, k.id, col.id, 1) },
-    ...(options ? [{ id: 'add', label: 'Add column after', icon: Plus, onSelect: () => addColumn(editor, k.id, index) }] : []),
+    { id: 'left', label: tr('moveLeft'), icon: ArrowLeft, disabled: index === 0, onSelect: () => moveColumn(editor, k.id, col.id, -1) },
+    { id: 'right', label: tr('moveRight'), icon: ArrowRight, disabled: index === k.columns.length - 1, onSelect: () => moveColumn(editor, k.id, col.id, 1) },
+    ...(options ? [{ id: 'add', label: tr('addColumnAfter'), icon: Plus, onSelect: () => addColumn(editor, k.id, index) }] : []),
     ...(isOption
       ? [
           { divider: true as const },
           {
             id: 'delete',
-            label: 'Delete column',
+            label: tr('deleteColumn'),
             icon: Trash2,
             danger: true,
             disabled: k.columns.filter((c) => c.id !== NO_GROUP).length < 2,
@@ -185,7 +186,7 @@ function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor;
         type="button"
         className={`fr-kanban__col-menu${open ? ' is-open' : ''}`}
         data-fr-interactive=""
-        aria-label={`Column options: ${title}`}
+        aria-label={tr('columnOptionsTitle', { title })}
         aria-haspopup="menu"
         aria-expanded={open}
         onPointerDown={stop}
@@ -193,7 +194,7 @@ function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor;
       >
         <MoreHorizontal size={16} aria-hidden />
       </button>
-      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label="Column options" />
+      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={items} aria-label={tr('columnOptions')} />
     </>
   );
 }
@@ -210,18 +211,18 @@ function ColumnColor({ editor, k, col }: { editor: Editor; k: KanbanElement; col
         className="fr-kanban__col-color"
         data-fr-interactive=""
         style={{ background: col.color }}
-        aria-label={`Column colour: ${COLUMN_COLOR_NAMES[col.color] ?? col.color}`}
+        aria-label={tr('columnColourValue', { value: COLUMN_COLOR_NAMES[col.color] ?? col.color })}
         aria-expanded={open}
         onPointerDown={stop}
         onClick={() => setOpen((o) => !o)}
       />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="start" aria-label="Column colour">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="start" aria-label={tr('columnColour')}>
         <ColorSwatches
           colors={COLUMN_PALETTE}
           names={COLUMN_COLOR_NAMES}
           value={col.color}
           columns={6}
-          aria-label="Column colour"
+          aria-label={tr('columnColour')}
           onChange={(c) => {
             patchColumn(editor, k.id, col.id, { color: c });
             setOpen(false);
@@ -262,7 +263,7 @@ function ColumnGrip({ editor, k, index, onDrag }: { editor: Editor; k: KanbanEle
     <span
       className="fr-kanban__grip"
       data-fr-interactive=""
-      title="Drag to move the column"
+      title={tr('dragToMoveTheColumn')}
       aria-hidden
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -304,7 +305,7 @@ function ColumnEdge({ editor, k, index, height }: { editor: Editor; k: KanbanEle
     <div
       className="fr-kanban__edge"
       data-fr-interactive=""
-      title="Drag to change the column width"
+      title={tr('dragToChangeTheColumn')}
       aria-hidden
       style={{ left: colLeft(k, index) + colWidth(k, index), top: HEADER_H, width: GAP, height }}
       onPointerDown={(e) => {
@@ -382,8 +383,8 @@ function FocusButton({ editor, k }: { editor: Editor; k: KanbanElement }) {
       type="button"
       className="fr-kanban__focus"
       data-fr-interactive=""
-      title="Open in focus mode: all its cards as a list you arrange your way"
-      aria-label="Open in focus mode"
+      title={tr('openInFocusModeAll')}
+      aria-label={tr('openInFocusMode')}
       onPointerDown={stop}
       onClick={() => editor.openPanel(FOCUS_PANEL, { id: k.id })}
     >
@@ -413,7 +414,7 @@ function Head({ editor, k, selected, lod, tabId, board, canEdit, phone }: { edit
             color="var(--fr-ink)"
             padding={{ top: 0, right: 8, bottom: 0, left: 16 }}
             style={{ fontWeight: 650 }}
-            placeholder="Kanban"
+            placeholder={tr('kanban')}
           />
         </div>
       )}
@@ -421,31 +422,25 @@ function Head({ editor, k, selected, lod, tabId, board, canEdit, phone }: { edit
       {!lod && (sortedBy || filterWords) && (
         <span className="fr-kanban__view-state">
           {filterWords && (
-            <button type="button" className="fr-kanban__view-chip" data-fr-interactive="" title={`Filtered: ${filterWords}`} onPointerDown={stop} onClick={() => editor.openDock(VIEW_PANEL)}>
-              <Filter size={12} aria-hidden />
-              Filtered
-            </button>
+            <button type="button" className="fr-kanban__view-chip" data-fr-interactive="" title={tr('filteredFilterwords', { filterWords })} onPointerDown={stop} onClick={() => editor.openDock(VIEW_PANEL)}>
+              <Filter size={12} aria-hidden />{tr('filtered')}</button>
           )}
           {sortedBy && (
             <button
               type="button"
               className="fr-kanban__view-chip"
               data-fr-interactive=""
-              title={`Sorted by ${sortedBy}: each column keeps that order (cards still move between columns)`}
+              title={tr('sortedBySortedbyEachColumn', { sortedBy })}
               onPointerDown={stop}
               onClick={() => editor.openDock(VIEW_PANEL)}
             >
-              <ArrowDownUp size={12} aria-hidden />
-              Sorted by {sortedBy}
-            </button>
+              <ArrowDownUp size={12} aria-hidden />{tr('sortedBySortedby', { sortedBy })}</button>
           )}
         </span>
       )}
       {controls && board && columnsAreOptions(k) && (
         <button type="button" className="fr-kanban__add" data-fr-interactive="" onPointerDown={stop} onClick={() => addColumn(editor, k.id)}>
-          <Plus size={14} aria-hidden />
-          Column
-        </button>
+          <Plus size={14} aria-hidden />{tr('column')}</button>
       )}
       {!lod && (selected || phone) && <FocusButton editor={editor} k={k} />}
     </div>
@@ -527,7 +522,7 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
             <div key={col.id} className={cls} style={box}>
               {!lod && (
                 <div className="fr-kanban__strip">
-                  <span className="fr-kanban__count" title={`${counts[i]} items, folded away`}>
+                  <span className="fr-kanban__count" title={tr('countsItemsFoldedAway', { counts: counts[i] })}>
                     {counts[i]}
                   </span>
                   {canEdit && !k.locked && (
@@ -535,8 +530,8 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
                       type="button"
                       className="fr-kanban__col-menu"
                       data-fr-interactive=""
-                      aria-label={`Expand column: ${title}`}
-                      title="Expand column"
+                      aria-label={tr('expandColumnTitle', { title })}
+                      title={tr('expandColumn')}
                       onPointerDown={stop}
                       onClick={() => setCollapsed(editor, k.id, col.id, false)}
                     >
@@ -570,7 +565,7 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
                         color="var(--fr-ink)"
                         padding={{ top: 0, right: 4, bottom: 0, left: controls ? 4 : 12 }}
                         style={{ fontWeight: 600 }}
-                        placeholder="Column"
+                        placeholder={tr('column')}
                       />
                     ) : (
                       <span className={`fr-kanban__col-label${col.id === NO_GROUP ? ' is-none' : ''}`} style={{ paddingLeft: controls ? 4 : 12 }}>
@@ -580,13 +575,13 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
                   </div>
                   <span
                     className="fr-kanban__count"
-                    title={col.wip ? `${counts[i]} of ${col.wip} allowed (work-in-progress limit)` : `${counts[i]} items`}
+                    title={col.wip ? tr('countsOfWipAllowedWork', { counts: counts[i], wip: col.wip }) : tr('countsItems', { counts: counts[i] })}
                   >
                     {counts[i]}
                     {col.wip ? `/${col.wip}` : ''}
                   </span>
                   {col.status && (!controls || roomy) && (
-                    <span className="fr-kanban__status" title={`Cards dropped here become “${STATUS_LABELS[col.status]}”`}>
+                    <span className="fr-kanban__status" title={tr('cardsDroppedHereBecomeStatus', { status_labels: STATUS_LABELS[col.status] })}>
                       <Check size={11} strokeWidth={3} aria-hidden />
                     </span>
                   )}
@@ -603,7 +598,7 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
           return (
             <div key={lane.id} className={`fr-kanban__lane${lane.id === NO_GROUP ? ' is-none' : ''}`} style={{ top, left: GAP / 2, width: k.w - GAP, height: LANE_HEAD_H }}>
               <span className="fr-kanban__lane-title">{laneTitles[i]}</span>
-              <span className="fr-kanban__count" title={`${laneCounts[i] ?? 0} items`}>
+              <span className="fr-kanban__count" title={tr('valueItems', { value: laneCounts[i] ?? 0 })}>
                 {laneCounts[i] ?? 0}
               </span>
             </div>
@@ -619,17 +614,13 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
                   className="fr-kanban__more"
                   data-fr-interactive=""
                   // Editors show them on the board (for everyone); anyone else reads them in focus mode.
-                  title={canEdit && !k.locked ? 'Show every card in this column' : `${m.n} more cards in this column: open in focus mode`}
+                  title={canEdit && !k.locked ? tr('showEveryCardInThis') : tr('nMoreCardsInThis', { n: m.n })}
                   onPointerDown={stop}
                   onClick={() => (canEdit && !k.locked ? setColumnLimit(editor, k.id, k.columns[m.col].id, 0) : editor.openPanel(FOCUS_PANEL, { id: k.id }))}
-                >
-                  +{m.n} more
-                </button>
+                >{tr('nMore', { n: m.n })}</button>
               )}
               {m.hidden > 0 && (
-                <span className="fr-kanban__hidden" title={filterWords ? `Hidden by the filter: ${filterWords}` : undefined}>
-                  {m.hidden} hidden by filter
-                </span>
+                <span className="fr-kanban__hidden" title={filterWords ? tr('hiddenByTheFilterFilterwords', { filterWords }) : undefined}>{tr('hiddenHiddenByFilter', { hidden: m.hidden })}</span>
               )}
             </div>
           ),
@@ -647,7 +638,7 @@ function BoardTab({ element: k, selected, zoom, tabId, phone }: ElementRenderPro
             style={{ left: colLeft(k, dragIdx) + colDrag.dx, top: HEADER_H, width: colWidth(k, dragIdx), height: COL_HEAD_H, ['--col' as string]: k.columns[dragIdx].color }}
             aria-hidden
           >
-            {richTextToPlain(k.columns[dragIdx].title) || 'Untitled'}
+            {richTextToPlain(k.columns[dragIdx].title) || tr('untitled')}
           </div>
           {insertAt !== null && <div className="fr-kanban__insert" style={{ left: insertAt - 2, top: HEADER_H, height: bodyH }} aria-hidden />}
         </>
@@ -680,7 +671,7 @@ function paintKanban(k: KanbanElement, p: LowDetailPaint) {
 
 const kanban = defineElement({
   type: 'kanban',
-  label: { one: 'Kanban board', many: 'Kanban boards' },
+  label: { one: tr('kanbanBoard'), many: tr('kanbanBoards') },
   icon: SquareKanbanIcon,
   // Columns size the board: width from their count and width, height from the tallest stack.
   resize: 'none',
@@ -692,7 +683,7 @@ const kanban = defineElement({
     type: 'kanban',
     w: kanbanWidth(3, DEFAULT_COL_W),
     h: 320,
-    title: 'Kanban',
+    title: tr('kanban'),
     columns: [],
     colW: DEFAULT_COL_W,
   }),
@@ -736,7 +727,7 @@ const kanban = defineElement({
  */
 const linkedView = defineElement({
   type: 'kanbanview',
-  label: { one: 'Linked view', many: 'Linked views' },
+  label: { one: tr('linkedView'), many: tr('linkedViews') },
   icon: Link2,
   resize: 'free',
   rotatable: false,
@@ -752,7 +743,7 @@ const linkedView = defineElement({
     const from = content && typeof content === 'object' ? (content as { board?: unknown }).board : undefined;
     if (typeof from !== 'string' || from === editor.boardId || sourceOf(editor, lv)) return;
     editor.remove([lv.id]);
-    editor.host.notify('Linked views stay on the board of their kanban for now: copy the kanban itself to take its cards along.', 'info');
+    editor.host.notify(tr('linkedViewsStayOnThe'), 'info');
   },
 });
 

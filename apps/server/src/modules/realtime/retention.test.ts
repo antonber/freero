@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
-import { createBoard } from '../boards/index';
+import { createBoard, placeLegalHold, releaseLegalHold } from '../boards/index';
 import { createTeamWorkspace, updateWorkspaceSettings } from '../workspaces/index';
 import { pruneSnapshotsByPolicy } from './init';
 import * as repo from './repo';
@@ -84,4 +84,23 @@ it('a workspace’s version retention removes its unnamed versions past the limi
   expect(await ages(strict)).toEqual(['auto:2', 'decision:85', 'named:80']);
   expect(await ages(lone)).toEqual([]);
   expect(await ages(relaxed)).toEqual(['auto:2', 'auto:90', 'named:80']);
+});
+
+it('a board under a legal hold keeps every version through thinning and its workspace’s version limit, until the hold is released', async () => {
+  const team = await createTeamWorkspace(userId, 'Held memory');
+  await updateWorkspaceSettings(team.id, userId, { versionRetentionDays: 30 });
+  const held = (await createBoard(userId, 'Held', '', 'none', { workspaceId: team.id })).id;
+  const state = new Uint8Array([0, 0]);
+  const now = Date.now();
+  for (const age of [90, 60, 40, 2]) await repo.insertSnapshot(held, { state, kind: 'auto', name: null, createdBy: null }, now - age * DAY);
+  await placeLegalHold('case-versions', { boardIds: [held], custodians: [] });
+
+  await pruneSnapshotsByPolicy(now);
+  expect(await repo.snapshotTimeline(held)).toHaveLength(4);
+  // A hold check that fails keeps everything too.
+  expect(await pruneSnapshots({ now, policyFor: () => ({ ...DEFAULT_RETENTION, maxAgeMs: DAY }), heldAmong: () => Promise.reject(new Error('db down')) })).toBe(0);
+
+  await releaseLegalHold('case-versions');
+  await pruneSnapshotsByPolicy(now);
+  expect(await repo.snapshotTimeline(held)).toHaveLength(1);
 });

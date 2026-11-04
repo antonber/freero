@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "Ebenen",
+  "unlock": "Entsperren",
+  "lock": "Sperren",
+  "hiddenWithItsFrameOr": "Mit seinem Rahmen oder dem verbundenen Element ausgeblendet",
+  "showHiddenForYouOnly": "Einblenden (nur für Sie ausgeblendet)",
+  "hideForMeOthersStill": "Für mich ausblenden (andere sehen es weiterhin)",
+  "collapse": "Einklappen",
+  "expand": "Ausklappen",
+  "untitledFrame": "Unbenannter Rahmen",
+  "notInAFrame": "In keinem Rahmen",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} nur für Sie ausgeblendet",
+  "showAll": "Alle einblenden",
+  "nothingOnTheBoardYet": "Noch nichts auf dem Board.",
+  "dragToRestackTheTop": "Ziehen zum Umsortieren: Der oberste Eintrag jeder Liste liegt vorne."
+}

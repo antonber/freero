@@ -6,13 +6,14 @@
 import { nanoid } from 'nanoid';
 import { inferFieldType, matchValue, parseCheckboxText, parseDateText, parseNumberText, plainToRichText, richTextToPlain, sortByValues, spanOfDates, timelineLayout, timelineRange, type DaySpan, type QueryValue, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
 
+import { t as tr } from '../messages';
 export const COLUMN_TYPES: Array<{ value: TableColumnType; label: string }> = [
-  { value: 'text', label: 'Text' },
-  { value: 'number', label: 'Number' },
-  { value: 'date', label: 'Date' },
-  { value: 'select', label: 'Select' },
-  { value: 'person', label: 'Person' },
-  { value: 'checkbox', label: 'Checkbox' },
+  { value: 'text', label: tr('text') },
+  { value: 'number', label: tr('number') },
+  { value: 'date', label: tr('date') },
+  { value: 'select', label: tr('select') },
+  { value: 'person', label: tr('person') },
+  { value: 'checkbox', label: tr('checkbox') },
 ];
 
 /** Select option tints (Freero's palette), in the order new options take them. */
@@ -55,7 +56,7 @@ export function displayValue(col: TableColumn | undefined, raw: string, people?:
     case 'select':
       return richTextToPlain(raw);
     case 'person':
-      return people?.name(raw) ?? 'Unknown person';
+      return people?.name(raw) ?? tr('unknownPerson');
     case 'checkbox':
       return raw === 'true' ? 'Yes' : '';
   }
@@ -135,36 +136,36 @@ export const FILTER_OPS: Record<TableColumnType, Array<{ value: TableFilter['op'
   text: [
     { value: 'contains', label: 'contains', needsValue: true },
     { value: 'is', label: 'is', needsValue: true },
-    { value: 'empty', label: 'is empty', needsValue: false },
-    { value: 'notEmpty', label: 'is not empty', needsValue: false },
+    { value: 'empty', label: tr('isEmpty'), needsValue: false },
+    { value: 'notEmpty', label: tr('isNotEmpty'), needsValue: false },
   ],
   number: [
     { value: 'is', label: '=', needsValue: true },
     { value: 'gt', label: '>', needsValue: true },
     { value: 'lt', label: '<', needsValue: true },
-    { value: 'empty', label: 'is empty', needsValue: false },
-    { value: 'notEmpty', label: 'is not empty', needsValue: false },
+    { value: 'empty', label: tr('isEmpty'), needsValue: false },
+    { value: 'notEmpty', label: tr('isNotEmpty'), needsValue: false },
   ],
   date: [
     { value: 'is', label: 'is', needsValue: true },
-    { value: 'gt', label: 'is after', needsValue: true },
-    { value: 'lt', label: 'is before', needsValue: true },
-    { value: 'empty', label: 'is empty', needsValue: false },
-    { value: 'notEmpty', label: 'is not empty', needsValue: false },
+    { value: 'gt', label: tr('isAfter'), needsValue: true },
+    { value: 'lt', label: tr('isBefore'), needsValue: true },
+    { value: 'empty', label: tr('isEmpty'), needsValue: false },
+    { value: 'notEmpty', label: tr('isNotEmpty'), needsValue: false },
   ],
   select: [
     { value: 'is', label: 'is', needsValue: true },
-    { value: 'empty', label: 'is empty', needsValue: false },
-    { value: 'notEmpty', label: 'is not empty', needsValue: false },
+    { value: 'empty', label: tr('isEmpty'), needsValue: false },
+    { value: 'notEmpty', label: tr('isNotEmpty'), needsValue: false },
   ],
   person: [
     { value: 'is', label: 'is', needsValue: true },
-    { value: 'empty', label: 'is empty', needsValue: false },
-    { value: 'notEmpty', label: 'is not empty', needsValue: false },
+    { value: 'empty', label: tr('isEmpty'), needsValue: false },
+    { value: 'notEmpty', label: tr('isNotEmpty'), needsValue: false },
   ],
   checkbox: [
-    { value: 'checked', label: 'is checked', needsValue: false },
-    { value: 'unchecked', label: 'is not checked', needsValue: false },
+    { value: 'checked', label: tr('isChecked'), needsValue: false },
+    { value: 'unchecked', label: tr('isNotChecked'), needsValue: false },
   ],
 };
 

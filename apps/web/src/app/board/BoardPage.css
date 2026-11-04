@@ -71,7 +71,7 @@
   flex-direction: column;
   gap: 12px;
   margin-bottom: 20px;
-  text-align: left;
+  text-align: start;
 }
 
 .fr-reqaccess__role {

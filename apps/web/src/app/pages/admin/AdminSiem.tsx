@@ -7,15 +7,16 @@ import { Copy, Pause, Play, Plus, Send, Trash2 } from 'lucide-react';
 import type { SiemKind, SiemSettings, SiemSinkInfo, WorkspaceSummary } from '@freero/shared';
 import { Button, Input, Modal, SegmentedControl, TextArea, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
+import { t as tr } from './messages';
 import './siem.css';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
 const KINDS: Array<{ value: SiemKind; label: string }> = [
-  { value: 'splunk', label: 'Splunk' },
-  { value: 'sentinel', label: 'Microsoft Sentinel' },
+  { value: 'splunk', label: tr('splunk') },
+  { value: 'sentinel', label: tr('microsoftSentinel') },
   { value: 'https', label: 'HTTPS' },
-  { value: 'syslog', label: 'Syslog (TLS)' },
+  { value: 'syslog', label: tr('syslogTls') },
 ];
 const kindLabel = (k: SiemKind) => KINDS.find((x) => x.value === k)?.label ?? k;
 
@@ -54,55 +55,53 @@ function SinkForm({ busy, onSubmit, onCancel }: { busy: boolean; onSubmit: (d: D
   };
   return (
     <form className="fr-admin-siem__form" onSubmit={submit}>
-      <SegmentedControl<SiemKind> aria-label="Where to" options={KINDS} value={d.kind} onChange={(kind) => setD({ ...EMPTY, kind })} />
-      <Input label="Name" value={d.name} onChange={(e) => setD((x) => ({ ...x, name: e.target.value }))} placeholder={kindLabel(d.kind)} />
+      <SegmentedControl<SiemKind> aria-label={tr('whereTo')} options={KINDS} value={d.kind} onChange={(kind) => setD({ ...EMPTY, kind })} />
+      <Input label={tr('name')} value={d.name} onChange={(e) => setD((x) => ({ ...x, name: e.target.value }))} placeholder={kindLabel(d.kind)} />
       {d.kind === 'splunk' ? (
         <>
-          <Input label="HTTP Event Collector URL" value={v('url')} onChange={set('url')} placeholder="https://splunk.example.com:8088" />
-          <Input label="HEC token" type="password" value={d.secret} onChange={(e) => setD((x) => ({ ...x, secret: e.target.value }))} />
+          <Input label={tr('httpEventCollectorUrl')} value={v('url')} onChange={set('url')} placeholder="https://splunk.example.com:8088" />
+          <Input label={tr('hecToken')} type="password" value={d.secret} onChange={(e) => setD((x) => ({ ...x, secret: e.target.value }))} />
           <div className="fr-admin-siem__pair">
-            <Input label="Index (optional)" value={v('index')} onChange={set('index')} />
-            <Input label="Source type (optional)" value={v('sourcetype')} onChange={set('sourcetype')} placeholder="freero:audit" />
+            <Input label={tr('indexOptional')} value={v('index')} onChange={set('index')} />
+            <Input label={tr('sourceTypeOptional')} value={v('sourcetype')} onChange={set('sourcetype')} placeholder="freero:audit" />
           </div>
         </>
       ) : d.kind === 'sentinel' ? (
         <>
-          <Input label="Data collection endpoint" value={v('endpoint')} onChange={set('endpoint')} placeholder="https://….ingest.monitor.azure.com" />
+          <Input label={tr('dataCollectionEndpoint')} value={v('endpoint')} onChange={set('endpoint')} placeholder="https://….ingest.monitor.azure.com" />
           <div className="fr-admin-siem__pair">
-            <Input label="Data collection rule ID" value={v('dcrId')} onChange={set('dcrId')} placeholder="dcr-…" />
-            <Input label="Stream" value={v('stream')} onChange={set('stream')} placeholder="Custom-FreeroAudit_CL" />
+            <Input label={tr('dataCollectionRuleId')} value={v('dcrId')} onChange={set('dcrId')} placeholder={tr('dcr')} />
+            <Input label={tr('stream')} value={v('stream')} onChange={set('stream')} placeholder={tr('customFreeroauditCl')} />
           </div>
           <div className="fr-admin-siem__pair">
-            <Input label="Directory (tenant) ID" value={v('tenantId')} onChange={set('tenantId')} />
-            <Input label="Application (client) ID" value={v('clientId')} onChange={set('clientId')} />
+            <Input label={tr('directoryTenantId')} value={v('tenantId')} onChange={set('tenantId')} />
+            <Input label={tr('applicationClientId')} value={v('clientId')} onChange={set('clientId')} />
           </div>
-          <Input label="Client secret" type="password" value={d.secret} onChange={(e) => setD((x) => ({ ...x, secret: e.target.value }))} />
+          <Input label={tr('clientSecret')} type="password" value={d.secret} onChange={(e) => setD((x) => ({ ...x, secret: e.target.value }))} />
         </>
       ) : d.kind === 'https' ? (
         <>
-          <Input label="Collector URL" value={v('url')} onChange={set('url')} placeholder="https://collector.example.com/freero" />
+          <Input label={tr('collectorUrl')} value={v('url')} onChange={set('url')} placeholder="https://collector.example.com/freero" />
           <Input
-            label="Bearer token (optional)"
+            label={tr('bearerTokenOptional')}
             type="password"
             value={d.secret}
             onChange={(e) => setD((x) => ({ ...x, secret: e.target.value }))}
-            hint="Sent as Authorization: Bearer. Every request is also signed with a secret you get once you add the stream."
+            hint={tr('sentAsAuthorizationBearerEvery')}
           />
         </>
       ) : (
         <>
           <div className="fr-admin-siem__pair">
-            <Input label="Host" value={v('host')} onChange={set('host')} placeholder="syslog.example.com" />
-            <Input label="Port" value={v('port')} onChange={set('port')} placeholder="6514" inputMode="numeric" />
+            <Input label={tr('host')} value={v('host')} onChange={set('host')} placeholder="syslog.example.com" />
+            <Input label={tr('port')} value={v('port')} onChange={set('port')} placeholder="6514" inputMode="numeric" />
           </div>
-          <TextArea label="CA certificate (optional, PEM)" rows={3} value={v('caCert')} onChange={set('caCert')} placeholder="-----BEGIN CERTIFICATE-----" />
+          <TextArea label={tr('caCertificateOptionalPem')} rows={3} value={v('caCert')} onChange={set('caCert')} placeholder="-----BEGIN CERTIFICATE-----" />
         </>
       )}
       <div className="fr-admin-siem__actions">
-        <Button type="submit" variant="primary" loading={busy}>
-          Start streaming
-        </Button>
-        <Button onClick={onCancel}>Cancel</Button>
+        <Button type="submit" variant="primary" loading={busy}>{tr('startStreaming')}</Button>
+        <Button onClick={onCancel}>{tr('cancel')}</Button>
       </div>
     </form>
   );
@@ -130,7 +129,7 @@ export function AdminSiem({ workspace }: { workspace: WorkspaceSummary }) {
       if (ok) notify(ok, 'success');
       await reload();
     } catch (e) {
-      notify(errorText(e, 'That didn’t work'), 'error');
+      notify(errorText(e, tr('thatDidnTWork')), 'error');
     } finally {
       setBusy(null);
     }
@@ -141,17 +140,12 @@ export function AdminSiem({ workspace }: { workspace: WorkspaceSummary }) {
     <div className="fr-admin-card fr-admin-siem">
       <div className="fr-admin-row">
         <div className="fr-admin-row__text">
-          <span className="fr-admin-row__label">Stream to your SIEM</span>
-          <span className="fr-admin-row__hint">
-            Every new event of this log goes to Splunk, Microsoft Sentinel, an HTTPS collector or syslog over TLS, in order and retried until it arrives. Each
-            carries its place in the hash chain, and every hour a signed checkpoint of the newest event follows, so your SIEM holds its own copy of the chain.
-          </span>
+          <span className="fr-admin-row__label">{tr('streamToYourSiem')}</span>
+          <span className="fr-admin-row__hint">{tr('everyNewEventOfThis')}</span>
         </div>
         {!adding ? (
           <div className="fr-admin-row__control">
-            <Button icon={Plus} onClick={() => setAdding(true)}>
-              Add a stream
-            </Button>
+            <Button icon={Plus} onClick={() => setAdding(true)}>{tr('addAStream')}</Button>
           </div>
         ) : null}
       </div>
@@ -164,7 +158,7 @@ export function AdminSiem({ workspace }: { workspace: WorkspaceSummary }) {
               const r = await api.createSiemSink(workspace.id, { kind: d.kind, name: d.name || undefined, settings: settingsOf(d), secret: d.secret || undefined });
               setAdding(false);
               if (r.signingSecret) setSecret(r.signingSecret);
-              else notify('Streaming started', 'success');
+              else notify(tr('streamingStarted'), 'success');
             })
           }
         />
@@ -182,33 +176,29 @@ export function AdminSiem({ workspace }: { workspace: WorkspaceSummary }) {
                   </span>
                   <span className="fr-admin-siem__spacer" />
                   {s.status === 'ok' ? (
-                    <span className="fr-admin-pill fr-admin-pill--ok">{behind ? `Sending · ${behind} to go` : 'Up to date'}</span>
+                    <span className="fr-admin-pill fr-admin-pill--ok">{behind ? tr('sendingBehindToGo', { behind }) : tr('upToDate')}</span>
                   ) : s.status === 'failing' ? (
-                    <span className="fr-admin-pill fr-admin-pill--warn">Retrying · {behind} waiting</span>
+                    <span className="fr-admin-pill fr-admin-pill--warn">{tr('retryingBehindWaiting', { behind })}</span>
                   ) : (
-                    <span className="fr-admin-pill fr-admin-pill--off">Paused</span>
+                    <span className="fr-admin-pill fr-admin-pill--off">{tr('paused')}</span>
                   )}
                 </div>
                 <span className="fr-admin-row__hint">
-                  {s.lastDeliveredAt ? `Last delivery ${new Date(s.lastDeliveredAt).toLocaleString()}.` : 'Nothing delivered yet.'}
-                  {s.lastError ? ` Last attempt failed: ${s.lastError}.` : ''}
-                  {s.status === 'failing' && s.nextAttemptAt ? ` Next try ${new Date(s.nextAttemptAt).toLocaleTimeString()}.` : ''}
+                  {s.lastDeliveredAt ? tr('lastDeliveryValue', { value: new Date(s.lastDeliveredAt).toLocaleString() }) : tr('nothingDeliveredYet')}
+                  {s.lastError ? tr('lastAttemptFailedLasterror', { lastError: s.lastError }) : ''}
+                  {s.status === 'failing' && s.nextAttemptAt ? tr('nextTryTolocaletimestring', { toLocaleTimeString: new Date(s.nextAttemptAt).toLocaleTimeString() }) : ''}
                 </span>
                 <div className="fr-admin-siem__actions">
-                  <Button size="sm" icon={Send} loading={busy === `test-${s.id}`} onClick={() => void run(`test-${s.id}`, () => api.testSiemSink(workspace.id, s.id), 'Test record sent')}>
-                    Send test
-                  </Button>
+                  <Button size="sm" icon={Send} loading={busy === `test-${s.id}`} onClick={() => void run(`test-${s.id}`, () => api.testSiemSink(workspace.id, s.id), tr('testRecordSent'))}>{tr('sendTest')}</Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     icon={s.enabled ? Pause : Play}
                     onClick={() => void run(`pause-${s.id}`, () => api.updateSiemSink(workspace.id, s.id, { enabled: !s.enabled }))}
                   >
-                    {s.enabled ? 'Pause' : 'Resume'}
+                    {s.enabled ? tr('pause') : tr('resume')}
                   </Button>
-                  <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void run(`rm-${s.id}`, () => api.deleteSiemSink(workspace.id, s.id), 'Stream removed')}>
-                    Remove
-                  </Button>
+                  <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void run(`rm-${s.id}`, () => api.deleteSiemSink(workspace.id, s.id), tr('streamRemoved'))}>{tr('remove')}</Button>
                 </div>
               </li>
             );
@@ -218,18 +208,13 @@ export function AdminSiem({ workspace }: { workspace: WorkspaceSummary }) {
       <Modal
         open={secret !== null}
         onClose={() => setSecret(null)}
-        title="Streaming started"
+        title={tr('streamingStarted')}
         width={480}
         footer={
-          <Button variant="primary" onClick={() => setSecret(null)}>
-            Done
-          </Button>
+          <Button variant="primary" onClick={() => setSecret(null)}>{tr('done')}</Button>
         }
       >
-        <p className="fr-admin-siem__modal-text">
-          Copy the signing secret now — it won’t be shown again. Each request carries <code>Freero-Signature: t=…,v1=…</code>, the HMAC-SHA256 of{' '}
-          <code>t.body</code> with this secret.
-        </p>
+        <p className="fr-admin-siem__modal-text">{tr('copyTheSigningSecretNow')}{' '}<code>Freero-Signature: t=…,v1=…</code>{tr('theHmacSha256Of')}<code>t.body</code>{' '}{tr('withThisSecret')}</p>
         {secret ? (
           <div className="fr-admin-siem__secret">
             <code>{secret}</code>
@@ -237,10 +222,8 @@ export function AdminSiem({ workspace }: { workspace: WorkspaceSummary }) {
               size="sm"
               variant="ghost"
               icon={Copy}
-              onClick={() => void navigator.clipboard?.writeText(secret).then(() => notify('Copied', 'success'), () => notify('Could not copy', 'error'))}
-            >
-              Copy
-            </Button>
+              onClick={() => void navigator.clipboard?.writeText(secret).then(() => notify(tr('copied'), 'success'), () => notify(tr('couldNotCopy'), 'error'))}
+            >{tr('copy')}</Button>
           </div>
         ) : null}
       </Modal>

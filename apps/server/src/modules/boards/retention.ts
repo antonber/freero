@@ -37,6 +37,12 @@ export function onBoardRetentionHold(fn: BoardHoldCheck): () => void {
 async function heldAmong(ids: string[]): Promise<Set<string>> {
   const held = new Set<string>();
   if (!ids.length) return held;
+  try {
+    for (const id of await repo.heldAmong(ids)) held.add(id); // legal holds (#157), kept in this module
+  } catch (e) {
+    logError('boards: the legal hold check failed; keeping these boards', e);
+    return new Set(ids);
+  }
   for (const fn of holdChecks) {
     try {
       for (const id of await fn(ids)) held.add(id);

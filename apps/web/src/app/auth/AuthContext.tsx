@@ -3,7 +3,9 @@ import type { Account, User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
 import { takeProviderSignIn, track } from '../analytics/bridge';
 import { api } from '../api/client';
+import { getLocale } from '@ui';
 import { setThemePreference } from '../lib/theme';
+import { adoptAccountLocale } from '../i18n/locale';
 
 export interface AuthValue {
   /** The signed-in user, or null. `deletionScheduledFor` set: only the restore page is usable. */
@@ -18,7 +20,7 @@ export interface AuthValue {
   /** Re-fetches the session. */
   refresh(): Promise<Account | null>;
   /** Saves name/color/time zone/theme; every open tab (boards included) picks the change up. */
-  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }): Promise<Account>;
+  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }): Promise<Account>;
   /**
    * Adopts an account the server just returned (avatar change, password reset sign-in, restore)
    * — or null after it signed this tab out (deletion) — and tells the other tabs.
@@ -102,7 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [announce]);
 
   const signup = useCallback(async (name: string, email: string, password: string) => {
-    const { user } = await api.signup({ name: name.trim(), email: email.trim(), password });
+    // The page's language becomes the account's (#5): the verification email is already in it.
+    const { user } = await api.signup({ name: name.trim(), email: email.trim(), password, locale: getLocale() });
     setUser(user);
     announce();
     takeProviderSignIn();
@@ -111,15 +114,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [announce]);
 
   const logout = useCallback(async () => {
+    let next: string | undefined;
     try {
-      await api.logout();
+      next = (await api.logout()).redirect;
     } finally {
       setUser(null);
       announce();
     }
+    // Signed out here; a SAML session goes on to sign out at the identity provider too (#13), which
+    // sends the browser back to the sign-in page.
+    if (next && /^https?:\/\//i.test(next)) window.location.assign(next);
   }, [announce]);
 
-  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) => {
+  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }) => {
     const { user } = await api.updateMe(patch);
     setUser(user);
     announce();
@@ -136,6 +143,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (accountTheme) setThemePreference(accountTheme);
   }, [accountTheme]);
+  // The account's language wins over this browser's (#5): a page in another language reloads once
+  // in the account's; an account without one takes the language this page shows.
+  const accountId = user?.id;
+  const accountLocale = user?.locale;
+  useEffect(() => {
+    if (!accountId) return;
+    adoptAccountLocale(accountLocale, (locale) => {
+      Promise.resolve(locale).then((l) => api.updateMe({ locale: l })).then(
+        ({ user: next }) => setUser((cur) => (cur && cur.id === next.id ? next : cur)),
+        () => undefined, // tried again next time the app loads
+      );
+    });
+  }, [accountId, accountLocale]);
   // An account whose time zone isn't known yet takes this browser's (reminders, email dates); a
   // zone chosen in the profile is never overwritten. Once per tab and account.
   const zoneSent = useRef<string | null>(null);

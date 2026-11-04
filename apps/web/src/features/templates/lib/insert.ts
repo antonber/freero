@@ -6,6 +6,7 @@ import type { Editor } from '@engine';
 import { boundsOf, instantiate } from './place';
 import type { TemplateDef } from './types';
 
+import { t } from '../messages';
 export const DOCK_ID = 'templates';
 
 /**
@@ -24,7 +25,7 @@ export async function addTemplate(editor: Editor, def: TemplateDef): Promise<str
 /** Inserts a template whose content is at hand (no `load`, or after it resolved). */
 export function insertTemplate(editor: Editor, def: TemplateDef): string[] {
   if (!editor.can('editor')) {
-    editor.host.notify('You need edit access to add templates.', 'info');
+    editor.host.notify(t('youNeedEditAccessTo'), 'info');
     return [];
   }
   const frames = editor.getElements().filter((e): e is FrameElement => e.type === 'frame');

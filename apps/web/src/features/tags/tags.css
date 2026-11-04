@@ -58,7 +58,7 @@
   border-radius: var(--fr-radius-sm);
   background: transparent;
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 
 .fr-tags-list button:hover,
@@ -185,8 +185,8 @@
 
 .fr-tagchips__row {
   position: absolute;
-  left: calc(8px * var(--s));
-  right: calc(8px * var(--s));
+  inset-inline-start: calc(8px * var(--s));
+  inset-inline-end: calc(8px * var(--s));
   bottom: calc(8px * var(--s));
   display: flex;
   gap: calc(4px * var(--s));

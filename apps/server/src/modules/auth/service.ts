@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, COLOR_THEME_PREFERENCES, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type ColorThemePreference, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, COLOR_THEME_PREFERENCES, isLocale, LOCALES, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type ColorThemePreference, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -29,14 +29,14 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 export const newToken = () => randomBytes(32).toString('base64url');
 
-const emailTaken = () => new HttpError(409, 'An account with that email already exists');
+const emailTaken = () => new HttpError(409, 'An account with that email already exists', 'email_taken');
 
 export function publicUser(u: User): User {
   return { id: u.id, name: u.name, email: u.email, color: u.color, avatarUrl: u.avatarUrl, createdAt: u.createdAt };
 }
 
 export function toAccount(u: Account): Account {
-  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor, timeZone: u.timeZone ?? null, theme: u.theme ?? 'system' };
+  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor, timeZone: u.timeZone ?? null, theme: u.theme ?? 'system', locale: u.locale ?? null };
 }
 
 export function normalizeEmail(email: unknown): string {
@@ -49,24 +49,24 @@ export function validEmail(email: string): boolean {
 
 export function validatePassword(password: unknown): string {
   const p = typeof password === 'string' ? password : '';
-  if (p.length < 8) throw badRequest('Password must be at least 8 characters');
-  if (p.length > 512) throw badRequest('Password is too long');
+  if (p.length < 8) throw badRequest('Password must be at least 8 characters', 'password_too_short', { min: 8 });
+  if (p.length > 512) throw badRequest('Password is too long', 'password_too_long');
   return p;
 }
 
 export async function createUser(
-  input: { name: unknown; email: unknown; password: unknown },
+  input: { name: unknown; email: unknown; password: unknown; locale?: unknown },
   opts: { emailVerified?: boolean } = {},
 ): Promise<Account> {
   const email = normalizeEmail(input.email);
   const name = typeof input.name === 'string' ? input.name.trim() : '';
-  if (!validEmail(email)) throw badRequest('Please enter a valid email address');
+  if (!validEmail(email)) throw badRequest('Please enter a valid email address', 'email_invalid');
   const password = validatePassword(input.password);
-  if (!name) throw badRequest('Please enter your name');
-  if (name.length > 80) throw badRequest('Name is too long (max 80 characters)');
+  if (!name) throw badRequest('Please enter your name', 'name_missing');
+  if (name.length > 80) throw badRequest('Name is too long (max 80 characters)', 'name_too_long', { max: 80 });
   refuseGuestStyleName(name);
   if (await repo.findUserByEmail(email)) throw emailTaken(); // fast path; the unique index decides races
-  return insertAccount({ name, email, passwordHash: await hashPassword(password), emailVerified: opts.emailVerified ?? false });
+  return insertAccount({ name, email, passwordHash: await hashPassword(password), emailVerified: opts.emailVerified ?? false, locale: input.locale });
 }
 
 /**
@@ -74,7 +74,7 @@ export async function createUser(
  * account goes through here. Throws 409 if the address is taken (the unique index decides races).
  */
 export async function insertAccount(
-  input: { name: string; email: string; passwordHash: string | null; emailVerified: boolean },
+  input: { name: string; email: string; passwordHash: string | null; emailVerified: boolean; locale?: unknown },
   identity?: { provider: string; issuer: string; subject: string; email: string | null; emailVerified: boolean },
 ): Promise<Account> {
   const user: repo.UserWithHash = {
@@ -87,6 +87,8 @@ export async function insertAccount(
     emailVerified: input.emailVerified,
     deletionScheduledFor: null,
     timeZone: null,
+    // The language the sign-up page was in (#5): the verification email is already in it.
+    locale: isLocale(input.locale) ? input.locale : null,
     passwordHash: input.passwordHash,
     passwordViaLink: false,
   };
@@ -114,7 +116,7 @@ export async function checkCredentials(emailIn: unknown, passwordIn: unknown): P
     // Attempts on an existing account are audited (its owner's workspaces see them); guesses at
     // addresses without an account are only rate limited.
     if (user) await recordAuditQuietly({ action: 'auth.login_failed', accountId: user.id, actorId: null, target: { type: 'user', id: user.id, label: user.email }, metadata: { reason: 'password' } });
-    throw unauthorized('Incorrect email or password');
+    throw unauthorized('Incorrect email or password', 'credentials_wrong');
   }
   return toAccount(user);
 }
@@ -133,15 +135,15 @@ export async function confirmPassword(userId: string, password: unknown, session
     return user;
   }
   if (!(await verifyPassword(typeof password === 'string' ? password : '', user.passwordHash)))
-    throw new HttpError(403, 'That password is not correct');
+    throw new HttpError(403, 'That password is not correct', 'password_incorrect');
   return user;
 }
 
 export async function updateProfile(userId: string, body: Record<string, unknown>): Promise<Account> {
-  const patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string; theme?: ColorThemePreference } = {};
+  const patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string; theme?: ColorThemePreference; locale?: string } = {};
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
-    if (!name || name.length > 80) throw badRequest('Name must be 1-80 characters');
+    if (!name || name.length > 80) throw badRequest('Name must be 1-80 characters', 'name_too_long', { max: 80 });
     refuseGuestStyleName(name);
     patch.name = name;
   }
@@ -164,9 +166,13 @@ export async function updateProfile(userId: string, body: Record<string, unknown
     if (!COLOR_THEME_PREFERENCES.includes(body.theme as ColorThemePreference)) throw badRequest('theme must be system, light or dark');
     patch.theme = body.theme as ColorThemePreference;
   }
+  if (body.locale !== undefined) {
+    if (!isLocale(body.locale)) throw badRequest(`locale must be one of ${LOCALES.join(', ')}`, 'locale_unknown');
+    patch.locale = body.locale;
+  }
   await repo.updateUserProfile(userId, patch);
-  // A theme alone is the person's own: open boards have nothing to take up.
-  if (Object.keys(patch).every((k) => k === 'theme')) return getAccount(userId);
+  // A theme or language alone is the person's own: open boards have nothing to take up.
+  if (Object.keys(patch).every((k) => k === 'theme' || k === 'locale')) return getAccount(userId);
   // Open boards take the new profile before we answer: a comment under the new name is accepted.
   await Promise.all(
     [...profileListeners].map((fn) => Promise.resolve(fn(userId)).catch((e) => logError('auth: a profile listener failed', e))),
@@ -357,7 +363,7 @@ export async function startSession(
   req: Request,
   res: Response,
   userId: string,
-  how: { method?: string; twoFactor?: boolean; expiresAt?: number | null } = {},
+  how: { method?: string; twoFactor?: boolean; expiresAt?: number | null; tag?: string | null } = {},
 ): Promise<{ knownDevice: boolean }> {
   await refuseIfSuspended(userId); // every way in ends here
   const token = newToken();
@@ -365,17 +371,22 @@ export async function startSession(
   const knownDevice = await rememberDevice(req, res, userId, now); // before this session exists
   // Single sign-on caps the session at the identity provider's (never beyond our own maximum).
   const expiresAt = Math.min(now + SESSION_TTL_MS, how.expiresAt ?? Infinity);
+  const key = hashToken(token);
+  const method = how.method ?? 'password';
   await repo.insertSession({
     id: newId(20),
-    tokenHash: hashToken(token),
+    tokenHash: key,
     userId,
     now,
     expiresAt,
     userAgent: (req.get('user-agent') ?? '').slice(0, 400),
     ip: clientIp(req).slice(0, 64),
-    method: how.method ?? 'password',
+    method,
     twoFactor: how.twoFactor ?? false,
   });
+  // Before the cookie: a listener that fails (single logout couldn't record the IdP session) leaves
+  // an orphan row nobody holds a cookie for, never a session single logout can't end.
+  for (const fn of sessionStartListeners) await fn({ key, userId, method, tag: how.tag ?? null, expiresAt });
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -423,14 +434,68 @@ export function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', path: '/' });
 }
 
-export async function endSession(req: Request, res: Response): Promise<void> {
+/** A session that just started (directory sign-ins record which IdP session it belongs to, #13). */
+export interface StartedSession {
+  /** The session's opaque key (as onSessionEnd and endSessionsByKeys name it). */
+  key: string;
+  userId: string;
+  method: string;
+  /** What the sign-in passed as `sessionTag` to completeSignIn, or null. */
+  tag: string | null;
+  expiresAt: number;
+}
+const sessionStartListeners = new Set<(s: StartedSession) => Promise<void> | void>();
+
+/** Called (and awaited) for every session started, before its cookie is set; a throw fails the sign-in. */
+export function onSessionStarted(fn: (s: StartedSession) => Promise<void> | void): () => void {
+  sessionStartListeners.add(fn);
+  return () => sessionStartListeners.delete(fn);
+}
+
+/**
+ * Ends the sessions with these keys (an identity provider's single logout names them through the
+ * module that recorded them); their connections close on every instance. Returns those that existed.
+ */
+export async function endSessionsByKeys(keys: string[]): Promise<Array<{ key: string; userId: string }>> {
+  const ended = await repo.deleteSessionsByKeys(keys);
+  sessionsEnded(ended.map((s) => s.key));
+  return ended;
+}
+
+/**
+ * Where the browser goes after signing out, for sessions another module knows more about (SAML
+ * single logout: on to the identity provider). Asked with the session's key just BEFORE it is
+ * deleted (what it records about the session goes with it); the session is ended whatever the
+ * answer, before the browser is told. The first URL wins.
+ */
+type SignOutRedirect = (sessionKey: string, req: Request) => Promise<string | null> | string | null;
+const signOutRedirects = new Set<SignOutRedirect>();
+export function onSignOutRedirect(fn: SignOutRedirect): () => void {
+  signOutRedirects.add(fn);
+  return () => signOutRedirects.delete(fn);
+}
+
+/** Signs this browser out; returns where it should go next (the IdP's single logout), if anywhere. */
+export async function endSession(req: Request, res: Response): Promise<string | null> {
   const key = sessionKeyFromCookieHeader(req.headers.cookie);
+  let redirect: string | null = null;
   if (key) {
+    for (const fn of signOutRedirects) {
+      if (redirect) break;
+      try {
+        redirect = await fn(key, req);
+      } catch (e) {
+        // Signed out here either way; the identity provider's session is left as it is.
+        logError('auth: a sign-out redirect failed', e);
+      }
+    }
     const userId = await repo.deleteSessionReturningUser(key);
     sessionsEnded([key]);
     if (userId) await recordAuditQuietly({ action: 'auth.logout', accountId: userId, actorId: userId });
+    else redirect = null; // not a session (already gone): nothing to sign out of at the IdP either
   }
   clearSessionCookie(res);
+  return redirect;
 }
 
 /**

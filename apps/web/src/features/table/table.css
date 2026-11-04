@@ -11,7 +11,7 @@
 .fr-table__cell {
   position: absolute;
   box-sizing: border-box;
-  border-right: 1px solid #d9d6e8;
+  border-inline-end: 1px solid #d9d6e8;
   border-bottom: 1px solid #d9d6e8;
   overflow: hidden;
 }
@@ -34,12 +34,12 @@
 .fr-table__divider--col {
   top: 0;
   width: 9px;
-  margin-left: -4.5px;
+  margin-inline-start: -4.5px;
   cursor: col-resize;
 }
 
 .fr-table__divider--row {
-  left: 0;
+  inset-inline-start: 0;
   height: 9px;
   margin-top: -4.5px;
   cursor: row-resize;
@@ -56,13 +56,13 @@
 .fr-table__divider--col::after {
   top: 0;
   bottom: 0;
-  left: 3.5px;
+  inset-inline-start: 3.5px;
   width: 2px;
 }
 
 .fr-table__divider--row::after {
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   top: 3.5px;
   height: 2px;
 }
@@ -74,7 +74,7 @@
 
 .fr-table-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   border: 1.5px dashed var(--fr-select);
   border-radius: 2px;
@@ -102,8 +102,8 @@
 
 .fr-table-fmt-chip {
   position: absolute;
-  left: 8px;
-  right: 8px;
+  inset-inline-start: 8px;
+  inset-inline-end: 8px;
   bottom: 4px;
   height: 3px;
   border-radius: 2px;
@@ -223,7 +223,7 @@
 }
 
 .fr-table__input.is-number {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 
@@ -231,7 +231,7 @@
 .fr-table__colmenu {
   position: absolute;
   top: 50%;
-  right: 4px;
+  inset-inline-end: 4px;
   z-index: 3;
   display: inline-flex;
   align-items: center;
@@ -260,7 +260,7 @@
 
 .fr-table__filtered {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   display: flex;
   align-items: center;
   gap: 6px;

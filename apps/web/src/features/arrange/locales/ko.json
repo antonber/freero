@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "태그 없음",
+  "selectTwoOrMoreUnlocked": "잠기지 않은 항목을 두 개 이상 선택하세요",
+  "selectThreeOrMoreUnlocked": "잠기지 않은 항목을 세 개 이상 선택하세요",
+  "autoLayout": "자동 레이아웃",
+  "selectTwoOrMoreUnlocked2": "커넥터로 연결된, 잠기지 않은 항목을 두 개 이상 선택하세요",
+  "alignAndDistribute": "정렬 및 분배",
+  "clusterStickies": "스티커 메모 묶기"
+}

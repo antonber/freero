@@ -4,6 +4,7 @@ import type { PenElement } from '@freero/shared';
 import { canvasInk, defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { HIGHLIGHTER_OPACITY, PEN_COLORS, PEN_WIDTHS } from './lib/constants';
 import { strokeDistance, strokePath, strokePoints, unpack } from './lib/stroke';
+import { t } from './messages';
 import './pen.css';
 
 const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement>) {
@@ -26,7 +27,7 @@ const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement
 
 export default defineElement({
   type: 'pen',
-  label: { one: 'Drawing', many: 'Drawings' },
+  label: { one: t('drawing'), many: t('drawings') },
   icon: PenLineIcon,
   resize: 'free',
   minSize: { w: 4, h: 4 },

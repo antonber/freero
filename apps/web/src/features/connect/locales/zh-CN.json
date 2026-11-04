@@ -1,0 +1,8 @@
+{
+  "@@unreviewed": [
+    "connectAnAiAgent",
+    "appsAgents"
+  ],
+  "connectAnAiAgent": "连接 AI 代理…",
+  "appsAgents": "应用与代理…"
+}

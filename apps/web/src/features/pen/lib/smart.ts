@@ -6,6 +6,7 @@ import type { BoardElement } from '@freero/shared';
 import type { Editor, Rect } from '@engine';
 import type { Recognition } from './recognise';
 
+import { t } from '../messages';
 /** How much of an item's box a scratch-out must cover to erase it. */
 const SCRATCH_COVER = 0.5;
 
@@ -41,8 +42,8 @@ export function applyRecognition(editor: Editor, inkId: string, reading: Recogni
     const gone = scratchedOut(editor, reading, inkId);
     if (!gone.length) return;
     editor.remove([inkId, ...gone.map((el) => el.id)]);
-    editor.host.notify(gone.length === 1 ? 'Scratched out 1 item' : `Scratched out ${gone.length} items`, 'info', {
-      action: { label: 'Undo', run: () => editor.undo() },
+    editor.host.notify(t('scratchedOutLengthItems', { length: gone.length }), 'info', {
+      action: { label: t('undo'), run: () => editor.undo() },
     });
     return;
   }

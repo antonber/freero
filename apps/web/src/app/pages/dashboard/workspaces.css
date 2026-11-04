@@ -9,7 +9,7 @@
   min-height: 48px;
   margin: 0 0 14px;
   padding: 7px 8px;
-  text-align: left;
+  text-align: start;
   color: var(--fr-ink);
   background: var(--fr-surface-2);
   border: 1px solid var(--fr-line);
@@ -156,7 +156,7 @@
   padding: 0 4px 0 12px;
   font-size: 13.5px;
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   color: inherit;
   background: transparent;
   border: 0;
@@ -304,7 +304,7 @@
   flex: none;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .fr-dash-members__role {
@@ -426,7 +426,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -497,8 +497,8 @@
   z-index: 2; /* above the card's open-board link */
   width: 100%;
   padding: 1px 4px;
-  margin-left: -4px;
-  text-align: left;
+  margin-inline-start: -4px;
+  text-align: start;
   background: transparent;
   border: 0;
   border-radius: 6px;
@@ -607,4 +607,294 @@
 /* The admin console entry is a link styled like the sidebar's buttons. */
 a.fr-nav {
   text-decoration: none;
+}
+
+/* ---- Nested projects (#129): pinned projects, the project page, delete choices ---- */
+.fr-dash-proj__list--pinned {
+  max-height: none;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--fr-line);
+}
+
+.fr-dash-projdlg__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-projdlg__choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-projdlg__choice legend {
+  margin-bottom: 4px;
+  color: var(--fr-ink);
+  font-weight: 600;
+}
+
+.fr-dash-projpage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.fr-dash-projpage__path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-projpage__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fr-dash-projpage__crumb button {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fr-dash-projpage__crumb button:hover {
+  background: var(--fr-hover);
+  color: var(--fr-ink);
+}
+
+.fr-dash-projpage__about {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 760px;
+}
+
+.fr-dash-projpage__desc {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fr-ink-2);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.fr-dash-projpage__desc--empty {
+  color: var(--fr-ink-3);
+  font-style: italic;
+}
+
+.fr-dash-projpage__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fr-dash-projpage__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fr-dash-projpage__subs,
+.fr-dash-projpage__pinned,
+.fr-dash-projpage__choose {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-dash-projpage__sub,
+.fr-dash-projpage__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-lg);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.fr-dash-projpage__sub:hover,
+.fr-dash-projpage__choice:hover {
+  background: var(--fr-hover);
+}
+
+.fr-dash-projpage__choose {
+  flex-direction: column;
+  margin-top: 10px;
+}
+
+.fr-dash-projpage__choice {
+  width: 100%;
+}
+
+.fr-dash-projpage__choice--on {
+  border-color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+.fr-dash-projpage__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-projpage__pin {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 168px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.fr-dash-projpage__pin-name {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-dash-projpage .fr-dash-activity {
+  margin-top: 0;
+}
+
+.fr-dash-projpage__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* ---- Blueprints (#161) ---- */
+.fr-dash-proj__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.fr-dash-bp {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 240px;
+}
+
+@media (max-width: 600px) {
+  .fr-dash-bp {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fr-dash-bp__loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.fr-dash-bp__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  max-height: 360px;
+}
+
+.fr-dash-bp__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fr-dash-bp__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-dash-bp__item--on {
+  border-color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+.fr-dash-bp__name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.fr-dash-bp__meta {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-bp__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fr-dash-bp__steps {
+  margin: 0;
+  padding-inline-start: 20px;
+  color: var(--fr-ink-2);
+  font-size: 13.5px;
+}
+
+.fr-dash-bp__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-dash-bp__items li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+  font-size: 12.5px;
+  color: var(--fr-ink-2);
 }

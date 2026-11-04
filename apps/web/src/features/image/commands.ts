@@ -5,6 +5,7 @@ import { resetCrop } from './lib/crop';
 import { insertStoredImages } from './lib/insert';
 import { CROP_PANEL } from './lib/cropping';
 
+import { t } from './messages';
 const selectedImages = (editor: Editor) =>
   editor
     .getSelection()
@@ -15,7 +16,7 @@ export default defineCommands([
   {
     id: 'image.crop',
     icon: Crop,
-    label: 'Crop image',
+    label: t('cropImage'),
     menus: ['context'],
     when: (editor) => {
       const [img, ...rest] = selectedImages(editor);
@@ -29,7 +30,7 @@ export default defineCommands([
     // Images already in Freero's storage, placed by another feature (share: pictures shared into the
     // installed app, KAI-218). Args: { urls: string[] } of `/uploads/<name>`; anything else is ignored.
     id: 'image.insertStored',
-    label: 'Insert stored images',
+    label: t('insertStoredImages'),
     run(editor, args) {
       const urls = (args as { urls?: unknown } | undefined)?.urls;
       if (Array.isArray(urls)) void insertStoredImages(editor, urls.filter((u): u is string => typeof u === 'string'));
@@ -38,7 +39,7 @@ export default defineCommands([
   {
     id: 'image.resetCrop',
     icon: Undo2,
-    label: 'Reset crop',
+    label: t('resetCrop'),
     menus: ['context'],
     when: (editor) => selectedImages(editor).some((el) => !!el.crop),
     run(editor) {

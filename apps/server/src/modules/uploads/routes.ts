@@ -5,6 +5,7 @@ import { rateLimit } from '../../platform/rateLimit';
 import { storage, type ByteRange } from '../../platform/storage';
 import { actorId, currentActor, currentUser, requireUser, requireUserOrGuest } from '../auth/index';
 import { openBoardFile } from './download';
+import { openCommentFile } from './commentFiles';
 import { isUploadRemoved } from './moderation';
 import {
   ATTACHMENT_EXT,
@@ -163,6 +164,35 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
       const file = await openBoardFile(req.params.id, req.params.elementId, actorId(currentActor(req)), { audit: !head });
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', attachmentDisposition(file.name));
+      contentHeaders(res);
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (file.size !== null) res.setHeader('Content-Length', String(file.size));
+      if (head) {
+        file.body.destroy();
+        return res.end();
+      }
+      file.body.on('error', () => res.destroy()).pipe(res);
+    }),
+  );
+
+  // A file or image on a comment (#143): only for someone who can read that message on the board
+  // (commentFiles.ts). `?inline=1`: an image shown in the thread (any role; raster bytes only);
+  // otherwise a download, which the downloads policy governs and the audit log records.
+  r.get(
+    '/api/boards/:id/comment-files/:threadId/:messageId/:index',
+    requireUserOrGuest,
+    rateLimit('download', 'user'),
+    handle(async (req, res) => {
+      const head = req.method === 'HEAD';
+      const inline = req.query.inline === '1';
+      const file = await openCommentFile(
+        req.params.id,
+        { threadId: req.params.threadId, messageId: req.params.messageId, index: Number(req.params.index) },
+        actorId(currentActor(req)),
+        { inline, audit: !head },
+      );
+      res.setHeader('Content-Type', file.contentType ?? 'application/octet-stream');
+      res.setHeader('Content-Disposition', file.contentType ? 'inline' : attachmentDisposition(file.name));
       contentHeaders(res);
       res.setHeader('Cache-Control', 'private, no-store');
       if (file.size !== null) res.setHeader('Content-Length', String(file.size));

@@ -7,11 +7,12 @@ import type { BoardGroupGrant, BoardSummary, WorkspaceGroup } from '@freero/shar
 import { IconButton, Select, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
 
+import { t } from '../messages';
 type GroupRole = BoardGroupGrant['role'];
 const ROLES: SelectOption<GroupRole>[] = [
-  { value: 'editor', label: 'Can edit' },
-  { value: 'commenter', label: 'Can comment' },
-  { value: 'viewer', label: 'Can view' },
+  { value: 'editor', label: t('canEdit') },
+  { value: 'commenter', label: t('canComment') },
+  { value: 'viewer', label: t('canView') },
 ];
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
 
@@ -36,22 +37,22 @@ export function ShareGroups({ board }: { board: BoardSummary }) {
     try {
       setGrants((await api.shareBoardWithGroup(board.id, groupId, as)).groups);
     } catch (e) {
-      notify(errorText(e, 'Could not share it with the group'), 'error');
+      notify(errorText(e, t('couldNotShareItWith')), 'error');
     }
   };
   const unshare = async (groupId: string) => {
     try {
       setGrants((await api.unshareBoardGroup(board.id, groupId)).groups);
     } catch (e) {
-      notify(errorText(e, 'Could not stop sharing it'), 'error');
+      notify(errorText(e, t('couldNotStopSharingIt')), 'error');
     }
   };
 
   if (!grants || (!grants.length && !groups.length)) return null;
   const candidates = groups.filter((g) => !grants.some((x) => x.groupId === g.id));
   return (
-    <section aria-label="Groups with access">
-      <h3 className="fr-share__heading">Groups</h3>
+    <section aria-label={t('groupsWithAccess')}>
+      <h3 className="fr-share__heading">{t('groups')}</h3>
       <ul className="fr-share__members">
         {grants.map((g) => (
           <li key={g.groupId} className="fr-share__member" data-testid="share-group">
@@ -67,8 +68,8 @@ export function ShareGroups({ board }: { board: BoardSummary }) {
             <div className="fr-share__member-actions">
               {manages ? (
                 <>
-                  <Select<GroupRole> aria-label={`What ${g.name} can do`} size="sm" options={ROLES} value={g.role} onChange={(r) => void share(g.groupId, r)} width={130} />
-                  <IconButton size={32} icon={X} label={`Stop sharing with ${g.name}`} tooltipSide="top" onClick={() => void unshare(g.groupId)} />
+                  <Select<GroupRole> aria-label={t('whatNameCanDo', { name: g.name })} size="sm" options={ROLES} value={g.role} onChange={(r) => void share(g.groupId, r)} width={130} />
+                  <IconButton size={32} icon={X} label={t('stopSharingWithName', { name: g.name })} tooltipSide="top" onClick={() => void unshare(g.groupId)} />
                 </>
               ) : (
                 <span className="fr-share__role">{ROLES.find((r) => r.value === g.role)?.label}</span>
@@ -80,13 +81,13 @@ export function ShareGroups({ board }: { board: BoardSummary }) {
       {invites && candidates.length ? (
         <div className="fr-share__groups-add">
           <Select<string>
-            aria-label="Share with a group"
-            options={[{ value: '', label: 'Share with a group…', disabled: true }, ...candidates.map((g) => ({ value: g.id, label: `${g.name} (${g.memberCount})` }))]}
+            aria-label={t('shareWithAGroup')}
+            options={[{ value: '', label: t('shareWithAGroup2'), disabled: true }, ...candidates.map((g) => ({ value: g.id, label: `${g.name} (${g.memberCount})` }))]}
             value=""
             onChange={(id) => id && void share(id, role)}
             width={240}
           />
-          <Select<GroupRole> aria-label="What the group can do" options={ROLES} value={role} onChange={setRole} width={140} />
+          <Select<GroupRole> aria-label={t('whatTheGroupCanDo')} options={ROLES} value={role} onChange={setRole} width={140} />
         </div>
       ) : null}
     </section>

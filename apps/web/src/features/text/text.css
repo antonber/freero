@@ -11,7 +11,7 @@
 }
 
 .fr-text.fr-textbox--auto.fr-text--editing {
-  right: auto;
+  inset-inline-end: auto;
   width: max-content;
   min-width: 100%;
 }
@@ -19,7 +19,7 @@
 /* Ghost shown under the cursor while the Text tool is armed. */
 .fr-textbox-ghost {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   pointer-events: none;
   display: flex;
@@ -44,7 +44,7 @@
 /* Width being dragged out with the Text tool. */
 .fr-textbox-dragbox {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   pointer-events: none;
   border: 1.5px dashed var(--fr-primary);

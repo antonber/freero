@@ -1,7 +1,7 @@
 /* ---- pins (world overlay; counter-scaled so they keep a constant screen size) ---- */
 .fr-cm-pin-anchor {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   width: 0;
   height: 0;
@@ -11,7 +11,7 @@
 /* Bubble with its pointed corner (bottom-left) exactly on the pinned point. */
 .fr-cm-pin {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   bottom: 0;
   display: grid;
   place-items: center;
@@ -59,7 +59,7 @@
 
 .fr-cm-pin__count {
   position: absolute;
-  right: -6px;
+  inset-inline-end: -6px;
   top: -6px;
   min-width: 18px;
   height: 18px;
@@ -76,7 +76,7 @@
 
 .fr-cm-pin__dot {
   position: absolute;
-  left: -3px;
+  inset-inline-start: -3px;
   top: -3px;
   width: 11px;
   height: 11px;
@@ -392,7 +392,7 @@
 }
 
 .fr-cm-hint {
-  margin-right: auto;
+  margin-inline-end: auto;
   font-size: 12px;
   color: var(--fr-ink-3);
 }
@@ -459,7 +459,7 @@
   border-radius: var(--fr-radius);
   background: var(--fr-surface);
   color: var(--fr-ink);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -490,7 +490,7 @@
 }
 
 .fr-cm-card__time {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 12px;
   color: var(--fr-ink-3);
   white-space: nowrap;
@@ -556,7 +556,7 @@
 
 .fr-cm-toggle__badge {
   position: absolute;
-  right: -2px;
+  inset-inline-end: -2px;
   top: -2px;
   min-width: 16px;
   height: 16px;
@@ -570,4 +570,69 @@
   text-align: center;
   box-shadow: 0 0 0 2px var(--fr-surface);
   pointer-events: none;
+}
+
+/* ---- #143: areas of the board, files on messages ---- */
+.fr-cm-area {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  transform-origin: 0 0;
+  border: solid var(--fr-primary);
+  background: color-mix(in srgb, var(--fr-primary) 8%, transparent);
+  pointer-events: none;
+}
+
+.fr-cm-area.is-drawing {
+  border-style: dashed;
+}
+
+.fr-cm-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-cm-files--pending {
+  margin: 6px 10px 0 14px;
+}
+
+.fr-cm-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 2px 2px 8px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+  font-size: 12.5px;
+  color: var(--fr-ink-2);
+}
+
+.fr-cm-file__img {
+  display: block;
+  flex-basis: 100%;
+  max-width: 100%;
+  max-height: 180px;
+  margin: 4px 0 2px;
+  border-radius: var(--fr-radius-sm);
+  object-fit: contain;
+  object-position: left center;
+}
+
+.fr-cm-file__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-cm-file__size {
+  flex: none;
+  color: var(--fr-ink-3);
 }

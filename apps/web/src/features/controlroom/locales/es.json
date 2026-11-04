@@ -1,0 +1,20 @@
+{
+  "@@unreviewed": [
+    "letAgentChangeThisBoard",
+    "stopAgentChangingThisBoard",
+    "agentCanWorkOnThis",
+    "agentIsPausedItsNext",
+    "resumeAgent",
+    "pauseAgent",
+    "agentPausedByBy",
+    "agentPaused"
+  ],
+  "letAgentChangeThisBoard": "Permitir que {agent} vuelva a cambiar este tablero",
+  "stopAgentChangingThisBoard": "Impedir que {agent} cambie este tablero hasta que lo reanudes",
+  "agentCanWorkOnThis": "{agent} puede volver a trabajar en este tablero",
+  "agentIsPausedItsNext": "{agent} está en pausa: su próximo cambio en este tablero se rechazará",
+  "resumeAgent": "Reanudar agente",
+  "pauseAgent": "Pausar agente",
+  "agentPausedByBy": "Agente pausado por {by}",
+  "agentPaused": "Agente en pausa"
+}

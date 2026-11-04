@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "selectOneItemToCopy",
+    "copyStyle",
+    "styleCopiedPasteItWith",
+    "pasteStyle",
+    "stopPaintingFormat",
+    "formatPainterClickOtherItems",
+    "formatPainter",
+    "selectOneItemThenPick",
+    "unlockThisItemToChange"
+  ],
+  "selectOneItemToCopy": "Wählen Sie ein Element aus, um seinen Stil zu kopieren.",
+  "copyStyle": "Stil kopieren",
+  "styleCopiedPasteItWith": "Stil kopiert. Mit Alt+Mod+V einfügen.",
+  "pasteStyle": "Stil einfügen",
+  "stopPaintingFormat": "Format übertragen beenden",
+  "formatPainterClickOtherItems": "Format übertragen: Klicken Sie auf andere Elemente, um diesen Stil zu kopieren",
+  "formatPainter": "Format übertragen",
+  "selectOneItemThenPick": "Wählen Sie ein Element aus und dann „Format übertragen“, um seinen Stil zu kopieren.",
+  "unlockThisItemToChange": "Entsperren Sie dieses Element, um seinen Stil zu ändern."
+}

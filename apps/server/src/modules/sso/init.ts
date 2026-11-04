@@ -1,8 +1,9 @@
 import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
-import { onEmailVerified, onSignInRestriction, onSignupExpected } from '../auth/index';
+import { onEmailVerified, onSessionStarted, onSignInRestriction, onSignOutRedirect, onSignupExpected } from '../auth/index';
 import { onTeamWorkspaceCreation } from '../workspaces/index';
 import { captureVerifiedAddress, completeDueCaptures, joinsOnSignup, teamWorkspaceCreationCheck } from './domainControl';
+import { recordSamlSession, samlSignOutRedirect } from './logout';
 import { enforcedSsoRestriction } from './policy';
 import * as repo from './repo';
 
@@ -19,7 +20,12 @@ export default function initSso(ctx: ServerContext): void {
   const stopBlock = onTeamWorkspaceCreation(teamWorkspaceCreationCheck);
   // On an invite-only server, an address at such a domain may sign up: it joins that workspace.
   const stopExpected = onSignupExpected(joinsOnSignup);
+  // Single logout (#13): which sessions a SAML sign-in started, and the IdP's logout after ours.
+  const stopSessions = onSessionStarted(recordSamlSession);
+  const stopSignOut = onSignOutRedirect(samlSignOutRedirect);
   ctx.onShutdown(() => {
+    stopSessions();
+    stopSignOut();
     stopCapture();
     stopBlock();
     stopExpected();

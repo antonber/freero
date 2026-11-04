@@ -1,0 +1,16 @@
+{
+  "layers": "Layers",
+  "unlock": "Unlock",
+  "lock": "Lock",
+  "hiddenWithItsFrameOr": "Hidden with its frame or the item it’s attached to",
+  "showHiddenForYouOnly": "Show (hidden for you only)",
+  "hideForMeOthersStill": "Hide for me (others still see it)",
+  "collapse": "Collapse",
+  "expand": "Expand",
+  "untitledFrame": "Untitled frame",
+  "notInAFrame": "Not in a frame",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} hidden for you only",
+  "showAll": "Show all",
+  "nothingOnTheBoardYet": "Nothing on the board yet.",
+  "dragToRestackTheTop": "Drag to restack: the top of each list is in front."
+}

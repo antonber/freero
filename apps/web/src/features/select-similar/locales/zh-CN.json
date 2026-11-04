@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "selectAll",
+    "lengthItemsSelected",
+    "selectOnly",
+    "onlyOneKindOfItem",
+    "noNameInTheSelection",
+    "ofThisType",
+    "selectSomethingFirst",
+    "withThisColour",
+    "selectSomethingWithAColour",
+    "withThisTag",
+    "selectSomethingTagged"
+  ],
+  "selectAll": "全选",
+  "lengthItemsSelected": "已选择 {length} 个项目",
+  "selectOnly": "仅选择",
+  "onlyOneKindOfItem": "只选中了一种项目",
+  "noNameInTheSelection": "所选内容中没有{name}",
+  "ofThisType": "此类型的",
+  "selectSomethingFirst": "请先选择内容",
+  "withThisColour": "此颜色的",
+  "selectSomethingWithAColour": "请选择带颜色的内容",
+  "withThisTag": "带此标签的",
+  "selectSomethingTagged": "请选择带标签的内容"
+}

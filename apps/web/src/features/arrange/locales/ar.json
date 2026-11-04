@@ -1,0 +1,18 @@
+{
+  "@@unreviewed": [
+    "noTag",
+    "selectTwoOrMoreUnlocked",
+    "selectThreeOrMoreUnlocked",
+    "autoLayout",
+    "selectTwoOrMoreUnlocked2",
+    "alignAndDistribute",
+    "clusterStickies"
+  ],
+  "noTag": "بلا وسم",
+  "selectTwoOrMoreUnlocked": "حدد عنصرين غير مقفلين أو أكثر",
+  "selectThreeOrMoreUnlocked": "حدد ثلاثة عناصر غير مقفلة أو أكثر",
+  "autoLayout": "تخطيط تلقائي",
+  "selectTwoOrMoreUnlocked2": "حدد عنصرين غير مقفلين أو أكثر متصلين بموصلات",
+  "alignAndDistribute": "محاذاة وتوزيع",
+  "clusterStickies": "تجميع الملاحظات اللاصقة"
+}

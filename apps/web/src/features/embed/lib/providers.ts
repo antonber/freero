@@ -1,5 +1,6 @@
 import { EMBED_PROVIDERS, OPERATOR_EMBED_SANDBOX, type EmbedProvider } from '@freero/shared';
 
+import { t as tr } from '../messages';
 // Which pasted links are links, and which can be shown live. Pure, unit-tested.
 //
 // Live frames come from a STRICT allowlist (`EMBED_PROVIDERS` in @freero/shared, which the server's
@@ -49,10 +50,10 @@ function startSeconds(v: string | null): number {
 type Parsed = { provider: EmbedProvider['id']; src: string; label?: string };
 
 const GOOGLE_KINDS: Record<string, { label: string; view: string; published: string }> = {
-  document: { label: 'Google Docs', view: 'preview', published: 'pub?embedded=true' },
-  spreadsheets: { label: 'Google Sheets', view: 'preview', published: 'pubhtml?widget=true&headers=false' },
-  presentation: { label: 'Google Slides', view: 'embed', published: 'embed' },
-  forms: { label: 'Google Forms', view: 'viewform?embedded=true', published: 'viewform?embedded=true' },
+  document: { label: tr('googleDocs'), view: 'preview', published: 'pub?embedded=true' },
+  spreadsheets: { label: tr('googleSheets'), view: 'preview', published: 'pubhtml?widget=true&headers=false' },
+  presentation: { label: tr('googleSlides'), view: 'embed', published: 'embed' },
+  forms: { label: tr('googleForms'), view: 'viewform?embedded=true', published: 'viewform?embedded=true' },
 };
 
 function parse(u: URL): Parsed | null {

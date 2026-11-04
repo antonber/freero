@@ -7,6 +7,7 @@ import type { BoardSharingSettings, BoardSummary } from '@freero/shared';
 import { Toggle, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 
+import { t } from '../messages';
 const DEFAULTS: BoardSharingSettings = { editorsCanShare: true, viewersCanExport: true };
 
 export function SharingSettings({ board, onChange }: { board: BoardSummary; onChange: (b: BoardSummary) => void }) {
@@ -22,35 +23,32 @@ export function SharingSettings({ board, onChange }: { board: BoardSummary; onCh
       onChange(updated);
       notify(done, 'success');
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : 'Could not change the sharing settings', 'error');
+      notify(e instanceof ApiError ? e.message : t('couldNotChangeTheSharing'), 'error');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <section className="fr-share__settings" aria-label="Sharing settings">
+    <section className="fr-share__settings" aria-label={t('sharingSettings')}>
       <h3 className="fr-share__heading">
-        <ShieldCheck size={14} aria-hidden /> Sharing settings
-      </h3>
+        <ShieldCheck size={14} aria-hidden />{' '}{t('sharingSettings')}</h3>
       <Toggle
         size="sm"
-        label="Editors can invite people"
+        label={t('editorsCanInvitePeople')}
         checked={settings.editorsCanShare}
         disabled={!manages || busy}
-        onChange={(on) => void set({ editorsCanShare: on }, on ? 'Editors can invite people again' : 'Only owners and co-owners can invite people now')}
+        onChange={(on) => void set({ editorsCanShare: on }, on ? t('editorsCanInvitePeopleAgain') : t('onlyOwnersAndCoOwners'))}
       />
       <Toggle
         size="sm"
-        label="Viewers and commenters can copy, export and download"
+        label={t('viewersAndCommentersCanCopy')}
         checked={settings.viewersCanExport}
         disabled={!manages || busy}
-        onChange={(on) => void set({ viewersCanExport: on }, on ? 'Viewers and commenters can copy and export again' : 'Viewers and commenters can no longer copy or export')}
+        onChange={(on) => void set({ viewersCanExport: on }, on ? t('viewersAndCommentersCanCopy2') : t('viewersAndCommentersCanNo'))}
       />
       <p className="fr-share__settings-note">
-        {manages ? 'Only the owner and co-owners change these; the workspace’s policies still apply on top. ' : ''}
-        Nothing stops someone from taking a screenshot of what they can see.
-      </p>
+        {manages ? t('onlyTheOwnerAndCo') : ''}{t('nothingStopsSomeoneFromTaking')}</p>
     </section>
   );
 }

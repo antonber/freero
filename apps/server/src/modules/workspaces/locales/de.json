@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} hat Sie in den Arbeitsbereich „{workspace}“ auf Freero eingeladen",
+  "invite.title": "Treten Sie „{workspace}“ auf Freero bei",
+  "invite.body": "{role, select, admin {{inviter} hat Sie eingeladen, dem Team-Arbeitsbereich als Admin beizutreten.} member {{inviter} hat Sie eingeladen, dem Team-Arbeitsbereich als Mitglied beizutreten.} other {{inviter} hat Sie eingeladen, dem Team-Arbeitsbereich als Gast beizutreten (Sie sehen die Boards, die mit Ihnen geteilt werden).}} Freero ist ein kostenloses Online-Whiteboard; Sie benötigen ein kostenloses Konto.",
+  "invite.action": "Arbeitsbereich beitreten",
+  "invite.outro": "{inviter} ({email}) hat diese Einladung gesendet. Der Link funktioniert einmal und läuft in 14 Tagen ab."
+}

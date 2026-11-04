@@ -19,6 +19,7 @@ import { gridColumns } from './table';
 import { myView } from './tabs';
 import { TimelineBody } from './TimelineView';
 
+import { t as tr } from '../messages';
 /** A canvas table's row height. */
 export const CANVAS_ROW_H = 40;
 
@@ -69,7 +70,7 @@ export function ProjectionTab({ editor, k, tab, selected }: { editor: Editor; k:
       k={k}
       view={view}
       name={tab.name}
-      of="this kanban"
+      of={tr('thisKanban')}
       noun="tab"
       canEdit={canEdit && !k.locked}
       interactive={selected}
@@ -101,13 +102,13 @@ function TableProjection(p: ProjectionBodyProps & { view: Extract<ProjectionView
         columns={columns}
         canEdit={p.canEdit}
         rowH={CANVAS_ROW_H}
-        label={`${p.name}: cards of ${p.of}`}
+        label={tr('nameCardsOfOf', { name: p.name, of: p.of })}
         interactive={p.interactive}
         clip={p.clip}
         height={p.box.height}
-        empty={hidden ? `This ${p.noun}’s filter leaves out all ${hidden} cards.` : `No cards yet. Cards on ${p.noun === 'tab' ? 'the Board tab' : `${p.of}’s board`} show here as rows.`}
+        empty={hidden ? tr('thisNounSFilterLeaves', { noun: p.noun, hidden }) : tr('noCardsYetCardsOn', { value: p.noun === 'tab' ? tr('theBoardTab') : tr('ofSBoard', { of: p.of }) })}
       />
-      {hidden > 0 && rows.length > 0 && <span className="fr-kanban__table-note">{hidden} left out by this {p.noun}’s filter</span>}
+      {hidden > 0 && rows.length > 0 && <span className="fr-kanban__table-note">{tr('hiddenLeftOutByThis', { hidden, noun: p.noun })}</span>}
     </div>
   );
 }
@@ -133,11 +134,11 @@ function ListProjection(p: ProjectionBodyProps & { view: Extract<ProjectionView,
         columns={listColumns(k, view, schema)}
         canEdit={p.canEdit}
         rowH={LIST_ROW_H}
-        label={`${p.name}: cards of ${p.of} as a list`}
+        label={tr('nameCardsOfOfAs', { name: p.name, of: p.of })}
         interactive={p.interactive}
         clip={p.clip}
         height={p.box.height}
-        empty={cards.length ? `This ${p.noun}’s filter leaves out every card.` : `No cards yet. Cards on ${p.noun === 'tab' ? 'the Board tab' : `${p.of}’s board`} show here as a list.`}
+        empty={cards.length ? tr('thisNounSFilterLeaves2', { noun: p.noun }) : tr('noCardsYetCardsOn2', { value: p.noun === 'tab' ? tr('theBoardTab') : tr('ofSBoard', { of: p.of }) })}
       />
     </div>
   );
@@ -152,7 +153,7 @@ function DatesProjection(p: ProjectionBodyProps) {
   if (view.layout === 'calendar')
     return (
       <div className="fr-kanban__table fr-kanban__proj" style={boxStyle(p.box)}>
-        <CalendarBody editor={editor} k={k} rows={rows} dateRef={calendarDateField(view, schema)} canEdit={p.canEdit} interactive={p.interactive} label={`${p.name}: cards of ${p.of} by date`} height={p.box.height} />
+        <CalendarBody editor={editor} k={k} rows={rows} dateRef={calendarDateField(view, schema)} canEdit={p.canEdit} interactive={p.interactive} label={tr('nameCardsOfOfBy', { name: p.name, of: p.of })} height={p.box.height} />
       </div>
     );
   if (view.layout !== 'timeline') return null;
@@ -170,7 +171,7 @@ function DatesProjection(p: ProjectionBodyProps) {
         lanes={t.lanes}
         canEdit={p.canEdit}
         interactive={p.interactive}
-        label={`${p.name}: cards of ${p.of} on a timeline`}
+        label={tr('nameCardsOfOfOn', { name: p.name, of: p.of })}
         clip={p.clip}
         height={p.box.height}
       />

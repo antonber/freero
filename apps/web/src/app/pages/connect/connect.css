@@ -124,7 +124,7 @@
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  padding-left: 36px;
+  padding-inline-start: 36px;
   counter-increment: fr-connect-step;
 }
 
@@ -132,7 +132,7 @@
   content: counter(fr-connect-step);
   position: absolute;
   top: -1px;
-  left: 0;
+  inset-inline-start: 0;
   display: grid;
   place-items: center;
   width: 24px;
@@ -237,6 +237,6 @@
   }
 
   .fr-connect-step {
-    padding-left: 32px;
+    padding-inline-start: 32px;
   }
 }

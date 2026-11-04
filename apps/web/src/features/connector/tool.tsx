@@ -6,6 +6,7 @@ import { DRAG_PX, findTarget, overlay, resetOverlay, snap45 } from './lib/connec
 import { dist } from './lib/geometry';
 import { buildConnector, endpoint, patchConnector, styleFromOptions, TOOL_ID, type ConnectorStyle } from './lib/model';
 
+import { t } from './messages';
 interface Drawing {
   start: ConnectorEndpoint;
   startPoint: Point;
@@ -27,14 +28,14 @@ function moveEnd(e: ToolPointerEvent, d: Drawing & { id: string }) {
 }
 
 const ROUTING_OPTIONS = [
-  { value: 'straight' as const, icon: Slash, title: 'Straight' },
-  { value: 'elbow' as const, icon: CornerDownRight, title: 'Elbow' },
-  { value: 'curved' as const, icon: Spline, title: 'Curved' },
+  { value: 'straight' as const, icon: Slash, title: t('straight') },
+  { value: 'elbow' as const, icon: CornerDownRight, title: t('elbow') },
+  { value: 'curved' as const, icon: Spline, title: t('curved') },
 ];
 
 export default defineTool({
   id: TOOL_ID,
-  label: 'Connection line',
+  label: t('connectionLine'),
   icon: MoveUpRight,
   shortcut: 'l',
   order: 40,
@@ -99,13 +100,13 @@ export default defineTool({
     const opts = useToolOptions<Partial<ConnectorStyle>>(TOOL_ID);
     return (
       <div className="fr-cx-options">
-        <div className="fr-cx-options__label">Line type</div>
+        <div className="fr-cx-options__label">{t('lineType')}</div>
         <SegmentedControl<ConnectorRouting>
           size="sm"
           value={styleFromOptions(opts).routing}
           onChange={(routing) => editor.setToolOptions(TOOL_ID, { routing })}
           options={ROUTING_OPTIONS}
-          aria-label="Line type"
+          aria-label={t('lineType')}
         />
       </div>
     );

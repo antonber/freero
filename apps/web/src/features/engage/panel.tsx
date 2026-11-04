@@ -10,9 +10,10 @@ import { ANSWER_DIALOG, KINDS, LINK_DIALOG, SETTINGS_DIALOG, STAGE_DIALOG, activ
 import { LinkDialog } from './lib/LinkDialog';
 import { Stage } from './lib/Stage';
 import { QuizEditor } from './lib/QuizEditor';
+import { t } from './messages';
 import './engage.css';
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong');
+const errorText = (e: unknown) => (e instanceof Error ? e.message : t('somethingWentWrong'));
 
 /** Answering through the board's server (Host.engage); moderation only for those who run activities. */
 function activityActions(engage: HostEngage, id: string, canRun: boolean): ActivityActions {
@@ -31,7 +32,7 @@ function useActivityState(editor: Editor, id: string, version = ''): [ActivitySt
   useEffect(() => {
     let cancelled = false;
     if (!editor.host.engage) {
-      setError('Activities need a board on a Freero server.');
+      setError(t('activitiesNeedABoardOn'));
       return;
     }
     editor.host.engage.state(id).then(
@@ -54,8 +55,8 @@ function AnswerDialog({ editor, props }: PanelProps) {
   const [state, setState, loadError] = useActivityState(editor, id, `${a?.quiz?.step}:${a?.quiz?.openedAt}:${a?.quiz?.showAnswer}:${a?.closed}:${a?.guests}`);
   if (!a || a.type !== 'activity') {
     return (
-      <Modal open onClose={close} title="Activity">
-        <p>This activity is no longer on the board.</p>
+      <Modal open onClose={close} title={t('activity')}>
+        <p>{t('thisActivityIsNoLonger')}</p>
       </Modal>
     );
   }
@@ -103,15 +104,15 @@ function AxesFields({ a, set }: { a: ActivityElement; set: (patch: Partial<Activ
   );
   return (
     <>
-      <span className="fr-engage-form__label">Across (left → right)</span>
+      <span className="fr-engage-form__label">{t('acrossLeftRight')}</span>
       <div className="fr-engage-form__row">
-        {field('x', 0, 'Left end')}
-        {field('x', 1, 'Right end')}
+        {field('x', 0, t('leftEnd'))}
+        {field('x', 1, t('rightEnd'))}
       </div>
-      <span className="fr-engage-form__label">Up (bottom → top)</span>
+      <span className="fr-engage-form__label">{t('upBottomTop')}</span>
       <div className="fr-engage-form__row">
-        {field('y', 0, 'Bottom end')}
-        {field('y', 1, 'Top end')}
+        {field('y', 0, t('bottomEnd'))}
+        {field('y', 1, t('topEnd'))}
       </div>
     </>
   );
@@ -125,24 +126,24 @@ function SettingsDialog({ editor, props }: PanelProps) {
   const set = (patch: Partial<ActivityElement>) => editor.update<ActivityElement>(a.id, patch);
   const setOptions = (options: ActivityElement['options']) => set({ options });
   return (
-    <Modal open onClose={close} title={`${kindLabel(a.kind)} settings`} width={520} footer={<Button variant="primary" onClick={close}>Done</Button>}>
+    <Modal open onClose={close} title={t('kindlabelSettings', { kindLabel: kindLabel(a.kind) })} width={520} footer={<Button variant="primary" onClick={close}>{t('done')}</Button>}>
       <div className="fr-engage-form">
-        <span className="fr-engage-form__label">Kind</span>
-        <Select<ActivityKind> aria-label="Kind" options={KINDS.map((k) => ({ value: k.value, label: k.label, description: k.hint }))} value={a.kind} onChange={(kind) => set(switchKind(a, kind))} />
+        <span className="fr-engage-form__label">{t('kind')}</span>
+        <Select<ActivityKind> aria-label={t('kind')} options={KINDS.map((k) => ({ value: k.value, label: k.label, description: k.hint }))} value={a.kind} onChange={(kind) => set(switchKind(a, kind))} />
         {usesOptions(a.kind) ? (
           <>
             <span className="fr-engage-form__label">
-              {a.kind === 'poll' ? 'Choices' : a.kind === 'ranking' ? 'Items to rank' : a.kind === 'matrix' ? 'Items to place' : 'Statements to rate'}
+              {a.kind === 'poll' ? t('choices') : a.kind === 'ranking' ? t('itemsToRank') : a.kind === 'matrix' ? t('itemsToPlace') : t('statementsToRate')}
             </span>
             {a.options.map((o, i) => (
               <div key={o.id} className="fr-engage-form__row">
                 <Input
-                  aria-label={`Option ${i + 1}`}
+                  aria-label={t('optionValue', { value: i + 1 })}
                   value={o.text}
                   maxLength={120}
                   onChange={(e) => setOptions(a.options.map((x) => (x.id === o.id ? { ...x, text: e.target.value } : x)))}
                 />
-                <IconButton size={32} icon={Trash2} label="Remove" disabled={a.options.length <= 2} onClick={() => setOptions(a.options.filter((x) => x.id !== o.id))} />
+                <IconButton size={32} icon={Trash2} label={t('remove')} disabled={a.options.length <= 2} onClick={() => setOptions(a.options.filter((x) => x.id !== o.id))} />
               </div>
             ))}
             <Button
@@ -150,20 +151,18 @@ function SettingsDialog({ editor, props }: PanelProps) {
               size="sm"
               icon={Plus}
               disabled={a.options.length >= ENGAGE_MAX_OPTIONS}
-              onClick={() => setOptions([...a.options, { id: nanoid(8), text: `Option ${a.options.length + 1}` }])}
-            >
-              Add
-            </Button>
+              onClick={() => setOptions([...a.options, { id: nanoid(8), text: t('optionValue', { value: a.options.length + 1 }) }])}
+            >{t('add')}</Button>
           </>
         ) : null}
         {a.kind === 'matrix' ? <AxesFields a={a} set={set} /> : null}
         {a.kind === 'quiz' ? <QuizEditor editor={editor} a={a} /> : null}
         {a.kind === 'poll' ? (
-          <Toggle label="People may pick several" checked={(a.maxChoices ?? 1) > 1} onChange={(on) => set({ maxChoices: on ? Math.max(2, a.options.length) : 1 })} />
+          <Toggle label={t('peopleMayPickSeveral')} checked={(a.maxChoices ?? 1) > 1} onChange={(on) => set({ maxChoices: on ? Math.max(2, a.options.length) : 1 })} />
         ) : null}
         {a.kind === 'rating' ? (
           <SegmentedControl<'5' | '10'>
-            aria-label="Scale"
+            aria-label={t('scale')}
             options={[
               { value: '5', label: '1–5' },
               { value: '10', label: '1–10' },
@@ -172,14 +171,14 @@ function SettingsDialog({ editor, props }: PanelProps) {
             onChange={(v) => set({ scale: Number(v) })}
           />
         ) : null}
-        <Toggle label="Anonymous (names are never shown with answers)" checked={a.anonymous} onChange={(anonymous) => set({ anonymous })} />
+        <Toggle label={t('anonymousNamesAreNeverShown')} checked={a.anonymous} onChange={(anonymous) => set({ anonymous })} />
         <Toggle
-          label={a.kind === 'quiz' ? 'Hide the leaderboard until I reveal it' : 'Hide results until I reveal them'}
+          label={a.kind === 'quiz' ? t('hideTheLeaderboardUntilI') : t('hideResultsUntilIReveal')}
           checked={a.results === 'reveal'}
           onChange={(on) => set({ results: on ? 'reveal' : 'live' })}
         />
-        <Toggle label="Visitors without an account can answer" checked={a.guests} onChange={(guests) => set({ guests })} />
-        <Toggle label="Answers are closed" checked={!!a.closed} onChange={(closed) => set({ closed })} />
+        <Toggle label={t('visitorsWithoutAnAccountCan')} checked={a.guests} onChange={(guests) => set({ guests })} />
+        <Toggle label={t('answersAreClosed')} checked={!!a.closed} onChange={(closed) => set({ closed })} />
       </div>
     </Modal>
   );

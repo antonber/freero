@@ -2,6 +2,7 @@
 import { STICKY_COLORS, type BoardElement, type ElementType, type StickyColor } from '@freero/shared';
 import type { Editor, ElementPatch } from '@engine';
 
+import { t } from '../messages';
 export const TOOL_ID = 'format-painter';
 
 /** Fields that are look, not content or layout. Only these are ever copied. */
@@ -111,7 +112,7 @@ export function pickUp(editor: Editor): boolean {
   const sel = editor.getSelection();
   const el = sel.length === 1 ? editor.getElement(sel[0]) : undefined;
   if (!el) {
-    editor.host.notify('Select one item to copy its style.', 'info');
+    editor.host.notify(t('selectOneItemToCopy'), 'info');
     return false;
   }
   editor.setToolOptions(TOOL_ID, { style: copyStyle(el) });

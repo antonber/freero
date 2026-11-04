@@ -14,6 +14,9 @@ export {
   listAuditEvents,
   auditCountsBy,
   verifyWorkspaceAudit,
+  // Legal holds (#157, modules/ediscovery): chains whose events retention must keep.
+  onAuditRetentionHold,
+  type AuditRetentionHold,
   // SIEM streams (modules/siem, #17): a workspace log in seq order, its head, and a signed head.
   workspaceEventsAfter,
   workspaceHeadSeq,

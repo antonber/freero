@@ -4,6 +4,7 @@ import type { BoardElement } from '@freero/shared';
 import type { Editor } from '@engine';
 import { ROUND_KEY, itemPrefix, readRound, voteKey, type Deck, type Estimate, type EstimationValue, type Round } from './model';
 
+import { t } from '../messages';
 export const COLLECTION = 'estimation';
 /** What can be estimated. */
 export const ESTIMABLE = new Set(['card', 'sticky']);
@@ -125,7 +126,7 @@ export function accept(editor: Editor, value: string): void {
   if (!round || !itemId || !canManage(editor, round)) return;
   if (editor.getElement(itemId)?.type !== 'card') return;
   editor.runCommand('card.setEstimate', { id: itemId, value });
-  editor.host.notify(`Estimate ${value} saved on the card`, 'success');
+  editor.host.notify(t('estimateValueSavedOnThe', { value }), 'success');
 }
 
 export function end(editor: Editor): void {

@@ -6,6 +6,7 @@ import { ICEBREAKER_MAX_ENTRIES, type IcebreakerElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { Button, Input, Popover, SegmentedControl, TextArea, ToolbarButton } from '@ui';
 
+import { t } from './messages';
 /** Everyone with access, and whoever is here now (guests too), by name, once each. */
 async function peopleNames(editor: Editor): Promise<string[]> {
   const here = editor.getPeers().map((p) => p.user?.name ?? '');
@@ -26,22 +27,18 @@ function EntriesControl({ editor, el }: { editor: Editor; el: IcebreakerElement 
   const set = (patch: Partial<IcebreakerElement>) => editor.update<IcebreakerElement>(el.id, patch);
   return (
     <>
-      <ToolbarButton ref={ref} label={el.kind === 'wheel' ? 'Names on the wheel' : 'People to put in order'} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <ListPlus size={16} />
-        Names
-      </ToolbarButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Names">
+      <ToolbarButton ref={ref} label={el.kind === 'wheel' ? t('namesOnTheWheel') : t('peopleToPutInOrder')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <ListPlus size={16} />{t('names')}</ToolbarButton>
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('names')}>
         <div className="fr-icebreaker-names">
-          <Input aria-label="Title" value={el.title} maxLength={80} onChange={(e) => set({ title: e.target.value })} />
+          <Input aria-label={t('title')} value={el.title} maxLength={80} onChange={(e) => set({ title: e.target.value })} />
           <TextArea
-            aria-label="Names, one per line"
+            aria-label={t('namesOnePerLine')}
             rows={8}
             value={el.entries.join('\n')}
             onChange={(e) => set({ entries: e.target.value.split('\n').slice(0, ICEBREAKER_MAX_ENTRIES) })}
           />
-          <Button size="sm" variant="ghost" icon={Users} onClick={() => void peopleNames(editor).then((entries) => set({ entries }))}>
-            Use the people on the board
-          </Button>
+          <Button size="sm" variant="ghost" icon={Users} onClick={() => void peopleNames(editor).then((entries) => set({ entries }))}>{t('useThePeopleOnThe')}</Button>
         </div>
       </Popover>
     </>
@@ -57,12 +54,12 @@ export default defineFormat({
     if (el.kind === 'dice')
       return (
         <SegmentedControl<'1' | '2' | '3'>
-          aria-label="How many dice"
+          aria-label={t('howManyDice')}
           size="sm"
           options={[
-            { value: '1', label: '1 die' },
-            { value: '2', label: '2 dice' },
-            { value: '3', label: '3 dice' },
+            { value: '1', label: t('n1Die') },
+            { value: '2', label: t('n2Dice') },
+            { value: '3', label: t('n3Dice') },
           ]}
           value={String(Math.min(3, Math.max(1, el.dice ?? 1))) as '1' | '2' | '3'}
           onChange={(v) => editor.update<IcebreakerElement>(el.id, { dice: Number(v) })}

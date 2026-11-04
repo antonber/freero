@@ -12,6 +12,7 @@ import { createFromRows } from './lib/fromRows';
 import { addLinkedView, renameLinkedView, resetMyLinkedView, saveLinkedViewForEveryone, selectedLinkedView, setLinkedLayout, setLinkedLocked, setMyLinkedView, sourceOf } from './lib/linked';
 import { LAYOUT_ICONS } from './lib/TabStrip';
 
+import { t } from './messages';
 const selectedKanban = (editor: Editor) => {
   const sel = editor.getSelection();
   const el = sel.length === 1 ? editor.getElement(sel[0]) : undefined;
@@ -30,7 +31,7 @@ const addLinked = (layout: ProjectionLayout): CommandDefinition => ({
   id: `kanban.addLinkedView.${layout}`,
   label: LAYOUT_NAMES[layout],
   icon: LAYOUT_ICONS[layout],
-  group: 'Add linked view',
+  group: t('addLinkedView'),
   menus: ['context'],
   when: (editor) => !!oneKanban(editor) && editor.mayAdd('kanbanview'),
   run(editor) {
@@ -57,7 +58,7 @@ const move = (dir: MoveDir, label: string, icon: CommandDefinition['icon'], shor
 export default defineCommands([
   {
     id: 'kanban.addColumn',
-    label: 'Add column',
+    label: t('addColumn'),
     icon: Columns3,
     menus: ['context'],
     when: (editor) => !!selectedKanban(editor),
@@ -71,7 +72,7 @@ export default defineCommands([
     // a card stands in IS that value, and only the kanban knows where its columns are. Args
     // { id, column } (a column id of the kanban the item is in).
     id: 'kanban.moveToColumn',
-    label: 'Move to column',
+    label: t('moveToColumn'),
     run(editor, args) {
       if (typeof args?.id === 'string' && typeof args.column === 'string') moveToColumn(editor, args.id, args.column);
     },
@@ -81,14 +82,14 @@ export default defineCommands([
     // args { rows: KanbanRowsInput (@freero/shared), at?: top-left, id?: the id it should get,
     // frameId? }. The kanban and its cards are made here, in the caller's transaction.
     id: 'kanban.createFromRows',
-    label: 'Make a kanban from rows',
+    label: t('makeAKanbanFromRows'),
     run(editor, args) {
       if (args?.rows) createFromRows(editor, args);
     },
   },
   {
     id: 'kanban.editFields',
-    label: 'Edit fields…',
+    label: t('editFields'),
     icon: ListChecks,
     menus: ['context'],
     minRole: 'viewer',
@@ -100,7 +101,7 @@ export default defineCommands([
     // color?: 'own' | 'group' | field id } change this person's own view (any role); density?:
     // 'compact' | 'comfortable' changes card sizes, so it is saved for everyone (editors).
     id: 'kanban.setCardDisplay',
-    label: 'Change what cards show',
+    label: t('changeWhatCardsShow'),
     minRole: 'viewer',
     run(editor, args) {
       const id = typeof args?.id === 'string' ? args.id : null;
@@ -115,7 +116,7 @@ export default defineCommands([
     // Columns by another field (lib/group.ts): args { id (the kanban), field (a single select,
     // person or checkbox field id; 'stage' is the column field) }. Moves the cards; one undo step.
     id: 'kanban.groupBy',
-    label: 'Group cards by',
+    label: t('groupCardsBy'),
     run(editor, args) {
       if (typeof args?.id === 'string' && typeof args.field === 'string') setGroupBy(editor, args.id, args.field);
     },
@@ -123,7 +124,7 @@ export default defineCommands([
   {
     // Swimlanes: args { id, field } (null: none). One undo step with the re-stack.
     id: 'kanban.setSwimlanes',
-    label: 'Swimlanes by',
+    label: t('swimlanesBy'),
     run(editor, args) {
       if (typeof args?.id === 'string' && (typeof args.field === 'string' || args.field === null)) setSwimlanes(editor, args.id, args.field);
     },
@@ -132,7 +133,7 @@ export default defineCommands([
     // This person's own filter on kanban { id, filter } (a ViewFilter, null: none): it fades the
     // cards it leaves out, for them only, until an editor saves it for everyone. Any role.
     id: 'kanban.setMyFilter',
-    label: 'Filter cards for me',
+    label: t('filterCardsForMe'),
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id === 'string') setMyFilter(editor, args.id, cleanFilter(args.filter, { personal: true }));
@@ -142,7 +143,7 @@ export default defineCommands([
     // Sorts every column of kanban { id } by { sort: [{ field, dir }] } ([]: manual order again).
     // Moves the real cards, so it is saved for everyone (editors). One undo step.
     id: 'kanban.setSort',
-    label: 'Sort cards by',
+    label: t('sortCardsBy'),
     run(editor, args) {
       if (typeof args?.id === 'string' && Array.isArray(args.sort)) setSort(editor, args.id, args.sort as never);
     },
@@ -151,7 +152,7 @@ export default defineCommands([
     // Locks or unlocks the saved view of kanban { id, locked }: only whoever locked it and the
     // board's owners change it then (everyone keeps their own view settings). Editors.
     id: 'kanban.lockView',
-    label: 'Lock view',
+    label: t('lockView'),
     run(editor, args) {
       if (typeof args?.id === 'string' && typeof args.locked === 'boolean') setViewLocked(editor, args.id, args.locked);
     },
@@ -159,14 +160,14 @@ export default defineCommands([
   {
     // "Save for everyone": this person's own view of kanban { id } becomes its saved view.
     id: 'kanban.saveViewForEveryone',
-    label: 'Save view for everyone',
+    label: t('saveViewForEveryone'),
     run(editor, args) {
       if (typeof args?.id === 'string') saveViewForEveryone(editor, args.id);
     },
   },
   {
     id: 'kanban.viewSettings',
-    label: 'View settings…',
+    label: t('viewSettings'),
     icon: SlidersHorizontal,
     menus: ['context'],
     minRole: 'viewer',
@@ -177,7 +178,7 @@ export default defineCommands([
     // Focus mode (lib/Focus.tsx): the kanban the selection points at as a page of its own,
     // arranged my way. Args { id } name another kanban. Any role.
     id: 'kanban.openFocus',
-    label: 'Open in focus mode',
+    label: t('openInFocusMode'),
     icon: Maximize2,
     menus: ['context'],
     minRole: 'viewer',
@@ -191,7 +192,7 @@ export default defineCommands([
     // View tabs (lib/tabs.ts). Adds a { layout: 'table' | 'list' | 'calendar' | 'timeline' } tab to
     // kanban { id } for everyone ({ name? }) and shows it to me. Editors; one undo step.
     id: 'kanban.addTab',
-    label: 'Add a view tab',
+    label: t('addAViewTab'),
     run(editor, args) {
       if (typeof args?.id === 'string' && isProjectionLayout(args.layout)) addTab(editor, args.id, args.layout, typeof args.name === 'string' ? args.name : undefined);
     },
@@ -199,7 +200,7 @@ export default defineCommands([
   {
     // A table tab (3a's command).
     id: 'kanban.addTableTab',
-    label: 'Add a table tab',
+    label: t('addATableTab'),
     icon: Table2,
     run(editor, args) {
       if (typeof args?.id === 'string') addTableTab(editor, args.id, typeof args.name === 'string' ? args.name : undefined);
@@ -208,7 +209,7 @@ export default defineCommands([
   {
     // Looks at tab { tab } of kanban { id }, for me only (any role); "Save for everyone" makes it everyone's.
     id: 'kanban.showTab',
-    label: 'Show tab',
+    label: t('showTab'),
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id === 'string' && typeof args.tab === 'string') switchTab(editor, args.id, args.tab);
@@ -217,7 +218,7 @@ export default defineCommands([
   {
     // Renames tab { tab } of kanban { id } to { name } for everyone. Editors.
     id: 'kanban.renameTab',
-    label: 'Rename tab',
+    label: t('renameTab'),
     run(editor, args) {
       if (typeof args?.id === 'string' && typeof args.tab === 'string' && typeof args.name === 'string') renameTab(editor, args.id, args.tab, args.name);
     },
@@ -225,7 +226,7 @@ export default defineCommands([
   {
     // Deletes table tab { tab } of kanban { id } for everyone (never the board tab). Editors.
     id: 'kanban.deleteTab',
-    label: 'Delete tab',
+    label: t('deleteTab'),
     run(editor, args) {
       if (typeof args?.id === 'string' && typeof args.tab === 'string') deleteTab(editor, args.id, args.tab);
     },
@@ -235,7 +236,7 @@ export default defineCommands([
     // any tab's filter / sort; a table's or a list's columns; a list's groupBy (null: no groups);
     // a calendar's date (a date field id); a timeline's start, end, scale and lanesBy (null: none).
     id: 'kanban.setMyView',
-    label: 'Arrange a tab for me',
+    label: t('arrangeATabForMe'),
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id !== 'string' || typeof args.tab !== 'string') return;
@@ -246,7 +247,7 @@ export default defineCommands([
   {
     // 3a's name for the same, on a table tab.
     id: 'kanban.setMyTable',
-    label: 'Arrange a table for me',
+    label: t('arrangeATableForMe'),
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id !== 'string' || typeof args.tab !== 'string') return;
@@ -258,7 +259,7 @@ export default defineCommands([
     // My focus-mode arrangement of kanban { id }: { groupBy? (a field id, null: none), density?,
     // filter?, sort?, columns? }. Any role; nothing changes for anyone else.
     id: 'kanban.setFocus',
-    label: 'Arrange focus mode',
+    label: t('arrangeFocusMode'),
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id !== 'string') return;
@@ -272,7 +273,7 @@ export default defineCommands([
     // timeline), { name? }, or { from: a projection tab of the kanban } to place that tab as I see
     // it. Editors; one undo step; the new view is selected.
     id: 'kanban.addLinkedView',
-    label: 'Add a linked view',
+    label: t('addALinkedView'),
     run(editor, args) {
       if (typeof args?.id !== 'string') return;
       const layout = isProjectionLayout(args.layout) ? args.layout : 'table';
@@ -283,7 +284,7 @@ export default defineCommands([
     // My own settings of linked view { id } (any role) until I save them for everyone: the same
     // settings a tab of its layout takes (kanban.setMyView).
     id: 'kanban.setMyLinkedView',
-    label: 'Arrange a linked view for me',
+    label: t('arrangeALinkedViewFor'),
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id !== 'string') return;
@@ -294,7 +295,7 @@ export default defineCommands([
   {
     // Linked view { id }: my settings become its saved view ({ reset: true }: drop mine instead).
     id: 'kanban.saveLinkedView',
-    label: 'Save a linked view for everyone',
+    label: t('saveALinkedViewFor'),
     minRole: 'viewer',
     run(editor, args) {
       if (typeof args?.id !== 'string') return;
@@ -305,7 +306,7 @@ export default defineCommands([
   {
     // Linked view { id } for everyone: { name }, { layout }, { locked }. Editors.
     id: 'kanban.configureLinkedView',
-    label: 'Change a linked view',
+    label: t('changeALinkedView'),
     run(editor, args) {
       if (typeof args?.id !== 'string') return;
       if (typeof args.name === 'string') renameLinkedView(editor, args.id, args.name);
@@ -316,7 +317,7 @@ export default defineCommands([
   {
     // From a selected linked view: its kanban, selected and in view.
     id: 'kanban.showLinkedSource',
-    label: 'Show its kanban',
+    label: t('showItsKanban'),
     icon: Columns3,
     menus: ['context'],
     minRole: 'viewer',
@@ -332,9 +333,9 @@ export default defineCommands([
       editor.zoomToFit([k.id], { animate: true, padding: 48 });
     },
   },
-  move('left', 'Move to previous column', ArrowLeft, 'arrowleft'),
-  move('right', 'Move to next column', ArrowRight, 'arrowright'),
-  move('up', 'Move up in column', ArrowUp, 'arrowup'),
-  move('down', 'Move down in column', ArrowDown, 'arrowdown'),
+  move('left', t('moveToPreviousColumn'), ArrowLeft, 'arrowleft'),
+  move('right', t('moveToNextColumn'), ArrowRight, 'arrowright'),
+  move('up', t('moveUpInColumn'), ArrowUp, 'arrowup'),
+  move('down', t('moveDownInColumn'), ArrowDown, 'arrowdown'),
 ]);
 

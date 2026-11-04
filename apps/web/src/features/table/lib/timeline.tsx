@@ -5,11 +5,12 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { editBar, timelineLayout, type BarEdit, type DaySpan, type TableColumn, type TableElement } from '@freero/shared';
 import type { Editor } from '@engine';
+import { formatDate } from '@ui';
 import { displayValue, optionOf, rowSpan, timelineDaysOf, typeOf, visibleRows, type PeopleLookup } from './columns';
 import { setRowSpan, today } from './actions';
 import { TIMELINE } from './model';
+import { t } from '../messages';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Screen px of a bar's end that resizes it rather than moving it. */
 const EDGE_PX = 6;
 const BAR_FILL = '#D3C4FF';
@@ -21,7 +22,7 @@ function months(span: DaySpan): Array<{ from: number; to: number; label: string 
   while (d <= span.end) {
     const [y, m] = timelineLayout.isoOf(d).split('-').map(Number);
     const next = timelineLayout.dayOf(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`);
-    out.push({ from: d, to: Math.min(span.end + 1, next), label: `${MONTHS[m - 1]} ${y}` });
+    out.push({ from: d, to: Math.min(span.end + 1, next), label: formatDate(Date.UTC(y, m - 1, 1), { month: 'short', year: 'numeric', timeZone: 'UTC' }) });
     d = next;
   }
   return out;
@@ -80,7 +81,7 @@ export function TimelineView({
     window.addEventListener('pointercancel', onUp, true);
   };
 
-  if (!table.timeline) return <div className="fr-table-board__empty">Add a date column to see the rows on a timeline.</div>;
+  if (!table.timeline) return <div className="fr-table-board__empty">{t('addADateColumnTo')}</div>;
   return (
     <div className="fr-table-tl" style={{ ['--tl-label' as string]: `${TIMELINE.labelW}px` }}>
       <div className="fr-table-tl__head" style={{ height: TIMELINE.head }}>
@@ -113,9 +114,7 @@ export function TimelineView({
                 {title}
               </div>
             ) : (
-              <div className="fr-table-tl__nodate" style={{ left: TIMELINE.labelW + 8 }}>
-                No dates
-              </div>
+              <div className="fr-table-tl__nodate" style={{ left: TIMELINE.labelW + 8 }}>{t('noDates')}</div>
             )}
           </div>
         );

@@ -6,6 +6,7 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AuthNotice, AuthShell } from '../auth/AuthShell';
 
+import { t } from './messages';
 const ROLE_TEXT = { editor: 'edit', commenter: 'comment on', viewer: 'view' } as const;
 const WS_ROLE_TEXT = { admin: 'as an admin', member: 'as a member', guest: 'as a guest' } as const;
 
@@ -66,7 +67,7 @@ export function InvitePage({ kind = 'board' }: { kind?: keyof typeof KINDS }) {
     let live = true;
     k.preview(token).then(
       (invite) => live && setInvite(invite),
-      (err) => live && setError(err instanceof ApiError ? err.message : 'Could not reach Freero. Try again.'),
+      (err) => live && setError(err instanceof ApiError ? err.message : t('couldNotReachFreeroTry')),
     );
     return () => {
       live = false;
@@ -78,7 +79,7 @@ export function InvitePage({ kind = 'board' }: { kind?: keyof typeof KINDS }) {
     try {
       navigate(await k.accept(token), { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Could not join the ${k.noun}. Try again.`);
+      setError(err instanceof ApiError ? err.message : t('couldNotJoinTheNoun', { noun: k.noun }));
       setJoining(false);
     }
   };
@@ -96,25 +97,25 @@ export function InvitePage({ kind = 'board' }: { kind?: keyof typeof KINDS }) {
 
   if (error)
     return (
-      <AuthShell docTitle="Invite" title="This invite can’t be used">
+      <AuthShell docTitle={t('invite')} title={t('thisInviteCanTBe')}>
         <AuthNotice kind="error">{error}</AuthNotice>
         <p className="fr-authcard__switch">
-          <Link to={user ? '/app' : '/login'}>{user ? 'Go to your boards' : 'Log in'}</Link>
+          <Link to={user ? '/app' : '/login'}>{user ? t('goToYourBoards') : t('logIn')}</Link>
         </p>
       </AuthShell>
     );
 
   if (!invite || loading)
     return (
-      <AuthShell docTitle="Invite" title="Opening your invite…">
-        <Spinner size={22} label="Loading the invite" />
+      <AuthShell docTitle={t('invite')} title={t('openingYourInvite')}>
+        <Spinner size={22} label={t('loadingTheInvite')} />
       </AuthShell>
     );
 
   return (
     <AuthShell
-      docTitle="You're invited"
-      title={`${invite.inviterName} invited you`}
+      docTitle={t('youReInvited')}
+      title={t('inviternameInvitedYou', { inviterName: invite.inviterName })}
       sub={invite.sub}
     >
       <div className="fr-authcard__invite">
@@ -122,21 +123,15 @@ export function InvitePage({ kind = 'board' }: { kind?: keyof typeof KINDS }) {
           <k.icon size={20} />
         </span>
         <span className="fr-authcard__invite-board">
-          <strong>{invite.name}</strong>
-          Sent to {invite.email}
-        </span>
+          <strong>{invite.name}</strong>{t('sentToEmail', { email: invite.email })}</span>
       </div>
       {user ? (
         <>
           {user.email !== invite.email ? (
-            <AuthNotice kind="error">
-              You're signed in as {user.email}. Joining adds this account to the {k.noun}.
-            </AuthNotice>
+            <AuthNotice kind="error">{t('youReSignedInAs', { email: user.email, noun: k.noun })}</AuthNotice>
           ) : null}
           <div className="fr-authcard__actions">
-            <Button variant="primary" size="lg" block loading={joining} onClick={join}>
-              Join {k.noun}
-            </Button>
+            <Button variant="primary" size="lg" block loading={joining} onClick={join}>{t('joinNoun', { noun: k.noun })}</Button>
           </div>
         </>
       ) : (
@@ -146,12 +141,8 @@ export function InvitePage({ kind = 'board' }: { kind?: keyof typeof KINDS }) {
             size="lg"
             block
             onClick={() => navigate(`/signup?next=${encodeURIComponent(back)}&email=${encodeURIComponent(invite.email)}`)}
-          >
-            Create a free account
-          </Button>
-          <Button size="lg" block onClick={() => navigate(`/login?next=${encodeURIComponent(back)}&email=${encodeURIComponent(invite.email)}`)}>
-            I already have an account
-          </Button>
+          >{t('createAFreeAccount')}</Button>
+          <Button size="lg" block onClick={() => navigate(`/login?next=${encodeURIComponent(back)}&email=${encodeURIComponent(invite.email)}`)}>{t('iAlreadyHaveAnAccount')}</Button>
         </div>
       )}
     </AuthShell>

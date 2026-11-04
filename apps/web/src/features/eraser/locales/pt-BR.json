@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "erasePartsOfStrokes",
+    "eraseWholeStrokes",
+    "eraserMode",
+    "eraserSize",
+    "eraser"
+  ],
+  "erasePartsOfStrokes": "Apagar partes dos traços",
+  "eraseWholeStrokes": "Apagar traços inteiros",
+  "eraserMode": "Modo da borracha",
+  "eraserSize": "Tamanho da borracha",
+  "eraser": "Borracha"
+}

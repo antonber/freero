@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} te invitó al espacio de trabajo “{workspace}” en Freero",
+  "invite.title": "Únete a “{workspace}” en Freero",
+  "invite.body": "{role, select, admin {{inviter} te invitó a unirte a su espacio de trabajo de equipo como administrador.} member {{inviter} te invitó a unirte a su espacio de trabajo de equipo como miembro.} other {{inviter} te invitó a unirte a su espacio de trabajo de equipo como invitado (verás los tableros compartidos contigo).}} Freero es una pizarra en línea gratuita; necesitarás una cuenta gratuita.",
+  "invite.action": "Unirse al espacio de trabajo",
+  "invite.outro": "{inviter} ({email}) envió esta invitación. El enlace funciona una sola vez y caduca en 14 días."
+}

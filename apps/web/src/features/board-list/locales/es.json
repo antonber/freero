@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "Tablero como lista",
+  "everyItemInReadingOrder": "Todos los elementos en orden de lectura, con los elementos de un marco debajo de él. Las flechas mueven, Derecha e Izquierda abren y cierran un marco, Enter muestra el elemento en el tablero.",
+  "thisBoardIsEmpty": "Este tablero está vacío.",
+  "boardItems": "Elementos del tablero",
+  "connections": "Conexiones"
+}

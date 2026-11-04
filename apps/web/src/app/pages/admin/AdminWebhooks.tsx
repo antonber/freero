@@ -17,6 +17,7 @@ import {
 import { Button, Input, Modal, Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
+import { t as tr } from './messages';
 import './webhooks.css';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : fallback);
@@ -30,19 +31,19 @@ export async function webhooksOffered(workspaceId: string): Promise<boolean> {
 }
 
 const FORMATS: SelectOption<WebhookFormat>[] = [
-  { value: 'json', label: 'JSON (signed, for your own service)' },
-  { value: 'slack', label: 'Slack message (incoming webhook)' },
-  { value: 'teams', label: 'Microsoft Teams message (Workflows webhook)' },
-  { value: 'discord', label: 'Discord message (channel webhook)' },
-  { value: 'google-chat', label: 'Google Chat message (space webhook)' },
-  { value: 'mattermost', label: 'Mattermost message (incoming webhook)' },
+  { value: 'json', label: tr('jsonSignedForYourOwn') },
+  { value: 'slack', label: tr('slackMessageIncomingWebhook') },
+  { value: 'teams', label: tr('microsoftTeamsMessageWorkflowsWebhook') },
+  { value: 'discord', label: tr('discordMessageChannelWebhook') },
+  { value: 'google-chat', label: tr('googleChatMessageSpaceWebhook') },
+  { value: 'mattermost', label: tr('mattermostMessageIncomingWebhook') },
 ];
 const FORMAT_LABEL: Record<WebhookFormat, string> = { json: 'JSON', slack: 'Slack', teams: 'Teams', discord: 'Discord', 'google-chat': 'Google Chat', mattermost: 'Mattermost' };
 const GROUPS: Array<{ label: string; types: FreeroEventType[] }> = [
-  { label: 'Items', types: ['item.created', 'item.updated', 'item.deleted'] },
-  { label: 'Comments', types: ['comment.created'] },
-  { label: 'Boards', types: ['board.created', 'board.renamed', 'board.moved', 'board.trashed', 'board.restored'] },
-  { label: 'Sharing', types: ['member.added', 'member.role_changed', 'member.removed'] },
+  { label: tr('items'), types: ['item.created', 'item.updated', 'item.deleted'] },
+  { label: tr('comments'), types: ['comment.created'] },
+  { label: tr('boards'), types: ['board.created', 'board.renamed', 'board.moved', 'board.trashed', 'board.restored'] },
+  { label: tr('sharing'), types: ['member.added', 'member.role_changed', 'member.removed'] },
 ];
 const DEFAULT_EVENTS: FreeroEventType[] = ['item.created', 'comment.created'];
 
@@ -51,9 +52,7 @@ function CopySecret({ value }: { value: string }) {
   return (
     <div className="fr-admin-hooks__secret">
       <code>{value}</code>
-      <Button size="sm" variant="ghost" icon={Copy} onClick={() => void navigator.clipboard?.writeText(value).then(() => notify('Copied', 'success'), () => notify('Could not copy', 'error'))}>
-        Copy
-      </Button>
+      <Button size="sm" variant="ghost" icon={Copy} onClick={() => void navigator.clipboard?.writeText(value).then(() => notify(tr('copied'), 'success'), () => notify(tr('couldNotCopy'), 'error'))}>{tr('copy')}</Button>
     </div>
   );
 }
@@ -87,7 +86,7 @@ function EndpointForm({
   onSubmit: (d: Draft) => void;
   onCancel: () => void;
 }) {
-  const projectOptions: SelectOption<string>[] = [{ value: '', label: 'Every project' }, ...projects.map((p) => ({ value: p.id, label: p.name }))];
+  const projectOptions: SelectOption<string>[] = [{ value: '', label: tr('everyProject') }, ...projects.map((p) => ({ value: p.id, label: p.name }))];
   const [d, setD] = useState(initial);
   const toggle = (t: FreeroEventType, on: boolean) => setD((x) => ({ ...x, events: on ? [...new Set([...x.events, t])] : x.events.filter((e) => e !== t) }));
   const submit = (e: FormEvent) => {
@@ -97,35 +96,35 @@ function EndpointForm({
   return (
     <form className="fr-admin-hooks__form" onSubmit={submit}>
       <Input
-        label="Endpoint URL"
+        label={tr('endpointUrl')}
         placeholder="https://"
         value={d.url}
         onChange={(e) => setD({ ...d, url: e.target.value })}
-        hint={editing ? 'Leave empty to keep the current URL (only its start is shown, the rest may be a token).' : 'Freero sends a POST for every event you pick.'}
+        hint={editing ? tr('leaveEmptyToKeepThe') : tr('freeroSendsAPostFor')}
         autoFocus
         required={!editing}
       />
-      <Input label="Description (optional)" value={d.description} maxLength={200} onChange={(e) => setD({ ...d, description: e.target.value })} />
+      <Input label={tr('descriptionOptional')} value={d.description} maxLength={200} onChange={(e) => setD({ ...d, description: e.target.value })} />
       <Input
-        label="Only for (optional)"
-        placeholder="Paste a board link, or an item's copied link"
+        label={tr('onlyForOptional')}
+        placeholder={tr('pasteABoardLinkOr')}
         value={d.scope}
         maxLength={2048}
         onChange={(e) => setD({ ...d, scope: e.target.value })}
-        hint="Empty: every board the whole team can open. A board: only its events. An item (a frame, or an agent's Tasks kanban): only changes and comments on it and what sits in it."
+        hint={tr('emptyEveryBoardTheWhole')}
       />
       {projects.length && !d.scope.trim() ? (
         <label className="fr-admin-hooks__field">
-          <span className="fr-admin-row__label">Project</span>
-          <Select<string> aria-label="Project" value={d.projectId} onChange={(projectId) => setD({ ...d, projectId })} options={projectOptions} />
+          <span className="fr-admin-row__label">{tr('project')}</span>
+          <Select<string> aria-label={tr('project')} value={d.projectId} onChange={(projectId) => setD({ ...d, projectId })} options={projectOptions} />
         </label>
       ) : null}
       <label className="fr-admin-hooks__field">
-        <span className="fr-admin-row__label">Format</span>
-        <Select<WebhookFormat> aria-label="Format" value={d.format} onChange={(format) => setD({ ...d, format })} options={FORMATS} />
+        <span className="fr-admin-row__label">{tr('format')}</span>
+        <Select<WebhookFormat> aria-label={tr('format')} value={d.format} onChange={(format) => setD({ ...d, format })} options={FORMATS} />
       </label>
       <fieldset className="fr-admin-hooks__events">
-        <legend className="fr-admin-row__label">Events</legend>
+        <legend className="fr-admin-row__label">{tr('events')}</legend>
         {GROUPS.map((g) => (
           <div key={g.label} className="fr-admin-hooks__group">
             <span className="fr-admin-hooks__group-label">{g.label}</span>
@@ -140,11 +139,9 @@ function EndpointForm({
         ))}
       </fieldset>
       <div className="fr-admin-hooks__form-actions">
-        <Button variant="ghost" type="button" onClick={onCancel}>
-          Cancel
-        </Button>
+        <Button variant="ghost" type="button" onClick={onCancel}>{tr('cancel')}</Button>
         <Button variant="primary" type="submit" loading={busy} disabled={!d.events.length || (!editing && !d.url.trim())}>
-          {editing ? 'Save' : 'Add webhook'}
+          {editing ? tr('save') : tr('addWebhook')}
         </Button>
       </div>
     </form>
@@ -159,7 +156,7 @@ function DeliveryLog({ workspaceId, endpoint }: { workspaceId: string; endpoint:
   const load = useCallback(() => {
     api.webhookDeliveries(workspaceId, endpoint.id).then(
       (r) => setList(r.deliveries),
-      (e) => notify(errorText(e, 'Could not load the delivery log'), 'error'),
+      (e) => notify(errorText(e, tr('couldNotLoadTheDelivery')), 'error'),
     );
   }, [workspaceId, endpoint.id, notify]);
   useEffect(() => {
@@ -171,27 +168,27 @@ function DeliveryLog({ workspaceId, endpoint }: { workspaceId: string; endpoint:
   const redeliver = async (d: WebhookDeliveryInfo) => {
     try {
       await api.redeliverWebhook(workspaceId, endpoint.id, d.id);
-      notify('Sending it again', 'success');
+      notify(tr('sendingItAgain'), 'success');
       load();
     } catch (e) {
-      notify(errorText(e, 'Could not send it again'), 'error');
+      notify(errorText(e, tr('couldNotSendItAgain')), 'error');
     }
   };
   if (!list) return <Spinner size={18} />;
-  if (!list.length) return <p className="fr-admin__muted fr-admin-hooks__empty-log">Nothing sent yet. Send a test, or wait for the next event.</p>;
+  if (!list.length) return <p className="fr-admin__muted fr-admin-hooks__empty-log">{tr('nothingSentYetSendA')}</p>;
   const now = Date.now();
   return (
     <div className="fr-admin-table-wrap">
-      <table className="fr-admin-table fr-admin-hooks__log" aria-label="Delivery log">
+      <table className="fr-admin-table fr-admin-hooks__log" aria-label={tr('deliveryLog')}>
         <thead>
           <tr>
-            <th>Event</th>
-            <th>Status</th>
-            <th>Attempts</th>
-            <th>Answer</th>
-            <th>When</th>
+            <th>{tr('event')}</th>
+            <th>{tr('status')}</th>
+            <th>{tr('attempts')}</th>
+            <th>{tr('answer')}</th>
+            <th>{tr('when')}</th>
             <th>
-              <span className="fr-admin__sr">Actions</span>
+              <span className="fr-admin__sr">{tr('actions')}</span>
             </th>
           </tr>
         </thead>
@@ -199,25 +196,23 @@ function DeliveryLog({ workspaceId, endpoint }: { workspaceId: string; endpoint:
           {list.map((d) => (
             <tr key={d.id} data-testid="webhook-delivery">
               <td>
-                {d.eventType === 'ping' ? <span>Test</span> : <code>{d.eventType}</code>}
+                {d.eventType === 'ping' ? <span>{tr('test')}</span> : <code>{d.eventType}</code>}
                 {d.eventType === 'ping' ? null : <div className="fr-admin__muted fr-admin-hooks__id">{d.eventId}</div>}
               </td>
               <td>
-                <span className={`fr-admin-pill ${STATUS_PILL[d.status]}`}>{d.status === 'delivered' ? 'Delivered' : d.status === 'failed' ? 'Failed' : 'Retrying'}</span>
-                {d.status === 'pending' && d.nextAttemptAt ? <div className="fr-admin__muted fr-admin-hooks__id">next {d.nextAttemptAt <= now ? 'now' : `in ${Math.ceil((d.nextAttemptAt - now) / 1000)} s`}</div> : null}
+                <span className={`fr-admin-pill ${STATUS_PILL[d.status]}`}>{d.status === 'delivered' ? tr('delivered') : d.status === 'failed' ? tr('failed') : tr('retrying')}</span>
+                {d.status === 'pending' && d.nextAttemptAt ? <div className="fr-admin__muted fr-admin-hooks__id">{tr('next')}{' '}{d.nextAttemptAt <= now ? 'now' : tr('inCeilS', { ceil: Math.ceil((d.nextAttemptAt - now) / 1000) })}</div> : null}
               </td>
               <td>{d.attempts}</td>
               <td className="fr-admin-hooks__answer">
                 {d.responseStatus !== null ? <code>{d.responseStatus}</code> : null}
                 {d.error ? <span className="fr-admin__muted"> {d.error}</span> : null}
-                {d.durationMs !== null && d.status === 'delivered' ? <span className="fr-admin__muted"> · {d.durationMs} ms</span> : null}
+                {d.durationMs !== null && d.status === 'delivered' ? <span className="fr-admin__muted">{' '}{tr('durationmsMs', { durationMs: d.durationMs })}</span> : null}
               </td>
               <td className="fr-admin__muted fr-admin__nowrap">{relativeTime(d.deliveredAt ?? d.createdAt, now)}</td>
               <td className="fr-admin-table__actions">
                 {d.status !== 'delivered' ? (
-                  <Button size="sm" variant="ghost" icon={RotateCw} onClick={() => void redeliver(d)}>
-                    Send again
-                  </Button>
+                  <Button size="sm" variant="ghost" icon={RotateCw} onClick={() => void redeliver(d)}>{tr('sendAgain')}</Button>
                 ) : null}
               </td>
             </tr>
@@ -249,7 +244,7 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
   const load = useCallback(() => {
     api.webhooks(workspace.id).then(
       (r) => setEndpoints(r.endpoints),
-      (e) => notify(errorText(e, 'Could not load webhooks'), 'error'),
+      (e) => notify(errorText(e, tr('couldNotLoadWebhooks')), 'error'),
     );
   }, [workspace.id, notify]);
   useEffect(load, [load]);
@@ -269,7 +264,7 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
           ...((d.scope.trim() ? '' : d.projectId) !== (form.edit.projectId ?? '') ? { projectId: (d.scope.trim() ? '' : d.projectId) || null } : {}),
         });
         replace(endpoint);
-        notify('Webhook saved', 'success');
+        notify(tr('webhookSaved'), 'success');
       } else {
         const r = await api.createWebhook(workspace.id, { url: d.url.trim(), description: d.description, format: d.format, events: d.events, ...(d.scope.trim() ? { scope: d.scope.trim() } : d.projectId ? { projectId: d.projectId } : {}) });
         setEndpoints((list) => [...(list ?? []), r.endpoint]);
@@ -277,7 +272,7 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
       }
       setForm(null);
     } catch (e) {
-      notify(errorText(e, 'Could not save the webhook'), 'error');
+      notify(errorText(e, tr('couldNotSaveTheWebhook')), 'error');
     } finally {
       setBusy(false);
     }
@@ -285,18 +280,18 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
   const setEnabled = async (e: WebhookEndpointInfo, enabled: boolean) => {
     try {
       replace((await api.updateWebhook(workspace.id, e.id, { enabled })).endpoint);
-      notify(enabled ? 'Webhook on: waiting deliveries are sent again' : 'Webhook off: nothing is sent until you turn it back on', 'success');
+      notify(enabled ? tr('webhookOnWaitingDeliveriesAre') : tr('webhookOffNothingIsSent'), 'success');
     } catch (err) {
-      notify(errorText(err, 'Could not change the webhook'), 'error');
+      notify(errorText(err, tr('couldNotChangeTheWebhook')), 'error');
     }
   };
   const test = async (e: WebhookEndpointInfo) => {
     try {
       await api.testWebhook(workspace.id, e.id);
-      notify('Test sent — see the delivery log', 'success');
+      notify(tr('testSentSeeTheDelivery'), 'success');
       setLog(e.id);
     } catch (err) {
-      notify(errorText(err, 'Could not send a test'), 'error');
+      notify(errorText(err, tr('couldNotSendATest')), 'error');
     }
   };
   const rotate = async (e: WebhookEndpointInfo) => {
@@ -305,7 +300,7 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
       replace(r.endpoint);
       setSecret({ value: r.secret, rotated: true });
     } catch (err) {
-      notify(errorText(err, 'Could not rotate the secret'), 'error');
+      notify(errorText(err, tr('couldNotRotateTheSecret')), 'error');
     }
   };
   const remove = async () => {
@@ -313,9 +308,9 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
     try {
       await api.deleteWebhook(workspace.id, deleting.id);
       setEndpoints((list) => (list ?? []).filter((x) => x.id !== deleting.id));
-      notify('Webhook removed', 'success');
+      notify(tr('webhookRemoved'), 'success');
     } catch (err) {
-      notify(errorText(err, 'Could not remove the webhook'), 'error');
+      notify(errorText(err, tr('couldNotRemoveTheWebhook')), 'error');
     } finally {
       setDeleting(null);
     }
@@ -326,22 +321,14 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <section aria-labelledby="admin-hooks-title">
       <div className="fr-admin-hooks__head">
-        <h1 id="admin-hooks-title" className="fr-admin__title">
-          Webhooks
-        </h1>
-        <Button variant="primary" icon={Plus} onClick={() => setForm({ edit: null })}>
-          Add webhook
-        </Button>
+        <h1 id="admin-hooks-title" className="fr-admin__title">{tr('webhooks')}</h1>
+        <Button variant="primary" icon={Plus} onClick={() => setForm({ edit: null })}>{tr('addWebhook')}</Button>
       </div>
-      <p className="fr-admin__intro">
-        Send what happens on this workspace’s boards to other tools: your own service (signed JSON) or a Slack or Microsoft Teams channel. Only
-        boards everyone in the workspace can open are ever sent — never personal boards, private projects, private drafts or hidden frames.
-        Failed deliveries are retried with growing gaps for a few hours; a webhook that keeps failing is turned off and its creator is emailed.
-      </p>
+      <p className="fr-admin__intro">{tr('sendWhatHappensOnThis')}</p>
 
       {endpoints.length === 0 ? (
         <div className="fr-admin-card fr-admin-hooks__none">
-          <p className="fr-admin__muted">No webhooks yet.</p>
+          <p className="fr-admin__muted">{tr('noWebhooksYet')}</p>
         </div>
       ) : (
         endpoints.map((e) => (
@@ -350,16 +337,15 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
               <div className="fr-admin-hooks__what">
                 <code className="fr-admin-hooks__url">{e.url}</code>
                 <span className="fr-admin-pill fr-admin-pill--ok">{FORMAT_LABEL[e.format]}</span>
-                {!e.enabled ? <span className="fr-admin-pill fr-admin-pill--off">{e.disabledReason ? 'Turned off' : 'Off'}</span> : null}
+                {!e.enabled ? <span className="fr-admin-pill fr-admin-pill--off">{e.disabledReason ? tr('turnedOff') : tr('off')}</span> : null}
                 {e.description ? <div className="fr-admin-hooks__desc">{e.description}</div> : null}
                 {e.scope ? (
-                  <div className="fr-admin-hooks__desc">
-                    Only {e.scope.itemId ? 'one item on ' : ''}“{e.scope.boardTitle ?? 'a board that is gone'}”
+                  <div className="fr-admin-hooks__desc">{tr('only')}{' '}{e.scope.itemId ? tr('oneItemOn') : ''}“{e.scope.boardTitle ?? tr('aBoardThatIsGone')}”
                   </div>
                 ) : null}
-                {e.projectId ? <div className="fr-admin-hooks__desc">Only boards in “{projectName(e.projectId)}”</div> : null}
+                {e.projectId ? <div className="fr-admin-hooks__desc">{tr('onlyBoardsInProjectname', { projectName: projectName(e.projectId) })}</div> : null}
               </div>
-              <Toggle aria-label={`Send to ${e.url}`} checked={e.enabled} onChange={(on) => void setEnabled(e, on)} />
+              <Toggle aria-label={tr('sendToUrl', { url: e.url })} checked={e.enabled} onChange={(on) => void setEnabled(e, on)} />
             </div>
             {e.disabledReason ? <p className="fr-admin-hooks__warning">{e.disabledReason}. Fix the receiver, then turn it back on.</p> : null}
             <div className="fr-admin-hooks__events-list">
@@ -367,38 +353,23 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
                 <code key={t}>{t}</code>
               ))}
             </div>
-            <div className="fr-admin-hooks__meta fr-admin__muted">
-              Added {relativeTime(e.createdAt, now)}
-              {e.createdBy ? ` by ${e.createdBy.name}` : ''} · {e.lastDeliveryAt ? `last delivered ${relativeTime(e.lastDeliveryAt, now)}` : 'nothing delivered yet'}
-              {e.consecutiveFailures > 0 && e.enabled ? ` · ${e.consecutiveFailures} failed in a row` : ''}
+            <div className="fr-admin-hooks__meta fr-admin__muted">{tr('addedValue', { value: relativeTime(e.createdAt, now) })}{e.createdBy ? tr('byName', { name: e.createdBy.name }) : ''} · {e.lastDeliveryAt ? tr('lastDeliveredValue', { value: relativeTime(e.lastDeliveryAt, now) }) : tr('nothingDeliveredYet2')}
+              {e.consecutiveFailures > 0 && e.enabled ? tr('consecutivefailuresFailedInARow', { consecutiveFailures: e.consecutiveFailures }) : ''}
             </div>
             <div className="fr-admin-hooks__actions">
-              <Button size="sm" variant="secondary" icon={Send} onClick={() => void test(e)} disabled={!e.enabled}>
-                Send test
-              </Button>
-              <Button size="sm" variant="ghost" icon={ScrollText} onClick={() => setLog(log === e.id ? null : e.id)} aria-expanded={log === e.id}>
-                Delivery log
-              </Button>
-              <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ edit: e })}>
-                Edit
-              </Button>
-              <Button size="sm" variant="ghost" icon={RefreshCw} onClick={() => void rotate(e)}>
-                Rotate secret
-              </Button>
-              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setDeleting(e)}>
-                Remove
-              </Button>
+              <Button size="sm" variant="secondary" icon={Send} onClick={() => void test(e)} disabled={!e.enabled}>{tr('sendTest')}</Button>
+              <Button size="sm" variant="ghost" icon={ScrollText} onClick={() => setLog(log === e.id ? null : e.id)} aria-expanded={log === e.id}>{tr('deliveryLog')}</Button>
+              <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ edit: e })}>{tr('edit')}</Button>
+              <Button size="sm" variant="ghost" icon={RefreshCw} onClick={() => void rotate(e)}>{tr('rotateSecret')}</Button>
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setDeleting(e)}>{tr('remove')}</Button>
             </div>
             {log === e.id ? <DeliveryLog workspaceId={workspace.id} endpoint={e} /> : null}
           </div>
         ))
       )}
-      <p className="fr-admin__muted">
-        Each JSON delivery carries a <code>Freero-Signature</code> header: <code>t=&lt;unix seconds&gt;,v1=&lt;HMAC-SHA256 of “t.body”&gt;</code> with the
-        webhook’s secret. Check it, and refuse old timestamps.
-      </p>
+      <p className="fr-admin__muted">{tr('eachJsonDeliveryCarriesA')}{' '}<code>Freero-Signature</code>{' '}{tr('header')}{' '}<code>t=&lt;unix seconds&gt;,v1=&lt;HMAC-SHA256 of “t.body”&gt;</code>{' '}{tr('withTheWebhookSSecret')}</p>
 
-      <Modal open={form !== null} onClose={() => setForm(null)} title={form?.edit ? 'Edit webhook' : 'Add a webhook'} width={620}>
+      <Modal open={form !== null} onClose={() => setForm(null)} title={form?.edit ? tr('editWebhook') : tr('addAWebhook')} width={620}>
         {form ? (
           <EndpointForm
             key={form.edit?.id ?? 'new'}
@@ -419,37 +390,29 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
       <Modal
         open={secret !== null}
         onClose={() => setSecret(null)}
-        title={secret?.rotated ? 'The new signing secret' : 'Webhook added'}
+        title={secret?.rotated ? tr('theNewSigningSecret') : tr('webhookAdded')}
         width={520}
         footer={
-          <Button variant="primary" onClick={() => setSecret(null)}>
-            Done
-          </Button>
+          <Button variant="primary" onClick={() => setSecret(null)}>{tr('done')}</Button>
         }
       >
         <p className="fr-admin-hooks__modal-text">
-          {secret?.rotated ? 'Deliveries are signed with this secret from now on. ' : ''}Copy the signing secret now — it won’t be shown again. Use it to
-          check that deliveries come from Freero.
-        </p>
+          {secret?.rotated ? tr('deliveriesAreSignedWithThis') : ''}{tr('copyTheSigningSecretNow2')}</p>
         {secret ? <CopySecret value={secret.value} /> : null}
       </Modal>
 
       <Modal
         open={deleting !== null}
         onClose={() => setDeleting(null)}
-        title="Remove this webhook?"
+        title={tr('removeThisWebhook')}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setDeleting(null)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={() => void remove()}>
-              Remove
-            </Button>
+            <Button variant="ghost" onClick={() => setDeleting(null)}>{tr('cancel')}</Button>
+            <Button variant="danger" onClick={() => void remove()}>{tr('remove')}</Button>
           </>
         }
       >
-        <p className="fr-admin-hooks__modal-text">Nothing more is sent to {deleting?.url}, and its delivery log goes with it.</p>
+        <p className="fr-admin-hooks__modal-text">{tr('nothingMoreIsSentTo', { url: deleting?.url })}</p>
       </Modal>
     </section>
   );

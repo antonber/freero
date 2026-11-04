@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "doc",
+    "thatItemIsnTOn",
+    "thisKindOfLinkHas",
+    "openYouMayBeAble",
+    "open",
+    "openLink",
+    "openTitle",
+    "smartLink",
+    "smartLinks"
+  ],
+  "doc": "מסמך",
+  "thatItemIsnTOn": "הפריט הזה כבר לא נמצא בלוח, או שהוא מוסתר.",
+  "thisKindOfLinkHas": "לסוג הקישור הזה עדיין אין דף לפתיחה.",
+  "openYouMayBeAble": "פתיחה (ייתכן שאפשר לבקש גישה)",
+  "open": "פתיחה",
+  "openLink": "פתיחת הקישור",
+  "openTitle": "פתיחת {title}",
+  "smartLink": "קישור חכם",
+  "smartLinks": "קישורים חכמים"
+}

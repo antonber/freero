@@ -20,6 +20,7 @@ import { BACK_COLORS, BACK_PART, DEFAULT_ACCENT, STATUSES } from './lib/constant
 import { formatDue, isOverdue } from './lib/actions';
 import { usePerson } from './lib/people';
 import { Chips } from './lib/Chips';
+import { t as tr } from './messages';
 import './card.css';
 
 /** Below this zoom the text is unreadable: draw placeholder bars instead. */
@@ -28,7 +29,7 @@ const MAX_TAGS = 2;
 
 function Assignee({ id }: { id: string }) {
   const person = usePerson(id);
-  if (!person) return <span className="fr-card__unknown" title="Someone who no longer has access to this board">?</span>;
+  if (!person) return <span className="fr-card__unknown" title={tr('someoneWhoNoLongerHas')}>?</span>;
   return <Avatar name={person.name} color={person.color} src={person.avatarUrl} size={22} title={person.name} />;
 }
 
@@ -87,11 +88,11 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
               color="var(--fr-ink)"
               padding={0}
               style={{ fontWeight: 600, whiteSpace: 'nowrap' }}
-              placeholder="Card title"
+              placeholder={tr('cardTitle')}
             />
           ) : null}
         </div>
-        {status?.value === 'done' && <Check className="fr-card__bar-done" size={12} strokeWidth={3} aria-label="Done" />}
+        {status?.value === 'done' && <Check className="fr-card__bar-done" size={12} strokeWidth={3} aria-label={tr('done')} />}
         {element.assigneeId && element.w >= 72 && zoom >= LOD_ZOOM && <Assignee id={element.assigneeId} />}
       </div>
     );
@@ -127,7 +128,7 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
               color="var(--fr-ink)"
               padding={0}
               style={{ fontWeight: TITLE.weight, lineHeight: `${TITLE.line}px` }}
-              placeholder="Card title"
+              placeholder={tr('cardTitle')}
             />
           </div>
           {desc && (
@@ -154,7 +155,7 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
                 </span>
               )}
               {element.dueDate && (
-                <span className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? 'Overdue' : 'Due date'}>
+                <span className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? tr('overdue') : tr('dueDate')}>
                   <CalendarDays size={12} strokeWidth={2.2} />
                   {formatDue(element.dueDate, now)}
                 </span>
@@ -162,7 +163,7 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
               {!!element.tags?.length && <TagChips ids={element.tags} />}
               <span className="fr-card__spacer" />
               {element.estimate && (
-                <span className="fr-card__estimate" title="Estimate">
+                <span className="fr-card__estimate" title={tr('estimate')}>
                   {element.estimate}
                 </span>
               )}
@@ -204,7 +205,7 @@ function FlipCard({ element, front }: { element: CardElement; front: ReactNode }
           color="var(--fr-ink)"
           padding={0}
           style={{ fontWeight: 600, lineHeight: 1.3 }}
-          placeholder="Back of the card"
+          placeholder={tr('backOfTheCard')}
         />
       </div>
     </div>
@@ -223,8 +224,8 @@ function FlipCard({ element, front }: { element: CardElement; front: ReactNode }
           type="button"
           className="fr-card-flip__turn"
           data-fr-interactive
-          aria-label={flipped ? 'Show the front' : 'Show the back'}
-          title={flipped ? 'Show the front' : 'Show the back'}
+          aria-label={flipped ? tr('showTheFront') : tr('showTheBack')}
+          title={flipped ? tr('showTheFront') : tr('showTheBack')}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => editor.update<CardElement>(element.id, { flipped: !flipped })}
         >
@@ -257,7 +258,7 @@ function paintCard(el: CardElement, p: LowDetailPaint) {
 
 export default defineElement({
   type: 'card',
-  label: { one: 'Card', many: 'Cards' },
+  label: { one: tr('card'), many: tr('cards') },
   icon: ListTodoIcon,
   resize: 'width-only',
   // As a timeline bar a card may be one day long.

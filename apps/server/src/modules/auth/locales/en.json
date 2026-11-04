@@ -1,0 +1,21 @@
+{
+  "verify.subject": "Confirm your email for Freero",
+  "verify.title": "Welcome to Freero, {name}",
+  "verify.body": "Confirm that this is your email address so you can invite people and share boards.",
+  "verify.action": "Confirm email",
+  "verify.outro": "The link works once and expires in 48 hours. If you did not create a Freero account, ignore this message.",
+  "reset.subject": "Reset your Freero password",
+  "reset.title": "Reset your password",
+  "reset.body": "Someone (hopefully you) asked to reset the password of the Freero account for {email}.",
+  "reset.action": "Choose a new password",
+  "reset.outro": "The link works once and expires in 30 minutes. If you did not ask for this, ignore this message: your password stays the same.",
+  "changeEmail.subject": "Confirm your new Freero email address",
+  "changeEmail.title": "Confirm your new email address",
+  "changeEmail.body": "{name} asked to use this address for their Freero account.",
+  "changeEmail.action": "Use this address",
+  "changeEmail.outro": "The link works once and expires in 24 hours. If this was not you, ignore this message.",
+  "changing.subject": "Your Freero email address is being changed",
+  "changing.title": "Email change requested",
+  "changing.sent": "We sent a confirmation link to {email}. Your account keeps using {current} until that link is opened.",
+  "changing.notYou": "If this was not you, change your password now: it also signs out every other device."
+}

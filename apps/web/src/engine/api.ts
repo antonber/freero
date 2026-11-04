@@ -132,6 +132,13 @@ export interface HostColorTheme {
   set(theme: ColorThemeChoice): void;
 }
 
+/** [#143] One file of a comment message: the thread, the message and its place in the message's list. */
+export interface CommentFileRef {
+  threadId: string;
+  messageId: string;
+  index: number;
+}
+
 export interface Host {
   user: HostUser;
   board: {
@@ -238,6 +245,16 @@ export interface Host {
    * allowed, removed by moderators, gone). Absent where nothing can be downloaded.
    */
   downloadFile?(item: { id: string; src: string; name: string }): Promise<void>;
+  /**
+   * [additive, #143] Files on comment messages (uploaded with `uploadAttachment`): served only from
+   * THIS board to someone who can read the message. `imageUrl`: a same-origin URL that shows an
+   * image attachment inline (any role); `download` saves a file under its name (the downloads
+   * policy applies, audited). Absent where comment files can't be fetched (offline sandbox, embeds).
+   */
+  commentFile?: {
+    imageUrl(ref: CommentFileRef): string;
+    download(ref: CommentFileRef & { name: string }): Promise<void>;
+  };
   renameBoard(title: string): Promise<void>;
   /**
    * [additive, KAI-137] Saves this board as a `.freero` backup file: built by the SERVER from what

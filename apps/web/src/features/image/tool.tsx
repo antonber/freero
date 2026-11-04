@@ -3,9 +3,10 @@ import { defineTool } from '@engine';
 import { pickImageFiles } from './lib/files';
 import { insertImageFiles } from './lib/insert';
 
+import { t } from './messages';
 export default defineTool({
   id: 'image',
-  label: 'Upload image',
+  label: t('uploadImage'),
   icon: ImageUp,
   order: 80,
   placement: 'main',

@@ -4,6 +4,7 @@
 // one CSV column (Stage) and a typed field from each other one. Pure: no editor, no DOM.
 import { fieldNameProblem, inferFieldType, parseDateText, type CardStatus, type FieldType, type ItemInput } from '@freero/shared';
 
+import { t as tr } from '../messages';
 /** Splits CSV/TSV text into rows of cells (quotes, doubled quotes, newlines inside quotes, CRLF). */
 export function parseDelimited(text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
@@ -83,7 +84,7 @@ export interface ItemRow {
 /** The column a flip card's back goes in (only when some exported card has one). */
 export const BACK_HEADER = 'Back';
 
-export const EXPORT_HEADER = ['Type', 'Text', 'Description', 'Color', 'Tags', 'Status', 'Assignee', 'Due date', 'Frame'];
+export const EXPORT_HEADER = ['Type', 'Text', 'Description', 'Color', 'Tags', 'Status', 'Assignee', tr('dueDate'), 'Frame'];
 /** Tags inside one cell. */
 export const TAG_SEPARATOR = '; ';
 
@@ -119,14 +120,14 @@ export function exportRows(items: ItemRow[]): string[][] {
 /** The fields an imported column can fill. */
 export type Field = 'text' | 'description' | 'tags' | 'status' | 'assignee' | 'due' | 'color' | 'type';
 export const FIELDS: ReadonlyArray<{ field: Field; label: string; aliases: string[] }> = [
-  { field: 'text', label: 'Text / title', aliases: ['text', 'title', 'name', 'summary', 'idea', 'note', 'task'] },
-  { field: 'description', label: 'Description', aliases: ['description', 'details', 'notes', 'body'] },
-  { field: 'tags', label: 'Tags', aliases: ['tags', 'tag', 'labels', 'label', 'category'] },
-  { field: 'status', label: 'Status', aliases: ['status', 'state', 'stage', 'column'] },
-  { field: 'assignee', label: 'Assignee', aliases: ['assignee', 'owner', 'assigned to', 'assigned', 'who'] },
-  { field: 'due', label: 'Due date', aliases: ['due date', 'due', 'deadline', 'date'] },
-  { field: 'color', label: 'Color', aliases: ['color', 'colour'] },
-  { field: 'type', label: 'Sticky or card', aliases: ['type', 'kind'] },
+  { field: 'text', label: tr('textTitle'), aliases: ['text', 'title', 'name', 'summary', 'idea', 'note', 'task'] },
+  { field: 'description', label: tr('description'), aliases: ['description', 'details', 'notes', 'body'] },
+  { field: 'tags', label: tr('tags'), aliases: ['tags', 'tag', 'labels', 'label', 'category'] },
+  { field: 'status', label: tr('status'), aliases: ['status', 'state', 'stage', 'column'] },
+  { field: 'assignee', label: tr('assignee'), aliases: ['assignee', 'owner', 'assigned to', 'assigned', 'who'] },
+  { field: 'due', label: tr('dueDate'), aliases: ['due date', 'due', 'deadline', 'date'] },
+  { field: 'color', label: tr('color'), aliases: ['color', 'colour'] },
+  { field: 'type', label: tr('stickyOrCard'), aliases: ['type', 'kind'] },
 ];
 
 export type Mapping = Partial<Record<Field, number>>;
@@ -253,7 +254,7 @@ export function fieldColumns(header: string[], body: string[][], mapping: Mappin
     const values = body.map((r) => unguard(r[i] ?? '').trim()).filter(Boolean);
     const problem = fieldNameProblem(taken, name);
     if (problem) return out.push({ column: i, name, type: 'skip', note: problem });
-    if (!values.length) return out.push({ column: i, name, type: 'skip', note: 'No values' });
+    if (!values.length) return out.push({ column: i, name, type: 'skip', note: tr('noValues') });
     const type = inferFieldType(values);
     taken.push({ id: String(i), name, type });
     out.push({ column: i, name, type });

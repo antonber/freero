@@ -5,6 +5,7 @@
 // and a file is fetched only when text in it is drawn. Each stack ends in system fonts that cover
 // Chinese, Japanese and Korean, so CJK text never falls back to boxes.
 import type { FontFamily } from '@freero/shared';
+import { t } from '../messages';
 import './fonts/fonts.css';
 
 const CJK_SANS = "'Hiragino Sans', 'PingFang SC', 'Microsoft YaHei', 'Malgun Gothic', 'Noto Sans CJK JP', 'Noto Sans JP', 'Noto Sans SC'";
@@ -29,21 +30,21 @@ const hand = (face: string) => `${face}, 'Comic Sans MS', ${CJK_SANS}, cursive`;
 
 /** In menu order: the familiar four first, then by group. Ids are stored on items: only ever add. */
 export const FONTS: Record<FontFamily, FontInfo> = {
-  sans: { label: 'Inter', group: 'Sans', stack: sans('Inter'), css: 'var(--fr-font)' },
-  serif: { label: 'Source Serif', group: 'Serif', stack: serif("'Source Serif 4'"), css: 'var(--fr-font-serif)' },
-  mono: { label: 'JetBrains Mono', group: 'Mono', stack: mono("'JetBrains Mono'"), css: 'var(--fr-font-mono)' },
-  hand: { label: 'Caveat', group: 'Handwritten', stack: hand('Caveat'), css: 'var(--fr-font-hand)' },
-  legible: { label: 'Atkinson Hyperlegible', group: 'Sans', stack: sans("'Atkinson Hyperlegible'"), css: '' },
-  rounded: { label: 'Nunito', group: 'Sans', stack: sans('Nunito'), css: '' },
-  geometric: { label: 'Montserrat', group: 'Sans', stack: sans('Montserrat'), css: '' },
-  grotesk: { label: 'Space Grotesk', group: 'Sans', stack: sans("'Space Grotesk'"), css: '' },
-  condensed: { label: 'Oswald', group: 'Sans', stack: sans('Oswald'), css: '' },
-  book: { label: 'Lora', group: 'Serif', stack: serif('Lora'), css: '' },
-  display: { label: 'Playfair Display', group: 'Serif', stack: serif("'Playfair Display'"), css: '' },
-  slab: { label: 'Bitter', group: 'Serif', stack: serif('Bitter'), css: '' },
-  typewriter: { label: 'Courier Prime', group: 'Mono', stack: mono("'Courier Prime'"), css: '' },
-  print: { label: 'Patrick Hand', group: 'Handwritten', stack: hand("'Patrick Hand'"), css: '' },
-  marker: { label: 'Permanent Marker', group: 'Handwritten', stack: hand("'Permanent Marker'"), css: '' },
+  sans: { label: t('inter'), group: 'Sans', stack: sans('Inter'), css: 'var(--fr-font)' },
+  serif: { label: t('sourceSerif'), group: 'Serif', stack: serif("'Source Serif 4'"), css: 'var(--fr-font-serif)' },
+  mono: { label: t('jetbrainsMono'), group: 'Mono', stack: mono("'JetBrains Mono'"), css: 'var(--fr-font-mono)' },
+  hand: { label: t('caveat'), group: 'Handwritten', stack: hand('Caveat'), css: 'var(--fr-font-hand)' },
+  legible: { label: t('atkinsonHyperlegible'), group: 'Sans', stack: sans("'Atkinson Hyperlegible'"), css: '' },
+  rounded: { label: t('nunito'), group: 'Sans', stack: sans('Nunito'), css: '' },
+  geometric: { label: t('montserrat'), group: 'Sans', stack: sans('Montserrat'), css: '' },
+  grotesk: { label: t('spaceGrotesk'), group: 'Sans', stack: sans("'Space Grotesk'"), css: '' },
+  condensed: { label: t('oswald'), group: 'Sans', stack: sans('Oswald'), css: '' },
+  book: { label: t('lora'), group: 'Serif', stack: serif('Lora'), css: '' },
+  display: { label: t('playfairDisplay'), group: 'Serif', stack: serif("'Playfair Display'"), css: '' },
+  slab: { label: t('bitter'), group: 'Serif', stack: serif('Bitter'), css: '' },
+  typewriter: { label: t('courierPrime'), group: 'Mono', stack: mono("'Courier Prime'"), css: '' },
+  print: { label: t('patrickHand'), group: 'Handwritten', stack: hand("'Patrick Hand'"), css: '' },
+  marker: { label: t('permanentMarker'), group: 'Handwritten', stack: hand("'Permanent Marker'"), css: '' },
 };
 for (const f of Object.values(FONTS)) if (!f.css) f.css = f.stack;
 

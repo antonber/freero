@@ -10,7 +10,8 @@ import { CAPTIONS_ID } from './ids';
 import { updateWalkthrough, usePlayer } from './playback';
 import { parseCaptionLines } from './timeline';
 
-const message = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong');
+import { t } from '../messages';
+const message = (e: unknown) => (e instanceof Error && e.message ? e.message : t('somethingWentWrong'));
 const asLines = (w: Walkthrough) => (w.transcript ?? []).map((c) => `${formatWalkthroughTime(c.start)} ${c.text}`).join('\n');
 
 export function CaptionsDialog({ editor, props }: PanelProps) {
@@ -30,7 +31,7 @@ export function CaptionsDialog({ editor, props }: PanelProps) {
         (x) => (setW(x), setText(asLines(x))),
         (e: unknown) => editor.host.notify(message(e), 'error'),
       );
-    host.captionsStatus().then(setAi, () => setAi({ available: false, reason: 'AI captions aren’t available here.' }));
+    host.captionsStatus().then(setAi, () => setAi({ available: false, reason: t('aiCaptionsArenTAvailable') }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -43,7 +44,7 @@ export function CaptionsDialog({ editor, props }: PanelProps) {
     if (!host || !w) return;
     setBusy('save');
     try {
-      done(await host.setCaptions(w.id, parseCaptionLines(text, w.durationMs)), text.trim() ? 'Captions saved' : 'Captions removed');
+      done(await host.setCaptions(w.id, parseCaptionLines(text, w.durationMs)), text.trim() ? t('captionsSaved') : t('captionsRemoved'));
     } catch (e) {
       editor.host.notify(message(e), 'error');
     } finally {
@@ -54,7 +55,7 @@ export function CaptionsDialog({ editor, props }: PanelProps) {
     if (!host || !w) return;
     setBusy('ai');
     try {
-      done(await host.transcribe(w.id), 'Captions made from the recording');
+      done(await host.transcribe(w.id), t('captionsMadeFromTheRecording'));
     } catch (e) {
       editor.host.notify(message(e), 'error');
     } finally {
@@ -67,16 +68,12 @@ export function CaptionsDialog({ editor, props }: PanelProps) {
       open
       onClose={close}
       width={520}
-      title="Captions"
-      description="Captions show while people watch, for anyone who can’t or won’t listen."
+      title={t('captions')}
+      description={t('captionsShowWhilePeopleWatch')}
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <Button variant="primary" loading={busy === 'save'} disabled={!w || busy !== null} onClick={() => void save()}>
-            Save captions
-          </Button>
+          <Button variant="ghost" onClick={close}>{t('cancel')}</Button>
+          <Button variant="primary" loading={busy === 'save'} disabled={!w || busy !== null} onClick={() => void save()}>{t('saveCaptions')}</Button>
         </>
       }
     >
@@ -89,20 +86,18 @@ export function CaptionsDialog({ editor, props }: PanelProps) {
               <Spinner size={16} />
             ) : ai.available ? (
               <>
-                <Button size="sm" icon={Sparkles} loading={busy === 'ai'} disabled={busy !== null} onClick={() => void transcribe()}>
-                  Make captions with AI
-                </Button>
-                <span>The recording is sent to this board’s AI provider, and nowhere else.</span>
+                <Button size="sm" icon={Sparkles} loading={busy === 'ai'} disabled={busy !== null} onClick={() => void transcribe()}>{t('makeCaptionsWithAi')}</Button>
+                <span>{t('theRecordingIsSentTo')}</span>
               </>
             ) : (
-              <span>AI captions aren’t available: {ai.reason}</span>
+              <span>{t('aiCaptionsArenTAvailable2', { reason: ai.reason })}</span>
             )}
           </section>
           <TextArea
-            label="Type or paste captions, one per line, starting with when it’s said"
+            label={t('typeOrPasteCaptionsOne')}
             rows={8}
             value={text}
-            placeholder={'0:00 Welcome to the roadmap\n0:12 First, what we shipped'}
+            placeholder={t('n000WelcomeToThe')}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.stopPropagation()}
           />

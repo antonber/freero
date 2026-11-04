@@ -7,6 +7,7 @@ import { AI_PROVIDER_LABELS, type AiAccess, type AiProviderKind, type WorkspaceA
 import { Button, Input, Select, Spinner, Toggle, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 
+import { t } from './messages';
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : e instanceof ApiError && e.status === 502 ? e.message : fallback);
 
 function Row({ label, hint, children }: { label: string; hint: ReactNode; children: ReactNode }) {
@@ -22,13 +23,13 @@ function Row({ label, hint, children }: { label: string; hint: ReactNode; childr
 }
 
 const ACCESS_OPTIONS: SelectOption<AiAccess>[] = [
-  { value: 'members', label: 'Members (not guests)' },
-  { value: 'admins', label: 'Owners and admins' },
-  { value: 'everyone', label: 'Everyone who can edit' },
+  { value: 'members', label: t('membersNotGuests') },
+  { value: 'admins', label: t('ownersAndAdmins') },
+  { value: 'everyone', label: t('everyoneWhoCanEdit') },
 ];
 const BUDGETS = [null, 100_000, 500_000, 1_000_000, 5_000_000, 20_000_000];
 const tokens = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${+(n / 1000).toFixed(1)}k` : String(n));
-const budgetLabel = (n: number | null) => (n === null ? 'No budget' : `${tokens(n)} tokens`);
+const budgetLabel = (n: number | null) => (n === null ? t('noBudget') : `${tokens(n)} tokens`);
 
 /** Whether this server offers AI at all (the tab shows only then). */
 export async function aiOffered(workspaceId: string): Promise<boolean> {
@@ -56,7 +57,7 @@ export function AdminAi({ workspace }: { workspace: WorkspaceSummary }) {
   };
 
   useEffect(() => {
-    api.workspaceAi(workspace.id).then(show, (e) => notify(errorText(e, 'Could not load the AI settings'), 'error'));
+    api.workspaceAi(workspace.id).then(show, (e) => notify(errorText(e, t('couldNotLoadTheAi')), 'error'));
   }, [workspace.id, notify]);
 
   const patch = async (p: WorkspaceAiPatch, done: string, what = 'save') => {
@@ -65,7 +66,7 @@ export function AdminAi({ workspace }: { workspace: WorkspaceSummary }) {
       show(await api.updateWorkspaceAi(workspace.id, p));
       notify(done, 'success');
     } catch (e) {
-      notify(errorText(e, 'Could not save the AI settings'), 'error');
+      notify(errorText(e, t('couldNotSaveTheAi')), 'error');
     } finally {
       setBusy(null);
     }
@@ -75,9 +76,9 @@ export function AdminAi({ workspace }: { workspace: WorkspaceSummary }) {
     setBusy('test');
     try {
       const r = await api.testWorkspaceAi(workspace.id);
-      notify(`It works: ${r.model} answered.`, 'success');
+      notify(t('itWorksModelAnswered', { model: r.model }), 'success');
     } catch (e) {
-      notify(errorText(e, 'The connection test failed'), 'error');
+      notify(errorText(e, t('theConnectionTestFailed')), 'error');
     } finally {
       setBusy(null);
     }
@@ -92,12 +93,12 @@ export function AdminAi({ workspace }: { workspace: WorkspaceSummary }) {
     e.preventDefault();
     void patch(
       { source: 'workspace', provider, baseUrl: baseUrl.trim() || null, model: model.trim() || null, ...(key.trim() ? { apiKey: key.trim() } : {}) },
-      'Provider saved',
+      t('providerSaved'),
     );
   };
   const sourceOptions: SelectOption<'instance' | 'workspace'>[] = [
-    ...(canInstance ? [{ value: 'instance' as const, label: 'This server’s provider' }] : []),
-    ...(canOwn ? [{ value: 'workspace' as const, label: 'Our own provider' }] : []),
+    ...(canInstance ? [{ value: 'instance' as const, label: t('thisServerSProvider') }] : []),
+    ...(canOwn ? [{ value: 'workspace' as const, label: t('ourOwnProvider') }] : []),
   ];
   const budgetOptions: SelectOption<string>[] = [...BUDGETS, ...(BUDGETS.includes(s.monthlyTokenBudget) ? [] : [s.monthlyTokenBudget])].map((b) => ({
     value: b === null ? 'none' : String(b),
@@ -112,103 +113,91 @@ export function AdminAi({ workspace }: { workspace: WorkspaceSummary }) {
 
       <div className="fr-admin-card">
         <Row
-          label="AI on this workspace’s boards"
-          hint="Generate ideas, cluster notes, summarise and draw diagrams. People preview every result before it’s added to a board."
+          label={t('aiOnThisWorkspaceS')}
+          hint={t('generateIdeasClusterNotesSummarise')}
         >
           <Toggle
-            aria-label="AI on this workspace’s boards"
+            aria-label={t('aiOnThisWorkspaceS')}
             checked={s.enabled}
             disabled={busy !== null}
-            onChange={(on) => void patch({ enabled: on }, on ? 'AI is on for this workspace' : 'AI is off for this workspace')}
+            onChange={(on) => void patch({ enabled: on }, on ? t('aiIsOnForThis') : t('aiIsOffForThis'))}
           />
         </Row>
-        <Row label="Who may use it" hint="Besides being able to edit the board.">
-          <Select<AiAccess> aria-label="Who may use AI" options={ACCESS_OPTIONS} value={s.access} onChange={(v) => void patch({ access: v }, 'Saved')} width={230} />
+        <Row label={t('whoMayUseIt')} hint={t('besidesBeingAbleToEdit')}>
+          <Select<AiAccess> aria-label={t('whoMayUseAi')} options={ACCESS_OPTIONS} value={s.access} onChange={(v) => void patch({ access: v }, 'Saved')} width={230} />
         </Row>
-        <Row label="Monthly budget" hint="Tokens (prompt + answer) everyone together may use per calendar month (UTC). AI stops for the rest of the month when it’s used up.">
+        <Row label={t('monthlyBudget')} hint={t('tokensPromptAnswerEveryoneTogether')}>
           <Select<string>
-            aria-label="Monthly budget"
+            aria-label={t('monthlyBudget')}
             options={budgetOptions}
             value={s.monthlyTokenBudget === null ? 'none' : String(s.monthlyTokenBudget)}
-            onChange={(v) => void patch({ monthlyTokenBudget: v === 'none' ? null : Number(v) }, 'Budget saved')}
+            onChange={(v) => void patch({ monthlyTokenBudget: v === 'none' ? null : Number(v) }, t('budgetSaved'))}
             width={230}
           />
         </Row>
-        <p className="fr-admin-card__note">
-          What happens to your data: when someone uses AI, their prompt and the board content the action reads (the selection, or the whole board for a
-          summary) are sent to the provider below and processed under that provider’s terms. Freero doesn’t store prompts or answers; the audit log
-          records who used AI, on which board, the task, model and tokens. Board text is always passed to the model as data, never as instructions.
-        </p>
+        <p className="fr-admin-card__note">{t('whatHappensToYourData')}</p>
       </div>
 
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">Provider</h2>
+        <h2 className="fr-admin-card__title">{t('provider')}</h2>
         {sourceOptions.length > 1 ? (
-          <Row label="Use" hint={own ? 'Your provider, your key, your bill.' : `${data.instance.provider ?? ''}, run by this Freero server’s operator.`}>
-            <Select<'instance' | 'workspace'> aria-label="Provider source" options={sourceOptions} value={s.source} onChange={(v) => void patch({ source: v }, 'Saved')} width={230} />
+          <Row label={t('use')} hint={own ? t('yourProviderYourKeyYour') : t('valueRunByThisFreero', { value: data.instance.provider ?? '' })}>
+            <Select<'instance' | 'workspace'> aria-label={t('providerSource')} options={sourceOptions} value={s.source} onChange={(v) => void patch({ source: v }, 'Saved')} width={230} />
           </Row>
         ) : (
-          <p className="fr-admin-card__note">{canInstance ? `This Freero server’s provider: ${data.instance.provider ?? ''}.` : 'Bring your own provider: your key, your bill.'}</p>
+          <p className="fr-admin-card__note">{canInstance ? t('thisFreeroServerSProvider', { value: data.instance.provider ?? '' }) : t('bringYourOwnProviderYour')}</p>
         )}
         {own && canOwn ? (
           <form className="fr-admin-ai__form" onSubmit={saveOwn}>
             <Select<AiProviderKind>
-              aria-label="Provider"
+              aria-label={t('provider')}
               options={(Object.keys(AI_PROVIDER_LABELS) as AiProviderKind[]).map((p) => ({ value: p, label: AI_PROVIDER_LABELS[p] }))}
               value={provider}
               onChange={setProvider}
               width={420}
             />
             <Input
-              label="Endpoint (optional)"
+              label={t('endpointOptional')}
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder={provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'}
             />
-            <Input label={provider === 'anthropic' ? 'Model (optional)' : 'Model'} value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === 'anthropic' ? 'claude-sonnet-5-5' : 'e.g. gpt-5.1 or llama3.3'} />
+            <Input label={provider === 'anthropic' ? t('modelOptional') : t('model')} value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === 'anthropic' ? 'claude-sonnet-5-5' : t('eGGpt51')} />
             <Input
-              label="API key"
+              label={t('apiKey')}
               type="password"
               autoComplete="off"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder={s.hasKey ? 'Stored — leave blank to keep it' : provider === 'openai' ? 'Not needed for a local endpoint' : ''}
+              placeholder={s.hasKey ? t('storedLeaveBlankToKeep') : provider === 'openai' ? t('notNeededForALocal') : ''}
             />
             <div className="fr-admin-ai__actions">
-              <Button type="submit" variant="primary" loading={busy === 'save'}>
-                Save provider
-              </Button>
+              <Button type="submit" variant="primary" loading={busy === 'save'}>{t('saveProvider')}</Button>
               {s.hasKey ? (
-                <Button type="button" variant="ghost" disabled={busy !== null} onClick={() => void patch({ apiKey: null }, 'Key removed', 'remove')}>
-                  Remove key
-                </Button>
+                <Button type="button" variant="ghost" disabled={busy !== null} onClick={() => void patch({ apiKey: null }, t('keyRemoved'), 'remove')}>{t('removeKey')}</Button>
               ) : null}
             </div>
           </form>
         ) : null}
         <div className="fr-admin-ai__actions fr-admin-ai__actions--test">
-          <Button type="button" variant="secondary" loading={busy === 'test'} disabled={busy !== null && busy !== 'test'} onClick={() => void test()}>
-            Test connection
-          </Button>
-          <span className="fr-admin-row__hint">Sends one tiny request with the saved settings.</span>
+          <Button type="button" variant="secondary" loading={busy === 'test'} disabled={busy !== null && busy !== 'test'} onClick={() => void test()}>{t('testConnection')}</Button>
+          <span className="fr-admin-row__hint">{t('sendsOneTinyRequestWith')}</span>
         </div>
       </div>
 
       <div className="fr-admin-card">
-        <h2 className="fr-admin-card__title">Usage in {data.usage.month}</h2>
-        <p className="fr-admin-card__note">
-          {data.usage.requests} {data.usage.requests === 1 ? 'request' : 'requests'} · {tokens(data.usage.inputTokens + data.usage.outputTokens)} tokens
-          {s.monthlyTokenBudget !== null ? ` of ${tokens(s.monthlyTokenBudget)}` : ''}
+        <h2 className="fr-admin-card__title">{t('usageInMonth', { month: data.usage.month })}</h2>
+        <p className="fr-admin-card__note">{t('requestsRequestsTokensTokens', { requests: data.usage.requests, tokens: tokens(data.usage.inputTokens + data.usage.outputTokens) })}{s.monthlyTokenBudget !== null ? t('ofTokens', { tokens: tokens(s.monthlyTokenBudget) }) : ''}
         </p>
         {data.usage.byUser.length ? (
           <div className="fr-admin-table-wrap fr-admin-ai__usage">
             <table className="fr-admin-table">
               <thead>
                 <tr>
-                  <th scope="col">Person</th>
-                  <th scope="col">Requests</th>
-                  <th scope="col">Tokens in</th>
-                  <th scope="col">Tokens out</th>
+                  <th scope="col">{t('person')}</th>
+                  <th scope="col">{t('requests')}</th>
+                  <th scope="col">{t('tokensIn')}</th>
+                  <th scope="col">{t('tokensOut')}</th>
                 </tr>
               </thead>
               <tbody>

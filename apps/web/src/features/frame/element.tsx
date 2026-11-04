@@ -6,6 +6,7 @@ import { DEFAULT_FILL, presetById } from './lib/frames';
 import { renameFrame } from './lib/actions';
 import { startTitleDrag } from './lib/titleDrag';
 import { planGrid } from './lib/grid';
+import { t } from './messages';
 import './frame.css';
 
 /** Title text size on screen (px) while the frame is comfortably large. */
@@ -61,7 +62,7 @@ function FrameTitle({ frame, zoom, selected }: { frame: FrameElement; zoom: numb
           data-fr-interactive=""
           className="fr-frame__title-input"
           value={draft}
-          aria-label="Frame title"
+          aria-label={t('frameTitle')}
           maxLength={120}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -92,13 +93,13 @@ function FrameTitle({ frame, zoom, selected }: { frame: FrameElement; zoom: numb
             setEditing(true);
           }}
         >
-          {frame.title || 'Untitled frame'}
+          {frame.title || t('untitledFrame')}
         </span>
       )}
       {frame.hidden && !editing && (
-        <span className="fr-frame__hidden-tag" title={canEdit ? 'Viewers and commenters see this frame empty; its contents never reach them' : undefined}>
+        <span className="fr-frame__hidden-tag" title={canEdit ? t('viewersAndCommentersSeeThis') : undefined}>
           <EyeOff size={Math.round(Math.max(px, TITLE_MIN_PX))} strokeWidth={2.25} aria-hidden />
-          {canEdit ? 'Hidden from viewers' : 'Contents hidden'}
+          {canEdit ? t('hiddenFromViewers') : t('contentsHidden')}
         </span>
       )}
     </div>
@@ -111,7 +112,7 @@ function HiddenCover({ zoom }: { zoom: number }) {
     <div className="fr-frame__cover">
       <div className="fr-frame__cover-note" style={{ transform: `scale(${1 / Math.max(zoom, 0.05)})` }}>
         <EyeOff size={18} aria-hidden />
-        <span>The editors have hidden what's in this frame</span>
+        <span>{t('theEditorsHaveHiddenWhat')}</span>
       </div>
     </div>
   );
@@ -143,7 +144,7 @@ const FrameView = memo(function FrameView({ element, selected, zoom: renderZoom 
 
 export default defineElement({
   type: 'frame',
-  label: { one: 'Frame', many: 'Frames' },
+  label: { one: t('frame'), many: t('frames') },
   icon: FrameIcon,
   resize: 'free',
   minSize: { w: 40, h: 40 },
@@ -152,7 +153,7 @@ export default defineElement({
   rotatable: false,
   defaults: (): Omit<NewElement<'frame'>, 'x' | 'y'> => {
     const p = presetById('16:9');
-    return { type: 'frame', w: p.w, h: p.h, title: 'Frame', fill: DEFAULT_FILL, index: 0, preset: p.id };
+    return { type: 'frame', w: p.w, h: p.h, title: t('frame'), fill: DEFAULT_FILL, index: 0, preset: p.id };
   },
   Component: FrameView,
   // Zoomed out to low detail (#185): its fill and hairline on the shared canvas — once its title,

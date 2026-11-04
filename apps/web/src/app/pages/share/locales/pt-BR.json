@@ -1,0 +1,24 @@
+{
+  "@@unreviewed": [
+    "sharedItems",
+    "couldNotCreateABoard",
+    "addToABoard",
+    "nothingArrivedThatFreeroCan",
+    "shared",
+    "failedFilesWerenTImages",
+    "newBoard",
+    "orABoardYouCan",
+    "untitledBoard",
+    "noBoardsYouCanEdit"
+  ],
+  "sharedItems": "Itens compartilhados",
+  "couldNotCreateABoard": "Não foi possível criar um quadro",
+  "addToABoard": "Adicionar a um quadro",
+  "nothingArrivedThatFreeroCan": "Não chegou nada que o Freero possa posicionar: compartilhe imagens, um link ou texto.",
+  "shared": "Compartilhado",
+  "failedFilesWerenTImages": "{failed, plural, one {Um arquivo não era uma imagem que o Freero pudesse guardar (ou sua cota de upload está cheia).} other {{failed} arquivos não eram imagens que o Freero pudesse guardar (ou sua cota de upload está cheia).}}",
+  "newBoard": "Novo quadro",
+  "orABoardYouCan": "Ou um quadro que você pode editar",
+  "untitledBoard": "Quadro sem título",
+  "noBoardsYouCanEdit": "Nenhum quadro que você possa editar ainda."
+}

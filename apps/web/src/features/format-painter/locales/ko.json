@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "selectOneItemToCopy",
+    "copyStyle",
+    "styleCopiedPasteItWith",
+    "pasteStyle",
+    "stopPaintingFormat",
+    "formatPainterClickOtherItems",
+    "formatPainter",
+    "selectOneItemThenPick",
+    "unlockThisItemToChange"
+  ],
+  "selectOneItemToCopy": "스타일을 복사할 항목을 하나 선택하세요.",
+  "copyStyle": "스타일 복사",
+  "styleCopiedPasteItWith": "스타일을 복사했어요. Alt+Mod+V로 붙여 넣으세요.",
+  "pasteStyle": "스타일 붙여 넣기",
+  "stopPaintingFormat": "서식 복사 중지",
+  "formatPainterClickOtherItems": "서식 복사: 다른 항목을 클릭해 이 스타일을 적용하세요",
+  "formatPainter": "서식 복사",
+  "selectOneItemThenPick": "항목을 하나 선택한 다음 서식 복사를 선택해 스타일을 복사하세요.",
+  "unlockThisItemToChange": "스타일을 변경하려면 이 항목의 잠금을 해제하세요."
+}

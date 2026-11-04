@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import { layoutStructure, LayoutError, meetingFormatOf, translateDraft, type LaidOut } from '@freero/shared';
 import type { Editor, NewElement, Point } from '@engine';
 
+import { t } from '../messages';
 export const DIALOG = 'meeting-notes.dialog';
 /** What the file picker offers. */
 export const ACCEPT = '.md,.markdown,.txt,.vtt,.srt';
@@ -104,7 +105,7 @@ export function summary(r: MeetingReport): string {
 export function announce(editor: Editor, r: MeetingReport): void {
   const ai = !!editor.host.ai || !!editor.host.aiUnavailable;
   const args = { frameId: r.frameId, ...(r.summaryId ? { fill: r.summaryId } : {}) };
-  editor.host.notify(summary(r), 'success', ai ? { action: { label: 'Summarise', run: () => editor.runCommand('ai.summarizeFrame', args) } } : undefined);
+  editor.host.notify(summary(r), 'success', ai ? { action: { label: t('summarise'), run: () => editor.runCommand('ai.summarizeFrame', args) } } : undefined);
 }
 
 /** Reads a file and places it; throws LayoutError (a message for the person). */

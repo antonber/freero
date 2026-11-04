@@ -14,6 +14,7 @@ import '@blocknote/ariakit/style.css';
 import { docToMarkdown, markdownToDoc, parseObjectUri, type DocBlock } from '@freero/shared';
 import type { ObjectDocStore } from '../store/ObjectDocStore';
 import type { DocEditorProps, DocHandle } from './DocEditor';
+import { t as tr } from '../messages';
 import './docs.css';
 
 const EmbedContext = createContext<((uri: string) => ReactNode) | undefined>(undefined);
@@ -129,8 +130,8 @@ export default function DocEditorImpl({ doc, user, editable, onReady, renderBoar
       const items = getDefaultReactSlashMenuItems(editor);
       if (pickBoardEmbed)
         items.push({
-          title: 'Live board',
-          subtext: 'A board or one of its frames, always up to date',
+          title: tr('liveBoard'),
+          subtext: tr('aBoardOrOneOf'),
           aliases: ['board', 'frame', 'embed', 'freero'],
           group: 'Freero',
           onItemClick: () => {

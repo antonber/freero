@@ -14,6 +14,7 @@ import { closeWalkthrough, usePlayer } from './playback';
 import { ReactButton, useWalkthroughReactions } from './Reactions';
 import { cameraShowing, chapterAt, cueAt, pointerAt, reactionMarks, viewAt } from './timeline';
 
+import { t as tr } from '../messages';
 const STEP_MS = 5000;
 
 export function PlayerOverlay({ editor }: PanelProps) {
@@ -23,7 +24,7 @@ export function PlayerOverlay({ editor }: PanelProps) {
   return (
     <div className="fr-walkthrough-bar" role="status" data-fr-occludes="" data-fr-interactive="">
       <Spinner size={16} />
-      <span className="fr-walkthrough-bar__hint">Opening the walkthrough…</span>
+      <span className="fr-walkthrough-bar__hint">{tr('openingTheWalkthrough')}</span>
     </div>
   );
 }
@@ -108,7 +109,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
     try {
       await el.play();
     } catch {
-      setProblem('The recording can’t be played in this browser.');
+      setProblem(tr('theRecordingCanTBe'));
       return;
     }
     if (!counted.current) {
@@ -199,8 +200,8 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
               setPlaying(false);
               setT(w.durationMs);
             }}
-            onError={() => setProblem((p) => p ?? 'The recording is gone or can’t be played.')}
-            aria-label={`${name}’s camera`}
+            onError={() => setProblem((p) => p ?? tr('theRecordingIsGoneOr'))}
+            aria-label={tr('nameSCamera', { name })}
           />
         ) : (
           <>
@@ -216,7 +217,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
                 setPlaying(false);
                 setT(w.durationMs);
               }}
-              onError={() => setProblem((p) => p ?? 'The recording is gone or can’t be played.')}
+              onError={() => setProblem((p) => p ?? tr('theRecordingIsGoneOr'))}
             />
           </>
         )}
@@ -240,8 +241,8 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
         />
       )}
 
-      <div className="fr-walkthrough-bar is-playing" role="region" aria-label={`Walkthrough: ${w.title}`} onKeyDown={onKeyDown} data-fr-occludes="" data-fr-interactive="">
-        <IconButton ref={playButton} icon={playing ? Pause : Play} label={playing ? 'Pause (Space)' : 'Play (Space)'} onClick={toggle} disabled={!!problem} />
+      <div className="fr-walkthrough-bar is-playing" role="region" aria-label={tr('walkthroughTitle', { title: w.title })} onKeyDown={onKeyDown} data-fr-occludes="" data-fr-interactive="">
+        <IconButton ref={playButton} icon={playing ? Pause : Play} label={playing ? tr('pauseSpace') : tr('playSpace')} onClick={toggle} disabled={!!problem} />
         <span className="fr-walkthrough-bar__time">{formatWalkthroughTime(t)}</span>
         <div className="fr-walkthrough-bar__track">
           {chapters.map((c) =>
@@ -252,7 +253,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
                 className="fr-walkthrough-bar__chapter"
                 style={{ left: `${(c.atMs / w.durationMs) * 100}%` }}
                 title={`${formatWalkthroughTime(c.atMs)} ${c.title}`}
-                aria-label={`Go to the chapter “${c.title}” at ${formatWalkthroughTime(c.atMs)}`}
+                aria-label={tr('goToTheChapterTitle', { title: c.title, value: formatWalkthroughTime(c.atMs) })}
                 onClick={() => seek(c.atMs)}
               />
             ) : null,
@@ -263,8 +264,8 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
               type="button"
               className={`fr-walkthrough-bar__reaction${m.mine ? ' is-mine' : ''}`}
               style={{ left: `${(m.atMs / w.durationMs) * 100}%` }}
-              title={`${m.counts.map((c) => `${c.emoji} ${c.n}`).join('  ')} at ${formatWalkthroughTime(m.atMs)}`}
-              aria-label={`Reactions at ${formatWalkthroughTime(m.atMs)}: ${m.counts.map((c) => `${c.emoji} ${c.n}`).join(', ')}`}
+              title={tr('joinAtValue', { join: m.counts.map((c) => `${c.emoji} ${c.n}`).join('  '), value: formatWalkthroughTime(m.atMs) })}
+              aria-label={tr('reactionsAtValueJoin', { value: formatWalkthroughTime(m.atMs), join: m.counts.map((c) => `${c.emoji} ${c.n}`).join(', ') })}
               onClick={() => seek(m.atMs)}
             >
               {m.counts[0].emoji}
@@ -279,8 +280,8 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
             step={250}
             value={Math.round(t)}
             onChange={(e) => seek(Number(e.target.value))}
-            aria-label="Position in the walkthrough"
-            aria-valuetext={`${formatWalkthroughTime(t)} of ${formatWalkthroughTime(w.durationMs)}`}
+            aria-label={tr('positionInTheWalkthrough')}
+            aria-valuetext={tr('valueOfValue2', { value: formatWalkthroughTime(t), value2: formatWalkthroughTime(w.durationMs) })}
             style={{ ['--fr-walkthrough-progress' as string]: `${(t / w.durationMs) * 100}%` }}
           />
           {markers.map((c) => (
@@ -289,8 +290,8 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
               type="button"
               className="fr-walkthrough-bar__marker"
               style={{ left: `${(c.atMs / w.durationMs) * 100}%` }}
-              title={`Comment at ${formatWalkthroughTime(c.atMs)}`}
-              aria-label={`Go to the comment at ${formatWalkthroughTime(c.atMs)}`}
+              title={tr('commentAtValue2', { value: formatWalkthroughTime(c.atMs) })}
+              aria-label={tr('goToTheCommentAt', { value: formatWalkthroughTime(c.atMs) })}
               onClick={() => {
                 seek(c.atMs);
                 setShowComments(true);
@@ -300,19 +301,18 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
         </div>
         <span className="fr-walkthrough-bar__time fr-walkthrough-bar__total">{formatWalkthroughTime(w.durationMs)}</span>
         {!following && (
-          <button type="button" className="fr-walkthrough-bar__back" onClick={backToView} title="Back to the narrator’s view (F)">
-            <LocateFixed size={15} aria-hidden /> Back to {name.split(' ')[0]}’s view
-          </button>
+          <button type="button" className="fr-walkthrough-bar__back" onClick={backToView} title={tr('backToTheNarratorS')}>
+            <LocateFixed size={15} aria-hidden />{' '}{tr('backToValueSView', { value: name.split(' ')[0] })}</button>
         )}
         <span className="fr-walkthrough-bar__sep" aria-hidden />
         {hasCaptions && (
-          <IconButton icon={captionsOn ? Captions : CaptionsOff} label={captionsOn ? 'Hide captions (C)' : 'Show captions (C)'} active={captionsOn} onClick={() => setCaptionsOn((on) => !on)} />
+          <IconButton icon={captionsOn ? Captions : CaptionsOff} label={captionsOn ? tr('hideCaptionsC') : tr('showCaptionsC')} active={captionsOn} onClick={() => setCaptionsOn((on) => !on)} />
         )}
-        {canManage(editor, w) && <IconButton icon={PenLine} label={hasCaptions ? 'Edit captions' : 'Add captions'} onClick={() => editor.openPanel(CAPTIONS_ID, { id: w.id })} />}
+        {canManage(editor, w) && <IconButton icon={PenLine} label={hasCaptions ? tr('editCaptions') : tr('addCaptions')} onClick={() => editor.openPanel(CAPTIONS_ID, { id: w.id })} />}
         {(chapters.length > 0 || !!w.summary || (canManage(editor, w) && !!editor.host.walkthroughs?.setChapters)) && (
           <IconButton
             icon={ListOrdered}
-            label={chapter ? `Chapters: ${chapter.title}` : `Chapters (${chapters.length})`}
+            label={chapter ? tr('chaptersTitle', { title: chapter.title }) : tr('chaptersLength', { length: chapters.length })}
             active={showChapters && !showComments}
             onClick={() => {
               setShowComments(false);
@@ -321,18 +321,18 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
           />
         )}
         <ReactButton editor={editor} id={w.id} t={t} state={reactions} />
-        <IconButton icon={MessageSquareText} label={`Walkthrough comments (${markers.length})`} active={showComments} onClick={() => setShowComments((on) => !on)}>
+        <IconButton icon={MessageSquareText} label={tr('walkthroughCommentsLength', { length: markers.length })} active={showComments} onClick={() => setShowComments((on) => !on)}>
           {markers.length > 0 && <span className="fr-walkthrough-bar__count">{markers.length}</span>}
         </IconButton>
         {editor.host.walkthroughs?.download && editor.host.board.canExport !== false && (
           <IconButton
             icon={Download}
-            label="Download the recording"
-            onClick={() => editor.host.walkthroughs?.download?.(w.id, w.title).catch((e: unknown) => editor.host.notify(e instanceof Error ? e.message : 'Download failed', 'error'))}
+            label={tr('downloadTheRecording')}
+            onClick={() => editor.host.walkthroughs?.download?.(w.id, w.title).catch((e: unknown) => editor.host.notify(e instanceof Error ? e.message : tr('downloadFailed'), 'error'))}
           />
         )}
-        <IconButton icon={Flag} label="Report the recording" onClick={() => editor.runCommand('report.open', { target: { kind: 'upload', id: w.mediaUrl } })} />
-        <IconButton icon={X} label="Close the walkthrough (Esc)" onClick={close} />
+        <IconButton icon={Flag} label={tr('reportTheRecording')} onClick={() => editor.runCommand('report.open', { target: { kind: 'upload', id: w.mediaUrl } })} />
+        <IconButton icon={X} label={tr('closeTheWalkthroughEsc')} onClick={close} />
         {problem && (
           <span className="fr-walkthrough-bar__problem" role="alert">
             {problem}

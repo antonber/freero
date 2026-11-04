@@ -15,6 +15,7 @@ import { stickyAt } from './lib/actions';
 import { gridPositions } from './lib/layout';
 import { listItems } from './lib/paste';
 import { padDefinition } from './lib/pad';
+import { t as tr } from './messages';
 import './sticky.css';
 
 /** Below this zoom the text is unreadable anyway: draw cheap "text lines" instead (2000-sticky boards). */
@@ -70,7 +71,7 @@ function paintSticky(el: StickyElement, p: LowDetailPaint) {
 
 const stickyDefinition = defineElement({
   type: 'sticky',
-  label: { one: 'Sticky note', many: 'Sticky notes' },
+  label: { one: tr('stickyNote'), many: tr('stickyNotes') },
   icon: StickyNoteIcon,
   resize: 'free',
   minSize: { w: 48, h: 48 },

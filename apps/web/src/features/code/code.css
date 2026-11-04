@@ -112,8 +112,8 @@
 
 .fr-code__gutter {
   flex: none;
-  padding-right: 12px;
-  text-align: right;
+  padding-inline-end: 12px;
+  text-align: end;
   color: var(--code-dim);
   user-select: none;
 }

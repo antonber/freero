@@ -3,6 +3,7 @@ import type { DocElement } from '@freero/shared';
 import { defineCommands, type Editor } from '@engine';
 import { docIdOf } from './lib/state';
 
+import { t } from './messages';
 /** The one selected doc item's doc id, or null. */
 function selectedDoc(editor: Editor): string | null {
   const ids = editor.getSelection();
@@ -14,7 +15,7 @@ function selectedDoc(editor: Editor): string | null {
 export default defineCommands([
   {
     id: 'doc.open',
-    label: 'Open doc',
+    label: t('openDoc'),
     icon: ExternalLink,
     menus: ['context'],
     minRole: 'viewer',
@@ -26,14 +27,14 @@ export default defineCommands([
   },
   {
     id: 'doc.exportMarkdown',
-    label: 'Export doc as Markdown',
+    label: t('exportDocAsMarkdown'),
     icon: Download,
     menus: ['context'],
     minRole: 'viewer',
     when: (editor) => !!selectedDoc(editor) && !!editor.host.docs,
     run(editor) {
       const id = selectedDoc(editor);
-      if (id && editor.host.docs) void editor.host.docs.exportMarkdown(id).catch((err: unknown) => editor.host.notify(err instanceof Error ? err.message : 'Could not export the doc', 'error'));
+      if (id && editor.host.docs) void editor.host.docs.exportMarkdown(id).catch((err: unknown) => editor.host.notify(err instanceof Error ? err.message : t('couldNotExportTheDoc'), 'error'));
     },
   },
 ]);

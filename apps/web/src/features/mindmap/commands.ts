@@ -17,13 +17,14 @@ import {
   toggleCollapse,
 } from './lib/actions';
 
+import { t } from './messages';
 const selectedNodes = (editor: Editor) => editor.getSelection().filter((id) => isNode(editor.getElement(id)));
 
 export default defineCommands([
   {
     // Works while typing too: commits the text and starts the child.
     id: 'mindmap.addChild',
-    label: 'Add child idea',
+    label: t('addChildIdea'),
     shortcut: 'tab',
     menus: ['context'],
     when: (editor) => !!selectedNode(editor),
@@ -35,7 +36,7 @@ export default defineCommands([
   {
     // Works while typing too (Tab commands reach the editor mid-edit).
     id: 'mindmap.promote',
-    label: 'Move idea up a level',
+    label: t('moveIdeaUpALevel'),
     shortcut: 'shift+tab',
     menus: ['context'],
     when: (editor) => {
@@ -52,7 +53,7 @@ export default defineCommands([
     // Shown for discoverability; the Enter key itself reaches the element definition's
     // onKeyDown first (before the engine's own Enter = edit text).
     id: 'mindmap.addSibling',
-    label: 'Add sibling idea',
+    label: t('addSiblingIdea'),
     shortcut: 'enter',
     menus: ['context'],
     when: (editor) => !!selectedNode(editor)?.parentId,
@@ -63,7 +64,7 @@ export default defineCommands([
   },
   {
     id: 'mindmap.expandAi',
-    label: 'Expand with AI…',
+    label: t('expandWithAi'),
     icon: Sparkles,
     menus: ['context'],
     palette: false,
@@ -76,18 +77,18 @@ export default defineCommands([
   {
     // #134: a pile of sticky notes becomes a map around the one you pick.
     id: 'mindmap.fromStickies',
-    label: 'Make a mind map…',
+    label: t('makeAMindMap'),
     icon: Network,
     menus: ['context'],
     when: (editor) => stickiesOf(editor, editor.getSelection()).length >= 2,
-    disabledReason: 'Select two or more sticky notes',
+    disabledReason: t('selectTwoOrMoreSticky'),
     run(editor) {
       editor.openPanel(FROM_STICKIES_DIALOG, { ids: stickiesOf(editor, editor.getSelection()).map((n) => n.id) });
     },
   },
   {
     id: 'mindmap.toggleCollapse',
-    label: 'Collapse / expand branch',
+    label: t('collapseExpandBranch'),
     menus: ['context'],
     when: (editor) => {
       const n = selectedNode(editor);
@@ -100,7 +101,7 @@ export default defineCommands([
   },
   {
     id: 'mindmap.deleteBranch',
-    label: 'Delete branch',
+    label: t('deleteBranch'),
     menus: ['context'],
     when: (editor) => selectedNodes(editor).length > 0,
     run(editor) {
@@ -110,7 +111,7 @@ export default defineCommands([
   {
     // Read-only: anyone who can see the map may copy it out.
     id: 'mindmap.copyAsOutline',
-    label: 'Copy as outline',
+    label: t('copyAsOutline'),
     icon: ListTree,
     menus: ['context'],
     minRole: 'viewer',
@@ -121,7 +122,7 @@ export default defineCommands([
   },
   {
     id: 'mindmap.relayout',
-    label: 'Tidy up mind map',
+    label: t('tidyUpMindMap'),
     menus: ['context'],
     when: (editor) => selectedNodes(editor).length > 0,
     run(editor) {

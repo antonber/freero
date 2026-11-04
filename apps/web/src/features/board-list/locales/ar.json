@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "اللوحة كقائمة",
+  "everyItemInReadingOrder": "كل عنصر بترتيب القراءة، وعناصر الإطار تحته. تنقّل بمفاتيح الأسهم، وافتح الإطار وأغلقه بالسهمين الأيمن والأيسر، واعرض العنصر على اللوحة بـ Enter.",
+  "thisBoardIsEmpty": "هذه اللوحة فارغة.",
+  "boardItems": "عناصر اللوحة",
+  "connections": "الموصلات"
+}

@@ -2,7 +2,7 @@ import { ChartGantt, Download, ExternalLink, KanbanSquare, RefreshCw, TicketPlus
 import { defineCommands, type Editor } from '@engine';
 import { IMPORT_DIALOG, linkedIssues, openIssue, selectedKanban, selectedTimeline, SEND_DIALOG, sendable, trackersAvailable } from './lib/links';
 
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+import { t } from './messages';
 
 async function forEachLinked(editor: Editor, act: (linkId: string) => Promise<void>, done: (n: number) => string) {
   const issues = linkedIssues(editor);
@@ -10,7 +10,7 @@ async function forEachLinked(editor: Editor, act: (linkId: string) => Promise<vo
     for (const i of issues) await act(i.id);
     editor.host.notify(done(issues.length), 'success');
   } catch (e) {
-    editor.host.notify(e instanceof Error ? e.message : 'The tracker didn’t answer. Try again.', 'error');
+    editor.host.notify(e instanceof Error ? e.message : t('theTrackerDidnTAnswer'), 'error');
   }
 }
 
@@ -19,7 +19,7 @@ async function forEachLinked(editor: Editor, act: (linkId: string) => Promise<vo
 export default defineCommands([
   {
     id: 'trackers.send',
-    label: 'Send to tracker…',
+    label: t('sendToTracker'),
     icon: TicketPlus,
     menus: ['context'],
     palette: false,
@@ -31,7 +31,7 @@ export default defineCommands([
   },
   {
     id: 'trackers.import',
-    label: 'Import issues…',
+    label: t('importIssues'),
     icon: Download,
     menus: ['board'],
     palette: false,
@@ -41,7 +41,7 @@ export default defineCommands([
   {
     // Roadmap mode (KAI-160): a tracker query onto the selected timeline, as bars in lanes.
     id: 'trackers.importToTimeline',
-    label: 'Import issues onto this timeline…',
+    label: t('importIssuesOntoThisTimeline'),
     icon: ChartGantt,
     menus: ['context'],
     palette: false,
@@ -51,7 +51,7 @@ export default defineCommands([
   {
     // Into the selected kanban: each issue in the column named after its status, with its priority.
     id: 'trackers.importToKanban',
-    label: 'Import issues into this kanban…',
+    label: t('importIssuesIntoThisKanban'),
     icon: KanbanSquare,
     menus: ['context'],
     palette: false,
@@ -60,7 +60,7 @@ export default defineCommands([
   },
   {
     id: 'trackers.open',
-    label: 'Open issue',
+    label: t('openIssue'),
     icon: ExternalLink,
     group: 'Issue',
     menus: ['context'],
@@ -74,7 +74,7 @@ export default defineCommands([
   },
   {
     id: 'trackers.sync',
-    label: 'Sync now',
+    label: t('syncNow'),
     icon: RefreshCw,
     group: 'Issue',
     menus: ['context'],
@@ -84,12 +84,12 @@ export default defineCommands([
       void forEachLinked(
         editor,
         (id) => editor.host.trackers!.sync(id),
-        (n) => `Syncing ${plural(n, 'issue')}…`,
+        (n) => `Syncing ${t('countIssue', { count: n })}…`,
       ),
   },
   {
     id: 'trackers.unlink',
-    label: 'Unlink from issue',
+    label: t('unlinkFromIssue'),
     icon: Unlink,
     group: 'Issue',
     menus: ['context'],
@@ -99,7 +99,7 @@ export default defineCommands([
       void forEachLinked(
         editor,
         (id) => editor.host.trackers!.unlink(id),
-        (n) => `Unlinked ${plural(n, 'issue')}. ${n === 1 ? 'It stays' : 'They stay'} in the tracker.`,
+        (n) => t('unlinkedValueTheyStayIn', { n, value: t('countIssue', { count: n }) }),
       ),
   },
 ]);

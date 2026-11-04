@@ -27,6 +27,7 @@ import {
 import type { Editor, NewElement } from '@engine';
 import { myView } from './tabs';
 
+import { t } from '../messages';
 const linkedOf = (editor: Pick<Editor, 'getElement'>, id: string): KanbanViewElement | null => {
   const el = editor.getElement<KanbanViewElement>(id);
   return el && el.type === 'kanbanview' ? el : null;
@@ -100,7 +101,7 @@ export function saveLinkedViewForEveryone(editor: Editor, id: string): boolean {
 /** Renames linked view `id` for everyone; returns why it can't be (an empty name), or null. */
 export function renameLinkedView(editor: Editor, id: string, name: string): string | null {
   const lv = linkedOf(editor, id);
-  if (!lv || !linkedEditable(editor, lv)) return 'You can’t rename this view';
+  if (!lv || !linkedEditable(editor, lv)) return t('youCanTRenameThis2');
   const problem = linkedViewNameProblem(name);
   if (problem) return problem;
   const saved = linkedView(lv);

@@ -8,9 +8,11 @@ import { Avatar, Button, Spinner } from '@ui';
 import { api } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 
+import { t } from './messages';
 const SHOWN = 6;
 
-export function RecentActivity({ workspaceId }: { workspaceId: string }) {
+/** `projectId`: a project page's activity (#129), only its boards. */
+export function RecentActivity({ workspaceId, projectId }: { workspaceId: string; projectId?: string }) {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -21,23 +23,22 @@ export function RecentActivity({ workspaceId }: { workspaceId: string }) {
     setEntries(null);
     setFailed(false);
     setAll(false);
-    api.workspaceActivity(workspaceId).then(
+    (projectId ? api.projectActivity(workspaceId, projectId) : api.workspaceActivity(workspaceId)).then(
       (r) => live && setEntries(r.entries),
       () => live && setFailed(true),
     );
     return () => {
       live = false;
     };
-  }, [workspaceId]);
+  }, [workspaceId, projectId]);
 
   if (failed || (entries && entries.length === 0)) return null;
   const now = Date.now();
   const shown = entries ? (all ? entries : entries.slice(0, SHOWN)) : [];
   return (
-    <section className="fr-dash-activity" aria-label="Recent activity">
+    <section className="fr-dash-activity" aria-label={t('recentActivity')}>
       <h2 className="fr-dash-activity__title">
-        <Activity size={16} aria-hidden /> Recent activity
-      </h2>
+        <Activity size={16} aria-hidden />{' '}{t('recentActivity')}</h2>
       {entries === null ? (
         <div className="fr-dash-activity__loading">
           <Spinner size={18} />
@@ -49,8 +50,8 @@ export function RecentActivity({ workspaceId }: { workspaceId: string }) {
               <button type="button" className="fr-dash-activity__entry" onClick={() => navigate(`/board/${encodeURIComponent(e.boardId)}`)}>
                 <Avatar name={e.actorName} color={e.actor?.color ?? '#8a89a3'} src={e.actor?.avatarUrl ?? null} size={28} />
                 <span className="fr-dash-activity__text">
-                  <strong>{e.actorName}</strong> {e.text} <span className="fr-dash-activity__on">on</span>{' '}
-                  <strong>{e.boardTitle || 'Untitled board'}</strong>
+                  <strong>{e.actorName}</strong> {e.text} <span className="fr-dash-activity__on">{t('on')}</span>{' '}
+                  <strong>{e.boardTitle || t('untitledBoard')}</strong>
                 </span>
                 <span className="fr-dash-activity__time">{relativeTime(e.at, now)}</span>
               </button>
@@ -59,9 +60,7 @@ export function RecentActivity({ workspaceId }: { workspaceId: string }) {
         </ul>
       )}
       {entries && entries.length > SHOWN && !all ? (
-        <Button size="sm" variant="ghost" onClick={() => setAll(true)}>
-          Show more
-        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setAll(true)}>{t('showMore')}</Button>
       ) : null}
     </section>
   );

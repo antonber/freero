@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "summarise",
+    "importMeetingNotes",
+    "youNeedEditAccessTo",
+    "couldNotImportThatTranscript",
+    "couldNotImportTheseNotes",
+    "importMeetingNotes2",
+    "aSummaryMarkdownOrText",
+    "cancel",
+    "importText",
+    "importing",
+    "chooseAFileMdTxt",
+    "orPasteTheNotes",
+    "forTranscriptsAddWhoSpoke",
+    "droppingAVttOrSrt"
+  ],
+  "summarise": "סיכום",
+  "importMeetingNotes": "ייבוא סיכום פגישה…",
+  "youNeedEditAccessTo": "נדרשת הרשאת עריכה כדי לייבא",
+  "couldNotImportThatTranscript": "לא ניתן לייבא את התמלול",
+  "couldNotImportTheseNotes": "לא ניתן לייבא את הסיכום",
+  "importMeetingNotes2": "ייבוא סיכום פגישה",
+  "aSummaryMarkdownOrText": "סיכום (Markdown או טקסט) או תמלול (.vtt, .srt) מאפליקציית הסיכומים שלך הופך למסגרת אחת: החלטות, משימות עם אחראי ותאריך יעד, ושאר הנקודות. ביטול אחד מחזיר הכול.",
+  "cancel": "ביטול",
+  "importText": "ייבוא הטקסט",
+  "importing": "מייבא…",
+  "chooseAFileMdTxt": "בחירת קובץ (.md, .txt, .vtt, .srt)",
+  "orPasteTheNotes": "או להדביק את הסיכום",
+  "forTranscriptsAddWhoSpoke": "בתמלולים, להוסיף מי דיבר וכמה זמן",
+  "droppingAVttOrSrt": "גרירת קובץ .vtt או .srt אל הלוח מייבאת אותו גם כן."
+}

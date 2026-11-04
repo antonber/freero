@@ -5,14 +5,15 @@ import { IconButton, Select } from '@ui';
 import { focusDiagram, relayout, setLayout } from './lib/actions';
 import { LAYERS_PANEL } from './lib/ids';
 
+import { t } from './messages';
 const DESCRIPTIONS: Record<DiagramLayout, string> = {
-  down: 'Steps flow downwards',
-  right: 'Steps flow to the right',
-  up: 'Steps flow upwards',
-  left: 'Steps flow to the left',
-  tree: 'Branches to the right',
-  orgchart: 'A top-down tree',
-  manual: 'Nothing moves by itself',
+  down: t('stepsFlowDownwards'),
+  right: t('stepsFlowToTheRight'),
+  up: t('stepsFlowUpwards'),
+  left: t('stepsFlowToTheLeft'),
+  tree: t('branchesToTheRight'),
+  orgchart: t('aTopDownTree'),
+  manual: t('nothingMovesByItself'),
 };
 
 /** One selected diagram: its layout, lay out again, layers, focus. */
@@ -29,15 +30,15 @@ export default defineFormat({
           <Select<DiagramLayout>
             size="sm"
             variant="ghost"
-            aria-label="Layout"
+            aria-label={t('layout')}
             value={d.layout}
             options={DIAGRAM_LAYOUTS.map((l) => ({ value: l, label: DIAGRAM_LAYOUT_NAMES[l], description: DESCRIPTIONS[l] }))}
             onChange={(l) => setLayout(editor, d.id, l)}
           />
         )}
-        {editable && d.layout !== 'manual' && <IconButton icon={Wand2} label="Lay out again (steps moved by hand too)" size={32} onClick={() => relayout(editor, d.id)} />}
-        <IconButton icon={Layers} label="Layers" size={32} onClick={() => editor.openDock(LAYERS_PANEL)} />
-        <IconButton icon={Focus} label="Focus on this diagram" size={32} onClick={() => focusDiagram(editor, d.id)} />
+        {editable && d.layout !== 'manual' && <IconButton icon={Wand2} label={t('layOutAgainStepsMoved')} size={32} onClick={() => relayout(editor, d.id)} />}
+        <IconButton icon={Layers} label={t('layers')} size={32} onClick={() => editor.openDock(LAYERS_PANEL)} />
+        <IconButton icon={Focus} label={t('focusOnThisDiagram')} size={32} onClick={() => focusDiagram(editor, d.id)} />
       </div>
     );
   },

@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "Capas",
+  "unlock": "Desbloquear",
+  "lock": "Bloquear",
+  "hiddenWithItsFrameOr": "Oculto con su marco o con el elemento al que está unido",
+  "showHiddenForYouOnly": "Mostrar (oculto solo para ti)",
+  "hideForMeOthersStill": "Ocultar para mí (los demás lo siguen viendo)",
+  "collapse": "Contraer",
+  "expand": "Expandir",
+  "untitledFrame": "Marco sin título",
+  "notInAFrame": "Fuera de un marco",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} ocultos solo para ti",
+  "showAll": "Mostrar todo",
+  "nothingOnTheBoardYet": "Aún no hay nada en el tablero.",
+  "dragToRestackTheTop": "Arrastra para reordenar: lo que está arriba en cada lista queda delante."
+}

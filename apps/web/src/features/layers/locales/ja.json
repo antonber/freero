@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "layers",
+    "unlock",
+    "lock",
+    "hiddenWithItsFrameOr",
+    "showHiddenForYouOnly",
+    "hideForMeOthersStill",
+    "collapse",
+    "expand",
+    "untitledFrame",
+    "notInAFrame",
+    "hiddencountHiddenForYouOnly",
+    "showAll",
+    "nothingOnTheBoardYet",
+    "dragToRestackTheTop"
+  ],
+  "layers": "レイヤー",
+  "unlock": "ロックを解除",
+  "lock": "ロック",
+  "hiddenWithItsFrameOr": "フレームまたは接続先の項目と一緒に非表示",
+  "showHiddenForYouOnly": "表示（自分にだけ非表示中）",
+  "hideForMeOthersStill": "自分だけ非表示（他の人には表示）",
+  "collapse": "折りたたむ",
+  "expand": "展開",
+  "untitledFrame": "無題のフレーム",
+  "notInAFrame": "フレーム外",
+  "hiddencountHiddenForYouOnly": "{hiddenCount} 件を自分にだけ非表示中",
+  "showAll": "すべて表示",
+  "nothingOnTheBoardYet": "まだボードには何もありません。",
+  "dragToRestackTheTop": "ドラッグして重ね順を変更します。各リストの一番上が最前面です。"
+}

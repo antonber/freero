@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { Button, Logo } from '@ui';
+import { t } from '../messages';
 import '../board/BoardPage.css';
 
 /**
@@ -29,12 +30,10 @@ export function FrameGuard({ children }: { children: ReactNode }) {
     <div className="fr-boarderror">
       <div className="fr-boarderror__card">
         <Logo size={32} />
-        <h1>Freero opens in its own window</h1>
-        <p>This page can’t be shown inside another site.</p>
+        <h1>{t('freeroOpensInItsOwn')}</h1>
+        <p>{t('thisPageCanTBe')}</p>
         <div className="fr-boarderror__actions">
-          <Button variant="primary" icon={ExternalLink} onClick={() => void window.open(pathname + search, '_blank', 'noopener')}>
-            Open in Freero
-          </Button>
+          <Button variant="primary" icon={ExternalLink} onClick={() => void window.open(pathname + search, '_blank', 'noopener')}>{t('openInFreero')}</Button>
         </div>
       </div>
     </div>

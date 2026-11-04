@@ -1,0 +1,32 @@
+{
+  "@@unreviewed": [
+    "tagItemsByName",
+    "searchOrCreateATag",
+    "nameYourFirstTag",
+    "tags",
+    "tagsGroupStickiesAndCards",
+    "createName",
+    "newTagColor",
+    "manageTags",
+    "colorOfName",
+    "renameName",
+    "deleteUses",
+    "deleteTagUsedOnUses",
+    "deleteTag",
+    "backToTags"
+  ],
+  "tagItemsByName": "태그 이름으로 항목에 태그 지정",
+  "searchOrCreateATag": "태그 검색 또는 만들기",
+  "nameYourFirstTag": "첫 번째 태그의 이름을 지정하세요",
+  "tags": "태그",
+  "tagsGroupStickiesAndCards": "태그로 스티커 메모와 카드를 주제, 담당자, 우선순위별로 묶을 수 있어요.",
+  "createName": "‘{name}’ 만들기",
+  "newTagColor": "새 태그 색상",
+  "manageTags": "태그 관리",
+  "colorOfName": "{name} 색상",
+  "renameName": "{name} 이름 바꾸기",
+  "deleteUses": "삭제({uses})",
+  "deleteTagUsedOnUses": "태그 삭제({uses}에 사용됨)",
+  "deleteTag": "태그 삭제",
+  "backToTags": "태그로 돌아가기"
+}

@@ -3,12 +3,13 @@ import { defineCommands } from '@engine';
 import { PANEL_ID } from './lib/search';
 import { setFindUi } from './lib/state';
 
+import { t } from './messages';
 export default defineCommands([
   {
     // Ctrl/⌘+F opens find (also mid-edit) instead of the browser's page search, which can't see
     // the canvas. Pressed again, it puts the cursor back in the search box.
     id: 'find.open',
-    label: 'Find on board',
+    label: t('findOnBoard'),
     icon: Search,
     shortcut: 'mod+f',
     minRole: 'viewer',

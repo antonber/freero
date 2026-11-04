@@ -3,11 +3,12 @@ import { defineCommands } from '@engine';
 import { SHEET_PANEL } from './lib/sheet';
 import { PALETTE_PANEL } from './lib/palette';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'shortcuts.open',
     icon: Keyboard,
-    label: 'Keyboard shortcuts',
+    label: t('keyboardShortcuts'),
     // '?' — matched by the character typed, so it works wherever the layout puts '?'.
     shortcut: 'shift+/',
     menus: ['board'],
@@ -19,7 +20,7 @@ export default defineCommands([
   {
     id: 'shortcuts.palette',
     icon: SquareChevronRight,
-    label: 'Command palette',
+    label: t('commandPalette'),
     // Mod+/ — matched by the typed character like '?', so layouts where '/' needs Shift (German
     // Shift+7) work too. Mod+K too, the key people bring from other tools: an alias, so with one
     // item selected Mod+K stays "Link to…" (a command's own key goes first) and while typing it

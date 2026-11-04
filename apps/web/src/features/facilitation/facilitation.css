@@ -48,8 +48,8 @@
   align-items: center;
   gap: 2px;
   padding: 0 8px;
-  border-left: 1px solid var(--fr-line);
-  border-right: 1px solid var(--fr-line);
+  border-inline-start: 1px solid var(--fr-line);
+  border-inline-end: 1px solid var(--fr-line);
 }
 
 .fr-facil-bar .fr-btn.is-on {
@@ -81,7 +81,7 @@
   color: var(--fr-ink);
   font: inherit;
   font-size: 13px;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 

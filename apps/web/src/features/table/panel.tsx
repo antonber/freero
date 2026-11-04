@@ -10,6 +10,7 @@ import { CELLS, cellText } from './lib/cells';
 import { peopleLookup } from './lib/actions';
 import type { PeopleLookup } from './lib/columns';
 import { CONVERT_DIALOG, columnNames, convertToKanban, defaultChoice, tableToKanbanRows, type ColumnFate, type ConvertChoice } from './lib/convert';
+import { t } from './messages';
 import './table.css';
 
 const TYPE_NAMES: Record<string, string> = {
@@ -68,8 +69,8 @@ function ConvertDialog({ editor, props }: PanelProps) {
 
   if (!table || !choice) {
     return (
-      <Modal open onClose={close} title="Convert to kanban" footer={<Button onClick={close}>Close</Button>}>
-        <p>A table needs at least two columns to become a kanban: one for the columns, one for the card titles.</p>
+      <Modal open onClose={close} title={t('convertToKanban2')} footer={<Button onClick={close}>{t('close')}</Button>}>
+        <p>{t('aTableNeedsAtLeast3')}</p>
       </Modal>
     );
   }
@@ -81,7 +82,7 @@ function ConvertDialog({ editor, props }: PanelProps) {
   const run = () => {
     const kid = convertToKanban(editor, table.id, choice, people);
     if (!kid) return;
-    editor.host.notify(`Converted to a kanban with ${rows?.cards.length ?? 0} cards. Undo brings the table back.`, 'success');
+    editor.host.notify(t('convertedToAKanbanWith', { value: rows?.cards.length ?? 0 }), 'success');
     close();
   };
 
@@ -89,23 +90,21 @@ function ConvertDialog({ editor, props }: PanelProps) {
     <Modal
       open
       onClose={close}
-      title="Convert to kanban"
-      description="Each row becomes a card. The kanban takes the table’s place; undo brings the table back."
+      title={t('convertToKanban2')}
+      description={t('eachRowBecomesACard')}
       width={520}
       footer={
         <>
-          <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" disabled={!rows} onClick={run}>
-            Convert
-          </Button>
+          <Button onClick={close}>{t('cancel')}</Button>
+          <Button variant="primary" disabled={!rows} onClick={run}>{t('convert')}</Button>
         </>
       }
     >
       <div className="fr-table-convert">
         <label className="fr-table-convert__pick">
-          <span>Columns from</span>
+          <span>{t('columnsFrom')}</span>
           <Select<string>
-            aria-label="Table column the kanban’s columns come from"
+            aria-label={t('tableColumnTheKanbanS')}
             size="sm"
             options={options}
             value={choice.columnsFrom}
@@ -113,9 +112,9 @@ function ConvertDialog({ editor, props }: PanelProps) {
           />
         </label>
         <label className="fr-table-convert__pick">
-          <span>Card titles from</span>
+          <span>{t('cardTitlesFrom')}</span>
           <Select<string>
-            aria-label="Table column the card titles come from"
+            aria-label={t('tableColumnTheCardTitles')}
             size="sm"
             options={options.filter((o) => o.value !== choice.columnsFrom)}
             value={choice.titleFrom}
@@ -124,12 +123,9 @@ function ConvertDialog({ editor, props }: PanelProps) {
         </label>
         {rows && plan && 'fates' in plan ? (
           <>
-            <p className="fr-table-convert__summary">
-              {rows.cards.length} {rows.cards.length === 1 ? 'card' : 'cards'} in {rows.columns.length} {rows.columns.length === 1 ? 'column' : 'columns'}:{' '}
-              {rows.columns.map((c) => c.title).join(', ')}
-            </p>
+            <p className="fr-table-convert__summary">{t('nCardsInNColumns', { length: rows.cards.length, length2: rows.columns.length, join: rows.columns.map((c) => c.title).join(', ') })}</p>
             {plan.fates.some((f) => f.as !== 'columns' && f.as !== 'title') ? (
-              <ul className="fr-table-convert__fates" aria-label="What the other columns become">
+              <ul className="fr-table-convert__fates" aria-label={t('whatTheOtherColumnsBecome')}>
                 {plan.fates
                   .filter((f) => f.as !== 'columns' && f.as !== 'title')
                   .map((f) => (

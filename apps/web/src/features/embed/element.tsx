@@ -4,6 +4,7 @@ import type { EmbedElement } from '@freero/shared';
 import { defineElement, useEditor, useIsExporting, type Editor, type ElementRenderProps, type NewElement } from '@engine';
 import { asLink, displayHost, liveEmbed, safeImageSrc, type LiveEmbed } from './lib/providers';
 import { CARD_H_TEXT, CARD_W, fillPreview, isFetching, sizeFor, subscribeFetching } from './lib/preview';
+import { t } from './messages';
 import './embed.css';
 
 const stop = (e: MouseEvent | PointerEvent) => e.stopPropagation();
@@ -32,8 +33,8 @@ function LiveFrame({ el, live, selected, onClose }: { el: EmbedElement; live: Li
           type="button"
           className="fr-embed__strip-btn"
           data-fr-interactive=""
-          title="Full screen"
-          aria-label="Full screen"
+          title={t('fullScreen')}
+          aria-label={t('fullScreen')}
           onPointerDown={stop}
           onClick={(e) => {
             e.stopPropagation();
@@ -48,8 +49,8 @@ function LiveFrame({ el, live, selected, onClose }: { el: EmbedElement; live: Li
           target="_blank"
           rel="noopener noreferrer nofollow"
           data-fr-interactive=""
-          title="Open in a new tab"
-          aria-label="Open in a new tab"
+          title={t('openInANewTab')}
+          aria-label={t('openInANewTab')}
           onPointerDown={stop}
         >
           <ExternalLink size={13} strokeWidth={2} />
@@ -58,8 +59,8 @@ function LiveFrame({ el, live, selected, onClose }: { el: EmbedElement; live: Li
           type="button"
           className="fr-embed__strip-btn"
           data-fr-interactive=""
-          title="Close (show the preview again)"
-          aria-label="Close live view"
+          title={t('closeShowThePreviewAgain')}
+          aria-label={t('closeLiveView')}
           onPointerDown={stop}
           onClick={(e) => {
             e.stopPropagation();
@@ -129,8 +130,8 @@ const EmbedView = memo(function EmbedView({ element: el, selected }: ElementRend
               type="button"
               className={video ? 'fr-embed__play' : 'fr-embed__activate'}
               data-fr-interactive=""
-              aria-label={video ? `Play ${live.label} video` : `Open live ${live.label} view`}
-              title={video ? `Play ${live.label} video` : `Open live view (${live.label})`}
+              aria-label={video ? t('playLabelVideo', { label: live.label }) : t('openLiveLabelView', { label: live.label })}
+              title={video ? t('playLabelVideo', { label: live.label }) : t('openLiveViewLabel', { label: live.label })}
               onPointerDown={stop}
               onClick={activate}
             >
@@ -139,7 +140,7 @@ const EmbedView = memo(function EmbedView({ element: el, selected }: ElementRend
               ) : (
                 <>
                   <MousePointerClick size={16} strokeWidth={2.2} />
-                  <span>Open live</span>
+                  <span>{t('openLive')}</span>
                 </>
               )}
             </button>
@@ -147,7 +148,7 @@ const EmbedView = memo(function EmbedView({ element: el, selected }: ElementRend
         </div>
       )}
       <div className="fr-embed__body">
-        <div className="fr-embed__title">{loading ? 'Loading preview…' : (el.title ?? el.url)}</div>
+        <div className="fr-embed__title">{loading ? t('loadingPreview') : (el.title ?? el.url)}</div>
         {el.description && !loading && <div className="fr-embed__desc">{el.description}</div>}
         <div className="fr-embed__host">
           <Globe size={12} strokeWidth={2} />
@@ -159,8 +160,8 @@ const EmbedView = memo(function EmbedView({ element: el, selected }: ElementRend
               target="_blank"
               rel="noopener noreferrer nofollow"
               data-fr-interactive=""
-              title="Open link in a new tab"
-              aria-label="Open link in a new tab"
+              title={t('openLinkInANew')}
+              aria-label={t('openLinkInANew')}
               onPointerDown={stop}
             >
               <ExternalLink size={13} strokeWidth={2} />
@@ -174,7 +175,7 @@ const EmbedView = memo(function EmbedView({ element: el, selected }: ElementRend
 
 export default defineElement({
   type: 'embed',
-  label: { one: 'Link', many: 'Links' },
+  label: { one: t('link'), many: t('links') },
   icon: LinkIcon,
   resize: 'free',
   minSize: { w: 200, h: 96 },

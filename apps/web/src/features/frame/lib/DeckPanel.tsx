@@ -13,6 +13,7 @@ import { layoutMenu, slideMenu } from './slideMenu';
 import { editSlide, slideEditStore } from './slideEditor';
 import { SlideThumb } from './Thumb';
 
+import { t as tr } from '../messages';
 export const DECK_PANEL_ID = 'frame.deck';
 /** Presenter notes (owned by features/present; read here, written with `present.setNote`). */
 const NOTES = 'presenterNotes';
@@ -40,8 +41,8 @@ function Notes({ editor, frame, text, canEdit }: { editor: Editor; frame: FrameE
   return (
     <textarea
       className="fr-deck__notes"
-      aria-label={`Speaker notes for ${frame.title || 'this slide'}`}
-      placeholder="Speaker notes (only you see them while presenting)"
+      aria-label={tr('speakerNotesForValue', { value: frame.title || tr('thisSlide') })}
+      placeholder={tr('speakerNotesOnlyYouSee')}
       value={draft}
       rows={3}
       onFocus={() => (focused.current = true)}
@@ -71,7 +72,7 @@ const Slide = memo(function Slide(props: {
   const { editor, frame, canEdit } = props;
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
-  const items = slideMenu(editor, frame, [{ id: 'edit', label: 'Edit slide', icon: SquarePen, onSelect: () => editSlide(editor, frame.id) }]);
+  const items = slideMenu(editor, frame, [{ id: 'edit', label: tr('editSlide'), icon: SquarePen, onSelect: () => editSlide(editor, frame.id) }]);
   return (
     <li
       data-frame-id={frame.id}
@@ -83,18 +84,17 @@ const Slide = memo(function Slide(props: {
           <SlideThumb editor={editor} frame={frame} children={props.children} w={THUMB_W} h={THUMB_H} />
           {frame.skip && (
             <span className="fr-deck__skipped">
-              <EyeOff size={12} aria-hidden /> Skipped
-            </span>
+              <EyeOff size={12} aria-hidden />{' '}{tr('skipped')}</span>
           )}
         </span>
         <span className="fr-deck__title">
-          <span title={frame.title}>{frame.title || 'Untitled slide'}</span>
+          <span title={frame.title}>{frame.title || tr('untitledSlide')}</span>
           {canEdit && (
             <button
               ref={ref}
               type="button"
               className="fr-deck__more"
-              aria-label={`Slide options: ${frame.title || 'Untitled slide'}`}
+              aria-label={tr('slideOptionsValue', { value: frame.title || tr('untitledSlide') })}
               aria-haspopup="menu"
               aria-expanded={menu}
               onPointerDown={(e) => e.stopPropagation()}
@@ -106,7 +106,7 @@ const Slide = memo(function Slide(props: {
         </span>
       </div>
       {props.selected && <Notes editor={editor} frame={frame} text={props.note} canEdit={canEdit} />}
-      {canEdit && <Menu open={menu} onClose={() => setMenu(false)} anchor={ref.current} items={items} aria-label="Slide options" />}
+      {canEdit && <Menu open={menu} onClose={() => setMenu(false)} anchor={ref.current} items={items} aria-label={tr('slideOptions')} />}
     </li>
   );
 });
@@ -182,16 +182,12 @@ export function DeckPanel({ editor }: { editor: Editor }) {
   return (
     <div className="fr-deck">
       <DockHeader className="fr-frames__head">
-        <h2 className="fr-frames__title">
-          Slides
-          {frames.length > 0 && <span className="fr-frames__count">{shown === frames.length ? frames.length : `${shown} of ${frames.length}`}</span>}
+        <h2 className="fr-frames__title">{tr('slides')}{frames.length > 0 && <span className="fr-frames__count">{shown === frames.length ? frames.length : tr('shownOfLength', { shown, length: frames.length })}</span>}
         </h2>
-        <Button size="sm" variant="primary" icon={Play} disabled={!shown} onClick={() => editor.runCommand('present.start')}>
-          Present
-        </Button>
+        <Button size="sm" variant="primary" icon={Play} disabled={!shown} onClick={() => editor.runCommand('present.start')}>{tr('present')}</Button>
       </DockHeader>
       {frames.length ? (
-        <ul className="fr-deck__list" ref={listRef} aria-label="Slides">
+        <ul className="fr-deck__list" ref={listRef} aria-label={tr('slides')}>
           {frames.map((f, i) => (
             <Slide
               key={f.id}
@@ -211,16 +207,14 @@ export function DeckPanel({ editor }: { editor: Editor }) {
       ) : (
         <div className="fr-frames__empty">
           <Presentation size={28} strokeWidth={1.5} />
-          <strong>No slides yet</strong>
-          <span>Each frame is a slide. Add one with a layout to start a deck; presenting and PDF export follow this order.</span>
+          <strong>{tr('noSlidesYet')}</strong>
+          <span>{tr('eachFrameIsASlide')}</span>
         </div>
       )}
       {canEdit && (
         <div className="fr-frames__foot" ref={addRef}>
-          <Button size="sm" variant="secondary" icon={Plus} aria-haspopup="menu" aria-expanded={adding} onClick={() => setAdding((o) => !o)}>
-            New slide
-          </Button>
-          <Menu open={adding} onClose={() => setAdding(false)} anchor={addRef.current} side="top" items={layoutMenu(add, true)} aria-label="New slide layout" />
+          <Button size="sm" variant="secondary" icon={Plus} aria-haspopup="menu" aria-expanded={adding} onClick={() => setAdding((o) => !o)}>{tr('newSlide')}</Button>
+          <Menu open={adding} onClose={() => setAdding(false)} anchor={addRef.current} side="top" items={layoutMenu(add, true)} aria-label={tr('newSlideLayout')} />
         </div>
       )}
     </div>

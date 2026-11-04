@@ -2,64 +2,65 @@
 // itself is @freero/shared's `layoutStructure`, the one the server runs for insert-structure.
 import { LayoutError, looksLikeMermaid, looksLikePlantUml, parseIndentedList, parseOrgRows, type OutlineNodeInput, type StructureInput } from '@freero/shared';
 
+import { t as tr } from '../messages';
 export type TextKind = 'mindmap' | 'tree' | 'orgchart' | 'mermaid' | 'plantuml' | 'kanban' | 'stickies' | 'table';
 
 export const KINDS: Array<{ value: TextKind; label: string; noun: string; hint: string; placeholder: string }> = [
   {
     value: 'mindmap',
-    noun: 'Mind map',
-    label: 'Mind map',
-    hint: 'An indented list: the first line is the central topic, each indent a level deeper.',
-    placeholder: 'Launch plan\n  Marketing\n    Blog post\n    Webinar\n  Product\n    Private beta',
+    noun: tr('mindMap'),
+    label: tr('mindMap'),
+    hint: tr('anIndentedListTheFirst'),
+    placeholder: tr('launchPlanMarketingBlogPost'),
   },
   {
     value: 'mermaid',
-    noun: 'Diagram',
+    noun: tr('diagram'),
     label: 'Mermaid',
-    hint: 'A flowchart, a sequence, class, ER or state diagram, or a mind map in Mermaid syntax. Edit the source later to update the diagram.',
+    hint: tr('aFlowchartASequenceClass'),
     placeholder: 'flowchart TD\n  A[Request] --> B{Approved?}\n  B -- yes --> C([Ship it])\n  B -- no --> D[Revise]\n  D --> A',
   },
   {
     value: 'plantuml',
-    noun: 'Diagram',
-    label: 'PlantUML',
-    hint: 'A sequence, class, activity, state, use case or component diagram between @startuml and @enduml. Edit the source later to update the diagram.',
+    noun: tr('diagram'),
+    label: tr('plantuml'),
+    hint: tr('aSequenceClassActivityState'),
     placeholder: '@startuml\nactor Customer\nparticipant Shop\nCustomer -> Shop : Place order\nShop --> Customer : Confirmation\n@enduml',
   },
   {
     value: 'tree',
-    noun: 'Tree',
-    label: 'Tree',
-    hint: 'An indented list drawn as boxes, top-down, joined by lines.',
-    placeholder: 'Website\n  Products\n    Pricing\n  About\n    Team\n    Careers',
+    noun: tr('tree'),
+    label: tr('tree'),
+    hint: tr('anIndentedListDrawnAs'),
+    placeholder: tr('websiteProductsPricingAboutTeam'),
   },
   {
     value: 'orgchart',
-    noun: 'Org chart',
-    label: 'Org chart',
+    noun: tr('orgChart'),
+    label: tr('orgChart'),
     hint: 'One person per line: Name, Title, Manager (comma- or tab-separated). No manager = top of the chart.',
-    placeholder: 'Name, Title, Manager\nMaria Lopez, CEO,\nAnn Kim, CTO, Maria Lopez\nBo Chen, CFO, Maria Lopez\nCy Park, Engineer, Ann Kim',
+    placeholder: tr('nameTitleManagerMariaLopez'),
   },
   {
     value: 'kanban',
-    noun: 'Kanban board',
-    label: 'Kanban',
-    hint: 'Column titles, each with its cards indented below. "To do", "In progress" and "Done" columns set the cards’ status.',
-    placeholder: 'To do\n  Write the brief\n  Book the venue\nIn progress\n  Draft agenda\nDone\n  Pick a date',
+    noun: tr('kanbanBoard'),
+    label: tr('kanban'),
+    hint: tr('columnTitlesEachWithIts'),
+    placeholder: tr('toDoWriteTheBrief'),
   },
   {
     value: 'stickies',
-    noun: 'Sticky notes',
-    label: 'Sticky notes',
-    hint: 'One sticky note per line (bullets and numbers are dropped).',
-    placeholder: '- Faster onboarding\n- Dark mode\n- Offline drafts',
+    noun: tr('stickyNotes'),
+    label: tr('stickyNotes'),
+    hint: tr('oneStickyNotePerLine'),
+    placeholder: tr('fasterOnboardingDarkModeOffline'),
   },
   {
     value: 'table',
-    noun: 'Table',
-    label: 'Table',
-    hint: 'Rows of cells: a Markdown table, or tab- or comma-separated lines. The first row is the header.',
-    placeholder: '| Risk | Owner | Status |\n| --- | --- | --- |\n| Data loss | Ann | Open |\n| Slow sync | Bo | Fixed |',
+    noun: tr('table'),
+    label: tr('table'),
+    hint: tr('rowsOfCellsAMarkdown'),
+    placeholder: tr('riskOwnerStatusDataLoss'),
   },
 ];
 

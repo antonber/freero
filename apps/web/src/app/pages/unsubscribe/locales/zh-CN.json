@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "thisLinkIsIncompleteOpen",
+    "couldNotReachFreeroTry",
+    "unsubscribe",
+    "unsubscribing",
+    "unsubscribing2",
+    "youReUnsubscribed",
+    "thatLinkDidnTWork",
+    "emailWonTGetThe",
+    "emailWonTGetNotification",
+    "chooseWhichEmailsYouGet",
+    "logInToChooseWhich"
+  ],
+  "thisLinkIsIncompleteOpen": "此链接不完整。请重新打开电子邮件中的链接。",
+  "couldNotReachFreeroTry": "无法连接到 Freero。请重试。",
+  "unsubscribe": "退订",
+  "unsubscribing": "正在退订…",
+  "unsubscribing2": "正在退订",
+  "youReUnsubscribed": "你已退订",
+  "thatLinkDidnTWork": "该链接无效",
+  "emailWonTGetThe": "{email} 将不再收到“白板变更”摘要。其他电子邮件不受影响。",
+  "emailWonTGetNotification": "{email} 将不再收到通知邮件。你仍会在 Freero 中看到提及和回复。",
+  "chooseWhichEmailsYouGet": "选择你要接收的电子邮件",
+  "logInToChooseWhich": "登录以选择你要接收的电子邮件"
+}

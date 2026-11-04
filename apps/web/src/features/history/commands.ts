@@ -2,10 +2,11 @@ import { History } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { PANEL_ID } from './lib/ids';
 
+import { t } from './messages';
 export default defineCommands([
   {
     id: 'history.togglePanel',
-    label: 'Version history',
+    label: t('versionHistory'),
     icon: History,
     menus: ['board'],
     // Editors and owners only: older versions can hold content removed before the board was

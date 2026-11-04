@@ -13,6 +13,7 @@ import { FormatToolbar } from './FormatToolbar';
 import { ContextMenu } from './ContextMenu';
 import { PanelSlotView } from './PanelSlot';
 import { DockHeaderContext } from './DockHeader';
+import { t } from '../messages';
 import './chrome.css';
 
 function Dock() {
@@ -26,10 +27,10 @@ function Dock() {
   if (!reg || reg.def.slot !== 'dock-right' || ROLE_RANK[role] < ROLE_RANK[reg.def.minRole ?? 'viewer']) return null;
   const { def, feature } = reg;
   return (
-    <aside className="fr-dock fr-chrome-card" data-fr-chrome="" data-fr-occludes="dock" data-fr-region="dock" aria-label="Side panel">
+    <aside className="fr-dock fr-chrome-card" data-fr-chrome="" data-fr-occludes="dock" data-fr-region="dock" aria-label={t('sidePanel')}>
       <div className={`fr-dock__head${scrolled ? ' is-scrolled' : ''}`}>
         <div className="fr-dock__headslot" ref={setHeadSlot} />
-        <IconButton className="fr-dock__close" icon={X} label="Close panel" size={32} onClick={() => core.editor.openDock(null)} />
+        <IconButton className="fr-dock__close" icon={X} label={t('closePanel')} size={32} onClick={() => core.editor.openDock(null)} />
       </div>
       <div className="fr-dock__body" data-fr-scrollable="" onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
         {/* Mounted once the header strip exists, so a panel's header renders there from the start. */}
@@ -58,7 +59,7 @@ function BottomDock() {
   if (!reg || reg.def.slot !== 'dock-bottom' || ROLE_RANK[role] < ROLE_RANK[reg.def.minRole ?? 'viewer']) return null;
   const { def, feature } = reg;
   return (
-    <section className="fr-bottomdock fr-chrome-card" data-fr-chrome="" data-fr-occludes="bottomdock" data-fr-region="bottomdock" aria-label="Bottom panel">
+    <section className="fr-bottomdock fr-chrome-card" data-fr-chrome="" data-fr-occludes="bottomdock" data-fr-region="bottomdock" aria-label={t('bottomPanel')}>
       <ScopeContext.Provider value={feature}>
         <def.Component editor={core.scoped(feature)} />
       </ScopeContext.Provider>
@@ -78,25 +79,21 @@ function ConnectionBanner() {
   if (status === 'removed')
     return (
       <div className="fr-connection fr-connection--error" role="status">
-        <WifiOff size={14} /> This board was removed by Freero’s moderators while they review a report.
-      </div>
+        <WifiOff size={14} />{' '}{t('thisBoardWasRemovedBy')}</div>
     );
   if (status === 'denied')
     return (
       <div className="fr-connection fr-connection--error" role="status">
-        <WifiOff size={14} /> You no longer have access to this board.
-      </div>
+        <WifiOff size={14} />{' '}{t('youNoLongerHaveAccess')}</div>
     );
   if (status === 'connecting' && !synced && !wasSynced.current)
     return (
       <div className="fr-connection" role="status">
-        <Spinner size={13} /> Connecting…
-      </div>
+        <Spinner size={13} />{' '}{t('connecting')}</div>
     );
   return (
     <div className="fr-connection fr-connection--warn" role="status">
-      <Spinner size={13} /> Reconnecting… your changes are kept and will sync.
-    </div>
+      <Spinner size={13} />{' '}{t('reconnectingYourChangesAreKept')}</div>
   );
 }
 

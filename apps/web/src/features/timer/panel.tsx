@@ -16,6 +16,7 @@ import {
   type TimerPhase,
 } from './lib/timer';
 import { playChime, readMuted, unlockAudioOnFirstGesture, writeMuted } from './lib/chime';
+import { t } from './messages';
 import './timer.css';
 
 const KEY = 'state';
@@ -49,7 +50,7 @@ function MuteToggle({ muted, onChange }: { muted: boolean; onChange: (m: boolean
   return (
     <button type="button" className="fr-timer-mute" aria-pressed={muted} onClick={() => onChange(!muted)}>
       {muted ? <BellOff size={15} /> : <Bell size={15} />}
-      {muted ? 'Chime muted for you' : 'Chime on for you'}
+      {muted ? t('chimeMutedForYou') : t('chimeOnForYou')}
     </button>
   );
 }
@@ -65,7 +66,7 @@ function Setup({ onStart }: { onStart: (ms: number) => void }) {
         if (parsed) onStart(parsed);
       }}
     >
-      <div className="fr-timer-presets" role="group" aria-label="Presets">
+      <div className="fr-timer-presets" role="group" aria-label={t('presets')}>
         {PRESETS.map((m) => {
           const value = formatClock(m * MINUTE);
           return (
@@ -75,23 +76,20 @@ function Setup({ onStart }: { onStart: (ms: number) => void }) {
               className={`fr-timer-preset${parsed === m * MINUTE ? ' is-active' : ''}`}
               aria-pressed={parsed === m * MINUTE}
               onClick={() => setCustom(value)}
-            >
-              {m} min
-            </button>
+            >{t('mMin', { m })}</button>
           );
         })}
       </div>
       <Input
-        label="Custom (mm:ss)"
+        label={t('customMmSs')}
         value={custom}
         onChange={(e) => setCustom(e.target.value)}
         inputMode="numeric"
-        error={custom.trim() && !parsed ? 'Use mm:ss, up to 99:59' : undefined}
-        aria-label="Custom duration"
+        error={custom.trim() && !parsed ? t('useMmSsUpTo') : undefined}
+        aria-label={t('customDuration')}
         size="sm"
       />
-      <Button type="submit" variant="primary" icon={Play} block disabled={!parsed}>
-        Start {parsed ? formatClock(parsed) : ''}
+      <Button type="submit" variant="primary" icon={Play} block disabled={!parsed}>{t('start')}{' '}{parsed ? formatClock(parsed) : ''}
       </Button>
     </form>
   );
@@ -105,24 +103,16 @@ function Controls({ editor, state, phase, now }: { editor: Editor; state: TimerS
       <div className={`fr-timer-big${phase === 'paused' ? ' is-paused' : ''}`} aria-live="off">
         {formatClock(remainingMs(state, now))}
       </div>
-      <div className="fr-timer-sub">{phase === 'paused' ? 'Paused' : `of ${formatClock(state.duration)}`}</div>
+      <div className="fr-timer-sub">{phase === 'paused' ? t('paused') : t('ofValue', { value: formatClock(state.duration) })}</div>
       {canEdit && (
         <div className="fr-timer-row">
           {phase === 'paused' ? (
-            <Button size="sm" variant="primary" icon={Play} onClick={() => write(resumeTimer(state, editor.host.serverNow()))}>
-              Resume
-            </Button>
+            <Button size="sm" variant="primary" icon={Play} onClick={() => write(resumeTimer(state, editor.host.serverNow()))}>{t('resume')}</Button>
           ) : (
-            <Button size="sm" icon={Pause} onClick={() => write(pauseTimer(state, editor.host.serverNow()))}>
-              Pause
-            </Button>
+            <Button size="sm" icon={Pause} onClick={() => write(pauseTimer(state, editor.host.serverNow()))}>{t('pause')}</Button>
           )}
-          <Button size="sm" icon={Plus} onClick={() => write(addTime(state, editor.host.serverNow()))}>
-            1 min
-          </Button>
-          <Button size="sm" variant="ghost" icon={Square} onClick={() => editor.collection<TimerState>('timer').delete(KEY)}>
-            Stop
-          </Button>
+          <Button size="sm" icon={Plus} onClick={() => write(addTime(state, editor.host.serverNow()))}>{t('n1Min')}</Button>
+          <Button size="sm" variant="ghost" icon={Square} onClick={() => editor.collection<TimerState>('timer').delete(KEY)}>{t('stop')}</Button>
         </div>
       )}
     </div>
@@ -176,20 +166,20 @@ function TimerPanel({ editor }: { editor: Editor }) {
 
   let trigger;
   if (phase === 'idle') {
-    trigger = <IconButton ref={anchor} icon={TimerIcon} label="Timer" active={open} onClick={() => setOpen((o) => !o)} />;
+    trigger = <IconButton ref={anchor} icon={TimerIcon} label={t('timer')} active={open} onClick={() => setOpen((o) => !o)} />;
   } else if (phase === 'done') {
     const flashing = flashUntil > Date.now();
     trigger = (
-      <Tooltip content="Dismiss" side="bottom">
+      <Tooltip content={t('dismiss')} side="bottom">
         <button
           ref={anchor}
           type="button"
           className={`fr-timer-pill is-done${flashing ? ' is-flashing' : ''}`}
           onClick={() => setDismissedAt(state?.endsAt ?? null)}
-          aria-label="Time's up. Click to dismiss"
+          aria-label={t('timeSUpClickTo')}
         >
           <TimerIcon size={16} />
-          {flashing ? '00:00' : "Time's up"}
+          {flashing ? '00:00' : t('timeSUp')}
         </button>
       </Tooltip>
     );
@@ -200,7 +190,7 @@ function TimerPanel({ editor }: { editor: Editor }) {
         ref={anchor}
         type="button"
         className={`fr-timer-pill${phase === 'paused' ? ' is-paused' : ''}${phase === 'running' && ms <= 10_000 ? ' is-ending' : ''}`}
-        aria-label={`Timer ${formatClock(ms)}${phase === 'paused' ? ', paused' : ''}`}
+        aria-label={t('timerValueValue2', { value: formatClock(ms), value2: phase === 'paused' ? t('paused2') : '' })}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
@@ -213,9 +203,9 @@ function TimerPanel({ editor }: { editor: Editor }) {
   return (
     <>
       {trigger}
-      <Popover open={open && phase !== 'done'} onClose={() => setOpen(false)} anchor={anchor.current} side="bottom" align="end" width={296} aria-label="Timer">
+      <Popover open={open && phase !== 'done'} onClose={() => setOpen(false)} anchor={anchor.current} side="bottom" align="end" width={296} aria-label={t('timer')}>
         <div className="fr-timer-pop">
-          <div className="fr-timer-pop__title">Timer</div>
+          <div className="fr-timer-pop__title">{t('timer')}</div>
           {phase === 'idle' ? (
             <Setup onStart={start} />
           ) : (

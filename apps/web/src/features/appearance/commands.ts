@@ -4,7 +4,8 @@
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { defineCommands, type ColorThemeChoice, type CommandDefinition, type Editor } from '@engine';
 
-const NAMES: Record<ColorThemeChoice, string> = { system: 'Same as device', light: 'Light', dark: 'Dark' };
+import { t as tr } from './messages';
+const NAMES: Record<ColorThemeChoice, string> = { system: tr('sameAsDevice'), light: 'Light', dark: 'Dark' };
 const ICONS = { system: Monitor, light: Sun, dark: Moon } as const;
 const NEXT: Record<ColorThemeChoice, ColorThemeChoice> = { system: 'light', light: 'dark', dark: 'system' };
 const available = (editor: Editor) => !!editor.host.colorTheme;
@@ -12,7 +13,7 @@ const available = (editor: Editor) => !!editor.host.colorTheme;
 const choose = (theme: ColorThemeChoice): CommandDefinition => ({
   id: `appearance.${theme}`,
   icon: ICONS[theme],
-  label: theme === 'system' ? 'Theme: same as device' : `Theme: ${NAMES[theme].toLowerCase()}`,
+  label: theme === 'system' ? tr('themeSameAsDevice') : tr('themeTheme', { theme: NAMES[theme].toLowerCase() }),
   minRole: 'viewer',
   palette: true,
   when: available,
@@ -23,7 +24,7 @@ export default defineCommands([
   {
     id: 'appearance.cycle',
     icon: Moon,
-    label: 'Theme',
+    label: tr('theme'),
     menus: ['board'],
     minRole: 'viewer',
     // It cycles; the palette lists the three choices below instead.

@@ -1,0 +1,18 @@
+{
+  "googleDocs": "Google Docs",
+  "googleSheets": "Google Sheets",
+  "googleSlides": "Google Slides",
+  "googleForms": "Google Forms",
+  "fullScreen": "Full screen",
+  "openInANewTab": "Open in a new tab",
+  "closeShowThePreviewAgain": "Close (show the preview again)",
+  "closeLiveView": "Close live view",
+  "playLabelVideo": "Play {label} video",
+  "openLiveLabelView": "Open live {label} view",
+  "openLiveViewLabel": "Open live view ({label})",
+  "openLive": "Open live",
+  "loadingPreview": "Loading preview…",
+  "openLinkInANew": "Open link in a new tab",
+  "link": "Link",
+  "links": "Links"
+}

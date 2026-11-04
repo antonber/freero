@@ -4,6 +4,7 @@ import { CARD_H, CARD_W, boundsOf, rowLayout, videoSize } from './layout';
 import { addPending } from './pending';
 import { storeFile, type Stored } from './store';
 
+import { t } from '../messages';
 const MAX_FILES = 20;
 
 function itemOf(s: Exclude<Stored, { kind: 'error' }>): Omit<NewElement<'media'>, 'x' | 'y'> | Omit<NewElement<'file'>, 'x' | 'y'> {
@@ -31,7 +32,7 @@ function itemOf(s: Exclude<Stored, { kind: 'error' }>): Omit<NewElement<'media'>
  */
 export async function insertFiles(editor: Editor, files: File[], at: Point | null, near?: Point): Promise<string[]> {
   if (!files.length || !editor.can('editor')) return [];
-  if (files.length > MAX_FILES) editor.host.notify(`Adding the first ${MAX_FILES} of ${files.length} files.`, 'info');
+  if (files.length > MAX_FILES) editor.host.notify(t('addingTheFirstMaxFiles', { max_files: MAX_FILES, length: files.length }), 'info');
   const batch = files.slice(0, MAX_FILES);
   let guess = rowLayout(batch.map(() => ({ w: CARD_W, h: CARD_H })), at ?? near ?? editor.getViewportCenter());
   if (!at) guess = intoFreeSpot(editor, guess, near);

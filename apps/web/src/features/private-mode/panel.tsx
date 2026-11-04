@@ -4,6 +4,7 @@ import { PRIVATE_MODE_TYPES, type PrivateModeSession } from '@freero/shared';
 import { definePanel, useCanEdit, useCollection, useElements, useParticipant, type Editor } from '@engine';
 import { Button, Toggle } from '@ui';
 import { COLLECTION, canManage, privateRule, revealAndEnd, setAnonymous, shareLeftovers } from './lib/session';
+import { t as tr } from './messages';
 import './private-mode.css';
 
 function useSession(): PrivateModeSession | undefined {
@@ -34,10 +35,10 @@ function PrivateModeBar({ editor }: { editor: Editor }) {
   const where = frame && 'title' in frame && frame.title ? ` in “${frame.title}”` : frame ? ' in a frame' : '';
   const by = session.startedBy === editor.user.id ? 'you reveal' : `${session.startedByName || 'the facilitator'} reveals`;
   // Everyone is told before they write whether their notes will carry their name (#44).
-  const title = session.anonymous ? 'Anonymous private mode' : 'Private mode';
+  const title = session.anonymous ? tr('anonymousPrivateMode') : tr('privateMode');
 
   return (
-    <div className="fr-private-bar" data-fr-interactive="" role="region" aria-label="Private mode">
+    <div className="fr-private-bar" data-fr-interactive="" role="region" aria-label={tr('privateMode')}>
       <span className="fr-private-bar__icon">
         <EyeOff size={16} />
       </span>
@@ -48,21 +49,17 @@ function PrivateModeBar({ editor }: { editor: Editor }) {
         </strong>
         <span>
           {canEdit
-            ? `What you add${where ? ' there' : ''} is visible only to you until ${by} it${session.anonymous ? ', without your name' : ''}. Others don't see your cursor ${where ? 'there' : 'meanwhile'}.`
-            : `Participants' notes appear here once they are revealed${session.anonymous ? ', without names' : ''}.`}
+            ? tr('whatYouAddValueIs', { value: where ? tr('there') : '', by, value2: session.anonymous ? tr('withoutYourName') : '', value3: where ? tr('there2') : tr('meanwhile') })
+            : tr('participantsNotesAppearHereOnce', { value: session.anonymous ? tr('withoutNames') : '' })}
         </span>
       </div>
       {canEdit && (
-        <span className="fr-private-bar__count" title="Only you can see these until they are revealed">
-          {mine} private item{mine === 1 ? '' : 's'}
-        </span>
+        <span className="fr-private-bar__count" title={tr('onlyYouCanSeeThese')}>{tr('minePrivateItems', { mine })}</span>
       )}
       {canManage(editor, session) && (
         <>
-          <Toggle size="sm" label="Anonymous" checked={!!session.anonymous} onChange={(on) => setAnonymous(editor, on)} />
-          <Button size="sm" variant="primary" icon={Eye} onClick={() => revealAndEnd(editor)}>
-            Reveal all
-          </Button>
+          <Toggle size="sm" label={tr('anonymous')} checked={!!session.anonymous} onChange={(on) => setAnonymous(editor, on)} />
+          <Button size="sm" variant="primary" icon={Eye} onClick={() => revealAndEnd(editor)}>{tr('revealAll')}</Button>
         </>
       )}
     </div>
@@ -81,19 +78,15 @@ function LeftoverBar({ editor, count }: { editor: Editor; count: number }) {
   }, []);
   if (!shown) return null;
   return (
-    <div className="fr-private-bar" data-fr-interactive="" role="region" aria-label="Private items">
+    <div className="fr-private-bar" data-fr-interactive="" role="region" aria-label={tr('privateItems')}>
       <span className="fr-private-bar__icon">
         <EyeOff size={16} />
       </span>
       <div className="fr-private-bar__text">
-        <strong>
-          {count} item{count === 1 ? ' is' : 's are'} still visible only to you
-        </strong>
-        <span>Private mode has ended. Share {count === 1 ? 'it' : 'them'} with everyone on the board?</span>
+        <strong>{tr('countItemsAreStillVisible', { count })}</strong>
+        <span>{tr('privateModeHasEndedShare', { count })}</span>
       </div>
-      <Button size="sm" variant="primary" icon={Eye} onClick={() => shareLeftovers(editor)}>
-        Share
-      </Button>
+      <Button size="sm" variant="primary" icon={Eye} onClick={() => shareLeftovers(editor)}>{tr('share')}</Button>
     </div>
   );
 }

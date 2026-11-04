@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} convidou você para “{board}” no Freero",
+  "invite.title": "{inviter} convidou você para um quadro",
+  "invite.body": "{role, select, editor {Você pode editar “{board}”.} commenter {Você pode comentar em “{board}”.} other {Você pode ver “{board}”.}} O Freero é um quadro branco on-line gratuito; você vai precisar de uma conta gratuita para abri-lo.",
+  "invite.action": "Abrir o quadro",
+  "invite.outro": "{inviter} ({email}) enviou este convite. O link funciona uma única vez e expira em 14 dias."
+}

@@ -9,6 +9,7 @@ import { FACILITATION_COLLECTION, FACILITATION_KEY, type FacilitationSession } f
 import { definePanel, describeElementType, useCollection, useLimits, usePeers, type Editor } from '@engine';
 import { Avatar, Button, Popover, Tooltip } from '@ui';
 import { canManage, change, cursorsHiddenFor, end, readSession, useCursorPrefs } from './lib/session';
+import { t as tr } from './messages';
 import './facilitation.css';
 
 function useSession(): FacilitationSession | undefined {
@@ -57,19 +58,17 @@ function FacilitatorBar({ editor, session }: { editor: Editor; session: Facilita
   const types = session.allowedTypes;
 
   return (
-    <div className="fr-facil-bar" data-fr-interactive="" role="region" aria-label="Facilitator controls">
+    <div className="fr-facil-bar" data-fr-interactive="" role="region" aria-label={tr('facilitatorControls')}>
       <span className="fr-facil-bar__icon">
         <Presentation size={16} />
       </span>
       <div className="fr-facil-bar__text">
-        <strong>{mine ? 'You are facilitating' : `${session.byName} is facilitating`}</strong>
-        <span>
-          {people} participant{people === 1 ? '' : 's'}
-          {mine ? '' : ' · you can change or end it as the owner'}
+        <strong>{mine ? tr('youAreFacilitating') : tr('bynameIsFacilitating', { byName: session.byName })}</strong>
+        <span>{tr('peopleParticipants', { people })}{mine ? '' : tr('youCanChangeOrEnd')}
         </span>
       </div>
       <div className="fr-facil-bar__controls">
-        <Tooltip content={session.locked ? 'Participants can only comment. Click to unlock.' : 'Make the board comment-only for participants'} side="bottom">
+        <Tooltip content={session.locked ? tr('participantsCanOnlyCommentClick') : tr('makeTheBoardCommentOnly')} side="bottom">
           <Button
             size="sm"
             variant="ghost"
@@ -78,7 +77,7 @@ function FacilitatorBar({ editor, session }: { editor: Editor; session: Facilita
             icon={session.locked ? Lock : LockOpen}
             onClick={() => change(editor, { locked: !session.locked })}
           >
-            {session.locked ? 'Locked' : 'Lock board'}
+            {session.locked ? tr('locked') : tr('lockBoard')}
           </Button>
         </Tooltip>
         <Button
@@ -91,12 +90,12 @@ function FacilitatorBar({ editor, session }: { editor: Editor; session: Facilita
           icon={Shapes}
           onClick={() => setTypesOpen((o) => !o)}
         >
-          {types ? `Adding: ${types.length ? describeElementType(editor, types[0]).many : 'nothing'}${types.length > 1 ? ` +${types.length - 1}` : ''}` : 'Any tool'}
+          {types ? tr('addingValueValue2', { length: types.length, value: types.length ? describeElementType(editor, types[0]).many : tr('nothing'), value2: types.length - 1 }) : tr('anyTool')}
         </Button>
         <Popover open={typesOpen} onClose={() => setTypesOpen(false)} anchor={typesRef.current} side="bottom" align="center" width={260}>
           <ToolPicker editor={editor} session={session} />
         </Popover>
-        <Tooltip content={session.follow ? "Participants see what you see and can't wander off" : 'Make everyone follow your view'} side="bottom">
+        <Tooltip content={session.follow ? tr('participantsSeeWhatYouSee') : tr('makeEveryoneFollowYourView')} side="bottom">
           <Button
             size="sm"
             variant="ghost"
@@ -104,11 +103,9 @@ function FacilitatorBar({ editor, session }: { editor: Editor; session: Facilita
             aria-pressed={session.follow}
             icon={Crosshair}
             onClick={() => change(editor, { follow: !session.follow })}
-          >
-            Follow me
-          </Button>
+          >{tr('followMe')}</Button>
         </Tooltip>
-        <Tooltip content="Hide everyone's cursors from participants (quiet, independent work)" side="bottom">
+        <Tooltip content={tr('hideEveryoneSCursorsFrom')} side="bottom">
           <Button
             size="sm"
             variant="ghost"
@@ -117,13 +114,11 @@ function FacilitatorBar({ editor, session }: { editor: Editor; session: Facilita
             icon={MousePointer2}
             onClick={() => change(editor, { cursorsHidden: !session.cursorsHidden })}
           >
-            {session.cursorsHidden ? 'Cursors hidden' : 'Hide cursors'}
+            {session.cursorsHidden ? tr('cursorsHidden') : tr('hideCursors')}
           </Button>
         </Tooltip>
       </div>
-      <Button size="sm" variant="secondary" icon={X} onClick={() => end(editor)}>
-        End
-      </Button>
+      <Button size="sm" variant="secondary" icon={X} onClick={() => end(editor)}>{tr('end')}</Button>
     </div>
   );
 }
@@ -138,12 +133,10 @@ function ToolPicker({ editor, session }: { editor: Editor; session: Facilitation
     change(editor, { allowedTypes: next });
   };
   return (
-    <div className="fr-facil-tools" role="group" aria-label="What participants can add">
-      <div className="fr-facil-tools__head">Participants can add</div>
+    <div className="fr-facil-tools" role="group" aria-label={tr('whatParticipantsCanAdd')}>
+      <div className="fr-facil-tools__head">{tr('participantsCanAdd')}</div>
       <button type="button" className="fr-facil-tools__row" aria-pressed={!chosen} onClick={() => change(editor, { allowedTypes: null })}>
-        <span className="fr-facil-tools__check">{!chosen && <Check size={14} />}</span>
-        Anything
-      </button>
+        <span className="fr-facil-tools__check">{!chosen && <Check size={14} />}</span>{tr('anything')}</button>
       {addable.map((type) => {
         const d = describeElementType(editor, type);
         const on = !!chosen?.includes(type);
@@ -155,7 +148,7 @@ function ToolPicker({ editor, session }: { editor: Editor; session: Facilitation
           </button>
         );
       })}
-      <p className="fr-facil-tools__note">Comments are always allowed. Existing items can still be moved and edited unless the board is locked.</p>
+      <p className="fr-facil-tools__note">{tr('commentsAreAlwaysAllowedExisting')}</p>
     </div>
   );
 }
@@ -166,12 +159,12 @@ function ParticipantBar({ editor, session }: { editor: Editor; session: Facilita
   const hideMine = useCursorPrefs((s) => s.hideMine);
   const lead = peers.find((p) => p.user?.id === session.by)?.user;
   const notes: string[] = [];
-  if (limits?.locked) notes.push('The board is locked: you can comment');
-  else if (limits?.addTypes) notes.push(`You can add ${typeNames(editor, limits.addTypes)}`);
-  if (session.follow) notes.push(`You're following ${session.byName}`);
-  if (session.cursorsHidden) notes.push('Cursors are hidden');
+  if (limits?.locked) notes.push(tr('theBoardIsLockedYou'));
+  else if (limits?.addTypes) notes.push(tr('youCanAddTypenames', { typeNames: typeNames(editor, limits.addTypes) }));
+  if (session.follow) notes.push(tr('youReFollowingByname', { byName: session.byName }));
+  if (session.cursorsHidden) notes.push(tr('cursorsAreHidden'));
   return (
-    <div className="fr-facil-bar is-participant" data-fr-interactive="" role="region" aria-label="Facilitator controls">
+    <div className="fr-facil-bar is-participant" data-fr-interactive="" role="region" aria-label={tr('facilitatorControls')}>
       {lead ? (
         <Avatar name={lead.name} color={lead.color} src={lead.avatarUrl ?? undefined} size={28} />
       ) : (
@@ -180,11 +173,11 @@ function ParticipantBar({ editor, session }: { editor: Editor; session: Facilita
         </span>
       )}
       <div className="fr-facil-bar__text">
-        <strong>{session.byName} is facilitating</strong>
-        <span>{notes.length ? notes.join(' · ') : 'Work as usual'}</span>
+        <strong>{tr('bynameIsFacilitating', { byName: session.byName })}</strong>
+        <span>{notes.length ? notes.join(' · ') : tr('workAsUsual')}</span>
       </div>
       {!session.cursorsHidden && (
-        <Tooltip content={hideMine ? 'Show other people’s cursors again' : 'Hide other people’s cursors (only for you)'} side="bottom">
+        <Tooltip content={hideMine ? tr('showOtherPeopleSCursors') : tr('hideOtherPeopleSCursors2')} side="bottom">
           <Button
             size="sm"
             variant="ghost"
@@ -193,7 +186,7 @@ function ParticipantBar({ editor, session }: { editor: Editor; session: Facilita
             icon={MousePointer2}
             onClick={() => useCursorPrefs.getState().setHideMine(!hideMine)}
           >
-            {hideMine ? 'Cursors off' : 'Cursors'}
+            {hideMine ? tr('cursorsOff') : tr('cursors')}
           </Button>
         </Tooltip>
       )}

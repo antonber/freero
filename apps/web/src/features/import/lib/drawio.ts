@@ -34,6 +34,7 @@ import {
   type ImportResult,
 } from './common';
 
+import { t as tr } from '../messages';
 /** Looks like a draw.io file (by its content, whatever its name). */
 export function looksLikeDrawio(text: string): boolean {
   const head = text.slice(0, 2000).trimStart();
@@ -375,7 +376,7 @@ export async function parseDrawio(text: string, newId: () => string): Promise<Im
       } else if (shapeName(c.style) === 'image') {
         const src = imageSource(c.style.get('image'));
         if (!src) {
-          skips.add('Images that aren’t embedded or linked (left out)');
+          skips.add(tr('imagesThatArenTEmbedded'));
           continue;
         }
         d = imageDraft(id, r, rotation, c.label.slice(0, 200));
@@ -383,7 +384,7 @@ export async function parseDrawio(text: string, newId: () => string): Promise<Im
       } else {
         let kind = shapeKind(c.style);
         if (!kind) {
-          skips.add(`“${(shapeName(c.style) ?? 'unknown').replace(/^mxgraph\./, '')}” shapes (drawn as rectangles)`);
+          skips.add(tr('replaceShapesDrawnAsRectangles', { replace: (shapeName(c.style) ?? 'unknown').replace(/^mxgraph\./, '') }));
           kind = 'rect';
         }
         const fs = num(c.style.get('fontStyle'), 0);
@@ -424,14 +425,14 @@ export async function parseDrawio(text: string, newId: () => string): Promise<Im
       const a = end(source, 'exitX', 'exitY', 'sourcePoint');
       const b = end(target, 'entryX', 'entryY', 'targetPoint');
       if (!a || !b) {
-        skips.add('Lines with a loose end that has no position (left out)');
+        skips.add(tr('linesWithALooseEnd'));
         continue;
       }
       const label = [c.label, ...(edgeLabels.get(c.id) ?? [])].filter(Boolean).join('\n');
       const box = lineBox(a, b);
       const routing = c.style.get('edgeStyle')?.includes('orthogonal') || c.style.get('edgeStyle') === 'elbowEdgeStyle' ? 'elbow' : c.style.get('curved') === '1' ? 'curved' : 'straight';
       const bends = [...(c.geo?.children ?? [])].some((ch) => ch.tagName === 'Array' && ch.getAttribute('as') === 'points' && ch.children.length > 0);
-      if (bends && routing !== 'elbow') skips.add('Hand-placed bends of lines (drawn as straight or curved lines)');
+      if (bends && routing !== 'elbow') skips.add(tr('handPlacedBendsOfLines'));
       const id = newId();
       const draft = {
         ...connectorDraft(id, { point: { x: 0, y: 0 } }, { point: { x: 0, y: 0 } }, { routing }),

@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "invite.subject",
+    "invite.title",
+    "invite.body",
+    "invite.action",
+    "invite.outro"
+  ],
+  "invite.subject": "{inviter} convidou você para o espaço de trabalho “{workspace}” no Freero",
+  "invite.title": "Participe de “{workspace}” no Freero",
+  "invite.body": "{role, select, admin {{inviter} convidou você para entrar no espaço de trabalho da equipe como administrador.} member {{inviter} convidou você para entrar no espaço de trabalho da equipe como membro.} other {{inviter} convidou você para entrar no espaço de trabalho da equipe como convidado (você verá os quadros compartilhados com você).}} O Freero é um quadro branco on-line gratuito; você vai precisar de uma conta gratuita.",
+  "invite.action": "Entrar no espaço de trabalho",
+  "invite.outro": "{inviter} ({email}) enviou este convite. O link funciona uma única vez e expira em 14 dias."
+}

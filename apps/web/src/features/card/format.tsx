@@ -9,6 +9,7 @@ import { detailsSession, type DetailsSession } from './lib/details';
 import { useBoardPeople, usePerson } from './lib/people';
 import { CardFields } from './lib/FieldsEditor';
 
+import { t } from './messages';
 type Props = { editor: Editor; cards: CardElement[] };
 
 function patchAll(editor: Editor, cards: CardElement[], patch: Partial<CardElement>) {
@@ -26,10 +27,10 @@ function ColorControl({ editor, cards }: Props) {
   const color = same(cards, 'color');
   return (
     <>
-      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Card color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label={t('cardColor')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="fr-card-fmt-dot" style={{ background: color ?? 'conic-gradient(#5B3FF0, #1FA463, #F5A524, #E5484D, #5B3FF0)' }} />
       </ToolbarButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Card color">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('cardColor')}>
         <ColorSwatches
           colors={ACCENTS}
           names={ACCENT_NAMES}
@@ -41,7 +42,7 @@ function ColorControl({ editor, cards }: Props) {
             patchAll(editor, cards, { color: c });
             editor.setToolOptions(TOOL_ID, { color: c });
           }}
-          aria-label="Card color"
+          aria-label={t('cardColor')}
         />
       </Popover>
     </>
@@ -52,10 +53,10 @@ function StatusControl({ editor, cards }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const status = same(cards, 'status');
-  const label = cards.every((c) => c.status === status) ? (STATUSES.find((s) => s.value === status)?.label ?? 'No status') : 'Mixed';
+  const label = cards.every((c) => c.status === status) ? (STATUSES.find((s) => s.value === status)?.label ?? t('noStatus')) : 'Mixed';
   return (
     <>
-      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Status" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label={t('status')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <CircleDashed size={16} />
         {label}
       </ToolbarButton>
@@ -73,7 +74,7 @@ function StatusControl({ editor, cards }: Props) {
             onSelect: () => patchAll(editor, cards, { status: s.value as CardStatus }),
           })),
           { divider: true as const },
-          { id: 'none', label: 'No status', checked: status === null, onSelect: () => patchAll(editor, cards, { status: null }) },
+          { id: 'none', label: t('noStatus'), checked: status === null, onSelect: () => patchAll(editor, cards, { status: null }) },
         ]}
       />
     </>
@@ -87,35 +88,31 @@ function DueControl({ editor, cards }: Props) {
   const start = same(cards, 'startDate') ?? null;
   return (
     <>
-      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Due date" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label={t('dueDate')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <CalendarDays size={16} />
         {due ? formatDue(due, new Date(editor.host.serverNow())) : null}
       </ToolbarButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Due date">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('dueDate')}>
         <div className="fr-card-pop">
-          <div className="fr-card-pop__label">Due date</div>
+          <div className="fr-card-pop__label">{t('dueDate')}</div>
           <input
             type="date"
-            aria-label="Due date"
+            aria-label={t('dueDate')}
             value={due ?? ''}
             onChange={(e) => patchAll(editor, cards, { dueDate: e.target.value || null })}
           />
           {/* A start date makes the card span days on a timeline. */}
-          <div className="fr-card-pop__label">Start date</div>
+          <div className="fr-card-pop__label">{t('startDate')}</div>
           <input
             type="date"
-            aria-label="Start date"
+            aria-label={t('startDate')}
             value={start ?? ''}
             max={due ?? undefined}
             onChange={(e) => patchAll(editor, cards, { startDate: e.target.value || null })}
           />
           <div className="fr-card-pop__row">
-            <Button size="sm" variant="secondary" onClick={() => patchAll(editor, cards, { dueDate: localISODate(new Date(editor.host.serverNow())) })}>
-              Today
-            </Button>
-            <Button size="sm" variant="ghost" disabled={!due && cards.every((c) => !c.dueDate)} onClick={() => patchAll(editor, cards, { dueDate: null })}>
-              Clear
-            </Button>
+            <Button size="sm" variant="secondary" onClick={() => patchAll(editor, cards, { dueDate: localISODate(new Date(editor.host.serverNow())) })}>{t('today')}</Button>
+            <Button size="sm" variant="ghost" disabled={!due && cards.every((c) => !c.dueDate)} onClick={() => patchAll(editor, cards, { dueDate: null })}>{t('clear')}</Button>
           </div>
         </div>
       </Popover>
@@ -139,19 +136,19 @@ function AssigneeControl({ editor, cards }: Props) {
   };
   return (
     <>
-      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Assignee" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label={t('assignee')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {assignee ? <AssigneeButtonFace id={assignee} /> : <UserPlus size={16} />}
       </ToolbarButton>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={260} aria-label="Assign to">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={260} aria-label={t('assignTo')}>
         <div className="fr-card-pop">
-          <div className="fr-card-pop__label">Assign to</div>
-          <ul className="fr-card-people" role="radiogroup" aria-label="Assignee">
+          <div className="fr-card-pop__label">{t('assignTo')}</div>
+          <ul className="fr-card-people" role="radiogroup" aria-label={t('assignee')}>
             {people.map((p, i) => (
               <li key={p.id}>
                 <button type="button" role="radio" aria-checked={assignee === p.id} onClick={() => assign(p.id)}>
                   <Avatar name={p.name} color={p.color} src={p.avatarUrl} size={24} />
                   <span className="fr-card-people__name">{p.name}</span>
-                  {i === 0 && <span className="fr-card-people__hint">You</span>}
+                  {i === 0 && <span className="fr-card-people__hint">{t('you')}</span>}
                 </button>
               </li>
             ))}
@@ -160,11 +157,11 @@ function AssigneeControl({ editor, cards }: Props) {
                 <span className="fr-card-people__none">
                   <UserPlus size={13} />
                 </span>
-                <span className="fr-card-people__name">Unassigned</span>
+                <span className="fr-card-people__name">{t('unassigned')}</span>
               </button>
             </li>
           </ul>
-          {people.length === 1 && <div className="fr-card-people__hint">Share the board to assign cards to others.</div>}
+          {people.length === 1 && <div className="fr-card-people__hint">{t('shareTheBoardToAssign')}</div>}
         </div>
       </Popover>
     </>
@@ -217,7 +214,7 @@ function DetailsControl({ editor, cards }: Props) {
       <IconButton
         ref={ref}
         icon={NotebookText}
-        label="Open details"
+        label={t('openDetails')}
         size={32}
         active={open}
         disabled={cards.length !== 1}
@@ -227,15 +224,15 @@ function DetailsControl({ editor, cards }: Props) {
           setOpen(true);
         }}
       />
-      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" offset={10} width={380} aria-label="Card details" className="fr-card-details">
+      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" offset={10} width={380} aria-label={t('cardDetails')} className="fr-card-details">
         <div className="fr-card-pop">
           <CardFields editor={editor} card={card} />
-          <div className="fr-card-pop__label">Description</div>
+          <div className="fr-card-pop__label">{t('description')}</div>
           <TextArea
             autoFocus
             value={text}
-            placeholder="Add details, links, acceptance criteria…"
-            aria-label="Card description"
+            placeholder={t('addDetailsLinksAcceptanceCriteria')}
+            aria-label={t('cardDescription')}
             onFocus={() => {
               if (!gesture.current) {
                 gesture.current = true;
@@ -273,17 +270,15 @@ function FlipControl({ editor, cards }: Props) {
     );
   return (
     <>
-      <ToolbarButton className="fr-card-fmt-btn" label={twoSided ? 'Make one-sided' : 'Two-sided (add a back)'} aria-pressed={twoSided} onClick={toggleTwoSided}>
-        <SquareStack size={16} />
-        Two-sided
-      </ToolbarButton>
+      <ToolbarButton className="fr-card-fmt-btn" label={twoSided ? t('makeOneSided') : t('twoSidedAddABack')} aria-pressed={twoSided} onClick={toggleTwoSided}>
+        <SquareStack size={16} />{t('twoSided')}</ToolbarButton>
       {twoSided ? (
         <>
-          <IconButton icon={Repeat2} label={flipped ? 'Show the front' : 'Flip to the back'} active={flipped} onClick={() => patchAll(editor, cards, { flipped: !flipped })} />
-          <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Back color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <IconButton icon={Repeat2} label={flipped ? t('showTheFront') : t('flipToTheBack')} active={flipped} onClick={() => patchAll(editor, cards, { flipped: !flipped })} />
+          <ToolbarButton ref={ref} className="fr-card-fmt-btn" label={t('backColor')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
             <span className="fr-card-fmt-dot" style={{ background: backColor ?? 'conic-gradient(#FFF1B8, #D2F4E6, #D7ECFF, #FFD9EC, #FFF1B8)' }} />
           </ToolbarButton>
-          <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Back color">
+          <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('backColor')}>
             <ColorSwatches
               colors={BACK_COLORS}
               names={BACK_COLOR_NAMES}
@@ -292,7 +287,7 @@ function FlipControl({ editor, cards }: Props) {
               size={26}
               allowCustom
               onChange={(color) => editor.updateMany(cards.map((c) => ({ id: c.id, patch: { back: { title: c.back?.title ?? '', color } } as Partial<CardElement> })))}
-              aria-label="Back color"
+              aria-label={t('backColor')}
             />
           </Popover>
         </>

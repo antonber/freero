@@ -1,0 +1,22 @@
+{
+  "@@unreviewed": [
+    "selectOneItemToCopy",
+    "copyStyle",
+    "styleCopiedPasteItWith",
+    "pasteStyle",
+    "stopPaintingFormat",
+    "formatPainterClickOtherItems",
+    "formatPainter",
+    "selectOneItemThenPick",
+    "unlockThisItemToChange"
+  ],
+  "selectOneItemToCopy": "حدّد عنصرًا واحدًا لنسخ نمطه.",
+  "copyStyle": "نسخ النمط",
+  "styleCopiedPasteItWith": "تم نسخ النمط. الصقه باستخدام Alt+Mod+V.",
+  "pasteStyle": "لصق النمط",
+  "stopPaintingFormat": "إيقاف نسخ التنسيق",
+  "formatPainterClickOtherItems": "ناسخ التنسيق: انقر على عناصر أخرى لتطبيق هذا النمط",
+  "formatPainter": "ناسخ التنسيق",
+  "selectOneItemThenPick": "حدّد عنصرًا واحدًا، ثم اختر ناسخ التنسيق لنسخ نمطه.",
+  "unlockThisItemToChange": "ألغِ قفل هذا العنصر لتغيير نمطه."
+}

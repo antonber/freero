@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "Board als Liste",
+  "everyItemInReadingOrder": "Alle Elemente in Lesereihenfolge, die Elemente eines Rahmens darunter. Pfeiltasten bewegen, Rechts und Links öffnen und schließen einen Rahmen, Enter zeigt das Element auf dem Board.",
+  "thisBoardIsEmpty": "Dieses Board ist leer.",
+  "boardItems": "Board-Elemente",
+  "connections": "Verbindungen"
+}

@@ -3,6 +3,7 @@ import type { PdfElement } from '@freero/shared';
 import { defineCommands, type Editor } from '@engine';
 import { placeAllPages } from './lib/actions';
 
+import { t } from './messages';
 const selectedPdf = (editor: Editor) => {
   const sel = editor.getSelection();
   const el = sel.length === 1 ? editor.getElement<PdfElement>(sel[0]) : undefined;
@@ -12,7 +13,7 @@ const selectedPdf = (editor: Editor) => {
 export default defineCommands([
   {
     id: 'pdf.placePages',
-    label: 'Place all pages',
+    label: t('placeAllPages'),
     icon: LayoutGrid,
     menus: ['context'],
     when: (editor) => !!selectedPdf(editor),

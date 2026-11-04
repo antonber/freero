@@ -1,0 +1,26 @@
+{
+  "@@unreviewed": [
+    "selectAll",
+    "lengthItemsSelected",
+    "selectOnly",
+    "onlyOneKindOfItem",
+    "noNameInTheSelection",
+    "ofThisType",
+    "selectSomethingFirst",
+    "withThisColour",
+    "selectSomethingWithAColour",
+    "withThisTag",
+    "selectSomethingTagged"
+  ],
+  "selectAll": "בחירת הכול",
+  "lengthItemsSelected": "{length} פריטים נבחרו",
+  "selectOnly": "בחירה רק של",
+  "onlyOneKindOfItem": "נבחר רק סוג אחד של פריטים",
+  "noNameInTheSelection": "אין {name} בבחירה",
+  "ofThisType": "מהסוג הזה",
+  "selectSomethingFirst": "יש לבחור משהו קודם",
+  "withThisColour": "בצבע הזה",
+  "selectSomethingWithAColour": "יש לבחור משהו עם צבע",
+  "withThisTag": "עם התגית הזו",
+  "selectSomethingTagged": "יש לבחור משהו עם תגית"
+}

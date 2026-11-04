@@ -236,6 +236,32 @@ export async function workspaceHeadSeq(workspaceId: string): Promise<number> {
 }
 
 /**
+ * Returns the chains among `chains` ('w:<workspace or organisation>', 'u:<account>') whose events
+ * must all be kept, whatever their retention: legal holds (#157; modules/ediscovery registers it).
+ */
+export type AuditRetentionHold = (chains: string[]) => Promise<Set<string>> | Set<string>;
+const retentionHolds = new Set<AuditRetentionHold>();
+
+export function onAuditRetentionHold(fn: AuditRetentionHold): () => void {
+  retentionHolds.add(fn);
+  return () => retentionHolds.delete(fn);
+}
+
+/** The held ones among `chains`; a failing check holds them all (nothing is pruned on a guess). */
+async function heldChains(chains: string[]): Promise<Set<string>> {
+  const held = new Set<string>();
+  for (const fn of retentionHolds) {
+    try {
+      for (const c of await fn(chains)) held.add(c);
+    } catch (e) {
+      logError('audit: a retention hold check failed; keeping every chain this round', e);
+      return new Set(chains);
+    }
+  }
+  return held;
+}
+
+/**
  * Retention: removes events older than each chain's retention. `daysFor(workspaceId | null)` gives
  * the days for a workspace's chain (null: an account's own chain). Idempotent; returns how many
  * events it removed.
@@ -246,8 +272,10 @@ export async function pruneAudit(daysFor: (workspaceIds: string[]) => Promise<Ma
   const chains = await repo.chainsOlderThan(now - 30 * DAY);
   const workspaceIds = chains.filter((c) => c.startsWith('w:')).map((c) => c.slice(2));
   const days = await daysFor(workspaceIds);
+  const held = await heldChains(chains);
   let removed = 0;
   for (const chain of chains) {
+    if (held.has(chain)) continue;
     const d = chain.startsWith('w:') ? (days.get(chain.slice(2)) ?? accountDays) : accountDays;
     removed += await repo.pruneChain(chain, now - d * DAY);
   }

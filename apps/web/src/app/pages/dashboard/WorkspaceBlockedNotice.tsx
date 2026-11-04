@@ -1,16 +1,15 @@
 // Why a workspace's boards are closed to you (WorkspaceSummary.blocked) and what to do about it.
 import { Link } from 'react-router-dom';
-import { Network, ShieldAlert, UserX } from 'lucide-react';
+import { KeyRound, Network, ShieldAlert, UserX } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 
+import { t } from './messages';
 export function WorkspaceBlockedNotice({ workspace }: { workspace: WorkspaceSummary }) {
   if (workspace.blocked === 'two_factor_required')
     return (
       <div className="fr-dash-blocked" role="status">
         <ShieldAlert size={18} aria-hidden />
-        <span>
-          {workspace.name} requires two-step verification. Its boards stay closed to you until you{' '}
-          <Link to="/settings#two-factor">turn it on in your settings</Link>.
+        <span>{t('nameRequiresTwoStepVerification', { name: workspace.name })}<Link to="/settings#two-factor">{t('turnItOnInYour')}</Link>.
         </span>
       </div>
     );
@@ -18,14 +17,21 @@ export function WorkspaceBlockedNotice({ workspace }: { workspace: WorkspaceSumm
     return (
       <div className="fr-dash-blocked" role="status">
         <Network size={18} aria-hidden />
-        <span>{workspace.name} opens its boards only from its own networks. Connect from the office or the company VPN to work here.</span>
+        <span>{t('nameOpensItsBoardsOnly', { name: workspace.name })}</span>
+      </div>
+    );
+  if (workspace.blocked === 'key_unavailable')
+    return (
+      <div className="fr-dash-blocked" role="status">
+        <KeyRound size={18} aria-hidden />
+        <span>{t('nameEncryptsItsBoardsWith', { name: workspace.name })}</span>
       </div>
     );
   if (workspace.blocked === 'deactivated')
     return (
       <div className="fr-dash-blocked" role="status">
         <UserX size={18} aria-hidden />
-        <span>Your access to {workspace.name} was deactivated by its admins, so its boards are closed to you. Ask them to reactivate you.</span>
+        <span>{t('yourAccessToNameWas', { name: workspace.name })}</span>
       </div>
     );
   return null;

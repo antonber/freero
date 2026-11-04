@@ -6,6 +6,7 @@ import type { Editor, HostUser } from '@engine';
 import { Avatar, Button, IconButton, Menu, Popover, Tooltip, formatShortcut } from '@ui';
 import type { CommentMessage, CommentThread } from '@freero/shared';
 import { MentionText, MessageText } from './composer';
+import { AttachButton, MessageAttachments, PendingAttachments, useAttachDraft } from './attachments';
 import { decodeMentions, encodeMentions, type MentionPick } from './mentions';
 import { MESSAGE_REACTIONS, colorFor, relativeTime } from './model';
 import { authorName, usePeopleOf } from './people';
@@ -21,6 +22,7 @@ import {
   toggleReaction,
 } from './state';
 
+import { t as tr } from '../messages';
 /** Server-clock "now" (comment timestamps are server time), refreshed periodically. */
 export function useNow(editor: Editor, intervalMs = 30_000): number {
   const [now, setNow] = useState(() => editor.host.serverNow());
@@ -56,9 +58,7 @@ function useMentionDraft(initial = '') {
 
 function SendHint() {
   return (
-    <span className="fr-cm-hint" title={`${formatShortcut('shift+enter')} for a new line`}>
-      Enter to send
-    </span>
+    <span className="fr-cm-hint" title={tr('valueForANewLine', { value: formatShortcut('shift+enter') })}>{tr('enterToSend')}</span>
   );
 }
 
@@ -71,7 +71,11 @@ export function authorColor(m: Pick<CommentMessage, 'authorColor' | 'authorId'>)
 // ---------------------------------------------------------------------------
 export function DraftComposer({ editor }: { editor: Editor }) {
   const d = useMentionDraft();
-  const send = () => submitDraft(editor, d.encoded());
+  const files = useAttachDraft(editor);
+  const ready = (!!d.text.trim() || files.items.length > 0) && !files.uploading;
+  const send = () => {
+    if (ready) submitDraft(editor, d.encoded(), files.items);
+  };
   return (
     <div className="fr-cm-composer">
       <div className="fr-cm-composer__row">
@@ -83,19 +87,17 @@ export function DraftComposer({ editor }: { editor: Editor }) {
           picks={d.picks}
           onPicks={d.setPicks}
           onSubmit={send}
-          placeholder="Add a comment… (@ to mention)"
-          label="Comment"
+          placeholder={tr('addACommentToMention')}
+          label={tr('comment')}
           autoFocus
         />
       </div>
+      <PendingAttachments draft={files} />
       <div className="fr-cm-composer__foot">
+        <AttachButton draft={files} />
         <SendHint />
-        <Button size="sm" variant="ghost" onClick={() => setUi(editor, { draft: null })}>
-          Cancel
-        </Button>
-        <Button size="sm" variant="primary" disabled={!d.text.trim()} onClick={send}>
-          Comment
-        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setUi(editor, { draft: null })}>{tr('cancel')}</Button>
+        <Button size="sm" variant="primary" disabled={!ready} onClick={send}>{tr('comment')}</Button>
       </div>
     </div>
   );
@@ -109,14 +111,14 @@ function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
   const ref = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <IconButton ref={ref} icon={SmilePlus} label="Add reaction" size={32} active={open} onClick={() => setOpen((o) => !o)} />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="top" align="end" aria-label="Reactions">
+      <IconButton ref={ref} icon={SmilePlus} label={tr('addReaction')} size={32} active={open} onClick={() => setOpen((o) => !o)} />
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="top" align="end" aria-label={tr('reactions')}>
         <div className="fr-cm-picker">
           {MESSAGE_REACTIONS.map((e) => (
             <button
               key={e}
               type="button"
-              aria-label={`React ${e}`}
+              aria-label={tr('reactE', { e })}
               onClick={() => {
                 onPick(e);
                 setOpen(false);
@@ -159,7 +161,7 @@ function MessageRow(props: {
           <Tooltip content={new Date(m.createdAt).toLocaleString()} side="top">
             <span className="fr-cm-msg__time">
               {relativeTime(m.createdAt, now)}
-              {m.editedAt ? ' · edited' : ''}
+              {m.editedAt ? tr('edited') : ''}
             </span>
           </Tooltip>
           {(canWrite || !mine) && !editing && (
@@ -169,7 +171,7 @@ function MessageRow(props: {
                 // The report feature's dialog (if it is there): features never import each other.
                 <IconButton
                   icon={Flag}
-                  label="Report"
+                  label={tr('report')}
                   size={32}
                   onClick={() => editor.runCommand('report.open', { target: { kind: 'comment', id: `${thread.id}:${m.id}` } })}
                 />
@@ -178,7 +180,7 @@ function MessageRow(props: {
                 <>
                   <IconButton
                     icon={Pencil}
-                    label="Edit"
+                    label={tr('edit')}
                     size={32}
                     onClick={() => {
                       draft.load(m.text, (id) => people[id]?.name);
@@ -201,18 +203,14 @@ function MessageRow(props: {
               onPicks={draft.setPicks}
               onSubmit={save}
               onEscape={() => onEdit(false)}
-              placeholder="Edit comment"
-              label="Edit comment"
+              placeholder={tr('editComment')}
+              label={tr('editComment')}
               autoFocus
             />
             <div className="fr-cm-composer__foot">
               <SendHint />
-              <Button size="sm" variant="ghost" onClick={() => onEdit(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" variant="primary" disabled={!draft.text.trim()} onClick={save}>
-                Save
-              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onEdit(false)}>{tr('cancel')}</Button>
+              <Button size="sm" variant="primary" disabled={!draft.text.trim()} onClick={save}>{tr('save')}</Button>
             </div>
           </div>
         ) : (
@@ -220,6 +218,7 @@ function MessageRow(props: {
             <MessageText text={m.text} people={people} meId={editor.user.id} />
           </div>
         )}
+        {m.attachments?.length ? <MessageAttachments editor={editor} files={m.attachments} at={{ threadId: thread.id, messageId: m.id }} /> : null}
         {reactions.length > 0 && (
           <div className="fr-cm-reactions">
             {reactions.map(([emoji, users]) => {
@@ -265,6 +264,7 @@ export function ThreadView({
   setEditingId: (id: string | null) => void;
 }) {
   const d = useMentionDraft();
+  const files = useAttachDraft(editor);
   const [menu, setMenu] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -283,10 +283,12 @@ export function ThreadView({
     if (el) el.scrollTop = el.scrollHeight;
   }, [count]);
 
+  const ready = (!!d.text.trim() || files.items.length > 0) && !files.uploading;
   const send = () => {
-    if (!d.text.trim()) return;
-    reply(editor, thread.id, d.encoded());
+    if (!ready) return;
+    reply(editor, thread.id, d.encoded(), files.items);
     d.clear();
+    files.clear();
   };
 
   return (
@@ -295,19 +297,18 @@ export function ThreadView({
         <span className="fr-cm-thread__title">
           {thread.resolved ? (
             <span className="fr-cm-badge fr-cm-badge--resolved">
-              <Check size={12} /> Resolved
-            </span>
+              <Check size={12} />{' '}{tr('resolved')}</span>
           ) : (
-            'Comment'
+            tr('comment')
           )}
         </span>
         {canWrite &&
           (thread.resolved ? (
-            <IconButton icon={RotateCcw} label="Reopen" size={32} onClick={() => setResolved(editor, thread.id, false)} />
+            <IconButton icon={RotateCcw} label={tr('reopen')} size={32} onClick={() => setResolved(editor, thread.id, false)} />
           ) : (
             <IconButton
               icon={Check}
-              label="Resolve"
+              label={tr('resolve')}
               size={32}
               onClick={() => {
                 setResolved(editor, thread.id, true);
@@ -317,20 +318,20 @@ export function ThreadView({
           ))}
         {canDelete && (
           <>
-            <IconButton ref={moreRef} icon={MoreHorizontal} label="More" size={32} active={menu} onClick={() => setMenu((o) => !o)} />
+            <IconButton ref={moreRef} icon={MoreHorizontal} label={tr('more')} size={32} active={menu} onClick={() => setMenu((o) => !o)} />
             <Menu
               open={menu}
               onClose={() => setMenu(false)}
               anchor={moreRef.current}
               align="end"
               minWidth={180}
-              items={[{ id: 'delete', label: 'Delete thread', icon: Trash2, danger: true, onSelect: () => deleteThread(editor, thread.id) }]}
+              items={[{ id: 'delete', label: tr('deleteThread'), icon: Trash2, danger: true, onSelect: () => deleteThread(editor, thread.id) }]}
             />
           </>
         )}
-        <IconButton icon={X} label="Close" size={32} onClick={() => setUi(editor, { openId: null })} />
+        <IconButton icon={X} label={tr('close')} size={32} onClick={() => setUi(editor, { openId: null })} />
       </div>
-      {elementMissing && <div className="fr-cm-note">The item this was pinned to was deleted.</div>}
+      {elementMissing && <div className="fr-cm-note">{tr('theItemThisWasPinned')}</div>}
       <div className="fr-cm-thread__list" ref={listRef}>
         {thread.messages.map((m) => (
           <MessageRow
@@ -347,8 +348,10 @@ export function ThreadView({
           />
         ))}
       </div>
+      {canWrite && !editingId && <PendingAttachments draft={files} />}
       {canWrite && !editingId && (
         <div className="fr-cm-reply">
+          <AttachButton draft={files} />
           <MentionText
             editor={editor}
             value={d.text}
@@ -356,11 +359,11 @@ export function ThreadView({
             picks={d.picks}
             onPicks={d.setPicks}
             onSubmit={send}
-            placeholder="Reply… (@ to mention)"
-            label="Reply"
+            placeholder={tr('replyToMention')}
+            label={tr('reply')}
             autoFocus={!quiet}
           />
-          <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!d.text.trim()} onClick={send} />
+          <IconButton icon={ArrowUp} label={tr('sendReply')} shortcut="Enter" size={32} variant="solid" disabled={!ready} onClick={send} />
         </div>
       )}
     </div>

@@ -6,6 +6,7 @@ import { useRole, type PanelProps } from '@engine';
 import { Input, Kbd, Modal } from '@ui';
 import { PALETTE_PANEL, loadRecent, rankActions, rememberRecent, type PaletteRow } from './palette';
 
+import { t } from '../messages';
 const PAGE = 8;
 
 export function Palette({ editor }: PanelProps) {
@@ -57,16 +58,16 @@ export function Palette({ editor }: PanelProps) {
 
   const current = rows[active];
   const status = !rows.length
-    ? 'No actions match'
+    ? t('noActionsMatch')
     : `${rows.length} ${rows.length === 1 ? 'action' : 'actions'}${current?.entry.disabledReason ? `. ${current.entry.label} is unavailable: ${current.entry.disabledReason}` : ''}`;
 
   return (
-    <Modal open onClose={close} title="Command palette" width={600} className="fr-shortcuts-palette">
+    <Modal open onClose={close} title={t('commandPalette')} width={600} className="fr-shortcuts-palette">
       <Input
         ref={inputRef}
         icon={Search}
-        placeholder="Search actions, tools and settings"
-        aria-label="Search actions"
+        placeholder={t('searchActionsToolsAndSettings')}
+        aria-label={t('searchActions')}
         role="combobox"
         aria-expanded
         aria-controls={listId}
@@ -85,9 +86,9 @@ export function Palette({ editor }: PanelProps) {
         {status}
       </div>
       {rows.length === 0 ? (
-        <p className="fr-shortcuts-palette__empty">Nothing matches “{query.trim()}”.</p>
+        <p className="fr-shortcuts-palette__empty">{t('nothingMatchesQuery', { query: query.trim() })}</p>
       ) : (
-        <ul id={listId} role="listbox" aria-label="Actions" className="fr-shortcuts-palette__list">
+        <ul id={listId} role="listbox" aria-label={t('actions')} className="fr-shortcuts-palette__list">
           {rows.map((row, i) => {
             const { entry } = row;
             const Icon = entry.icon;
@@ -115,7 +116,7 @@ export function Palette({ editor }: PanelProps) {
                   </span>
                   {disabled && <span className="fr-shortcuts-palette__reason">{entry.disabledReason}</span>}
                 </span>
-                <span className="fr-shortcuts-palette__section">{entry.kind === 'tool' ? 'Tool' : row.section}</span>
+                <span className="fr-shortcuts-palette__section">{entry.kind === 'tool' ? t('tool') : row.section}</span>
                 <span className="fr-shortcuts-palette__keys">
                   {row.keys.map((k) => (
                     <Kbd key={k} compact>
@@ -129,8 +130,7 @@ export function Palette({ editor }: PanelProps) {
         </ul>
       )}
       <p className="fr-shortcuts-palette__hint" aria-hidden>
-        <Kbd compact>↑</Kbd> <Kbd compact>↓</Kbd> to choose · <Kbd compact>Enter</Kbd> to run · <Kbd compact>Esc</Kbd> to close
-      </p>
+        <Kbd compact>↑</Kbd> <Kbd compact>↓</Kbd>{' '}{t('toChoose')}{' '}<Kbd compact>Enter</Kbd>{' '}{t('toRun')}{' '}<Kbd compact>Esc</Kbd>{' '}{t('toClose')}</p>
     </Modal>
   );
 }

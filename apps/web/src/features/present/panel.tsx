@@ -20,14 +20,13 @@ import { LaserOverlay } from './lib/LaserOverlay';
 import { NotesPanel, PresenterNotes } from './lib/NotesPanel';
 import { NOTES_PANEL_ID } from './lib/notes';
 import { NotesWindow } from './lib/NotesWindow';
+import { t as tr } from './messages';
 import './present.css';
 
 // ---------------------------------------------------------------- top bar button
 function PresentButton({ editor }: { editor: Editor }) {
   return (
-    <Button size="sm" variant="ghost" icon={MonitorPlay} onClick={() => startPresenting(editor)} title="Present frames one by one">
-      Present
-    </Button>
+    <Button size="sm" variant="ghost" icon={MonitorPlay} onClick={() => startPresenting(editor)} title={tr('presentFramesOneByOne')}>{tr('present')}</Button>
   );
 }
 
@@ -103,18 +102,16 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
       {notesOpen && current && !notesWindow && <PresenterNotes frameId={current.id} onClose={toggleNotes} />}
       {notesWindow ? <NotesWindow editor={editor} /> : null}
       {!list.length && (
-        <div className="fr-present-hint" role="status">
-          No frames yet, so the whole board is shown. Add frames (F) to present it step by step.
-        </div>
+        <div className="fr-present-hint" role="status">{tr('noFramesYetSoThe')}</div>
       )}
-      <div className="fr-present-bar" data-fr-interactive="" role="toolbar" aria-label="Presentation controls">
-        <IconButton icon={ChevronLeft} label="Previous" shortcut="←" size={32} disabled={pos <= 0} onClick={() => step(editor, -1)} />
+      <div className="fr-present-bar" data-fr-interactive="" role="toolbar" aria-label={tr('presentationControls')}>
+        <IconButton icon={ChevronLeft} label={tr('previous2')} shortcut="←" size={32} disabled={pos <= 0} onClick={() => step(editor, -1)} />
         <span className="fr-present-bar__count" aria-live="polite">
-          {list.length ? `${pos + 1} / ${list.length}` : 'Board'}
+          {list.length ? `${pos + 1} / ${list.length}` : tr('board')}
         </span>
         <IconButton
           icon={ChevronRight}
-          label="Next"
+          label={tr('next3')}
           shortcut="→"
           size={32}
           disabled={pos < 0 || pos >= list.length - 1}
@@ -131,7 +128,7 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((o) => !o)}
             >
-              <span>{current?.title || 'Untitled frame'}</span>
+              <span>{current?.title || tr('untitledFrame2')}</span>
               <ChevronDown size={14} />
             </button>
             <Menu
@@ -151,13 +148,13 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
           </>
         )}
         <span className="fr-present-bar__sep" />
-        <IconButton icon={Zap} label="Laser pointer" shortcut="L" size={32} active={laser} onClick={toggleLaser} />
-        {list.length > 0 && <IconButton icon={NotebookText} label="Your notes" shortcut="N" size={32} active={notesOpen} onClick={toggleNotes} />}
-        {others > 0 && <IconButton icon={Users} label="Bring everyone to me" size={32} onClick={() => editor.runCommand('presence.bringEveryone')} />}
-        <IconButton icon={AppWindow} label="Open notes in a window" size={32} active={notesWindow} onClick={() => store.setState({ notesWindow: !notesWindow })} />
+        <IconButton icon={Zap} label={tr('laserPointer')} shortcut="L" size={32} active={laser} onClick={toggleLaser} />
+        {list.length > 0 && <IconButton icon={NotebookText} label={tr('yourNotes')} shortcut="N" size={32} active={notesOpen} onClick={toggleNotes} />}
+        {others > 0 && <IconButton icon={Users} label={tr('bringEveryoneToMe')} size={32} onClick={() => editor.runCommand('presence.bringEveryone')} />}
+        <IconButton icon={AppWindow} label={tr('openNotesInAWindow')} size={32} active={notesWindow} onClick={() => store.setState({ notesWindow: !notesWindow })} />
         {editor.host.presentation && people.length > 0 ? (
           <>
-            <IconButton ref={handRef} icon={ArrowRightLeft} label="Hand off to…" size={32} active={handOpen} onClick={() => setHandOpen((o) => !o)} />
+            <IconButton ref={handRef} icon={ArrowRightLeft} label={tr('handOffTo')} size={32} active={handOpen} onClick={() => setHandOpen((o) => !o)} />
             <Menu
               open={handOpen}
               onClose={() => setHandOpen(false)}
@@ -165,13 +162,11 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
               side="top"
               align="center"
               minWidth={200}
-              items={[{ heading: 'Hand the presentation to' }, ...people.map((p) => ({ id: p.id, label: p.name, onSelect: () => void handOff(editor, p) }))]}
+              items={[{ heading: tr('handThePresentationTo') }, ...people.map((p) => ({ id: p.id, label: p.name, onSelect: () => void handOff(editor, p) }))]}
             />
           </>
         ) : null}
-        <Button size="sm" variant="ghost" icon={X} className="fr-present-bar__exit" onClick={() => stopPresenting(editor)}>
-          Exit
-        </Button>
+        <Button size="sm" variant="ghost" icon={X} className="fr-present-bar__exit" onClick={() => stopPresenting(editor)}>{tr('exit')}</Button>
       </div>
     </>
   );
@@ -206,12 +201,12 @@ function AudienceOverlay({ editor }: { editor: Editor }) {
         if (!presenter || presenter.user.id !== server.presenterId || !sessionKey) return;
         followedFor.current = { key: sessionKey, userId: presenter.user.id, name: presenter.user.name };
         editor.follow({ userId: presenter.user.id, clientId: presenter.clientId });
-        editor.host.notify(`${presenter.user.name} presents now`);
+        editor.host.notify(tr('namePresentsNow', { name: presenter.user.name }));
         return;
       }
       followedFor.current = null;
       editor.follow(null);
-      editor.host.notify(`${f.name} ended the presentation`);
+      editor.host.notify(tr('nameEndedThePresentation', { name: f.name }));
     }
   }, [editor, following, sessionKey, server, presenter]);
 
@@ -226,15 +221,10 @@ function AudienceOverlay({ editor }: { editor: Editor }) {
     <div className="fr-present-banner" data-fr-interactive="" role="status">
       <Avatar name={presenter.user.name} color={presenter.user.color} src={presenter.user.avatarUrl ?? undefined} size={24} />
       <span>
-        <strong>{presenter.user.name}</strong> is presenting
-      </span>
-      <Button size="sm" variant="primary" icon={Eye} onClick={follow}>
-        Follow
-      </Button>
+        <strong>{presenter.user.name}</strong>{' '}{tr('isPresenting')}</span>
+      <Button size="sm" variant="primary" icon={Eye} onClick={follow}>{tr('follow')}</Button>
       <HandOverMenu editor={editor} presenterId={presenter.user.id} />
-      <Button size="sm" variant="ghost" onClick={() => store.setState({ dismissed: [...dismissed, sessionKey] })}>
-        Dismiss
-      </Button>
+      <Button size="sm" variant="ghost" onClick={() => store.setState({ dismissed: [...dismissed, sessionKey] })}>{tr('dismiss')}</Button>
     </div>
   );
 }
@@ -267,11 +257,11 @@ function SessionWatcher({ editor }: { editor: Editor }) {
     if (mine && !presenting && server.handedFrom && server.at > since) {
       handled.current = server.at;
       startPresenting(editor, server.frameId, { handedOver: true });
-      editor.host.notify(`${server.handedBy ?? 'Someone'} handed you the presentation`, 'success');
+      editor.host.notify(tr('valueHandedYouThePresentation', { value: server.handedBy ?? tr('someone') }), 'success');
     } else if (!mine && presenting && server.at > since) {
       handled.current = server.at;
       stopPresenting(editor, { quietly: true });
-      editor.host.notify(`${server.presenterName} presents now`);
+      editor.host.notify(tr('presenternamePresentsNow', { presenterName: server.presenterName }));
     }
   }, [editor, server, presenting, since]);
   return null;
@@ -287,9 +277,7 @@ function HandOverMenu({ editor, presenterId }: { editor: Editor; presenterId: st
   if (!editor.host.presentation || !(session?.by === editor.user.id || editor.host.board.role === 'owner')) return null;
   return (
     <>
-      <Button ref={ref} size="sm" variant="ghost" icon={ArrowRightLeft} onClick={() => setOpen((o) => !o)}>
-        Hand off
-      </Button>
+      <Button ref={ref} size="sm" variant="ghost" icon={ArrowRightLeft} onClick={() => setOpen((o) => !o)}>{tr('handOff')}</Button>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
@@ -297,7 +285,7 @@ function HandOverMenu({ editor, presenterId }: { editor: Editor; presenterId: st
         side="bottom"
         align="center"
         minWidth={200}
-        items={[{ heading: 'Hand the presentation to' }, ...[me, ...people].map((p) => ({ id: p.id, label: p.name, onSelect: () => void editor.host.presentation!.handoff(p.id, null).catch((e: unknown) => editor.host.notify(e instanceof Error ? e.message : 'Couldn’t hand over', 'error')) }))]}
+        items={[{ heading: tr('handThePresentationTo') }, ...[me, ...people].map((p) => ({ id: p.id, label: p.name, onSelect: () => void editor.host.presentation!.handoff(p.id, null).catch((e: unknown) => editor.host.notify(e instanceof Error ? e.message : tr('couldnTHandOver'), 'error')) }))]}
       />
     </>
   );

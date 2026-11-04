@@ -7,6 +7,7 @@ import { capShape } from './lib/geometry';
 import { patchConnector, TOOL_ID, type ConnectorStyle } from './lib/model';
 import { CAP_GROUPS, PRESET_GROUPS } from './lib/presets';
 
+import { t } from './messages';
 const COLORS = ['#2B2A44', '#8A89A3', '#5B3FF0', '#2F7CF6', '#12A594', '#2FA84F', '#F2A007', '#F06A2B', '#E5484D', '#D6409F', '#FFFFFF'];
 const WIDTHS = [1, 2, 3, 4, 6, 8, 12];
 
@@ -77,12 +78,12 @@ function PresetButton({ editor, conns }: { editor: Editor; conns: ConnectorEleme
   ]);
   return (
     <>
-      <Tooltip content="Diagram line types" side="bottom">
-        <button ref={ref} type="button" className="fr-cx-fmt-btn" aria-label="Diagram line types" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <Tooltip content={t('diagramLineTypes')} side="bottom">
+        <button ref={ref} type="button" className="fr-cx-fmt-btn" aria-label={t('diagramLineTypes')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <Workflow size={16} aria-hidden />
         </button>
       </Tooltip>
-      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="center" minWidth={210} items={items} aria-label="Diagram line types" />
+      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="center" minWidth={210} items={items} aria-label={t('diagramLineTypes')} />
     </>
   );
 }
@@ -110,13 +111,13 @@ function ColorControl({ editor, conns }: { editor: Editor; conns: ConnectorEleme
   const color = conns[0].stroke;
   return (
     <>
-      <Tooltip content="Line color" side="bottom">
-        <button ref={ref} type="button" className="fr-cx-fmt-swatch" aria-label="Line color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <Tooltip content={t('lineColor')} side="bottom">
+        <button ref={ref} type="button" className="fr-cx-fmt-swatch" aria-label={t('lineColor')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <span style={{ background: color }} />
         </button>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Line color">
-        <ColorSwatches colors={COLORS} value={color} columns={6} size={24} allowCustom onChange={(stroke) => apply(editor, conns, { stroke })} aria-label="Line color" />
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={t('lineColor')}>
+        <ColorSwatches colors={COLORS} value={color} columns={6} size={24} allowCustom onChange={(stroke) => apply(editor, conns, { stroke })} aria-label={t('lineColor')} />
       </Popover>
     </>
   );
@@ -153,26 +154,24 @@ export default defineFormat({
           value={c.routing}
           onChange={(routing) => apply(editor, conns, { routing, waypoints: [] })}
           options={[
-            { value: 'straight', icon: Slash, title: 'Straight' },
-            { value: 'elbow', icon: CornerDownRight, title: 'Elbow' },
-            { value: 'curved', icon: Spline, title: 'Curved' },
+            { value: 'straight', icon: Slash, title: t('straight') },
+            { value: 'elbow', icon: CornerDownRight, title: t('elbow') },
+            { value: 'curved', icon: Spline, title: t('curved') },
           ]}
-          aria-label="Line type"
+          aria-label={t('lineType')}
         />
         <ColorControl editor={editor} conns={conns} />
         <MenuButton
-          label="Line width"
+          label={t('lineWidth')}
           items={WIDTHS.map((w) => ({
             id: `w${w}`,
-            label: `${w} px`,
+            label: t('wPx', { w }),
             checked: c.strokeWidth === w,
             onSelect: () => apply(editor, conns, { strokeWidth: w }),
           }))}
-        >
-          {c.strokeWidth} px
-        </MenuButton>
+        >{t('strokewidthPx', { strokeWidth: c.strokeWidth })}</MenuButton>
         <MenuButton
-          label="Line style"
+          label={t('lineStyle')}
           items={(['solid', 'dashed', 'dotted'] as const).map((s) => ({
             id: s,
             label: s[0].toUpperCase() + s.slice(1),
@@ -184,14 +183,14 @@ export default defineFormat({
           <StyleIcon style={c.strokeStyle} />
         </MenuButton>
         <MenuButton
-          label="Start of line"
+          label={t('startOfLine')}
           items={capItems(c.startCap, true, (startCap) => apply(editor, conns, { startCap }))}
         >
           <CapIcon cap={c.startCap} flip />
         </MenuButton>
         <IconButton
           icon={ArrowLeftRight}
-          label="Swap line ends"
+          label={t('swapLineEnds')}
           size={32}
           onClick={() =>
             editor.transact(() => {
@@ -200,7 +199,7 @@ export default defineFormat({
           }
         />
         <MenuButton
-          label="End of line"
+          label={t('endOfLine')}
           items={capItems(c.endCap, false, (endCap) => apply(editor, conns, { endCap }))}
         >
           <CapIcon cap={c.endCap} />
@@ -208,8 +207,8 @@ export default defineFormat({
         <PresetButton editor={editor} conns={conns} />
         {hasLabel && (
           <>
-            <IconButton icon={Bold} label="Bold" shortcut="Mod+B" size={32} active={fmt.bold} onClick={() => editor.formatText('bold')} />
-            <IconButton icon={Italic} label="Italic" shortcut="Mod+I" size={32} active={fmt.italic} onClick={() => editor.formatText('italic')} />
+            <IconButton icon={Bold} label={t('bold')} shortcut="Mod+B" size={32} active={fmt.bold} onClick={() => editor.formatText('bold')} />
+            <IconButton icon={Italic} label={t('italic')} shortcut="Mod+I" size={32} active={fmt.italic} onClick={() => editor.formatText('italic')} />
           </>
         )}
       </>

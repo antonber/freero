@@ -6,7 +6,7 @@
 import type { ServerContext } from '../../platform/context';
 import { log, logError } from '../../platform/log';
 import { consumeOutbox } from '../../platform/outbox';
-import { boardWorkspaceId } from '../boards/index';
+import { boardWorkspaceId, legallyHeldAmong } from '../boards/index';
 import { retentionOverrides } from '../workspaces/index';
 import { DEFAULT_RETENTION, pruneSnapshots, type RetentionPolicyFor } from './retention';
 import { suggestionWithdrawalsConsumer } from './withdrawals';
@@ -25,7 +25,7 @@ export async function pruneSnapshotsByPolicy(now = Date.now()): Promise<number |
     const d = days.get((await boardWorkspaceId(boardId)) ?? '');
     return d === undefined ? DEFAULT_RETENTION : { ...DEFAULT_RETENTION, maxAgeMs: d * DAY };
   };
-  return pruneSnapshots({ now, policyFor, shortestMaxAgeMs: days.size ? Math.min(...days.values()) * DAY : null });
+  return pruneSnapshots({ now, policyFor, shortestMaxAgeMs: days.size ? Math.min(...days.values()) * DAY : null, heldAmong: legallyHeldAmong });
 }
 
 export default function initRealtime(ctx: ServerContext): void {

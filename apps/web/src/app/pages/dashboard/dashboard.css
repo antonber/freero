@@ -13,7 +13,7 @@
   width: 248px;
   padding: 18px 12px 12px;
   background: var(--fr-surface);
-  border-right: 1px solid var(--fr-line);
+  border-inline-end: 1px solid var(--fr-line);
 }
 
 .fr-sidebar__brand {
@@ -48,7 +48,7 @@
   padding: 0 12px;
   font-size: 14px;
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   color: var(--fr-ink-2);
   background: transparent;
   border: 0;
@@ -86,7 +86,7 @@
   gap: 10px;
   width: 100%;
   padding: 8px;
-  text-align: left;
+  text-align: start;
   background: transparent;
   border: 0;
   border-radius: 12px;
@@ -158,14 +158,14 @@
 }
 
 .fr-dash__search-kbd {
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 
 .fr-dash__actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .fr-dash__scroll {
@@ -189,7 +189,7 @@
   gap: 14px;
   height: 88px;
   padding: 0 18px;
-  text-align: left;
+  text-align: start;
   color: var(--fr-ink);
   background: var(--fr-surface);
   border: 1px solid var(--fr-line);
@@ -364,7 +364,7 @@
 .fr-tabs {
   display: inline-flex;
   gap: 2px;
-  margin-right: 4px;
+  margin-inline-end: 4px;
 }
 
 .fr-tab {
@@ -465,7 +465,7 @@
 .fr-dash-card__hover-actions {
   position: absolute;
   top: 8px;
-  right: 8px;
+  inset-inline-end: 8px;
   z-index: 2;
   display: flex;
   gap: 4px;
@@ -664,14 +664,14 @@
 }
 
 .fr-empty__sticky--a {
-  left: 10px;
+  inset-inline-start: 10px;
   top: 8px;
   background: #ffe36e;
   transform: rotate(-8deg);
 }
 
 .fr-empty__sticky--b {
-  right: 10px;
+  inset-inline-end: 10px;
   top: 14px;
   background: #c9bdff;
   transform: rotate(6deg);
@@ -751,8 +751,8 @@
 
   .fr-dash__top,
   .fr-dash__scroll {
-    padding-left: 20px;
-    padding-right: 20px;
+    padding-inline-start: 20px;
+    padding-inline-end: 20px;
   }
 
   .fr-list__head,

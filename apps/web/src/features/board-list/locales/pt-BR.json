@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "Quadro como lista",
+  "everyItemInReadingOrder": "Cada item em ordem de leitura, com os itens de uma moldura abaixo dela. As setas movem, Direita e Esquerda abrem e fecham uma moldura, Enter mostra o item no quadro.",
+  "thisBoardIsEmpty": "Este quadro está vazio.",
+  "boardItems": "Itens do quadro",
+  "connections": "Conexões"
+}

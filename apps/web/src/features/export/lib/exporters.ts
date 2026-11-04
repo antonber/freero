@@ -4,6 +4,7 @@ import type { Editor, Rect } from '@engine';
 import { dataUrlToBlob, downloadBlob, exportFileName } from './files';
 import type { PdfFrame } from './pdf';
 
+import { t } from '../messages';
 export type ImageFormat = 'png' | 'jpeg' | 'svg';
 export type ImageScope = 'board' | 'selection' | 'visible';
 
@@ -62,9 +63,7 @@ export function missingImages(editor: Editor) {
     report() {
       if (!count) return;
       editor.host.notify(
-        count === 1
-          ? "1 image was left out: its website doesn't let Freero copy it. Upload the image as a file to include it."
-          : `${count} images were left out: their websites don't let Freero copy them. Upload the images as files to include them.`,
+        t('countImagesWereLeftOut', { count }),
         'info',
       );
     },
@@ -97,7 +96,7 @@ export function boardFrames(editor: Editor): PdfFrame[] {
   return editor
     .getElements()
     .filter((e): e is FrameElement => e.type === 'frame')
-    .map((f) => ({ id: f.id, title: f.title || 'Untitled frame', index: f.index ?? 0, x: f.x, y: f.y, w: f.w, h: f.h, ...(f.skip ? { skip: true } : {}) }));
+    .map((f) => ({ id: f.id, title: f.title || t('untitledFrame'), index: f.index ?? 0, x: f.x, y: f.y, w: f.w, h: f.h, ...(f.skip ? { skip: true } : {}) }));
 }
 
 /** Render scale for a PDF page: crisp but bounded memory for huge frames. */
@@ -110,7 +109,7 @@ export async function copySelectionAsImage(editor: Editor): Promise<void> {
   const ids = editor.getSelection();
   const notify = editor.host.notify;
   if (!ids.length) {
-    notify('Select something first, then copy it as an image.', 'info');
+    notify(t('selectSomethingFirstThenCopy'), 'info');
     return;
   }
   const missing = missingImages(editor);
@@ -119,15 +118,15 @@ export async function copySelectionAsImage(editor: Editor): Promise<void> {
     if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) throw new Error('Clipboard images unsupported');
     // Pass the promise (not the blob) so the write starts inside the user gesture (Safari).
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-    notify('Copied selection as image.', 'success');
+    notify(t('copiedSelectionAsImage'), 'success');
     missing.report();
   } catch {
     try {
       downloadBlob(await blob, exportFileName(editor.host.board.title, 'png', 'selection'));
-      notify('Your browser blocked copying images, so we downloaded a PNG instead.', 'info');
+      notify(t('yourBrowserBlockedCopyingImages'), 'info');
       missing.report();
     } catch {
-      notify('Could not render the selection as an image.', 'error');
+      notify(t('couldNotRenderTheSelection'), 'error');
     }
   }
 }

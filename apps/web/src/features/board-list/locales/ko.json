@@ -1,0 +1,14 @@
+{
+  "@@unreviewed": [
+    "boardAsList",
+    "everyItemInReadingOrder",
+    "thisBoardIsEmpty",
+    "boardItems",
+    "connections"
+  ],
+  "boardAsList": "보드를 목록으로 보기",
+  "everyItemInReadingOrder": "모든 항목을 읽는 순서대로 보여 주며, 프레임의 항목은 그 아래에 있어요. 화살표 키로 이동하고, 오른쪽/왼쪽 키로 프레임을 열고 닫으며, Enter로 보드에서 항목을 보여 줘요.",
+  "thisBoardIsEmpty": "이 보드는 비어 있어요.",
+  "boardItems": "보드 항목",
+  "connections": "연결"
+}
