@@ -87,6 +87,10 @@ export { ElementText } from './text/ElementText';
 // [additive] Dark mode at paint time (canvas/theme.ts): default inks light on the live canvas.
 export { canvasInk, canvasPaper, isLightSurface } from './canvas/theme';
 export type { ElementTextProps } from './text/ElementText';
+// [additive] Rich text outside the canvas (a card's details): shown formatted, or edited in place
+// with ElementText's editing stack (+ Markdown-style typing).
+export { RichTextView, RichTextEditor } from './text/RichText';
+export type { RichTextViewProps, RichTextEditorProps } from './text/RichText';
 // Sanitizes the RichText HTML subset (see @freero/shared RichText).
 export { sanitizeRichText, richTextToPlain, plainToRichText, replaceInRichText, isSafeHref } from './text/sanitize';
 export type { TextFormatState } from './text/session';

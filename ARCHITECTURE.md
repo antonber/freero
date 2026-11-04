@@ -1106,7 +1106,24 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   per-word colours (that would touch types that take no text colour). A new type joins mixed
   editing by defining `sharedStyle` (+ `applySharedStyle` when its fields differ).
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
-  Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
+  Untrusted; `isSafeHref(href)` (`@freero/shared`, re-exported by `@engine`) is the one safe-href
+  rule shared with rich text and the server's Markdown conversion.
+- Rich text outside the canvas (`@engine` `RichTextView`, `RichTextEditor`; `engine/text/RichText.tsx`):
+  the card details' description shown formatted (links open in a new tab, `noopener`) or
+  edited in place with ElementText's stack (contenteditable + execCommand, `editing.ts`: Enter =
+  line break outside lists, paste as plain text), sanitized on every change; the feature owns the
+  write (`onChange`) and the undo step (begin/endGesture per sitting). `markdownShortcuts`
+  (`markdownTyping.ts`): "1. " / "- " at a line's start make a list, Tab / Shift+Tab nest it,
+  `**bold**`, `*italic*`, `~~struck~~`, `` `code` ``, `[label](url)` and web addresses format when a
+  space or Enter follows. The RichText subset now holds `<code>` and `<pre>` too (no attributes).
+- Markdown → RichText (`@freero/shared` `markdownToRichText`, `richMarkdown.ts`): the docs' Markdown
+  reader (`markdownToDoc`) mapped onto the RichText subset — paragraphs, lists (nested), bold,
+  italic, strike, inline code, code blocks, links (only isSafeHref ones), bare URLs; the rest as
+  text; every text escaped. Card descriptions are Markdown wherever they come from outside the
+  editor: `cardDraft` (MCP `add_cards`, REST structure, CSV and meeting-notes imports) and the REST /
+  MCP item writes (`api/items.ts`). The way back, `richTextToReadable`: plain text with `1.` / `-`
+  list lines, nested lists indented, link addresses in brackets — the card's outline text and its
+  CSV export. The card's face keeps `richTextToPlain`'s clamped lines.
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
   and zooms to it on load (`?el=` is still honored).
 - `ElementDefinition.onDoubleClick?(el, { editor, point })`: double-click on an element with no

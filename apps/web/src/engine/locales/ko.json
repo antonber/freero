@@ -200,7 +200,8 @@
     "guestLimitBoard",
     "guestLimitRate",
     "guestChangeUndone",
-    "guestCanEditOwn"
+    "guestCanEditOwn",
+    "openLinkInNewTab"
   ],
   "dots": "점",
   "lines": "선",
@@ -402,5 +403,6 @@
   "guestLimitBoard": "이 보드가 게스트에게서 받을 수 있는 한도에 도달했습니다.",
   "guestLimitRate": "게스트가 변경할 수 있는 속도보다 빠릅니다. 조금 천천히 해 주세요.",
   "guestChangeUndone": "이 변경은 게스트에게 허용되지 않아 취소되었습니다.",
-  "guestCanEditOwn": "내 항목 추가·편집 가능"
+  "guestCanEditOwn": "내 항목 추가·편집 가능",
+  "openLinkInNewTab": "새 탭에서 링크 열기"
 }

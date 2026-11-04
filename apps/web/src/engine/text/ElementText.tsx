@@ -19,6 +19,7 @@ import { RenderModeContext, useCore } from '../context';
 import { plainToRichText, richTextToPlain, sanitizeRichText } from './sanitize';
 import { autoMaxFont, fitFontSize, FONT_VARS, getFontEpoch, LINE_HEIGHT, subscribeFontEpoch } from './autofit';
 import type { FormatCommand, TextFormatState, TextSession } from './session';
+import { enterAsLineBreak, pasteAsPlainText } from './editing';
 import { t } from '../messages';
 import './text.css';
 
@@ -353,23 +354,11 @@ function TextEditor(props: TextEditorProps) {
       e.stopPropagation();
       return;
     }
-    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const sel = window.getSelection();
-      const inList = !!(sel?.anchorNode && (sel.anchorNode.nodeType === 1 ? (sel.anchorNode as Element) : sel.anchorNode.parentElement)?.closest('li'));
-      if (!inList) {
-        e.preventDefault();
-        document.execCommand('insertLineBreak');
-      }
-    }
+    enterAsLineBreak(e);
   };
 
-  const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    // Paste as plain text: foreign HTML never enters the board.
-    e.preventDefault();
-    e.stopPropagation();
-    const text = e.clipboardData.getData('text/plain');
-    if (text) document.execCommand('insertText', false, text);
-  };
+  // Paste as plain text: foreign HTML never enters the board.
+  const onPaste = pasteAsPlainText;
 
   const onBlur = () => {
     // Commit when focus truly leaves (not when the window loses focus or a toolbar is clicked).

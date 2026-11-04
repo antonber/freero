@@ -3,7 +3,8 @@
 // kanban's own arrange pass settles its items on insert, and cards measure their height on create.
 import type { CardStatus, StickyColor } from '../elements';
 import { STICKY_COLORS } from '../elements';
-import { plainToRichText } from '../text';
+import { plainToRichText, richTextToPlain } from '../text';
+import { markdownToRichText } from '../richMarkdown';
 import { STICKY_GAP, STICKY_SIZE } from './kit';
 import { measureText } from './measure';
 import { LAYOUT_LIMITS, LayoutError, type CardInput, type ElementDraft, type ItemInput, type LaidOut, type LayoutContext } from './types';
@@ -37,10 +38,10 @@ export function checkLink(v: unknown): string | null {
   return v;
 }
 
-/** A task card at (x, y), `w` wide, measured for its title and description. */
+/** A task card at (x, y), `w` wide, measured for its title and description (Markdown, CardInput). */
 export function cardDraft(it: CardInput & { assigneeId?: string | null; tags?: string[] }, id: string, x: number, y: number, w: number, frameId: string | null): ElementDraft & { h: number } {
   if (it.status !== undefined && it.status !== null && it.status !== 'todo' && it.status !== 'doing' && it.status !== 'done') throw new LayoutError('A card status is todo, doing or done');
-  const desc = clip(typeof it.description === 'string' ? it.description : '');
+  const desc = markdownToRichText(clip(typeof it.description === 'string' ? it.description : ''));
   const link = checkLink(it.link);
   const tags = (it.tags ?? []).filter((t) => typeof t === 'string' && t);
   return {
@@ -48,12 +49,13 @@ export function cardDraft(it: CardInput & { assigneeId?: string | null; tags?: s
     x: Math.round(x),
     y: Math.round(y),
     w,
-    h: cardHeight(w, it.text, desc),
+    // The card's face shows the description's plain lines (features/card).
+    h: cardHeight(w, it.text, richTextToPlain(desc)),
     rotation: 0,
     ...(frameId ? { frameId } : {}),
     type: 'card',
     title: plainToRichText(clip(it.text)),
-    description: desc ? plainToRichText(desc) : '',
+    description: desc,
     color: typeof it.color === 'string' && HEX_RE.test(it.color) ? it.color : CARD_ACCENT,
     status: it.status ?? null,
     assigneeId: it.assigneeId ?? null,

@@ -51,7 +51,8 @@
     "thisCardIsNoLonger",
     "viewOnly",
     "noDescription",
-    "selectOneCard"
+    "selectOneCard",
+    "markdownHint"
   ],
   "toDo": "للتنفيذ",
   "doing": "قيد التنفيذ",
@@ -104,5 +105,6 @@
   "thisCardIsNoLonger": "لم تعد هذه البطاقة على اللوحة.",
   "viewOnly": "للعرض فقط",
   "noDescription": "لا يوجد وصف",
-  "selectOneCard": "اختر بطاقة واحدة"
+  "selectOneCard": "اختر بطاقة واحدة",
+  "markdownHint": "اكتب 1. أو - لبدء قائمة؛ يُنسَّق **الغامق** و*المائل* و`الشيفرة` وعناوين الويب أثناء الكتابة."
 }

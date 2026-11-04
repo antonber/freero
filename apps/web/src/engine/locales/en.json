@@ -199,5 +199,6 @@
   "guestLimitBoard": "Guests have added as much as this board takes from guests.",
   "guestLimitRate": "You’re changing things faster than a guest can. Slow down a little.",
   "guestChangeUndone": "That change wasn’t allowed for guests and was undone.",
-  "guestCanEditOwn": "Can add and edit own"
+  "guestCanEditOwn": "Can add and edit own",
+  "openLinkInNewTab": "Open link in a new tab"
 }

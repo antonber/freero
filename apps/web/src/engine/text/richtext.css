@@ -1,0 +1,161 @@
+/* Rich text outside the canvas (RichText.tsx): a card's description in its details. */
+.fr-richtext {
+  min-height: 1lh;
+  color: var(--fr-ink);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.fr-richtext p {
+  margin: 0 0 0.6em;
+}
+
+.fr-richtext p:last-child,
+.fr-richtext ul:last-child,
+.fr-richtext ol:last-child,
+.fr-richtext pre:last-child {
+  margin-block-end: 0;
+}
+
+.fr-richtext ul,
+.fr-richtext ol {
+  margin: 0 0 0.6em;
+  padding-inline-start: 1.6em;
+}
+
+.fr-richtext li {
+  margin-block: 0.15em;
+}
+
+.fr-richtext li > ul,
+.fr-richtext li > ol,
+.fr-richtext ul > ul,
+.fr-richtext ol > ol,
+.fr-richtext ul > ol,
+.fr-richtext ol > ul {
+  margin-block: 0.15em 0;
+}
+
+.fr-richtext ol {
+  list-style: decimal;
+}
+
+.fr-richtext ol ol {
+  list-style: lower-alpha;
+}
+
+.fr-richtext ol ol ol {
+  list-style: lower-roman;
+}
+
+.fr-richtext ul {
+  list-style: disc;
+}
+
+.fr-richtext ul ul {
+  list-style: circle;
+}
+
+.fr-richtext a {
+  color: var(--fr-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fr-richtext code,
+.fr-richtext pre {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--fr-surface-3);
+  border-radius: 5px;
+}
+
+.fr-richtext code {
+  padding: 0.1em 0.35em;
+}
+
+.fr-richtext pre {
+  margin: 0 0 0.6em;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.fr-richtext pre code {
+  padding: 0;
+  background: none;
+}
+
+.fr-richtext.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--fr-ink-3);
+  pointer-events: none;
+}
+
+.fr-richtext:focus-visible:not(.fr-richtext--editing) {
+  border-radius: 4px;
+  box-shadow: var(--fr-focus-ring);
+}
+
+/* The editor: a box like a text area's, growing with its text up to a scrolling height. */
+.fr-richtext-field {
+  position: relative;
+}
+
+.fr-richtext--editing {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius);
+  cursor: text;
+  overflow-y: auto;
+  transition:
+    border-color 0.12s var(--fr-ease),
+    box-shadow 0.12s var(--fr-ease);
+}
+
+.fr-richtext--editing:hover {
+  border-color: var(--fr-ink-3);
+}
+
+.fr-richtext--editing:focus {
+  border-color: var(--fr-primary);
+  box-shadow: var(--fr-focus-ring);
+}
+
+/* With the caret in a link: the chip that opens it in a new tab. */
+.fr-richtext-field__link {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(360px, 100%);
+  padding: 4px 8px;
+  border-radius: 7px;
+  background: var(--fr-surface);
+  box-shadow:
+    0 0 0 1px var(--fr-line-strong),
+    0 6px 16px -6px rgba(23, 22, 43, 0.35);
+  color: var(--fr-primary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.fr-richtext-field__link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-richtext-field__link:hover span {
+  text-decoration: underline;
+}
+
+.fr-richtext-field__link:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}

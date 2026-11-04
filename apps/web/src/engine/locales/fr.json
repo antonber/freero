@@ -200,7 +200,8 @@
     "guestLimitBoard",
     "guestLimitRate",
     "guestChangeUndone",
-    "guestCanEditOwn"
+    "guestCanEditOwn",
+    "openLinkInNewTab"
   ],
   "dots": "Points",
   "lines": "Lignes",
@@ -402,5 +403,6 @@
   "guestLimitBoard": "Les invités ont ajouté autant que ce tableau en accepte de leur part.",
   "guestLimitRate": "Vous modifiez les choses plus vite qu’un invité ne le peut. Ralentissez un peu.",
   "guestChangeUndone": "Cette modification n’est pas autorisée pour les invités et a été annulée.",
-  "guestCanEditOwn": "Peut ajouter et modifier les siens"
+  "guestCanEditOwn": "Peut ajouter et modifier les siens",
+  "openLinkInNewTab": "Ouvrir le lien dans un nouvel onglet"
 }

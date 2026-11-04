@@ -13,6 +13,7 @@ import {
   fieldValueToText,
   layoutStructure,
   richTextToPlain,
+  richTextToReadable,
   splitLabels,
   storedFields,
   withOptions,
@@ -74,7 +75,8 @@ export function toRows(editor: Editor, items: Item[], names: ReadonlyMap<string,
     return {
       type: el.type,
       text: richTextToPlain(el.type === 'card' ? el.title : el.text),
-      description: el.type === 'card' ? richTextToPlain(el.description) : '',
+      // Lists keep their 1. / - markers: an import (Markdown, cardDraft) reads them back as lists.
+      description: el.type === 'card' ? richTextToReadable(el.description) : '',
       color: el.color,
       tags: (el.tags ?? []).map((id) => tags.get(id)?.name).filter((n): n is string => !!n),
       status: el.type === 'card' ? (el.status ?? '') : '',

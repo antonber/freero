@@ -200,7 +200,8 @@
     "guestLimitBoard",
     "guestLimitRate",
     "guestChangeUndone",
-    "guestCanEditOwn"
+    "guestCanEditOwn",
+    "openLinkInNewTab"
   ],
   "dots": "Pontos",
   "lines": "Linhas",
@@ -402,5 +403,6 @@
   "guestLimitBoard": "Os convidados já adicionaram o máximo que este quadro aceita de convidados.",
   "guestLimitRate": "Você está alterando as coisas mais rápido do que um convidado pode. Vá um pouco mais devagar.",
   "guestChangeUndone": "Essa alteração não é permitida para convidados e foi desfeita.",
-  "guestCanEditOwn": "Pode adicionar e editar o seu"
+  "guestCanEditOwn": "Pode adicionar e editar o seu",
+  "openLinkInNewTab": "Abrir o link em uma nova guia"
 }

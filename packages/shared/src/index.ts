@@ -13,6 +13,7 @@ export * from './publicApi';
 export * from './suggestions';
 export * from './device';
 export * from './text';
+export * from './richMarkdown';
 export * from './geometry';
 export * from './outline/index';
 export * from './layout/index';

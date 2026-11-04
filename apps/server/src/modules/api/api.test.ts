@@ -118,7 +118,8 @@ it('what the API answers in a real session has the shapes its reference promises
     items: [
       { type: 'frame', title: 'Plan', x: 0, y: 0, w: 900, h: 600 },
       { type: 'sticky', text: 'Ship it', x: 100, y: 100, color: 'green' },
-      { type: 'card', title: 'Write docs', status: 'doing' },
+      // A card's description is Markdown: it arrives as rich text (a list stays a list).
+      { type: 'card', title: 'Write docs', status: 'doing', description: '1. Draft\n2. **Review**' },
       { type: 'shape', shape: 'diamond', text: 'Ready?' },
       { type: 'text', text: 'Notes' },
       { type: 'connector', from: '$1', to: '$3', label: 'then' },
@@ -159,7 +160,7 @@ it('what the API answers in a real session has the shapes its reference promises
   await call('DELETE', `${B}/items/${frame.id}?confirm=true`, '/boards/{boardId}/items/{itemId}');
   // Groups, rename and copy (#170).
   const group = (await call('POST', `${B}/groups`, '/boards/{boardId}/groups', { ids: [card.id, shape.id] })).json.group;
-  expect((await call('GET', `${B}/items/${card.id}`, '/boards/{boardId}/items/{itemId}')).json.item.data.groupId).toBe(group.id);
+  expect((await call('GET', `${B}/items/${card.id}`, '/boards/{boardId}/items/{itemId}')).json.item.data).toMatchObject({ groupId: group.id, description: '<ol><li>Draft</li><li><b>Review</b></li></ol>' });
   expect((await call('DELETE', `${B}/groups/group:${group.id}`, '/boards/{boardId}/groups/{groupId}')).json.ungrouped.sort()).toEqual([card.id, shape.id].sort());
   expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed' }, readOnly)).status).toBe(403);
   expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed', description: 'Q3' })).json.board).toMatchObject({ title: 'Renamed', description: 'Q3' });

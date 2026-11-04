@@ -51,7 +51,8 @@
     "thisCardIsNoLonger",
     "viewOnly",
     "noDescription",
-    "selectOneCard"
+    "selectOneCard",
+    "markdownHint"
   ],
   "toDo": "待办",
   "doing": "进行中",
@@ -104,5 +105,6 @@
   "thisCardIsNoLonger": "此卡片已不在白板上。",
   "viewOnly": "仅查看",
   "noDescription": "无描述",
-  "selectOneCard": "请选择一张卡片"
+  "selectOneCard": "请选择一张卡片",
+  "markdownHint": "输入 1. 或 - 开始列表；**粗体**、*斜体*、`代码`和网址会在输入时自动设置格式。"
 }

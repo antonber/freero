@@ -51,7 +51,8 @@
     "thisCardIsNoLonger",
     "viewOnly",
     "noDescription",
-    "selectOneCard"
+    "selectOneCard",
+    "markdownHint"
   ],
   "toDo": "A fazer",
   "doing": "Fazendo",
@@ -104,5 +105,6 @@
   "thisCardIsNoLonger": "Este cartão não está mais no quadro.",
   "viewOnly": "Somente leitura",
   "noDescription": "Sem descrição",
-  "selectOneCard": "Selecione um cartão"
+  "selectOneCard": "Selecione um cartão",
+  "markdownHint": "Digite 1. ou - para começar uma lista; **negrito**, *itálico*, `código` e endereços da web são formatados enquanto você digita."
 }

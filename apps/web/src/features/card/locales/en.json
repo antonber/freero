@@ -50,5 +50,6 @@
   "thisCardIsNoLonger": "This card is no longer on the board.",
   "viewOnly": "View only",
   "noDescription": "No description",
-  "selectOneCard": "Select one card"
+  "selectOneCard": "Select one card",
+  "markdownHint": "Type 1. or - to start a list; **bold**, *italic*, `code` and web addresses format as you type."
 }

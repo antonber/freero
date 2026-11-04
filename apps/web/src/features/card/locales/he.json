@@ -51,7 +51,8 @@
     "thisCardIsNoLonger",
     "viewOnly",
     "noDescription",
-    "selectOneCard"
+    "selectOneCard",
+    "markdownHint"
   ],
   "toDo": "לביצוע",
   "doing": "בביצוע",
@@ -104,5 +105,6 @@
   "thisCardIsNoLonger": "הכרטיס הזה כבר לא נמצא על הלוח.",
   "viewOnly": "צפייה בלבד",
   "noDescription": "אין תיאור",
-  "selectOneCard": "בחרו כרטיס אחד"
+  "selectOneCard": "בחרו כרטיס אחד",
+  "markdownHint": "הקלידו 1. או - כדי להתחיל רשימה; **מודגש**, *נטוי*, `קוד` וכתובות אינטרנט מעוצבים תוך כדי הקלדה."
 }

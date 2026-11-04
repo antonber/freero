@@ -340,10 +340,21 @@
   color: var(--fr-ink-3);
 }
 
-.fr-card-details textarea {
-  min-height: 220px;
+/* The description in the details: formatted, as tall as its text up to a scrolling height. */
+.fr-card-details__desc.fr-richtext,
+.fr-card-details__desc .fr-richtext--editing {
   max-height: 60vh;
-  resize: vertical;
+  overflow-y: auto;
+}
+
+.fr-card-details__desc .fr-richtext--editing {
+  min-height: 220px;
+}
+
+.fr-card-details__hint {
+  margin: -2px 0 0;
+  color: var(--fr-ink-3);
+  font-size: 12px;
 }
 
 /* Card details: the kanban's fields */
