@@ -170,6 +170,15 @@ doc.transact(() => {
 });
 // Written once the server holds it: a fresh socket sees the whole board.
 await sleep(1500);
+// The server digests the seeded board for a while (storing, indexing): navigating meanwhile timed
+// its busy event loop, not the app's load. Wait until it answers promptly, then read the app's
+// files once, so a cold read of a fresh build (and a virus scan of it) isn't timed either (#183).
+for (let t = Date.now(), quick = 0; quick < 5 && Date.now() - t < 30_000; await sleep(100)) {
+  const t0 = performance.now();
+  await fetch(`${base}/api/auth/me`);
+  quick = performance.now() - t0 < 20 ? quick + 1 : 0;
+}
+for (const f of fs.readdirSync(path.join(dist, 'assets')).filter((f) => /\.(js|css)$/.test(f))) await (await fetch(`${base}/assets/${f}`)).arrayBuffer();
 
 // ---------------------------------------------------------------------------------------------
 // The browser
@@ -257,7 +266,7 @@ await scenario('initial load', async () => {
     await page.screenshot({ path: path.join(work, 'load-failed.png') });
     throw new Error(`${e.message} (screenshot: ${path.join(work, 'load-failed.png')}; at ${page.url()})`);
   });
-  return { ms: r.ms, firstItemMs: r.first, detail: `${r.count} items drawn (${r.painted} on low-detail canvases), ${r.nodes} DOM nodes`, drawn: r.count, nodes: r.nodes, longTasksMs: r.longTasks };
+  return { ms: r.ms, firstItemMs: r.first, detail: `first items drawn at ${r.first} ms; ${r.count} items drawn (${r.painted} on low-detail canvases), ${r.nodes} DOM nodes`, drawn: r.count, nodes: r.nodes, longTasksMs: r.longTasks };
 });
 await scenario('memory after load', () => memory());
 // --census: what the drawn board is made of, by item type — the DOM nodes, and those that cost
@@ -545,7 +554,10 @@ function benchRuntime() {
         } else if (n && ++stable >= 60 && performance.now() - lastAt > 1500) break;
       }
       await raf();
-      return { ms: Math.round(lastAt), first: Math.round(first), count: last, painted: drawnItems().painted, nodes: document.getElementsByTagName('*').length, longTasks: longSince(0) };
+      // Loaded: every item drawn AND the page done with it — a long task after the count settled
+      // (DOM swapped for canvases, say) is still loading.
+      const busyUntil = longTasks.reduce((t, e) => Math.max(t, e.start + e.dur), 0);
+      return { ms: Math.round(Math.max(lastAt, busyUntil)), first: Math.round(first), count: last, painted: drawnItems().painted, nodes: document.getElementsByTagName('*').length, longTasks: longSince(0) };
     },
     census() {
       const out = {};

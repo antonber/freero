@@ -15,13 +15,18 @@ import { LOW_DETAIL_ZOOM } from '../canvas/detail';
 // jsdom has no 2D canvas: what is painted is a browser's business; which items go there is ours.
 HTMLCanvasElement.prototype.getContext = (() => null) as never;
 
+/** How many times an item was drawn in full (its component rendered). */
+let fullRenders = 0;
 const sticky = (): Omit<NewElement<'sticky'>, 'x' | 'y'> => ({ type: 'sticky', w: 200, h: 200, color: 'yellow', text: '', fontFamily: 'sans', fontSize: 'auto', textColor: '#17162B', align: 'center', vAlign: 'middle' });
 const probe = defineElement({
   type: 'sticky',
   resize: 'free',
   textField: 'text',
   defaults: sticky,
-  Component: ({ element, selected }) => <div className="full" data-id={element.id} data-selected={selected ? '' : undefined} />,
+  Component: ({ element, selected }) => {
+    fullRenders++;
+    return <div className="full" data-id={element.id} data-selected={selected ? '' : undefined} />;
+  },
   lowDetail: (_el, p) => p.box({ fill: '#FFF3A3' }),
 });
 // A type with no low-detail painting (a kanban, a table): always its own DOM.
@@ -87,6 +92,17 @@ describe('low detail', () => {
     expect(drawn(world)).toEqual([id]);
     zoomTo((enter + exit) / 2);
     expect(drawn(world)).toEqual([id]);
+  });
+
+  it('a jump far out (the fit on load) goes straight to the canvas: the items it brings into view are never mounted in full on the way (#183)', () => {
+    const { board, ed } = setup();
+    for (let i = 0; i < 30; i++) ed.create({ ...sticky(), x: i * 1000, y: 0 });
+    act(() => ed.setCamera({ x: -100, y: -100, zoom: 1 }));
+    const world = mount(board.world(0));
+    const before = fullRenders;
+    act(() => ed.setCamera({ x: -100, y: -100, zoom: 0.03 }));
+    expect(drawn(world)).toEqual(['low ×30']);
+    expect(fullRenders - before).toBe(0);
   });
 
   it('keeps render order around items drawn in full, and never reaches exports and thumbnails, an item being edited, or one still big on screen', () => {

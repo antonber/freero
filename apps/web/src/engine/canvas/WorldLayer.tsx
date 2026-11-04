@@ -94,9 +94,12 @@ function useVisibleIds(): { ids: string[]; cull: Rect } {
 export function WorldElements() {
   const core = useCore();
   const { ids, cull } = useVisibleIds();
-  // Switching between low and full detail mounts or unmounts most of the view: done as a
-  // transition (React renders it in slices; the view shows the old drawing, scaled, meanwhile).
-  const lowDetail = useDeferredValue(useStore(core.ui, (s) => s.lowDetail));
+  // Into low detail at once (#183): deferring it rendered the new, zoomed-out view in FULL detail
+  // first — on load that mounted the whole board (the fit) as DOM before the canvases took over.
+  // Out of it as a transition (React renders the mounting in slices; the canvas shows meanwhile).
+  const lowNow = useStore(core.ui, (s) => s.lowDetail);
+  const lowDeferred = useDeferredValue(lowNow);
+  const lowDetail = lowNow || lowDeferred;
   const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
   const editingId = useStore(core.ui, (s) => s.editingId);
   const preview = useStore(core.ui, (s) => s.dragPreview);
