@@ -3,3 +3,7 @@
 // the public API and the MCP server all search through `searchFor`, which re-checks the reader's
 // live access to every board before showing anything of it.
 export { searchFor, rebuildSearch, deriveBoardSearch, searchConsumer, SEARCH_CONSUMER, type SearchQuery, type SearchOptions } from './service';
+// What a board says as every reader sees it, row by row (items, comments, its title): the
+// sensitive-data scan (modules/dlp, #158) reads the same text search indexes.
+export { searchRowsOf } from './service';
+export type { SearchRow } from './extract';

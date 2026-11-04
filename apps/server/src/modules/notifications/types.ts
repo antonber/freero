@@ -38,6 +38,8 @@ export interface NotificationData {
   walkthroughId?: string;
   walkthroughTitle?: string;
   atMs?: number;
+  /** sensitive_data.found (#158): the kinds found (never what matched). `workspaceId` says where. */
+  sensitiveKinds?: string[];
 }
 
 /** The reader's interface language (#5), or null for English. */
@@ -84,6 +86,19 @@ export const dueDay = (date: string, locale?: L): string => {
   return Number.isNaN(ms) ? date : new Date(ms).toLocaleDateString(lang, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 };
 const role = (d: NotificationData) => d.role ?? '';
+/** "card numbers and IBANs", in the reader's language. */
+const KIND_KEYS = {
+  payment_card: 'sensitiveData.kind.paymentCard',
+  iban: 'sensitiveData.kind.iban',
+  national_id: 'sensitiveData.kind.nationalId',
+  secret: 'sensitiveData.kind.secret',
+  email: 'sensitiveData.kind.email',
+  phone: 'sensitiveData.kind.phone',
+} as const;
+const formatKinds = (l: L, kinds: string[]): string => {
+  const words = kinds.filter((k): k is keyof typeof KIND_KEYS => k in KIND_KEYS).map((k) => t(l, KIND_KEYS[k]));
+  return new Intl.ListFormat(!l || l === 'en' ? 'en' : l, { type: 'conjunction' }).format(words);
+};
 
 /** Moderation notices by action (modules/moderation). */
 const MODERATION_TITLE: Record<string, (l: L, d: NotificationData) => string> = {
@@ -224,6 +239,18 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
   },
   // modules/problems: an operator marked a problem the person reported as fixed. The excerpt is
   // the start of their own note, so they recognise which one.
+  // #158: to a workspace's owners and content admins; the board's title and the kinds only.
+  'sensitive_data.found': {
+    label: (l) => t(l, 'sensitiveData.found.label'),
+    description: (l) => t(l, 'sensitiveData.found.description'),
+    linkLabel: (l) => t(l, 'sensitiveData.found.link'),
+    title: (l, _actor, d) =>
+      t(l, 'sensitiveData.found.title', {
+        board: board(l, d),
+        kinds: formatKinds(l, d.sensitiveKinds ?? []),
+      }),
+    link: (_id, d) => (d.workspaceId ? `/admin/${encodeURIComponent(d.workspaceId)}?tab=labels` : '/app'),
+  },
   'problem.fixed': {
     label: (l) => t(l, 'problem.fixed.label'),
     description: (l) => t(l, 'problem.fixed.description'),

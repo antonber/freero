@@ -93,7 +93,17 @@
     "comment.thread.label",
     "comment.thread.description",
     "comment.thread.title",
-    "comment.thread.link"
+    "comment.thread.link",
+    "sensitiveData.found.label",
+    "sensitiveData.found.description",
+    "sensitiveData.found.title",
+    "sensitiveData.found.link",
+    "sensitiveData.kind.paymentCard",
+    "sensitiveData.kind.iban",
+    "sensitiveData.kind.nationalId",
+    "sensitiveData.kind.secret",
+    "sensitiveData.kind.email",
+    "sensitiveData.kind.phone"
   ],
   "someone": "有人",
   "quoted": "「{title}」",
@@ -188,5 +198,15 @@
   "comment.thread.label": "你的白板上的新评论",
   "comment.thread.description": "有人在你拥有或加星标的白板上发起评论（开启后）。",
   "comment.thread.title": "{actor} 评论了 {board}",
-  "comment.thread.link": "打开评论"
+  "comment.thread.link": "打开评论",
+  "sensitiveData.found.label": "白板上的敏感数据",
+  "sensitiveData.found.description": "敏感数据扫描在你管理的工作区的白板上发现了银行卡号、IBAN、身份证件号码或密钥。",
+  "sensitiveData.found.title": "{board} 上有敏感数据：{kinds}",
+  "sensitiveData.found.link": "查看结果",
+  "sensitiveData.kind.paymentCard": "银行卡号",
+  "sensitiveData.kind.iban": "IBAN",
+  "sensitiveData.kind.nationalId": "身份证件号码",
+  "sensitiveData.kind.secret": "密钥或 API 密钥",
+  "sensitiveData.kind.email": "电子邮件地址",
+  "sensitiveData.kind.phone": "电话号码"
 }

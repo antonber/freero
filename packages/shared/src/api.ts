@@ -1864,7 +1864,9 @@ export type NotificationType =
   | 'walkthrough.comment'
   | 'walkthrough.reaction'
   | 'agent.blocked'
-  | 'problem.fixed';
+  | 'problem.fixed'
+  // #158: the sensitive-data scan found something on a board of a workspace you administer.
+  | 'sensitive_data.found';
 
 export interface AppNotification {
   id: string;
@@ -2831,6 +2833,7 @@ export const AUDIT_ACTIONS = {
   'label.updated': 'Changed a classification label',
   'label.deleted': 'Deleted a classification label',
   'board.label_changed': 'Changed a board’s classification label',
+  'sensitive_data.settings_changed': 'Changed the sensitive-data scan',
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',

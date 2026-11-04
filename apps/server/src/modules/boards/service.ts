@@ -69,6 +69,7 @@ import {
 } from '../workspaces/index';
 import { callOf, jitsiAvailable } from './call';
 import { boardLifecycle, boardMovedWorkspace } from './events';
+import { checkLabelChange } from './labelPolicy';
 import * as repo from './repo';
 import type { Board } from './repo';
 
@@ -1033,6 +1034,8 @@ export async function setBoardLabel(boardId: string, userId: string, labelId: un
   const label = labelId ? available.find((l) => l.id === labelId) : null;
   if (labelId && !label) throw badRequest('That label isn’t available in this board’s workspace');
   if (!labelId && requirement.required) throw new HttpError(400, 'Boards in this workspace must carry a label', 'label_required');
+  // A workspace policy may refuse it (the sensitive-data scan: a board holding findings keeps a label at least as strict as the one it requires).
+  await checkLabelChange({ boardId: board.id, workspaceId: board.workspaceId, fromLabelId: board.labelId, toLabelId: (labelId as string | null) ?? null });
   await repo.transaction(async () => {
     if (!(await repo.setLabel(board.id, labelId as string | null))) throw notFound('Board not found');
     await recordAudit({

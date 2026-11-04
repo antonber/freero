@@ -132,3 +132,58 @@ export interface BoardLabelSummary {
   color: string;
   caps: LabelCaps;
 }
+
+// ---- the sensitive-data scan (#158; docs/design/compliance.md §2) ----
+// A team workspace may scan what its boards say (the shared content, as every reader sees it) for
+// sensitive data. A finding records the board, the item and the kind, and how many — never the
+// text that matched. Content admins (and owners) set it up and see the findings:
+// GET  /api/workspaces/:id/admin/sensitive-data            -> SensitiveDataStatus
+// PUT  /api/workspaces/:id/admin/sensitive-data            SensitiveDataSettingsInput -> SensitiveDataStatus
+// The board's own people who manage its label (owner, co-owners, content admins):
+// GET  /api/boards/:id/sensitive-data                      -> BoardSensitiveData
+export const SENSITIVE_DATA_KINDS = ['payment_card', 'iban', 'national_id', 'secret', 'email', 'phone'] as const;
+export type SensitiveDataKind = (typeof SENSITIVE_DATA_KINDS)[number];
+/** What a workspace scans for when it turns the scan on without choosing (email and phone are opt-in). */
+export const DEFAULT_SENSITIVE_DATA_KINDS: readonly SensitiveDataKind[] = ['payment_card', 'iban', 'national_id', 'secret'];
+
+/**
+ * notify: admins are told and the console lists it; suggest: also the board's managers see the
+ * label to give it; require: the label is given by Freero, and while the board holds findings its
+ * label can only be changed to one at least as strict.
+ */
+export type SensitiveDataAction = 'notify' | 'suggest' | 'require';
+
+export interface SensitiveDataSettings {
+  enabled: boolean;
+  kinds: SensitiveDataKind[];
+  action: SensitiveDataAction;
+  /** The label to suggest or require (null: none, only notify). */
+  labelId: string | null;
+}
+export type SensitiveDataSettingsInput = Partial<SensitiveDataSettings>;
+
+export interface SensitiveDataFinding {
+  boardId: string;
+  boardTitle: string;
+  /** The item it is in (null: the board's title or a comment not pinned to an item). */
+  elementId: string | null;
+  /** Where on the board: an item, a comment, the board itself. */
+  where: 'item' | 'comment' | 'board';
+  kind: SensitiveDataKind;
+  count: number;
+  foundAt: number;
+}
+
+export interface SensitiveDataStatus {
+  settings: SensitiveDataSettings;
+  /** Newest first, at most 500. */
+  findings: SensitiveDataFinding[];
+}
+
+export interface BoardSensitiveData {
+  /** Kinds found on the board now (empty: nothing found, or the scan is off). */
+  kinds: SensitiveDataKind[];
+  action: SensitiveDataAction | null;
+  /** The label the workspace suggests or requires for it, unless the board's label already satisfies it. */
+  label: BoardLabelSummary | null;
+}

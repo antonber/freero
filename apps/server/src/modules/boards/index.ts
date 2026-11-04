@@ -57,6 +57,10 @@ export { registerBoardObjectTypes, boardRoles, elementTitle } from './objects';
 export { onBoardLifecycle, type BoardLifecycleEvent, type BoardLifecycleAction } from './events';
 // A board moved into another workspace (#124): modules adjust what they keep per workspace.
 export { onBoardMovedWorkspace, type BoardMovedWorkspaceEvent } from './events';
+// #158: a label given by a workspace policy (the sensitive-data scan), and a policy's say over people's label changes.
+export { applyLabelByPolicy, onLabelChange, type LabelChange, type LabelChangeGuard } from './labelPolicy';
+// A person relabelling a board (PUT /boards/:id/label), with every check that route makes.
+export { setBoardLabel } from './service';
 // The same, reliably: appended to the outbox in the change's transaction (modules/events, search; KAI-150).
 export { BOARD_EVENTS_TOPIC, type BoardEventRecord } from './repo';
 // Files downloaded from a board (modules/uploads): the downloads policy, then the audit log.
@@ -287,6 +291,11 @@ export async function boardPlace(
 /** The workspace a board (trashed or not) belongs to, or null if there is no such board. */
 export async function boardWorkspaceId(boardId: string): Promise<string | null> {
   return (await repo.getBoardIncludingTrash(boardId))?.workspaceId ?? null;
+}
+
+/** #158: the label the board carries (null: none, or no such board). */
+export async function boardLabelId(boardId: string): Promise<string | null> {
+  return (await repo.getBoard(boardId))?.labelId ?? null;
 }
 
 /** The board's title, or null if there is no such board (invite previews). */
