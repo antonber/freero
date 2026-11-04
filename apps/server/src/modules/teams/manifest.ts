@@ -13,7 +13,7 @@
 //   side panel's "Share to stage" button (meeting.shareAppContentToStage).
 import { zipSync } from 'fflate';
 import type { Config } from '../../platform/config';
-import { colorIcon, outlineIcon } from './icons';
+import { colorIcon, outlineIcon } from '../../platform/brandIcons';
 
 export const TEAMS_MANIFEST_VERSION = '1.19';
 export const TEAMS_MANIFEST_SCHEMA = `https://developer.microsoft.com/json-schemas/teams/v${TEAMS_MANIFEST_VERSION}/MicrosoftTeams.schema.json`;

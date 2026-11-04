@@ -19,7 +19,7 @@ server ([../mcp.md](../mcp.md)). Nothing here needs a marketplace listing or any
 | **n8n** | Importable workflows: GitHub issue → card, board comment → Slack | [n8n.md](n8n.md) |
 | **Make** | The same two scenarios, step by step | [make.md](make.md) |
 | **Zapier** | Webhooks by Zapier + the REST API | [zapier.md](zapier.md) |
-| **Power Automate / Logic Apps** | A custom connector for the whole REST API | [power-automate.md](power-automate.md), `npm run gen:power-automate` |
+| **Power Automate / Logic Apps** | A custom connector for the whole REST API, with a trigger on board events; certification files for a listed connector (owner submits) | [power-automate.md](power-automate.md), `npm run gen:power-automate` |
 
 Matrix isn't on the list: it has no standard incoming-webhook URL to post to (see
 [events.md](../events.md#formats)).

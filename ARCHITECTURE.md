@@ -2371,7 +2371,10 @@ audit and admin controls are the same code.
   (`kind: 'app'`, its name, the person it acts for). This is the contract the MCP server's
   `propose_changes` (KAI-107) calls.
 - **OAuth server** (`apiauth/oauth.ts`), built to OAuth 2.1 as the MCP authorization spec requires:
-  authorization code only; PKCE S256 mandatory for every client; exact redirect URIs (loopback http
+  authorization code only; PKCE S256 mandatory for every public client — a confidential app a person
+  registered (client secret) may omit it, because Power Automate's and Make's generic OAuth can't
+  send it (#174, #175; RFC 9700 §2.1.1): a challenge that is sent is always enforced, and a code
+  issued without one needs the secret and refuses any verifier (no downgrade); exact redirect URIs (loopback http
   on any port, RFC 8252; https; an app's own scheme; never `javascript:`/`data:`/fragments); codes
   single use (deleted on redemption, even a failed one), 10 minutes; access tokens 1 hour; refresh
   tokens rotate, and a replayed one revokes the whole consent; RFC 7591 dynamic client registration
@@ -2741,9 +2744,14 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   route) and MCP (`import_meeting_notes`, a thin tool over it; proposed when the credential may only
   suggest) produce the same frame. Dropped `.md` stays the doc importer's: only the menu reads Markdown
   as meeting notes.
-- **Power Automate**: `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
-  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
-  keeps the checked-in file in step and free of OpenAPI 3 constructs.
+- **Power Automate** (#175): `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
+  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `scripts/lib/powerAutomate.mjs`
+  turns "add a webhook" into a webhook trigger (`x-ms-notification-url`; the API's 201 answers the
+  webhook's `Location`, which the trigger DELETEs) and builds the certification files
+  (`docs/integrations/power-automate/certified/`: a curated operation list in Microsoft's wording,
+  generic OAuth to freero.app, the icon from `platform/brandIcons.ts`). `api/powerAutomate.test.ts`
+  keeps both in step, free of OpenAPI 3 constructs and within Microsoft's published certification
+  rules.
 
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 
@@ -2758,7 +2766,8 @@ piece reuses an owner that already exists.
   `/mcp`, OAuth through the plugin vault). The plugin lists its tools from mcp's
   `mcpToolDescriptions` (mcp's index: the `tools/list` descriptions, JSON Schema from the tools' zod
   input), so the package can't drift from the server; write tools carry a confirmation. Icons are
-  rasterised from Freero's mark in `icons.ts` (no image dependency). Served per instance
+  rasterised from Freero's mark in `platform/brandIcons.ts` (no image dependency; every host
+  app package uses it). Served per instance
   (`/api/integrations/{teams/app-package,copilot/agent-package}`, `?version=`), by the CLI
   (`teams:package`, `copilot:package`) and linked from the operator console.
 - **The tab is the public embed.** `app/teams/TeamsTabPage` renders `PublicEmbed`

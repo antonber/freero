@@ -1032,17 +1032,17 @@ const AUTOMATION: Integration[] = [
     id: "power-automate",
     name: "Power Automate",
     category: 'automation',
-    oneLiner: "A custom connector for Power Automate and Logic Apps, generated from Freero’s API description.",
+    oneLiner: "A connector for Power Automate and Logic Apps: every REST operation as an action, and a trigger when something happens on a board.",
     description: [
-      "Import the generated Swagger 2.0 connector into Power Automate or Logic Apps and every REST operation becomes an action you can use in a flow.",
-      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Power Automate’s own directory.",
+      "Import the generated Swagger 2.0 connector into Power Automate or Logic Apps: every REST operation becomes an action, and “When something happens on a board” runs a flow on board events through a workspace webhook that the flow adds and removes itself.",
+      "The files for a certified connector (OAuth sign-in to freero.app, listed in Power Automate’s own connector list) are generated too; until Microsoft certifies it, import the custom connector.",
     ],
     status: 'api',
     connect: {
-      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Import docs/integrations/power-automate/freero.swagger.json as a custom connector and sign in with the token."],
-      docs: { file: "docs/integrations/power-automate.md", label: "Power Automate recipe" },
+      steps: ["Create a Freero token under Connect an agent → Any HTTP client (webhooks:manage for the trigger).", "Import docs/integrations/power-automate/freero.swagger.json as a custom connector and sign in with the token."],
+      docs: { file: "docs/integrations/power-automate.md", label: "Power Automate connector" },
     },
-    keywords: ["power automate", "logic apps", "microsoft", "custom connector", "flow"],
+    keywords: ["power automate", "logic apps", "microsoft", "custom connector", "certified connector", "flow", "trigger", "webhook"],
     seo: {
       title: "Power Automate connector for Freero whiteboards",
       description: "Use Freero in Power Automate and Logic Apps with a custom connector generated from its REST API: every operation available as an action.",

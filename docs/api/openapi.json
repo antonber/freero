@@ -322,6 +322,9 @@
         "responses": {
           "201": {
             "description": "The webhook and its secret",
+            "headers": {
+              "Location": { "description": "The webhook’s address (absolute): DELETE it to remove the webhook", "schema": { "type": "string" } }
+            },
             "content": {
               "application/json": {
                 "schema": {

@@ -13,7 +13,10 @@ curl -H "Authorization: Bearer frp_…" https://<your-freero>/api/v1/me
 ```
 
 **An app other people connect:** Settings → Your OAuth apps → register its redirect URIs. It then
-uses the authorization code flow with PKCE (S256, required):
+uses the authorization code flow with PKCE (S256, required). A **confidential** app (registered with
+*Confidential app* on: it gets a client secret) may leave PKCE out when its platform can't send it
+(Power Automate's and Make's generic OAuth do not): it then authenticates with its secret at the
+token endpoint and sends no `code_verifier`. A challenge it does send is always checked.
 
 | | |
 |---|---|

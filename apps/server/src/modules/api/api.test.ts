@@ -102,9 +102,9 @@ async function call(method: string, path: string, specPath: string, body?: unkno
     expect(Object.keys(content), `${method} ${specPath} ${res.status} documents ${type}`).toContain(type);
     const json = type === 'application/json' ? JSON.parse(text) : text;
     expect(problems(json, content[type].schema), `${method} ${path} → ${res.status}: ${text.slice(0, 300)}`).toEqual([]);
-    return { status: res.status, json };
+    return { status: res.status, json, location: res.headers.get('location') };
   }
-  return { status: res.status, json: null };
+  return { status: res.status, json: null, location: res.headers.get('location') };
 }
 
 it('what the API answers in a real session has the shapes its reference promises', async () => {
@@ -286,7 +286,9 @@ it('a workspace’s webhooks over the API: only its owners and admins with a web
   const made = await call('POST', W, '/workspaces/{workspaceId}/webhooks', { url: 'https://hooks.example.com/in?key=s3cr3t', events: ['item.created'], description: 'CI' }, manager);
   expect(made.status).toBe(201);
   expect(made.json.secret).toMatch(/^whsec_/);
-  const H = `${W}/${made.json.webhook.id}`;
+  // Its Location is where a subscriber (Power Automate's webhook trigger) removes it: the DELETE below uses it.
+  const H = new URL(made.location!).pathname.replace(/^\/api\/v1/, '');
+  expect(H.endsWith(made.json.webhook.id)).toBe(true);
   const listed = await call('GET', W, '/workspaces/{workspaceId}/webhooks', undefined, manager);
   expect(JSON.stringify(listed.json)).not.toContain(made.json.secret);
   expect(JSON.stringify(listed.json)).not.toContain('s3cr3t');
