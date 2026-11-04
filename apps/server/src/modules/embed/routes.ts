@@ -47,6 +47,11 @@ export default function embedRoutes(ctx: ServerContext): Router {
     /^\/embed\/connect\//,
     'The embed sign-in popup posts the board-bound token to window.opener, a Freero-origin frame, with targetOrigin set to Freero itself',
   );
+  // The board chooser window a Freero frame on another platform opens (the Google Meet side panel, #169).
+  allowOpener(
+    /^\/embed\/choose$/,
+    'The board chooser window posts the chosen board and its board-bound token to window.opener, a Freero-origin frame, with targetOrigin set to Freero itself',
+  );
 
   const origin = (req: Request) => appUrl(req, '');
   const indexHtml = path.join(ctx.config.webDist, 'index.html');

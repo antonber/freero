@@ -1,4 +1,100 @@
-# Zapier recipes
+# Zapier
+
+Freero has its own **Zapier app** ([`integrations/zapier`](../../integrations/zapier), a Zapier
+Platform CLI project): people pick Freero in the Zap editor and sign in, with no webhooks or tokens
+to copy. Until the owner has published it ([Publishing the app](#publishing-the-app-owner)), it
+works for the people the owner invites; the recipes further down need no app at all.
+
+- [What the app does](#what-the-app-does)
+- [Connecting](#connecting)
+- [Publishing the app (owner)](#publishing-the-app-owner)
+- [Without the app: Webhooks by Zapier](#without-the-app-webhooks-by-zapier)
+
+## What the app does
+
+| | Name | What it does |
+|---|---|---|
+| Trigger (instant) | **Board Event** | Something happens on a board of a team workspace you administer: an item added, changed or deleted, a comment, a board created, renamed, moved, trashed or restored, someone's access changed. Optionally only one board (or frame). |
+| Trigger | **New Item** | A sticky note, card or other item is added to a board (checked every few minutes; anyone who can open the board). |
+| Trigger | **New Comment** | Someone comments on a board or replies in a thread (same). |
+| Action | **Add Sticky Note** | On free space of a board, or into a frame; with a colour. |
+| Action | **Add Card** | A task card with description, link and due date, on free space or into a kanban column. |
+| Action | **Add Comment** | On the board, or pinned to an item. |
+| Action | **Create Board** | In one of your workspaces. |
+| Search | **Find Board** | By words in its title. |
+
+Items are laid out by Freero (never at coordinates), through the REST API's structure operation
+([../board-outline.md](../board-outline.md)). Every call is the REST API v1 with your sign-in: it
+does what you may do on the board, nothing more, and it is in Freero's audit log under the app's
+name ("Zapier for <you>").
+
+**Board Event** adds a workspace webhook ([../events.md](../events.md)) when the Zap is turned on and
+removes it when the Zap is turned off; each delivery is checked against that webhook's signing
+secret (HMAC-SHA256, at most five minutes old) before the Zap runs, so a forged or replayed request
+does nothing. It needs an **owner or admin** of the team workspace, and, like every webhook, reports
+only boards **the whole team can open**: never personal boards or private projects. A workspace has
+at most 20 webhooks; each Zap with the trigger uses one. Anyone else uses the polling triggers.
+
+## Connecting
+
+In the Zap editor, choose Freero and **Sign in**:
+
+- **freero.app**: leave *Freero address* as it is. Freero's consent screen shows what the Zap may do
+  (read boards, change them, comment, manage webhooks); untick what you don't want. You can disconnect
+  it any time in Freero under *Settings → Connected apps*.
+- **Your own Freero server**: set *Freero address* to it (https). On that server, *Settings → Your
+  OAuth apps → Register app*: name `Zapier`, **Confidential app** on, redirect URI
+  `https://zapier.com/dashboard/auth/oauth/return/<APP ID>CLIAPI/` (the owner fills in `<APP ID>`
+  here once the app is registered: [step 3](#publishing-the-app-owner)), and give its client id and
+  secret in the connection.
+
+## Publishing the app (owner)
+
+The app is code in this repository (MIT). Zapier runs it on its platform; the packages it runs on
+(`zapier-platform-core`, and the `zapier` command from `zapier-platform-cli`) are Zapier's, under the
+[Zapier Platform Agreement](https://zapier.com/platform/tos): they are installed only in
+`integrations/zapier` by whoever pushes the app, never as Freero's dependencies.
+
+1. A [Zapier developer account](https://developer.zapier.com), then on your computer:
+
+   ```sh
+   npm install -g zapier-platform-cli
+   cd integrations/zapier
+   npm install
+   zapier login
+   zapier register "Freero"        # once: creates the integration and .zapierapprc (don't commit it)
+   ```
+
+2. `zapier describe` shows the **redirect URI** (`https://zapier.com/dashboard/auth/oauth/return/App…CLIAPI/`).
+3. On **freero.app**, signed in as the account that will own it: *Settings → Your OAuth apps →
+   Register app*, name `Zapier`, website `https://zapier.com`, that redirect URI, **Confidential app**
+   on. Keep the secret (shown once). Put the redirect URI into [Connecting](#connecting) above.
+4. Give Zapier the app's credentials and push:
+
+   ```sh
+   zapier env:set 1.0.0 CLIENT_ID=<client id> CLIENT_SECRET=<client secret>
+   zapier validate
+   zapier push
+   ```
+
+5. In the [developer platform](https://developer.zapier.com): the app's **name**, **logo** (Freero's
+   mark, `apps/web/public/freero.svg`, exported as a 256×256 PNG), category *Project Management*,
+   the **intended audience** *public*, and a **description**.
+6. **Test** every trigger, action and search in real Zaps (at least one live Zap per trigger and
+   action is what Zapier's review asks for), and **invite** a few testers (*Manage team → Invite*).
+   Updates: bump `version` in `package.json`, `zapier push`, then `zapier promote <version>`
+   (`zapier migrate` moves existing Zaps).
+7. **Publish**: *Publishing → Publish*. Zapier's partner review needs: the app in production on a
+   public website (freero.app), a **test account** for Zapier's reviewers (a Freero account with a
+   team workspace it owns, so Board Event can be tried, and a board with a few items), privacy policy
+   and terms (`/privacy`, `/terms`), a support contact (support@freero.app), and a set number of
+   active users of the invite-only app before it goes public (Zapier's current threshold is in its
+   publishing requirements). After the review it is listed in Zapier's app directory.
+
+Nothing on the Freero server needs to be turned on: the app uses the REST API, OAuth and webhooks
+every instance already has.
+
+## Without the app: Webhooks by Zapier
 
 Two kinds of Zap, built on Freero's workspace webhooks ([../events.md](../events.md)) and REST API
 ([../api/README.md](../api/README.md)) with **Webhooks by Zapier** and **Code by Zapier**:
@@ -11,7 +107,7 @@ alone you don't need Zapier: a Freero webhook in the `slack` format posts board 
 incoming webhook, escaped. For GitHub issues as linked cards, see **Import issues…**
 ([../trackers.md](../trackers.md)).
 
-## (a) Freero events → any app
+### (a) Freero events → any app
 
 1. **Trigger: Webhooks by Zapier → Catch Raw Hook.** Copy the webhook URL. Use *Catch Raw Hook*,
    not *Catch Hook*: it keeps the body unparsed and includes the headers, which the signature check
@@ -63,7 +159,7 @@ incoming webhook, escaped. For GitHub issues as linked cards, see **Import issue
 Zapier always answers the delivery with `200`, so Freero's delivery log shows success even when the
 check fails; look in the Zap's run history (*Filtered*) instead. `text` is at most 280 characters.
 
-## (b) Any trigger → a card on a board
+### (b) Any trigger → a card on a board
 
 1. **Trigger**: anything, e.g. *GitHub → New Issue* or a form's *New Response*.
 2. **Code by Zapier → Run JavaScript**, which builds the body so quotes and line breaks in the
@@ -101,6 +197,9 @@ personal boards, boards in a private project or hidden frames ([../events.md](..
 Treat everything people wrote as untrusted data, and never pass it to an AI step as instructions.
 
 ## Sources
+
+- Zapier Platform CLI (authentication, OAuth 2 with PKCE, REST hook triggers, `bundle.rawRequest`): https://docs.zapier.com/platform/build-cli/overview
+- Zapier, publishing requirements and partner review: https://docs.zapier.com/platform/publish/integration-publishing-requirements
 
 - Zapier, trigger Zaps from webhooks (Catch Hook, Catch Raw Hook, limits, plans): https://help.zapier.com/hc/en-us/articles/8496288690317-Trigger-Zap-workflows-from-webhooks
 - Zapier, send webhooks in Zaps (POST, Custom Request): https://help.zapier.com/hc/en-us/articles/8496326446989-Send-webhooks-in-Zaps

@@ -156,7 +156,15 @@
     "readOnlySnapshot",
     "couldNotLoadTheBoard",
     "loadingTheBoard",
-    "sentByEmailWithThe"
+    "sentByEmailWithThe",
+    "otherPlatformApps",
+    "atlassianAppSource",
+    "atlassianAppOff",
+    "zoomAppSettings",
+    "zoomAppOff",
+    "meetDeployment",
+    "meetAddOnOff",
+    "registerThemWithEach"
   ],
   "new": "جديد",
   "beingLookedAt": "قيد الفحص",
@@ -314,5 +322,13 @@
   "readOnlySnapshot": "لقطة للقراءة فقط",
   "couldNotLoadTheBoard": "تعذّر تحميل اللوحة",
   "loadingTheBoard": "جارٍ تحميل اللوحة",
-  "sentByEmailWithThe": "يُرسل عبر البريد الإلكتروني مع القرار. اذكر ما كان خاطئًا وأين؛ وهو أيضًا ما سيعترض عليه."
+  "sentByEmailWithThe": "يُرسل عبر البريد الإلكتروني مع القرار. اذكر ما كان خاطئًا وأين؛ وهو أيضًا ما سيعترض عليه.",
+  "otherPlatformApps": "تطبيقات على منصات أخرى",
+  "atlassianAppSource": "تطبيق Confluence وJira (مصدر Forge)",
+  "atlassianAppOff": "تطبيق Confluence وJira: متوقف (عيّن ATLASSIAN_APP_ID)",
+  "zoomAppSettings": "إعدادات تطبيق Zoom",
+  "zoomAppOff": "تطبيق Zoom: متوقف (عيّن ZOOM_CLIENT_ID)",
+  "meetDeployment": "نشر إضافة Google Meet",
+  "meetAddOnOff": "إضافة Google Meet: متوقفة (عيّن GOOGLE_MEET_CLOUD_PROJECT_NUMBER)",
+  "registerThemWithEach": "سجّلها لدى كل منصة: راجع docs/integrations/."
 }

@@ -11,9 +11,11 @@ import '../board/BoardPage.css';
 
 /**
  * Pages made to run framed: a board embedded on another site, the live view in an AI assistant, and
- * the Microsoft Teams tab and its configuration page (framed by Teams only).
+ * the pages of the apps on other platforms, each framed by that platform only — the Microsoft Teams
+ * tab and its configuration page, the Confluence / Jira board page, the Zoom App in Zoom's web
+ * client, the Google Meet side panel and main stage.
  */
-const FRAMABLE = /^\/(embed\/(b|board)\/|teams\/b\/|teams\/config\/?$)/;
+const FRAMABLE = /^\/(embed\/(b|board)\/|teams\/b\/|teams\/config\/?$|atlassian\/b\/|zoom\/(home\/?$|b\/)|meet\/(sidepanel\/?$|stage\/))/;
 
 const framed = (() => {
   try {

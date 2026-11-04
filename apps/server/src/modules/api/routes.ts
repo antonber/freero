@@ -12,6 +12,7 @@ import { Router, type Request, type Response } from 'express';
 import { PROBLEM_REPORT_NOTICE, type ApiScope } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, HttpError } from '../../platform/http';
+import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { allowCrossSiteApi } from '../../platform/security';
 import { authenticate, registerProtectedResource, requireScope, sendAuthError, type ApiCredential } from '../apiauth/index';
@@ -110,7 +111,13 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   const ws = (call: api.ApiCall) => call.req.params.workspaceId;
   const hook = (call: api.ApiCall) => call.req.params.webhookId;
   endpoint('get', W, 'webhooks:manage', async (call) => ({ body: await hooks.listWebhooksFor(call, ws(call)) }));
-  endpoint('post', W, 'webhooks:manage', async (call) => ({ status: 201, body: await hooks.createWebhookFor(call, ws(call), call.req.body) }));
+  endpoint('post', W, 'webhooks:manage', async (call) => {
+    const out = await hooks.createWebhookFor(call, ws(call), call.req.body);
+    // Where the new webhook lives: subscription-style triggers (Power Automate's webhook triggers,
+    // #175) DELETE this address when a flow is turned off.
+    const location = appUrl(call.req, `/api/v1/workspaces/${encodeURIComponent(ws(call))}/webhooks/${encodeURIComponent(out.webhook.id)}`);
+    return { status: 201, headers: { Location: location }, body: out };
+  });
   endpoint('patch', `${W}/:webhookId`, 'webhooks:manage', async (call) => ({ body: await hooks.updateWebhookFor(call, ws(call), hook(call), call.req.body) }));
   endpoint('delete', `${W}/:webhookId`, 'webhooks:manage', async (call) => ({ body: await hooks.deleteWebhookFor(call, ws(call), hook(call)) }));
   endpoint('post', `${W}/:webhookId/rotate`, 'webhooks:manage', async (call) => ({ body: await hooks.rotateWebhookFor(call, ws(call), hook(call)) }));

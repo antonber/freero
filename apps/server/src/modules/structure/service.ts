@@ -34,16 +34,18 @@ function parseRequest(body: unknown): InsertStructureRequest {
   if (b.target !== undefined && !Object.hasOwn(SINKS, b.target)) throw badRequest(`target must be ${Object.keys(SINKS).join(', ')}`);
   if (b.description !== undefined && (typeof b.description !== 'string' || b.description.length > MAX_SUGGESTION_DESCRIPTION))
     throw badRequest(`description must be text of at most ${MAX_SUGGESTION_DESCRIPTION} characters`);
-  return { structure: b.structure, near: b.near, at: b.at, target: b.target, description: b.description, ...(b.placement !== undefined ? { placement: readPlacement(b.placement) } : {}) };
+  // No placement: absent, null, or one that names nothing (automation tools send every optional field, empty).
+  const placement = b.placement === undefined || b.placement === null ? null : readPlacement(b.placement);
+  return { structure: b.structure, near: b.near, at: b.at, target: b.target, description: b.description, ...(placement && Object.keys(placement).length ? { placement } : {}) };
 }
 
-/** `placement` as sent: one of into (with column) / newFrame / newKanban, each a short text. */
+/** `placement` as sent: one of into (with column) / newFrame / newKanban, each a short text (empty: not given). */
 export function readPlacement(v: unknown): StructurePlacement {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw badRequest('placement must be { into, column?, row? } or { newFrame } or { newKanban }');
   const out: StructurePlacement = {};
   for (const k of ['into', 'column', 'row', 'newFrame', 'newKanban'] as const) {
     const x = (v as Record<string, unknown>)[k];
-    if (x === undefined || x === null) continue;
+    if (x === undefined || x === null || x === '') continue;
     if (typeof x !== 'string' || !x.trim() || x.length > 200) throw badRequest(`placement.${k} must be a short text`);
     out[k] = x.trim();
   }

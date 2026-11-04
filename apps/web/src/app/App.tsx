@@ -45,6 +45,14 @@ const EmbedSignedInPage = lazy(() => import('./embed/EmbedSignedInPage'));
 const TeamsTabPage = lazy(() => import('./teams/TeamsTabPage'));
 const TeamsConfigPage = lazy(() => import('./teams/TeamsConfigPage'));
 const TeamsChoosePage = lazy(() => import('./teams/TeamsChoosePage'));
+// Apps on other platforms (#166–#169): Confluence and Jira, Zoom, Google Meet, and the board chooser window.
+const AtlassianBoardPage = lazy(() => import('./hosts/AtlassianBoardPage'));
+const EmbedChoosePage = lazy(() => import('./hosts/EmbedChoosePage'));
+const ZoomHomePage = lazy(() => import('./hosts/zoom/ZoomHomePage'));
+const ZoomBoardPage = lazy(() => import('./hosts/zoom/ZoomBoardPage'));
+const ZoomInstalledPage = lazy(() => import('./hosts/zoom/ZoomInstalledPage'));
+const MeetSidePanelPage = lazy(() => import('./hosts/meet/MeetSidePanelPage'));
+const MeetStagePage = lazy(() => import('./hosts/meet/MeetStagePage'));
 // Docs (KAI-162): the page and its editor load on demand.
 const DocPage = lazy(() => import('./pages/doc/DocPage'));
 // The phone answer page of a live activity (#40): no board engine, just the activity's REST.
@@ -275,6 +283,27 @@ export function App() {
                 </Suspense>
               }
             />
+            {(
+              [
+                ['/atlassian/b/:id', AtlassianBoardPage],
+                ['/embed/choose', EmbedChoosePage],
+                ['/zoom/home', ZoomHomePage],
+                ['/zoom/b/:id', ZoomBoardPage],
+                ['/zoom/installed', ZoomInstalledPage],
+                ['/meet/sidepanel', MeetSidePanelPage],
+                ['/meet/stage/:id', MeetStagePage],
+              ] as const
+            ).map(([path, Page]) => (
+              <Route
+                key={path}
+                path={path}
+                element={
+                  <Suspense fallback={<FullPageSpinner label={t('openingBoard')} />}>
+                    <Page />
+                  </Suspense>
+                }
+              />
+            ))}
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
           </FrameGuard>

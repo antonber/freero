@@ -155,5 +155,13 @@
   "readOnlySnapshot": "Read-only snapshot",
   "couldNotLoadTheBoard": "Could not load the board",
   "loadingTheBoard": "Loading the board",
-  "sentByEmailWithThe": "Sent by email with the decision. Say what was wrong and where; it is also what they appeal against."
+  "sentByEmailWithThe": "Sent by email with the decision. Say what was wrong and where; it is also what they appeal against.",
+  "otherPlatformApps": "Apps on other platforms",
+  "atlassianAppSource": "Confluence and Jira app (Forge source)",
+  "atlassianAppOff": "Confluence and Jira app: off (set ATLASSIAN_APP_ID)",
+  "zoomAppSettings": "Zoom App settings",
+  "zoomAppOff": "Zoom App: off (set ZOOM_CLIENT_ID)",
+  "meetDeployment": "Google Meet add-on deployment",
+  "meetAddOnOff": "Google Meet add-on: off (set GOOGLE_MEET_CLOUD_PROJECT_NUMBER)",
+  "registerThemWithEach": "Register them with each platform: see docs/integrations/."
 }

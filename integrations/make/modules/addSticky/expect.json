@@ -1,0 +1,76 @@
+[
+    {
+        "name": "board",
+        "label": "Board",
+        "type": "select",
+        "required": true,
+        "options": "rpc://listBoards",
+        "mappable": true,
+        "help": "Pick a board, or map its id (in its address: /board/<id>)."
+    },
+    {
+        "name": "text",
+        "label": "Text",
+        "type": "text",
+        "required": true,
+        "multiline": true
+    },
+    {
+        "name": "color",
+        "label": "Color",
+        "type": "select",
+        "options": [
+            {
+                "label": "Yellow",
+                "value": "yellow"
+            },
+            {
+                "label": "Orange",
+                "value": "orange"
+            },
+            {
+                "label": "Coral",
+                "value": "coral"
+            },
+            {
+                "label": "Pink",
+                "value": "pink"
+            },
+            {
+                "label": "Violet",
+                "value": "violet"
+            },
+            {
+                "label": "Blue",
+                "value": "blue"
+            },
+            {
+                "label": "Cyan",
+                "value": "cyan"
+            },
+            {
+                "label": "Green",
+                "value": "green"
+            },
+            {
+                "label": "Lime",
+                "value": "lime"
+            },
+            {
+                "label": "Gray",
+                "value": "gray"
+            },
+            {
+                "label": "White",
+                "value": "white"
+            }
+        ]
+    },
+    {
+        "name": "into",
+        "label": "Into frame or kanban",
+        "type": "text",
+        "required": false,
+        "help": "Optional: the id of a frame or kanban (Copy link to item in Freero: the part after item=). Leave it empty for free space."
+    }
+]

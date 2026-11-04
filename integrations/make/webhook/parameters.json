@@ -1,0 +1,77 @@
+[
+    {
+        "name": "workspace",
+        "label": "Team workspace",
+        "type": "select",
+        "required": true,
+        "options": "rpc://listAdminWorkspaces",
+        "help": "A team workspace you own or administer. Its webhooks report only boards the whole team can open."
+    },
+    {
+        "name": "events",
+        "label": "Events",
+        "type": "select",
+        "multiple": true,
+        "required": true,
+        "default": [
+            "item.created"
+        ],
+        "options": [
+            {
+                "label": "An item was added",
+                "value": "item.created"
+            },
+            {
+                "label": "An item changed",
+                "value": "item.updated"
+            },
+            {
+                "label": "An item was deleted",
+                "value": "item.deleted"
+            },
+            {
+                "label": "Someone commented",
+                "value": "comment.created"
+            },
+            {
+                "label": "A board was created",
+                "value": "board.created"
+            },
+            {
+                "label": "A board was renamed",
+                "value": "board.renamed"
+            },
+            {
+                "label": "A board was moved",
+                "value": "board.moved"
+            },
+            {
+                "label": "A board was trashed",
+                "value": "board.trashed"
+            },
+            {
+                "label": "A board was restored",
+                "value": "board.restored"
+            },
+            {
+                "label": "Someone was given access",
+                "value": "member.added"
+            },
+            {
+                "label": "Someone’s access changed",
+                "value": "member.role_changed"
+            },
+            {
+                "label": "Someone’s access was removed",
+                "value": "member.removed"
+            }
+        ]
+    },
+    {
+        "name": "board",
+        "label": "Only for board",
+        "type": "text",
+        "required": false,
+        "help": "A board link (or a frame’s copied link) to watch only that board. Leave it empty for every board the team can open."
+    }
+]

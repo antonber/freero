@@ -1,0 +1,56 @@
+[
+    {
+        "name": "url",
+        "label": "URL",
+        "type": "text",
+        "required": true,
+        "help": "A path of the REST API v1, such as /boards. The reference is at /api/v1/openapi.json of your Freero."
+    },
+    {
+        "name": "method",
+        "label": "Method",
+        "type": "select",
+        "required": true,
+        "default": "GET",
+        "options": [
+            {
+                "label": "GET",
+                "value": "GET"
+            },
+            {
+                "label": "POST",
+                "value": "POST"
+            },
+            {
+                "label": "PATCH",
+                "value": "PATCH"
+            },
+            {
+                "label": "DELETE",
+                "value": "DELETE"
+            }
+        ]
+    },
+    {
+        "name": "qs",
+        "label": "Query string",
+        "type": "array",
+        "spec": [
+            {
+                "name": "key",
+                "label": "Key",
+                "type": "text"
+            },
+            {
+                "name": "value",
+                "label": "Value",
+                "type": "text"
+            }
+        ]
+    },
+    {
+        "name": "body",
+        "label": "Body",
+        "type": "any"
+    }
+]

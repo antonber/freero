@@ -1464,7 +1464,10 @@ three in "Search, the event stream and webhooks" below — `backup` (no table: `
 backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
 "Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (slack_teams, slack_user_links, slack_oauth_flows: the operator's Slack app — link unfurls, and personal Slack: people's linked Slack accounts, direct messages, `/freero`; see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
-Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
+Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `atlassian` (no table: the
+Forge app's generated source, its board page framed by Atlassian's hosts), `zoom` (zoom_meeting_boards: the board a Zoom
+meeting opened for everyone, by the hash of its UUID, for a day), `meet` (no table: the Meet add-on's deployment
+manifest, its pages framed by Meet) — see "Apps that run on other platforms" below, `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
@@ -2413,7 +2416,10 @@ audit and admin controls are the same code.
   (`kind: 'app'`, its name, the person it acts for). This is the contract the MCP server's
   `propose_changes` (KAI-107) calls.
 - **OAuth server** (`apiauth/oauth.ts`), built to OAuth 2.1 as the MCP authorization spec requires:
-  authorization code only; PKCE S256 mandatory for every client; exact redirect URIs (loopback http
+  authorization code only; PKCE S256 mandatory for every public client — a confidential app a person
+  registered (client secret) may omit it, because Power Automate's and Make's generic OAuth can't
+  send it (#174, #175; RFC 9700 §2.1.1): a challenge that is sent is always enforced, and a code
+  issued without one needs the secret and refuses any verifier (no downgrade); exact redirect URIs (loopback http
   on any port, RFC 8252; https; an app's own scheme; never `javascript:`/`data:`/fragments); codes
   single use (deleted on redemption, even a failed one), 10 minutes; access tokens 1 hour; refresh
   tokens rotate, and a replayed one revokes the whole consent; RFC 7591 dynamic client registration
@@ -2783,9 +2789,69 @@ the secret or the full URL — in the workspace data export (`webhooksWorkspaceE
   route) and MCP (`import_meeting_notes`, a thin tool over it; proposed when the credential may only
   suggest) produce the same frame. Dropped `.md` stays the doc importer's: only the menu reads Markdown
   as meeting notes.
-- **Power Automate**: `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
-  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
-  keeps the checked-in file in step and free of OpenAPI 3 constructs.
+- **Power Automate** (#175): `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
+  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `scripts/lib/powerAutomate.mjs`
+  turns "add a webhook" into a webhook trigger (`x-ms-notification-url`; the API's 201 answers the
+  webhook's `Location`, which the trigger DELETEs) and builds the certification files
+  (`docs/integrations/power-automate/certified/`: a curated operation list in Microsoft's wording,
+  generic OAuth to freero.app, the icon from `platform/brandIcons.ts`). `api/powerAutomate.test.ts`
+  keeps both in step, free of OpenAPI 3 constructs and within Microsoft's published certification
+  rules.
+
+### Apps that run on other platforms (`integrations/`, `modules/{atlassian,zoom,meet}`; #166–#169, #173, #174)
+
+Code another vendor runs or hosts, kept in `integrations/<platform>/` (MIT, outside the npm
+workspaces: each platform's own SDK — Zapier's platform packages, Atlassian's Forge bridge — is
+installed only there by whoever publishes, never as Freero's dependency, since their licences
+aren't permissive). They talk to Freero only through what any client has — REST API v1, OAuth,
+webhooks, the public embed — so they add no server state. Their tests are in
+`apps/server/src/integrations/` (root layer, like the composition root: they mount the routes of the
+modules they call) and run the app definitions unchanged against a real HTTP server.
+
+- **Zapier** (`integrations/zapier`, Zapier Platform CLI): OAuth 2.0 with PKCE to freero.app (the
+  app's `CLIENT_ID`/`CLIENT_SECRET`) or to any Freero by address with that server's own confidential
+  OAuth app; REST-hook trigger Board Event (subscribe = `POST …/webhooks` scoped to a board,
+  unsubscribe = `DELETE`, every delivery's `Freero-Signature` checked with the subscription's
+  secret, five-minute window), polling New Item / New Comment, actions over `/structure`,
+  `/comments`, `/boards`. `zapier.test.ts` drives it with a stand-in `z` that applies the app's own
+  middleware.
+- **Make** (`integrations/make`, the Make Apps Editor's local layout: `makecomapp.json` + IML JSON):
+  OAuth 2.0 as a confidential app without PKCE (Make can't send it; apiauth allows exactly that),
+  the hosted app's client in Make's common data, any Freero by address with its own app; a dedicated
+  webhook whose attach / detach add and remove the workspace webhook; actions over `/structure`
+  (empty optional fields — Make sends them — mean "not given": structure's `readPlacement`),
+  `/comments`, `/boards`, a universal module. `make.test.ts` checks every request against the API
+  reference and runs the connection, modules and webhook against the real server with a deliberately
+  tiny IML evaluator that refuses expressions it doesn't know.
+
+**Boards on other platforms' pages** (#166–#169; `modules/atlassian`, `modules/zoom`, `modules/meet`,
+web `app/hosts/`; docs/integrations/atlassian.md, zoom.md, google-meet.md). Teams' pattern, three times:
+off until the operator sets the platform's id (`config.atlassian`, `.zoom`, `.meet`); what the operator
+registers is generated per instance (`platform/hostApps.ts`: the https origin, the download, the app
+page); each platform's page is `PublicEmbed` (same `boardEmbedding` gate, board-bound member token,
+visitor rule) and may be framed only by that platform's documented origins through
+`frameFromOrigins` — the board pages only while the board allows embedding — and `FrameGuard` lets
+exactly those paths render framed.
+
+- **Atlassian** (`forge.ts`): a Forge project (manifest with a Confluence macro + `autoConvert` for
+  this host's board links + `adfExport`, a Jira issue panel, `external.frames` = this host's
+  `/atlassian/b/` only; Custom UI pages that resolve a macro's link, an issue property or the issue's
+  remote link from tracker sync to `/atlassian/b/<id>?item=`). Ancestors: `*.atlassian.net`,
+  `*.jira.com`, `*.cdn.prod.atlassian-dev.net` (Forge's frame sits between). Editing keeps the plain
+  embed's uncovered-frame click (any Forge app can frame the page).
+- **Zoom** (`@zoom/appssdk`, MIT, only in `app/hosts/zoom/zoomSdk.ts`): Zoom's desktop browser loads
+  the pages top level with its own cookies, so `/zoom/home` lists boards with the session and mints the
+  token in place; Zoom's web client frames them (`zoom.us`, `*.zoom.us`), where the Lax session cookie
+  never reaches, so they use the chooser and sign-in windows. "Invite everyone" records the meeting's
+  board (`zoom_meeting_boards`, sha256 of the meeting UUID, a day; set by the session or the board's
+  embed token — embed's index exports `memberOf` for this — only for a board the person can open that
+  allows embedding; looked up by invitees, null once embedding is off) and sends Zoom's invitation.
+- **Google Meet**: Google's add-ons SDK may not be bundled, so `/meet/sidepanel` and `/meet/stage/:id`
+  load it from `https://www.gstatic.com` — `frameFromOrigins(…, { scripts })` adds that origin to those
+  responses' `script-src` only. The side panel starts an activity whose main stage is the board.
+- **`/embed/choose`** (`app/hosts/EmbedChoosePage`, `allowOpener`): the first-party chooser window a
+  Freero frame without a session opens; it posts `EmbedChooseMessage` (the board and its member token)
+  to `window.opener` with targetOrigin = Freero's origin, like `/embed/connect`.
 
 ### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
 
@@ -2800,7 +2866,8 @@ piece reuses an owner that already exists.
   `/mcp`, OAuth through the plugin vault). The plugin lists its tools from mcp's
   `mcpToolDescriptions` (mcp's index: the `tools/list` descriptions, JSON Schema from the tools' zod
   input), so the package can't drift from the server; write tools carry a confirmation. Icons are
-  rasterised from Freero's mark in `icons.ts` (no image dependency). Served per instance
+  rasterised from Freero's mark in `platform/brandIcons.ts` (no image dependency; every host
+  app package uses it). Served per instance
   (`/api/integrations/{teams/app-package,copilot/agent-package}`, `?version=`), by the CLI
   (`teams:package`, `copilot:package`) and linked from the operator console.
 - **The tab is the public embed.** `app/teams/TeamsTabPage` renders `PublicEmbed`

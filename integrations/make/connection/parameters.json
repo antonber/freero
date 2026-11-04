@@ -1,0 +1,23 @@
+[
+    {
+        "name": "baseUrl",
+        "label": "Freero address",
+        "type": "url",
+        "required": true,
+        "default": "https://freero.app",
+        "help": "Leave it as https://freero.app, or give your own Freero server’s address (https)."
+    },
+    {
+        "name": "clientId",
+        "label": "OAuth app client ID (your own Freero server only)",
+        "type": "text",
+        "advanced": true,
+        "help": "On your Freero: Settings → Your OAuth apps → register an app with Confidential app on and the redirect URI https://www.make.com/oauth/cb/app."
+    },
+    {
+        "name": "clientSecret",
+        "label": "OAuth app client secret (your own Freero server only)",
+        "type": "password",
+        "advanced": true
+    }
+]

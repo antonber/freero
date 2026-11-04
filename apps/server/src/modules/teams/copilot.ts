@@ -14,7 +14,7 @@
 import { zipSync } from 'fflate';
 import type { Config } from '../../platform/config';
 import { MCP_PATH, mcpToolDescriptions } from '../mcp/index';
-import { colorIcon, outlineIcon } from './icons';
+import { colorIcon, outlineIcon } from '../../platform/brandIcons';
 import { BRAND_ACCENT, developerInfo, TEAMS_APP_VERSION, TEAMS_MANIFEST_SCHEMA, TEAMS_MANIFEST_VERSION } from './manifest';
 
 export const COPILOT_PACKAGE_PATH = '/api/integrations/copilot/agent-package';

@@ -1,0 +1,24 @@
+[
+    {
+        "name": "board",
+        "label": "Board",
+        "type": "select",
+        "required": true,
+        "options": "rpc://listBoards",
+        "mappable": true,
+        "help": "Pick a board, or map its id (in its address: /board/<id>)."
+    },
+    {
+        "name": "text",
+        "label": "Comment",
+        "type": "text",
+        "required": true,
+        "multiline": true
+    },
+    {
+        "name": "item",
+        "label": "On item",
+        "type": "text",
+        "help": "Optional: the item’s id (Copy link to item: the part after item=)."
+    }
+]

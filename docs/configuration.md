@@ -285,6 +285,18 @@ for your instance: [integrations/teams.md](integrations/teams.md). Each is off u
 | `COPILOT_APP_ID` | — | The GUID of your Copilot agent app. With the next one, turns on the agent package (`/api/integrations/copilot/agent-package`, `npm run admin -- copilot:package`). |
 | `COPILOT_OAUTH_REFERENCE_ID` | — | The OAuth client registration ID from the Teams Developer Portal, for Freero's OAuth app registered for Copilot. One without the other refuses to start. |
 
+## Confluence and Jira, Zoom, Google Meet
+
+Apps that show a board through its [embed](integrations/embedding.md) on other platforms, each off
+unless its id is set; `PUBLIC_URL` must be https. Owner steps: [atlassian.md](integrations/atlassian.md),
+[zoom.md](integrations/zoom.md), [google-meet.md](integrations/google-meet.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `ATLASSIAN_APP_ID` | — | Your Forge app's id (`ari:cloud:ecosystem::app/<uuid>`). Turns on the app's source (`/api/integrations/atlassian/forge-app`, `npm run admin -- atlassian:package`) and lets Atlassian's hosts — only them — frame `/atlassian/b/<board>` while the board allows embedding. |
+| `ZOOM_CLIENT_ID` | — | Your Zoom App's Client ID. Turns on its settings (`/api/integrations/zoom/app-settings`, `npm run admin -- zoom:settings`), a meeting's board (`/api/integrations/zoom/meeting-board`), and lets Zoom's web client frame `/zoom/home` and `/zoom/b/<board>`. |
+| `GOOGLE_MEET_CLOUD_PROJECT_NUMBER` | — | The number of the Google Cloud project the Meet add-on is deployed from. Turns on its deployment manifest (`/api/integrations/meet/deployment.json`, `npm run admin -- meet:deployment`) and lets Google Meet frame `/meet/sidepanel` and `/meet/stage/<board>`, whose CSP alone allows Google's add-ons SDK (`https://www.gstatic.com`). |
+
 ## Board calls
 
 | Variable | Default | Description |
@@ -430,6 +442,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 | `RATE_LIMIT_SLACK_UNFURL` | `50/1m` | Per Slack workspace: link previews Freero posts with `chat.unfurl` (Slack's own limit for it is about 50 a minute); past it, links stay without a preview. |
 | `RATE_LIMIT_TEAMS_UNFURL` | `120/1m` | Per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes); past it, links get no card. |
+| `RATE_LIMIT_ZOOM_MEETING_BOARD` | `120/10m` | Per IP: a Zoom meeting's board set or looked up (the Zoom App does it once per participant who opens it). |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).

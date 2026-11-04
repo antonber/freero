@@ -1,0 +1,4 @@
+# Made by `zapier register` / `zapier build` for whoever pushes the app
+.zapierapprc
+build/
+*.zip

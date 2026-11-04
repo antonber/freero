@@ -1,0 +1,17 @@
+{
+  "name": "freero-zapier",
+  "version": "1.0.0",
+  "description": "Freero's Zapier app: board events, new items and comments as triggers; stickies, cards, comments and boards as actions.",
+  "license": "MIT",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "validate": "zapier validate"
+  },
+  "dependencies": {
+    "zapier-platform-core": "19.3.0"
+  }
+}

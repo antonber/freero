@@ -156,7 +156,15 @@
     "readOnlySnapshot",
     "couldNotLoadTheBoard",
     "loadingTheBoard",
-    "sentByEmailWithThe"
+    "sentByEmailWithThe",
+    "otherPlatformApps",
+    "atlassianAppSource",
+    "atlassianAppOff",
+    "zoomAppSettings",
+    "zoomAppOff",
+    "meetDeployment",
+    "meetAddOnOff",
+    "registerThemWithEach"
   ],
   "new": "신규",
   "beingLookedAt": "확인 중",
@@ -314,5 +322,13 @@
   "readOnlySnapshot": "읽기 전용 스냅숏",
   "couldNotLoadTheBoard": "보드를 불러오지 못했어요",
   "loadingTheBoard": "보드 불러오는 중",
-  "sentByEmailWithThe": "결정과 함께 이메일로 발송돼요. 무엇이 어디에서 잘못되었는지 적어 주세요. 이 내용이 이의 제기의 대상이 되기도 해요."
+  "sentByEmailWithThe": "결정과 함께 이메일로 발송돼요. 무엇이 어디에서 잘못되었는지 적어 주세요. 이 내용이 이의 제기의 대상이 되기도 해요.",
+  "otherPlatformApps": "다른 플랫폼의 앱",
+  "atlassianAppSource": "Confluence 및 Jira 앱(Forge 소스)",
+  "atlassianAppOff": "Confluence 및 Jira 앱: 꺼짐(ATLASSIAN_APP_ID 설정)",
+  "zoomAppSettings": "Zoom 앱 설정",
+  "zoomAppOff": "Zoom 앱: 꺼짐(ZOOM_CLIENT_ID 설정)",
+  "meetDeployment": "Google Meet 부가기능 배포",
+  "meetAddOnOff": "Google Meet 부가기능: 꺼짐(GOOGLE_MEET_CLOUD_PROJECT_NUMBER 설정)",
+  "registerThemWithEach": "각 플랫폼에 등록하세요. docs/integrations/를 참고하세요."
 }
