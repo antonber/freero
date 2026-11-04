@@ -49,6 +49,7 @@ import {
   resealBoard,
 } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
+import { miroImportOffered } from '../importers/index';
 import {
   boardAccess,
   boardAccessLoader,
@@ -387,6 +388,8 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     gifs: getConfig().gifs !== null && access.policies.gifs !== 'off',
     // #171: Place from Figma where the operator registered a Figma app (modules/figma).
     figma: getConfig().figma !== null,
+    // #62: import a Miro board with the person's own token (modules/importers), unless the operator turned it off.
+    miroImport: miroImportOffered(),
     manageSharing: manages,
     invite: manages || (atLeast(role, 'editor') && board.editorsCanShare),
     canCopy: copies,
