@@ -9,6 +9,7 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { purgeDueAccounts } from '../accounts/index';
 import { createUser, getUser, scheduleAccountDeletion } from '../auth/index';
 import { changeCase, createCase, getCaseDetail, releaseCase } from '../ediscovery/index';
+import { createKey, destroyKey } from '../keys/index';
 import { changeWorkspaceRole, createTeamWorkspace, deleteWorkspace, inviteToWorkspace } from '../workspaces/index';
 import { boardRecords } from './index';
 import * as repo from './repo';
@@ -33,7 +34,7 @@ async function team(owner: Account, members: Account[], admins: Array<[Account, 
 }
 const exists = async (id: string) => (await boardRecords([id])).length === 1;
 
-it('no path deletes a held board: the trash purge, its owner’s delete forever, the account purge and workspace deletion all keep it; release lets the purge take it', async () => {
+it('no path deletes a held board: the trash purge, its owner’s delete forever, the account purge, workspace deletion and destroying the workspace’s key all keep it; release lets the purge take it', async () => {
   const owner = await user('Owner');
   const custodian = await user('Custodian');
   const other = await user('Other');
@@ -58,12 +59,16 @@ it('no path deletes a held board: the trash purge, its owner’s delete forever,
   expect(await listBoards(custodian.id, 'trash', '', { workspaceId: ws.id })).toEqual([]);
 
   // Workspace deletion is refused; the account purge waits.
-  await expect(deleteWorkspace(null, ws.id, owner.id, (await getCaseDetail(ws.id, c.id, owner.id)).workspaces[0].name)).rejects.toMatchObject({ status: 409, code: 'legal_hold' });
+  await expect(deleteWorkspace(null, ws.id, owner.id, ws.name)).rejects.toMatchObject({ status: 409, code: 'legal_hold' });
   await scheduleAccountDeletion(null, custodian.id, 'password-123');
   const afterGrace = Date.now() + getConfig().accountDeletionGraceMs + 60_000;
   await purgeDueAccounts(afterGrace);
   expect(await getUser(custodian.id)).not.toBeNull();
   expect(await exists(evidence.id)).toBe(true);
+
+  // Destroying the workspace's encryption key would destroy the content (#159): refused too.
+  await createKey(ws.id, owner.id, {});
+  await expect(destroyKey(ws.id, owner.id, { confirm: ws.name })).rejects.toMatchObject({ status: 409, code: 'legal_hold' });
 
   // A statement that skips every service check is refused by the database itself.
   await expect(repo.deleteAllInWorkspace(ws.id)).rejects.toMatchObject({ code: repo.LEGAL_HOLD_ERROR });

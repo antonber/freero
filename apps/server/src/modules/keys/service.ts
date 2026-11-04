@@ -22,7 +22,7 @@ import { appendOutbox } from '../../platform/outbox';
 import { publish, subscribe } from '../../platform/pubsub';
 import { requireAdmin } from '../admin/index';
 import { recordAudit } from '../audit/index';
-import { boardIdsInWorkspace } from '../boards/index';
+import { boardIdsInWorkspace, underLegalHold } from '../boards/index';
 import { BOARD_CONTENT_TOPIC, boardsNeedingReseal, resealBoard } from '../realtime/index';
 import { refreshWorkspaceBoards, requireWorkspace } from '../workspaces/index';
 import { newDataKey, openBlob, sealBlob } from './envelope';
@@ -380,6 +380,8 @@ export async function resumeKey(workspaceId: string, userId: string): Promise<Wo
 export async function destroyKey(workspaceId: string, userId: string, body: Record<string, unknown>): Promise<WorkspaceKeyStatus> {
   const { workspace } = await requireWorkspace(workspaceId, userId, 'owner');
   if (body.confirm !== workspace.name) throw forbidden('Type the workspace’s name to destroy its key');
+  // Destroying the key destroys the content: a legal hold (#157) on anything here outranks it.
+  if (await underLegalHold({ workspaceId })) throw new HttpError(409, 'A legal hold keeps content in this workspace: its key can’t be destroyed until the hold is released.', 'legal_hold');
   if (!(await changeState(workspaceId, ['active', 'suspended', 'unavailable'], 'destroyed', null, { action: 'key.destroyed', actorId: userId })))
     throw new HttpError(409, 'There is no key to destroy', 'key_state');
   return { providers: offered(), key: (await keyStatusQuiet(workspaceId)) ?? null };
