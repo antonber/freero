@@ -1017,6 +1017,18 @@ export async function restoreForWorkspace(workspaceId: string, boardId: string, 
 export async function deleteForever(boardId: string, userId: string): Promise<void> {
   const board = await repo.getBoardIncludingTrash(boardId);
   if (!board || board.deletedAt === null || board.ownerId !== userId || board.removedAt !== null) throw notFound('Board not found in your trash');
+  // Under a legal hold (#157) it only looks deleted: it leaves the trash for everyone and is kept
+  // for the case, then purged once no hold is left. The hold stays silent to its owner.
+  const discarded = await repo.transaction(async () => {
+    if (!(await repo.heldAmong([board.id])).has(board.id)) return false;
+    if (!(await repo.discardTrashedBoard(board.id, Date.now()))) throw notFound('Board not found in your trash');
+    await recordAudit({ action: 'board.deleted', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { keptBy: 'legal_hold' } });
+    return true;
+  });
+  if (discarded) {
+    await closeBoardDoc(board.id);
+    return;
+  }
   const thumbnail = await repo.transaction(async () => {
     const t = await repo.deleteTrashedBoard(board.id);
     if (t === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
@@ -1048,6 +1060,8 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
   const byWorkspace = (await retentionOverrides())
     .filter((o) => o.trashDays !== TRASH_RETENTION_DAYS)
     .map((o) => ({ workspaceId: o.id, before: now - o.trashDays * DAY_MS }));
+  // Held boards whose time is up leave the trash as if purged, and are kept (#157).
+  await repo.discardHeldExpired(before, byWorkspace, now);
   let total = 0;
   for (;;) {
     const purged = await repo.transaction(async () => {
@@ -1058,7 +1072,7 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
           workspaceId: b.workspaceId,
           actorId: null,
           target: { type: 'board', id: b.id, label: b.title },
-          metadata: { owner: b.ownerId, trashedAt: new Date(b.deletedAt).toISOString() },
+          metadata: { owner: b.ownerId, trashedAt: new Date(b.deletedAt).toISOString(), ...(b.discarded ? { reason: 'legal_hold_released' } : {}) },
         });
       return rows;
     });
