@@ -59,6 +59,7 @@ const codeish = (s) =>
   /^\s*[MmLlCcQqAaHhVvZz]\s*(-?[\d.]|x\b|,)/.test(s) || // SVG path data
   /(^|\s)x(px|%)?$/.test(s.trim()) && !/\p{L}{2,}/u.test(s.replace(/ x /g, ' ')) || // just a number and a unit
   PROPER.test(s.trim()) ||
+  /^\s*\((min|max|prefers|hover|pointer|orientation)[a-z-]*\s*:/.test(s) || // media queries
   /[{}<>=\\]|\$\(|=>|\bfunction\b/.test(s) ||
   /[\w-]+:[^\s;]+;|^\s*[\w-]+\s*:\s*[^;]+;\s*[\w-]+\s*:/.test(s) || // CSS declarations
   /^[A-Z0-9_]+$/.test(s.trim()) ||
@@ -140,7 +141,7 @@ function catalog(unit) {
   let c = catalogs.get(unit);
   if (!c) {
     const file = path.join(WEB, unit, 'locales/en.json');
-    c = { file, data: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}, dirty: false };
+    c = { file, data: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}, dirty: false, added: new Set() };
     catalogs.set(unit, c);
   }
   return c;
@@ -165,6 +166,7 @@ function keyFor(unit, message, nameText = message) {
   let key = base;
   for (let i = 2; key in c.data; i++) key = `${base}${i}`;
   c.data[key] = message;
+  c.added.add(key);
   c.dirty = true;
   return key;
 }
@@ -444,7 +446,7 @@ function processFile(sf, checker, unit) {
 
   const jsxRuns = (parent) => {
     const tag = ts.isJsxElement(parent) ? parent.openingElement.tagName.getText(sf) : '';
-    if (/^(code|pre|kbd|Kbd|samp)$/.test(tag)) return;
+    if (/^(code|pre|kbd|Kbd|samp|text|tspan|textPath)$/.test(tag)) return;
     const kids = parent.children;
     let run = [];
     const flush = () => {
@@ -632,6 +634,9 @@ for (const [file, text, unit] of results) {
 }
 for (const [unit, c] of catalogs) {
   if (!c.dirty) continue;
+  // A key made for an edit that a wider edit replaced is used nowhere: leave it out.
+  const texts = results.filter((r) => r[2] === unit).map((r) => r[1]).join('\n');
+  for (const k of c.added) if (!texts.includes(`('${k}'`)) delete c.data[k];
   fs.mkdirSync(path.dirname(c.file), { recursive: true });
   fs.writeFileSync(c.file, JSON.stringify(c.data, null, 2) + '\n');
   ensureMessagesFile(unit);

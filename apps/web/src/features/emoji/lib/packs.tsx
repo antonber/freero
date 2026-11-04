@@ -247,8 +247,8 @@ const MOODS: StampDef[] = [
       <Round fill={face}>
         <path d="M30 45q7 6 14 0M56 45q7 6 14 0" {...stroke} />
         <circle cx="50" cy="65" r="4.5" fill={INK} />
-        <text x="72" y="26" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="16">{t('z')}</text>
-        <text x="81" y="15" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="11">{t('z')}</text>
+        <text x="72" y="26" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="16">z</text>
+        <text x="81" y="15" fill="#5B3FF0" fontFamily={FONT} fontWeight="800" fontSize="11">z</text>
       </Round>
     ),
   },
