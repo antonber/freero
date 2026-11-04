@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { TableElement } from '@freero/shared';
+import { timelineLayout, type TableElement } from '@freero/shared';
 import { createTestBoard, type Editor, type FeatureBundle, type TestBoard } from '@engine';
 import manifest from './feature';
 import tableDef from './element';
 import { CELLS, cellText, setCellText } from './lib/cells';
-import { insertRow, layoutTable, moveFrom, newTable, parseDelimited, toCsv } from './lib/model';
-import { createFromGrid, moveCell, patchOption, setColumnType, setFilter, sortByColumn } from './lib/actions';
+import { BAND_H, insertRow, layoutTable, moveFrom, newTable, parseDelimited, toCsv } from './lib/model';
+import { commitCell, createFromGrid, moveCell, patchOption, setColumnType, setFilter, setGroupRows, setRowSpan, setView, shownRows, sortByColumn } from './lib/actions';
+import { rowSpan } from './lib/columns';
 import { plainGrid } from './lib/cells';
 
 const bundle: FeatureBundle = { manifest, elements: [tableDef], tools: [], formats: [], panels: [], commands: [] };
@@ -184,6 +185,57 @@ describe('typed columns (KAI-123)', () => {
     moveCell(ann, tableOf(ann, id), t.rows[3].id, t.cols[1].id, 'next');
     expect(tableOf(ann, id).rows.slice(0, 4).map((r) => r.id)).toEqual(t.rows.map((r) => r.id));
     expect(tableOf(ann, id).rows).toHaveLength(5);
+  });
+});
+
+describe('views of the rows (#51)', () => {
+  const tableOf = (ed: Editor, id: string) => ed.getElement<TableElement>(id)!;
+  const tall = (ed: Editor, id: string, rows: number[]) => rows.reduce((s, i) => s + tableOf(ed, id).rows[i].h, 0);
+
+  it('a filter gives back the room of the rows it hides, on everyone’s screen, and a cell edit that brings a row back makes room again', () => {
+    const [ann, bob] = twoPeople();
+    const id = createFromGrid(ann, [['Task', 'Owner'], ['a', 'x'], ['b', ''], ['c', '']], { x: 0, y: 0 });
+    const t = tableOf(ann, id);
+    setFilter(ann, id, { colId: t.cols[1].id, op: 'notEmpty' });
+    board!.sync();
+    expect(tableOf(ann, id).h).toBe(tall(ann, id, [0, 1]));
+    expect(tableOf(bob, id).h).toBe(tableOf(ann, id).h);
+    commitCell(bob, id, t.rows[2].id, t.cols[1].id, '<p>y</p>');
+    board!.sync();
+    expect(tableOf(ann, id).h).toBe(tall(ann, id, [0, 1, 2]));
+    // Resizing by the handles shares the height among the rows it shows; hidden ones keep theirs.
+    const hiddenH = tableOf(ann, id).rows[3].h;
+    ann.update<TableElement>(id, { h: tableOf(ann, id).h * 2 });
+    expect(tableOf(ann, id).h).toBe(tall(ann, id, [0, 1, 2]));
+    expect(tableOf(ann, id).rows[3].h).toBe(hiddenH);
+  });
+
+  it('a grouped grid puts each option’s rows under its band, Tab follows the groups, and the table is as tall as its rows and bands', async () => {
+    board = createTestBoard({ users: ['ann'], features: [bundle] });
+    const [ann] = board.editors('table');
+    const id = createFromGrid(ann, [['Task', 'Status'], ['a', 'Done'], ['b', 'Doing'], ['c', 'Done'], ['d', '']], { x: 0, y: 0 });
+    const statusId = tableOf(ann, id).cols[1].id;
+    await setColumnType(ann, id, statusId, 'select'); // options in order of appearance: Done, Doing
+    setGroupRows(ann, id, statusId);
+    const t = tableOf(ann, id);
+    expect(shownRows(ann, t).map((r) => r.id)).toEqual([0, 1, 3, 2, 4].map((i) => t.rows[i].id));
+    expect(t.h).toBe(tall(ann, id, [0, 1, 2, 3, 4]) + 3 * BAND_H); // Done, Doing, No value
+    moveCell(ann, t, t.rows[1].id, t.cols[1].id, 'next');
+    expect(ann.getEditingPart()).toBe(`${t.rows[3].id}:${t.cols[0].id}`);
+  });
+
+  it('dragging a timeline bar writes both of its date cells, and a row with one date reads as a one-day bar', () => {
+    board = createTestBoard({ users: ['ann'], features: [bundle] });
+    const [ann] = board.editors('table');
+    const id = createFromGrid(ann, [['Task', 'Start', 'End'], ['a', '2026-11-02', '2026-11-04'], ['b', '', '2026-11-10'], ['c', '2026-11-03', '']], { x: 0, y: 0 });
+    const t = tableOf(ann, id);
+    setView(ann, id, 'timeline');
+    expect(tableOf(ann, id).timeline).toEqual({ start: t.cols[1].id, end: t.cols[2].id });
+    const get = (r: string, c: string) => cellText(ann.collection<string>(CELLS), id, r, c);
+    const day = timelineLayout.dayOf;
+    expect(rowSpan(tableOf(ann, id), get, t.rows[2].id)).toEqual({ start: day('2026-11-10'), end: day('2026-11-10') });
+    setRowSpan(ann, id, t.rows[2].id, { start: day('2026-11-09'), end: day('2026-11-12') });
+    expect([get(t.rows[2].id, t.cols[1].id), get(t.rows[2].id, t.cols[2].id)]).toEqual(['2026-11-09', '2026-11-12']);
   });
 });
 

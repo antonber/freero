@@ -39,3 +39,17 @@ it('only messages a socket writes under its own user id count, and only when the
   const [edit] = eventsOf(doc, 'bob', (m) => m.set('m:t1:c', msg('c', 'bob', 'a better reply')));
   expect(edit).toMatchObject({ previousText: 'a reply', text: 'a better reply' });
 });
+
+it('only a thread’s first message starts a thread (#104): a reply, an edit of the first message or a message after all were deleted does not', () => {
+  const doc = new Y.Doc();
+  const [first] = eventsOf(doc, 'ann', (m) => {
+    m.set('t:t1', { kind: 'thread', id: 't1', createdBy: 'ann' });
+    m.set('m:t1:a', msg('a', 'ann', 'kickoff'));
+  });
+  expect(first.newThread).toBe(true);
+  expect(eventsOf(doc, 'ann', (m) => m.set('m:t1:a', msg('a', 'ann', 'kickoff!')))[0].newThread).toBeUndefined();
+  expect(eventsOf(doc, 'bob', (m) => m.set('m:t1:b', msg('b', 'bob', 'a reply')))[0].newThread).toBeUndefined();
+  eventsOf(doc, 'ann', (m) => m.set('x:t1:a', { kind: 'deleted', threadId: 't1', messageId: 'a' }));
+  eventsOf(doc, 'bob', (m) => m.set('x:t1:b', { kind: 'deleted', threadId: 't1', messageId: 'b' }));
+  expect(eventsOf(doc, 'ann', (m) => m.set('m:t1:c', msg('c', 'ann', 'again')))[0].newThread).toBeUndefined();
+});

@@ -94,8 +94,11 @@ export interface DaySpan {
  * a one-day bar; a start after the end reads from the earlier to the later. Null: no date.
  */
 export function barSpanOf(k: KanbanElement, card: CardElement, startRef: string, endRef: string, schema: readonly FieldDef[]): DaySpan | null {
-  const s = cardDate(k, card, startRef, schema);
-  const e = cardDate(k, card, endRef, schema);
+  return spanOfDates(cardDate(k, card, startRef, schema), cardDate(k, card, endRef, schema));
+}
+
+/** A bar from two ISO dates (YYYY-MM-DD or null): one alone is a one-day bar; a start after the end reads from the earlier. Also a table's rows (#51). */
+export function spanOfDates(s: string | null, e: string | null): DaySpan | null {
   if (!s && !e) return null;
   const a = dayOf(s ?? e!);
   const b = dayOf(e ?? s!);

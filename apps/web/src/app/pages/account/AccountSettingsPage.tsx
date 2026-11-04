@@ -341,6 +341,16 @@ function NotificationsSection({ version }: { version: number }) {
                 aria-label={tr('emailASummaryOfChanges')}
               />
             </div>
+            <Toggle
+              label={
+                <span className="fr-acct-prefs__type">
+                  <span className="fr-acct-prefs__label">{tr('newCommentsOnYourBoards')}</span>
+                  <span className="fr-acct__hint">{tr('tellMeWhenSomeoneStarts')}</span>
+                </span>
+              }
+              checked={prefs.boardComments === true}
+              onChange={(on) => save({ boardComments: on }, { ...prefs, boardComments: on })}
+            />
             {slack ? (
               <ul className="fr-acct-prefs__types fr-acct-prefs__types--channels" aria-label={tr('notifyMeAbout')}>
                 <li className="fr-acct-prefs__channels-head" aria-hidden>

@@ -4,7 +4,7 @@
 // @freero/shared fieldText.ts and values filtered and sorted by query.ts — the same rules a
 // kanban's fields, the CSV import and the trackers use; only the table's own storage lives here.
 import { nanoid } from 'nanoid';
-import { inferFieldType, matchValue, parseCheckboxText, parseDateText, parseNumberText, plainToRichText, richTextToPlain, sortByValues, timelineLayout, type QueryValue, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
+import { inferFieldType, matchValue, parseCheckboxText, parseDateText, parseNumberText, plainToRichText, richTextToPlain, sortByValues, spanOfDates, timelineLayout, timelineRange, type DaySpan, type QueryValue, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
 
 import { t as tr } from '../messages';
 export const COLUMN_TYPES: Array<{ value: TableColumnType; label: string }> = [
@@ -279,4 +279,61 @@ export function inferType(values: string[]): TableColumnType {
   if (values.filter((v) => v.trim()).length < 2) return 'text';
   const t = inferFieldType(values, { choices: false, dayFirst: false });
   return t === 'number' || t === 'date' || t === 'checkbox' ? t : 'text';
+}
+
+// ------------------------------------------------------------------ grouped grid (#51)
+
+export type GridItem<R> = { kind: 'row'; row: R; y: number } | { kind: 'band'; key: string; label: string; color: string; count: number; y: number };
+
+/**
+ * The grid as drawn: the rows it shows (`shown`, in order) from the top, and — grouped by a select
+ * column (`groupRows`) — under a band per option that has rows (option order), then "No value".
+ * The header row stays first. Render, hit-testing, Tab order and the table's height read this.
+ */
+export function gridItems<R extends { id: string; h: number }>(
+  el: Pick<TableElement, 'header' | 'cols' | 'groupRows'> & { rows: readonly R[] },
+  shown: readonly R[],
+  get: (rowId: string, colId: string) => string,
+  bandH: number,
+): Array<GridItem<R>> {
+  const out: Array<GridItem<R>> = [];
+  let y = 0;
+  const push = (row: R) => {
+    out.push({ kind: 'row', row, y });
+    y += row.h;
+  };
+  const col = el.cols.find((c) => c.id === el.groupRows && typeOf(c) === 'select');
+  if (!col) {
+    shown.forEach(push);
+    return out;
+  }
+  const head = el.header && shown[0] === el.rows[0] ? shown[0] : null;
+  if (head) push(head);
+  const body = shown.filter((r) => r !== head);
+  const groups = [...(col.options ?? []).map((o) => ({ key: o.id, label: o.label, color: o.color })), { key: '', label: 'No value', color: '#F1F0F5' }];
+  for (const g of groups) {
+    const rows = body.filter((r) => (optionOf(col, get(r.id, col.id))?.id ?? '') === g.key);
+    if (!rows.length) continue;
+    out.push({ kind: 'band', key: g.key || '∅', label: g.label, color: g.color, count: rows.length, y });
+    y += bandH;
+    rows.forEach(push);
+  }
+  return out;
+}
+
+/** The timeline view's bar of a row (#51, @freero/shared `spanOfDates`, as a kanban's timeline reads cards), or null without a date. */
+export function rowSpan(el: Pick<TableElement, 'timeline' | 'cols'>, get: (rowId: string, colId: string) => string, rowId: string): DaySpan | null {
+  const t = el.timeline;
+  if (!t) return null;
+  const read = (colId: string) => {
+    const raw = el.cols.some((c) => c.id === colId && typeOf(c) === 'date') ? get(rowId, colId) : '';
+    return isISODate(raw) ? raw : null;
+  };
+  return spanOfDates(read(t.start), read(t.end));
+}
+
+/** The days a table's timeline shows (@freero/shared `timelineRange`, as a kanban's timeline tab): around its rows' bars, or `today`. */
+export function timelineDaysOf(el: Pick<TableElement, 'timeline' | 'cols' | 'rows' | 'header' | 'filter'>, get: (rowId: string, colId: string) => string, today: number): DaySpan {
+  const spans = visibleRows(el, get).flatMap((r) => rowSpan(el, get, r.id) ?? []);
+  return timelineRange(spans, today);
 }

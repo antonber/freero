@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "No se pudo conectar con Freero. Inténtalo de nuevo.",
   "restoreAccount": "Restaurar cuenta",
@@ -498,5 +500,7 @@
   "email": "Correo",
   "emailLabel": "Correo: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "Eliminar"
+  "delete": "Eliminar",
+  "newCommentsOnYourBoards": "Comentarios nuevos en tus tableros",
+  "tellMeWhenSomeoneStarts": "Avisarme cuando alguien inicie un hilo de comentarios en un tablero mío o que marqué con estrella: en la campana y luego por correo o Slack según lo elegido abajo."
 }

@@ -244,7 +244,9 @@ function kanban(el: KanbanElement): string {
 }
 
 function table(el: TableElement, cells: ReadonlyMap<string, unknown>): string {
-  const rows = Array.isArray(el.rows) ? el.rows : [];
+  // A filter's hidden rows take no room (#51: TableElement.hiddenRows, kept by the table feature).
+  const hidden = el.filter && Array.isArray(el.hiddenRows) ? new Set(el.hiddenRows) : null;
+  const rows = (Array.isArray(el.rows) ? el.rows : []).filter((r) => !hidden?.has(r.id));
   const cols = Array.isArray(el.cols) ? el.cols : [];
   const parts = [`<rect x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" fill="#FFFFFF" stroke="${LINE}"/>`];
   let y = el.y;

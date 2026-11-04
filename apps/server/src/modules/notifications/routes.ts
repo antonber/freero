@@ -65,8 +65,9 @@ export default function notificationRoutes(_ctx: ServerContext): Router {
   r.put(
     '/notifications/prefs',
     handle(async (req, res) => {
-      const body = (req.body ?? {}) as { emailAll?: unknown; email?: unknown; slack?: unknown; boardChanges?: unknown };
+      const body = (req.body ?? {}) as { emailAll?: unknown; email?: unknown; slack?: unknown; boardChanges?: unknown; boardComments?: unknown };
       if (body.emailAll !== undefined && typeof body.emailAll !== 'boolean') throw badRequest('emailAll must be true or false');
+      if (body.boardComments !== undefined && typeof body.boardComments !== 'boolean') throw badRequest('boardComments must be true or false', 'invalid_board_comments');
       if (body.boardChanges !== undefined && !FREQUENCIES.includes(body.boardChanges as BoardChangesFrequency))
         throw badRequest('boardChanges must be off, daily or weekly');
       if (body.email !== undefined && (typeof body.email !== 'object' || body.email === null)) throw badRequest('email must map types to true or false');
@@ -77,6 +78,7 @@ export default function notificationRoutes(_ctx: ServerContext): Router {
           email: body.email as Partial<Record<NotificationType, boolean>> | undefined,
           slack: body.slack as Partial<Record<NotificationType, boolean>> | undefined,
           boardChanges: body.boardChanges as BoardChangesFrequency | undefined,
+          boardComments: body.boardComments as boolean | undefined,
         }),
       );
     }),

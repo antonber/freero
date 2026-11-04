@@ -147,6 +147,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's interface language (`users.locale`, `Account.locale`, #5) and the page's `<html lang dir>` | server `modules/auth` (`PATCH /api/auth/me` `{ locale }`, sign-up's `locale`); in the browser `app/i18n/locale.ts` is the only writer of `lang` / `dir` and of the language this browser remembers — decided once before the app loads (`?lang=` for the tab > the account's > this browser's > `navigator.languages` > English), a change saves and reloads | `LanguagePicker` (`app/components`): account settings → Language, under the sign-in card |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | A chart's data (#137: `ChartElement` rows / series ids and kind; `chartCells` one record per cell — label, series name, value — read through `@freero/shared` `charts.ts` `readChart` / `chartCellKey`) | `features/chart` (its data panel: typing, a pasted grid replaces the data in one undo step after `chartGridFromRows` accepts it); server `modules/structure` (`layoutChart` for the API / MCP `add_diagram` `chart`, its cells written to `chartCells` by `planStructure`, and accepted suggestions) | the chart feature's data panel; other features only read it |
+| A table's views and derived row layout (#51: `TableElement.view` grid / board / timeline, `groupRows`, `timeline` start / end date columns; derived `hiddenRows` and `bands`, from which normalize sizes the grid — a filter reclaims what it hides, a grouped grid's bands take room) | `features/table` (format toolbar; `refreshRows` in the transaction of every cell, filter or grouping change; timeline bars write the date cells through `setRowSpan`, @freero/shared `spanValues` / `spanOfDates` / `timelineRange` as a kanban's timeline tab) | its format toolbar; never edit `hiddenRows` / `bands` by hand (server `render/svg.ts` only reads `hiddenRows`) |
 | A workspace's team sticker sets (`sticker_sets`, `stickers`, #138): names, which uploads they hold | server `modules/stickers` (members of the workspace add; the set's creator or a workspace owner / admin removes; every image goes through uploads' `saveUpload` under `MAX_STICKER_BYTES`) | `Host.stickers` (the emoji feature's picker); a PLACED sticker is an ordinary emoji item (`emoji: 'img:/uploads/<name>'`, `name`), so it outlives its set; the web shows only `/uploads/` images there |
 | Blueprints (`blueprints`, `blueprint_items`, #161): name, description, steps, where shared, the saved content of each board / doc | server `modules/blueprints` (saved from a project by someone who may copy its boards; shared / unshared like team templates) | its routes; using one makes boards through boards' `createBoardWithState` and a project through workspaces' `createProject`, in one transaction |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
@@ -155,6 +156,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
+| "New comments on your boards" (#104: `notification_prefs` key `board-comments`, off unless set) | server `modules/notifications` (`updatePrefs`) | `PUT /notifications/prefs` `boardComments` (account settings) |
 | The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
 | Who presents a board (`presentation` key `session`, #146) | server `modules/presentations` (realtime `updateServerEntry`: start, hand off, end; a socket's write is undone) | `Host.presentation` (`features/present`) |
 | Icebreaker results (`icebreakerResults`, #150) and a quiz's answer key (`engage_keys`, #147) | server `modules/icebreakers` (`writeServerCollection`) and `modules/engage` | `Host.icebreakers.roll`; `Host.engage.setKey` / `runQuiz` |
@@ -219,7 +221,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   only the part a change touched (drag, a collaborator's edit) and all of it on selection, focus,
   theme or zoom changes. Paint only: the doc, hit-testing, selection overlays, exports and
   thumbnails (`ElementFrame` in export mode) and the live regions / Board as list (they read the
-  doc) never see it; canvases are `aria-hidden`.
+  doc) never see it; canvases are `aria-hidden`. Containers paint too (#185): a kanban's paper and
+  column blocks, a diagram's body, a frame's fill — a type may paint only below its own on-screen
+  size (`lowDetailMaxPx`: a frame once its title, which you drag it by, can't show; 0 for a hidden
+  frame). Entering low detail is immediate (#183: deferring it drew the zoomed-out view in full
+  first — on load, the whole board's fit); leaving it is gradual (#184): the canvases keep painting,
+  at the resolution they were left at, what hasn't mounted yet, and items mount nearest the pointer
+  first in batches sized by the last frame (`useLeavingLowDetail`).
+- Only items near the view are mounted — the selection too (#182); the item being edited is the
+  one kept mounted wherever it is.
 - Items are placed with `left` / `top` (a transform only when rotated) and are each a stacking
   context (`z-index: 0`). Each item's selected / edited / drag-preview state comes from one ui
   subscription per editor (`ItemStates` in `WorldLayer.tsx`) that notifies only the items whose
@@ -1513,6 +1523,14 @@ reports" below).
   `/board/<id>?changes=1` (`activity.showChanges`). Claim-then-send in the same digest job. Its
   unsubscribe token is signed over the list name (`list=board-changes`): it stops only this email,
   and an all-emails token can't be bent into it; the master switch stops it too.
+  "New comments on your boards" (#104): opt-in per person (`notification_prefs` key
+  `board-comments`, `PUT /notifications/prefs` `boardComments`). Realtime marks a message that is
+  the first of its thread (`CommentMessageEvent.newThread`: no other message record in it, deleted
+  ones included), and `onCommentMessage` sends `comment.thread` to the board's followers — its
+  owner and everyone who starred it (boards' `boardFollowerIds`) — except the author and people the
+  message already mentions; `notify` drops anyone who can no longer open the board and, for a
+  thread in a hidden frame (`editorsOnly`), anyone not an owner or editor. From there it is an
+  ordinary notification: the bell, then Slack or the digest by the type's switches.
   Times in emails (security notices, export expiry, this digest) read in the recipient's time zone
   (`platform/time.ts` `formatWhen`); calendar dates (due dates) stay dates.
 

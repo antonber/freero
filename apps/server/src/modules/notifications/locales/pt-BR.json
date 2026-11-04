@@ -89,7 +89,11 @@
     "digest.more",
     "digest.action",
     "digest.outro",
-    "digest.unsubscribe"
+    "digest.unsubscribe",
+    "comment.thread.label",
+    "comment.thread.description",
+    "comment.thread.title",
+    "comment.thread.link"
   ],
   "someone": "Alguém",
   "quoted": "“{title}”",
@@ -180,5 +184,9 @@
   "digest.more": "Aqui estão as {shown} mais recentes; mais {more} esperam por você no Freero.",
   "digest.action": "Abrir o Freero",
   "digest.outro": "Você recebe estes e-mails sobre atividades que ainda não viu no Freero. Escolha quais nas configurações da sua conta.",
-  "digest.unsubscribe": "Cancelar a inscrição nos e-mails de notificação"
+  "digest.unsubscribe": "Cancelar a inscrição nos e-mails de notificação",
+  "comment.thread.label": "Novos comentários nos seus quadros",
+  "comment.thread.description": "Alguém inicia uma conversa de comentários em um quadro seu ou que você marcou com estrela (depois que você ativar).",
+  "comment.thread.title": "{actor} comentou em {board}",
+  "comment.thread.link": "Abrir o comentário"
 }

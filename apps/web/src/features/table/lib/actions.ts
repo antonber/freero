@@ -3,10 +3,12 @@ import { nanoid } from 'nanoid';
 import { tableCellKey, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
 import { measureRichText, plainToRichText, type Editor, type Point } from '@engine';
 import {
+  BAND_H,
   cellPart,
   CELL_BORDER,
   CELL_PAD,
   fitColumnWidths,
+  gridHeight,
   insertCol,
   insertRow,
   moveFrom,
@@ -15,12 +17,13 @@ import {
   removeCol,
   removeRow,
   resizeRow,
-  sumH,
   sumW,
+  TIMELINE,
   toCsv,
   type Move,
 } from './model';
-import { convertColumn, inferType, OPTION_COLORS, sortedRows, typeOf, valueFor, visibleRows, type PeopleLookup } from './columns';
+import { convertColumn, gridItems, inferType, OPTION_COLORS, sortedRows, timelineDaysOf, typeOf, valueFor, visibleRows, type PeopleLookup } from './columns';
+import { spanValues, timelineLayout, type DaySpan } from '@freero/shared';
 import { CELLS, cellText, plainGrid, setCellFill, setCellText, writeContent } from './cells';
 
 import { t as tr } from '../messages';
@@ -108,19 +111,43 @@ export function commitCell(editor: Editor, tableId: string, rowId: string, colId
     setCellText(editor, tableId, rowId, colId, html);
     const el = editor.getElement<TableElement>(tableId);
     if (el) fitRows(editor, el, rowId);
+    refreshRows(editor, tableId);
   });
+}
+
+/**
+ * [#51] Keeps the table's derived row layout — the rows its filter hides (`hiddenRows`) and its
+ * group bands (`bands`) — in step with its cells, filter and grouping, so its height (normalize,
+ * model.ts `gridHeight`) is that of what it shows: a filter reclaims the space of what it hides.
+ * Call it in the transaction of every such change; it writes nothing when nothing moved.
+ */
+export function refreshRows(editor: Editor, tableId: string): void {
+  const el = editor.getElement<TableElement>(tableId);
+  if (!el) return;
+  const get = rawCell(editor, el.id);
+  const shown = visibleRows(el, get);
+  const kept = new Set(shown.map((r) => r.id));
+  const hiddenRows = el.filter ? el.rows.filter((r) => !kept.has(r.id)).map((r) => r.id) : [];
+  const bands = el.groupRows ? gridItems(el, shown, get, BAND_H).filter((x) => x.kind === 'band').length : 0;
+  const patch: Partial<TableElement> = {};
+  if (hiddenRows.join() !== (el.hiddenRows ?? []).join()) patch.hiddenRows = hiddenRows.length ? hiddenRows : null;
+  if (bands !== (el.bands ?? 0)) patch.bands = bands || null;
+  if (Object.keys(patch).length) editor.update<TableElement>(el.id, patch);
 }
 
 /** Moves the cell editor (Tab / arrows); Tab on the last cell adds a row first. */
 export function moveCell(editor: Editor, el: TableElement, rowId: string, colId: string, move: Move): boolean {
-  // Rows a filter hides are skipped (they keep their place in `el.rows`).
+  // Rows a filter hides are skipped (they keep their place in `el.rows`); a grouped grid goes in its drawn order.
   const to = moveFrom({ rows: shownRows(editor, el), cols: el.cols }, rowId, colId, move);
   if (!to) return false;
   if (to === 'append') {
     if (!editor.can('editor')) return false;
     const newRow = nanoid();
     editor.stopEditing();
-    editor.update<TableElement>(el.id, insertRow(el, el.rows.length, () => newRow));
+    editor.transact(() => {
+      editor.update<TableElement>(el.id, insertRow(el, el.rows.length, () => newRow));
+      refreshRows(editor, el.id);
+    });
     editCell(editor, el.id, newRow, el.cols[0].id);
     return true;
   }
@@ -133,7 +160,10 @@ export function moveCell(editor: Editor, el: TableElement, rowId: string, colId:
 export function addRow(editor: Editor, el: TableElement, where: 'above' | 'below') {
   const cell = activeCell(editor, el);
   const i = cell ? el.rows.findIndex((r) => r.id === cell.rowId) : el.rows.length - 1;
-  editor.update<TableElement>(el.id, insertRow(el, where === 'above' ? i : i + 1));
+  editor.transact(() => {
+    editor.update<TableElement>(el.id, insertRow(el, where === 'above' ? i : i + 1));
+    refreshRows(editor, el.id);
+  });
 }
 
 export function addCol(editor: Editor, el: TableElement, where: 'left' | 'right') {
@@ -151,6 +181,7 @@ export function deleteRow(editor: Editor, el: TableElement) {
   editor.transact(() => {
     for (const c of el.cols) clearCell(editor, el.id, rowId, c.id);
     editor.update<TableElement>(el.id, patch);
+    refreshRows(editor, el.id);
   });
 }
 
@@ -162,6 +193,7 @@ export function deleteCol(editor: Editor, el: TableElement) {
   editor.transact(() => {
     for (const r of el.rows) clearCell(editor, el.id, r.id, colId);
     editor.update<TableElement>(el.id, patch);
+    refreshRows(editor, el.id);
   });
 }
 
@@ -254,11 +286,19 @@ export async function setColumnType(editor: Editor, tableId: string, colId: stri
     for (const c of out.cells) if (c.raw !== get(c.rowId, col.id)) setCellText(editor, el.id, c.rowId, col.id, c.raw);
     const filter = el.filter?.colId === colId ? null : el.filter;
     const groupBy = el.groupBy === colId && type !== 'select' ? null : el.groupBy;
+    const groupRows = el.groupRows === colId && type !== 'select' ? null : el.groupRows;
+    // A timeline whose date column stops being one goes back to the grid.
+    const timeline = el.timeline && (el.timeline.start === colId || el.timeline.end === colId) && type !== 'date' ? null : el.timeline;
+    const toGrid = (groupBy !== el.groupBy && el.view === 'board') || (timeline !== el.timeline && el.view === 'timeline');
     editor.update<TableElement>(el.id, {
       cols: el.cols.map((c) => (c.id === colId ? out.col : c)),
       ...(filter !== el.filter ? { filter } : {}),
-      ...(groupBy !== el.groupBy ? { groupBy, view: 'grid' as const, w: sumW(el.cols), h: sumH(el.rows) } : {}),
+      ...(groupBy !== el.groupBy ? { groupBy } : {}),
+      ...(groupRows !== el.groupRows ? { groupRows } : {}),
+      ...(timeline !== el.timeline ? { timeline } : {}),
+      ...(toGrid ? { view: 'grid' as const, w: sumW(el.cols) } : {}),
     });
+    refreshRows(editor, el.id);
   });
 }
 
@@ -277,12 +317,30 @@ export function setFilter(editor: Editor, tableId: string, filter: TableFilter |
   const el = editor.getElement<TableElement>(tableId);
   if (!el) return;
   editor.stopEditing();
-  editor.update<TableElement>(el.id, { filter });
+  editor.transact(() => {
+    editor.update<TableElement>(el.id, { filter });
+    refreshRows(editor, el.id);
+  });
 }
 
-/** Rows drawn: everything but filtered-out rows (see TableElement.filter). */
+/** [#51] Groups the grid's rows under a band per option of a select column (null: no grouping). One undo step. */
+export function setGroupRows(editor: Editor, tableId: string, colId: string | null): void {
+  const el = editor.getElement<TableElement>(tableId);
+  if (!el || (el.groupRows ?? null) === colId) return;
+  if (colId && !el.cols.some((c) => c.id === colId && typeOf(c) === 'select')) return;
+  editor.stopEditing();
+  editor.transact(() => {
+    editor.update<TableElement>(el.id, { groupRows: colId });
+    refreshRows(editor, el.id);
+  });
+}
+
+/** Rows drawn, in the order drawn: everything but filtered-out rows (see TableElement.filter), a grouped grid group by group. */
 export function shownRows(editor: Editor, el: TableElement): TableElement['rows'] {
-  return visibleRows(el, rawCell(editor, el.id));
+  const get = rawCell(editor, el.id);
+  const shown = visibleRows(el, get);
+  if (!el.groupRows) return shown;
+  return gridItems(el, shown, get, BAND_H).flatMap((x) => (x.kind === 'row' ? [x.row] : []));
 }
 
 export function addOption(editor: Editor, tableId: string, colId: string, label: string): TableSelectOption | null {
@@ -313,6 +371,7 @@ export function patchOption(editor: Editor, tableId: string, colId: string, opti
       for (const r of el.rows.slice(el.header ? 1 : 0))
         if (valueFor(col, get(r.id, colId)) === plainToRichText(opt.label)) setCellText(editor, el.id, r.id, colId, plainToRichText(label));
     editor.update<TableElement>(el.id, { cols: el.cols.map((c) => (c.id === colId ? { ...c, options: col.options!.map((o) => (o.id === optionId ? next : o)) } : c)) });
+    refreshRows(editor, el.id);
   });
 }
 
@@ -326,6 +385,7 @@ export function removeOption(editor: Editor, tableId: string, colId: string, opt
   editor.transact(() => {
     for (const r of el.rows.slice(el.header ? 1 : 0)) if (valueFor(col, get(r.id, colId)) === plainToRichText(opt.label)) setCellText(editor, el.id, r.id, colId, '');
     editor.update<TableElement>(el.id, { cols: el.cols.map((c) => (c.id === colId ? { ...c, options: col.options!.filter((o) => o.id !== optionId) } : c)) });
+    refreshRows(editor, el.id);
   });
 }
 
@@ -340,15 +400,16 @@ export const groupColumns = (el: Pick<TableElement, 'cols'>) => el.cols.filter((
  * Switches between the grid and the board view. The board view is sized to show every card;
  * back on the grid, the size follows the columns and rows again.
  */
-export function setView(editor: Editor, tableId: string, view: 'grid' | 'board', groupBy?: string): void {
+export function setView(editor: Editor, tableId: string, view: 'grid' | 'board' | 'timeline', groupBy?: string): void {
   const el = editor.getElement<TableElement>(tableId);
   if (!el) return;
   editor.stopEditing();
   if (view === 'grid') {
     if ((el.view ?? 'grid') === 'grid') return;
-    editor.update<TableElement>(el.id, { view: 'grid', w: sumW(el.cols), h: sumH(el.rows) });
+    editor.update<TableElement>(el.id, { view: 'grid', w: sumW(el.cols), h: gridHeight(el) });
     return;
   }
+  if (view === 'timeline') return setTimeline(editor, el.id, el.timeline ?? defaultTimeline(el));
   const group = el.cols.find((c) => c.id === groupBy && typeOf(c) === 'select') ?? groupColumns(el)[0];
   if (!group) return;
   const get = rawCell(editor, el.id);
@@ -372,5 +433,60 @@ export function moveRowToGroup(editor: Editor, tableId: string, rowId: string, c
   const el = editor.getElement<TableElement>(tableId);
   const col = el?.cols.find((c) => c.id === colId);
   if (!el || !col || !el.rows.some((r) => r.id === rowId)) return;
-  setCellText(editor, el.id, rowId, colId, label ? plainToRichText(label) : '');
+  editor.transact(() => {
+    setCellText(editor, el.id, rowId, colId, label ? plainToRichText(label) : '');
+    refreshRows(editor, el.id);
+  });
+}
+
+// ------------------------------------------------------------------ timeline view (#51)
+
+/** The date columns a timeline can run between. */
+export const dateColumns = (el: Pick<TableElement, 'cols'>) => el.cols.filter((c) => typeOf(c) === 'date');
+
+/** A timeline's first choice: the first two date columns (one alone: one-day bars). */
+function defaultTimeline(el: TableElement): { start: string; end: string } | null {
+  const dates = dateColumns(el);
+  return dates.length ? { start: dates[0].id, end: (dates[1] ?? dates[0]).id } : null;
+}
+
+/** Days a timeline shows for these rows (@freero/shared `timelineRange`, as a kanban's timeline tab). */
+export function timelineDays(editor: Editor, el: TableElement): DaySpan {
+  return timelineDaysOf(el, rawCell(editor, el.id), today(editor));
+}
+
+/** Today's day number, by the server's clock in this device's calendar. */
+export const today = (editor: Editor) => timelineLayout.dayOf(timelineLayout.localDay(editor.host.serverNow()));
+
+/** The grid as drawn (bands and rows, model.ts BAND_H): what textPartAt hits and the element draws. */
+export function gridItemsOf(editor: Editor, el: TableElement) {
+  const get = rawCell(editor, el.id);
+  return gridItems(el, visibleRows(el, get), get, BAND_H);
+}
+
+/**
+ * Shows the rows as a timeline from `cols.start` to `cols.end` (date columns). Sized so each day
+ * gets room within reason; the height follows the rows (normalize).
+ */
+export function setTimeline(editor: Editor, tableId: string, cols: { start: string; end: string } | null): void {
+  const el = editor.getElement<TableElement>(tableId);
+  const dates = el ? dateColumns(el).map((c) => c.id) : [];
+  if (!el || !cols || !dates.includes(cols.start) || !dates.includes(cols.end)) return;
+  editor.stopEditing();
+  const next = { ...el, timeline: cols };
+  const days = timelineDays(editor, next);
+  const span = days.end - days.start + 1;
+  const dayW = Math.max(TIMELINE.minDayW, Math.min(TIMELINE.maxDayW, 900 / span));
+  const w = el.view === 'timeline' ? el.w : Math.round(TIMELINE.labelW + span * dayW);
+  editor.update<TableElement>(el.id, { view: 'timeline', timeline: cols, w });
+}
+
+/** A bar dragged on the timeline: the row's two dates become the bar as drawn (@freero/shared `spanValues`). One undo step. */
+export function setRowSpan(editor: Editor, tableId: string, rowId: string, span: DaySpan): void {
+  const el = editor.getElement<TableElement>(tableId);
+  if (!el?.timeline || !el.rows.some((r) => r.id === rowId)) return;
+  editor.transact(() => {
+    for (const [colId, iso] of Object.entries(spanValues(el.timeline!.start, el.timeline!.end, span))) setCellText(editor, el.id, rowId, colId, iso);
+    refreshRows(editor, el.id);
+  });
 }

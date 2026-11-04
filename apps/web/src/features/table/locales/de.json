@@ -95,7 +95,15 @@
     "nCardsInNColumns",
     "whatTheOtherColumnsBecome",
     "nameofHasLengthDifferentValues",
-    "eachRowBecomesACard"
+    "eachRowBecomesACard",
+    "addADateColumnTo",
+    "noDates",
+    "timelineRowsAsBarsBetween",
+    "groupRowsBy",
+    "noGroups",
+    "groupColumnname",
+    "barsStartAt",
+    "barsEndAt"
   ],
   "text": "Text",
   "number": "Zahl",
@@ -192,5 +200,13 @@
   "nCardsInNColumns": "{length, plural, one {# Karte} other {# Karten}} in {length2, plural, one {# Spalte} other {# Spalten}}:  {join}",
   "whatTheOtherColumnsBecome": "Was aus den anderen Spalten wird",
   "nameofHasLengthDifferentValues": "„{nameOf}“ hat {length} verschiedene Werte; ein Kanban hat höchstens {max_kanban_columns} Spalten. Wählen Sie eine andere Spalte.",
-  "eachRowBecomesACard": "Jede Zeile wird zu einer Karte. Das Kanban tritt an die Stelle der Tabelle; Rückgängig bringt die Tabelle zurück."
+  "eachRowBecomesACard": "Jede Zeile wird zu einer Karte. Das Kanban tritt an die Stelle der Tabelle; Rückgängig bringt die Tabelle zurück.",
+  "addADateColumnTo": "Fügen Sie eine Datumsspalte hinzu, um die Zeilen auf einer Zeitleiste zu sehen.",
+  "noDates": "Keine Daten",
+  "timelineRowsAsBarsBetween": "Zeitleiste: Zeilen als Balken zwischen zwei Datumsspalten",
+  "groupRowsBy": "Zeilen gruppieren nach",
+  "noGroups": "Keine Gruppen",
+  "groupColumnname": "Gruppe: {columnName}",
+  "barsStartAt": "Balken beginnen bei",
+  "barsEndAt": "Balken enden bei"
 }

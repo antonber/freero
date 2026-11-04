@@ -15,11 +15,12 @@ import {
   type ElementRenderProps,
   type NewElement,
 } from '@engine';
-import { CELL_PAD, cellAt, cellPart, FONT_SIZE, HEADER_FILL, layoutTable, parseCellPart, parseDelimited, resizeCol, resizeRow, type Move } from './lib/model';
+import { BAND_H, CELL_PAD, cellPart, FONT_SIZE, HEADER_FILL, layoutTable, parseCellPart, parseDelimited, resizeCol, resizeRow, type Move } from './lib/model';
 import { CELLS, cellText, plainGrid, readContent, writeContent, type TableContent } from './lib/cells';
-import { commitCell, createFromGrid, editCell, moveCell, rememberCell, setFilter, shownRows } from './lib/actions';
-import { typeOf, visibleRows, type PeopleLookup } from './lib/columns';
+import { commitCell, createFromGrid, editCell, gridItemsOf, moveCell, rememberCell, setFilter } from './lib/actions';
+import { gridItems, typeOf, visibleRows, type PeopleLookup } from './lib/columns';
 import { BoardView, ColumnMenu, TypedEditor, TypedValue } from './lib/views';
+import { TimelineView } from './lib/timeline';
 import { t } from './messages';
 import './table.css';
 
@@ -88,9 +89,20 @@ const TableView = memo(function TableView({ element: el, selected, editing, zoom
       </div>
     );
 
-  // Filtered-out rows are drawn collapsed; the row being edited always shows.
+  if (el.view === 'timeline')
+    return (
+      <div className="fr-table is-timeline">
+        <TimelineView editor={editor} table={el} get={get} people={people} interactive={selected && writable} zoom={zoom} />
+      </div>
+    );
+
+  // Filtered-out rows take no room (#51: the table's height follows, model.ts gridHeight); the row
+  // being edited always shows. Grouped: a band per option above its rows.
   const shown = visibleRows(el, get);
-  const rows = active && !shown.some((r) => r.id === active.rowId) ? el.rows.filter((r) => shown.includes(r) || r.id === active.rowId) : shown;
+  const items = gridItems(el, active && !shown.some((r) => r.id === active.rowId) ? el.rows.filter((r) => shown.includes(r) || r.id === active.rowId) : shown, get, BAND_H);
+  const placed = items.flatMap((it) => (it.kind === 'row' ? [it] : []));
+  const rows = placed.map((it) => it.row);
+  const ys = placed.map((it) => it.y);
   const hidden = el.rows.length - rows.length;
 
   const xs: number[] = [];
@@ -99,13 +111,8 @@ const TableView = memo(function TableView({ element: el, selected, editing, zoom
     xs.push(x);
     x += c.w;
   }
-  const ys: number[] = [];
-  let y = 0;
-  for (const r of rows) {
-    ys.push(y);
-    y += r.h;
-  }
-  const gridH = y;
+  const lastItem = items[items.length - 1];
+  const gridH = !lastItem ? 0 : lastItem.kind === 'row' ? lastItem.y + lastItem.row.h : lastItem.y + BAND_H;
   const dividers = selected && writable;
   const finish = (rowId: string, colId: string) => (raw: string, then?: 'stop' | 'next' | 'prev') => {
     if (raw !== get(rowId, colId)) commitCell(editor, el.id, rowId, colId, raw);
@@ -118,7 +125,17 @@ const TableView = memo(function TableView({ element: el, selected, editing, zoom
 
   return (
     <>
-      <div className={`fr-table${hidden ? ' is-filtered' : ''}`} style={{ fontSize: el.fontSize, height: hidden ? gridH : undefined }}>
+      <div className={`fr-table${hidden ? ' is-filtered' : ''}`} style={{ fontSize: el.fontSize, height: hidden || el.groupRows ? gridH : undefined }}>
+        {items.map((it) =>
+          it.kind === 'band' ? (
+            <div key={`band:${it.key}`} className="fr-table__band" style={{ top: it.y, height: BAND_H, width: el.w }}>
+              <span className="fr-table__chip" style={{ background: it.color }}>
+                {it.label}
+              </span>
+              <span className="fr-table__band-count">{it.count}</span>
+            </div>
+          ) : null,
+        )}
         {rows.map((r, ri) =>
           el.cols.map((c, ci) => {
             const header = el.header && r === el.rows[0];
@@ -240,11 +257,16 @@ export default defineElement({
   Component: TableView,
   normalize: (el, prev) => layoutTable(el, prev),
 
-  // Double-click a cell (or click one of a selected table) to type in it.
+  // Double-click a cell (or click one of a selected table) to type in it; a grouped grid's band is no cell.
   textPartAt(el, local, { editor }) {
-    if (el.view === 'board') return null;
-    const cell = cellAt({ rows: shownRows(editor, el), cols: el.cols }, local);
-    return cell ? cellPart(cell.rowId, cell.colId) : null;
+    if (el.view === 'board' || el.view === 'timeline') return null;
+    const row = gridItemsOf(editor, el).find((it) => it.kind === 'row' && local.y >= it.y && local.y < it.y + it.row.h);
+    let x = 0;
+    const col = el.cols.find((c) => {
+      x += c.w;
+      return local.x >= x - c.w && local.x < x;
+    });
+    return row?.kind === 'row' && col ? cellPart(row.row.id, col.id) : null;
   },
 
   // Enter on a selected table edits its first cell; typing starts there too. In a cell, Tab /

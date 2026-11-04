@@ -89,7 +89,11 @@
     "digest.more",
     "digest.action",
     "digest.outro",
-    "digest.unsubscribe"
+    "digest.unsubscribe",
+    "comment.thread.label",
+    "comment.thread.description",
+    "comment.thread.title",
+    "comment.thread.link"
   ],
   "someone": "誰か",
   "quoted": "「{title}」",
@@ -180,5 +184,9 @@
   "digest.more": "最新の{shown}件を表示しています。Freeroではさらに{more}件が待っています。",
   "digest.action": "Freeroを開く",
   "digest.outro": "Freeroでまだ確認していないアクティビティについて、このメールをお送りしています。受け取るメールはアカウント設定で選べます。",
-  "digest.unsubscribe": "通知メールの配信を停止"
+  "digest.unsubscribe": "通知メールの配信を停止",
+  "comment.thread.label": "自分のボードへの新しいコメント",
+  "comment.thread.description": "自分が所有またはスターを付けたボードで誰かがコメントスレッドを始めたとき（オンにした場合）。",
+  "comment.thread.title": "{actor} が {board} にコメントしました",
+  "comment.thread.link": "コメントを開く"
 }

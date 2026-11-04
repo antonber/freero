@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "تعذّر الوصول إلى Freero. حاول مرة أخرى.",
   "restoreAccount": "استعادة الحساب",
@@ -498,5 +500,7 @@
   "email": "البريد الإلكتروني",
   "emailLabel": "البريد الإلكتروني: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "حذف"
+  "delete": "حذف",
+  "newCommentsOnYourBoards": "تعليقات جديدة على لوحاتك",
+  "tellMeWhenSomeoneStarts": "أعلمني عندما يبدأ شخص سلسلة تعليقات على لوحة أملكها أو ميّزتها بنجمة: في الجرس، ثم بالبريد أو Slack كما هو مختار أدناه."
 }

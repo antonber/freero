@@ -247,5 +247,7 @@
   "email": "Email",
   "emailLabel": "Email: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "Delete"
+  "delete": "Delete",
+  "newCommentsOnYourBoards": "New comments on your boards",
+  "tellMeWhenSomeoneStarts": "Tell me when someone starts a comment thread on a board I own or starred: under the bell, then by email or Slack as chosen below."
 }

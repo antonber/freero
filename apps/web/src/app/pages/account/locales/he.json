@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "לא ניתן להתחבר ל-Freero. נא לנסות שוב.",
   "restoreAccount": "שחזור החשבון",
@@ -498,5 +500,7 @@
   "email": "דוא״ל",
   "emailLabel": "דוא״ל: {label}",
   "slackLabel": "Slack: {label}",
-  "delete": "מחיקה"
+  "delete": "מחיקה",
+  "newCommentsOnYourBoards": "תגובות חדשות בלוחות שלך",
+  "tellMeWhenSomeoneStarts": "ליידע אותי כשמישהו פותח שרשור תגובות בלוח שבבעלותי או שסימנתי בכוכב: בפעמון, ואז בדוא״ל או ב-Slack כפי שנבחר למטה."
 }

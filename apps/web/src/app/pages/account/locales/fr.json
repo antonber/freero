@@ -248,7 +248,9 @@
     "email",
     "emailLabel",
     "slackLabel",
-    "delete"
+    "delete",
+    "newCommentsOnYourBoards",
+    "tellMeWhenSomeoneStarts"
   ],
   "couldNotReachFreeroTry": "Impossible de joindre Freero. Réessayez.",
   "restoreAccount": "Restaurer le compte",
@@ -498,5 +500,7 @@
   "email": "E-mail",
   "emailLabel": "E-mail : {label}",
   "slackLabel": "Slack : {label}",
-  "delete": "Supprimer"
+  "delete": "Supprimer",
+  "newCommentsOnYourBoards": "Nouveaux commentaires sur vos tableaux",
+  "tellMeWhenSomeoneStarts": "Me prévenir quand quelqu’un ouvre un fil de commentaires sur un tableau qui m’appartient ou que j’ai mis en favori : sous la cloche, puis par e-mail ou Slack selon les choix ci-dessous."
 }
