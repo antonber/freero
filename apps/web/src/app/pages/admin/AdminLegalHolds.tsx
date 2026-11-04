@@ -120,7 +120,7 @@ function NewCase({ workspace, onClose, onCreated }: { workspace: WorkspaceSummar
   useEffect(() => {
     const t = setTimeout(() => {
       void api
-        .adminBoards(workspace.id, { filter: '', inactiveDays: 0, sort: 'title', q, offset: 0, limit: 50 })
+        .adminBoards(workspace.id, { filter: '', inactiveDays: 90, sort: 'title', q, offset: 0, limit: 50 })
         .then((r) => setBoards(r.boards), () => setBoards([]));
     }, 200);
     return () => clearTimeout(t);
