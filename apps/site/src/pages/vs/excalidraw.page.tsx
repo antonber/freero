@@ -13,6 +13,7 @@ export const comparison: ComparisonDef = {
   competitor: 'Excalidraw',
   column: 'Excalidraw and Excalidraw+',
   checked: '2026-10-28',
+  updated: '2026-11-06',
   published: true,
   title: 'Excalidraw alternative for teams: Freero vs Excalidraw',
   description:
@@ -94,7 +95,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Works offline',
       competitor: { verdict: 'yes', note: 'the web app works offline and saves locally', sources: ['E2'] },
-      freero: { verdict: 'no', note: 'rides out short disconnects only', ref: 'docs/parity.md' },
+      freero: { verdict: 'yes', note: 'boards opened on a device open and take edits without a connection, and sync when it’s back', ref: 'docs/parity.md' },
     },
     {
       capability: 'Embeddable editor component',
@@ -110,7 +111,7 @@ export const comparison: ComparisonDef = {
   competitorStronger: [
     'You want to open a page and draw: no account, no setup, and a deliberately small toolset.',
     'You like the hand-drawn look for diagrams and explainers.',
-    'You need to work offline, or want live sessions that are end-to-end encrypted.',
+    'You want to draw offline without an account, or want live sessions that are end-to-end encrypted.',
     'You are embedding a whiteboard in your own product: the React package is made for that.',
     'You want AI on the free tier with nothing to configure, or Excalidraw’s large community and shape libraries.',
     'You want the interface in your language: the editor is translated.',

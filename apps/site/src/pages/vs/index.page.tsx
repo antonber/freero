@@ -13,7 +13,7 @@ export default definePage({
   ogTitle: 'How Freero compares',
   description:
     'Freero compared with Miro, Microsoft Whiteboard, Mural, FigJam, Excalidraw, Confluence whiteboards and Jamboard: sourced, dated, and fair to both sides.',
-  updated: '2026-10-28',
+  updated: '2026-11-06',
   sitemap: 'compare',
   body: ({ pages }) => (
     <>
@@ -43,11 +43,11 @@ export default definePage({
         <Checks
           kind="no"
           items={[
-            'No native desktop or mobile apps: Freero installs from the browser as a web app, and phones get a view-and-comment layout.',
+            'No released desktop or mobile apps yet: apps for Windows, macOS, iOS and Android are built in the open-source repository, but there are no signed downloads or app-store listings. Today Freero installs from the browser as a web app, and phones open boards in a view-and-comment layout with the full toolbar behind Edit board.',
             'No built-in AI until someone connects a model, and no image generation.',
             'No security certifications such as SOC 2 or ISO 27001, and no choice of hosted data region: organizations that need one host Freero themselves.',
             'No built-in audio or video: a board links to your meeting or a Jitsi room.',
-            'Imports cover CSV, draw.io and Excalidraw files, plus images and PDFs placed on a board; there is no importer for Miro, Mural, FigJam, Microsoft Whiteboard, Confluence or Jamboard boards.',
+            'Imports from other whiteboards don’t bring everything: Miro boards come over through your own Miro token but without comments, documents or mind maps; Mural and Lucid boards through their own CSV exports, which carry no sizes (and, for Lucid, no positions); FigJam only through its sticky and table CSV. There is no importer for Microsoft Whiteboard, Confluence or Jamboard boards.',
             `A library of ${SITE_TEMPLATES.length} original templates, no plugin SDK (integrations connect from outside, through the API, webhooks and MCP), and interface translations that are machine-made and not yet reviewed by people.`,
           ]}
         />

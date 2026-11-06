@@ -10,6 +10,7 @@ export const comparison: ComparisonDef = {
   slug: 'confluence-whiteboards',
   competitor: 'Confluence whiteboards',
   checked: '2026-10-28',
+  updated: '2026-11-06',
   published: true,
   title: 'Confluence whiteboards alternative: Freero vs Confluence',
   description:
@@ -143,7 +144,8 @@ export const comparison: ComparisonDef = {
             <a href="/chatgpt">ChatGPT</a>.
           </p>
           <p>
-            Freero can’t import Confluence whiteboards. It imports CSV, draw.io and Excalidraw files, and can pull Jira issues onto a board by query.
+            Freero can’t import Confluence whiteboards. It imports Miro boards, Mural’s and Lucid’s CSV exports, Visio, PowerPoint, draw.io and Excalidraw
+            files and CSV rows, and can pull Jira issues onto a board by query.
           </p>
         </>
       ),
