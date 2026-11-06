@@ -1,0 +1,17 @@
+{
+  "name": "freero",
+  "owner": {
+    "name": "Kaiten Gaming LLC"
+  },
+  "metadata": {
+    "description": "Freero's Cursor plugin: the collaborative whiteboard's remote MCP server and a rule for using it.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "freero",
+      "source": "./integrations/cursor",
+      "description": "Read and build on collaborative whiteboards: notes, clusters, kanban cards and diagrams, or changes people review."
+    }
+  ]
+}

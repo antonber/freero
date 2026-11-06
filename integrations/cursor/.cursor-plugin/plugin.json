@@ -1,0 +1,18 @@
+{
+  "name": "freero",
+  "displayName": "Freero",
+  "version": "0.1.0",
+  "description": "Read and build on collaborative whiteboards: notes, clusters, kanban cards and diagrams, or changes people review.",
+  "author": {
+    "name": "Kaiten Gaming LLC"
+  },
+  "homepage": "https://freero.app/",
+  "repository": "https://github.com/antonber/freero",
+  "license": "MIT",
+  "logo": "assets/logo.svg",
+  "keywords": ["whiteboard", "kanban", "diagrams", "mermaid", "retrospective", "roadmap", "mcp"],
+  "category": "integrations",
+  "tags": ["whiteboard", "mcp", "productivity", "diagrams"],
+  "rules": "./rules/",
+  "mcpServers": "./mcp.json"
+}
