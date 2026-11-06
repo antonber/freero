@@ -281,8 +281,8 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Board backup and restore | Download a full-fidelity board file and restore it later or elsewhere | Have: a `.freero` file (content, comments, files; layers and the downloads policy respected) restored as a new board on any Freero (KAI-137) | M | P2 | 4 |
 | Diagram import | Bring in Visio, draw.io or Lucid diagrams as editable shapes | Have: draw.io (KAI-138) and `.vsdx` files from Visio or Lucidchart with shapes, masters, connectors glued to shapes, groups, containers and swimlanes as frames, pages as frames, and pictures, behind zip and XML safety limits (#116); PlantUML and Mermaid text and files (#38) | — | P2 | — |
 | PowerPoint import | Bring a `.pptx` deck in as slides | Have: `.pptx` files become slides with their formatting, theme colours, pictures, tables, master artwork and notes (#136) | — | P2 | — |
-| Import from Miro | Bring a team's Miro boards over with stickies, shapes, connectors and frames | Missing: through the person's own Miro token (#62), after a check of Miro's API terms (§16) | M | P1 | parity |
-| Import from other whiteboards | Bring boards over from Mural, FigJam, Lucidspark, Excalidraw and similar tools | Partial: Excalidraw and draw.io (KAI-138, `features/import/lib/drawio.ts`); Mural (#163), FigJam (#164), Lucidspark and Whimsical (#165) not yet | M | P2 | parity |
+| Import from Miro | Bring a team's Miro boards over with stickies, shapes, connectors and frames | Have: a board read through Miro's REST API with the person's own token (from a Miro app they make for their own team with only `boards:read`; never stored, sent only to Miro's API origin): stickies, shapes, text, frames with their children, connectors, cards, pictures copied into the person's uploads and tags, in one undo step with a report; app cards as plain cards, embeds and link previews as link cards; comments, documents and mind-map nodes aren't in Miro's public API and stay behind; at most 2,000 items and connectors and 100 pictures an import; `MIRO_IMPORT=off` turns it off. Built after Miro's terms were read on 2026-11-04 ([design/importers.md](design/importers.md); #62) | — | P1 | — |
+| Import from other whiteboards | Bring boards over from Mural, FigJam, Lucidspark, Excalidraw and similar tools | Partial: Excalidraw and draw.io (KAI-138); each vendor's own export where its API terms rule an API importer out or are unclear ([design/importers.md](design/importers.md)): Mural's CSV download (stickies with colour, position, tags and link, areas as frames; #163), Lucid's CSV of Shape Data (stickies, shapes, containers as frames, connectors and tags, laid out automatically: the file has no positions; #165), FigJam's sticky and table CSV through the CSV import (#164) and Whimsical's Copy as Mermaid (#165). FigJam's shapes and connectors, Mural's sizes and Lucid's layout don't come over | M | P2 | parity |
 | Print | Print the board or its frames | Partial: through PDF export only | S | P3 | parity |
 | Export from code | Get a board or frame as a picture or PDF through the API, for reports and agents | Have: `POST /boards/{id}/export` and MCP `export_board` draw PNG, SVG or PDF on the server without a headless browser, charts and team stickers included; the downloads policy and the board's copy-and-export setting apply (#33) | — | P2 | — |
 
@@ -418,15 +418,18 @@ in part (engineering symbols through uploaded shape packs); and 4 rows were adde
 rows that mixed shipped and unshipped work (accessibility review and conformance report, personal
 Slack and Teams messages) and two for shipped work that had none (classification labels, SAML
 single logout and encrypted assertions). Several rows that stay Partial now wait only on the owner
-(GIF search, automation directories, Figma, and the meeting apps but for Teams sign-on).
+(GIF search, automation directories, Figma, and the meeting apps but for Teams sign-on). On
+2026-11-06, Import from Miro moved from Missing to Have (#62), and the import row for other
+whiteboards was brought up to date with what shipped for Mural, FigJam, Lucid and Whimsical
+(#163–#165; still Partial).
 
 **By status**
 
 | Status | Count |
 |---|---|
-| Have | 220 |
+| Have | 221 |
 | Partial | 23 |
-| Missing | 11 |
+| Missing | 10 |
 | **Total** | **254** |
 
 **By priority and status**
@@ -434,7 +437,7 @@ single logout and encrypted assertions). Several rows that stay Partial now wait
 | Priority | Have | Partial | Missing | Total |
 |---|---|---|---|---|
 | P0 | 31 | 0 | 0 | 31 |
-| P1 | 56 | 3 | 1 | 60 |
+| P1 | 57 | 3 | 0 | 60 |
 | P2 | 104 | 11 | 0 | 115 |
 | P3 | 29 | 9 | 10 | 48 |
 
@@ -442,12 +445,12 @@ single logout and encrypted assertions). Several rows that stay Partial now wait
 
 **Takeaways**
 
-- Every P0 row is Have, and 220 of 254 rows in all; no P2 row is Missing. What's left at P1 is
-  four rows, three of them built: interface languages (#5; ten languages live, the machine
+- Every P0 row is Have, and 221 of 254 rows in all; no P1 or P2 row is Missing. What's left at P1
+  is three rows, all of them built: interface languages (#5; ten languages live, the machine
   translations unreviewed and some server text still English), GIF search (#139; off until the
   operator gets a provider key), personal Slack messages (#105; off until the operator updates the
-  Slack app) next to personal Teams messages, which aren't built (#113), and Miro import (#62),
-  which waits on a check of Miro's API terms. Link guests vote, estimate and draft (#96) but still
+  Slack app) next to personal Teams messages, which aren't built (#113). Miro import (#62) moved
+  to Have on 2026-11-06. Link guests vote, estimate and draft (#96) but still
   can't add stickies (#97).
 - The first-hour gaps a switcher noticed (sticky shapes and dark colours, fonts, Miro-style
   shortcuts, dark mode) have shipped, and large-board performance is measured rather than assumed:
@@ -496,13 +499,15 @@ keep their Linear ids as a record of what shipped.
 
 **The 2026-11-03 ranking, and where it stands at 6e7bba8.** The re-check ranked the remaining gaps
 by who hits them, how soon, whether they block a buyer or a migration, and cost. The top fifteen
-carry `priority: high` in GitHub Issues. Eight are done; four are done but for owner steps (6, 9,
-10, 14); two are partly done (1, 12); one is open (3):
+carry `priority: high` in GitHub Issues. Nine are done; four are done but for owner steps (6, 9,
+10, 14); two are partly done (1, 12):
 
 1. Partly done. Commenters and link guests take part in votes, estimates and private drafts
    (#96, done); optional guest editing (#97) is open.
 2. Done. A public live embed and oEmbed (#2).
-3. Open. Miro import (#62), after the owner's check of Miro's API terms.
+3. Done. Miro import (#62) through the person's own Miro token, built after Miro's terms were
+   read on 2026-11-04 ([design/importers.md](design/importers.md)); Mural's and Lucid's CSV exports
+   import too (#163, #165).
 4. Done. First-hour polish: sticky shapes, sizes and dark colours (#98), fonts (#99), Miro-style
    shortcut aliases (#100), dark mode (#101).
 5. Done. Voting depth: anonymous ballots, up to 99 votes, per-item cap, timer, past results (#102).
@@ -550,21 +555,18 @@ Figma picker and plugin (#171, #172) and the desktop and phone shells (#176, #17
 
 1. Guest editing on owner-chosen boards, with abuse controls (#97): the last piece of the
    outside-workshop gap.
-2. Miro import through the person's own token (#62), once the owner has checked the API terms: the
-   migration path.
-3. Personal Teams messages (#113) and Teams single sign-on (#112), so Teams matches Slack.
-4. The English that's left in the interface: server emails and activity summaries, uncoded
+2. Personal Teams messages (#113) and Teams single sign-on (#112), so Teams matches Slack.
+3. The English that's left in the interface: server emails and activity summaries, uncoded
    errors, sentences assembled from English words (docs/design/i18n.md), then the site's
    translated pages (#77).
-5. Imports from Mural (#163), FigJam (#164), Lucidspark and Whimsical (#165).
-6. Data tables: rows pinned as synced cards and several filter conditions (#51); a GitHub App with
+4. Data tables: rows pinned as synced cards and several filter conditions (#51); a GitHub App with
    installation tokens (#42); dependencies for the trackers that lack them.
-7. AI decks and re-planning a proposal that failed (#1); semantic search (#47).
-8. Walkthrough screen capture and captions in search (#69), and board items a screen reader's
+5. AI decks and re-planning a proposal that failed (#1); semantic search (#47).
+6. Walkthrough screen capture and captions in search (#69), and board items a screen reader's
    browse mode can reach (#29).
-9. Optional in-board audio and video on an operator's Jitsi or LiveKit (#149).
-10. The in-board app SDK (#179), and hosted data residency (#160) if the owner decides to run a
-    second region.
+7. Optional in-board audio and video on an operator's Jitsi or LiveKit (#149).
+8. The in-board app SDK (#179), and hosted data residency (#160) if the owner decides to run a
+   second region.
 
 **Batch A: Editing polish (all S–M, engine and small features)**
 - **Issues:** KAI-110 (step forward/back, select only a type, exact size and position), KAI-109
@@ -627,8 +629,6 @@ the repo that turns on or proves something already built. Each issue (and the do
 exact steps.
 
 - **Decisions**
-  - Whether Miro's developer terms allow an importer that uses each person's own token, before
-    #62 is built (§16).
   - Funding a SOC 2 Type II or ISO 27001 auditor for freero.app (#110).
   - Whether freero.app runs a second region for data residency (#160).
   - Which features to turn on for freero.app once their vendor steps are done: workspace keys
@@ -694,5 +694,5 @@ exact steps.
 | Customer-managed keys, DLP scanning, eDiscovery and legal hold | Need KMS integrations, content scanning pipelines and legal processes | Built after all, without SDKs or outside scanners: legal holds with case export (#157), labels and an on-instance sensitive-data scan (#158), and per-workspace keys in AWS KMS, Google Cloud KMS, Azure Key Vault or Vault Transit (#159), next to storage encryption (KAI-143), the audit log and data export. The key services still need checks against real customer keys; self-hosting stays the path for organisations that want everything in their own estate |
 | SOC 2 / ISO 27001 / HIPAA certification | Expensive yearly audits by outside firms | The security overview, subprocessor list, DPA and responsible disclosure policy are published, next to the hash-chained audit log with SIEM streaming (#109, #17); self-hosting as the compliance path; an attestation for the hosted service once the owner funds an auditor (#110) |
 | Native mobile and desktop apps | Separate codebases, store fees and reviews | A PWA plus touch-optimised web chrome (KAI-140, KAI-139), and thin Tauri (desktop) and Capacitor (phone and tablet) shells that load the server's own web app, so there is no second codebase (#176, #177); signing and store listings need the owner's developer accounts, certificates and fees |
-| Importing Miro's own board files | The backup format is proprietary; use of Miro's API is under Miro's terms | Import from open formats (CSV, draw.io XML, Excalidraw JSON, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid and PlantUML; KAI-136, KAI-138, #116, #136, #38). A Miro import through the user's own API token, after checking the terms (#62) |
+| Importing Miro's own board files | The backup format is proprietary; use of Miro's API is under Miro's terms | Import from open formats (CSV, draw.io XML, Excalidraw JSON, Visio `.vsdx`, PowerPoint `.pptx`, Mermaid and PlantUML; KAI-136, KAI-138, #116, #136, #38), and a Miro import through the person's own API token, built after Miro's terms were read on 2026-11-04 (#62, [design/importers.md](design/importers.md)) |
 | Community template marketplace and moderation | Moderation work and legal exposure for user uploads | Shared team templates first (Phase 3), then a public gallery built on abuse reporting (KAI-142): submissions are stripped copies, operators approve each one before it's public, listings are CC BY or CC0 and can be reported (#162) |
