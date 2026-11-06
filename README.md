@@ -1,7 +1,11 @@
 # Freero
 
-An original real-time collaborative whiteboard: an infinite canvas for teams to brainstorm, plan,
-diagram and run workshops together.
+A free, open-source (MIT) real-time collaborative whiteboard: an infinite canvas for teams and their
+AI agents to brainstorm, plan, diagram and run workshops together. Claude, ChatGPT and other MCP
+clients read boards and propose changes that people accept.
+
+Use it free at **[freero.app](https://freero.app)**, or self-host it from one Docker image
+([deployment](docs/deployment.md)). Key facts: [freero.app/facts](https://freero.app/facts).
 
 ## What's in it
 
