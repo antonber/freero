@@ -13,7 +13,7 @@ export default definePage({
   ogTitle: 'Retros that end with owned actions',
   description:
     'Run sprint retros on a free online whiteboard: private writing under a timer, anonymous reveal, voting, action items, and an AI agent that groups notes.',
-  updated: '2026-10-30',
+  updated: '2026-11-06',
   sitemap: 'use-cases',
   faq: [
     {
@@ -34,7 +34,7 @@ export default definePage({
       <Hero
         kicker="Use case · Retrospectives"
         title="An online retrospective board that runs the retro for you"
-        lead="Freero’s guided retro takes the team through every step on one board: write alone under a timer, reveal, group, vote, discuss and leave with action items that have an owner. An AI agent can group the notes into themes while you talk."
+        lead="Freero is a free, open-source retrospective board. Its guided retro takes the team through every step on one board: write alone under a timer, reveal, group, vote, discuss and leave with action items that have an owner. An AI agent can group the notes into themes while you talk."
         actions={
           <>
             <ButtonLink href={useTemplateHref('retrospective')}>Start a retro board</ButtonLink>

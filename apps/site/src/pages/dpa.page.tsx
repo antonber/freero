@@ -14,6 +14,7 @@ export default definePage({
   title: 'Data processing addendum (DPA) · Freero',
   description: 'The data processing addendum for organizations using the hosted Freero service: GDPR and UK GDPR Article 28 terms with the standard contractual clauses.',
   updated: UPDATED,
+  dateInBody: true,
   legal: true,
   closingCta: false,
   body: () => (

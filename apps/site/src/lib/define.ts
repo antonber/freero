@@ -12,7 +12,7 @@ export interface FaqItem {
 }
 
 /** Which sitemap a page is listed in (sitemap.xml is the index of these). */
-export type SitemapGroup = 'pages' | 'features' | 'use-cases' | 'templates' | 'compare' | 'integrations';
+export type SitemapGroup = 'pages' | 'features' | 'use-cases' | 'templates' | 'compare' | 'integrations' | 'answers';
 
 export interface PageDef {
   /** URL path: '/', '/claude', '/vs/example'. No trailing slash. */
@@ -36,8 +36,13 @@ export interface PageDef {
    * `key` get the same image; `kicker` and `title` are drawn on it.
    */
   sharedOg?: { key: string; kicker: string; title: string };
-  /** Last meaningful content change (sitemap lastmod), YYYY-MM-DD. */
+  /**
+   * Last meaningful content change, YYYY-MM-DD: the sitemap's lastmod, the WebPage's dateModified
+   * and the "Updated" date every page shows under its breadcrumbs (or above the closing band).
+   */
   updated: string;
+  /** The body shows the date itself (a legal article's "Last updated"), so the page frame doesn't repeat it. */
+  dateInBody?: boolean;
   /** false: `noindex`, left out of the sitemap (drafts, the comparison placeholder, 404). */
   index?: boolean;
   /**

@@ -13,6 +13,7 @@ export default definePage({
   title: 'Terms of service · Freero',
   description: 'The terms for using the hosted Freero service: your account, your content, AI features and connected apps, moderation, and liability.',
   updated: UPDATED,
+  dateInBody: true,
   legal: true,
   closingCta: false,
   body: () => (

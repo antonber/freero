@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { INTEGRATIONS } from '@freero/shared';
 import { buildSite, SITE_PREFIXES } from './build';
+import { MatrixSection } from './lib/answers';
 import { defineComparison, type ComparisonDef } from './lib/compare';
 import type { PageDef } from './lib/define';
 import { MCP_PROMPTS, MCP_TOOLS } from './lib/mcp';
@@ -81,6 +82,38 @@ describe('every page as a search result', () => {
         expect(visible.includes(q.name), `${p.path}: question not on the page: ${q.name}`).toBe(true);
         expect(visible.includes(q.acceptedAnswer.text), `${p.path}: answer not on the page: ${q.name}`).toBe(true);
       }
+    }
+  });
+
+  it('every page shows when it was last updated, and its structured data carries the same date, so a quoted page can’t look fresher or staler than it is', () => {
+    for (const p of pages.filter((p) => p.path !== '/404')) {
+      const doc = html.get(p.path)!;
+      const shown = p.dateInBody ? `Last updated ${p.updated}` : `Updated <time dateTime="${p.updated}">${p.updated}</time>`;
+      expect(doc.includes(shown), `${p.path} doesn’t show ${shown}`).toBe(true);
+      const webPage = jsonLd(doc)
+        .flatMap((d) => d['@graph'])
+        .find((n) => n['@type'] === 'WebPage');
+      expect(webPage?.dateModified, p.path).toBe(p.updated);
+    }
+  });
+
+  it('the limits the site quotes (pricing, key facts, answers) are the server’s own defaults', () => {
+    const config = fs.readFileSync(path.resolve(__dirname, '../../server/src/platform/config.ts'), 'utf8');
+    const intDefault = (name: string) => Number(new RegExp(`int\\('${name}', (\\d+)`).exec(config)?.[1]);
+    const boards = intDefault('MAX_BOARDS_PER_USER').toLocaleString('en-US');
+    const uploadGb = intDefault('UPLOAD_QUOTA_MB') / 1024;
+    const perMinute = /apiCredential: '(\d+)\/1m'/.exec(config)?.[1];
+    expect(boards).toMatch(/\d/);
+    expect(perMinute).toBeTruthy();
+    const pricing = text(html.get('/pricing')!);
+    expect(pricing).toContain(`${boards} per account`);
+    expect(pricing).toContain(`${uploadGb} GB per account`);
+    expect(pricing).toContain(`${perMinute} per minute per token or connected app`);
+    const facts = text(html.get('/facts')!);
+    expect(facts).toContain(`${boards} boards per account, ${uploadGb} GB of uploads per account and ${perMinute} API or MCP requests per minute`);
+    for (const p of pages.filter((p) => p.path.startsWith('/answers/'))) {
+      const quoted = [...text(html.get(p.path)!).matchAll(/([\d,]+) boards per account/g)].map((m) => m[1]);
+      for (const q of quoted) expect(q, `${p.path} quotes ${q} boards per account`).toBe(boards);
     }
   });
 
@@ -266,6 +299,8 @@ describe('what agents read (/llms.txt, /agents)', () => {
       for (const must of [`${HOST}/mcp`, `${HOST}/.well-known/oauth-protected-resource/mcp`, `${HOST}/api/oauth/register`, `${HOST}${APP.connect}`])
         expect(txt.includes(must), `${p} doesn’t say ${must}`).toBe(true);
       for (const [name] of MCP_TOOLS) expect(txt.includes(`\`${name}\``), `${p} leaves out ${name}`).toBe(true);
+      // Served through the same token filling as the pages: an operator's fact would arrive as HTML here.
+      expect(/\[\[freero-legal:|<span|<a href/.test(txt), `${p} carries HTML or a legal token`).toBe(false);
     }
   });
 
@@ -364,5 +399,18 @@ describe('comparison pages', () => {
     expect(() => defineComparison({ ...base, rows: [{ ...base.rows[0], competitor: { verdict: 'unverified', sources: [] } }] })).toThrow(/not verified/);
     expect(() => defineComparison({ ...base, rows: [{ ...base.rows[0], competitor: { verdict: 'no', sources: [] } }] })).toThrow(/no source/);
     expect(() => defineComparison({ ...base, rows: [{ ...base.rows[0], competitor: { verdict: 'no', sources: ['S9'] } }] })).toThrow(/unknown source/);
+  });
+
+  it('an answer page’s table can’t show a claim its comparison no longer makes, or one from an unpublished comparison', () => {
+    const matrix = (product: ComparisonDef, capability: string) => ({
+      title: 'm',
+      caption: 'c',
+      columns: ['SSO'],
+      rows: [{ product, cells: [capability] }],
+      freero: [{ verdict: 'yes' as const, ref: 'docs/configuration.md' }],
+    });
+    expect(() => MatrixSection({ matrix: matrix(base, 'SSO') })).not.toThrow();
+    expect(() => MatrixSection({ matrix: matrix(base, 'Single sign-on') })).toThrow(/has no row/);
+    expect(() => MatrixSection({ matrix: matrix({ ...base, published: false }, 'SSO') })).toThrow(/not published/);
   });
 });

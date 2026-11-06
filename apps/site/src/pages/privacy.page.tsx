@@ -15,6 +15,7 @@ export default definePage({
   title: 'Privacy policy · Freero',
   description: 'What the Freero service collects, why, who processes it, how long it is kept, and how to see, export or delete your data.',
   updated: UPDATED,
+  dateInBody: true,
   legal: true,
   closingCta: false,
   body: () => (

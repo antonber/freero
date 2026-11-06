@@ -309,6 +309,23 @@ pre {
 .crumbs a {
   color: var(--fr-ink-2);
 }
+.crumbs__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 24px;
+}
+/* The page's last change (PageDef.updated). */
+.updated {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fr-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.wrap > .updated {
+  padding-block: 0 24px;
+}
 
 /* ---- Hero ---- */
 .hero {
@@ -1148,6 +1165,16 @@ tbody th code {
   white-space: normal;
   min-width: 10em;
 }
+/* Answer-page matrices (lib/answers.tsx): when each product's facts were checked, and an empty cell. */
+.matrix__checked {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fr-ink-3);
+}
+.matrix__none {
+  color: var(--fr-ink-3);
+}
 .table-wrap--stack td {
   min-width: 13em;
 }
@@ -1196,6 +1223,43 @@ tbody th code {
     content: attr(data-label) ': ';
     font-weight: 600;
     color: var(--fr-ink-3);
+  }
+}
+/* Key facts (/facts): a topic, then the statement and where to check it. */
+.facts {
+  margin: 0;
+}
+.facts__item {
+  display: grid;
+  grid-template-columns: minmax(0, 11em) minmax(0, 1fr);
+  gap: 4px 24px;
+  padding-block: 16px;
+  border-block-end: 1px solid var(--fr-line);
+  scroll-margin-top: 90px;
+}
+.facts__item:target {
+  background: var(--fr-accent-soft);
+}
+.facts dt {
+  font-weight: 700;
+}
+.facts dt a {
+  color: var(--fr-ink);
+  text-decoration: none;
+}
+.facts dd {
+  margin: 0;
+}
+.facts dd p {
+  margin: 0 0 4px;
+}
+.facts__source {
+  font-size: 14px;
+  color: var(--fr-ink-3);
+}
+@media (max-width: 640px) {
+  .facts__item {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 /* Dated events (a retirement timeline): the date, then what happened. */

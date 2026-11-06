@@ -11,6 +11,7 @@ export default definePage({
   title: 'Acceptable use policy · Freero',
   description: 'What you may not use the Freero service for, how to report content that breaks the rules, and what happens when someone does.',
   updated: UPDATED,
+  dateInBody: true,
   legal: true,
   closingCta: false,
   body: () => (

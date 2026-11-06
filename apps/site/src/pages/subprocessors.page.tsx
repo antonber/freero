@@ -27,6 +27,7 @@ export default definePage({
   title: 'Subprocessors · Freero',
   description: 'The companies that process personal data for the hosted Freero service: what each does, which data it handles, where, and how you hear of changes.',
   updated: UPDATED,
+  dateInBody: true,
   legal: true,
   closingCta: false,
   body: () => (

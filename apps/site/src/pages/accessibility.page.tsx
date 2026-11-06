@@ -88,6 +88,7 @@ export default definePage({
   ogTitle: 'Accessibility conformance report',
   description: 'How Freero meets WCAG 2.2 level A and AA, criterion by criterion, in the VPAT 2.5 format: a self-assessment pending an independent audit.',
   updated: UPDATED,
+  dateInBody: true,
   closingCta: false,
   body: () => (
     <LegalArticle
