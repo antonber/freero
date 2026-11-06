@@ -5,9 +5,9 @@
 // Left out as "Could not verify": the date and completeness of that conversion, whether Miro's and
 // Lucidspark's Jamboard importers still exist, the education $600 fee, guest access and an
 // accessibility statement (no rows for them). Freero has no Jamboard importer; PDF upload exists.
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'jamboard',
   competitor: 'Jamboard',
   column: 'Jamboard (until 2024)',
@@ -169,4 +169,6 @@ export default defineComparison({
     { id: 'J7', title: 'Wikipedia: Jamboard', url: 'https://en.wikipedia.org/wiki/Jamboard', checked: '2026-10-28' },
     { id: 'J9', title: 'Figma Help Center: importing into FigJam (lists Jamboard)', url: 'https://help.figma.com/hc/en-us/articles/1500007927941', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);

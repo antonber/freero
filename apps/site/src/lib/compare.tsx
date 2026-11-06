@@ -81,7 +81,7 @@ export interface ComparisonDef {
   published: boolean;
 }
 
-const VERDICT_TEXT: Record<Verdict, string> = {
+export const VERDICT_TEXT: Record<Verdict, string> = {
   yes: 'Yes',
   no: 'No',
   partial: 'Partly',
@@ -108,7 +108,8 @@ export function publishedComparisons(pages: PageDef[], except?: string): PageDef
   return pages.filter((p) => p.path.startsWith('/vs/') && p.index !== false && p.path !== except).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function cell(text: string, note?: string, refs?: ReactNode) {
+/** A table cell: the verdict in bold, its qualifier, then its citations. */
+export function cell(text: string, note?: string, refs?: ReactNode) {
   return (
     <>
       <strong>{text}</strong>
@@ -118,6 +119,16 @@ function cell(text: string, note?: string, refs?: ReactNode) {
   );
 }
 
+/** Freero's side of a row: its verdict and a link to the documentation that backs it. */
+export const freeroCell = (f: FreeroCell) =>
+  cell(
+    VERDICT_TEXT[f.verdict],
+    f.note,
+    <a className="cite" href={docsUrl(f.ref)} aria-label={`Freero documentation: ${f.ref}`}>
+      [docs]
+    </a>,
+  );
+
 const MORE_ABOUT_FREERO: Array<[string, string]> = [
   ['/agents', 'Agents, MCP, the API and webhooks'],
   ['/claude', 'Freero for Claude'],
@@ -125,6 +136,7 @@ const MORE_ABOUT_FREERO: Array<[string, string]> = [
   ['/open-source', 'Self-hosting and the MIT licence'],
   ['/security', 'Security, SSO and the audit log'],
   ['/pricing', 'Pricing and default limits'],
+  ['/facts', 'Key facts, each with where to check it'],
 ];
 
 export function defineComparison(c: ComparisonDef): PageDef {
@@ -175,7 +187,7 @@ export function defineComparison(c: ComparisonDef): PageDef {
               stack
               caption={`Freero and ${c.competitor} compared, checked ${c.checked}`}
               head={['Capability', c.column ?? c.competitor, 'Freero']}
-              rows={c.rows.map((r) => [r.capability, cell(VERDICT_TEXT[r.competitor.verdict], r.competitor.note, cite(...r.competitor.sources)), cell(VERDICT_TEXT[r.freero.verdict], r.freero.note, <a className="cite" href={docsUrl(r.freero.ref)} aria-label={`Freero documentation: ${r.freero.ref}`}>[docs]</a>)])}
+              rows={c.rows.map((r) => [r.capability, cell(VERDICT_TEXT[r.competitor.verdict], r.competitor.note, cite(...r.competitor.sources)), freeroCell(r.freero)])}
             />
           </Section>
           <Section id="strengths" tone="tint" title="Where each one is stronger">

@@ -4,9 +4,9 @@
 // elements (so the Jira link is described as writing to Jira), whether Guard is bundled into
 // Enterprise, which plans get Rovo's whiteboard features, mobile-app support, Free-plan guests.
 // Atlassian's trademark guidelines: names in plain text, referential use only.
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'confluence-whiteboards',
   competitor: 'Confluence whiteboards',
   checked: '2026-10-28',
@@ -61,7 +61,7 @@ export default defineComparison({
     {
       capability: 'Built-in AI',
       competitor: { verdict: 'paid', note: 'Rovo summarises boards and groups stickies; Rovo needs a paid plan and uses credits', sources: ['C7', 'C9'] },
-      freero: { verdict: 'partial', note: 'off until you connect a model; no chat assistant or semantic search', ref: 'docs/ai.md' },
+      freero: { verdict: 'partial', note: 'off until you connect a model; then a board assistant and saved AI workflows', ref: 'docs/ai.md' },
     },
     {
       capability: 'Bring your own AI model',
@@ -181,4 +181,6 @@ export default defineComparison({
     { id: 'C16', title: 'Atlassian Support: Understand data residency', url: 'https://support.atlassian.com/security-and-access-policies/docs/understand-data-residency/', checked: '2026-10-28' },
     { id: 'C17', title: 'Atlassian: Migration and Data Center changes', url: 'https://www.atlassian.com/migration', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);

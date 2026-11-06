@@ -6,10 +6,10 @@
 // only by searching), the status of tldraw computer and Fairies, whether the MCP App endpoint needs
 // sign-in, guest access on tldraw.com. Freero-side corrections to the sheet: in-chat live boards
 // (MCP Apps) shipped (docs/parity.md §9), and the template count comes from the catalog.
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'tldraw',
   competitor: 'tldraw',
   column: 'tldraw.com and the tldraw SDK',
@@ -143,4 +143,6 @@ export default defineComparison({
     { id: 'T12', title: 'tldraw blog: tldraw offline', url: 'https://tldraw.dev/blog/tldraw-offline', checked: '2026-10-28' },
     { id: 'T13', title: 'tldraw releases: v4.0.0', url: 'https://tldraw.dev/releases/v4.0.0', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);

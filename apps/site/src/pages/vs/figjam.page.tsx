@@ -3,10 +3,10 @@
 // are annual or monthly, which seat FigJam MCP writes need, whether the REST API and webhooks cover
 // FigJam (so no API or webhook rows), residency region names, the VPAT, plugin counts and the
 // Config India press.
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'figjam',
   competitor: 'FigJam',
   checked: '2026-10-28',
@@ -61,7 +61,7 @@ export default defineComparison({
     {
       capability: 'AI assistant inside the board',
       competitor: { verdict: 'partial', note: 'Figma agent announced for FigJam, waitlist only', sources: ['F8'] },
-      freero: { verdict: 'no', note: 'no chat assistant; agents work through MCP', ref: 'docs/ai.md' },
+      freero: { verdict: 'partial', note: 'a board assistant once a model is connected; agents also work through MCP', ref: 'docs/ai.md' },
     },
     {
       capability: 'Jira',
@@ -91,7 +91,7 @@ export default defineComparison({
     {
       capability: 'Audit log',
       competitor: { verdict: 'paid', note: 'activity logs on Organization and Enterprise', sources: ['F16'] },
-      freero: { verdict: 'yes', note: 'per workspace, exportable; no SIEM streaming yet', ref: 'docs/parity.md' },
+      freero: { verdict: 'yes', note: 'per workspace, hash-chained, exportable and streamed to your SIEM', ref: 'docs/configuration.md' },
     },
     {
       capability: 'Choice of data region',
@@ -198,4 +198,6 @@ export default defineComparison({
     { id: 'F24', title: 'Figma blog: FigJam for iPad (with its retirement note)', url: 'https://www.figma.com/blog/introducing-figjam-for-ipad/', checked: '2026-10-28' },
     { id: 'F26', title: 'Figma Help Center: Open sessions', url: 'https://help.figma.com/hc/en-us/articles/4410786053911', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);
