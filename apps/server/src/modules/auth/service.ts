@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, COLOR_THEME_PREFERENCES, isLocale, LOCALES, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type ColorThemePreference, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, COLOR_THEME_PREFERENCES, isDiscoverySource, isLocale, LOCALES, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type ColorThemePreference, type DiscoverySource, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -55,7 +55,7 @@ export function validatePassword(password: unknown): string {
 }
 
 export async function createUser(
-  input: { name: unknown; email: unknown; password: unknown; locale?: unknown },
+  input: { name: unknown; email: unknown; password: unknown; locale?: unknown; discoverySource?: unknown },
   opts: { emailVerified?: boolean } = {},
 ): Promise<Account> {
   const email = normalizeEmail(input.email);
@@ -66,7 +66,16 @@ export async function createUser(
   if (name.length > 80) throw badRequest('Name is too long (max 80 characters)', 'name_too_long', { max: 80 });
   refuseGuestStyleName(name);
   if (await repo.findUserByEmail(email)) throw emailTaken(); // fast path; the unique index decides races
-  return insertAccount({ name, email, passwordHash: await hashPassword(password), emailVerified: opts.emailVerified ?? false, locale: input.locale });
+  return insertAccount({
+    name,
+    email,
+    passwordHash: await hashPassword(password),
+    emailVerified: opts.emailVerified ?? false,
+    locale: input.locale,
+    // Optional, and never a reason to refuse the sign-up: an answer that isn't one of the fixed
+    // ones (an old or tampered client) is dropped.
+    discoverySource: isDiscoverySource(input.discoverySource) ? input.discoverySource : null,
+  });
 }
 
 /**
@@ -74,7 +83,7 @@ export async function createUser(
  * account goes through here. Throws 409 if the address is taken (the unique index decides races).
  */
 export async function insertAccount(
-  input: { name: string; email: string; passwordHash: string | null; emailVerified: boolean; locale?: unknown },
+  input: { name: string; email: string; passwordHash: string | null; emailVerified: boolean; locale?: unknown; discoverySource?: DiscoverySource | null },
   identity?: { provider: string; issuer: string; subject: string; email: string | null; emailVerified: boolean },
 ): Promise<Account> {
   const user: repo.UserWithHash = {
@@ -91,6 +100,7 @@ export async function insertAccount(
     locale: isLocale(input.locale) ? input.locale : null,
     passwordHash: input.passwordHash,
     passwordViaLink: false,
+    discoverySource: input.discoverySource ?? null,
   };
   try {
     await repo.insertUser(user, identity && { ...identity, id: newId() });

@@ -1,7 +1,7 @@
 // The only writer of `users`, `sessions`, `auth_tokens`, `auth_identities`, `auth_oidc_flows`,
 // `auth_challenges`, `user_totp`, `user_recovery_codes`, `auth_devices`,
 // `auth_two_factor_recoveries` and `guest_sessions` [S4].
-import type { Account, ColorThemePreference } from '@freero/shared';
+import type { Account, ColorThemePreference, DiscoverySource } from '@freero/shared';
 import { isForeignKeyViolation, isUniqueViolation, one, query, tx } from '../../platform/db';
 
 interface UserRow {
@@ -19,6 +19,7 @@ interface UserRow {
   time_zone: string | null;
   color_theme: ColorThemePreference;
   locale: string | null;
+  discovery_source: DiscoverySource | null;
 }
 
 export interface UserWithHash extends Account {
@@ -29,6 +30,8 @@ export interface UserWithHash extends Account {
    * the password) and no sign-in has passed the second step since. See setPasswordHash.
    */
   passwordViaLink: boolean;
+  /** The answer to "How did you find Freero?" at sign-up; null when not given (never in the session). */
+  discoverySource?: DiscoverySource | null;
 }
 
 const toUser = (r: UserRow): UserWithHash => ({
@@ -45,6 +48,7 @@ const toUser = (r: UserRow): UserWithHash => ({
   locale: r.locale ?? null,
   passwordHash: r.password_hash,
   passwordViaLink: r.password_via_link_at !== null,
+  discoverySource: r.discovery_source ?? null,
 });
 
 /** Thrown when an email is taken (possibly by a concurrent signup or email change). */
@@ -55,9 +59,9 @@ export async function insertUser(u: UserWithHash, identity?: Omit<IdentityRecord
   try {
     await tx(async () => {
       await query(
-        `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at, email_verified_at, locale)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, new Date(u.createdAt), u.emailVerified ? new Date(u.createdAt) : null, u.locale ?? null],
+        `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at, email_verified_at, locale, discovery_source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, new Date(u.createdAt), u.emailVerified ? new Date(u.createdAt) : null, u.locale ?? null, u.discoverySource ?? null],
       );
       if (identity) await insertIdentity({ ...identity, userId: u.id, createdAt: u.createdAt });
     });
@@ -84,6 +88,15 @@ export async function findUserByEmail(email: string): Promise<UserWithHash | nul
 
 export async function countUsers(): Promise<number> {
   return (await one<{ n: number }>(`SELECT COUNT(*) AS n FROM users`))!.n;
+}
+
+/** Accounts created in [since, until), by their answer to "How did you find Freero?" (null: no answer). */
+export async function countDiscoverySources(since: number, until: number): Promise<Array<{ source: DiscoverySource | null; count: number }>> {
+  const rows = await query<{ source: DiscoverySource | null; n: number }>(
+    `SELECT discovery_source AS source, COUNT(*) AS n FROM users WHERE created_at >= $1 AND created_at < $2 GROUP BY discovery_source`,
+    [new Date(since), new Date(until)],
+  );
+  return rows.map((r) => ({ source: r.source, count: Number(r.n) }));
 }
 
 /** Changes only the given fields, in one statement (no read-modify-write that could drop a concurrent edit). */

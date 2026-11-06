@@ -15,6 +15,8 @@ export interface AccountDataExport {
     /** The app theme they chose (system, light or dark). */
     theme: string;
     timeZone: string | null;
+    /** Their answer to "How did you find Freero?" when they signed up (DISCOVERY_SOURCES), or null. */
+    discoverySource: string | null;
     createdAt: string;
     deletionScheduledFor: string | null;
   };
@@ -46,6 +48,7 @@ export async function exportAccountData(userId: string): Promise<AccountDataExpo
       avatarUrl: user.avatarUrl,
       theme: user.theme ?? 'system',
       timeZone: user.timeZone,
+      discoverySource: user.discoverySource ?? null,
       createdAt: iso(user.createdAt),
       deletionScheduledFor: user.deletionScheduledFor === null ? null : iso(user.deletionScheduledFor),
     },
