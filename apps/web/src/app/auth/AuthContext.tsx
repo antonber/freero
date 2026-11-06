@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Account, User } from '@freero/shared';
+import type { Account, DiscoverySource, User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
 import { takeProviderSignIn, track } from '../analytics/bridge';
 import { api } from '../api/client';
@@ -19,7 +19,8 @@ export interface AuthValue {
   /** null: the account has two-factor on; finish at /login/two-factor (completeTwoFactor). */
   login(email: string, password: string): Promise<Account | null>;
   completeTwoFactor(code: string): Promise<Account>;
-  signup(name: string, email: string, password: string): Promise<Account>;
+  /** `discoverySource`: the optional "How did you find Freero?" answer (stored on the account, and sent with GA's sign_up). */
+  signup(name: string, email: string, password: string, discoverySource?: DiscoverySource): Promise<Account>;
   logout(): Promise<void>;
   /** Re-fetches the session. */
   refresh(): Promise<Account | null>;
@@ -122,14 +123,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user;
   }, [announce]);
 
-  const signup = useCallback(async (name: string, email: string, password: string) => {
+  const signup = useCallback(async (name: string, email: string, password: string, discoverySource?: DiscoverySource) => {
     // The page's language becomes the account's (#5): the verification email is already in it.
-    const { user } = await api.signup({ name: name.trim(), email: email.trim(), password, locale: getLocale() });
+    const { user } = await api.signup({ name: name.trim(), email: email.trim(), password, locale: getLocale(), ...(discoverySource ? { discoverySource } : {}) });
     setUser(user);
     confirmed(user);
     announce();
     takeProviderSignIn();
-    track({ name: 'sign_up', method: 'password' });
+    track({ name: 'sign_up', method: 'password', ...(discoverySource ? { source: discoverySource } : {}) });
     return user;
   }, [announce]);
 

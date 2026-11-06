@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { CircleAlert, Eye, EyeOff, KeyRound, Lock, Mail, Sparkles, UserRound } from 'lucide-react';
-import { SSO_REQUIRED, type SiteLegal, type SsoDiscovery } from '@freero/shared';
-import { Button, IconButton, Input, Logo } from '@ui';
+import { SSO_REQUIRED, type DiscoverySource, type SiteLegal, type SsoDiscovery } from '@freero/shared';
+import { Button, IconButton, Input, Logo, Select, type SelectOption } from '@ui';
 import { noteProviderSignIn } from '../../analytics/bridge';
 import { useAuth } from '../../auth/AuthContext';
 import { api, ApiError } from '../../api/client';
@@ -15,6 +15,18 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEMO = { email: 'demo@freero.app', password: 'freero123' };
 
 type Mode = 'login' | 'signup';
+
+/** "How did you find Freero?" (optional, one choice; stored as the answer's id, never as text). */
+const SOURCE_OPTIONS: Array<SelectOption<DiscoverySource>> = [
+  { value: 'search', label: tr('sourceSearch') },
+  { value: 'ai_assistant', label: tr('sourceAiAssistant'), description: tr('sourceAiAssistantExamples') },
+  { value: 'colleague', label: tr('sourceColleague') },
+  { value: 'social', label: tr('sourceSocial') },
+  { value: 'open_source', label: tr('sourceOpenSource') },
+  { value: 'directory', label: tr('sourceDirectory') },
+  { value: 'other', label: tr('sourceOther') },
+];
+
 interface Errors { name?: string; email?: string; password?: string }
 
 export function validateAuth(mode: Mode, v: { name: string; email: string; password: string }): Errors {
@@ -43,6 +55,8 @@ export function AuthPage({ mode }: { mode: Mode }) {
   const [email, setEmail] = useState(params.get('email') ?? ''); // invite links prefill it
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [source, setSource] = useState<DiscoverySource | ''>('');
+  const sourceId = useId();
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   // A provider sign-in that came back with ?error= (until the next attempt).
@@ -118,7 +132,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
           navigate(`/login/two-factor?next=${encodeURIComponent(next)}`, { replace: true });
           return;
         }
-      } else await signup(name, email, password);
+      } else await signup(name, email, password, source || undefined);
       navigate(next, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.code === SSO_REQUIRED) {
@@ -232,6 +246,24 @@ export function AuthPage({ mode }: { mode: Mode }) {
                   />
                 }
               />
+
+              {isLogin ? null : (
+                <div className="fr-authcard__source">
+                  <label className="fr-authcard__source-label" htmlFor={sourceId}>
+                    {tr('howDidYouFindFreero')} <span className="fr-authcard__optional">{tr('optional')}</span>
+                  </label>
+                  <Select<DiscoverySource | ''>
+                    id={sourceId}
+                    aria-label={tr('howDidYouFindFreero')}
+                    width="100%"
+                    placeholder={tr('chooseOne')}
+                    // Once answered, it can be taken back.
+                    options={source ? [{ value: '', label: tr('noAnswer') }, ...SOURCE_OPTIONS] : SOURCE_OPTIONS}
+                    value={source}
+                    onChange={setSource}
+                  />
+                </div>
+              )}
 
               {isLogin ? (
                 <Link className="fr-authcard__forgot" to={`/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}>{tr('forgotPassword')}</Link>

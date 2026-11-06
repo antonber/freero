@@ -133,5 +133,17 @@
   "withoutYourAuthenticatorAppOr": "Without your authenticator app or a recovery code, Freero can remove two-step verification after a waiting period, through your account’s email address.",
   "weEmailYourAccountS": "We email your account’s address now and again before the waiting period ends. Then a link removes two-step verification and connected sign-in providers, signs out every device and lets you choose a new password. Anyone who logs in with the authenticator meanwhile cancels it, so nobody can use this against you while you still have yours.",
   "startAccountRecovery": "Start account recovery",
-  "iHaveACodeAfter": "I have a code after all"
+  "iHaveACodeAfter": "I have a code after all",
+  "howDidYouFindFreero": "How did you find Freero?",
+  "optional": "Optional",
+  "chooseOne": "Choose one",
+  "noAnswer": "No answer",
+  "sourceSearch": "Search engine",
+  "sourceAiAssistant": "AI assistant",
+  "sourceAiAssistantExamples": "ChatGPT, Claude, Gemini, Copilot…",
+  "sourceColleague": "A colleague or friend",
+  "sourceSocial": "Social media",
+  "sourceOpenSource": "GitHub or open-source community",
+  "sourceDirectory": "A directory or review site",
+  "sourceOther": "Other"
 }
