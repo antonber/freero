@@ -8,9 +8,11 @@ signed in, with only the permissions they ticked on the consent screen. Full ref
 ## Signing in
 
 The first call opens the browser to sign in to Freero (run `/mcp auth freero` to sign in again).
-By default the connection can read boards and propose changes; creating boards, changing items and
-commenting are permissions the person ticks. When a tool answers that a permission is missing, say
-which one and that they can run `/mcp auth freero` again and tick it.
+This extension asks for reading boards and proposing changes, so use `propose_changes` to add
+things: people on the board accept or reject them. When a tool answers that a permission is
+missing (creating boards, changing items, commenting), say which one; the person can give it by
+overriding the server in `~/.gemini/settings.json` with the scopes
+`boards:read boards:suggest boards:write comments:write` (docs/mcp.md, "Gemini CLI").
 
 ## Working with boards
 
@@ -19,12 +21,13 @@ which one and that they can run `/mcp auth freero` again and tick it.
 2. **Read it first** with `get_board_outline`: item ids are in `[brackets]`. Large boards are cut to
    a budget; page with its `cursor` or narrow with `scope` (a frame, kanban or `cluster:<id>`). For a
    big kanban, `query_cards` returns its cards as rows.
-3. **Add to it** with `add_stickies`, `add_clusters`, `add_cards` (task cards, kanbans) or
-   `add_diagram` (Mermaid, outlines, org charts, charts). Never pick coordinates: Freero places
-   everything, in free space or with `placement` into a frame, kanban column or cluster. The add
-   tools return the new ids in the order the items were sent.
-4. **Prefer proposing** on boards other people use: `propose_changes` adds one group of
-   suggestions that people on the board accept or reject; the board does not change until they do.
+3. **Propose** with `propose_changes`: sticky notes, clusters, a kanban, items or a diagram as one
+   group of suggestions that people on the board accept or reject; the board does not change until
+   they do. Never pick coordinates: Freero places everything, in free space or with `placement`
+   into a frame, kanban column or cluster.
+4. **With write permission**, add directly with `add_stickies`, `add_clusters`, `add_cards` (task
+   cards, kanbans) or `add_diagram` (Mermaid, outlines, org charts, charts); they return the new
+   ids in the order the items were sent. Still prefer proposing on boards other people use.
 5. **Long tasks:** `post_status` keeps a plan, a status line and To do / Doing / Done / Blocked tasks
    on a control-room lane; call `get_feedback` with its cursor before each step to see what people
    changed, and stop writing if it says you are paused.
