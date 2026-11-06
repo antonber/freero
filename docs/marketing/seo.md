@@ -209,6 +209,27 @@ How to measure (check monthly; the first useful read is 4–6 weeks after the de
 4. **Spot checks**: ask ChatGPT search, Copilot, Gemini, Perplexity and Claude (with web search) the
    answer pages' questions; note whether Freero is named and which URL is cited. Keep the log here.
 
+Recurring work (Claude's; the owner's GEO board at https://freero.app/board/5V2pRhlp23 holds only
+what the owner must do):
+
+- **Monthly, first 2026-12-07:** the spot check above for these questions: a free alternative to
+  Miro; an open-source Miro alternative to self-host; a whiteboard that works with Claude (MCP); can
+  ChatGPT edit a whiteboard; a free Miro alternative with SSO / SCIM; a free online retrospective
+  board; a free planning poker tool; a whiteboard that syncs with Jira / Linear / GitHub; the best AI
+  whiteboard for teams; how an AI agent can show its work to a team. Fix any page an answer gets
+  wrong. Plus GA4 landing pages of the AI Assistant channel (`/login` / `/signup` landings are people
+  connecting an assistant, not discovery) and `npm run admin -- signups:sources`.
+- **2026-12-14:** re-rank the keyword backlog with real Search Console data and Bing's grounding
+  queries; pick the next answer pages (Notion whiteboard needs a sourced `/vs` comparison first; org
+  chart; dot voting).
+- **Quarterly, first 2027-02-01:** re-check every "as of" competitor fact on `/vs` and the answer
+  pages; update dates.
+- **Watch:** the Gemini CLI gallery picking up `gemini-extension.json` (crawled daily), the
+  directory PRs in `directory-submissions.md`, and the Claude directory listing's tool list after
+  approval.
+- **Later, only with usage to show:** Mistral Le Chat's curated connector directory (a partnership
+  conversation, no public form).
+
 ## IndexNow (Bing, Yandex, Seznam, Naver…)
 
 Google does not use IndexNow; Search Console and the sitemap cover it. For the others:
