@@ -1387,7 +1387,10 @@ byte-for-byte what it was). When on:
   first page reported and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
   token removed (`/board/<id>` → `/board`, unknown routes → `/not-found`), a generic title — and
   events from the closed list `AnalyticsEvent` (`sign_up` / `login` with the method, `board_created`,
-  `template_used` with a built-in template's public id), validated by `analyticsEventParams`.
+  `template_used` with a built-in template's public id), validated by `analyticsEventParams`. A
+  `sign_up` from the sign-up form also carries `discovery_source` when the person answered "How did
+  you find Freero?" (one of `DISCOVERY_SOURCES`; the account keeps the answer too, see
+  `signups:sources` in docs/operations.md, so it is counted whatever their analytics choice).
   `/embed/*` and `/teams/*` (the assistants' live view, boards embedded on other sites or in
   Teams, their sign-in pages), `/operator*` and `/oauth/*` are never reported. Features
   count events through `Host.track` (optional; the templates feature is the only user).
@@ -1480,7 +1483,8 @@ module's service functions, print what they did, and record an audit event (belo
 `ctx` (`platform/context.ts`) carries `config` and `onShutdown(fn)` (realtime flushes docs there).
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
-not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens: email
+not a reserved hook. Server modules today: `auth` (users, with the sign-up form's optional "How did you find Freero?"
+answer in `discovery_source`, counted by `npm run admin -- signups:sources`; sessions, auth_tokens: email
 verification, password reset, email change, session list/revoke, avatars, deletion scheduling;
 auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
