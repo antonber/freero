@@ -1,7 +1,8 @@
 // Freero vs Mural (#72). Facts: docs/marketing/competitors/mural.md (sourced rows only; source ids
 // follow the sheet). Left out as "Could not verify": Business monthly price, AI credit limits,
 // webhooks either way, which plans get the Linear and GitHub integrations and basic Jira sync,
-// the names of the residency regions, an exact template count, the ACR's contents.
+// the names of the residency regions, an exact template count, the ACR's contents. Import of
+// Mural's own CSV download: features/import/lib/mural.ts (#163; why not Mural's API: docs/design/importers.md).
 import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
@@ -9,6 +10,7 @@ export const comparison: ComparisonDef = {
   slug: 'mural',
   competitor: 'Mural',
   checked: '2026-10-28',
+  updated: '2026-11-06',
   published: true,
   title: 'Free, open-source Mural alternative: Freero vs Mural',
   description:
@@ -94,7 +96,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Choice of data region',
       competitor: { verdict: 'paid', note: 'Enterprise, with your own encryption key', sources: ['S4'] },
-      freero: { verdict: 'yes', note: 'wherever you host it; no hosted regions or customer-managed keys', ref: 'docs/deployment.md' },
+      freero: { verdict: 'yes', note: 'wherever you host it, with workspace keys in your own KMS if you turn them on; no hosted regions', ref: 'docs/deployment.md' },
     },
     {
       capability: 'Security certifications',
@@ -104,7 +106,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Native desktop and mobile apps',
       competitor: { verdict: 'yes', note: 'plus Surface Hub and other interactive displays', sources: ['S9'] },
-      freero: { verdict: 'no', note: 'installable web app; phones view and comment', ref: 'docs/parity.md' },
+      freero: { verdict: 'no', note: 'not released yet: Windows, macOS, iOS and Android apps are built but unsigned and not in the app stores; installable web app today', ref: 'docs/parity.md' },
     },
     {
       capability: 'Templates',
@@ -121,7 +123,7 @@ export const comparison: ComparisonDef = {
     'You run facilitated workshops at scale and want a methods library: LUMA frameworks, AI guidance for its methods, and training from the same company.',
     'Your organization is built on Microsoft: a Microsoft 365 Copilot agent, Azure hosting and apps for Surface Hub.',
     'You sync boards with Azure DevOps, Rally, Salesforce, Asana or Microsoft Planner, which Freero doesn’t support.',
-    'Your security review needs certifications such as SOC 2 Type 2 and ISO 27001, your own encryption key or a hosted data region.',
+    'Your security review needs certifications such as SOC 2 Type 2 and ISO 27001, or a hosted service with your own encryption key or a choice of data region.',
     'You want native desktop and mobile apps, or visitors who can edit without an account.',
     'You want a hosted service with standard, priority and premier support tiers, and nothing to run.',
   ],
@@ -140,8 +142,15 @@ export const comparison: ComparisonDef = {
       body: () => (
         <>
           <p>
-            Freero can’t import murals today. It brings in CSV rows as sticky notes or cards, draw.io and Excalidraw files as editable shapes, and images
-            and PDFs placed on a board. Facilitation tools are built in for the workshops you move over: voting, a shared timer, private mode, polls, word
+            Freero imports Mural’s own CSV download. In a mural, select what you want to bring and use Mural’s Download to CSV, then drop the file on a
+            Freero board (or choose <strong>Import from a file or another whiteboard…</strong> in the board menu). Each sticky note comes over with its text,
+            the nearest Freero colour, its position, its tags and its link, and each area becomes a frame around its sticky notes, in one undo step. The CSV
+            has no sizes, so every sticky gets the standard size, spread out to keep the layout’s gaps. Who edited what isn’t imported, and Mural’s PDF
+            export can go on a board as a document or as pictures of its pages.
+          </p>
+          <p>
+            Freero doesn’t read murals through Mural’s API; the CSV is the way in. Other files come in too:
+            Visio, PowerPoint, draw.io and Excalidraw files, CSV rows as sticky notes or cards, and images and PDFs. Facilitation tools are built in for the workshops you move over: voting, a shared timer, private mode, polls, word
             clouds, Q&amp;A and planning poker, all free, with guests answering through a link.
           </p>
           <p>
@@ -168,7 +177,7 @@ export const comparison: ComparisonDef = {
     },
     {
       q: 'Can I import my murals into Freero?',
-      a: 'Not today. Freero has no Mural importer; it imports CSV, draw.io and Excalidraw files, and places images and PDFs on a board.',
+      a: 'Yes, from Mural’s own CSV download: drop the CSV on a Freero board and each sticky note arrives with its text, colour, position, tags and link, with every area as a frame around its sticky notes. Sizes aren’t in the file, so stickies get the standard size. Freero has no importer that reads murals through Mural’s API.',
     },
   ],
   sources: [

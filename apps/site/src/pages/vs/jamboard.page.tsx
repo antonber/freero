@@ -12,6 +12,7 @@ export const comparison: ComparisonDef = {
   competitor: 'Jamboard',
   column: 'Jamboard (until 2024)',
   checked: '2026-10-28',
+  updated: '2026-11-06',
   published: true,
   title: 'Jamboard alternative and replacement: Freero vs Jamboard',
   description:
@@ -59,7 +60,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Mobile apps',
       competitor: { verdict: 'yes', note: 'iOS and Android, until the shutdown', sources: ['J7', 'J1'] },
-      freero: { verdict: 'no', note: 'installable web app; phones view and comment', ref: 'docs/parity.md' },
+      freero: { verdict: 'no', note: 'not released yet: iOS and Android apps are built but unsigned and not in the app stores; installable web app today', ref: 'docs/parity.md' },
     },
     {
       capability: 'Open source, on your own servers',

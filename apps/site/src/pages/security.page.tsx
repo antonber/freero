@@ -9,7 +9,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs, docsUrl, SOURCE_REPO } from '../lib/site';
 
-const UPDATED = '2026-11-03';
+const UPDATED = '2026-11-06';
 
 export default definePage({
   path: '/security',
@@ -145,14 +145,20 @@ export default definePage({
         <li>
           <strong>The database, its backups and files</strong> are encrypted at rest by the hosting provider, with AES-256 under keys it manages; this also
           covers its point-in-time recovery archives and its storage buckets. Board content is
-          not encrypted by the application itself: the key would have to live next to the application that opens every board, so it would add little to
-          storage encryption, and it would stop search, backlinks and file clean-up from working. <a href={docsUrl('docs/deployment.md')}>Why, in detail</a>.
+          not encrypted by the application itself unless a workspace has its own key (below): an application-wide key would have to live next to the
+          application that opens every board, so it would add little to storage encryption. <a href={docsUrl('docs/deployment.md')}>Why, in detail</a>.
         </li>
         <li>
           <strong>Keys:</strong> the server’s secret is held only in the hosting provider’s environment variables, which it keeps envelope-encrypted and
           decrypts only to hand to the running service; it is never in the code or the image. A
           self-hosted server can encrypt its bucket with its own AWS KMS key (<code>S3_SSE=aws:kms</code>) and its database volume with its cloud’s KMS.
-          Customer-managed keys per workspace are not offered.
+        </li>
+        <li>
+          <strong>Workspace encryption keys</strong> are part of the software and off by default. When a server’s operator turns them on (
+          <code>WORKSPACE_KEYS</code>), a team workspace’s security admins can keep its board content and the files uploaded to its boards sealed with
+          AES-256-GCM under data keys wrapped by the server’s key or by the workspace’s own key in AWS KMS, Google Cloud KMS, Azure Key Vault or a
+          HashiCorp Vault Transit engine; suspending or destroying the key closes the workspace’s boards at once. They are not turned on for the hosted
+          service yet, so today customer-managed keys mean hosting Freero yourself. <a href={docsUrl('docs/configuration.md')}>Configuration</a>.
         </li>
       </ul>
 
@@ -391,7 +397,7 @@ export default definePage({
         <li>No independent penetration test and no automated dependency vulnerability scanning.</li>
         <li>No choice of data region, no second region and no service-level agreement.</li>
         <li>No automated alerting or on-call paging for the hosted service.</li>
-        <li>No customer-managed encryption keys on the hosted service.</li>
+        <li>No customer-managed encryption keys on the hosted service yet: workspace keys are built but not turned on there.</li>
         <li>No SAML single logout and no encrypted SAML assertions.</li>
       </ul>
 

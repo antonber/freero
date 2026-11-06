@@ -63,7 +63,7 @@ Proprietary and closed source, sold only as SaaS. We found no on-premises or sel
 - **Being where the team already works.** For Notion-centered teams, notes, specs and decisions are already there.
 - **AI and agent depth.** Notion has a chat agent, Custom Agents, Workers, meeting notes, enterprise search across connected sources, sub-agents and skills, plus a model router and a choice of models. Freero has no chat assistant, AI workflows or semantic search, and its AI is off until a model is connected (`docs/ai.md`).
 - **A mature MCP with human review.** Notion's MCP already offers suggested edits that people resolve, for pages, which is the same idea as Freero's `propose_changes`. Notion also lets outside agents like Claude and Cursor take assigned tasks inside Notion.
-- **Native apps** for Mac, Windows and mobile (https://www.notion.com/desktop, checked 2026-10-28). Freero is a PWA only.
+- **Native apps** for Mac, Windows and mobile (https://www.notion.com/desktop, checked 2026-10-28). Freero's Windows, macOS, iOS and Android apps are built (`docs/desktop.md`, `docs/mobile.md`) but not released: unsigned, not in the app stores; today it is a PWA.
 - **Templates and community.** The gallery advertises 30,000+ templates (https://www.notion.com/templates, checked 2026-10-28). Freero has 73 built-in templates and no community gallery.
 - **Compliance and residency.** SOC 2, several ISO certifications, ISMAP, BSI C5, HIPAA BAA and hosted residency in four regions. Freero has no certifications and no hosted regions.
 - **Scale and brand.** Notion has a very large user base and ecosystem; Freero is a young project.
@@ -104,7 +104,7 @@ Rows marked "whiteboard" compare Notion's (absent) native whiteboard; embedding 
 | SCIM | Paid | Yes | notion.com/pricing; `docs/configuration.md` |
 | Audit log | Paid | Yes | notion.com/pricing; `ARCHITECTURE.md` |
 | Data residency choice | Paid | Partial⁶ | notion.com/help/data-residency; `docs/deployment.md` |
-| Native apps | Yes | No | notion.com/desktop; `apps/web/public/manifest.webmanifest` |
+| Native apps | Yes | Not yet (PWA; apps built, not released) | notion.com/desktop; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Whiteboard facilitation (voting / timer / private mode) | No | Yes | notion.com/releases; `README.md` |
 | Templates | Yes | Yes | notion.com/templates; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | Guest access | Yes | Yes | notion.com/pricing; `ARCHITECTURE.md` ("Guests") |

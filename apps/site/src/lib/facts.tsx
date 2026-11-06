@@ -135,6 +135,12 @@ export const FACTS: Fact[] = [
     source: { label: 'Issue tracker guide', href: docsUrl('docs/trackers.md') },
   },
   {
+    id: 'import',
+    topic: 'Importing',
+    text: 'Freero imports Miro boards, read through Miro’s API with the person’s own Miro access token, which is never stored: sticky notes, shapes, text, frames, connectors, cards, images and tags, up to 2,000 items per import; comments, documents and mind maps stay in Miro. It also imports Mural’s and Lucid’s own CSV exports, Visio (.vsdx), PowerPoint (.pptx), draw.io and Excalidraw files, Mermaid and PlantUML, CSV rows as sticky notes or cards, and images and PDFs.',
+    source: { label: 'Importers from other whiteboards', href: docsUrl('docs/design/importers.md') },
+  },
+  {
     id: 'integrations',
     topic: 'Integrations',
     text: `${INTEGRATIONS.length} integrations in all, among them ${list(names('chat').filter((n) => !/ (app|link previews|notifications)/.test(n)))} for chat, and ${list(names('automation').filter((n) => ['n8n', 'Make', 'Zapier', 'Power Automate'].includes(n)))} for automation, besides the REST API and signed webhooks.`,

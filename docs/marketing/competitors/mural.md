@@ -88,8 +88,10 @@ is offered; Enterprise customers can choose a storage region and bring their own
 - **Facilitation methods and services.** LUMA Institute frameworks, 36 LUMA methods with AI guidance,
   and training/services [S1][S5]; Freero has facilitation tools but no methods library or services
   (brief).
-- **Native apps.** Windows, macOS, iOS, Android and Surface Hub / interactive displays [S9]; Freero
-  is a PWA only, view-and-comment on phones (`docs/accessibility.md`).
+- **Native apps.** Windows, macOS, iOS, Android and Surface Hub / interactive displays [S9]; Freero's
+  desktop and mobile apps are built but not released (unsigned, not in the stores: `docs/desktop.md`,
+  `docs/mobile.md`), so today it is a PWA whose phone layout opens in view-and-comment mode
+  (`docs/accessibility.md`).
 - **Microsoft ecosystem.** Microsoft 365 Copilot agent, Azure hosting, Microsoft SSPA [S2][S4];
   Freero has no Copilot or Teams app beyond webhook payloads (`docs/events.md`).
 - **Certifications and enterprise controls.** SOC 2 Type 2, ISO 27001, ISO 42001, BYOK, data
@@ -155,7 +157,7 @@ is offered; Enterprise customers can choose a storage region and bring their own
 | Audit log | Paid (Enterprise) | Yes | [S1]; `ARCHITECTURE.md` |
 | Data residency choice | Paid (Enterprise: NA/EU/APAC) | Yes (self-host anywhere; no hosted regions) | [S8]; `docs/deployment.md` |
 | Compliance certifications (SOC 2 / ISO 27001) | Yes | No | [S4]; brief "Enterprise / security" |
-| Native desktop/mobile apps | Yes | No (PWA) | [S9]; `apps/web/public/manifest.webmanifest` |
+| Native desktop/mobile apps | Yes | Not yet (PWA; apps built, not released) | [S9]; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Template library size | Yes ("hundreds") | Partial (73) | [S14]; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | App marketplace | Partial (integrations directory and an Integrations SDK; no public app count) | No | [S16]; brief "Developer platform" |
 | Accessibility statement / VPAT | Yes (partial WCAG 2.1; ACR) | Partial (WCAG 2.1 AA statement, no VPAT) | [S11]; `docs/accessibility.md` |

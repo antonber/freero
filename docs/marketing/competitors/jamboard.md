@@ -46,7 +46,7 @@ Currency USD. No per-seat pricing existed for the app.
 - **Purpose-built hardware:** a 55-inch 4K touch display with camera, microphones and speakers, plus stylus and eraser (https://en.wikipedia.org/wiki/Jamboard). Freero is software only, with no built-in audio or video (`docs/configuration.md` "Board calls").
 - **Google Workspace fit:** jams lived in Drive, opened from Meet and needed no IT setup for schools already on Google. Freero has Google sign-in (OIDC) but no Drive or Classroom integration (brief: not claimed).
 - **Simplicity for young students:** a deliberately small toolset. Freero is a much larger product, which can be more to learn.
-- **Native mobile apps** (iOS, Android). Freero is a PWA with a view-and-comment phone layout (`docs/accessibility.md`).
+- **Native mobile apps** (iOS, Android). Freero's iOS and Android apps are built but not in the stores (`docs/mobile.md`); today it is a PWA whose phone layout opens in view-and-comment mode, with editing behind "Edit board" (`docs/accessibility.md`).
 - **Zero ops:** hosted by Google, while Freero needs someone to run it unless a hosted offer exists.
 
 ## 8. Where Freero is stronger (verifiable)
@@ -87,7 +87,7 @@ Currency USD. No per-seat pricing existed for the app.
 | SCIM | No | Yes | none found; `docs/configuration.md` |
 | Audit log | No (device event logs deleted after Sept 30, 2024) | Yes | https://workspaceupdates.googleblog.com/2023/09/the-next-phase-of-digital-whiteboarding-for-google-workspace.html; `ARCHITECTURE.md` |
 | Data residency choice | No | Yes (self-host anywhere) | Google cloud only; `docs/deployment.md` |
-| Native apps | No (iOS/Android apps Retired) | No (PWA) | https://workspaceupdates.googleblog.com/2023/09/the-next-phase-of-digital-whiteboarding-for-google-workspace.html; `apps/web/public/manifest.webmanifest` |
+| Native apps | No (iOS/Android apps Retired) | Not yet (PWA; apps built, not released) | https://workspaceupdates.googleblog.com/2023/09/the-next-phase-of-digital-whiteboarding-for-google-workspace.html; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Templates | No (none found) | Yes (73) | https://en.wikipedia.org/wiki/Jamboard; templates catalog |
 | Guest access | No (Retired) | Yes | app shut down per Google 2023 notice; `ARCHITECTURE.md` "Guests" |
 | Accessibility statement | No (none found) | Yes | none found on support.google.com/jamboard; `docs/accessibility.md` |

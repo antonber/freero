@@ -61,6 +61,8 @@ export interface ComparisonDef {
   column?: string;
   /** Last date every fact on the page was checked, YYYY-MM-DD. */
   checked: string;
+  /** Last date the page changed, when that is after `checked` (Freero's side brought up to date, the competitor's facts not re-checked). YYYY-MM-DD. */
+  updated?: string;
   /** Page <title> and meta description (limits as for every page). */
   title: string;
   description: string;
@@ -94,6 +96,7 @@ export function comparisonProblems(c: ComparisonDef): string[] {
   const ids = new Set(c.sources.map((s) => s.id));
   const out: string[] = [];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(c.checked)) out.push(`checked date "${c.checked}" is not YYYY-MM-DD`);
+  if (c.updated !== undefined && !(/^\d{4}-\d{2}-\d{2}$/.test(c.updated) && c.updated >= c.checked)) out.push(`updated date "${c.updated}" is not a YYYY-MM-DD on or after the checked date`);
   for (const r of c.rows) {
     if (r.competitor.verdict === 'unverified') out.push(`"${r.capability}": the ${c.competitor} cell is not verified`);
     else if (!r.competitor.sources.length) out.push(`"${r.capability}": the ${c.competitor} cell has no source`);
@@ -168,7 +171,7 @@ export function defineComparison(c: ComparisonDef): PageDef {
     title: c.title,
     description: c.description,
     ogTitle: `Freero vs ${c.competitor}`,
-    updated: c.checked,
+    updated: c.updated ?? c.checked,
     index: c.published,
     sitemap: 'compare',
     faq: c.faq,

@@ -96,8 +96,10 @@ edition; the FedRAMP "GovSuite" is a separate hosted offering, not self-hosted [
 - **Certifications and public-sector readiness.** SOC 2 Type II, ISO 27001/27701/42001, FedRAMP
   Moderate, IRAP [S9]; Freero has no certifications (brief).
 - **Paired diagramming product.** Lucidchart in the same account and bundle [S1]; Freero has
-  diagramming features but no separate pro diagramming product, and no import from other tools
-  (brief, "Honest gaps").
+  diagramming features but no separate pro diagramming product (brief, "Honest gaps"). It imports
+  Lucid's own "CSV of Shape Data" export (#165, `docs/design/importers.md`), which has no positions,
+  sizes or colours, so the items are laid out automatically; Lucidchart's Visio export imports with
+  its layout (#116).
 - **Accessibility paperwork.** A published Lucidspark VPAT/ACR [S15]; Freero has an accessibility
   statement but no VPAT (`docs/accessibility.md`).
 - **Enterprise planning features.** Scenario/capacity planning, dependency mapping, breakout boards,
@@ -108,7 +110,8 @@ edition; the FedRAMP "GovSuite" is a separate hosted offering, not self-hosted [
   and 113 marketplace listings [S16][S12]; Freero has 73 templates and no marketplace
   (`apps/web/src/features/templates/lib/catalog/index.ts`).
 - **Native mobile apps.** iOS app (Team/Enterprise subscribers) and an Android app [S17]; Freero is
-  PWA only. Lucidspark has no desktop app either [S17].
+  a PWA today: its iOS and Android apps are built but not in the stores (`docs/mobile.md`). Lucidspark has
+  no desktop app either [S17].
 - **Scale and turnkey hosting.** 100M+ users claimed [S16], nothing to run; Freero is young and
   self-hosted (brief).
 
@@ -159,7 +162,7 @@ edition; the FedRAMP "GovSuite" is a separate hosted offering, not self-hosted [
 | Audit log | Paid (Enterprise + Shield add-on) | Yes | [S8]; `ARCHITECTURE.md` |
 | Data residency choice | Paid (Enterprise: US/EU/AU) | Yes (self-host anywhere; no hosted regions) | [S9][S14]; `docs/deployment.md` |
 | Compliance certifications (SOC 2 / ISO 27001) | Yes | No | [S9]; brief "Enterprise / security" |
-| Native desktop/mobile apps | Partial (iOS/Android; no desktop) | No (PWA) | [S17]; `apps/web/public/manifest.webmanifest` |
+| Native desktop/mobile apps | Partial (iOS/Android; no desktop) | Not yet (PWA; apps built, not released) | [S17]; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Template library size | Yes (500+) | Partial (73) | [S16]; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | App marketplace | Yes (113 listings) | No | [S12]; brief "Developer platform" |
 | Accessibility statement / VPAT | Yes (VPAT 2026-02-16) | Partial (WCAG 2.1 AA statement, no VPAT) | [S15]; `docs/accessibility.md` |

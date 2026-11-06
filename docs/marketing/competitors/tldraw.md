@@ -63,7 +63,7 @@ Flags:
 - **Canvas feel and performance:** widely adopted (51.1k GitHub stars, https://github.com/tldraw/tldraw, checked 2026-10-28) and focused on drawing quality.
 - **AI experimentation:** first-party ChatGPT/Codex plugin with a canvas UI inside chat, an MCP App, multi-agent fairies, and agent starter kits. Freero's MCP previews inside chat are not shipped (planned KAI-171).
 - **Zero-setup free app:** tldraw.com needs nothing to run; Freero is self-hosted unless a hosted offer exists.
-- **Local-first desktop app** (tldraw offline) with no account; Freero is a PWA with no offline editing beyond short disconnects.
+- **Local-first desktop app** (tldraw offline) with no account; Freero's desktop app is built but not released (unsigned, `docs/desktop.md`); in the browser, boards opened on a device open and take edits offline and sync later (#178), but they live on a server, not in local files.
 - **Accessibility claim on the SDK:** 4.0 claims WCAG 2.2 AA (https://tldraw.dev/releases/v4.0.0); Freero targets WCAG 2.1 AA.
 
 ## 8. Where Freero is stronger (verifiable)
@@ -80,7 +80,7 @@ Flags:
 | Bring-your-own model built-in AI (Anthropic, OpenAI-compatible, Ollama…), no credits | `docs/ai.md` | tldraw.com AI is via external clients; SDK kits need your own keys (https://tldraw.dev/starter-kits/agent) |
 | Facilitation (voting, timer, polls, planning poker), 73 templates, guests, kanban, timeline | `README.md`, `apps/web/src/features/templates/lib/catalog/index.ts`, `ARCHITECTURE.md` | tldraw.com is a minimal sketching board (no template gallery found) |
 
-Honesty notes: Freero has no SDK for embedding, no native/desktop app, no certifications, a small ecosystem, and self-hosting means you run it.
+Honesty notes: Freero has no SDK for embedding, no released native/desktop app (built, unsigned), no certifications, a small ecosystem, and self-hosting means you run it.
 
 ## 9. Suggested comparison table
 
@@ -104,7 +104,7 @@ Column "tldraw" = tldraw.com unless the row says SDK.
 | SCIM | No | Yes | tldraw.dev (none found); `docs/configuration.md` |
 | Audit log | No | Yes | tldraw.dev (none found); `ARCHITECTURE.md` audit_events |
 | Data residency choice | Partial (SDK: you host it; tldraw.com: no) | Yes (self-host anywhere) | https://tldraw.dev/docs/sync; `docs/deployment.md` |
-| Native apps | Yes (tldraw offline desktop) | No (PWA) | https://tldraw.dev/blog/tldraw-offline; `apps/web/public/manifest.webmanifest` |
+| Native apps | Yes (tldraw offline desktop) | Not yet (PWA; apps built, not released) | https://tldraw.dev/blog/tldraw-offline; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Templates | No (none found on tldraw.com) | Yes (73) | tldraw.com; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | Guest access | Yes (reported: join shared links without an account) | Yes | https://openalternative.co/tldraw (third-party); `ARCHITECTURE.md` "Guests" |
 | Accessibility statement | Partial (SDK 4.0 claims WCAG 2.2 AA; no tldraw.com statement found) | Yes (WCAG 2.1 AA target) | https://tldraw.dev/releases/v4.0.0; `docs/accessibility.md` |

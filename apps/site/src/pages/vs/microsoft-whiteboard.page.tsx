@@ -13,6 +13,7 @@ export const comparison: ComparisonDef = {
   competitor: 'Microsoft Whiteboard',
   column: 'Microsoft Whiteboard',
   checked: '2026-10-28',
+  updated: '2026-11-06',
   published: true,
   title: 'Microsoft Whiteboard alternative after the app retirement',
   description:
@@ -104,7 +105,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Apps',
       competitor: { verdict: 'partial', note: 'inside the Teams apps; the standalone Windows, iOS and Android apps retired 2026-10-16', sources: ['W4'] },
-      freero: { verdict: 'no', note: 'installable web app; phones view and comment', ref: 'docs/parity.md' },
+      freero: { verdict: 'no', note: 'not released yet: Windows, macOS, iOS and Android apps are built but unsigned and not in the app stores; installable web app today', ref: 'docs/parity.md' },
     },
     {
       capability: 'Templates',

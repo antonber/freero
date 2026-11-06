@@ -2,7 +2,8 @@
 // numbers follow the sheet as F<n>). Left out as "Could not verify": whether the Professional prices
 // are annual or monthly, which seat FigJam MCP writes need, whether the REST API and webhooks cover
 // FigJam (so no API or webhook rows), residency region names, the VPAT, plugin counts and the
-// Config India press.
+// Config India press. Moving content over: FigJam's own sticky and table CSV through features/csv,
+// PNG / PDF exports as pictures and PDF items; no FigJam API importer (#164, docs/design/importers.md).
 import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
@@ -10,6 +11,7 @@ export const comparison: ComparisonDef = {
   slug: 'figjam',
   competitor: 'FigJam',
   checked: '2026-10-28',
+  updated: '2026-11-06',
   published: true,
   title: 'Free, open-source FigJam alternative: Freero vs FigJam',
   description:
@@ -106,7 +108,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Native desktop and mobile apps',
       competitor: { verdict: 'yes', note: 'in the Figma apps', sources: ['F24'] },
-      freero: { verdict: 'no', note: 'installable web app; phones view and comment', ref: 'docs/parity.md' },
+      freero: { verdict: 'no', note: 'not released yet: Windows, macOS, iOS and Android apps are built but unsigned and not in the app stores; installable web app today', ref: 'docs/parity.md' },
     },
     {
       capability: 'Templates',
@@ -147,8 +149,10 @@ export const comparison: ComparisonDef = {
       body: () => (
         <>
           <p>
-            Freero can’t import FigJam files today. It brings in CSV rows as sticky notes or cards, draw.io and Excalidraw files as editable shapes, and
-            images and PDFs placed on a board. Freero is a whiteboard, not a design tool, so keep Figma for design work: a Figma link pasted onto a
+            Freero has no FigJam importer of its own, but FigJam’s own exports come in. A CSV of sticky notes or of a table, exported from FigJam, goes
+            through Freero’s CSV import (in the board menu) and becomes sticky notes or cards, and a board exported as PNG or PDF goes on a board as a picture
+            or a document you can page through. Shapes and connectors don’t come over as editable items. Visio, PowerPoint, draw.io and Excalidraw files do,
+            and Miro boards, Mural’s CSV and Lucid’s CSV of shape data import too. Freero is a whiteboard, not a design tool, so keep Figma for design work: a Figma link pasted onto a
             board opens the file in a live frame after a click.
           </p>
           <p>
@@ -175,7 +179,7 @@ export const comparison: ComparisonDef = {
     },
     {
       q: 'Can I import FigJam boards into Freero?',
-      a: 'Not today. Freero has no FigJam importer; it imports CSV, draw.io and Excalidraw files, and places images and PDFs on a board.',
+      a: 'In part. Freero has no FigJam importer, but a CSV of sticky notes or a table exported from FigJam imports as sticky notes or cards through Freero’s CSV import, and PNG or PDF exports go on a board as a picture or a document. FigJam’s shapes and connectors don’t come over as editable items.',
     },
   ],
   sources: [

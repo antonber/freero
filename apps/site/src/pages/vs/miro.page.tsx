@@ -2,7 +2,8 @@
 // "Could not verify" list is left out: monthly prices, which plans can choose EU hosting, Jira Cards'
 // plans and Data Center support, the MCP beta label and Flow caps). Source ids follow the sheet.
 // Freero facts: docs/parity.md and the docs each row links (guests are view-and-comment, not editors,
-// although the sheet says otherwise).
+// although the sheet says otherwise). Import from Miro: features/import/lib/miro.ts and server
+// modules/importers (#62; terms reasoning in docs/design/importers.md: Miro is named only as the source).
 import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
@@ -10,6 +11,7 @@ export const comparison: ComparisonDef = {
   slug: 'miro',
   competitor: 'Miro',
   checked: '2026-10-28',
+  updated: '2026-11-06',
   published: true,
   title: 'Free, open-source Miro alternative: Freero vs Miro',
   description:
@@ -110,7 +112,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Native desktop and mobile apps',
       competitor: { verdict: 'yes', note: 'plus apps for interactive displays', sources: ['S23'] },
-      freero: { verdict: 'no', note: 'installable web app; phones view and comment', ref: 'docs/parity.md' },
+      freero: { verdict: 'no', note: 'not released yet: Windows, macOS, iOS and Android apps are built but unsigned and not in the app stores; installable web app today', ref: 'docs/parity.md' },
     },
     {
       capability: 'Templates',
@@ -133,7 +135,7 @@ export const comparison: ComparisonDef = {
     'You rely on a big ecosystem: thousands of community templates and 250+ marketplace apps, including integrations Freero doesn’t have.',
     'You need native desktop and mobile apps, or apps for interactive displays.',
     'You want AI that goes further out of the box: agent-style Sidekicks, multi-step Flows and AI prototyping, without connecting a model yourself.',
-    'Your security review asks for certifications such as ISO 27001 and SOC 2 Type II, customer-managed keys or a hosted data region.',
+    'Your security review asks for certifications such as ISO 27001 and SOC 2 Type II, or for a hosted service with customer-managed keys or a choice of data region.',
   ],
   freeroStronger: [
     'You want to run your whiteboard on your own servers, under the MIT licence, in the region you choose.',
@@ -149,9 +151,21 @@ export const comparison: ComparisonDef = {
       body: () => (
         <>
           <p>
-            Freero can’t import Miro boards today. What it can bring in: CSV rows as sticky notes or cards, draw.io and Excalidraw files as editable
-            shapes, and images and PDFs placed on a board. Once you’re in, every board can be exported as an image, PDF, SVG or CSV, or downloaded as a
-            full backup file that restores on any Freero server.
+            Freero imports Miro boards. Open a Freero board, choose <strong>Import from a file or another whiteboard…</strong> in the board menu and pick{' '}
+            <strong>Miro</strong>, then paste the Miro board’s link and an access token from a Miro app you create for your own team with only the{' '}
+            <code>boards:read</code> permission. Freero reads that one board through Miro’s public REST API and adds it in one undo step: sticky notes,
+            shapes, text, frames with their contents, connectors with their arrows and captions, cards with due dates, images and tags. App cards arrive as
+            plain cards, and embeds and link previews as cards that link to the page.
+          </p>
+          <p>
+            Some things stay in Miro because its public API doesn’t give them out: comments, documents and mind-map nodes. One import brings up to 2,000
+            items and 2,000 connectors and copies up to 100 pictures; a report lists what didn’t come over. The token is used for that one import and is
+            never stored.
+          </p>
+          <p>
+            Other files come in too: Visio (.vsdx), PowerPoint (.pptx), draw.io and Excalidraw files as editable items, Mermaid and PlantUML as diagrams,
+            CSV rows as sticky notes or cards, and images and PDFs placed on a board. Once you’re in, every board can be exported as an image, PDF, SVG or
+            CSV, or downloaded as a full backup file that restores on any Freero server.
           </p>
           <p>
             If agents are part of why you are looking, start with <a href="/agents">how agents work on Freero boards</a>, or connect{' '}
@@ -173,7 +187,7 @@ export const comparison: ComparisonDef = {
     },
     {
       q: 'Can I import my Miro boards into Freero?',
-      a: 'Not today. Freero imports CSV rows as sticky notes or cards, draw.io and Excalidraw files as editable shapes, and places images and PDFs on a board, but it has no Miro importer.',
+      a: 'Yes. In a Freero board, choose Import from a file or another whiteboard… and then Miro, and paste the board’s link and an access token from a Miro app you create for your own team with only the boards:read permission. Freero reads the board through Miro’s REST API and brings over its sticky notes, shapes, text, frames, connectors, cards, images and tags in one undo step. Comments, documents and mind-map nodes stay in Miro, because its API doesn’t give them out. One import brings up to 2,000 items, and the token is never stored.',
     },
     {
       q: 'Who owns Miro now?',

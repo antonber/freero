@@ -14,6 +14,7 @@ export const comparison: ComparisonDef = {
   competitor: 'tldraw',
   column: 'tldraw.com and the tldraw SDK',
   checked: '2026-11-02',
+  updated: '2026-11-06',
   published: true,
   title: 'tldraw alternative for teams: Freero vs tldraw',
   description:
@@ -70,7 +71,7 @@ export const comparison: ComparisonDef = {
     {
       capability: 'Desktop app that works offline',
       competitor: { verdict: 'yes', note: 'tldraw offline: free, local files, no account', sources: ['T12'] },
-      freero: { verdict: 'no', note: 'installs from the browser; rides out short disconnects only', ref: 'docs/parity.md' },
+      freero: { verdict: 'partial', note: 'no released desktop app yet (a Windows and macOS app is built, unsigned); in the browser, boards opened on a device open and take edits offline and sync later', ref: 'docs/parity.md' },
     },
     {
       capability: 'Accessibility target',

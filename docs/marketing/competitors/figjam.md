@@ -107,7 +107,9 @@ plan of its own. It is included in every paid seat type [2][3].
 - **Figma platform fit:** boards live next to Design, Slides and Make. One seat and one file browser
   cover them all, and Design files are viewable and commentable from a Collab seat [2].
 - **Native apps:** the Figma desktop app plus Figma for iOS and Android. FigJam moved into the main
-  Figma app when the FigJam iPad app retired on 2026-01-08 (reported) [24]. Freero is a PWA only.
+  Figma app when the FigJam iPad app retired on 2026-01-08 (reported) [24]. Freero's desktop and mobile
+  apps are built (`docs/desktop.md`, `docs/mobile.md`) but not released: unsigned, not in the app stores;
+  today it is a PWA.
 - **Built-in AI** that Freero lacks: prompt-to-template generation, image generation in boards, and
   an upcoming agent [1][8][10]. Freero has no AI chat assistant and no image generation.
 - **Agent tooling depth:** the official MCP server writes FigJam content and is part of a wide
@@ -155,7 +157,7 @@ plan of its own. It is included in every paid seat type [2][3].
 | Audit log | Paid (Organization) | Yes | [16]; `ARCHITECTURE.md` |
 | Data residency choice | Paid (Enterprise) | Yes (self-host anywhere; no hosted regions) | [18]; `docs/deployment.md` |
 | Security certifications (SOC 2/ISO) | Yes | No | [15]; brief "Enterprise / security" |
-| Native desktop and mobile apps | Yes | No (PWA) | [24]; `apps/web/public/manifest.webmanifest` |
+| Native desktop and mobile apps | Yes | Not yet (PWA; apps built, not released) | [24]; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Template library of 300 or more | Yes | No (73) | [1]; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | Plugin or widget marketplace | Yes | No | [14]; brief "Developer platform" |
 | Accessibility conformance report (VPAT/ACR) | Yes (Dec 2023 ACR, via third party) | Partial (statement, WCAG 2.1 AA target, no VPAT) | [27]; `docs/accessibility.md` |

@@ -100,20 +100,28 @@ management options including bring-your-own-key [S14].
   templates and has no community gallery (`apps/web/src/features/templates/lib/catalog/index.ts`).
 - **Marketplace and in-board SDK.** 250+ apps [S21] and a Web SDK [S12]; Freero has no app SDK or
   marketplace (brief, "Developer platform").
-- **Native apps.** Windows, macOS, iOS, Android and interactive-display apps [S23]; Freero is a PWA
-  only, view-and-comment on phones (`docs/accessibility.md` "Touch and small screens").
+- **Native apps.** Windows, macOS, iOS, Android and interactive-display apps [S23]; Freero's
+  desktop and mobile apps are built but not released (unsigned, not in the stores: `docs/desktop.md`,
+  `docs/mobile.md`), so today it is a PWA whose phone layout opens in view-and-comment mode with the
+  full toolbar behind "Edit board" (`docs/accessibility.md` "Touch and small screens").
 - **AI depth.** Agent-style Sidekicks, multi-step Flows, AI prototyping and connectors to outside
   context [S5][S6]; Freero has no board-aware chat assistant, AI workflows, AI slides, image
   generation or semantic search (`docs/ai.md`).
 - **Certifications and enterprise controls.** ISO 27001, ISO 42001, SOC 2 Type II, IRAP, BYOK and
-  four hosted residency regions [S14]; Freero has no certifications, customer-managed keys, DLP or
-  eDiscovery, and no multi-region hosted offer (brief).
+  four hosted residency regions [S14]; Freero has no certifications and no multi-region hosted
+  offer (brief), and its customer-managed workspace keys are built but off by default and not on
+  the hosted service (`WORKSPACE_KEYS`, #159, `docs/configuration.md`).
 - **Turnkey hosting.** Nothing to run. Freero is self-hosted unless a hosted offer exists (brief).
 - **Integrations breadth.** 250+ marketplace apps, including Microsoft Teams, Google Meet and a
   two-way monday.com sync app [S21]; Freero has no Asana, Azure DevOps, monday.com, Trello, ClickUp or Notion sync
   (`docs/trackers.md`).
-- **Built-in video, import, languages.** Freero has no built-in calls, no import from Miro, and an
-  English-only interface (brief).
+- **Built-in video, languages.** Freero has no built-in calls (brief), and its ten interface
+  languages are machine translations not yet reviewed by people (`docs/design/i18n.md`).
+- **Import is partial.** Freero imports a Miro board through Miro's REST API with the person's own
+  token (#62, `docs/design/importers.md`): stickies, shapes, text, frames, connectors, cards, images
+  and tags, up to 2,000 items and 100 pictures per import. Comments, documents and mind-map nodes
+  aren't in Miro's public API, so they stay behind; app cards arrive as plain cards, embeds as link
+  cards.
 
 ## 8. Where Freero is stronger
 
@@ -177,7 +185,7 @@ Each point pairs a Freero file with the Miro-side source.
 | Audit log | Paid (Enterprise) | Yes | [S3]; `ARCHITECTURE.md` |
 | Data residency choice | Paid (Enterprise: EU/US/AU/JP) | Yes (self-host anywhere; no hosted regions) | [S3][S14]; `docs/deployment.md` |
 | Compliance certifications (SOC 2 / ISO 27001) | Yes | No | [S14]; brief "Enterprise / security" |
-| Native desktop/mobile apps | Yes | No (PWA) | [S23]; `apps/web/public/manifest.webmanifest` |
+| Native desktop/mobile apps | Yes | Not yet (PWA; apps built, not released) | [S23]; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Template library size | Yes (7,000+) | Partial (73) | [S22]; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | App marketplace | Yes (250+) | No | [S21]; brief "Developer platform" |
 | Accessibility statement / VPAT | Yes (ACR on request) | Partial (WCAG 2.1 AA statement, no VPAT) | [S14]; `docs/accessibility.md` |
