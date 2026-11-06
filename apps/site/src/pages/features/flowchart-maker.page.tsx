@@ -1,8 +1,8 @@
 // /features/flowchart-maker — "free online flowchart / diagram maker": shapes and the shape library
 // (features/shape), connectors (features/connector), Mermaid and Insert from text (features/from-text,
-// shared/layout/mermaid.ts), auto-layout (features/arrange), draw.io and Excalidraw import
-// (features/import), checked against the code. Not claimed: Mermaid class, state, ER or Gantt
-// diagrams, Visio import.
+// shared/layout/mermaid.ts, plantuml.ts), auto-layout (features/arrange), draw.io, Excalidraw and
+// Visio (.vsdx) import (features/import), checked against the code. Not claimed: Mermaid Gantt
+// or other diagram types beyond flowchart, sequence, class, ER, state and mind map.
 import { ButtonLink, Card, Cards, Code, Hero, Prompts, Section, Shot } from '../../components/ui';
 import { definePage } from '../../lib/define';
 import { feature, FeatureTemplates, OtherFeatures } from '../../lib/features';
@@ -19,7 +19,7 @@ export default definePage({
   ogTitle: 'Flowcharts and diagrams, together',
   description:
     'Draw flowcharts, UML, BPMN, ERD and network diagrams online, free and together: connectors that stay attached, auto-layout and Mermaid import.',
-  updated: '2026-11-02',
+  updated: '2026-11-06',
   sitemap: 'features',
   jsonLd: [softwareApplication()],
   faq: [
@@ -29,11 +29,11 @@ export default definePage({
     },
     {
       q: 'Can I paste a Mermaid diagram?',
-      a: 'Yes. Paste Mermaid text onto the board, or use Insert from text, and a flowchart (with subgraphs as frames), sequence diagram or mind map becomes editable shapes and connectors. The source is kept, so Edit diagram source changes the diagram and lays it out again. Other Mermaid diagram types are refused with the line that caused it.',
+      a: 'Yes. Paste Mermaid text onto the board, or use Insert from text, and a flowchart (with subgraphs as frames), a sequence, class, ER or state diagram or a mind map becomes editable shapes and connectors; PlantUML works the same way. The source is kept, so Edit diagram source changes the diagram and lays it out again. Other Mermaid diagram types, such as Gantt charts, are refused with the line that caused it.',
     },
     {
-      q: 'Can I import draw.io or Excalidraw files?',
-      a: 'Yes. Import a draw.io (.drawio) or Excalidraw file and its shapes, text and arrows become editable Freero items in one undo step, with a report of anything that could not be mapped.',
+      q: 'Can I import draw.io, Visio or Excalidraw files?',
+      a: 'Yes. Import a draw.io (.drawio), Visio (.vsdx, also Lucidchart’s Visio export) or Excalidraw file and its shapes, text and connectors become editable Freero items in one undo step, with a report of anything that could not be mapped. Visio pages become frames, and its containers and swimlanes frames too.',
     },
     {
       q: 'How do I export a diagram?',
@@ -87,7 +87,7 @@ export default definePage({
               <strong>Swimlanes and tables.</strong> Lanes and phases that grow with their content, and tables with typed columns.
             </li>
             <li>
-              <strong>Bring your diagrams.</strong> Import draw.io and Excalidraw files as editable shapes.
+              <strong>Bring your diagrams.</strong> Import draw.io, Visio (.vsdx) and Excalidraw files as editable shapes.
             </li>
           </ul>
         </div>
