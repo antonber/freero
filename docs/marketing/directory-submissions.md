@@ -18,13 +18,28 @@ without contacting support while the Claude listing slug is permanent, so it mus
 
 ## Status
 
-**Claude connectors directory: submitted 2026-11-02** (listing "Freero", slug `freero`, MCP URL
-`https://freero.app/mcp`), awaiting review. **ChatGPT app directory: not submitted** (needs
-developer mode in a workspace that allows it, and OpenAI organization verification; the upload is
-built by `npm run chatgpt:plugin`). **Official MCP Registry: published 2026-11-04** as
-`io.github.antonber/freero` 0.1.0 from [`server.json`](../../server.json) (GitHub sign-in as
-antonber). To change it, raise `version` there and run `mcp-publisher publish` again (a version can
-be published only once).
+Checked 2026-11-06. PRs below were opened from the antonber account by an agent, each saying so.
+
+| Directory | Status | Link / owner step |
+|---|---|---|
+| Claude connectors directory | Submitted 2026-11-02 (listing "Freero", slug `freero`), in review | — |
+| ChatGPT app directory | Not submitted | Owner: developer mode + OpenAI organization verification; upload `npm run chatgpt:plugin` |
+| Official MCP Registry | Published 2026-11-04, `io.github.antonber/freero` 0.1.0 from [`server.json`](../../server.json) | To change: raise `version`, run `mcp-publisher publish` (a version publishes once) |
+| Microsoft 365 | Owner's Partner Center task | — |
+| Gemini CLI extensions gallery | Ready: [`gemini-extension.json`](../../gemini-extension.json) + [`GEMINI.md`](../../GEMINI.md) at the repo root (`httpUrl`, OAuth discovery + dynamic registration, scopes read + suggest: see docs/mcp.md "Gemini CLI" for why not write) | Owner, after merging to main: `gh repo edit antonber/freero --add-topic gemini-cli-extension`. The crawler runs daily; check with `gh api 'search/code?q=repo:antonber/freero+filename:gemini-extension.json' --jq .total_count` (0 = not indexed yet) |
+| Cursor Marketplace | Ready: [`integrations/cursor/`](../../integrations/cursor/), found through the root `.cursor-plugin/marketplace.json` | Owner: signed in to Cursor, submit `https://github.com/antonber/freero` at cursor.com/marketplace/publish (manual review, no confirmation email; stuck: marketplace-publishing@cursor.com) |
+| cursor.directory | Web form only (no PRs) | Owner: cursor.directory/plugins/new → sign in with GitHub → paste `https://github.com/antonber/freero` (it reads the marketplace file and finds the rule and the MCP server) → Submit |
+| awesome-remote-mcp-servers (punkpeye) | PR open, CI passed (`endpoint-ok`, `has-connector`) | [#4048](https://github.com/punkpeye/awesome-remote-mcp-servers/pull/4048). Owner: **star the repository** from antonber (its rule: no merge otherwise) |
+| Docker MCP Catalog (docker/mcp-registry) | PR open (`servers/freero`: remote, OAuth via dynamic registration) | [#6718](https://github.com/docker/mcp-registry/pull/6718). Owner: send test credentials through the form linked in its PR template; answer review |
+| RemoteMCPList | PR open; the repo hasn't merged anything since 2025-09 | [remotemcplist/servers#173](https://github.com/remotemcplist/servers/pull/173) |
+| Glama | Listed automatically from the registry as a connector, shown **Unhealthy** (no test profile, so it can't sign in) | Owner: sign in at [glama.ai/mcp/connectors/io.github.antonber/freero](https://glama.ai/mcp/connectors/io.github.antonber/freero) with GitHub, claim it, add a test profile (the reviewer account) under Admin → Test Profile |
+| awesome-mcp-servers (punkpeye) | Not submitted: its CI asks for a Glama *server* score badge (`glama.ai/mcp/servers/antonber/freero`, not listed) | Owner: add the repo at glama.ai/mcp/servers (sign-in), then a PR with the entry in [seo.md](seo.md#awesome-mcp-servers-punkpeye-and-awesome-remote-mcp-servers) and the badge |
+| PulseMCP | Not accepting submissions (paused since 2026-09-03); says it will pick up registry entries when back | — |
+| Smithery | No self-serve listings: proxy and accounts shut down 2026-10-31; now a curated set of verified servers (run by Arcade) | — |
+| mcp.so | Website form (free review or a paid fast track); its GitHub issue queue has thousands open | Owner: mcp.so/submit → Remote Server → `https://freero.app/mcp`, free option |
+| mcpservers.org | Website form only (its repo takes no PRs); free review within 2 weeks or paid | Owner: mcpservers.org/submit, category Productivity, remote: yes, registry name `io.github.antonber/freero`, free plan |
+| LobeHub | Publishing needs a LobeHub account and its CLI (browser sign-in + GitHub connect) | Owner: `npx -y @lobehub/market-cli login`, `… github connect`, `… plugin init --url https://freero.app/mcp`, review `lhm.plugin.json` (`cloudEndpoint` `https://freero.app/mcp`), `… plugin publish https://github.com/antonber/freero` |
+| awesome-remote-mcp-servers (jaw9c) | Skipped: 200+ open PRs, last merge 2026-06 | — |
 
 | | Ready | Missing |
 |---|---|---|
