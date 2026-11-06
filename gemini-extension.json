@@ -1,0 +1,15 @@
+{
+  "name": "freero",
+  "version": "0.1.0",
+  "description": "Freero's collaborative whiteboard in Gemini CLI: find and read boards, and propose sticky notes, clusters, kanban cards and diagrams that people accept.",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "freero": {
+      "httpUrl": "https://freero.app/mcp",
+      "oauth": {
+        "enabled": true,
+        "scopes": ["boards:read", "boards:suggest"]
+      }
+    }
+  }
+}

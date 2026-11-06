@@ -168,9 +168,12 @@ Google does not use IndexNow; Search Console and the sitemap cover it. For the o
 3. The URL list comes from the same sitemaps Google reads, so it can't drift from what the site asks
    to have indexed (`site.test.ts` checks this against the built sitemaps).
 
-## Off-site listings (ready to paste; nothing has been submitted)
+## Off-site listings (ready to paste)
 
-Facts used below are true of the code on 2026-11-02. Re-read each site's rules when filing.
+Facts used below are true of the code on 2026-11-02. Re-read each site's rules when filing. What has
+been filed (MCP and AI-tool directories, as of 2026-11-06) is tracked in the Status table of
+[directory-submissions.md](directory-submissions.md#status); none of the listings below it
+(AlternativeTo, Product Hunt, …) has been submitted.
 
 ### GitHub repository (antonber/freero)
 
@@ -251,12 +254,16 @@ without the words "open-source", "free" or "self-hosted", "(alternative to …)"
 - **awesome-remote-mcp-servers** fits freero.app (a hosted endpoint with public sign-up). Rules
   (CONTRIBUTING.md, 2026-11-02): the URL must answer an MCP `initialize` (CI checks; `https://freero.app/mcp`
   answers 401 with OAuth metadata, as OAuth servers do), usable by anyone, **listed as a Glama
-  connector** with its badge, description ≤ 120 characters. Entry:
+  connector** with its badge, description ≤ 120 characters, and the PR's account must have starred
+  the repo. **Submitted 2026-11-06 as
+  [#4048](https://github.com/punkpeye/awesome-remote-mcp-servers/pull/4048)** (Workplace &
+  Productivity; CI passed); the owner still has to star the repo. Glama had already listed the
+  connector from the MCP Registry as `io.github.antonber/freero`. Entry as filed:
 
   ```markdown
   - [Freero](https://freero.app) `https://freero.app/mcp`
-    [![Freero MCP connector](https://glama.ai/mcp/connectors/<glama-id>/badges/score.svg)](https://glama.ai/mcp/connectors/<glama-id>)
-    🔐 - Read and build on collaborative whiteboards: notes, clusters, kanban cards, diagrams, tracker sync; edits reviewable.
+    [![Freero MCP connector](https://glama.ai/mcp/connectors/io.github.antonber/freero/badges/score.svg)](https://glama.ai/mcp/connectors/io.github.antonber/freero)
+    🔐 - Read and add to team whiteboards: sticky notes, clusters, kanban cards and diagrams, or propose changes people accept.
   ```
 - **awesome-mcp-servers** is for servers you run yourself from a public GitHub repo; Freero's MCP
   server ships inside the self-hosted product, so it fits under "Workplace & Productivity":
@@ -264,14 +271,18 @@ without the words "open-source", "free" or "self-hosted", "(alternative to …)"
   ```markdown
   - [antonber/freero](https://github.com/antonber/freero) 📇 ☁️ 🏠 - Open-source collaborative whiteboard with a built-in MCP server (OAuth 2.1): read boards as outlines, add notes, clusters, kanban cards and Mermaid diagrams, or propose changes people accept; two-way Jira, Linear and GitHub sync.
   ```
-  Entries there mostly carry a Glama score badge too.
-- **Needs from the owner**: claim the server and connector on glama.ai (sign in with GitHub) to get
-  the badge ids; open the PRs by hand.
-- Also worth listing (free, self-serve): the official MCP Registry (`registry.modelcontextprotocol.io`,
-  a `server.json` with a `remotes` entry for `https://freero.app/mcp`; namespace `app.freero/*` needs
-  DNS verification of freero.app, or `io.github.antonber/*` via GitHub sign-in), mcp.so, PulseMCP,
-  Smithery. The Claude connectors directory and ChatGPT app directory have their own checklist in
-  `directory-submissions.md`.
+  Its CI asks for a Glama *server* score badge (`glama.ai/mcp/servers/antonber/freero`), and Glama
+  doesn't list the repository as a server yet (only the connector), so this one is **not
+  submitted**.
+- **Needs from the owner**: claim the connector on glama.ai (sign in with GitHub) and add a test
+  profile so it stops showing Unhealthy; add the repository at glama.ai/mcp/servers for the
+  awesome-mcp-servers badge, then open that PR with the entry above and the badge.
+- Also worth listing: the official MCP Registry (**published 2026-11-04** as
+  `io.github.antonber/freero`), mcp.so and mcpservers.org (website forms: owner steps), PulseMCP
+  (submissions paused; it says it will pick up registry entries), Smithery (no self-serve listings
+  since 2026-10-31). The Claude connectors directory and ChatGPT app directory have their own
+  checklist in `directory-submissions.md`, which also tracks the Gemini CLI, Cursor, Docker MCP
+  Catalog and RemoteMCPList listings.
 
 ### Product Hunt
 

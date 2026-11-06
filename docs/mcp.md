@@ -121,6 +121,18 @@ VS Code opens the browser to sign in the first time.
 - **Windsurf** (Devin Desktop since 2026-06): in Cascade's raw MCP config,
   `{ "mcpServers": { "freero": { "serverUrl": "https://<your-freero>/mcp" } } }`
   ([docs](https://docs.devin.ai/desktop/cascade/mcp)).
+- **Gemini CLI**: for the hosted service, `gemini extensions install https://github.com/antonber/freero`
+  (the repo's [`gemini-extension.json`](../gemini-extension.json): the server plus
+  [`GEMINI.md`](../GEMINI.md), a short guide to the tools), which asks for read + suggest only.
+  For your own server, or to add write and comment permissions, in `~/.gemini/settings.json`:
+  `{ "mcpServers": { "freero": { "httpUrl": "https://<your-freero>/mcp", "oauth": { "enabled": true, "scopes": ["boards:read", "boards:suggest", "boards:write", "comments:write"] } } } }`,
+  then `/mcp auth freero` ([docs](https://geminicli.com/docs/tools/mcp-server)) and **tick every
+  permission** on the consent screen. Always name the scopes (without them Gemini CLI asks for
+  every scope the authorization server lists, the team-admin ones included), and only ones you will
+  grant: Gemini CLI sends them again on every token refresh, and Freero refuses a refresh that asks
+  for more than was granted, so the connection then has to sign in again.
+- **Cursor plugin**: [`integrations/cursor/`](../integrations/cursor/) is the Cursor Marketplace
+  package for the hosted service (the server plus a rule on using the tools).
 - A client that runs only local (stdio) servers: the [mcp-remote](https://github.com/geelen/mcp-remote)
   bridge, `{ "command": "npx", "args": ["mcp-remote", "https://<your-freero>/mcp"] }`.
 
