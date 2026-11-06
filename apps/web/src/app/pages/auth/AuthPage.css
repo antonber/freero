@@ -366,3 +366,21 @@
   display: flex;
   justify-content: center;
 }
+
+/* "How did you find Freero?": optional, so quieter than the fields above it. */
+.fr-authcard__source {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fr-authcard__source-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-authcard__optional {
+  font-weight: 400;
+  color: var(--fr-ink-3);
+}

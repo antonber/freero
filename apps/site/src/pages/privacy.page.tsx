@@ -7,7 +7,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs } from '../lib/site';
 
-const UPDATED = '2026-11-03';
+const UPDATED = '2026-11-06';
 
 export default definePage({
   path: '/privacy',
@@ -59,6 +59,7 @@ export default definePage({
         </li>
         <li>If you sign in with a provider (such as Google or Microsoft) or your organization’s single sign-on: that provider’s identifier for you and the email address it gives us.</li>
         <li>Whether your email address is verified, when you joined, and your notification and email preferences.</li>
+        <li>If you answer the optional question when you sign up: how you found Freero, as one of a few fixed choices (such as search engine or AI assistant).</li>
       </ul>
       <h3>What you create and share</h3>
       <ul>

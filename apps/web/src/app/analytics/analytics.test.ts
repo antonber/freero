@@ -119,4 +119,6 @@ it('no app route carries an id or token to Google, and no event carries text tha
   }
   expect(analyticsEventParams({ name: 'template_used', template: 'Q3 layoffs plan' })).toBeNull();
   expect(analyticsEventParams({ name: 'login', method: 'anton@example.com' })).toBeNull();
+  // "How did you find Freero?" goes as one of its fixed answers, never as what someone typed.
+  expect(analyticsEventParams({ name: 'sign_up', method: 'password', source: 'my friend Ada at Acme' as never })).toBeNull();
 });

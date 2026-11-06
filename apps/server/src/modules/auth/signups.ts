@@ -5,9 +5,11 @@
 // Asked by the two ways a person makes their own account — signup with a password and a first
 // sign-in with a personal provider. Accounts the organization's identity provider or directory makes
 // (SSO just in time, SCIM) are vouched for by a workspace that proved the domain, so they pass.
+import { DISCOVERY_SOURCES, type DiscoverySource } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
+import { countDiscoverySources } from './repo';
 
 export const SIGNUP_CLOSED = 'signup_closed';
 
@@ -39,4 +41,19 @@ export async function signupRefusal(email: string): Promise<string | null> {
 export async function assertSignupAllowed(email: string): Promise<void> {
   const why = await signupRefusal(email);
   if (why) throw new HttpError(403, why, SIGNUP_CLOSED);
+}
+
+/**
+ * How the accounts created in [since, until) found Freero, by their answer at sign-up: every
+ * answer (0 when nobody gave it) and `none` (skipped, or made without the form: a provider, SSO, a
+ * directory). Counted from the accounts, so it doesn't depend on anyone's analytics choice.
+ */
+export async function discoverySourceCounts(since: number, until: number): Promise<{ answers: Record<DiscoverySource, number>; none: number; total: number }> {
+  const answers = Object.fromEntries(DISCOVERY_SOURCES.map((s) => [s, 0])) as Record<DiscoverySource, number>;
+  let none = 0;
+  for (const { source, count } of await countDiscoverySources(since, until)) {
+    if (source === null) none += count;
+    else answers[source] += count;
+  }
+  return { answers, none, total: none + Object.values(answers).reduce((a, b) => a + b, 0) };
 }

@@ -379,6 +379,7 @@ workspace (modules/workspaces).
 | Data | Store (owner) | In the personal export | On account purge | On workspace deletion |
 |---|---|---|---|---|
 | Name, email, cursor colour, avatar, verified flag, created | `users` + avatar file (auth, uploads) | `account.json`, `uploads/` | deleted (row, avatar file) | — |
+| "How did you find Freero?" answer at sign-up (optional; one of `DISCOVERY_SOURCES`) | `users.discovery_source` (auth) | `account.json` → `profile.discoverySource` | deleted (row) | — |
 | Password hash, two-step secret (sealed), recovery codes (sha256) | `users`, `user_totp`, `user_recovery_codes` (auth) | only whether they are set — never the secrets | deleted (cascade) | — |
 | Signed-in devices: user agent, IP, sign-in method, times | `sessions`, `auth_devices` (sha256 of a device cookie) (auth) | `account.json` (IP masked) | deleted (cascade) | — |
 | Connected sign-in providers / SSO identities (issuer, subject, email) | `auth_identities` (auth) | `account.json` | deleted (cascade) | SSO identities of that workspace stay on the account (inert: the workspace's IdP is gone) |
@@ -619,6 +620,14 @@ built-in PGlite database (no `DATABASE_URL`) stop the server first (one process 
 Every command that changes an account writes an `"audit"` log line (action, the operator's name,
 their stated reason, the account id) and records the same event in the audit log: the account's
 own chain and the logs of its team workspaces, where their admins see it.
+
+`npm run admin -- signups:sources [--since YYYY-MM-DD] [--until YYYY-MM-DD]` counts the accounts created
+in the period (UTC days, the last 30 by default) by their answer to "How did you find Freero?", the
+optional question on the sign-up form: discovery Google Analytics files under Direct (someone an AI
+assistant told about Freero who typed the address). It reads the accounts, so it counts whatever
+anyone's analytics choice. "No answer" is a skipped question or an account made without the form
+(Google, Microsoft, single sign-on, a directory: they aren't asked). Deleted accounts no longer
+count. Changes nothing.
 
 `npm run admin -- api:revoke-all <user id | email>` revokes every API token and app authorisation of an
 account at once (a compromised integration, an account being taken back): their next API call is

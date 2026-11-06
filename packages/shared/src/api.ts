@@ -860,8 +860,22 @@ export interface BoardMember {
 // POST /api/auth/two-factor/recovery/cancel-link body { token } -> { ok: true } (the link in the recovery mails)
 // POST /api/auth/two-factor/recovery/cancel -> SecurityInfo (signed in)
 // Any accepted second-factor code also cancels a recovery in progress.
-/** `locale` [additive, #5]: the language the sign-up page is in (the account's language from the start). */
-export interface SignupRequest { name: string; email: string; password: string; locale?: string }
+/**
+ * "How did you find Freero?", the optional question on the sign-up form: one of these, or no answer.
+ * Stored on the account (users.discovery_source, counted by `npm run admin -- signups:sources`) and
+ * sent with GA4's sign_up event. Kept in step with the CHECK constraint of auth's migration
+ * 202612050900_discovery_source.sql: a new answer adds a migration too.
+ */
+export const DISCOVERY_SOURCES = ['search', 'ai_assistant', 'colleague', 'social', 'open_source', 'directory', 'other'] as const;
+export type DiscoverySource = (typeof DISCOVERY_SOURCES)[number];
+export const isDiscoverySource = (v: unknown): v is DiscoverySource => typeof v === 'string' && (DISCOVERY_SOURCES as readonly string[]).includes(v);
+
+/**
+ * `locale` [additive, #5]: the language the sign-up page is in (the account's language from the start).
+ * `discoverySource` [additive]: the answer to "How did you find Freero?" if they gave one; anything
+ * else is ignored (never a reason to refuse the sign-up).
+ */
+export interface SignupRequest { name: string; email: string; password: string; locale?: string; discoverySource?: DiscoverySource }
 export interface LoginRequest { email: string; password: string }
 export type LoginResponse = AuthResponse | { twoFactorRequired: true };
 

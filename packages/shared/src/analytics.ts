@@ -4,6 +4,7 @@
 // its route with every id and token taken out (/board/<id> → /board), with a generic title, and
 // without its query string (UTM campaign tags excepted). Pure: used by the web app's bridge and
 // its tests.
+import { isDiscoverySource, type DiscoverySource } from './api';
 import { integrationById } from './integrations';
 
 /** What `GET /api/analytics` answers: whether this server measures with Google Analytics. */
@@ -16,8 +17,11 @@ export const isGaMeasurementId = (id: string): boolean => /^G-[A-Z0-9]{4,20}$/.t
 
 /** Product events, each with only the parameters listed here (never a title, name, email or id). */
 export type AnalyticsEvent =
-  /** `method`: `password`, a sign-in provider's id (`google`, `microsoft`) or `sso`. */
-  | { name: 'sign_up'; method: string }
+  /**
+   * `method`: `password`, a sign-in provider's id (`google`, `microsoft`) or `sso`. `source`: the
+   * answer to "How did you find Freero?" (only the sign-up form asks), sent as `discovery_source`.
+   */
+  | { name: 'sign_up'; method: string; source?: DiscoverySource }
   | { name: 'login'; method: string }
   | { name: 'board_created' }
   /** A built-in template by its public catalog id (the slug of its page on the site). */
@@ -26,7 +30,11 @@ export type AnalyticsEvent =
 /** The GA4 parameters of an event, or null when a value isn't one the event may carry (it is then not sent). */
 export function analyticsEventParams(e: AnalyticsEvent): Record<string, string> | null {
   switch (e.name) {
-    case 'sign_up':
+    case 'sign_up': {
+      if (!/^[a-z][a-z0-9_-]{1,23}$/.test(e.method)) return null;
+      if (e.source === undefined) return { method: e.method };
+      return isDiscoverySource(e.source) ? { method: e.method, discovery_source: e.source } : null;
+    }
     case 'login':
       return /^[a-z][a-z0-9_-]{1,23}$/.test(e.method) ? { method: e.method } : null;
     case 'board_created':
