@@ -418,11 +418,14 @@ export async function tokenRequest(req: Request, body: Record<string, unknown>) 
     if (used.clientId !== client.id || !used.grantId || (used.expiresAt !== null && used.expiresAt <= now)) throw new OAuthError('invalid_grant', 'The refresh token is invalid or expired');
     const grant = await repo.getGrant(used.grantId);
     if (!grant) throw new OAuthError('invalid_grant', 'The person revoked this app’s access');
+    // A refresh keeps or narrows the scopes. Asking for more never fails: the refresh token is already
+    // used up here, so refusing would sign the app out (and its retry would read as a replay). Some
+    // clients (Gemini CLI) resend every scope they want on each refresh; they get what was granted,
+    // and the response's `scope` says so (RFC 6749 §5.1).
     let scopes = used.scopes;
     if (typeof body.scope === 'string' && body.scope.trim()) {
-      const asked = body.scope.split(' ').filter(Boolean);
-      if (asked.some((s) => !scopes.includes(s))) throw new OAuthError('invalid_scope', 'A refresh can only keep or narrow the scopes');
-      scopes = asked;
+      const kept = body.scope.split(' ').filter((s) => used.scopes.includes(s));
+      if (kept.length) scopes = [...new Set(kept)];
     }
     return issueTokens(grant, scopes, used.issuedVia, client.name);
   }

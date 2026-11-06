@@ -110,6 +110,17 @@ it('an authorization code works once and only with its PKCE verifier; a replayed
   await expect(exchange({ grant_type: 'refresh_token', client_id: again.clientId, refresh_token: second.refresh_token })).rejects.toMatchObject({ error: 'invalid_grant' });
 });
 
+it('a refresh asking for more scopes than were granted keeps the app signed in with what was granted, and never widens it', async () => {
+  const app = await authorizeApp(alice.id); // granted boards:read only
+  const first = await exchange({ grant_type: 'authorization_code', client_id: app.clientId, code: app.code, code_verifier: app.verifier });
+  const second = await exchange({ grant_type: 'refresh_token', client_id: app.clientId, refresh_token: first.refresh_token, scope: 'boards:read boards:write members:manage' });
+  expect(second.scope).toBe('boards:read');
+  // Still signed in: the new refresh token works (a refusal above would have burnt the old one).
+  const third = await exchange({ grant_type: 'refresh_token', client_id: app.clientId, refresh_token: second.refresh_token, scope: 'boards:write' });
+  expect(third.scope).toBe('boards:read');
+  expect(await refusal(third.access_token)).toBeNull();
+});
+
 it('every authorization response — a code, a refusal, a bad request sent back to the app — names this server as the metadata does, so a client can’t be fooled by a mix-up (RFC 9207)', async () => {
   const meta = authorizationServerMetadata({} as Request);
   expect(meta.authorization_response_iss_parameter_supported).toBe(true);
