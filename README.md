@@ -18,7 +18,7 @@ Use it free at **[freero.app](https://freero.app)**, or self-host it from one Do
   "bring everyone to me", emoji reactions, comment threads, owner/editor/commenter/viewer roles,
   share by invite or link.
 - **Facilitation** — voting sessions, a shared timer, presentation mode over frames.
-- **Templates & export** — 180 original templates in 18 categories; export PNG/JPG/SVG, frames to PDF, copy as image.
+- **Templates & export** — 586 original templates (retrospectives, planning, workshops, diagrams, strategy and more); export PNG/JPG/SVG, frames to PDF, copy as image.
 - **Dashboard** — boards grid/list, search, filters, stars, live thumbnails, duplicate, sharing.
 
 ## Run it
