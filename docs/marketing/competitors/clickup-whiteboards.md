@@ -64,7 +64,7 @@ Proprietary and closed source, sold only as SaaS. We found no on-premises or sel
 - **All-in-one platform.** Tasks, docs, chat, dashboards, time tracking and whiteboards share one workspace, and stickies become real tasks without an integration. Freero is a whiteboard that syncs to trackers. It has no task system or docs product of its own beyond board items.
 - **Being where the team already works.** For a team already on ClickUp, the whiteboard adds no extra tool, login or vendor.
 - **AI depth and packaging.** Brain is built in with credits on every plan, generates flowcharts from workspace data and runs agents across ClickUp. Freero has no built-in chat assistant, AI workflows or semantic search, and its AI is off until an operator connects a model (`docs/ai.md`; brief "Honest gaps").
-- **Native apps.** ClickUp offers iOS, Android, Mac and Windows downloads (https://clickup.com/pricing, download menu, checked 2026-10-28). Freero is a PWA only.
+- **Native apps.** ClickUp offers iOS, Android, Mac and Windows downloads (https://clickup.com/pricing, download menu, checked 2026-10-28). Freero's Windows, macOS, iOS and Android apps are built (`docs/desktop.md`, `docs/mobile.md`) but not released: unsigned, not in the app stores; today it is a PWA.
 - **Certifications and compliance.** ClickUp holds SOC 1/2/3, five ISO certifications and HIPAA on Enterprise. Freero has no compliance certifications.
 - **Hosted data residency** in three regions, with no servers to run. Freero has no hosted multi-region offer.
 - **Scale, support and ecosystem.** ClickUp has a large user base, a mature vendor and a broad integration catalog. Freero is a young project with no documented support contracts or SLAs.
@@ -103,7 +103,7 @@ Proprietary and closed source, sold only as SaaS. We found no on-premises or sel
 | SCIM | Paid | Yes | clickup.com/pricing; `docs/configuration.md` |
 | Audit log | Paid | Yes | clickup.com/pricing; `ARCHITECTURE.md`, `docs/configuration.md` |
 | Data residency choice | Paid | Partial⁶ | clickup.com/security; `docs/deployment.md` |
-| Native apps | Yes | No | clickup.com/pricing (download menu); `apps/web/public/manifest.webmanifest` |
+| Native apps | Yes | Not yet (PWA; apps built, not released) | clickup.com/pricing (download menu); `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Whiteboard facilitation (voting / timer / private mode) | No⁷ | Yes | clickup.com/features/whiteboard, feedback.clickup.com/feature-requests/p/digital-timer-pomodoro; `README.md` |
 | Templates | Yes | Yes | clickup.com/features/whiteboard; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | Guest access | Yes | Yes | clickup.com/pricing; `ARCHITECTURE.md` ("Guests") |

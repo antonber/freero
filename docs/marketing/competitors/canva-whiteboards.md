@@ -96,7 +96,7 @@ change recorded 2026-09-14, none recorded in October 2026) [4][5]. Moda's review
 - **One suite for the whole flow:** a whiteboard can become a doc, presentation or social asset in the
   same editor (Magic Switch) [2][8]. Freero's closest equivalent is a slide deck built from frames
   (`ARCHITECTURE.md` "Slide deck (KAI-126)").
-- **Native apps:** Windows, Mac, iOS and Android [24]. Freero is a PWA only.
+- **Native apps:** Windows, Mac, iOS and Android [24]. Freero's Windows, macOS, iOS and Android apps are built (`docs/desktop.md`, `docs/mobile.md`) but not released: unsigned, not in the app stores; today it is a PWA.
 - **App ecosystem:** Apps Marketplace with 430+ apps [15]. Freero has no marketplace or SDK.
 - **AI breadth Freero lacks:**
   - Image generation and background removal (MCP `generate-image`, `remove-background`) [11].
@@ -144,7 +144,7 @@ change recorded 2026-09-14, none recorded in October 2026) [4][5]. Moda's review
 | Audit log | Paid (Enterprise) | Yes | [17]; `ARCHITECTURE.md` |
 | Data residency choice | Paid (Enterprise: US/EU) | Yes (self-host anywhere; no hosted regions) | [16]; `docs/deployment.md` |
 | Security certifications (SOC 2/ISO) | Yes | No | [17]; brief "Enterprise / security" |
-| Native desktop and mobile apps | Yes | No (PWA) | [24]; `apps/web/public/manifest.webmanifest` |
+| Native desktop and mobile apps | Yes | Not yet (PWA; apps built, not released) | [24]; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Very large template library | Yes (1.6M+ across Canva) | No (73) | [7]; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | App marketplace | Yes (430+ apps) | No | [15]; brief "Developer platform" |
 | Accessibility conformance report (VPAT/ACR) | Yes | Partial (statement, no VPAT) | [19]; `docs/accessibility.md` |

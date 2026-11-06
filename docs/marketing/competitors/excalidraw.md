@@ -116,7 +116,7 @@ From the Excalidraw+ pricing page [3], checked 2026-10-28. Prices are in USD.
   products [2]. Freero documents no embeddable editor component and has no SDK.
 - **Privacy model:** live sessions on excalidraw.com are end-to-end encrypted, and drawings autosave
   locally [2].
-- **Offline use:** the PWA works offline [2]. Freero only rides out short disconnects.
+- **Offline use:** the PWA works offline [2]. Freero keeps boards opened on a device there: they open and take edits without a connection and sync later (#178), but a first visit needs the server and an account.
 - **AI on the free tier with no setup:** 10 requests a day, including text-to-diagram, Mermaid
   import and wireframe-to-code [3]. Freero's AI is off until an operator configures a model, and its AI
   actions don't include wireframe-to-code (`docs/ai.md`).
@@ -167,8 +167,8 @@ From the Excalidraw+ pricing page [3], checked 2026-10-28. Prices are in USD.
 | Audit log | Partial (beta logs endpoint) | Yes | [8][12]; `ARCHITECTURE.md` |
 | Data residency choice | Partial (self-host editor anywhere; hosted region not selectable) | Yes (self-host anywhere; no hosted regions) | [6][16]; `docs/deployment.md` |
 | Security certifications (SOC 2/ISO) | Yes (SOC 2, Plus) | No | [16]; brief "Enterprise / security" |
-| Native desktop and mobile apps | No (PWA) | No (PWA) | [2]; `apps/web/public/manifest.webmanifest` |
-| Works offline | Yes (PWA) | No (short disconnects only) | [2]; brief "Honest gaps" |
+| Native desktop and mobile apps | No (PWA) | Not yet (PWA; apps built, not released) | [2]; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
+| Works offline | Yes (PWA) | Yes (boards opened on the device; sync later) | [2]; `ARCHITECTURE.md` "Offline copies" |
 | Embeddable editor component (npm) | Yes | No (not documented) | [2]; brief "Developer platform" |
 | Built-in board templates | Partial (community shape libraries) | Yes (73) | [19]; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | Plugin marketplace | No | No | [2]; brief "Developer platform" |

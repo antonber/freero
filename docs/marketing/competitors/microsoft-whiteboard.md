@@ -83,7 +83,7 @@ All of these come from the Microsoft 365 tenant, so they need a paid commercial 
 | Facilitation and planning: voting, timer, polls, planning poker, kanban, timeline, 73 templates | `README.md`, `apps/web/src/features/*`, templates catalog | Copilot works on sticky notes only; templates exist (§9) |
 | Keyboard "Board as list" view, high-contrast support, WCAG 2.1 AA target | `docs/accessibility.md` | Microsoft publishes keyboard and screen-reader support docs (https://support.microsoft.com/whiteboard/whiteboard-accessibility-support) |
 
-**Migration reality:** Freero has **no Whiteboard file importer** and no Miro/Mural importer (brief "Honest gaps"). Microsoft's documented exports are image export from the board and HTML export for admins via `Export-WhiteboardHtml` (https://support.microsoft.com/en-us/whiteboard/migration-of-whiteboards-from-azure-to-onedrive). An exported image can be placed on a Freero board as an image (`README.md`: images), but it will not become editable sticky notes.
+**Migration reality:** Freero has **no Whiteboard file importer** (it imports Miro boards and Mural's and Lucid's CSV exports, `docs/design/importers.md`, but nothing from Whiteboard). Microsoft's documented exports are image export from the board and HTML export for admins via `Export-WhiteboardHtml` (https://support.microsoft.com/en-us/whiteboard/migration-of-whiteboards-from-azure-to-onedrive). An exported image can be placed on a Freero board as an image (`README.md`: images), but it will not become editable sticky notes.
 
 ## 9. Suggested comparison table
 
@@ -105,7 +105,7 @@ All of these come from the Microsoft 365 tenant, so they need a paid commercial 
 | SCIM | Paid (tenant-level via Entra ID, not Whiteboard-specific) | Yes | same; `docs/configuration.md` |
 | Audit log | Paid (Purview file activities) | Yes | https://learn.microsoft.com/en-us/microsoft-365/whiteboard/manage-data-organizations; `ARCHITECTURE.md` |
 | Data residency choice | Paid (follows tenant OneDrive location) | Yes (self-host anywhere) | same; `docs/deployment.md` |
-| Native apps | Partial (inside Teams clients; standalone apps Retired Oct 16, 2026) | No (PWA) | https://mc.merill.net/message/MC1469557; `apps/web/public/manifest.webmanifest` |
+| Native apps | Partial (inside Teams clients; standalone apps Retired Oct 16, 2026) | Not yet (PWA; apps built, not released) | https://mc.merill.net/message/MC1469557; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Templates | Yes | Yes (73) | https://support.microsoft.com/en-us/whiteboard/insert-templates-in-whiteboard; templates catalog |
 | Guest access | Partial (meeting-only for anonymous users; B2B for persistent) | Yes | https://learn.microsoft.com/en-us/microsoft-365/whiteboard/manage-sharing-organizations; `ARCHITECTURE.md` |
 | Accessibility statement | Yes (support docs; Microsoft ACR program) | Yes | https://support.microsoft.com/whiteboard/whiteboard-accessibility-support; https://www.microsoft.com/en-us/accessibility/conformance-reports; `docs/accessibility.md` |

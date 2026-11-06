@@ -101,7 +101,7 @@ The whiteboard comes with Confluence: "included with Confluence", with capabilit
 | SCIM | Paid | Yes | atlassian.com/software/guard/pricing; `docs/configuration.md` |
 | Audit log | Paid | Yes | atlassian.com/software/guard/pricing; `ARCHITECTURE.md` |
 | Data residency choice | Paid | Partial⁷ | support "understand-data-residency"; `docs/deployment.md` |
-| Native apps | No⁸ | No | jira.atlassian.com/browse/CONFCLOUD-79999; `apps/web/public/manifest.webmanifest` |
+| Native apps | No⁸ | Not yet (PWA; apps built, not released) | jira.atlassian.com/browse/CONFCLOUD-79999; `apps/web/public/manifest.webmanifest`, `docs/desktop.md`, `docs/mobile.md` |
 | Whiteboard facilitation (voting / timer / private mode) | Yes | Yes | support "create-and-edit-confluence-whiteboards"; `README.md` |
 | Templates | Yes | Yes | atlassian.com/software/whiteboards; `apps/web/src/features/templates/lib/catalog/index.ts` |
 | Guest access | Partial⁹ | Yes | support kb "share-confluence-cloud-whiteboards-with-external-users"; `ARCHITECTURE.md` |

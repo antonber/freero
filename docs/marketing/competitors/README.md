@@ -107,13 +107,16 @@ similar). The ranking below weighs three things:
   has no chat assistant, AI workflows, image generation or semantic search (`docs/ai.md`). Keep it
   that way in the tables.
 - **The same gaps appear in every sheet; don't hide them:**
-  - no native apps (PWA only)
+  - no released native apps (desktop and mobile apps built, unsigned, not in the stores; PWA today)
   - no marketplace or SDK
   - a smaller template library (73)
-  - no SOC 2 or ISO certifications, customer-managed keys, DLP or eDiscovery
+  - no SOC 2 or ISO certifications, and no customer-managed keys on the hosted service (workspace
+    keys are built and off by default: `WORKSPACE_KEYS`, #159)
   - no hosted data-residency regions
   - no built-in calls
-  - no importer from other whiteboards
+  - imports from other whiteboards are partial: Miro through the person's own API token (no
+    comments, documents or mind maps), Mural and Lucid through their own CSV exports, FigJam
+    through its sticky CSV only (`docs/design/importers.md`)
   - English only
 
 ## Legal and brand cautions for comparative pages
@@ -195,5 +198,4 @@ publishing.
   - Atlassian's MCP v2 whiteboard support; v1 connections move on 2027-03-01.
   - Notion's rebuilt Jira and GitHub syncs.
   - Microsoft's Azure Whiteboard service shutdown on 2026-11-30.
-- When Freero ships something on the gap list (the MCP Apps board preview, KAI-171; importers;
-  certifications), update the Freero column in every table, not just one sheet.
+- When Freero ships something on the gap list (the MCP Apps board preview, KAI-171; certifications), update the Freero column in every table, not just one sheet.
