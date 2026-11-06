@@ -1309,7 +1309,18 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   prose sections (a retirement timeline, moving over) cite sources through the same numbering, and
   the site tests check that every Freero `[docs]` link names a file in the repo. `/vs` lists the
   published comparisons, found from the build's pages (a page body receives `{ pages }`), and the
-  footer links it.
+  footer links it. Each page exports its definition as `comparison`, so other pages can reuse rows.
+- **Answers** (`/answers/<slug>`, `src/lib/answers.tsx` `defineAnswer`): one question people ask a
+  search engine or an AI assistant, answered in the first sentences, then facts, a matrix, steps and
+  an FAQ. A matrix (`MatrixSection`, also on `/open-source`) never states a competitor fact itself:
+  each cell is a row of a published comparison with that row's sources and check dates, and a
+  renamed row or an unpublished comparison fails the build. `/answers` lists them from the build's
+  pages; their own sitemap is `sitemap-answers.xml`.
+- **Key facts** (`/facts`, `src/lib/facts.tsx`): short dated statements with where to check each,
+  shared with llms.txt; counts, client, tracker and language names are read from the catalogs they
+  describe. Every page shows its `updated` date (under the breadcrumbs, or above the closing band on
+  `/`), the same date as the WebPage's `dateModified`; a legal article prints its own
+  (`dateInBody`).
 - **One build, any deployment.** Pages are built with the placeholder origin
   `https://origin.freero.invalid`; `modules/site` swaps in `PUBLIC_URL` when it serves them (once
   per origin, cached), so the Docker image is the same everywhere. The build writes
@@ -1318,7 +1329,7 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
 - **Serving** (`modules/site/routes.ts`, mounted at `/`): `/` → the landing page, or 302 `/app` for
   a signed-in person (`Vary: Cookie`); known pages with `Cache-Control: no-cache` (ETag);
   `/claude/` → 301 `/claude`; a missing page under `/vs/`, `/features/`, `/use-cases/`,
-  `/templates/`, `/integrations/` → the site's 404; `/_site/*` immutable; anything else falls through to the web
+  `/templates/`, `/integrations/`, `/answers/` → the site's 404; `/_site/*` immutable; anything else falls through to the web
   app. `SITE=false` (or no build): `/` → `/app`, nothing marketing, `robots.txt` `Disallow: /`.
   The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
@@ -1348,8 +1359,8 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   confirm. Approving = removing the flag and the marks (after fixing any statement that turned out
   wrong); none of the trust pages carries either today.
 - **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
-  like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
-  and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
+  like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata,
+  the key facts, the answer pages (llms-full.txt with their FAQ) and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
   tests fail when it drifts from the MCP server's `tools.ts` / `prompts.ts`.
 - **Screenshots** are real: `scripts/site-shots.mjs` drives the built app on a throwaway server
   (accounts, a board, a personal token proposing changes as an agent, a mock Jira) and writes WebP

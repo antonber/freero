@@ -44,11 +44,11 @@ export default definePage({
           kind="no"
           items={[
             'No native desktop or mobile apps: Freero installs from the browser as a web app, and phones get a view-and-comment layout.',
-            'No built-in AI until someone connects a model, and no AI chat assistant, AI workflows or image generation.',
-            'No security certifications such as SOC 2 or ISO 27001, no customer-managed keys, DLP or eDiscovery, and no choice of hosted data region: organizations that need one host Freero themselves.',
+            'No built-in AI until someone connects a model, and no image generation.',
+            'No security certifications such as SOC 2 or ISO 27001, and no choice of hosted data region: organizations that need one host Freero themselves.',
             'No built-in audio or video: a board links to your meeting or a Jitsi room.',
             'Imports cover CSV, draw.io and Excalidraw files, plus images and PDFs placed on a board; there is no importer for Miro, Mural, FigJam, Microsoft Whiteboard, Confluence or Jamboard boards.',
-            `A library of ${SITE_TEMPLATES.length} original templates, no plugin SDK (integrations connect from outside, through the API, webhooks and MCP), and an English-only interface.`,
+            `A library of ${SITE_TEMPLATES.length} original templates, no plugin SDK (integrations connect from outside, through the API, webhooks and MCP), and interface translations that are machine-made and not yet reviewed by people.`,
           ]}
         />
         <p>

@@ -1,6 +1,9 @@
 // /llms.txt and /llms-full.txt (llmstxt.org): what Freero is and how an agent connects to it, in
 // Markdown for language models. Built with the placeholder origin like every page; modules/site
 // puts the instance's PUBLIC_URL in when it serves them, so each deployment describes itself.
+import { answerPages } from './answers';
+import type { PageDef } from './define';
+import { FACTS, FACTS_CHECKED } from './facts';
 import { MCP_PROMPTS, MCP_TOOLS } from './mcp';
 import { abs, APP, docsUrl, MCP_URL } from './site';
 
@@ -22,7 +25,28 @@ const connection = (): string[] => [
 
 const NEEDS: Record<string, string> = { read: 'boards:read', suggest: 'boards:suggest', write: 'boards:write', comment: 'comments:write' };
 
-export function llmsTxt(): string {
+const href = (h: string) => (h.startsWith('/') ? abs(h) : h);
+
+/** The quotable facts of /facts, each with where to check it (lib/facts.tsx). */
+const keyFacts = (): string[] => [
+  `## Key facts (checked ${FACTS_CHECKED})`,
+  '',
+  `Each fact has its own address on ${abs('/facts')} (for example ${abs('/facts#licence')}).`,
+  '',
+  ...FACTS.filter((f) => f.llms !== false).map((f) => `- ${f.topic}: ${f.text} ([${f.source.label}](${href(f.source.href)}))`),
+  '',
+];
+
+/** The answer pages: the question, then its short answer. */
+const answers = (pages: PageDef[]): string[] => [
+  '## Answers',
+  '',
+  ...answerPages(pages).map((p) => `- [${p.ogTitle ?? p.name}](${abs(p.path)}): ${p.description}`),
+  `- [All answers](${abs('/answers')}) and [comparisons with other whiteboards](${abs('/vs')}), sourced and dated`,
+  '',
+];
+
+export function llmsTxt(pages: PageDef[]): string {
   return [
     '# Freero',
     '',
@@ -30,6 +54,7 @@ export function llmsTxt(): string {
     '',
     ...connection(),
     '',
+    ...keyFacts(),
     '## Connect',
     '',
     `- [Connect an agent](${abs(CONNECT_PAGE)}): in the app, one step per client (Claude, ChatGPT, Claude Code, Cursor, VS Code, Codex, Windsurf, any MCP client, plain HTTP)`,
@@ -37,6 +62,7 @@ export function llmsTxt(): string {
     `- [Freero for ChatGPT](${abs('/chatgpt')}): ChatGPT, as a custom MCP server (plugin)`,
     `- [Build with agents](${abs('/agents')}): the MCP server, the REST API and webhooks`,
     '',
+    ...answers(pages),
     '## MCP tools',
     '',
     ...MCP_TOOLS.map(([name, needs, summary]) => `- \`${name}\` (${NEEDS[needs]}): ${summary}`),
@@ -54,13 +80,14 @@ export function llmsTxt(): string {
     '',
     '## Optional',
     '',
-    `- [llms-full.txt](${abs('/llms-full.txt')}): this file with setup for each client, the sign-in flow step by step and the agent control room`,
+    `- [llms-full.txt](${abs('/llms-full.txt')}): this file with setup for each client, the sign-in flow step by step, the agent control room and the answers in full`,
+    `- [Key facts](${abs('/facts')}): the facts above, each with its own address`,
     `- [Source code](https://github.com/antonber/freero): MIT licence`,
     '',
   ].join('\n');
 }
 
-export function llmsFullTxt(): string {
+export function llmsFullTxt(pages: PageDef[]): string {
   return [
     '# Freero',
     '',
@@ -68,6 +95,7 @@ export function llmsFullTxt(): string {
     '',
     ...connection(),
     '',
+    ...keyFacts(),
     '## Connecting a client',
     '',
     `The easiest way: sign in to Freero and open ${abs(CONNECT_PAGE)}. It shows this address and, per client, the one click or one paste it takes, and lists what is connected.`,
@@ -114,6 +142,9 @@ export function llmsFullTxt(): string {
     '- The person can disconnect the app or revoke the token at any time; the next request is refused.',
     '- A workspace’s downloads policy can refuse reads of its boards’ content (`downloads_restricted`).',
     '',
+    '## Answers',
+    '',
+    ...answerPages(pages).flatMap((p) => [`### ${p.ogTitle ?? p.name}`, '', `${p.description} Full answer, comparison and sources: ${abs(p.path)}`, '', ...(p.faq ?? []).flatMap((f) => [`**${f.q}** ${f.a}`, '']), ]),
     '## Docs',
     '',
     `- [MCP server guide](${docsUrl('docs/mcp.md')})`,

@@ -3,10 +3,10 @@
 // plans and Data Center support, the MCP beta label and Flow caps). Source ids follow the sheet.
 // Freero facts: docs/parity.md and the docs each row links (guests are view-and-comment, not editors,
 // although the sheet says otherwise).
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'miro',
   competitor: 'Miro',
   checked: '2026-10-28',
@@ -50,7 +50,7 @@ export default defineComparison({
     {
       capability: 'Built-in AI',
       competitor: { verdict: 'yes', note: 'metered in AI credits; a small trial on Free', sources: ['S3', 'S5'] },
-      freero: { verdict: 'partial', note: 'off until you connect a model; no chat assistant or AI workflows', ref: 'docs/ai.md' },
+      freero: { verdict: 'partial', note: 'off until you connect a model; then a board assistant and saved AI workflows', ref: 'docs/ai.md' },
     },
     {
       capability: 'Bring your own AI model',
@@ -95,7 +95,7 @@ export default defineComparison({
     {
       capability: 'Audit log',
       competitor: { verdict: 'paid', note: 'Enterprise', sources: ['S3'] },
-      freero: { verdict: 'yes', note: 'per workspace, exportable; no SIEM streaming yet', ref: 'docs/parity.md' },
+      freero: { verdict: 'yes', note: 'per workspace, hash-chained, exportable and streamed to your SIEM', ref: 'docs/configuration.md' },
     },
     {
       capability: 'Choice of data region',
@@ -202,4 +202,6 @@ export default defineComparison({
     { id: 'S22', title: 'Miroverse templates', url: 'https://miro.com/templates/', checked: '2026-10-28' },
     { id: 'S23', title: 'Miro: Apps', url: 'https://miro.com/apps/', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);

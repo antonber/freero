@@ -5,10 +5,10 @@
 // Whiteboard, what personal accounts can still view or export, Loop as a successor, a
 // Whiteboard-specific ACR and the template count. Absences ("no MCP server") are worded as what
 // Microsoft documents, citing the pages checked.
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'microsoft-whiteboard',
   competitor: 'Microsoft Whiteboard',
   column: 'Microsoft Whiteboard',
@@ -49,7 +49,7 @@ export default defineComparison({
     {
       capability: 'Built-in AI',
       competitor: { verdict: 'paid', note: 'Copilot suggests, groups and summarises sticky notes; needs a Copilot licence', sources: ['W8'] },
-      freero: { verdict: 'partial', note: 'off until you connect a model; no chat assistant', ref: 'docs/ai.md' },
+      freero: { verdict: 'partial', note: 'off until you connect a model; then a board assistant beside the board', ref: 'docs/ai.md' },
     },
     {
       capability: 'Bring your own AI model',
@@ -84,12 +84,12 @@ export default defineComparison({
     {
       capability: 'Audit trail',
       competitor: { verdict: 'yes', note: 'board file activity in Microsoft Purview', sources: ['W6'] },
-      freero: { verdict: 'yes', note: 'per-workspace audit log, exportable; no SIEM streaming yet', ref: 'docs/parity.md' },
+      freero: { verdict: 'yes', note: 'per-workspace audit log, hash-chained, exportable and streamed to your SIEM', ref: 'docs/configuration.md' },
     },
     {
       capability: 'Retention, legal hold, DLP, eDiscovery',
       competitor: { verdict: 'yes', note: 'through OneDrive and Microsoft 365', sources: ['W6'] },
-      freero: { verdict: 'partial', note: 'retention of trash, history and the audit log; no eDiscovery, legal hold or DLP', ref: 'docs/parity.md' },
+      freero: { verdict: 'yes', note: 'retention policies, legal holds with case exports, and an opt-in scan for sensitive data', ref: 'docs/design/compliance.md' },
     },
     {
       capability: 'Security certifications',
@@ -117,7 +117,6 @@ export default defineComparison({
     'Your compliance team relies on Microsoft 365 controls: Purview auditing, retention, legal hold, DLP and eDiscovery, and certifications such as SOC 2, ISO 27001 and HIPAA.',
     'You draw on Surface Hub or Teams Rooms devices in meeting rooms.',
     'You have Microsoft 365 Copilot and want it to sort and summarise sticky notes on the board.',
-    'You need the interface in a language other than English.',
   ],
   freeroStronger: [
     'You used Whiteboard with a personal Microsoft account, or you work without a Microsoft 365 subscription.',
@@ -215,4 +214,6 @@ export default defineComparison({
     { id: 'W9', title: 'Microsoft Learn: Graph “whiteboard” resource (returned 404)', url: 'https://learn.microsoft.com/en-us/graph/api/resources/whiteboard', checked: '2026-10-28' },
     { id: 'W10', title: 'Microsoft Support: Insert templates in Whiteboard', url: 'https://support.microsoft.com/en-us/whiteboard/insert-templates-in-whiteboard', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);

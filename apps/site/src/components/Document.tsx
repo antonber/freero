@@ -104,6 +104,8 @@ function SiteFooter() {
         ['/use-cases', 'Use cases'],
         ['/open-source', 'Open source'],
         ['/vs', 'Compare'],
+        ['/answers', 'Answers'],
+        ['/facts', 'Key facts'],
       ],
     },
     {
@@ -180,25 +182,39 @@ function SiteFooter() {
   );
 }
 
-function Breadcrumbs({ items }: { items: Crumb[] }) {
+/** When the page last changed (its `updated`): readers and the engines that quote it see how fresh it is. */
+function Updated({ date }: { date: string }) {
   return (
-    <nav className="crumbs" aria-label="Breadcrumb">
+    <p className="updated">
+      Updated <time dateTime={date}>{date}</time>
+    </p>
+  );
+}
+
+function Breadcrumbs({ items, updated }: { items: Crumb[]; updated?: string }) {
+  return (
+    <div className="crumbs">
       <Container>
-        <ol>
-          {items.map((c, i) =>
-            i === items.length - 1 ? (
-              <li key={c.path} aria-current="page">
-                {c.name}
-              </li>
-            ) : (
-              <li key={c.path}>
-                <a href={c.path}>{c.name}</a>
-              </li>
-            ),
-          )}
-        </ol>
+        <div className="crumbs__row">
+          <nav aria-label="Breadcrumb">
+            <ol>
+              {items.map((c, i) =>
+                i === items.length - 1 ? (
+                  <li key={c.path} aria-current="page">
+                    {c.name}
+                  </li>
+                ) : (
+                  <li key={c.path}>
+                    <a href={c.path}>{c.name}</a>
+                  </li>
+                ),
+              )}
+            </ol>
+          </nav>
+          {updated ? <Updated date={updated} /> : null}
+        </div>
       </Container>
-    </nav>
+    </div>
   );
 }
 
@@ -207,6 +223,8 @@ export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDe
   // A legal page is built as a draft; the server makes it indexable once it is in effect.
   // A page under review stays noindex until the operator approves it (and the server keeps it so).
   const indexable = page.index !== false && !page.legal && !page.underReview;
+  // Every content page shows its date; a legal article prints its own, and the 404 has none.
+  const dated = !page.dateInBody && page.path !== '/404';
   const ogAlt = `${page.sharedOg?.title ?? page.ogTitle ?? page.name}: Freero`;
   return (
     <html lang="en">
@@ -248,7 +266,7 @@ export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDe
         </a>
         <SiteHeader current={page.path} />
         <main id="main" tabIndex={-1}>
-          {crumbs.length > 1 ? <Breadcrumbs items={crumbs} /> : null}
+          {crumbs.length > 1 ? <Breadcrumbs items={crumbs} updated={dated ? page.updated : undefined} /> : null}
           {page.legal || page.underReview ? (
             <Container>
               {page.legal ? <DraftBanner /> : null}
@@ -257,6 +275,11 @@ export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDe
           ) : null}
           <page.body pages={pages} />
           {page.faq?.length ? <Faq items={page.faq} /> : null}
+          {dated && crumbs.length <= 1 ? (
+            <Container>
+              <Updated date={page.updated} />
+            </Container>
+          ) : null}
           {page.closingCta === false ? null : <ClosingCta />}
         </main>
         <SiteFooter />

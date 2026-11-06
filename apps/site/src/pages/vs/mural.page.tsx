@@ -2,10 +2,10 @@
 // follow the sheet). Left out as "Could not verify": Business monthly price, AI credit limits,
 // webhooks either way, which plans get the Linear and GitHub integrations and basic Jira sync,
 // the names of the residency regions, an exact template count, the ACR's contents.
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'mural',
   competitor: 'Mural',
   checked: '2026-10-28',
@@ -44,7 +44,7 @@ export default defineComparison({
     {
       capability: 'Built-in AI',
       competitor: { verdict: 'paid', note: 'Mural AI on Team+ and up', sources: ['S1', 'S2'] },
-      freero: { verdict: 'partial', note: 'off until you connect a model; no chat assistant or AI workflows', ref: 'docs/ai.md' },
+      freero: { verdict: 'partial', note: 'off until you connect a model; then a board assistant and saved AI workflows', ref: 'docs/ai.md' },
     },
     {
       capability: 'Bring your own AI model',
@@ -89,7 +89,7 @@ export default defineComparison({
     {
       capability: 'Audit log',
       competitor: { verdict: 'paid', note: 'Enterprise', sources: ['S1'] },
-      freero: { verdict: 'yes', note: 'per workspace, exportable; no SIEM streaming yet', ref: 'docs/parity.md' },
+      freero: { verdict: 'yes', note: 'per workspace, hash-chained, exportable and streamed to your SIEM', ref: 'docs/configuration.md' },
     },
     {
       capability: 'Choice of data region',
@@ -183,4 +183,6 @@ export default defineComparison({
     { id: 'S13', title: 'Mural blog: Integrations (2026-09-30)', url: 'https://www.mural.co/blog/mural-integrations', checked: '2026-10-28' },
     { id: 'S14', title: 'Mural Learning: Browse the template library', url: 'https://learning.mural.co/lessons/browse-the-template-library', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);

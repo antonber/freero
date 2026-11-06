@@ -19,6 +19,7 @@ export default definePage({
   description:
     'How the hosted Freero service and the open-source software protect data: hosting, encryption, SSO, SCIM, audit log, backups, incidents and AI.',
   updated: UPDATED,
+  dateInBody: true,
   closingCta: false,
   faq: [
     {

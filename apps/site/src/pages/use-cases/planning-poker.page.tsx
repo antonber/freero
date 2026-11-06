@@ -13,7 +13,7 @@ export default definePage({
   ogTitle: 'Planning poker on the board where the work is',
   description:
     'Free online planning poker on a whiteboard: Fibonacci, T-shirt or custom decks, picks sealed until the reveal, and the agreed estimate written on the card.',
-  updated: '2026-10-30',
+  updated: '2026-11-06',
   sitemap: 'use-cases',
   faq: [
     {
@@ -34,7 +34,7 @@ export default definePage({
       <Hero
         kicker="Use case · Planning poker"
         title="Planning poker online, right on the board"
-        lead="Estimate the cards your team already planned on the whiteboard, one by one. Everyone picks in private, the facilitator reveals, you talk about the spread, and the agreed value lands on the card. No separate poker app, no copying stories over."
+        lead="Freero has free planning poker built into every board of its open-source whiteboard: estimate the cards your team already planned, one by one. Everyone picks in private, the facilitator reveals, you talk about the spread, and the agreed value lands on the card. No separate poker app, no copying stories over."
         actions={
           <>
             <ButtonLink href={useTemplateHref('relative-sizing')}>Start an estimation board</ButtonLink>

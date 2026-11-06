@@ -5,10 +5,10 @@
 // row), plan requirements beyond a Plus API key, release dates, library counts, a VPAT.
 // Freero-side correction: the sheet calls Freero's in-chat live boards planned; they shipped
 // (docs/parity.md §9, MCP Apps).
-import { defineComparison } from '../../lib/compare';
+import { defineComparison, type ComparisonDef } from '../../lib/compare';
 import { SITE_TEMPLATES } from '../../lib/templates';
 
-export default defineComparison({
+export const comparison: ComparisonDef = {
   slug: 'excalidraw',
   competitor: 'Excalidraw',
   column: 'Excalidraw and Excalidraw+',
@@ -167,4 +167,6 @@ export default defineComparison({
     { id: 'E15', title: 'Excalidraw+ docs: Self-hosting Excalidraw+', url: 'https://plus.excalidraw.com/docs/self-hosting/excalidraw-plus-self-hosting', checked: '2026-10-28' },
     { id: 'E16', title: 'Excalidraw+: Security and compliance', url: 'https://plus.excalidraw.com/security-and-compliance', checked: '2026-10-28' },
   ],
-});
+};
+
+export default defineComparison(comparison);

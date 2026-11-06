@@ -14,6 +14,7 @@ export default definePage({
   ogTitle: 'Help and support',
   description: 'Get help with Freero, report abuse or a security issue, manage your data and connected AI apps, and check whether the service is up.',
   updated: UPDATED,
+  dateInBody: true,
   closingCta: false,
   body: () => (
     <LegalArticle

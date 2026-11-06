@@ -84,7 +84,7 @@ Status: **live** = on freero.app; **new** = built in this branch, live after the
 | Claude | claude whiteboard, claude mcp whiteboard, claude connector whiteboard | commercial | `/claude` | live |
 | ChatGPT | chatgpt whiteboard, chatgpt mcp connector whiteboard | commercial | `/chatgpt` | live |
 | MCP / builders | mcp whiteboard server, whiteboard api, whiteboard webhooks | commercial / informational | `/agents`, `/integrations/mcp-client`, `/docs` | live |
-| Open source / self-hosted | open source whiteboard, self-hosted whiteboard, docker whiteboard, on-premise whiteboard | commercial | `/open-source` | live |
+| Open source / self-hosted | open source whiteboard, self-hosted whiteboard, docker whiteboard, on-premise whiteboard, open-source whiteboard I can self-host | commercial | `/open-source` (direct answer + "Self-hostable whiteboards, compared" matrix since 2026-11-06) | live, extended |
 | Miro alternative | free / open source / self-hosted miro alternative | commercial | `/vs/miro` | live |
 | Other alternatives | mural, figjam, excalidraw, jamboard, microsoft whiteboard, confluence whiteboard alternative | commercial | `/vs/<slug>` | live |
 | tldraw alternative | tldraw alternative, tldraw open source, tldraw self-hosted, tldraw license | commercial / informational | `/vs/tldraw` | new |
@@ -93,8 +93,19 @@ Status: **live** = on freero.app; **new** = built in this branch, live after the
 | Notion whiteboard | notion whiteboard, whiteboard for notion | informational | an article, not a /vs page | gap |
 | Pricing / free | is freero free, whiteboard pricing | navigational | `/pricing` | live |
 | Security / enterprise | whiteboard sso scim, whiteboard audit log | commercial | `/security` | live |
+| Free + SSO (answer) | free whiteboard with sso, free miro alternative with sso, whiteboard scim free | commercial | `/answers/free-whiteboard-with-sso` | new |
+| MCP whiteboards (answer) | which whiteboard works with claude / chatgpt, mcp whiteboard, whiteboard mcp server compared | commercial / informational | `/answers/mcp-whiteboard` | new |
+| No board limit (answer) | free whiteboard unlimited boards, miro alternative no board limit, free whiteboard no 3 board limit | commercial | `/answers/free-whiteboard-without-board-limit` | new |
+| Answers hub | freero answers, whiteboard questions | navigational | `/answers` | new |
+| Key facts | freero licence, is freero open source, freero mcp endpoint, freero languages | navigational / informational | `/facts` | new |
 | Integrations | whiteboard slack integration, jira whiteboard integration, n8n whiteboard | commercial | `/integrations/<id>` | live |
 | Templates | "[name] template", "free [name] template" | commercial | `/templates/<id>`, `/templates/category/<slug>`, `/templates` | live (584) |
+
+Answer pages (`/answers/<slug>`, `lib/answers.tsx`) take a question people put to an assistant;
+the next candidates, in order: "does Notion have a whiteboard?" (informational and large; needs a
+sourced Notion comparison first, and no claim about embedding Freero in Notion until it is tested),
+"free online dot voting tool", "self-hosted Excalidraw with collaboration" (today an FAQ on
+`/open-source`), "Microsoft Whiteboard for personal accounts replacement" (today `/vs/microsoft-whiteboard`).
 
 Gaps worth a page next, in order: org chart maker (`/templates/org-chart` exists; a feature page
 would add "Insert from text" org charts), online timer / dot voting tool pages (small but
@@ -142,8 +153,10 @@ uncontested), a Notion-whiteboard article, `/vs/lucidspark` once prices are conf
         │                   │ (each lists its templates; every template page links back)
         ▼                   ▼
    /templates ──► /templates/category/<slug> ──► /templates/<id>
-   /vs ──► /vs/<competitor> ──► /open-source, /pricing, /claude, /chatgpt
+   /vs ──► /vs/<competitor> ──► /open-source, /pricing, /claude, /chatgpt, /facts
    /claude ◄──► /chatgpt ◄──► /agents ◄──► /integrations ──► /security, /docs
+   /answers ──► /answers/<question> ──► its /vs comparisons, /facts, the pages in its "Keep reading"
+                 (each answer lists the others); /facts ◄── every answer page, /vs page and the footer
 ```
 
 - Header: Features, Claude, ChatGPT, For builders, Templates, Security, Pricing, Docs (+ Log in,
@@ -153,6 +166,48 @@ uncontested), a Notion-whiteboard article, `/vs/lucidspark` once prices are conf
   workshop cards the use cases, the agent section `/claude`, `/chatgpt`, `/agents`.
 - New pages are added to `src/lib/features.tsx` or `src/lib/useCases.tsx` and the hubs and sibling
   links follow; nothing else to edit.
+
+## GEO: being found, understood and cited by AI assistants
+
+ChatGPT search, Copilot / Bing, Gemini / AI Overviews, Claude and Perplexity answer questions from
+pages they can fetch and quote. What the site does for them (built 2026-11-06, on top of the SEO
+above):
+
+- **Answer pages** (`/answers/<slug>`): the question as the h1, the direct answer in the first one or
+  two sentences (what Freero is, free, open source, agents propose and people accept), then short
+  checkable facts, a dated comparison matrix, how-to steps, an FAQ (FAQPage JSON-LD that the tests
+  match against the visible text) and links into the page graph. A matrix cell is always a row of a
+  published `/vs` page with its sources and check date ("as of" in the caption, "checked" per
+  product), so an answer can't state a competitor fact the comparison doesn't.
+- **Quotable facts** (`/facts`, `lib/facts.tsx`): one statement per topic (licence, price, limits,
+  self-hosting, MCP endpoint, AI clients, trackers, integrations, languages, templates, guests,
+  hosting, operator, source), each with its own anchor (`/facts#licence`) and where to check it.
+  Counts and names come from the catalogs (MCP tools, integrations, `LOCALES`, templates), and the
+  site tests check the quoted limits against the server's defaults. No user counts.
+- **llms.txt** has "Key facts" and "Answers" sections; **llms-full.txt** adds each answer's FAQ.
+- **Dates everywhere:** every page shows "Updated <date>" from its `updated` field (under the
+  breadcrumbs; above the closing band on `/`; legal articles show their own "Last updated"), and the
+  WebPage JSON-LD carries the same `dateModified` (tested). Bump `updated` when a page's facts change.
+- **Already in place before:** robots.txt allows every crawler (the AI ones included) on marketing
+  pages, static HTML without scripts, schema.org JSON-LD, `/vs` comparisons, use-case and template
+  pages, IndexNow.
+
+How to measure (check monthly; the first useful read is 4–6 weeks after the deploy):
+
+1. **GA4**: create a custom channel group with an "AI Assistant" channel whose source matches
+   `chatgpt\.com|chat\.openai\.com|perplexity\.ai|copilot\.microsoft\.com|bing\.com/chat|gemini\.google\.com|claude\.ai|you\.com`
+   (regex on Session source), placed above Referral. Report: Acquisition → Traffic acquisition by that
+   channel, with Landing page as the secondary dimension. Expect `/answers/*`, `/facts`, `/vs/*`,
+   `/claude`, `/chatgpt` to lead. (GA4 runs only where `GA_MEASUREMENT_ID` is set and the visitor
+   didn't opt out, so it undercounts.)
+2. **Bing Webmaster Tools**: verify freero.app, submit `sitemap.xml`, and read the **AI Performance**
+   report (citations of the site in Copilot and Bing AI answers, by page). IndexNow already notifies
+   Bing after each deploy.
+3. **Google Search Console**: AI Overviews and AI Mode clicks and impressions are counted in the
+   Performance report (Web search type); filter Pages by `/answers/` and `/facts` and compare queries
+   before and after. `sitemap-answers.xml` is its own sitemap, so its coverage reads separately.
+4. **Spot checks**: ask ChatGPT search, Copilot, Gemini, Perplexity and Claude (with web search) the
+   answer pages' questions; note whether Freero is named and which URL is cited. Keep the log here.
 
 ## IndexNow (Bing, Yandex, Seznam, Naver…)
 

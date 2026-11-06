@@ -22,7 +22,7 @@ import { crumbsOf, jsonLdFor, LOGO_PNG_PATH, robotsTxt, sitemaps } from './lib/s
 const require = createRequire(import.meta.url);
 export const DEFAULT_OUT = path.resolve(SRC_DIR, '../dist');
 /** URL prefixes that belong to the site: a missing page under them is the site's 404. */
-export const SITE_PREFIXES = ['/vs/', '/features/', '/use-cases/', '/templates/', '/integrations/'];
+export const SITE_PREFIXES = ['/vs/', '/features/', '/use-cases/', '/templates/', '/integrations/', '/answers/'];
 /** What a shell is built with; the server's modules/site index.ts `SHELL` replaces them. */
 export const SHELL_PLACEHOLDERS = { title: '__freero_shell_title__', description: '__freero_shell_description__', name: '__freero_shell_name__', path: '/__freero_shell_path__' } as const;
 
@@ -128,6 +128,8 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
       description: SHELL_PLACEHOLDERS.description,
       name: SHELL_PLACEHOLDERS.name,
       updated: hub.updated,
+      // The hub's date isn't the template's: the page frame shows none.
+      dateInBody: true,
       sharedOg: { key: 'gallery', kicker: 'Community template', title: 'Made by people who use Freero' },
       body: () => <div data-freero-slot="body" />,
     };
@@ -146,8 +148,8 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
   files.push({ path: '/robots.txt', file: 'robots.txt', type: 'text/plain' });
   // For agents (llmstxt.org): what Freero is, its MCP endpoint, sign-in and tools.
   for (const [name, text] of [
-    ['llms.txt', llmsTxt()],
-    ['llms-full.txt', llmsFullTxt()],
+    ['llms.txt', llmsTxt(pages)],
+    ['llms-full.txt', llmsFullTxt(pages)],
   ] as const) {
     write(name, text);
     files.push({ path: `/${name}`, file: name, type: 'text/plain' });
