@@ -3,16 +3,13 @@ import { Eye, EyeOff } from 'lucide-react';
 import { PRIVATE_MODE_TYPES, type PrivateModeSession } from '@freero/shared';
 import { definePanel, useCanEdit, useCollection, useElements, useParticipant, type Editor } from '@engine';
 import { Button, Toggle } from '@ui';
-import { COLLECTION, canManage, privateRule, revealAndEnd, setAnonymous, shareLeftovers } from './lib/session';
+import { COLLECTION, canManage, privateRule, revealAndEnd, runningSession, setAnonymous, shareLeftovers } from './lib/session';
 import { t as tr } from './messages';
 import './private-mode.css';
 
 function useSession(): PrivateModeSession | undefined {
   const entries = useCollection<PrivateModeSession>(COLLECTION);
-  return useMemo(() => {
-    const s = entries.find(([k]) => k === 'session')?.[1];
-    return s?.active ? s : undefined;
-  }, [entries]);
+  return useMemo(() => runningSession((key) => entries.find(([k]) => k === key)?.[1]), [entries]);
 }
 
 /** Session bar + the placement rule (what this user adds goes private while the session is on). */

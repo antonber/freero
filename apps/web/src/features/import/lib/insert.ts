@@ -62,10 +62,11 @@ function dataUrlToBlob(url: string): Blob {
  * Stores each picture with the board's uploads (linked ones fetched by the server); null for one
  * that couldn't be stored. A picture used several times (a logo on every slide) is stored once.
  */
-async function storeImages(editor: Editor, images: ImportResult['images']): Promise<Map<string, string | null>> {
+async function storeImages(editor: Editor, images: ImportResult['images'], signal?: AbortSignal): Promise<Map<string, string | null>> {
   const stored = new Map<string, Promise<string | null>>();
   const store = (source: string) => {
     let p = stored.get(source);
+    if (!p && signal?.aborted) p = Promise.resolve(null); // cancelled: nothing more is uploaded
     if (!p) {
       p = (source.startsWith('data:') ? editor.host.uploadImage(dataUrlToBlob(source)) : editor.host.importImage(source)).then(
         ({ url }) => url || null,
@@ -80,16 +81,23 @@ async function storeImages(editor: Editor, images: ImportResult['images']): Prom
   return out;
 }
 
+/** The person cancelled (the import dialog's Cancel aborts `signal`): rejects with its AbortError, and nothing is placed. */
+function stopIfCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Cancelled', 'AbortError');
+}
+
 /**
  * Creates `result` on the board near `at` (default: the middle of the view), selected and in view.
  * Images are stored first; one that can't be is left out (lines to it keep a loose end) and
- * reported. Returns the report.
+ * reported. Returns the report. Once `signal` is aborted, nothing more is stored or placed (#193).
  */
-export async function placeImport(editor: Editor, result: ImportResult, at?: Point): Promise<ImportReport> {
+export async function placeImport(editor: Editor, result: ImportResult, at?: Point, signal?: AbortSignal): Promise<ImportReport> {
+  stopIfCancelled(signal);
   const skipped = [...result.report.skipped];
   let drafts: ElementDraft[] = result.drafts;
   if (result.images.length) {
-    const stored = await storeImages(editor, result.images);
+    const stored = await storeImages(editor, result.images, signal);
+    stopIfCancelled(signal);
     const failed = new Set([...stored].filter(([, url]) => !url).map(([id]) => id));
     if (failed.size) skipped.push({ what: tr('imagesThatCouldnTBe'), count: failed.size });
     drafts = drafts
@@ -140,26 +148,26 @@ export async function placeImport(editor: Editor, result: ImportResult, at?: Poi
 }
 
 /** Reads, recognises, parses and places a file; throws ImportError (a message for the person). */
-export async function importFile(editor: Editor, file: File, at?: Point): Promise<ImportReport> {
+export async function importFile(editor: Editor, file: File, at?: Point, signal?: AbortSignal): Promise<ImportReport> {
   if (file.size > MAX_FILE_BYTES) throw new ImportError(`That file is over ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
   const packaged = kindOfFile(file.name, '');
-  if (packaged === 'vsdx') return placeImport(editor, await parseVsdx(new Uint8Array(await file.arrayBuffer()), nanoid), at);
-  if (packaged === 'pptx') return placeImport(editor, await parsePptx(new Uint8Array(await file.arrayBuffer()), nanoid), at);
+  if (packaged === 'vsdx') return placeImport(editor, await parseVsdx(new Uint8Array(await file.arrayBuffer()), nanoid), at, signal);
+  if (packaged === 'pptx') return placeImport(editor, await parsePptx(new Uint8Array(await file.arrayBuffer()), nanoid), at, signal);
   const text = await file.text();
   const kind = kindOfFile(file.name, text.slice(0, 2000));
   if (!kind || kind === 'vsdx' || kind === 'pptx') throw new ImportError(tr('freeroImportsTheseFiles'));
-  return placeImport(editor, await parseImport(kind, text), at);
+  return placeImport(editor, await parseImport(kind, text), at, signal);
 }
 
 /**
  * [#62] Reads a Miro board with the person's own token (through the server, which keeps nothing)
  * and places it like a file. The host's errors carry a message for the person.
  */
-export async function importMiro(editor: Editor, board: string, token: string, at?: Point): Promise<ImportReport> {
+export async function importMiro(editor: Editor, board: string, token: string, at?: Point, signal?: AbortSignal): Promise<ImportReport> {
   const host = editor.host.boardImport;
   if (!host) throw new ImportError(tr('miroImportNotOffered'));
-  const answer = await host.miro(board, token);
-  return placeImport(editor, parseMiro(answer, nanoid), at);
+  const answer = await host.miro(board, token, signal);
+  return placeImport(editor, parseMiro(answer, nanoid), at, signal);
 }
 
 /** One line for a toast. */

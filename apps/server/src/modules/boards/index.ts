@@ -58,6 +58,7 @@ export {
   boardsUnderLegalHold,
   legallyHeldAmong,
   underLegalHold,
+  underLegalHoldUntilCommit,
   type LegalHoldScope,
   type HeldBoard,
 } from './legalHolds';
@@ -178,6 +179,14 @@ export async function setBoardSharingSettings(boardId: string, userId: string, s
   if (patch.guestsCanEdit !== undefined) checkGuestEditingChange(board, access, patch.guestsCanEdit, board.linkAccess);
   await repo.updateBoardFields(board.id, patch, Date.now());
   await sharingSettingsChanged(board, userId, patch);
+}
+
+/**
+ * Inside a transaction (modules/members): serialises changes to who has the board and who may share
+ * it, so each is authorised (`requireBoardAccess` after this) against what the previous one left.
+ */
+export async function lockBoardSharing(boardId: string): Promise<void> {
+  await repo.lockBoardSharing(boardId);
 }
 
 /**
@@ -423,6 +432,11 @@ export function replaceBoardLabels(workspaceId: string, labelIds: string[], to: 
 
 export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
   return repo.idsInWorkspace(workspaceId);
+}
+
+/** Every board (in any state) after `afterId` by id, at most `limit`, with its workspace: for jobs that sweep all boards a page per round. */
+export function boardWorkspacesAfter(afterId: string, limit: number): Promise<Array<{ id: string; workspaceId: string }>> {
+  return repo.workspacesAfter(afterId, limit);
 }
 
 /** Board usage of a workspace for its admin console (trash counted apart; owners of live boards). */

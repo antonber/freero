@@ -166,9 +166,20 @@ export async function rotate(
   });
 }
 
+/** The key-encryption key and wrapped data key an unwrap used: what a refusal is about. */
+export interface UnwrapTried {
+  provider: WorkspaceKeyProvider;
+  kmsKeyId: string | null;
+  /** Absent when the data key row was missing. */
+  dataKey?: { version: number; wrapped: string };
+}
+
 /**
  * Moves the key to `to` if it is in one of `from`, recording why; returns whether it moved.
  * Destroying also deletes every wrapped data key (crypto-shredding) in the same statement's transaction.
+ * `guard` runs first in that transaction (throwing rolls it back). `onlyIf`: only while the key is
+ * still wrapped as that unwrap found it (a rotation since — on any instance — means the refusal was
+ * about a key that is no longer stored).
  */
 export async function setState(
   workspaceId: string,
@@ -177,11 +188,17 @@ export async function setState(
   reason: string | null,
   now: number,
   inTx: () => Promise<void>,
+  opts: { guard?: () => Promise<void>; onlyIf?: UnwrapTried } = {},
 ): Promise<boolean> {
   return tx(async () => {
+    if (opts.guard) await opts.guard();
+    const t = opts.onlyIf;
     const r = await one(
-      `UPDATE workspace_keys SET state = $3, state_reason = $4, state_changed_at = $5 WHERE workspace_id = $1 AND state = ANY($2::text[]) RETURNING 1`,
-      [workspaceId, from, to, reason, new Date(now)],
+      `UPDATE workspace_keys SET state = $3, state_reason = $4, state_changed_at = $5 WHERE workspace_id = $1 AND state = ANY($2::text[])
+       ${t ? `AND provider = $6 AND kms_key_id IS NOT DISTINCT FROM $7` : ''}
+       ${t?.dataKey ? `AND EXISTS (SELECT 1 FROM workspace_data_keys d WHERE d.workspace_id = $1 AND d.version = $8 AND d.wrapped = $9)` : ''}
+       RETURNING 1`,
+      [workspaceId, from, to, reason, new Date(now), ...(t ? [t.provider, t.kmsKeyId] : []), ...(t?.dataKey ? [t.dataKey.version, t.dataKey.wrapped] : [])],
     );
     if (!r) return false;
     if (to === 'destroyed') await query(`DELETE FROM workspace_data_keys WHERE workspace_id = $1`, [workspaceId]);

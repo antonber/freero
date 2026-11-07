@@ -10,6 +10,7 @@ import type { Request } from 'express';
 import {
   API_MAX_DELETE_PER_CALL,
   API_MAX_ITEMS_PER_CALL,
+  BOARD_CLOSED,
   SUGGESTION_STALE,
   type ApiSuggestionGroup,
   CONFIRM_REQUIRED,
@@ -65,6 +66,7 @@ import { inviteBoardMember, listBoardMembers, removeBoardMember, setBoardMemberR
 import { boardComments, boardOutline, boardPeopleNames, type OutlineQuery, type OutlineResult } from '../outline/index';
 import {
   BoardChangeError,
+  BoardClosedError,
   capRole,
   changeBoard,
   decideSuggestions as decide,
@@ -206,12 +208,16 @@ const requireConfirm = (v: unknown, what: string) => {
   if (!confirmed(v)) throw new HttpError(400, `${what} can’t be undone from the API: send confirm=true to go ahead`, CONFIRM_REQUIRED);
 };
 
-/** Bad input to a change, or a board that changed under it: 400, nothing written. */
+/**
+ * Bad input to a change, or a board that changed under it: 400, nothing written. A board closed
+ * (moved to the trash, deleted) before the change was saved: 409, not made either.
+ */
 export async function change<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
     if (e instanceof BoardChangeError) throw badRequest(e.message);
+    if (e instanceof BoardClosedError) throw new HttpError(409, 'The board was closed (moved to the trash or deleted) before this change could be saved; it was not made', BOARD_CLOSED);
     throw e;
   }
 }

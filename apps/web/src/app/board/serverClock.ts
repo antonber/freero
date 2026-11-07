@@ -35,16 +35,74 @@ export function estimateOffset(samples: ClockSample[]): number | null {
   return Math.round((lo + hi) / 2);
 }
 
-let offset = 0;
-let started = false;
+// ---------------------------------------------------------------- measuring (FAC-9)
+// Measured on the first board of the page, again whenever the board's socket reconnects (a laptop
+// that slept, a network change), and — while it fails (a board opened offline from the device
+// copy, a blip) — again after a growing pause instead of never. Until a measurement succeeds,
+// `measuredNow()` is null and nothing writes a shared deadline (Host.measuredServerNow): one written
+// in an unmeasured local clock would be off by that clock's skew for everyone else.
 
-/** Current time on the server's clock (ms). Falls back to the local clock until measured. */
-export function serverNow(): number {
-  return Date.now() + offset;
+export interface ServerClock {
+  /** Server time: the local clock until measured. */
+  now(): number;
+  /** Server time, or null while not measured yet (and a measurement starts). */
+  measuredNow(): number | null;
+  /** Measures unless measured or measuring (cheap to call from every mount). */
+  sync(): void;
+  /** Measures again now (the socket reconnected); the last offset stands meanwhile. */
+  remeasure(): void;
 }
 
 const SAMPLE_COUNT = 5;
 const SAMPLE_SPACING_MS = 210;
+/** Pauses before measuring again after a failed measurement (the last one repeats). */
+const RETRY_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
+
+export function createServerClock(sample: () => Promise<ClockSample | null>, clock: () => number = Date.now): ServerClock {
+  let offset = 0;
+  let measured = false;
+  let measuring = false;
+  let failures = 0;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+
+  const measure = () => {
+    if (measuring) return;
+    if (retry) clearTimeout(retry);
+    retry = null;
+    measuring = true;
+    const samples: ClockSample[] = [];
+    let pending = SAMPLE_COUNT;
+    for (let i = 0; i < SAMPLE_COUNT; i++) {
+      setTimeout(async () => {
+        const s = await sample().catch(() => null);
+        if (s) samples.push(s);
+        if (--pending > 0) return;
+        measuring = false;
+        const est = estimateOffset(samples);
+        if (est != null) {
+          offset = est;
+          measured = true;
+          failures = 0;
+        } else retry = setTimeout(measure, RETRY_MS[Math.min(failures++, RETRY_MS.length - 1)]);
+      }, i * SAMPLE_SPACING_MS);
+    }
+  };
+  const sync = () => {
+    if (!measured && !measuring && !retry) measure();
+  };
+
+  return {
+    now: () => clock() + offset,
+    measuredNow() {
+      if (measured) return clock() + offset;
+      sync();
+      return null;
+    },
+    sync,
+    remeasure: measure,
+  };
+}
+
 // Any cheap endpoint carries a Date header; this one answers 200 for everyone (guests have no account).
 const SAMPLE_URL = '/api/auth/session';
 
@@ -61,19 +119,18 @@ async function sample(): Promise<ClockSample | null> {
   }
 }
 
-/** Starts measuring the server clock once per page; cheap to call from every mount. */
+const pageClock = createServerClock(sample);
+const canMeasure = () => typeof fetch === 'function';
+
+/** Current time on the server's clock (ms). Falls back to the local clock until measured. */
+export const serverNow = (): number => pageClock.now();
+/** Server time once measured, else null (Host.measuredServerNow). */
+export const measuredServerNow = (): number | null => (canMeasure() ? pageClock.measuredNow() : serverNow());
+/** Starts measuring the server clock (retried while it fails); cheap to call from every mount. */
 export function syncServerClock(): void {
-  if (started || typeof fetch !== 'function') return;
-  started = true;
-  const samples: ClockSample[] = [];
-  let pending = SAMPLE_COUNT;
-  for (let i = 0; i < SAMPLE_COUNT; i++) {
-    setTimeout(async () => {
-      const s = await sample();
-      if (s) samples.push(s);
-      if (--pending > 0) return;
-      const est = estimateOffset(samples);
-      if (est != null) offset = est;
-    }, i * SAMPLE_SPACING_MS);
-  }
+  if (canMeasure()) pageClock.sync();
+}
+/** The board's socket reconnected: measure again (Host.onConnected). */
+export function remeasureServerClock(): void {
+  if (canMeasure()) pageClock.remeasure();
 }

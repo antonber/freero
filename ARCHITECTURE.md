@@ -25,6 +25,11 @@ Contributors — human or agent — usually see a narrow slice of the code, so t
 5. **Exceptions are narrow, explicit and reviewed** — `dune.exceptions.json`, each with a reason.
    If the same review comment appears twice, encode it as a check, type, test or directory.
 
+Every lifecycle in the app — explicit (a `status` column, a `phase` on a board) or implicit
+(`used_at` + `expires_at`, a row present or not, a session's tombstone) — is described with its
+states, invariants and transitions in docs/design/state-machines.md. A change that adds a state, a
+transition or a guard updates its machine there in the same commit.
+
 ## Stack
 
 - npm workspaces. Node 22, no native deps. `npm run dev` starts both apps (no Docker needed).
@@ -407,6 +412,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   tab's view every frame, publishes `PresenceState.following` (the followed user id) and, while
   anyone follows this user, publishes its viewport every 50 ms instead of 200 ms. Any other camera
   write (user move, a feature's `setCamera`), a canvas click, Esc, or the person leaving ends it.
+  This tab's own connection dropping does not (everyone's presence goes with it): following waits
+  until it is back and `PRESENCE_RESYNC_MS` after, and a presentation still the presenter's on the
+  server is still followed.
   Presence (avatars) and present (the "is presenting" banner) both use it; presence owns the
   "Following … · Stop" pill and "Bring everyone to me" (`presence.bringEveryone`).
 - `ToolDefinition.onCanvasDoubleClick?(editor, point)`: double-click on empty canvas (or a frame's
@@ -1569,7 +1577,7 @@ and decision snapshots" below, `marketplace` (marketplace_listings: community li
 agents; see "Apps & agents" below), `gallery` (gallery_templates: the community template gallery,
 #162; see "Community template gallery" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
-encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports: “Report a problem”, see "Problem
+encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports, problem_screenshot_deletions: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
@@ -1811,6 +1819,15 @@ reports" below).
 - Suspensions (KAI-180): `user.suspend` with `boards: 'take_down' | 'disable_link'` acts on every
   board the account has in service, each recorded with `parent_id` = the suspension; `user.restore`
   reverses those children not reversed or deleted since (children of the lift). One notice.
+  A suspended account's community listings and templates are not public while it is suspended:
+  marketplace and gallery ask auth's `suspendedUserIds` on every public read (lists, pages,
+  previews, installs, reports) instead of writing a status, so the operator's decisions (approved,
+  featured) are untouched and lifting the suspension brings them back as they were (#192).
+- Appeals are refused (409 `appeal_final`, and `AppealInfo.final` on the page) once the action
+  can't be undone any more: the removed file's kept copy was deleted, the board deleted for good,
+  the listing or template withdrawn. A listing or template decision and its record are one
+  transaction; the other actions apply side effects other instances must see at once (sockets,
+  sessions, files) and are recorded right after.
 - Community listings (#87, `modules/marketplace`): their status is marketplace's, written only
   through its `decideListing`; moderation owns the decisions (`listing.approve` / `reject` /
   `remove` / `restore` / `feature` / `unfeature` are actions like the others: recorded, audited,
@@ -1852,8 +1869,10 @@ reports" below).
 - **Retention.** The `problems:retention` exclusive job deletes reports closed (fixed, wontfix,
   duplicate) longer than `PROBLEM_RETENTION_DAYS` ago, row first, then the screenshot; reopening
   clears `closed_at`. The account purge deletes a person's reports and screenshots
-  (`deleteProblemsOf`; rows would cascade, files wouldn't); the data export carries them
-  (`problems/`). The privacy policy states the period through the `problemRetentionDays` legal token.
+  (`deleteProblemsOf`; rows would cascade, files wouldn't). Deleting a report lists its
+  screenshot in `problem_screenshot_deletions` in the same statement, and the key leaves that list
+  only once the file's delete succeeded, so a storage error is retried by the next retention run
+  instead of leaving the file for good (#192). The data export carries them (`problems/`). The privacy policy states the period through the `problemRetentionDays` legal token.
 - **Web.** The dialog is the app shell's (`app/problems/`), because it opens on every signed-in page:
   `ProblemReportProvider` (in `App`) owns it and the shortcut `mod+alt+p` outside boards; the help menu
   (`HelpMenu`: dashboard and settings top bars) and the dashboard's account menu open it; on a board,
@@ -3522,7 +3541,9 @@ network, also after a reload, and syncs when the network is back.
   does not protect against someone who can read the browser profile while the person is signed
   in: that is why keyed workspaces keep no copies unless their policy says 'all'.
 - **When copies go**: sign-out / session gone / another person (above); a board whose socket the
-  server ends for good (4401 / 4403 / taken down: `BoardStore` stops saving and calls `forget`);
+  server ends for good (4401 / 4403 / taken down, and 1009: a change it holds that the server
+  refused as too large, which every reconnect and every reload would send again — `BoardStore`,
+  status 'refused', stops saving and calls `forget`);
   `GET /boards/:id` answering 403 / 404 / 451; and on every online start the app asks
   `POST /api/boards/offline-check { ids }` → `{ keep }` (the boards this person can still open
   and may keep, never counted as opening them) and deletes the rest — so a person removed while
@@ -3531,7 +3552,11 @@ network, also after a reload, and syncs when the network is back.
   exchange (and the layers' own) sends exactly what the server lacks. The server applies its rules
   to them as to any update — a person made a viewer while offline has their offline edits refused,
   layer writes they may no longer make are dropped, private-mode and hidden-frame placement are
-  checked as usual. Tested with real sockets (`realtime/offline.test.ts`).
+  checked as usual. Tested with real sockets (`realtime/offline.test.ts`). A socket the server
+  closes soon after it opened (4429 too many connections, 1011 the board could not be loaded, 1013)
+  is retried later and later, from 0.25–0.5 s doubling up to 30 s (`engine/store/reconnect.ts`);
+  one that stayed open 30 s was healthy, and its close reconnects at once (y-websocket backs off
+  only while a socket fails to open).
 - **Opening offline**: the service worker answers `/board/:id` with this build's `index.html`
   when the network fails (only boards; the app's chunks are cache-first once loaded). The auth
   context falls back to the account card in the vault when the session check can't reach the
@@ -3945,17 +3970,28 @@ holding it — it sends a sync-request and waits for one sync-reply per other su
 board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
 the board as collaborators see it, including edits not saved yet anywhere (KAI-73). Closing a
 board's rooms (trash, delete) saves what each instance's sockets changed before dropping the doc
-(for a deleted board that save finds no board and is dropped).
+(for a deleted board that save finds no board and is dropped). A request already writing to the
+room as it closes is saved with it, or fails (`Room.saveNow` throws `BoardClosedError`; the API
+answers 409 `board_closed`): it is never answered as done and then lost.
 
 Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
 messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'
 updates and presence on the board's channel and applies the others' with `REMOTE_ORIGIN` (relayed
 to its sockets, never re-published or saved: the instance whose socket made a change saves it). A
 room subscribes, loads, then asks the other instances for what the database lacks (sync-request /
-sync-reply, also after a Redis reconnect). Presence from another instance never overrides a client
+sync-reply, also after a Redis reconnect). It goes both ways: an instance asked by one that holds
+something it lacks (changes made while the asker's publishes were lost) asks back, so after a
+Redis gap on either side every copy of the board converges. Presence from another instance never overrides a client
 id owned by a local socket (a client that moved here). A room that applied remote changes appends
 what the database still lacks before it unloads. Access refreshes, board deletion and logouts go to
-all instances on a control channel. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
+all instances on a control channel. That channel keeps nothing, so every instance also re-reads the
+access of all its open sockets every `ACCESS_RECHECK_MS` (5 min) and after the channel was down,
+and a refresh whose read failed (a database blip) runs again with backoff: a removed member's socket
+closes even when the announcement or the first read was lost. Admission is compare-and-set against
+the instance's access version (`realtime/rooms.ts` `accessVersion`): it is read before authorizing,
+every refresh and every board closed for everyone (delete, trash, takedown) bumps it, and a socket
+whose board changed meanwhile reads its access again before joining — it never joins with a role
+that ended while it was being admitted. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
 instances and checks all of this with clients on each.
 
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
@@ -4294,7 +4330,15 @@ the board, deletions. A suggestion is not board content until someone who can ed
   badge ("Claude for Maria", "AI for Maria") can't be forged by a socket. A SOCKET may only set or
   clear the `decision` of an existing record, naming itself (`realtime/suggestions.ts`
   `guardSuggestionWrites`, inside the transaction that applies its editors-layer update, like the
-  facilitation guards: what it undoes reaches nobody, the sender gets the correction). Decided
+  facilitation guards: what it undoes reaches nobody, the sender gets the correction). Deciding is
+  first come, first served (a compare-and-set on the decision): a decision of a record someone
+  decided already is refused, and an accept that lost to a rejection (a reviewer's, a request's, a
+  withdrawal) changes nothing on the board either. Its change is undone in the transaction that
+  applies it (`revertLostAccepts`): the socket's next shared-doc update (`BoardStore` sends the
+  decision first, then the change), its part in a layer (an item in a hidden frame), and in any order
+  a new item under a rejected suggestion's proposed id (a reconnecting client sends its offline
+  change first). Not covered: an offline accept of a change or deletion, sent before its decision,
+  of a suggestion rejected meanwhile stays as the acceptor's own edit. Decided
   records stay a day (undo needs them) and are pruned when a room loads.
 - **Accepting** in the app (`Editor.acceptSuggestions`) is an ordinary edit by the acceptor plus the
   decision, in ONE undo step across the shared doc and the editors layer (its undo manager tracks
@@ -4314,7 +4358,9 @@ the board, deletions. A suggestion is not board content until someone who can ed
   refresh token), an app (its developer) or all of a person's (revoke-all, signed out everywhere);
   realtime's `suggestion-withdrawals` consumer (`realtime/withdrawals.ts`) finds the boards in
   `board_suggestion_authors` — a hint realtime owns: `proposeSuggestions` notes (board, person,
-  credential) BEFORE writing the records, a room load forgets authors with nothing pending — and
+  credential) BEFORE writing the records, a room load or a withdrawal forgets authors with nothing
+  pending, but never a hint noted within the last hour (`noted_at`: the view it works from can
+  predate a proposal noted moments ago, on this instance or another) — and
   `withdrawSuggestionsOn` decides them on the live room as rejected by `WITHDRAWN_BY` with `withdrawn`
   (no socket names that id, so none reopens them), audited `via: 'revoked'` in the person's name.
   Keyed by person AND credential: an app's credential id is its client id, shared by everyone who

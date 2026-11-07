@@ -5,16 +5,16 @@
 // stays here is the view: following the facilitator (a locked engine follow) and hidden cursors.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crosshair, Lock, LockOpen, MousePointer2, Presentation, Shapes, X } from 'lucide-react';
-import { FACILITATION_COLLECTION, FACILITATION_KEY, type FacilitationSession } from '@freero/shared';
+import { FACILITATION_COLLECTION, type FacilitationSession } from '@freero/shared';
 import { definePanel, describeElementType, useCollection, useLimits, usePeers, type Editor } from '@engine';
 import { Avatar, Button, Popover, Tooltip } from '@ui';
-import { canManage, change, cursorsHiddenFor, end, readSession, useCursorPrefs } from './lib/session';
+import { canManage, change, cursorsHiddenFor, end, sessionOf, useCursorPrefs } from './lib/session';
 import { t as tr } from './messages';
 import './facilitation.css';
 
 function useSession(): FacilitationSession | undefined {
   const entries = useCollection<FacilitationSession>(FACILITATION_COLLECTION);
-  return useMemo(() => readSession(entries.find(([k]) => k === FACILITATION_KEY)?.[1]), [entries]);
+  return useMemo(() => sessionOf((key) => entries.find(([k]) => k === key)?.[1]), [entries]);
 }
 
 /** Following and hidden cursors: views, so every client applies them to itself. */

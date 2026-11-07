@@ -1,6 +1,9 @@
 // The only writer of `moderation_items` and `moderation_actions` [S4]. Actions are append-only.
 import type { ModerationActionKind, ModerationItemStatus, ReportReason, ReportTargetKind } from '@freero/shared';
-import { one, query } from '../../platform/db';
+import { one, query, tx } from '../../platform/db';
+
+/** Runs fn in one transaction; the owning modules' writes it calls join it (platform/db's scope). */
+export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
 
 export interface ItemRow {
   id: string;
@@ -62,11 +65,13 @@ const toItem = (r: ItemDb): ItemRow => ({
   resolutionNote: r.resolution_note,
 });
 
+type NewItem = Omit<ItemRow, 'status' | 'resolvedAt' | 'resolvedBy' | 'resolutionNote'> & { dedupeKey: string };
+
 /**
  * Adds an item to the queue unless an open one with the same `dedupeKey` exists (a repeated report,
  * a second appeal against one action). Returns whether it was added.
  */
-export async function insertItem(i: Omit<ItemRow, 'status' | 'resolvedAt' | 'resolvedBy' | 'resolutionNote'> & { dedupeKey: string }): Promise<boolean> {
+export async function insertItem(i: NewItem): Promise<boolean> {
   const row = await one(
     `INSERT INTO moderation_items (id, kind, board_id, board_title, target_kind, target_id, reason, message,
        reporter_id, reporter_key, contact_email, action_id, dedupe_key, created_at)
@@ -93,6 +98,29 @@ export async function insertItem(i: Omit<ItemRow, 'status' | 'resolvedAt' | 'res
   return row !== null;
 }
 
+/** What a report is about, for "is it the first open one" (a board with everything on it, or a listing / template). */
+export type ReportScope = { boardId: string } | { kind: 'listing' | 'gallery'; id: string };
+
+/**
+ * Adds a report like insertItem, and says whether it is now the only open item about `about`
+ * (operators are mailed for that one only). The insert and the count run in one transaction under
+ * a lock per target, so reports arriving together are counted one after the other: exactly one of
+ * them is the first (#192 — counted side by side, each saw the other and nobody was mailed).
+ * null: not added (the same reporter's report is already open).
+ */
+export async function insertReport(i: NewItem, about: ReportScope): Promise<{ first: boolean } | null> {
+  const target = 'boardId' in about ? `board:${about.boardId}` : `${about.kind}:${about.id}`;
+  return tx(async () => {
+    await query(`SELECT pg_advisory_xact_lock(hashtext('moderation.first_report'), hashtext($1))`, [target]);
+    if (!(await insertItem(i))) return null;
+    const open =
+      'boardId' in about
+        ? await one<{ n: number }>(`SELECT count(*)::int AS n FROM moderation_items WHERE board_id = $1 AND status = 'open'`, [about.boardId])
+        : await one<{ n: number }>(`SELECT count(*)::int AS n FROM moderation_items WHERE target_kind = $1 AND target_id = $2 AND status = 'open'`, [about.kind, about.id]);
+    return { first: open?.n === 1 };
+  });
+}
+
 export async function getItem(id: string): Promise<ItemRow | null> {
   const r = await one<ItemDb>(`SELECT * FROM moderation_items WHERE id = $1`, [id]);
   return r ? toItem(r) : null;
@@ -109,12 +137,6 @@ export async function listItems(status: 'open' | 'closed', limit: number): Promi
 
 export async function itemsForBoard(boardId: string): Promise<ItemRow[]> {
   return (await query<ItemDb>(`SELECT * FROM moderation_items WHERE board_id = $1 ORDER BY created_at DESC LIMIT 200`, [boardId])).map(toItem);
-}
-
-/** How many open items the board has (operators are mailed for the first one only). */
-export async function countOpenForBoard(boardId: string): Promise<number> {
-  const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM moderation_items WHERE board_id = $1 AND status = 'open'`, [boardId]);
-  return r?.n ?? 0;
 }
 
 /** Whether an appeal against the action is waiting for review. */
@@ -228,13 +250,6 @@ export async function openReportsAbout(kind: 'listing' | 'gallery', ids: string[
 }
 export const openReportsAboutListings = (ids: string[]) => openReportsAbout('listing', ids);
 export const openReportsAboutGallery = (ids: string[]) => openReportsAbout('gallery', ids);
-
-/** How many open items are about the listing or template (operators are mailed for the first one only). */
-export async function countOpenFor(kind: 'listing' | 'gallery', id: string): Promise<number> {
-  const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM moderation_items WHERE target_kind = $1 AND target_id = $2 AND status = 'open'`, [kind, id]);
-  return r?.n ?? 0;
-}
-export const countOpenForListing = (id: string) => countOpenFor('listing', id);
 
 /** Upload names among these with an open report or appeal about them: their kept copy is on hold (KAI-179). */
 export async function uploadsUnderReview(names: string[]): Promise<Set<string>> {

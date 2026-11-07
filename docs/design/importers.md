@@ -69,7 +69,9 @@ Conditions Freero meets (and tests):
    100 pictures, a 429 from Miro is reported (no retry storm), and the route has its own per-person
    rate limit.
 5. **Consent**: the person starts each import; the dialog says what is read and that the token is
-   not kept.
+   not kept. Cancel really cancels (#193): the request is aborted, the server stops reading and
+   copying pictures, and an answer already on its way is never placed (as for a file whose
+   pictures are still being stored).
 
 What the API does not give: comments (no public comments endpoint), groups, app cards' fields,
 embeds, documents, mind-map nodes (experimental API). The import report lists them.

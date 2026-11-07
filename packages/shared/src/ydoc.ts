@@ -210,6 +210,8 @@ export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilit
 export const FACILITATION_COLLECTION = 'facilitation';
 export const FACILITATION_KEY = 'session';
 export interface FacilitationSession {
+  /** [additive, FAC-1] This session (new for every start): its end is kept under `sessionEndKey(id)` (sessions.ts). */
+  id?: string;
   /** The facilitator's user id: their sockets are never limited. */
   by: string;
   byName: string;
@@ -258,6 +260,8 @@ export const NEW_BOARD_SETTINGS: Partial<BoardSettings> = { lineJumps: true };
 export const GRID_SIZES = [8, 16, 24, 32, 48] as const;
 
 export interface TimerState {
+  /** [additive, FAC-1] This run (new for every Start): Stop is kept under `sessionEndKey(id)` (sessions.ts). */
+  id?: string;
   /** Epoch ms when the timer reaches zero (when running). */
   endsAt: number | null;
   /** Total duration in ms for the current run. */
@@ -437,6 +441,8 @@ export interface ActivityResults {
 
 /** Private mode: while active, what participants add stays in their private layer until revealed. */
 export interface PrivateModeSession {
+  /** [additive, FAC-1] This session (new for every start): its end is kept under `sessionEndKey(id)` (sessions.ts). */
+  id?: string;
   active: boolean;
   startedBy: string;
   startedByName: string;

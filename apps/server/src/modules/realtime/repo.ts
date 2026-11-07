@@ -573,6 +573,24 @@ export async function boardsNotSealedWith(boardIds: string[], ref: string | null
   return rows.map((r) => r.board_id);
 }
 
+/** The boards among these with a row sealed under another workspace's key than the one given for them (a save that raced a move). */
+export async function boardsSealedOutside(boards: Array<{ id: string; workspaceId: string }>): Promise<string[]> {
+  if (!boards.length) return [];
+  const ids = boards.map((b) => b.id);
+  const rows = await query<{ board_id: string }>(
+    `SELECT DISTINCT s.board_id FROM (
+       SELECT board_id, sealed_with FROM board_docs WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_doc_updates WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_doc_snapshots WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_layers WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_layer_updates WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+     ) s JOIN unnest($1::text[], $2::text[]) AS b(id, workspace_id) ON b.id = s.board_id
+     WHERE regexp_replace(s.sealed_with, ':[0-9]+$', '') <> b.workspace_id ORDER BY s.board_id`,
+    [ids, boards.map((b) => b.workspaceId)],
+  );
+  return rows.map((r) => r.board_id);
+}
+
 // ---- who has pending suggestions where (KAI-224; a hint for withdrawing them) ----
 
 /** One app or token acting for one person, as suggestion records name it (`author`). */
@@ -581,13 +599,13 @@ export interface SuggestionAuthorKey {
   credentialId: string;
 }
 
-/** Notes that `boardId` holds pending suggestions of `author` (idempotent). */
+/** Notes that `boardId` holds pending suggestions of `author` (idempotent; a repeat notes it anew). */
 export async function noteSuggestionAuthor(boardId: string, author: SuggestionAuthorKey): Promise<void> {
-  await query(`INSERT INTO board_suggestion_authors (board_id, user_id, credential_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [
-    boardId,
-    author.userId,
-    author.credentialId,
-  ]);
+  await query(
+    `INSERT INTO board_suggestion_authors (board_id, user_id, credential_id, noted_at) VALUES ($1, $2, $3, now())
+     ON CONFLICT (board_id, user_id, credential_id) DO UPDATE SET noted_at = now()`,
+    [boardId, author.userId, author.credentialId],
+  );
 }
 
 /** Boards that may hold pending suggestions of the person (null: anyone's) through the credential (null: any). */
@@ -601,11 +619,16 @@ export async function boardsWithSuggestionsOf(who: { userId: string | null; cred
   return rows.map((r) => r.board_id);
 }
 
-/** Forgets every author of `boardId` but those in `pending` (whose suggestions still wait there). */
+/**
+ * Forgets every author of `boardId` but those in `pending` (whose suggestions still wait there).
+ * `pending` is a view of the board that can predate a proposal noted moments ago (its records not
+ * yet written, saved or relayed), so a hint noted within the last hour is always kept.
+ */
 export async function keepSuggestionAuthors(boardId: string, pending: readonly SuggestionAuthorKey[]): Promise<void> {
   await query(
     `DELETE FROM board_suggestion_authors
-     WHERE board_id = $1 AND (user_id, credential_id) NOT IN (SELECT u, c FROM unnest($2::text[], $3::text[]) AS p(u, c))`,
+     WHERE board_id = $1 AND noted_at < now() - interval '1 hour'
+       AND (user_id, credential_id) NOT IN (SELECT u, c FROM unnest($2::text[], $3::text[]) AS p(u, c))`,
     [boardId, pending.map((p) => p.userId), pending.map((p) => p.credentialId)],
   );
 }

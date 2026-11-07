@@ -1,7 +1,9 @@
 // People's Slack links and the app's bot token per Slack workspace (#105). A link is the person's
 // Slack user id in one Slack workspace, proven by Slack's OAuth consent (oauth.ts); Freero holds no
 // token of the person's. The bot token a consent returns is the app's in that workspace, sealed at
-// rest; SLACK_BOT_TOKEN stands in for workspaces without one (the operator's own).
+// rest; SLACK_BOT_TOKEN stands in for workspaces without one (the operator's own). It is kept
+// exactly while someone in that Slack workspace is linked or a consent there is in flight
+// (releaseSlackTeam, #193).
 import type { ApiScope, SlackAccountInfo } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logger } from '../../platform/log';
@@ -60,12 +62,55 @@ export async function botTokenFor(teamId: string): Promise<string | null> {
   if (!slack) return null;
   const sealed = teamId ? await repo.teamToken(teamId) : null;
   const opened = sealed ? unseal(TOKEN_PURPOSE, sealed) : null;
-  if (opened?.stale) await repo.setTeamToken(teamId, seal(TOKEN_PURPOSE, opened.value), Date.now());
+  if (sealed && opened?.stale) await repo.resealTeamToken(teamId, sealed, seal(TOKEN_PURPOSE, opened.value));
   return opened?.value ?? slack.botToken;
 }
 
-export function storeBotToken(teamId: string, token: string): Promise<void> {
-  return repo.setTeamToken(teamId, seal(TOKEN_PURPOSE, token), Date.now());
+/** How long a consent Slack answered may take to finish (two more Slack calls) before its claim lapses. */
+const CLAIM_TTL_MS = 10 * 60_000;
+
+/**
+ * A consent Slack answered with `token` for `teamId` claims the workspace: until it is linked or
+ * given up, Disconnect there doesn't revoke the app's token. False: Freero is revoking that very
+ * token right now (the consent can't use it; the person tries again).
+ */
+export function claimSlackTeam(teamId: string, claimId: string, token: string): Promise<boolean> {
+  return repo.claimTeam(teamId, claimId, Date.now() + CLAIM_TTL_MS, (sealed) => unseal(TOKEN_PURPOSE, sealed)?.value === token);
+}
+
+/**
+ * Finishes a claimed consent: stores the workspace's token and the person's link together. When
+ * this moved their link from another Slack workspace, that one is released (releaseSlackTeam).
+ * False: the claim lapsed, nothing was linked.
+ */
+export async function linkSlack(link: repo.SlackLink, token: string, claimId: string): Promise<boolean> {
+  const r = await repo.linkAndStoreToken(link, seal(TOKEN_PURPOSE, token), claimId);
+  if (r === 'expired') return false;
+  if (r.previousTeam && r.previousTeam !== link.teamId) await releaseSlackTeam(r.previousTeam);
+  return true;
+}
+
+/** A claimed consent that won't be linked (Slack refused a later step): the claim goes, and the workspace is released. */
+export async function abandonSlackClaim(teamId: string, claimId: string): Promise<void> {
+  await repo.dropClaim(claimId);
+  await releaseSlackTeam(teamId);
+}
+
+/**
+ * When nobody in a Slack workspace is linked any more and no consent there is in flight, Freero
+ * forgets the app's token there and revokes it with Slack (auth.revoke) — unless it is
+ * SLACK_BOT_TOKEN, the operator's own, which only the operator manages. Decided under the
+ * workspace's lock (repo.startRevokingIfUnused); every path that removes a link ends here.
+ */
+async function releaseSlackTeam(teamId: string): Promise<void> {
+  const r = await repo.startRevokingIfUnused(teamId);
+  if (!r) return;
+  const token = unseal(TOKEN_PURPOSE, r.sealed)?.value ?? null;
+  if (token && token !== getConfig().slack?.botToken) {
+    const answer = await callSlack('auth.revoke', token, {}, { form: true });
+    logger.info({ slack: { revoked: teamId, ok: answer.ok, error: answer.error ?? null } }, 'slack token revoked');
+  }
+  await repo.forgetRevokedToken(teamId, r.mark);
 }
 
 export async function slackAccountOf(userId: string): Promise<SlackAccountInfo> {
@@ -84,11 +129,7 @@ export async function linkedUserOf(teamId: string, slackUserId: string | undefin
   return (await repo.linkBySlackUser(teamId, slackUserId))?.userId ?? null;
 }
 
-/**
- * Disconnects the person's Slack account. When nobody is linked in that Slack workspace any more,
- * Freero forgets the app's token there and revokes it with Slack (auth.revoke) — unless it is
- * SLACK_BOT_TOKEN, the operator's own, which only the operator manages.
- */
+/** Disconnects the person's Slack account (Disconnect, or their account being deleted); see releaseSlackTeam. */
 export async function unlinkSlack(userId: string): Promise<boolean> {
   const link = await repo.deleteLink(userId);
   if (!link) return false;
@@ -99,15 +140,7 @@ export async function unlinkSlack(userId: string): Promise<boolean> {
     target: { type: 'slack_account', id: `${link.teamId}:${link.slackUserId}`, label: link.slackName },
     metadata: { team: link.teamId },
   });
-  if ((await repo.linksInTeam(link.teamId)) === 0) {
-    const sealed = await repo.teamToken(link.teamId);
-    const token = sealed ? unseal(TOKEN_PURPOSE, sealed)?.value : null;
-    if (sealed) await repo.deleteTeamToken(link.teamId);
-    if (token && token !== getConfig().slack?.botToken) {
-      const r = await callSlack('auth.revoke', token, {}, { form: true });
-      logger.info({ slack: { revoked: link.teamId, ok: r.ok, error: r.error ?? null } }, 'slack token revoked');
-    }
-  }
+  await releaseSlackTeam(link.teamId);
   return true;
 }
 

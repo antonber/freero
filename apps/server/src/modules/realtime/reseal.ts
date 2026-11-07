@@ -25,3 +25,12 @@ export async function resealBoard(boardId: string, workspaceId?: string): Promis
 export function boardsNeedingReseal(boardIds: string[], ref: string | null): Promise<string[]> {
   return repo.boardsNotSealedWith(boardIds, ref);
 }
+
+/**
+ * The boards among these (each with the workspace it is in now) holding a row sealed under another
+ * workspace's key: a save that sealed for the board's previous workspace while it moved. Rows are
+ * sealed outside the transaction that writes them, so this can happen whatever reseals the move does.
+ */
+export function boardsSealedForAnotherWorkspace(boards: Array<{ id: string; workspaceId: string }>): Promise<string[]> {
+  return repo.boardsSealedOutside(boards);
+}

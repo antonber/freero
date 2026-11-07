@@ -15,7 +15,15 @@ export default function importersRoutes(_ctx: ServerContext): Router {
     '/boards/:id/import/miro',
     requireUser,
     rateLimit('boardImport', 'user'),
-    handle(async (req, res) => res.set('Cache-Control', 'private, no-store').json((await importFromMiro(req.params.id, currentUser(req).id, req.body)) satisfies MiroImportResponse)),
+    handle(async (req, res) => {
+      // The person cancelled (the import dialog's Cancel aborts the request): stop reading and copying.
+      const gone = new AbortController();
+      res.on('close', () => {
+        if (!res.writableFinished) gone.abort();
+      });
+      const answer = await importFromMiro(req.params.id, currentUser(req).id, req.body, gone.signal);
+      res.set('Cache-Control', 'private, no-store').json(answer satisfies MiroImportResponse);
+    }),
   );
   return r;
 }

@@ -206,6 +206,8 @@ export function createCore(
     // Web fonts arrived: text measured with fallback fonts gets its real size (locally, no undo).
     subscribeFontEpoch(() => core.editor.renormalizeMeasured()),
     store.subscribeStatus(() => {
+      // (Re)connected: the host re-measures what may have drifted meanwhile (the server clock, FAC-9).
+      if (store.status === 'connected' && ui.getState().connection !== 'connected') core.hostRef.current.onConnected?.();
       ui.setState({ connection: store.status, synced: store.synced, restored: store.restored });
       core.emitter.emit('connection');
       if (store.ended && !endReported) {
@@ -230,8 +232,9 @@ export function createCore(
       // Hidden frames' contents and pending suggestions: only owners/editors may hold them. Losing
       // the role forgets the local copy; gaining it asks the server for the layer. A live view in an
       // AI assistant reads them as the person even while its writes are capped (`readRole`, #89).
+      // Anything the layer ever received counts (suggestions live outside its `elements`).
       if (ROLE_RANK[store.serverReadRole ?? role] < ROLE_RANK.editor) {
-        if (store.layers.editors.elements.size) store.resetLayer('editors');
+        if (store.layers.editors.doc.store.clients.size) store.resetLayer('editors');
       } else store.requestLayerSync('editors');
       core.emitter.emit('connection');
     }),

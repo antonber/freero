@@ -1,8 +1,8 @@
 // Editor-bound planning poker actions (only this feature's scoped editor writes `estimation`).
 import { nanoid } from 'nanoid';
-import type { BoardElement } from '@freero/shared';
+import { isSessionEndKey, writeSessionEnd, type BoardElement } from '@freero/shared';
 import type { Editor } from '@engine';
-import { ROUND_KEY, itemPrefix, readRound, voteKey, type Deck, type Estimate, type EstimationValue, type Round } from './model';
+import { ROUND_KEY, itemPrefix, roundOf, voteKey, type Deck, type Estimate, type EstimationValue, type Round } from './model';
 
 import { t } from '../messages';
 export const COLLECTION = 'estimation';
@@ -13,7 +13,7 @@ const shared = (editor: Editor) => editor.collection<EstimationValue>(COLLECTION
 /** My sealed picks: the server sends them to nobody else until the item is revealed. */
 const sealed = (editor: Editor) => editor.privateCollection<EstimationValue>(COLLECTION);
 
-export const getRound = (editor: Pick<Editor, 'collection'>) => readRound(editor.collection<EstimationValue>(COLLECTION).get(ROUND_KEY));
+export const getRound = (editor: Pick<Editor, 'collection'>) => roundOf((k) => editor.collection<EstimationValue>(COLLECTION).get(k));
 
 export const currentItem = (round: Round) => round.itemIds[round.index] ?? null;
 
@@ -52,7 +52,7 @@ export function start(editor: Editor, itemIds: string[], deck: Deck): void {
   };
   // One update: the old round's estimates disappear together with the new round appearing.
   editor.transact(() => {
-    for (const [key] of shared(editor).entries()) shared(editor).delete(key);
+    for (const [key] of shared(editor).entries()) if (!isSessionEndKey(key)) shared(editor).delete(key);
     shared(editor).set(ROUND_KEY, round);
   });
   focusItem(editor, round);
@@ -88,9 +88,12 @@ export function reveal(editor: Editor): void {
   const itemId = round && currentItem(round);
   if (!round || !itemId || round.revealed || !canManage(editor, round)) return;
   // The server moves every voter's pick into the shared collection (replacing the markers) before
-  // the round reads as revealed: nobody ever sees half of the cards.
-  editor.revealPrivate(COLLECTION, { prefix: itemPrefix(round.id, itemId) });
-  shared(editor).set(ROUND_KEY, { ...round, revealed: true });
+  // the round reads as revealed: nobody ever sees half of the cards. One step: offline, the reveal
+  // waits with it and is sent first on reconnecting (FAC-8).
+  editor.transact(() => {
+    editor.revealPrivate(COLLECTION, { prefix: itemPrefix(round.id, itemId) });
+    shared(editor).set(ROUND_KEY, { ...round, revealed: true });
+  });
 }
 
 /** Back to picking for the current item: everyone's cards are cleared. */
@@ -130,10 +133,13 @@ export function accept(editor: Editor, value: string): void {
 }
 
 export function end(editor: Editor): void {
-  if (!editor.can('editor') || !getRound(editor)) return;
+  const round = getRound(editor);
+  if (!editor.can('editor') || !round) return;
   editor.discardPrivate(COLLECTION);
   editor.transact(() => {
-    for (const [key] of shared(editor).entries()) shared(editor).delete(key);
+    for (const [key] of shared(editor).entries()) if (key !== ROUND_KEY && !isSessionEndKey(key)) shared(editor).delete(key);
+    // Kept as the round's end (FAC-1): an owner's step taken at the same moment can't bring it back.
+    writeSessionEnd(shared(editor), ROUND_KEY, { id: round.id, ended: true }, { keep: true });
   });
 }
 

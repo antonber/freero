@@ -15,22 +15,23 @@ export const sealToken = (token: string) => seal(PURPOSE, token);
 const reconnect = () => new HttpError(409, 'Connect Figma again: Figma no longer accepts Freero’s access to your account.', 'figma_reconnect');
 export const notConnected = () => new HttpError(409, 'Connect your Figma account first.', 'figma_not_connected');
 
-async function refreshed(userId: string, sealedRefresh: string | null): Promise<string> {
-  const refresh = sealedRefresh ? unseal(PURPOSE, sealedRefresh)?.value : null;
+/** Fresh tokens for the connection that was read; it is dropped when Figma refuses (a connection made since is left alone). */
+async function refreshed(acct: repo.FigmaConnection): Promise<string> {
+  const refresh = acct.refreshToken ? unseal(PURPOSE, acct.refreshToken)?.value : null;
   if (!refresh) {
-    await repo.deleteAccount(userId);
+    await repo.dropConnection(acct);
     throw reconnect();
   }
   try {
     const t = await refreshTokens(refresh);
-    await repo.setTokens(userId, sealToken(t.accessToken), t.refreshToken ? sealToken(t.refreshToken) : null, t.expiresAt);
+    await repo.setTokens(acct, sealToken(t.accessToken), t.refreshToken ? sealToken(t.refreshToken) : null, t.expiresAt);
     return t.accessToken;
   } catch (e) {
     if (!(e instanceof FigmaApiError)) throw e;
     if (e.status === 400 || e.status === 401 || e.status === 403) {
       // Revoked in Figma (or the app's secret changed): the connection is gone, say so once.
       logger.info({ figma: { dropped: 'refresh_refused' } }, 'figma connection dropped');
-      await repo.deleteAccount(userId);
+      await repo.dropConnection(acct);
       throw reconnect();
     }
     throw new HttpError(502, 'Figma didn’t answer. Try again in a moment.', 'figma_unreachable');
@@ -46,12 +47,12 @@ export async function withFigmaToken<T>(userId: string, fn: (token: string) => P
   if (!acct) throw notConnected();
   const opened = unseal(PURPOSE, acct.accessToken);
   let token = opened?.value ?? null;
-  if (!token || (acct.expiresAt !== null && acct.expiresAt - EARLY_MS < Date.now())) token = await refreshed(userId, acct.refreshToken);
-  else if (opened?.stale) await repo.setTokens(userId, sealToken(token), null, acct.expiresAt);
+  if (!token || (acct.expiresAt !== null && acct.expiresAt - EARLY_MS < Date.now())) token = await refreshed(acct);
+  else if (opened?.stale) await repo.setTokens(acct, sealToken(token), null, acct.expiresAt);
   try {
     return await fn(token);
   } catch (e) {
     if (!(e instanceof FigmaApiError) || e.status !== 401) throw e;
-    return fn(await refreshed(userId, acct.refreshToken));
+    return fn(await refreshed(acct));
   }
 }

@@ -2,8 +2,7 @@ import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { endSessionsBeyondLimits, onEmailVerified, onSignupExpected, onTwoFactorRequirement, setSessionLimits } from '../auth/index';
-import { hasLiveInviteFor } from './repo';
-import { convertInvitesFor } from './invites';
+import { convertInvitesFor, hasUsableInviteFor } from './invites';
 import { registerWorkspaceObjectTypes } from './objects';
 import { allSessionLimits, sessionLimitsFor, twoFactorRequirementOf } from './service';
 
@@ -15,7 +14,7 @@ export default function initWorkspaces(ctx: ServerContext): void {
   const stop = onEmailVerified(convertInvitesFor);
   ctx.onShutdown(() => void stop());
   // An invite-only server lets an address invited to a workspace sign up.
-  const stopExpected = onSignupExpected((email) => hasLiveInviteFor(email, Date.now()));
+  const stopExpected = onSignupExpected(hasUsableInviteFor);
   ctx.onShutdown(() => void stopExpected());
 
   // A workspace that requires two-step verification: its members can't turn it off (auth's seam);

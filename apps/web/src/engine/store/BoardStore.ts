@@ -45,6 +45,7 @@ import {
 import type { ElementLayer, OfflineCopy } from '../api';
 import { compareRenderOrder } from '../geometry/spatial';
 import { UndoHistory } from './undo';
+import { backOffQuickCloses, isRefusal, type Backoff } from './reconnect';
 
 /** Transaction origin for every local write; the undo manager tracks only this. */
 export const LOCAL_ORIGIN = { source: 'freero-local' };
@@ -53,8 +54,15 @@ export const SILENT_ORIGIN = { source: 'freero-silent' };
 /** Layer updates received from the server (never sent back). */
 const LAYER_REMOTE_ORIGIN = { source: 'freero-layer-remote' };
 
-/** 'removed': Freero's moderators took the board down (WS_CLOSE_BOARD_REMOVED); otherwise like 'denied'. */
-export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied' | 'removed';
+/**
+ * 'denied', 'removed' and 'refused' are final: no more reconnecting, read-only, the device copy
+ * forgotten. 'removed': Freero's moderators took the board down (WS_CLOSE_BOARD_REMOVED); 'refused':
+ * the server refused a change this client holds as too large (1009), which every reconnect would
+ * send again (reconnect.ts); otherwise like 'denied'.
+ */
+export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied' | 'removed' | 'refused';
+/** Has the server ended this connection for good? */
+export const connectionEnded = (s: ConnectionStatus): boolean => s === 'denied' || s === 'removed' || s === 'refused';
 /** Decides the layer an element is written to, given where it is now (null = new). */
 export type Placement = (el: BoardElement, current: ElementLayer | null) => ElementLayer;
 
@@ -96,6 +104,25 @@ export interface StorePersistence {
 /** At most one device-copy save per this many ms while changes keep coming. */
 const PERSIST_EVERY_MS = 800;
 
+/**
+ * Ops kept with the device copy while they wait (FAC-8): reveals only. A reveal that never reaches
+ * the server leaves what it should have shown sealed for good (a vote's ballots under an ended
+ * vote); a discard that never does leaves only private leftovers that the next start discards, while
+ * one sent again much later could drop what a newer session holds.
+ */
+const isKeptOp = (op: LayerOp) => op.type === 'reveal';
+
+/** The kept ops of a device copy (none when absent or unreadable). */
+function readKeptOps(bytes: Uint8Array | undefined): LayerOp[] {
+  if (!bytes) return [];
+  try {
+    const v: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return Array.isArray(v) ? v.filter((op): op is LayerOp => !!op && typeof op === 'object' && isKeptOp(op as LayerOp) && typeof (op as LayerOp).collection === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 type Listener = () => void;
 
 /** An element-content entry that is not in its element's doc, and where it belongs. */
@@ -128,7 +155,7 @@ export class BoardStore {
   readonly layers: Record<BoardLayer, LayerDoc>;
 
   status: ConnectionStatus;
-  /** Why the server closed the socket for good ('denied' / 'removed'), or null. */
+  /** Why the server closed the socket for good ('denied' / 'removed' / 'refused'), or null. */
   ended: { code: number; reason: string } | null = null;
   synced = false;
   serverRole: Role | null = null;
@@ -179,6 +206,7 @@ export class BoardStore {
   private baseCaptureTimeout: number;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private backoff: Backoff | null = null;
   private destroyed = false;
   /** Collections whose local writes are undoable (FeatureManifest.undoable), in every doc. */
   private undoable = new Set<string>();
@@ -266,8 +294,12 @@ export class BoardStore {
         }
       };
       provider.on('status', ({ status }: { status: string }) => {
+        // On (re)connecting, before the provider sends anything (FAC-8): the reveals asked for
+        // offline go first, so the server applies them before this client's offline doc changes
+        // (its answer to the server's sync step 1), e.g. a sealed vote's ballots before its end.
+        if (status === 'connected') this.flushLayerOps();
         if (status === 'connected') for (const name of BOARD_LAYERS) this.requestLayerSync(name);
-        if (this.status === 'denied' || this.status === 'removed') return;
+        if (connectionEnded(this.status)) return;
         this.status = status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected';
         this.emit(this.statusListeners);
       });
@@ -278,8 +310,9 @@ export class BoardStore {
         this.emit(this.statusListeners);
       });
       provider.on('connection-close', (event: CloseEvent | null) => {
-        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || event.code === WS_CLOSE_EMBED_FULL)) {
-          this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : 'denied';
+        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || event.code === WS_CLOSE_EMBED_FULL || isRefusal(event.code))) {
+          this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : isRefusal(event.code) ? 'refused' : 'denied';
+          this.backoff?.stop();
           this.ended = { code: event.code, reason: event.reason };
           this.dropPersisted();
           provider.shouldConnect = false;
@@ -295,6 +328,8 @@ export class BoardStore {
           this.emit(this.roleListeners);
         }
       });
+      // Other closes soon after opening (4429, 1011, 1013): reconnect later and later, not at once.
+      this.backoff = backOffQuickCloses(provider);
     } else {
       this.status = 'local';
       this.synced = true;
@@ -398,6 +433,8 @@ export class BoardStore {
     };
     apply(this.doc, copy.shared);
     apply(this.layers.private.doc, copy.private);
+    // Reveals that were waiting when the page closed (FAC-8): sent first on connecting.
+    this.pendingOps.unshift(...readKeptOps(copy.ops));
     // Kept only for an owner / editor, and read back only while this person still is one.
     if (persist.keeps('editors')) apply(this.layers.editors.doc, copy.editors);
     this.restored = true;
@@ -417,6 +454,8 @@ export class BoardStore {
     if (!p) return;
     const copy: OfflineCopy = { shared: Y.encodeStateAsUpdate(this.doc), private: Y.encodeStateAsUpdate(this.layers.private.doc) };
     if (p.keeps('editors')) copy.editors = Y.encodeStateAsUpdate(this.layers.editors.doc);
+    const kept = this.pendingOps.filter(isKeptOp);
+    if (kept.length) copy.ops = new TextEncoder().encode(JSON.stringify(kept));
     void p.save(copy).catch(() => undefined);
   }
 
@@ -437,21 +476,33 @@ export class BoardStore {
     if (p) void p.forget().catch(() => undefined);
   }
 
-  /** Runs a reveal/discard on the server (in order with this socket's updates); offline: queued. */
+  /**
+   * Runs a reveal/discard on the server (in order with this socket's updates); offline: queued, and
+   * a queued reveal is kept with the device copy (with the doc changes made after it, e.g. the end
+   * of the vote it reveals) until it is sent first thing on the next connection (FAC-8).
+   */
   runLayerOp(op: LayerOp): void {
     if (!this.provider) return this.applyLayerOpLocally(op);
     this.pendingOps.push(op);
-    if (this.synced) this.flushLayerOps();
+    if (isKeptOp(op)) this.schedulePersist();
+    this.flushLayerOps();
   }
 
   private flushLayerOps(): void {
     const p = this.provider;
-    if (!p || !p.wsconnected || !p.ws) return;
-    for (const op of this.pendingOps.splice(0)) {
+    if (!p || !p.wsconnected || !p.ws || !this.pendingOps.length) return;
+    const ops = this.pendingOps.splice(0);
+    for (const op of ops) {
       const e = encoding.createEncoder();
       encoding.writeVarUint(e, WS_MESSAGE_LAYER_OP);
       encoding.writeVarString(e, JSON.stringify(op));
       p.ws.send(encoding.toUint8Array(e));
+    }
+    // Sent: the device copy lets go of them at once (one sent again later would reveal twice).
+    if (ops.some(isKeptOp)) {
+      if (this.persistSaveTimer) clearTimeout(this.persistSaveTimer);
+      this.persistSaveTimer = null;
+      this.savePersisted();
     }
   }
 
@@ -639,6 +690,9 @@ export class BoardStore {
   /** Runs `fn` as one transaction on every doc it may write (the shared doc and the layers). */
   private transactAll(fn: () => void, origin: object): void {
     const { private: p, editors: e } = this.layers;
+    // The innermost transaction ends (and is sent) first: the editors layer, then the private one,
+    // then the shared doc. The server relies on it: a suggestion's decision arrives before the
+    // board change of the same accept (realtime/suggestions.ts revertLostAccepts).
     this.doc.transact(() => p.doc.transact(() => e.doc.transact(fn, origin), origin), origin);
   }
 
@@ -1124,6 +1178,7 @@ export class BoardStore {
     if (this.destroyed) return;
     this.destroyed = true;
     if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.backoff?.stop();
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;

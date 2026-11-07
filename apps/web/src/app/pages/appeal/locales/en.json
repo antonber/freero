@@ -14,6 +14,7 @@
   "reason": "Reason",
   "when": "When",
   "thisDecisionWasReversedThere": "This decision was reversed. There is nothing to appeal.",
+  "thisDecisionIsFinal": "What this decision was about has been deleted for good, so it can’t be undone and there is nothing left to appeal.",
   "thanksAModeratorWillReview": "Thanks. A moderator will review your appeal and email you the outcome.",
   "yourAppealIsWaitingFor": "Your appeal is waiting for a moderator. We’ll email you the outcome.",
   "whyIsThisAMistake": "Why is this a mistake?",

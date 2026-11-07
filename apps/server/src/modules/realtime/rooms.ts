@@ -72,6 +72,8 @@ import {
   GUEST_EDIT_LIMITS,
   type GuestEditGrant,
   type GuestEditNoticeCode,
+  sessionEndKey,
+  sessionIdOf,
 } from '@freero/shared';
 import { guardProtectedLocks } from './protectedLock';
 import {
@@ -101,6 +103,7 @@ import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentList
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
+import { guardSessionEnds, prepareSessionEnds } from './sessionEnds';
 import { attributionOf, creatorOf, guardAttribution, type Attribution } from './attribution';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
 import { guardContentPlacement, placeElementContent, writeElementContent, type MovedEntry } from './elementContent';
@@ -113,6 +116,7 @@ import {
   EDITORS_LAYER,
   isLayerName,
   isPrivateLayer,
+  layerOpSessionHolds,
   mayRunLayerOp,
   mayWriteLayer,
   participantMayWriteLayer,
@@ -129,6 +133,11 @@ import { auditDecisions } from './suggestionAudit';
 import {
   guardSuggestionWrites,
   planDecision,
+  elementWritesIn,
+  rejectedCreatesAdded,
+  revertLostAccepts,
+  undoLostAccepts,
+  type ElementWrites,
   proposeRecords,
   pruneDecided,
   suggestionEntries,
@@ -187,6 +196,24 @@ class RequestOrigin {
 export const AGENT_PRESENCE_MS = 6000;
 /** How long to wait for the other instances holding a board to send what we lack. */
 const PEER_CATCH_UP_TIMEOUT_MS = 2000;
+/** First retry of an access refresh whose read failed (database blip); doubles up to the max. */
+const ACCESS_RETRY_MS = 1000;
+const ACCESS_RETRY_MAX_MS = 60_000;
+/**
+ * How often every open socket's access is read again: the backstop for an access change this
+ * instance was never told of (a control message lost in a Redis gap, a change made by the
+ * operator CLI). Bounds how long a removed member can stay connected.
+ */
+export const ACCESS_RECHECK_MS = 5 * 60_000;
+/**
+ * How long after a socket's accept lost to an earlier rejection its next shared-doc update is taken
+ * as that accept's change (Editor.acceptSuggestions sends the decision, then the change, at once).
+ */
+const LOST_ACCEPT_WINDOW_MS = 5000;
+/** Saves a closing room makes for changes requests add while it closes, before it gives up on them. */
+const CLOSE_SAVE_ROUNDS = 3;
+/** Times an admission reads access again because it kept changing meanwhile, before it gives up (1013). */
+const MAX_ADMISSION_RECHECKS = 3;
 
 /** Who a socket is, decided once at admission. */
 export interface Admission {
@@ -297,6 +324,16 @@ interface Conn {
   /** #97: the guest socket's update rate, and when it was last told of each refusal. */
   bucket: TokenBucket | null;
   noticeAt: Map<GuestEditNoticeCode, number>;
+  /**
+   * Suggestions this socket accepted after they were rejected (suggestions.ts guardSuggestionWrites),
+   * and when: its next shared-doc update is that accept's change, undone as it is applied.
+   */
+  lostAccepts: { records: SuggestionRecord[]; at: number } | null;
+  /**
+   * What this socket's last sync step 2 wrote to the shared doc's items, and when: a reconnecting
+   * client sends what it did offline as step 2s, the shared doc's before the layers' (onLayerMessage).
+   */
+  offlineWrites: { writes: ElementWrites; at: number } | null;
 }
 
 /** One layer doc of a room (see "Board layers" above). */
@@ -387,6 +424,9 @@ class Room {
   pendingJoins = 0;
   destroyed = false;
   private dirty = false;
+  /** Changes this room made (sockets, requests, the server) so far, and how many of them are saved. */
+  private changeCount = 0;
+  private savedCount = 0;
   /** Changes made through this room's sockets since the last successful save, in order. */
   private unsaved: Uint8Array[] = [];
   /** Rows in the board's log that this room knows of (loaded + appended); compaction trigger. */
@@ -399,6 +439,9 @@ class Room {
   private saving: Promise<void> = Promise.resolve();
   private pendingSaves = 0;
   private refreshing: Promise<void> = Promise.resolve();
+  /** A failed access refresh runs again (see retryAccessLater); the delay of the next retry. */
+  private accessRetry: NodeJS.Timeout | null = null;
+  private accessRetryMs = 0;
   private subscription: Subscription | null = null;
   /** Called with the sender of every sync-reply addressed to us (see catchUpWithPeers). */
   private replyWaiters = new Set<(from: string) => void>();
@@ -481,6 +524,8 @@ class Room {
     this.doc.getMap<unknown>(VOTING_COLLECTION);
     // Results only the server writes (serverCollections.ts): likewise.
     prepareServerCollections(this.doc);
+    // Sessions whose end is kept (sessionEnds.ts): likewise.
+    prepareSessionEnds(this.doc);
     // Element content (elementContent.ts): likewise, for the placement guard.
     for (const name of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) this.doc.getMap<unknown>(name);
     // A doc's document (KAI-162; @freero/shared docs.ts): typed up front, so nothing ever reads
@@ -729,9 +774,11 @@ class Room {
       const before = Y.encodeStateVector(doc);
       let fixed = false;
       let decided: ReturnType<typeof guardSuggestionWrites>['decided'] = [];
+      let lost: SuggestionRecord[] = [];
       doc.getMap<unknown>(VOTING_COLLECTION);
       if (participant) for (const n of PARTICIPANT_LAYER_ROOTS) doc.getMap<unknown>(n);
       prepareServerCollections(doc);
+      for (const n of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) doc.getMap<unknown>(n);
       const overrides = mayProtectOn(conn);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
@@ -751,9 +798,24 @@ class Room {
           const g = guardSuggestionWrites(tr, doc, conn.userId);
           fixed = g.reverted > 0 || fixed;
           decided = g.decided;
+          lost = g.lost;
         }
+        // An accept that lost to a rejection changes nothing: its part in this doc (an item in a
+        // hidden frame) is undone here, the shared-doc part when it arrives (onUpdate).
+        const suggestions = name === EDITORS_LAYER ? doc : this.layers.get(EDITORS_LAYER)?.doc;
+        fixed = revertLostAccepts(tr, doc, [...lost, ...rejectedCreatesAdded(tr, doc, suggestions)]) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(doc, before))));
+      if (lost.length) {
+        const now = Date.now();
+        const offline = conn.offlineWrites;
+        // Live, the accept's change is this socket's next shared-doc update (BoardStore sends the
+        // decision first). Sent from offline (sync step 2s), it came first: undone now if nobody
+        // changed those items since (published, saved, sent to everyone: a change of the server's).
+        if (syncType !== syncProtocol.messageYjsSyncStep2) conn.lostAccepts = { records: lost, at: now };
+        else if (offline && now - offline.at <= LOST_ACCEPT_WINDOW_MS)
+          this.doc.transact(() => undoLostAccepts(this.doc, offline.writes, lost, { onlyIfCurrent: true }), SERVER_ORIGIN);
+      }
       if (decided.length) {
         void auditDecisions(this.id, conn.userId, decided, 'board');
         emitSuggestionsDecided(this.id, conn.userId, decided);
@@ -877,7 +939,13 @@ class Room {
       this.facilitatorTimer = null;
       const now = readFacilitation(this.doc);
       if (this.destroyed || !now || now.by !== session.by || now.startedAt !== session.startedAt || this.facilitatorPresent(now.by)) return;
-      this.doc.transact(() => this.doc.getMap<unknown>(FACILITATION_COLLECTION).delete(FACILITATION_KEY), SERVER_ORIGIN);
+      this.doc.transact(() => {
+        const map = this.doc.getMap<unknown>(FACILITATION_COLLECTION);
+        // Kept as the session's end (sessionEnds.ts) when it has an id: a stale change can't revive it.
+        const id = sessionIdOf(map.get(FACILITATION_KEY));
+        if (id && !map.has(sessionEndKey(id))) map.set(sessionEndKey(id), { id, ended: true });
+        map.delete(FACILITATION_KEY);
+      }, SERVER_ORIGIN);
     }, getConfig().facilitatorGraceMs);
     this.facilitatorTimer.unref();
   }
@@ -895,6 +963,8 @@ class Room {
     void Promise.all(names.map(async (n) => ((await getBoardAccess(this.id, privateLayerOwner(n)!)).role)))
       .then((roles) => {
         if (this.destroyed || !this.conns.has(conn.ws) || !mayRunLayerOp(conn)) return;
+        // An op tied to a session (it waited offline) applies only while that session is the one on the board.
+        if (op.session && !layerOpSessionHolds(op.session, this.doc)) return;
         const docs = new Map<string, Y.Doc>();
         // Participants' layers too, while the board lets them take part (participation.ts).
         const open = participationIsOpen(this.doc);
@@ -949,9 +1019,14 @@ class Room {
           this.applyPeerAwareness(msg.update);
           break;
         case 'sync-request':
-          // Answer from the loaded doc (a request can arrive while we are still loading).
+          // Answer from the loaded doc (a request can arrive while we are still loading). Both ways:
+          // when the asker holds something we lack (changes it made while its publishes were lost,
+          // a Redis gap on its side), ask it back, or our copy stays behind for the room's lifetime.
           this.ready.then(
-            () => this.answerPeer(from, msg.stateVector, msg.layers ?? []),
+            () => {
+              this.answerPeer(from, msg.stateVector, msg.layers ?? []);
+              if (!this.destroyed && this.lacksFrom(msg.stateVector, msg.layers ?? [])) this.requestPeerSync();
+            },
             () => {},
           );
           break;
@@ -1015,6 +1090,16 @@ class Room {
       return false;
     });
     if (ours) awarenessProtocol.applyAwarenessUpdate(this.awareness, ours, REMOTE_ORIGIN);
+  }
+
+  /** Do these state vectors (another instance's doc and layers) cover anything this room lacks? */
+  private lacksFrom(stateVector: Uint8Array, layerVectors: Array<{ layer: string; data: Uint8Array }>): boolean {
+    const ahead = (theirs: Uint8Array, doc: Y.Doc | undefined) => {
+      const ours = doc ? Y.decodeStateVector(Y.encodeStateVector(doc)) : new Map<number, number>();
+      for (const [client, clock] of Y.decodeStateVector(theirs)) if (clock > (ours.get(client) ?? 0)) return true;
+      return false;
+    };
+    return ahead(stateVector, this.doc) || layerVectors.some((l) => isLayerName(l.layer) && ahead(l.data, this.layers.get(l.layer)?.doc));
   }
 
   private answerPeer(to: string, stateVector: Uint8Array, layerVectors: Array<{ layer: string; data: Uint8Array }>): void {
@@ -1091,6 +1176,8 @@ class Room {
       guestGrant: null,
       bucket: null,
       noticeAt: new Map(),
+      lostAccepts: null,
+      offlineWrites: null,
     };
     conn.guestGrant = guestGrantOf(conn, conn.role, session);
     this.conns.set(ws, conn);
@@ -1183,11 +1270,17 @@ class Room {
       let fixed = false;
       let moved: MovedEntry[] = [];
       const overrides = mayProtectOn(conn);
+      // The change of an accept that lost to a rejection (onLayerMessage): this socket's next update.
+      const lost = conn.lostAccepts && Date.now() - conn.lostAccepts.at <= LOST_ACCEPT_WINDOW_MS ? conn.lostAccepts.records : [];
+      conn.lostAccepts = null;
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
-        fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
+        fixed = revertLostAccepts(tr, this.doc, [...lost, ...rejectedCreatesAdded(tr, this.doc, this.layers.get(EDITORS_LAYER)?.doc)]) > 0;
+        fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access }) || fixed;
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
+        // An ended session stays ended, whoever wrote it since (sessionEnds.ts): after the owners' rules above.
+        fixed = guardSessionEnds(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
         // Only the owner changes protected items (protectedLock.ts).
         if (!overrides) fixed = guardProtectedLocks(tr, this.doc.getMap<unknown>(ELEMENTS), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
@@ -1197,6 +1290,7 @@ class Room {
         const homes = { editors: this.layers.get(EDITORS_LAYER)?.doc, own: this.layers.get(privateLayerOf(conn.userId))?.doc };
         moved = guardContentPlacement(tr, this.doc, homes, SERVER_ORIGIN);
         fixed = moved.length > 0 || fixed;
+        if (syncType === syncProtocol.messageYjsSyncStep2) conn.offlineWrites = { writes: elementWritesIn(tr, this.doc), at: Date.now() };
       }, conn.ws);
       this.reportMovedComments(moved, conn.userId);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
@@ -1356,8 +1450,10 @@ class Room {
   }
 
   /**
-   * Re-resolves every connection's role (after membership / link access changes). Refreshes run
-   * one after another, so the last one always reflects the latest committed access.
+   * Re-resolves every connection's role (after membership / link access changes, and every
+   * ACCESS_RECHECK_MS). Refreshes run one after another, so the last one always reflects the
+   * latest committed access. A socket whose access could not be read keeps its role only until
+   * the retry (retryAccessLater): a failed read never ends a revocation.
    */
   refreshAccess(): Promise<void> {
     this.refreshing = this.refreshing.then(
@@ -1369,35 +1465,49 @@ class Room {
 
   private async doRefreshAccess(): Promise<void> {
     const conns = [...this.conns.values()];
-    const resolved = await Promise.all(
-      // As from the socket's own address (#156: IP allowlists), not the refresh's trigger.
-      conns.map((c) =>
-        runWithRequestContext({ reqId: `access-refresh:${this.id}`, userId: c.userId, ip: c.ip, userAgent: null }, async () => {
-          if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false, guestEdit: false };
-          const a = await getBoardAccess(this.id, c.userId);
-          return { role: a.role, coOwner: a.coOwner, guestEdit: a.guestEdit === true };
-        }),
-      ),
-    );
-    conns.forEach((conn, i) => {
-      if (!this.conns.has(conn.ws)) return; // left meanwhile
-      const own = resolved[i].role;
-      conn.coOwner = resolved[i].coOwner;
+    const resolved = await Promise.allSettled(conns.map((c) => readAccess(this.id, c)));
+    let failure: unknown[] = [];
+    for (const [i, conn] of conns.entries()) {
+      if (!this.conns.has(conn.ws)) continue; // left meanwhile
+      const r = resolved[i];
+      if (r.status === 'rejected') {
+        failure = [r.reason];
+        continue;
+      }
+      const own = r.value.role;
+      conn.coOwner = r.value.coOwner;
       const role = own && capRole(own, conn.maxRole);
       if (!own || !role) {
         conn.ws.close(4403, 'Access revoked');
         this.leave(conn);
-      } else if (role !== conn.access || own !== conn.ownAccess || resolved[i].guestEdit !== conn.guestEdit) {
+      } else if (role !== conn.access || own !== conn.ownAccess || r.value.guestEdit !== conn.guestEdit) {
         conn.access = role;
         conn.ownAccess = own;
-        conn.guestEdit = resolved[i].guestEdit;
+        conn.guestEdit = r.value.guestEdit;
         this.setEffective(conn);
       }
-    });
+    }
+    if (failure.length) {
+      this.retryAccessLater();
+      throw failure[0];
+    }
+    this.accessRetryMs = 0;
+  }
+
+  /** Runs the access refresh again soon (backing off while reads keep failing). */
+  private retryAccessLater(): void {
+    if (this.destroyed || this.accessRetry) return;
+    this.accessRetryMs = Math.min(ACCESS_RETRY_MAX_MS, this.accessRetryMs ? this.accessRetryMs * 2 : ACCESS_RETRY_MS);
+    this.accessRetry = setTimeout(() => {
+      this.accessRetry = null;
+      if (!this.destroyed) void this.refreshAccess();
+    }, this.accessRetryMs);
+    this.accessRetry.unref();
   }
 
   private markDirty(): void {
     if (this.destroyed) return;
+    this.changeCount++;
     const now = Date.now();
     if (!this.dirty) this.firstDirtyAt = now;
     this.dirty = true;
@@ -1424,9 +1534,22 @@ class Room {
     return this.saving;
   }
 
+  /**
+   * flush() for a write made on a request: resolves once every change made so far is saved, and
+   * throws BoardClosedError when the board's room was closed (trashed, deleted, taken down) before
+   * they were, so the request fails instead of reporting a write that is lost. (A save that failed
+   * for another reason is retried, as for sockets' changes: the change is still kept.)
+   */
+  async saveNow(): Promise<void> {
+    const upTo = this.changeCount;
+    await this.flush();
+    if (this.destroyed && this.savedCount < upTo) throw new BoardClosedError(this.id);
+  }
+
   private async persist(): Promise<void> {
     if (!this.dirty || this.destroyed) return;
     this.dirty = false;
+    const upTo = this.changeCount;
     const now = Date.now();
     const timer = persistDuration.startTimer();
     const updates = this.unsaved;
@@ -1447,6 +1570,7 @@ class Room {
         await layerStore.appendLayerUpdates(this.id, name, u, now);
         layerSaves.shift();
       }
+      this.savedCount = upTo;
       timer();
       if (this.logRows >= store.COMPACT_AFTER_ROWS || this.logBytes >= store.COMPACT_AFTER_BYTES) await this.compact();
     } catch (err) {
@@ -1524,6 +1648,7 @@ class Room {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
     if (this.facilitatorTimer) clearTimeout(this.facilitatorTimer);
+    if (this.accessRetry) clearTimeout(this.accessRetry);
     for (const t of this.agents.values()) clearTimeout(t);
     this.destroyed = true;
     this.subscription?.close();
@@ -1539,10 +1664,36 @@ class Room {
 }
 
 const rooms = new Map<string, Room>();
-/** Bumped by every access refresh, so a socket admitted with an older answer re-checks. */
-const accessEpochs = new Map<string, number>();
+/**
+ * Access changes on this instance, in order: every access refresh and every board closed for
+ * everyone (deleted, trashed, taken down) takes the next `accessVersion`, and `accessChangedAt`
+ * keeps each board's latest. An admission reads the version BEFORE it authorizes and joins only
+ * once no change to its board came after that (else it reads access again), so a socket never
+ * joins with a role that ended while it was being admitted. Only admissions in flight compare
+ * against it: cleared whenever none is.
+ */
+let accessVersion = 0;
+const accessChangedAt = new Map<string, number>();
+function accessChanged(boardId: string): void {
+  accessChangedAt.set(boardId, ++accessVersion);
+}
 /** Sockets between upgrade and join (for logout). */
 const admitting = new Set<{ ws: WebSocket; sessionKey: string | null }>();
+
+/**
+ * A socket's access as it is now: its own `resolveRole`, else the user's role on the board. Read
+ * as from the socket's own address (#156: IP allowlists), not the refresh's trigger.
+ */
+function readAccess(
+  boardId: string,
+  s: { userId: string; ip?: string | null; resolveRole?: () => Promise<Role | null> },
+): Promise<{ role: Role | null; coOwner: boolean; guestEdit: boolean; removed: boolean }> {
+  return runWithRequestContext({ reqId: `access-refresh:${boardId}`, userId: s.userId, ip: s.ip ?? null, userAgent: null }, async () => {
+    if (s.resolveRole) return { role: await s.resolveRole(), coOwner: false, guestEdit: false, removed: false };
+    const a = await getBoardAccess(boardId, s.userId);
+    return { role: a.role, coOwner: a.coOwner, guestEdit: a.guestEdit === true, removed: a.removed };
+  });
+}
 
 function getRoom(boardId: string): Room {
   let room = rooms.get(boardId);
@@ -1623,33 +1774,51 @@ export async function admitSocket(
   admitting.add(entry);
   const ip = currentRequestContext()?.ip ?? null; // the upgrade's address (#156)
   try {
+    let since = accessVersion; // before authorizing: a change from here on makes its answer stale
     const authorized = await authorize();
-    const a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip };
+    let a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip };
     if ('code' in a) return ws.close(a.code, a.reason);
-    const epoch = accessEpochs.get(a.boardId) ?? 0;
-    const room = getRoom(a.boardId);
-    room.pendingJoins++;
-    try {
-      await room.ready;
-    } finally {
-      room.pendingJoins--;
+    for (let rechecks = 0; ; rechecks++) {
+      const room = getRoom(a.boardId);
+      room.pendingJoins++;
+      try {
+        await room.ready;
+      } finally {
+        room.pendingJoins--;
+      }
+      // Gone while waiting (closed, signed out), or turned away: don't leave an empty room loaded forever.
+      const leaveRoom = () => {
+        if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
+      };
+      if (ws.readyState !== WebSocket.OPEN) return leaveRoom();
+      if ((accessChangedAt.get(a.boardId) ?? 0) <= since) {
+        if (room.destroyed || rooms.get(a.boardId) !== room) return ws.close(4403, 'Board deleted');
+        // Nothing awaited since the check: no access change can land between it and the join.
+        ws.off('message', hold);
+        room.join(ws, a, queue);
+        return;
+      }
+      // The board's access changed (a member removed, the board trashed or taken down) after the
+      // answer above was read: read it again, and join (a current room) only with the new answer.
+      if (rechecks === MAX_ADMISSION_RECHECKS) {
+        leaveRoom();
+        return ws.close(1013, 'Board access is changing; try again');
+      }
+      since = accessVersion;
+      const now = await readAccess(a.boardId, a);
+      if (!now.role) {
+        leaveRoom();
+        return now.removed ? ws.close(WS_CLOSE_BOARD_REMOVED, 'Board removed for review') : ws.close(4403, 'Access revoked');
+      }
+      a = a.resolveRole ? { ...a, role: now.role } : { ...a, role: now.role, coOwner: now.coOwner, guestEdit: now.guestEdit };
     }
-    if (ws.readyState !== WebSocket.OPEN) {
-      // Gone while waiting (closed, signed out): don't leave an empty room loaded forever.
-      if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
-      return;
-    }
-    if (room.destroyed) return ws.close(4403, 'Board deleted');
-    ws.off('message', hold);
-    room.join(ws, a, queue);
-    // Membership or link access changed after we resolved this socket's role.
-    if ((accessEpochs.get(a.boardId) ?? 0) !== epoch) await room.refreshAccess();
   } catch (err) {
     logError('realtime: could not open a board socket', err);
     if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'Could not open the board');
   } finally {
     ws.off('message', hold);
     admitting.delete(entry);
+    if (admitting.size === 0) accessChangedAt.clear();
   }
 }
 
@@ -1707,8 +1876,17 @@ export function* liveSessionKeys(): Iterable<string> {
 }
 
 async function refreshAccessHere(boardId: string): Promise<void> {
-  accessEpochs.set(boardId, (accessEpochs.get(boardId) ?? 0) + 1);
+  accessChanged(boardId);
   await rooms.get(boardId)?.refreshAccess();
+}
+
+/**
+ * Reads the access of every socket on this instance again, one board after another (every
+ * ACCESS_RECHECK_MS, and after the control channel was down): a removal whose announcement never
+ * reached this instance still closes the removed member's sockets.
+ */
+export async function recheckBoardAccess(): Promise<void> {
+  for (const room of [...rooms.values()]) if (!room.destroyed && room.conns.size > 0) await room.refreshAccess();
 }
 
 /**
@@ -1720,9 +1898,18 @@ export async function refreshRoomAccess(boardId: string): Promise<void> {
   await refreshAccessHere(boardId);
 }
 
-/** Starts applying other instances' control messages; returns the stop function. */
+/** Starts applying other instances' control messages and re-checking access; returns the stop function. */
 export function listenToOtherInstances(): () => void {
+  // Control messages are fire-and-forget: re-check every socket's access after a gap in the
+  // channel, and periodically (a publisher's gap, or a change no instance announced).
+  let rechecking: Promise<void> = Promise.resolve();
+  const recheck = () => {
+    rechecking = rechecking.then(recheckBoardAccess, recheckBoardAccess).catch((err) => logError('realtime: could not re-check board access', err));
+  };
+  const timer = setInterval(recheck, ACCESS_RECHECK_MS);
+  timer.unref();
   const sub = subscribe(CONTROL_CHANNEL, {
+    resubscribed: recheck,
     message(data) {
       try {
         const { from, msg } = decodeControl(data);
@@ -1738,7 +1925,10 @@ export function listenToOtherInstances(): () => void {
       }
     },
   });
-  return sub.close;
+  return () => {
+    clearInterval(timer);
+    sub.close();
+  };
 }
 
 /** The board was closed (deleted, trashed) while a request was using its doc. */
@@ -1783,7 +1973,7 @@ export async function restoreBoardDoc(boardId: string, version: Uint8Array, befo
     await before(Y.encodeStateAsUpdate(room.doc));
     if (room.destroyed) throw new BoardClosedError(boardId);
     room.restore(version);
-    await room.flush();
+    await room.saveNow();
   });
 }
 
@@ -1833,7 +2023,7 @@ export async function changeBoard<T extends { change: BoardChange }>(
     // A comment written on a request is the actor's, like one from their socket (mentions, replies).
     if (before.size && hasCommentListeners())
       emitCommentMessages(room.commentEvents(before, actor.userId).map((e) => (actor.via ? { ...e, via: actor.via } : e)));
-    await room.flush();
+    await room.saveNow();
     return { ...planned, applied };
   });
 }
@@ -1872,7 +2062,7 @@ export async function proposeSuggestions<T extends { change: BoardChange; conten
     const records = proposeRecords(view, planned.change, { author, description: opts.description, content: planned.content, newId: () => newId(16), pending: view.suggestions.length });
     if (room.destroyed) throw new BoardClosedError(boardId);
     writeProposal(editors, records, SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
     return { ...planned, records };
   });
   // The activity feed's "suggested N changes" (owners and editors only, like the suggestions).
@@ -1911,7 +2101,7 @@ export async function decideSuggestions(
     // Applied like any request write: attributed to the actor (and the app acting for them) in activity.
     const applied = create.length || update.length || remove.length ? applyChange(room.doc, docs, plan.change, actor, new RequestOrigin(actor)) : null;
     writeDecisions(editors, plan.records, plan.decision, SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
     return { records: plan.records, decision: plan.decision, applied };
   });
   const steps = out.records.map((record) => ({ record, from: undefined, to: out.decision }));
@@ -1951,7 +2141,7 @@ export async function withdrawSuggestionsOn(boardId: string, who: { userId: stri
     const decision: SuggestionDecision = { status: 'rejected', by: WITHDRAWN_BY, at: Date.now(), withdrawn: true };
     if (records.length) {
       writeDecisions(editors, records, decision, SERVER_ORIGIN);
-      await room.flush();
+      await room.saveNow();
     }
     await keepSuggestionAuthors(boardId, pendingAppAuthors(editors));
     return { records, decision };
@@ -1979,7 +2169,7 @@ export async function writeServerCollection(boardId: string, collection: string,
     if (isElementContentCollection(collection)) {
       // An activity's results go where the activity is: a hidden frame's to owners/editors only.
       writeElementContent(room.doc, layerDocs(room), collection, entries, SERVER_ORIGIN);
-      await room.flush();
+      await room.saveNow();
       return;
     }
     const map = room.doc.getMap<unknown>(collection);
@@ -1989,7 +2179,7 @@ export async function writeServerCollection(boardId: string, collection: string,
         else map.set(k, v);
       }
     }, SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
   });
 }
 
@@ -2011,7 +2201,7 @@ export async function updateServerEntry<T>(
     const next = update(map.get(key), room.peopleHere());
     if (next === undefined) return undefined;
     room.doc.transact(() => (next === null ? map.delete(key) : map.set(key, next)), SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
     return next;
   });
 }
@@ -2089,7 +2279,7 @@ export async function appendDocBlocks(docId: string, actor: BoardActor, blocks: 
   if (!blocks.length) return;
   await withLiveRoom(docId, async (room) => {
     room.doc.transact(() => writeDocBlocks(room.doc, blocks, () => newId(16)), new RequestOrigin(actor));
-    await room.flush();
+    await room.saveNow();
   });
 }
 
@@ -2101,7 +2291,7 @@ export async function editDocBlocks(docId: string, actor: BoardActor, edit: DocE
   return withLiveRoom(docId, async (room) => {
     let ids: string[] = [];
     room.doc.transact(() => (ids = applyDocEdit(room.doc, edit, () => newId(16))), new RequestOrigin(actor));
-    await room.flush();
+    await room.saveNow();
     return ids;
   });
 }
@@ -2150,6 +2340,7 @@ export async function closeBoardDoc(boardId: string, why: 'deleted' | 'removed' 
 }
 
 async function closeBoardHere(boardId: string, why: 'deleted' | 'removed'): Promise<void> {
+  accessChanged(boardId); // also when not loaded here: a socket being admitted to it must re-check
   const room = rooms.get(boardId);
   if (!room) return;
   rooms.delete(boardId);
@@ -2158,7 +2349,13 @@ async function closeBoardHere(boardId: string, why: 'deleted' | 'removed'): Prom
   // Save what this instance's sockets changed and nobody saved yet, then drop the doc: a trashed
   // board keeps those edits (each instance saves its own); for a deleted board the save finds no
   // board and is dropped. Queued behind any save in flight, so nothing lands after this returns.
-  await room.flush();
+  // A request already writing to the room (it was in it before it closed) may add a change while
+  // that save runs: saved too, in another round. One that still can't be saved fails its request
+  // (saveNow), never reported made and lost.
+  for (let round = 0; round < CLOSE_SAVE_ROUNDS && !room.destroyed; round++) {
+    await room.flush();
+    if (!room.hasPendingWrites) break;
+  }
   if (!room.destroyed) room.destroy();
 }
 
@@ -2183,7 +2380,7 @@ export async function renameCommentAuthor(boardId: string, userId: string, name:
           }
         }, SERVER_ORIGIN);
       }
-      await room.flush();
+      await room.saveNow();
     });
   } catch (err) {
     if (!(err instanceof BoardClosedError)) throw err;
@@ -2219,7 +2416,7 @@ export async function removeGuestItems(boardId: string, guestId: string): Promis
       }, SERVER_ORIGIN);
       n += ids.length;
     }
-    if (n) await room.flush();
+    if (n) await room.saveNow();
     return n;
   });
 }

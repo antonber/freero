@@ -1,6 +1,6 @@
 import type { TimerState } from '@freero/shared';
-import { defineCommands } from '@engine';
-import { MINUTE, startTimer } from './lib/timer';
+import { deadlineClock, defineCommands } from '@engine';
+import { MINUTE, TIMER_KEY, startTimer, stopTimer } from './lib/timer';
 
 import { t } from './messages';
 export default defineCommands([
@@ -11,7 +11,9 @@ export default defineCommands([
     label: t('startTheTimer'),
     run(editor, args) {
       const minutes = typeof args?.minutes === 'number' && Number.isFinite(args.minutes) ? args.minutes : 5;
-      editor.collection<TimerState>('timer').set('state', startTimer(minutes * MINUTE, editor.host.serverNow(), editor.user.id));
+      const now = deadlineClock(editor.host);
+      if (now === null) return editor.host.notify(t('clockNotSyncedYet'), 'info');
+      editor.collection<TimerState>('timer').set(TIMER_KEY, startTimer(minutes * MINUTE, now, editor.user.id));
     },
   },
   {
@@ -19,7 +21,7 @@ export default defineCommands([
     id: 'timer.stop',
     label: t('stopTheTimer'),
     run(editor) {
-      editor.collection<TimerState>('timer').delete('state');
+      stopTimer(editor.collection<TimerState>('timer'));
     },
   },
 ]);

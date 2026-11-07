@@ -145,7 +145,7 @@ export async function submitReport(body: Record<string, unknown>, who: { userId:
   // Who reported, without keeping the address itself: enough to see one source flooding the queue.
   const reporterKey = mac(`moderation.reporter:${who.ip}`).toString('base64url').slice(0, 22);
   const reporter = who.userId ? `u:${who.userId}` : `k:${reporterKey}`;
-  const added = await repo.insertItem({
+  const added = await repo.insertReport({
     id: newId(16),
     kind: 'report',
     boardId: board.id,
@@ -160,10 +160,10 @@ export async function submitReport(body: Record<string, unknown>, who: { userId:
     actionId: null,
     createdAt: Date.now(),
     dedupeKey: `report:${board.id}:${kind}:${targetId ?? ''}:${reporter}`,
-  });
+  }, { boardId: board.id });
   if (added) {
     log(`moderation: report on board ${board.id} (${kind}${targetId ? ` ${targetId}` : ''}, ${body.reason})`);
-    if ((await repo.countOpenForBoard(board.id)) === 1) alertOperators({ kind: 'report', boardTitle: board.title, reason: body.reason });
+    if (added.first) alertOperators({ kind: 'report', boardTitle: board.title, reason: body.reason });
   }
 }
 
@@ -176,7 +176,7 @@ async function submitListingReport(id: unknown, body: Record<string, unknown>, u
   const note = text(body.note, 'note', MAX_REPORT_NOTE);
   const listing = userId && typeof id === 'string' && LISTING_ID_RE.test(id) ? await reportableListing(id) : null;
   if (!listing) throw notFound('Listing not found');
-  const added = await repo.insertItem({
+  const added = await repo.insertReport({
     id: newId(16),
     kind: 'report',
     boardId: null,
@@ -191,10 +191,10 @@ async function submitListingReport(id: unknown, body: Record<string, unknown>, u
     actionId: null,
     createdAt: Date.now(),
     dedupeKey: `report:listing:${listing.id}:u:${userId}`,
-  });
+  }, { kind: 'listing', id: listing.id });
   if (added) {
     log(`moderation: report on listing ${listing.id} (${body.reason})`);
-    if ((await repo.countOpenForListing(listing.id)) === 1) alertOperators({ kind: 'report', boardTitle: listing.name, reason: body.reason });
+    if (added.first) alertOperators({ kind: 'report', boardTitle: listing.name, reason: body.reason });
   }
 }
 
@@ -207,7 +207,7 @@ async function submitGalleryReport(id: unknown, body: Record<string, unknown>, u
   const note = text(body.note, 'note', MAX_REPORT_NOTE);
   const t = userId && typeof id === 'string' ? await reportableGalleryTemplate(id) : null;
   if (!t) throw notFound('Template not found');
-  const added = await repo.insertItem({
+  const added = await repo.insertReport({
     id: newId(16),
     kind: 'report',
     boardId: null,
@@ -222,10 +222,10 @@ async function submitGalleryReport(id: unknown, body: Record<string, unknown>, u
     actionId: null,
     createdAt: Date.now(),
     dedupeKey: `report:gallery:${t.id}:u:${userId}`,
-  });
+  }, { kind: 'gallery', id: t.id });
   if (added) {
     log(`moderation: report on community template ${t.id} (${body.reason})`);
-    if ((await repo.countOpenFor('gallery', t.id)) === 1) alertOperators({ kind: 'report', boardTitle: t.title, reason: body.reason });
+    if (added.first) alertOperators({ kind: 'report', boardTitle: t.title, reason: body.reason });
   }
 }
 
@@ -511,6 +511,7 @@ export async function act(operatorId: string, body: Record<string, unknown>): Pr
   if (!targetId) throw badRequest('targetId is required');
   if (NEEDS_NO_REASON.includes(kind) && body.reason === undefined) body = { ...body, reason: 'other' };
   if (!isReason(body.reason)) throw badRequest(`reason must be one of ${REPORT_REASONS.map((r) => r.id).join(', ')}`);
+  const reason = body.reason;
   const statement = text(body.statement, 'statement', MAX_STATEMENT);
   if (isAdverse(kind) && !statement) throw badRequest('Write the statement the person affected will read');
   const note = text(body.note, 'note', MAX_STATEMENT);
@@ -520,22 +521,30 @@ export async function act(operatorId: string, body: Record<string, unknown>): Pr
   if (boards !== null && (kind !== 'user.suspend' || (boards !== 'take_down' && boards !== 'disable_link')))
     throw badRequest('boards (take_down or disable_link) only goes with user.suspend');
 
-  const done = await execute(kind, targetId, operatorId, boardHint, statement);
-  if (!done.changed) throw new HttpError(409, nothingToDo[kind]);
-  const subjectUserId = done.subjects[0] ?? null;
-  const record = await record_({
-    action: kind,
-    targetId: done.targetId,
-    boardId: done.boardId,
-    // Who it is about, as they are now: the record keeps naming them after their account is gone.
-    subject: subjectUserId ? ((await getUsers([subjectUserId])).get(subjectUserId) ?? null) : null,
-    operatorId,
-    reason: body.reason,
-    statement,
-    note,
-    itemId,
-    parentId: null,
-  });
+  const decide = async () => {
+    const done = await execute(kind, targetId, operatorId, boardHint, statement);
+    if (!done.changed) throw new HttpError(409, nothingToDo[kind]);
+    const subjectUserId = done.subjects[0] ?? null;
+    const record = await record_({
+      action: kind,
+      targetId: done.targetId,
+      boardId: done.boardId,
+      // Who it is about, as they are now: the record keeps naming them after their account is gone.
+      subject: subjectUserId ? ((await getUsers([subjectUserId])).get(subjectUserId) ?? null) : null,
+      operatorId,
+      reason,
+      statement,
+      note,
+      itemId,
+      parentId: null,
+    });
+    return { done, record };
+  };
+  // A listing or template decision is only a database write of the owning module, so it and its
+  // record are one transaction (#192): either both happen or neither does, and a retry isn't
+  // refused as "nothing to do". The other actions close sockets, end sessions or move files as they
+  // apply, which other instances must see committed at once, so they can't wait for a commit.
+  const { done, record } = kind.startsWith('listing.') || kind.startsWith('gallery.') ? await repo.transaction(decide) : await decide();
 
   // KAI-180: the account's boards go with the suspension, and come back when it is lifted.
   let boardsChanged = 0;
@@ -732,6 +741,19 @@ async function reversed(a: repo.ActionRow): Promise<boolean> {
   return !!undo && (await repo.laterAction(a.targetId, [undo], a.createdAt)) !== null;
 }
 
+/**
+ * Whether the action can't be undone any more, so an appeal could never be granted (#192): what it
+ * was about is gone for good — a removed file whose kept copy was deleted (by an operator or the
+ * retention job), a board deleted for good, a listing or template its submitter withdrew.
+ */
+async function final(a: repo.ActionRow): Promise<boolean> {
+  if (a.action.startsWith('upload.')) return !(await uploadForModeration(a.targetId))?.restorable;
+  if (a.action.startsWith('board.')) return !(await boardForModeration(a.targetId));
+  if (a.action.startsWith('listing.')) return !(await listingForModeration(a.targetId));
+  if (a.action.startsWith('gallery.')) return !(await galleryForModeration(a.targetId));
+  return false;
+}
+
 export async function appealInfo(token: unknown): Promise<AppealInfo> {
   const a = await appealedAction(token);
   const board = a.boardId ? await boardForModeration(a.boardId) : null;
@@ -745,6 +767,7 @@ export async function appealInfo(token: unknown): Promise<AppealInfo> {
     createdAt: a.createdAt,
     pending: await repo.openAppealFor(a.id),
     reversed: await reversed(a),
+    final: await final(a),
   };
 }
 
@@ -754,6 +777,8 @@ export async function submitAppeal(body: Record<string, unknown>): Promise<void>
   const message = text(body.message, 'message', MAX_APPEAL);
   if (!message) throw badRequest('Tell us why you think the decision is wrong');
   if (await reversed(a)) throw new HttpError(409, 'This decision was already reversed');
+  if (await final(a))
+    throw new HttpError(409, 'What this decision was about has been deleted for good, so it can’t be undone and there is nothing left to appeal.', 'appeal_final');
   const board = a.boardId ? await boardForModeration(a.boardId) : null;
   const listing = a.action.startsWith('listing.') ? await listingForModeration(a.targetId) : null;
   const template = a.action.startsWith('gallery.') ? await galleryForModeration(a.targetId) : null;

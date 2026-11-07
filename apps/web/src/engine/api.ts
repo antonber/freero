@@ -137,6 +137,11 @@ export interface OfflineCopy {
   shared: Uint8Array;
   private?: Uint8Array;
   editors?: Uint8Array;
+  /**
+   * [additive, FAC-8] Reveals asked for offline and not yet sent (JSON LayerOp[]): kept with the doc
+   * changes they belong with (a vote's end), sent first on the next connection.
+   */
+  ops?: Uint8Array;
 }
 /** [additive, #178] Where the device copy of a board is kept (see `Host.offline`). */
 export interface HostOffline {
@@ -189,9 +194,10 @@ export interface HostBoardImport {
   /**
    * Reads a Miro board (its link or id) with the person's own Miro token, through the server, which
    * keeps neither: pictures come back already copied into their uploads. Rejects with a showable
-   * message (token refused, no such board, Miro slowing down).
+   * message (token refused, no such board, Miro slowing down). Aborting `signal` (the person
+   * cancelled) stops the read, and the server stops copying pictures.
    */
-  miro(board: string, token: string): Promise<MiroImportResponse>;
+  miro(board: string, token: string, signal?: AbortSignal): Promise<MiroImportResponse>;
 }
 
 /** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
@@ -343,8 +349,8 @@ export interface Host {
   syncProtocols?: string[];
   /**
    * [additive] The server closed the board's socket for good, with its close code: access gone
-   * (4401 / 4403), the board removed, or too many visitors on a board embedded on another site
-   * (WS_CLOSE_EMBED_FULL, #60). The board shows its own banner either way; a host that can offer
+   * (4401 / 4403), the board removed, too many visitors on a board embedded on another site
+   * (WS_CLOSE_EMBED_FULL, #60), or a change this tab holds refused as too large (1009). The board shows its own banner either way; a host that can offer
    * more (an embed: sign in again, open in Freero) does it here. Called once per board load.
    */
   onConnectionEnded?(end: { code: number; reason: string }): void;
@@ -449,6 +455,19 @@ export interface Host {
    * until measured, and offline.
    */
   serverNow(): number;
+  /**
+   * [additive, FAC-9] The server's time once this page has measured its clock, else null (and a
+   * measurement starts). Writers of shared deadlines (a timer's `endsAt`, a vote's timer) use it and
+   * write nothing while it is null: a deadline in an unmeasured local clock is off by that clock's
+   * skew for everyone else, and the server enforces some of them on its own clock. Absent (offline
+   * sandbox, tests): `serverNow()` is the only clock there is and is used as is.
+   */
+  measuredServerNow?(): number | null;
+  /**
+   * [additive, FAC-9] The board's socket (re)connected: the host re-measures what may have drifted
+   * while it was away (the server clock).
+   */
+  onConnected?(): void;
   /**
    * [additive] Everyone with access to this board (owner + invited members), including people
    * who have never been online here. Offline sandbox: just the local user. Rejects when the
@@ -1987,8 +2006,11 @@ export interface Editor {
    * `anonymous` [additive] ('elements', #44): the server reveals the drafts with no author
    * (`ANONYMOUS_AUTHOR`) and without the comment threads on them; drafts written while private mode
    * was anonymous are revealed so anyway.
+   * `session` [additive, FAC-8]: only while the shared value at `session.collection` / `session.key`
+   * carries session id `session.id` — a reveal that waited offline never reveals a later session's
+   * entries (LayerOp.session).
    */
-  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean; anonymous?: boolean }): void;
+  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean; anonymous?: boolean; session?: { collection: string; key: string; id: string } }): void;
   /** [additive] Like revealPrivate, but deletes those private entries without revealing them. */
   discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void;
 
@@ -2150,6 +2172,13 @@ export function defineCommands(d: CommandDefinition[] | CommandFactory): Command
   return d;
 }
 export const defineDecoration = (d: DecorationDefinition): DecorationDefinition => d;
+
+/**
+ * [additive, FAC-9] Server time to write a shared deadline with, or null while this page hasn't
+ * measured the server's clock (Host.measuredServerNow): then write no deadline.
+ */
+export const deadlineClock = (host: Pick<Host, 'serverNow' | 'measuredServerNow'>): number | null =>
+  host.measuredServerNow ? host.measuredServerNow() : host.serverNow();
 /** [additive] importer.ts: `export default defineImporter({...})` (or an array). */
 export const defineImporter = (d: ImporterDefinition): ImporterDefinition => d;
 

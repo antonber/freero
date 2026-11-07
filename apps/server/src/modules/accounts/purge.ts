@@ -5,7 +5,8 @@
 //      and boards they own in team workspaces pass to an owner there (workspaces.handOverTeamWorkspaces);
 //      the boards they still own (their personal workspace's, trash included) are deleted;
 //   2. on boards they could comment on (member or opened), their comments become "Deleted user";
-//   3. their avatar file is deleted, and their problem reports with their screenshots;
+//   3. their avatar file is deleted, and their problem reports with their screenshots; their Slack
+//      account is disconnected (the app's token there goes with the last link, #193);
 //   4. the account row goes; sessions, tokens, memberships, stars, opens, invites, upload rows and
 //      the personal workspace cascade — except files an operator removed, which outlive it.
 // Before step 1 the account is re-checked, so a restore that lands first keeps everything.
@@ -23,6 +24,7 @@ import { membershipsOf } from '../members/index';
 import { forgetEngageRespondent } from '../engage/index';
 import { deleteProblemsOf } from '../problems/index';
 import { renameCommentAuthor } from '../realtime/index';
+import { unlinkSlack } from '../slack/index';
 import { deleteUpload, keepRemovedUploadsOf } from '../uploads/index';
 import { auditScopeOf, handOverTeamWorkspaces } from '../workspaces/index';
 import { recordAuditQuietly } from '../audit/index';
@@ -66,6 +68,7 @@ export async function purgeAccount(userId: string, now: number): Promise<boolean
   await deleteUpload((await getUser(userId))?.avatarUrl);
   await deleteProblemsOf(userId); // the screenshots are files: the rows' cascade wouldn't remove them
   await keepRemovedUploadsOf(userId);
+  await unlinkSlack(userId); // the app's token in their Slack workspace goes if they were the last one linked there
   const deleted = await deleteAccountIfDue(userId, now);
   if (deleted) {
     log(`accounts: purged account ${userId} (${deletedBoards} boards)`);

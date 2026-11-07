@@ -727,25 +727,41 @@ export async function findLiveInvite(tokenHash: string, now: number): Promise<In
   return r ? toInvite(r) : null;
 }
 
-/** Uses a live invite (deletes and returns it): of two concurrent uses exactly one gets it. */
-export async function takeInvite(tokenHash: string, now: number): Promise<InviteRow | null> {
-  const r = await one<IRow>(`DELETE FROM workspace_invites WHERE token_hash = $1 AND expires_at > $2 RETURNING *`, [tokenHash, new Date(now)]);
+/**
+ * Uses a live invite (deletes and returns it): of two concurrent uses exactly one gets it. With
+ * `tokenHash`, only while that is still its link (a resent invite's old link is dead).
+ */
+export async function takeInvite(id: string, now: number, tokenHash: string | null): Promise<InviteRow | null> {
+  const r = await one<IRow>(`DELETE FROM workspace_invites WHERE id = $1 AND expires_at > $2 AND ($3::text IS NULL OR token_hash = $3) RETURNING *`, [
+    id,
+    new Date(now),
+    tokenHash,
+  ]);
   return r ? toInvite(r) : null;
 }
 
-/** Whether a live invite was sent to `email` (an invite-only server lets that address sign up). */
-export async function hasLiveInviteFor(email: string, now: number): Promise<boolean> {
-  return (await query(`SELECT 1 FROM workspace_invites WHERE email = $1 AND expires_at > $2 LIMIT 1`, [email, new Date(now)])).length > 0;
+/** The live invites sent to `email`, oldest first. */
+export async function liveInvitesFor(email: string, now: number): Promise<InviteRow[]> {
+  return (await query<IRow>(`SELECT * FROM workspace_invites WHERE email = $1 AND expires_at > $2 ORDER BY created_at`, [email, new Date(now)])).map(toInvite);
 }
 
-export async function takeInvitesForEmail(email: string, now: number): Promise<InviteRow[]> {
-  return (await query<IRow>(`DELETE FROM workspace_invites WHERE email = $1 AND expires_at > $2 RETURNING *`, [email, new Date(now)])).map(toInvite);
-}
-
-export async function renewInvite(workspaceId: string, id: string, tokenHash: string, now: number, expiresAt: number): Promise<InviteRow | null> {
+/**
+ * A new link and expiry for a pending invite. `resender` takes the invite over (it is sent in their
+ * name) when its role is one of `roles`, those they may invite; otherwise it stays its inviter's.
+ */
+export async function renewInvite(
+  workspaceId: string,
+  id: string,
+  tokenHash: string,
+  now: number,
+  expiresAt: number,
+  resender: { id: string; roles: InvitableWorkspaceRole[] },
+): Promise<InviteRow | null> {
   const r = await one<IRow>(
-    `UPDATE workspace_invites SET token_hash = $3, created_at = $4, expires_at = $5 WHERE workspace_id = $1 AND id = $2 RETURNING *`,
-    [workspaceId, id, tokenHash, new Date(now), new Date(expiresAt)],
+    `UPDATE workspace_invites SET token_hash = $3, created_at = $4, expires_at = $5,
+       invited_by = CASE WHEN role = ANY($7::text[]) THEN $6 ELSE invited_by END
+     WHERE workspace_id = $1 AND id = $2 RETURNING *`,
+    [workspaceId, id, tokenHash, new Date(now), new Date(expiresAt), resender.id, resender.roles],
   );
   return r ? toInvite(r) : null;
 }

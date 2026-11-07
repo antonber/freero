@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { BOARD_REMOVED } from '@freero/shared';
-import { closeTestDb, openTestDb } from '../../platform/testing';
+import { closeTestDb, mailIdle, openTestDb, outboxMails } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard, getBoardAccess, requireBoardAccess } from '../boards/index';
 import { act, appealInfo, appealToken, queue, submitAppeal, submitReport } from './service';
 
-beforeAll(() => openTestDb());
+const OPERATOR = 'ops@moderation.test.freero.app';
+beforeAll(() => openTestDb({ OPERATOR_EMAILS: OPERATOR }));
 afterAll(() => closeTestDb());
 
 let n = 0;
@@ -40,6 +41,20 @@ it('reporting the same thing again while the first report is open does not add t
   for (let i = 0; i < 3; i++) await report(board.id, reporter.id);
   await report(board.id, reporter.id, { target: { kind: 'element', id: 'el-1' } }); // something else on it: a new item
   expect((await queue('open')).filter((i) => i.boardId === board.id)).toHaveLength(2);
+});
+
+it('two people reporting a board at the same moment mail the operators exactly once, about its first report', async () => {
+  const owner = await user('Piled');
+  const board = await createBoard(owner.id, 'Spam everywhere', '', 'viewer');
+  const reporters = [await user('ReporterA'), await user('ReporterB'), await user('ReporterC')];
+  await mailIdle();
+  const alerts = () => outboxMails().filter((m) => m.to === OPERATOR && m.subject.includes('Spam everywhere')).length;
+
+  await Promise.all(reporters.map((r) => report(board.id, r.id)));
+  await mailIdle();
+
+  expect((await queue('open')).filter((i) => i.boardId === board.id)).toHaveLength(3);
+  expect(alerts()).toBe(1);
 });
 
 it('a taken-down board is closed to everyone who could open it, owner included, until an operator restores it', async () => {

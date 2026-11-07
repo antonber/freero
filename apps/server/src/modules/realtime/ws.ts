@@ -30,7 +30,8 @@ export default function realtimeWs(ctx: ServerContext): WsRoute[] {
     stopTracking();
     stopWatchingProfiles();
   });
-  // Access changes, deleted boards and logouts handled by other instances (REDIS_URL).
+  // Access changes, deleted boards and logouts handled by other instances (REDIS_URL), and the
+  // periodic re-check of every open socket's access (the backstop for a change never announced).
   ctx.onShutdown(listenToOtherInstances());
   gaugeFn('freero_realtime_loaded_docs', 'Board documents loaded in memory', loadedRoomCount);
   gaugeFn('freero_realtime_persist_queue', 'Loaded board documents with changes not yet persisted', pendingPersistCount);
@@ -56,7 +57,9 @@ function objectDocRoute(kind: ObjectKind, PREFIX: string): WsRoute {
             : null;
         const key = account ? accountKey : guest ? guestKeyFromCookieHeader(cookie) : null;
         if (!user || !key) return { code: 4401, reason: 'Not logged in' };
-        // Per-user connect limit (the per-IP one runs at the upgrade); the client retries with backoff.
+        // Per-user connect limit (the per-IP one runs at the upgrade). Refused after the upgrade: the
+        // client waits longer before each retry of a socket closed soon after it opened
+        // (web engine/store/reconnect.ts; y-websocket alone would retry every 100 ms).
         if (!(await checkRateLimit('wsConnect', `user:${user.id}`)).allowed) return { code: 4429, reason: 'Too many connections' };
         let boardId = '';
         try {

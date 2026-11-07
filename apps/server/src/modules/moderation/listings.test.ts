@@ -1,11 +1,24 @@
 // Community listings in the moderation console (#87): decisions are operators' actions, recorded
 // and audited like every other; reports reach the same queue.
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { onAuditEvent, type AuditEvent } from '../../platform/audit';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, getAccount } from '../auth/index';
 import { listingFor, liveListings, submitListing } from '../marketplace/index';
 import { act, queue, submitReport } from './service';
+
+// A database error while the decision is being recorded (after the listing's own write).
+let failRecording = false;
+vi.mock('./repo', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./repo')>();
+  return {
+    ...real,
+    insertAction: async (a: Parameters<typeof real.insertAction>[0]) => {
+      if (failRecording) throw new Error('connection lost');
+      return real.insertAction(a);
+    },
+  };
+});
 
 const audited: AuditEvent[] = [];
 let stop = () => {};
@@ -38,6 +51,22 @@ it('approving and removing a listing are each in the audit trail of its submitte
   // A decision that changes nothing is refused, and so never recorded twice.
   await expect(act(op.id, { action: 'listing.remove', targetId: listing.id, reason: 'spam', statement: 'Again.' })).rejects.toMatchObject({ status: 409 });
   expect(audited.filter((e) => e.detail?.targetId === listing.id)).toHaveLength(2);
+});
+
+it('a listing decision that can’t be recorded doesn’t happen: the listing stays as it was, so nothing is live without a decision on record, and taking it again works', async () => {
+  const op = await account('FailingOp');
+  const dev = await account('FailingDev');
+  const listing = await submit(dev, 'Unrecorded');
+
+  failRecording = true;
+  await expect(act(op.id, { action: 'listing.approve', targetId: listing.id, statement: '' })).rejects.toThrow('connection lost');
+  failRecording = false;
+  expect(await listingFor(listing.id, dev.id)).toMatchObject({ status: 'pending' });
+  expect((await liveListings()).map((l) => l.id)).not.toContain(listing.id);
+
+  await act(op.id, { action: 'listing.approve', targetId: listing.id, statement: '' });
+  expect((await liveListings()).map((l) => l.id)).toContain(listing.id);
+  expect(audited.filter((e) => e.action === 'moderation.listing.approve' && e.detail?.targetId === listing.id)).toHaveLength(1);
 });
 
 it('declining a submission needs a statement for its submitter, and keeps it hidden', async () => {

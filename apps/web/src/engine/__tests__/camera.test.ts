@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PresenceState } from '@freero/shared';
 import type { ElementDefinition, ToolDefinition } from '../api';
 import type { EngineCore } from '../runtime/core';
-import { followStep } from '../camera/follow';
+import { followStep, PRESENCE_RESYNC_MS } from '../camera/follow';
 import { boxDef, bundle, makeCore } from './harness';
 
 let core: EngineCore;
@@ -97,6 +97,29 @@ describe('following someone', () => {
     expect(core.editor.getCamera().x).toBeCloseTo(5000, 0);
     leave(core, 6);
     followStep(core);
+    expect(core.editor.getFollowing()).toBeNull();
+  });
+
+  it('keeps following through a blip of your own connection, and lets go only if they are still gone once it is back', () => {
+    core = makeCore();
+    core.ui.setState({ connection: 'connected', synced: true });
+    join(core, 7, peer(7, 'zoe', { x: 0, y: 0, zoom: 1, width: 1000, height: 800 }));
+    core.editor.follow({ userId: 'zoe' });
+    followStep(core);
+    // The socket drops: y-websocket forgets everyone's presence.
+    core.ui.setState({ connection: 'disconnected', synced: false });
+    leave(core, 7);
+    followStep(core);
+    expect(core.editor.getFollowing()?.userId).toBe('zoe');
+    // Back, before their presence is: still following; then it arrives and the view follows again.
+    core.ui.setState({ connection: 'connected', synced: true });
+    followStep(core);
+    join(core, 7, peer(7, 'zoe', { x: 3000, y: 0, zoom: 1, width: 1000, height: 800 }));
+    for (let i = 0; i < 200; i++) followStep(core);
+    expect(core.editor.getCamera().x).toBeCloseTo(3000, 0);
+    // Gone for real (still missing a while after the reconnect): following ends.
+    leave(core, 7);
+    followStep(core, Date.now() + PRESENCE_RESYNC_MS);
     expect(core.editor.getFollowing()).toBeNull();
   });
 });

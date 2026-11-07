@@ -12,6 +12,7 @@ import {
   kanbanLaneAt,
   type BoardElement,
   type CardElement,
+  type CardPlacement,
   type CardStatus,
   type KanbanColumn,
   type KanbanElement,
@@ -21,14 +22,19 @@ import { plainToRichText } from '../text';
 import {
   COLUMN_FIELD_ID,
   NO_GROUP,
+  cardValue,
   collectionSchema,
   groupFieldId,
   groupKeyOf,
   groupKeyValue,
+  groupRevOf,
   isGroupable,
   readValue,
+  settledValues,
+  stalePlacement,
   storedFields,
   type FieldDef,
+  type FieldValues,
 } from '../fields';
 import { boardView, savedViews, type GroupSettings, type ViewConfig } from '../views';
 import { cardPasses, cardQueryValue, sortByValues, queryField } from '../query';
@@ -115,8 +121,12 @@ type Placed = { el: BoardElement; key: number };
  * shows its first items (in each row), and cards the view's filter leaves out don't show at all:
  * both stay in their column, stacked below the board, folded away (`hidesMember`), still counted.
  * Regrouping (another `groupBy`) moves cards between columns without "dropping" them: no status is
- * written then. When a sort is cleared, the manual order kept while it lasted (`manualOrder`) is
- * restored, and the view stops keeping it.
+ * written then. Every card the change touched records where it was put (`placed`, #197). A card
+ * placed under an earlier grouping (someone's write that hadn't seen a regroup won) keeps the value
+ * of the column it stood in as a value of the field that column stood for (`settledValues`) and
+ * goes to the column of its value, last, without a status — whoever lays the board out next —
+ * unless this change moved it. When a sort is cleared, the manual order kept while it lasted
+ * (`manualOrder`) is restored, and the view stops keeping it.
  *
  * `previous`: what the change found, by id (null: created by it); items not in it weren't touched.
  */
@@ -140,6 +150,9 @@ export function planKanban(k: KanbanElement, all: readonly BoardElement[], previ
   // Where the board itself was (it may have moved in the same change, carrying its items).
   const kBefore = (previous.get(k.id) as KanbanElement | null | undefined) ?? k;
   const regrouped = groupFieldId(kBefore) !== groupFieldId(k);
+  const gid = groupFieldId(k);
+  const groupF = schema.find((f) => f.id === gid);
+  const rev = groupRevOf(k);
   const lanes = laneField(k);
   const laneKeys = lanes ? groupKeys(lanes, items.map((el) => storedKey(lanes, el)), (kBefore.lanes ?? []).map((l) => l.id)) : [''];
   const cells: Placed[][][] = laneKeys.map(() => k.columns.map(() => []));
@@ -148,7 +161,23 @@ export function planKanban(k: KanbanElement, all: readonly BoardElement[], previ
     let col = kanbanColumnAt(k, centerX(el));
     let key = centerY(el);
     const prev = previous.get(el.id);
-    if (el.type === 'card' && prev !== undefined && !regrouped) {
+    const moved = prev === null || (prev !== undefined && (prev.frameId !== k.id || prev.x !== el.x || prev.y !== el.y));
+    const card = el.type === 'card' ? (el as CardElement) : null;
+    const stale = !!card && stalePlacement(k, card);
+    if (stale) {
+      // Placed under an earlier grouping (#197): it keeps the value of the column it stood in, and
+      // goes to its value's column ("No value" if it has none), last — unless this change moved
+      // it (dropped by someone who sees the board as it is now: where they put it counts).
+      const values = settledValues(k, card!, schema);
+      if (JSON.stringify(values) !== JSON.stringify(card!.values ?? {})) own(el.id).values = values;
+      const want = groupF ? groupKeyOf(groupF, cardValue(k, card!, groupF)) : NO_GROUP;
+      const to = [want, NO_GROUP].map((id) => k.columns.findIndex((c) => c.id === id)).find((i) => i >= 0);
+      if (!moved && to !== undefined) {
+        col = to;
+        key = Number.POSITIVE_INFINITY;
+      }
+    }
+    if (el.type === 'card' && prev !== undefined && !regrouped && !(stale && !moved)) {
       const status = el.status ?? null;
       const movedIn = prev === null || prev.frameId !== k.id || kBefore.columns[kanbanColumnAt(kBefore, centerX(prev))]?.id !== k.columns[col]?.id;
       const statusChanged = prev !== null && prev.type === 'card' && (prev.status ?? null) !== status;
@@ -166,19 +195,24 @@ export function planKanban(k: KanbanElement, all: readonly BoardElement[], previ
     }
     let lane = 0;
     if (lanes) {
-      const moved = prev === null || (prev !== undefined && (prev.frameId !== k.id || prev.x !== el.x || prev.y !== el.y));
       const at = kBefore.lanes?.[kanbanLaneAt(kBefore, centerY(el))]?.id;
-      const stored = storedKey(lanes, el);
+      const settled = (patchOf.get(el.id)?.values as FieldValues | undefined) ?? card?.values;
+      const stored = card ? storedKey(lanes, { ...card, values: settled }) : NO_GROUP;
       const want = (el.type !== 'card' || moved) && at !== undefined && laneKeys.includes(at) ? at : stored;
       lane = Math.max(0, laneKeys.indexOf(want));
       if (el.type === 'card' && want !== stored) {
         // Dropped into another row: it takes that row's value (the one write the layout makes on a card's fields).
-        const values = { ...((el as CardElement).values ?? {}) };
+        const values = { ...(settled ?? {}) };
         const v = groupKeyValue(lanes, want);
         if (v === null) delete values[lanes.id];
         else values[lanes.id] = v;
         own(el.id).values = values;
       } else if (el.type === 'card' && !moved && prev && storedKey(lanes, prev) !== stored) key = Number.POSITIVE_INFINITY;
+    }
+    if (card && k.columns[col] && (stale || prev !== undefined)) {
+      // Where it was put, under which grouping (#197).
+      const placed: CardPlacement = { kanban: k.id, rev, field: gid, key: k.columns[col].id };
+      if (JSON.stringify(card.placed ?? null) !== JSON.stringify(placed)) own(el.id).placed = placed;
     }
     cells[lane][col].push({ el, key });
   }
@@ -341,8 +375,11 @@ const settingsOf = (c: KanbanColumn): GroupSettings | null =>
  * Grouping kanban `k` by field `fieldId` (step 2c), as one change: the old group field's values
  * written onto the cards from where each stands, its options back into its `fields` entry, the new
  * field's options as the columns (its stored values dropped: the column says it now), each card
- * moved to the column of its value, and column settings kept per field in the view. Null when
- * nothing changes (or it can't group by that field).
+ * moved to the column of its value, and column settings kept per field in the view. The grouping
+ * gets its next revision (`groupRev`) and each card records it with its new column (`placed`), so
+ * a card someone moved under the old grouping at the same moment is told apart (#197). `values`:
+ * the cards' patches (values and placement). Null when nothing changes (or it can't group by that
+ * field).
  */
 export function planGroupBy(
   k: KanbanElement,
@@ -357,18 +394,8 @@ export function planGroupBy(
   const newF = schema.find((f) => f.id === fieldId);
   if (!oldF || !newF || !isGroupable(newF)) return null;
   const members = all.filter((el) => isStackable(el, k.id));
-
-  const values: KanbanPatch[] = [];
-  for (const el of members) {
-    if (el.type !== 'card') continue;
-    const card = el as CardElement;
-    const v = k.columns.length ? groupKeyValue(oldF, k.columns[kanbanColumnAt(k, centerX(card))].id) : null;
-    const next = { ...(card.values ?? {}) };
-    if (v === null) delete next[oldId];
-    else next[oldId] = v;
-    delete next[fieldId];
-    if (JSON.stringify(next) !== JSON.stringify(card.values ?? {})) values.push({ id: card.id, patch: { values: next } });
-  }
+  const n = Number.parseInt(groupRevOf(k), 10);
+  const rev = `${(Number.isFinite(n) ? n : 0) + 1}:${fieldId}`;
 
   const groupSettings = { ...(view.groupSettings ?? {}) };
   const parked = Object.fromEntries(k.columns.flatMap((c) => (settingsOf(c) ? [[c.id, settingsOf(c)!]] : [])));
@@ -377,16 +404,32 @@ export function planGroupBy(
   const restored = groupSettings[fieldId] ?? {};
   delete groupSettings[fieldId];
 
-  const keyOf = new Map(members.map((el) => [el.id, storedKey(newF, el)]));
+  const keyOf = new Map(members.map((el) => [el.id, el.type === 'card' ? groupKeyOf(newF, cardValue(k, el as CardElement, newF)) : NO_GROUP]));
   const columns = columnsFor(newF, groupKeys(newF, keyOf.values()), restored);
+  const colOf = (id: string) => Math.max(0, columns.findIndex((c) => c.id === keyOf.get(id)));
+
+  const values: KanbanPatch[] = [];
+  for (const el of members) {
+    if (el.type !== 'card') continue;
+    const card = el as CardElement;
+    const v = cardValue(k, card, oldF);
+    const next = settledValues(k, card, schema);
+    if (v === null) delete next[oldId];
+    else next[oldId] = v;
+    delete next[fieldId];
+    const patch: Record<string, unknown> = {};
+    if (JSON.stringify(next) !== JSON.stringify(card.values ?? {})) patch.values = next;
+    if (columns.length) patch.placed = { kanban: k.id, rev, field: fieldId, key: columns[colOf(card.id)].id } satisfies CardPlacement;
+    if (Object.keys(patch).length) values.push({ id: card.id, patch });
+  }
   const nextView: ViewConfig = { ...view, groupBy: fieldId, subGroupBy: view.subGroupBy === fieldId ? null : view.subGroupBy, groupSettings };
   const nextK = { ...k, columns };
   const mid = (i: number) => k.x + kanbanColumnLeft(nextK, i) + kanbanColumnWidth(nextK, i) / 2;
   const moves = members
-    .map((el) => ({ id: el.id, dx: mid(Math.max(0, columns.findIndex((c) => c.id === keyOf.get(el.id)))) - centerX(el), dy: 0 }))
+    .map((el) => ({ id: el.id, dx: mid(colOf(el.id)) - centerX(el), dy: 0 }))
     .filter((m) => Math.abs(m.dx) > EPS);
   return {
-    kanban: { columns, fields: storedFields(schema, fieldId), ...savedViews(k, nextView), ...(nextView.subGroupBy ? {} : { lanes: null }), w: kanbanBoardWidth(nextK) },
+    kanban: { columns, fields: storedFields(schema, fieldId), ...savedViews(k, nextView), ...(nextView.subGroupBy ? {} : { lanes: null }), w: kanbanBoardWidth(nextK), groupRev: rev },
     values,
     moves,
   };
