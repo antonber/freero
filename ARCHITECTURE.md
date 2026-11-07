@@ -4183,9 +4183,11 @@ only to connections that may read them:
   `editors`; else shared. Every owner/editor client re-checks after each change (frame hidden/shown/
   deleted, concurrent writes) and moves misplaced elements silently; non-editors additionally never
   render a hidden frame's contents (`isOffBoard`) while a move is in flight.
-- Undo spans docs: each doc has its own Y.UndoManager and `store/undo.ts` records which of them got
-  an item per user action, so one gesture is one step even when it moves a sticky into a hidden
-  frame (shared doc delete + layer doc insert).
+- Undo spans docs: each doc has its own Y.UndoManager and `store/undo.ts` records the exact stack
+  items each of them got per user action, so one gesture is one step even when it moves a sticky
+  into a hidden frame (shared doc delete + layer doc insert). Undo, redo and cancelling a gesture
+  pop exactly those items, one at a time: an item a collaborator has since overwritten changes
+  nothing and is consumed, never letting Y.UndoManager go on into part of an older step (#198).
 - Losing owner/editor drops the local copy of the `editors` layer (a fresh doc; never synced back
   as deletions); gaining it asks the server for the layer. Dashboard thumbnails render shared
   content only; duplicating a board copies the `editors` layer only for an owner/editor and never
