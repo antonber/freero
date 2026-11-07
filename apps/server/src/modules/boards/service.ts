@@ -990,7 +990,7 @@ export async function closeKeepingContent(boardId: string, why: 'deleted' | 'rem
 }
 
 /** Owner only: takes a board out of the trash (subject to the board quota). */
-export async function restoreFromTrash(boardId: string, userId: string): Promise<Board> {
+export async function restoreFromTrash(boardId: string, userId: string, now = Date.now()): Promise<Board> {
   const board = await repo.getBoardIncludingTrash(boardId);
   // Not yours / not there: the same answer, so the trash leaks nothing about other people's boards.
   // A board taken down by an operator stays with them until they restore it.
@@ -999,7 +999,7 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
     userId,
     (max) => `You have reached the limit of ${max} boards. Delete boards you no longer need to restore this one.`,
     async () => {
-      if (!(await repo.restoreBoard(board.id))) throw notFound('Board not found in your trash');
+      if (!(await repo.restoreBoard(board.id, now))) throw notFound('Board not found in your trash');
       await recordAudit({ action: 'board.restored', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board) });
       await repo.appendBoardEvent({ type: 'board.restored', boardId: board.id, workspaceId: board.workspaceId, actorId: userId, title: board.title });
     },
@@ -1131,14 +1131,14 @@ export async function workspaceTrash(workspaceId: string): Promise<AdminTrashedB
  * for its owner: it counts against the OWNER's board quota, and is audited with who restored it.
  * 404 for a board that isn't in THIS workspace's trash (another workspace's, taken down, gone).
  */
-export async function restoreForWorkspace(workspaceId: string, boardId: string, actorId: string): Promise<void> {
+export async function restoreForWorkspace(workspaceId: string, boardId: string, actorId: string, now = Date.now()): Promise<void> {
   const board = await repo.getBoardIncludingTrash(boardId);
   if (!board || board.workspaceId !== workspaceId || board.deletedAt === null || board.removedAt !== null) throw notFound('Board not found in this workspace’s trash');
   await withinBoardQuota(
     board.ownerId,
     (max) => `Its owner has reached the limit of ${max} boards. They need to delete boards before this one can be restored.`,
     async () => {
-      if (!(await repo.restoreBoard(board.id))) throw notFound('Board not found in this workspace’s trash');
+      if (!(await repo.restoreBoard(board.id, now))) throw notFound('Board not found in this workspace’s trash');
       await recordAudit({
         action: 'board.restored',
         workspaceId,
@@ -1158,24 +1158,28 @@ export async function deleteForever(boardId: string, userId: string): Promise<vo
   if (!board || board.deletedAt === null || board.ownerId !== userId || board.removedAt !== null) throw notFound('Board not found in your trash');
   // Under a legal hold (#157) it only looks deleted: it leaves the trash for everyone and is kept
   // for the case, then purged once no hold is left. The hold stays silent to its owner.
-  const discarded = await repo.transaction(async () => {
-    if (!(await repo.heldAmong([board.id])).has(board.id)) return false;
-    if (!(await repo.discardTrashedBoard(board.id, Date.now()))) throw notFound('Board not found in your trash');
-    await recordAudit({ action: 'board.deleted', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { keptBy: 'legal_hold' } });
-    return true;
-  });
-  if (discarded) {
-    await closeBoardDoc(board.id);
-    return;
+  let deleted: { thumbnail: string | null } | null = null;
+  if (!(await repo.heldAmong([board.id])).has(board.id)) {
+    try {
+      deleted = await repo.transaction(async () => {
+        const thumbnail = await repo.deleteTrashedBoard(board.id);
+        if (thumbnail === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
+        await recordAudit({ action: 'board.deleted', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board) });
+        return { thumbnail };
+      });
+    } catch (e) {
+      // A hold placed since the check: the database refused the delete (and rolled it back). It is
+      // kept exactly as if the hold had been there first, just as silently.
+      if (!repo.isLegalHoldViolation(e)) throw e;
+    }
   }
-  const thumbnail = await repo.transaction(async () => {
-    const t = await repo.deleteTrashedBoard(board.id);
-    if (t === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
-    await recordAudit({ action: 'board.deleted', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board) });
-    return t;
-  });
+  if (!deleted)
+    await repo.transaction(async () => {
+      if (!(await repo.discardTrashedBoard(board.id, Date.now()))) throw notFound('Board not found in your trash');
+      await recordAudit({ action: 'board.deleted', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { keptBy: 'legal_hold' } });
+    });
   await closeBoardDoc(board.id); // nobody should be connected; make sure nothing saves after the delete
-  await deleteUpload(thumbnail);
+  if (deleted) await deleteUpload(deleted.thumbnail);
 }
 
 const PURGE_BATCH = 200;

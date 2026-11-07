@@ -391,9 +391,18 @@ export async function trashBoard(id: string, now: number, by: string | null = nu
   return (await one(`UPDATE boards SET deleted_at = $2, deleted_by = $3 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, new Date(now), by])) !== null;
 }
 
-/** Takes a board out of the trash; false if it was not in the trash. */
-export async function restoreBoard(id: string): Promise<boolean> {
-  return (await one(`UPDATE boards SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 AND deleted_at IS NOT NULL AND discarded_at IS NULL RETURNING id`, [id])) !== null;
+/**
+ * Takes a board out of the trash; false if it was not in the trash. Restoring is activity, like
+ * unarchiving (#154): a retention rule that trashed it starts over (idle for its period, a fresh notice).
+ */
+export async function restoreBoard(id: string, now = Date.now()): Promise<boolean> {
+  return (
+    (await one(
+      `UPDATE boards SET deleted_at = NULL, deleted_by = NULL, updated_at = GREATEST(updated_at, $2)
+       WHERE id = $1 AND deleted_at IS NOT NULL AND discarded_at IS NULL RETURNING id`,
+      [id, new Date(now)],
+    )) !== null
+  );
 }
 
 /**
@@ -551,7 +560,10 @@ export async function liveOwnedBy(userId: string): Promise<Array<{ id: string; t
 /**
  * Deletes (up to `limit`) trashed boards deleted before their workspace's cutoff: `before` by
  * default, the `byWorkspace` cutoff for the workspaces listed there — and boards deleted forever
- * while a legal hold kept them, once none does (#157). A held board is never deleted.
+ * while a legal hold kept them, once none does (#157). A held board is never deleted (the trigger
+ * re-reads the holds per row). The target row repeats the state conditions so that Postgres re-checks
+ * them on the row's latest version once it holds the row lock: a board restored (or re-trashed, or
+ * taken down) while the purge waited for it is left alone; the sub-select alone is never re-run.
  */
 export async function purgeTrashedBefore(
   before: number,
@@ -559,12 +571,14 @@ export async function purgeTrashedBefore(
   byWorkspace: Array<{ workspaceId: string; before: number }> = [],
 ): Promise<Array<{ id: string; thumbnail: string | null; title: string; workspaceId: string; ownerId: string; deletedAt: number; discarded: boolean }>> {
   const rows = await query<{ id: string; thumbnail: string | null; title: string; workspace_id: string; owner_id: string; deleted_at: Date; discarded_at: Date | null }>(
-    `DELETE FROM boards WHERE id IN (
-       SELECT b.id FROM boards b
+    `DELETE FROM boards d USING (
+       SELECT b.id, COALESCE(o.before, $1) AS cutoff FROM boards b
        LEFT JOIN unnest($3::text[], $4::timestamptz[]) AS o(workspace_id, before) ON o.workspace_id = b.workspace_id
        WHERE (b.deleted_at < COALESCE(o.before, $1) OR b.discarded_at IS NOT NULL) AND b.removed_at IS NULL AND NOT ${HELD}
        ORDER BY b.deleted_at LIMIT $2
-     ) RETURNING id, thumbnail, title, workspace_id, owner_id, deleted_at, discarded_at`,
+     ) c
+     WHERE d.id = c.id AND (d.deleted_at < c.cutoff OR d.discarded_at IS NOT NULL) AND d.removed_at IS NULL
+     RETURNING d.id, d.thumbnail, d.title, d.workspace_id, d.owner_id, d.deleted_at, d.discarded_at`,
     [new Date(before), limit, byWorkspace.map((w) => w.workspaceId), byWorkspace.map((w) => new Date(w.before))],
   );
   return rows.map((r) => ({
@@ -580,15 +594,18 @@ export async function purgeTrashedBefore(
 
 /**
  * A held board whose trash retention ran out leaves the trash as if it had been purged (the hold is
- * silent, #157) but is kept: it is marked discarded. Returns how many.
+ * silent, #157) but is kept: it is marked discarded. Returns how many. As in purgeTrashedBefore, the
+ * target row repeats the state conditions: a board restored while this waited for its row is not
+ * marked (a live board marked discarded would be purged once its hold ends).
  */
 export async function discardHeldExpired(before: number, byWorkspace: Array<{ workspaceId: string; before: number }>, now: number): Promise<number> {
   const rows = await query(
-    `UPDATE boards SET discarded_at = $4 WHERE id IN (
-       SELECT b.id FROM boards b
+    `UPDATE boards d SET discarded_at = $4 FROM (
+       SELECT b.id, COALESCE(o.before, $1) AS cutoff FROM boards b
        LEFT JOIN unnest($2::text[], $3::timestamptz[]) AS o(workspace_id, before) ON o.workspace_id = b.workspace_id
        WHERE b.deleted_at < COALESCE(o.before, $1) AND b.discarded_at IS NULL AND b.removed_at IS NULL AND ${HELD}
-     ) RETURNING 1`,
+     ) c
+     WHERE d.id = c.id AND d.deleted_at < c.cutoff AND d.discarded_at IS NULL AND d.removed_at IS NULL RETURNING 1`,
     [new Date(before), byWorkspace.map((w) => w.workspaceId), byWorkspace.map((w) => new Date(w.before)), new Date(now)],
   );
   return rows.length;
