@@ -6,8 +6,9 @@
 //   board's shared content is copied ONCE through content.ts — no comments, hidden frames, drafts,
 //   names — with a preview drawn from that copy; the board itself is never linked again. Pending
 //   until an operator approves it; operators are mailed about each submission.
-// - Public: approved ones only, to anyone (the site's /gallery pages, the API). Everything else —
-//   pending, rejected, removed, withdrawn, unknown — is the same 404.
+// - Public: approved ones only, to anyone (the site's /gallery pages, the API), while their
+//   submitter isn't suspended. Everything else — pending, rejected, removed, withdrawn, a suspended
+//   submitter's, unknown — is the same 404.
 // - Install: a new board from the template's copy in a workspace the person may create boards in
 //   (board quota and permissions as any new board), with the credit and licence in its description.
 // - Moderation decides the status (decideGalleryTemplate), records and audits it, notifies; this
@@ -92,18 +93,34 @@ const presentOwn = (r: repo.GalleryRow): OwnGalleryTemplate => ({
 
 // ---- public ----
 
-/** Approved templates matching the words of `q` and `category` (both optional), newest first. */
-export async function publicTemplates(q: unknown, category: unknown): Promise<GalleryTemplate[]> {
-  const words = typeof q === 'string' ? q.slice(0, GALLERY_LIMITS.query).toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8) : [];
-  const rows = await repo.published({ words, category: isCategory(category) ? category : null, limit: LIST_LIMIT });
-  return rows.map(present);
+/**
+ * Whether a template is public: approved, and its submitter's account isn't suspended (#192). A
+ * suspension hides everything the account published (pages, previews, installs, the sitemap) for
+ * as long as it lasts and lifting it brings it all back, without writing anything here: the
+ * operator's decisions stay as they were, and one taken while the account is suspended counts
+ * once it isn't.
+ */
+async function isPublic(r: repo.GalleryRow): Promise<boolean> {
+  return r.status === 'approved' && !(await suspendedUserIds([r.submittedBy])).size;
 }
 
-/** An approved template, or null for anything else (pending, decided against, withdrawn, unknown). */
+/** Public templates matching the words of `q` and `category` (both optional), newest first. */
+export async function publicTemplates(q: unknown, category: unknown): Promise<GalleryTemplate[]> {
+  const words = typeof q === 'string' ? q.slice(0, GALLERY_LIMITS.query).toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8) : [];
+  const suspended: string[] = [];
+  for (;;) {
+    const rows = await repo.published({ words, category: isCategory(category) ? category : null, limit: LIST_LIMIT, exceptSubmitters: suspended });
+    const more = await suspendedUserIds([...new Set(rows.map((r) => r.submittedBy))]);
+    if (!more.size) return rows.map(present);
+    suspended.push(...more);
+  }
+}
+
+/** A public template, or null for anything else (pending, decided against, withdrawn, its submitter suspended, unknown). */
 export async function publicTemplate(id: unknown): Promise<GalleryTemplate | null> {
   if (!validId(id)) return null;
   const r = await repo.get(id);
-  return r?.status === 'approved' ? present(r) : null;
+  return r && (await isPublic(r)) ? present(r) : null;
 }
 
 /**
@@ -114,7 +131,7 @@ export async function previewFor(id: unknown, viewer: { userId: string | null; o
   if (!validId(id)) return null;
   const r = await repo.get(id);
   if (!r) return null;
-  if (r.status !== 'approved' && !viewer.operator && r.submittedBy !== viewer.userId) return null;
+  if (!viewer.operator && r.submittedBy !== viewer.userId && !(await isPublic(r))) return null;
   return repo.previewOf(id);
 }
 
@@ -210,7 +227,7 @@ function alertOperators(title: string): void {
 /** A new board from an approved template in `workspaceId` (default: the person's personal workspace). */
 export async function installTemplate(userId: string, id: string, body: Record<string, unknown>): Promise<{ boardId: string }> {
   const t = validId(id) ? await repo.get(id) : null;
-  if (!t || t.status !== 'approved') throw notFound('No such template');
+  if (!t || !(await isPublic(t))) throw notFound('No such template');
   const content = await repo.contentOf(t.id);
   if (!content) throw notFound('No such template');
   const workspaceId = typeof body.workspaceId === 'string' && body.workspaceId ? body.workspaceId : await ensurePersonalWorkspace(userId);
@@ -231,7 +248,7 @@ export async function installTemplate(userId: string, id: string, body: Record<s
 /** A template anyone signed in may report: public ones only. */
 export async function reportableGalleryTemplate(id: string): Promise<{ id: string; title: string } | null> {
   const r = validId(id) ? await repo.get(id) : null;
-  return r?.status === 'approved' ? { id: r.id, title: r.title } : null;
+  return r && (await isPublic(r)) ? { id: r.id, title: r.title } : null;
 }
 
 /** The facts a moderation decision needs. */
