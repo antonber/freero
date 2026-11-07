@@ -837,7 +837,9 @@ What the next steps need:
   its column key is its value of `placed.field`, the group field's value is its stored one
   (`cardValue`, `settledValues`) — and the next layout pass (KAI-75's re-arrange, or anyone's
   change to the board) writes those values and moves it to its value's column, unless that change
-  moved it. Older clients' regroups don't touch `groupRev`, so their cards keep reading by position.
+  moved it. Whoever sets such a card's group value (card details' `kanban.moveToColumn`, an
+  agent's `update_items`, a tracker pull) records it as placed now (`placedNow`), since its x may
+  already fall in that column and no move would show. Older clients' regroups don't touch `groupRev`, so their cards keep reading by position.
 - **"A value changed in place moves the card"**: for the grouped field it is `card.setValues` →
   `kanban.moveToColumn` (positional, as Stage in 2a), for a swimlane field the layout moves a card
   whose stored row value changed where it stood to the bottom of that row.

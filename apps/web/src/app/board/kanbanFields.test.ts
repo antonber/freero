@@ -6,11 +6,14 @@ import {
   COLUMN_FIELD_ID,
   KANBAN_LAYOUT,
   NO_GROUP,
+  cardValue,
+  collectionSchema,
   kanbanColumnAt,
   kanbanColumnLeft,
   kanbanLaneAt,
   kanbanLanesTop,
   renderOutlineMarkdown,
+  stalePlacement,
   type CardElement,
   type FieldDef,
   type KanbanColumn,
@@ -346,6 +349,47 @@ describe('grouping and swimlanes', () => {
     const column = find(ed.getOutline().items, `${kid}:c_todo`)!;
     expect(column.children!.map((c) => c.id).sort()).toEqual([...ids].sort());
     expect(column.fields).toMatchObject({ shows: 2 });
+  });
+
+  it('picking a Priority in card details for a card a regroup left where the old grouping put it (its x happens to be that priority’s column) puts it there, and no layout settles it back', () => {
+    vi.useFakeTimers();
+    let raced = 0;
+    // Which concurrent write of the card wins depends on the replicas' random client ids.
+    for (let run = 0; run < 12; run++) {
+      board = createTestBoard({ users: ['ann', 'bob'], features });
+      const [ann, bob] = board.editors('kanban');
+      const kid = kanban(ann, [{ id: COLUMN_FIELD_ID, name: 'Stage', type: 'select' }, PRIORITY]);
+      const id = card(ann, kid, 0, 'Fix login');
+      ann.runCommand('card.setValues', { id, values: { f_prio: 'o_p0' } });
+      board.sync();
+      vi.advanceTimersByTime(60_000);
+
+      ann.runCommand('kanban.groupBy', { id: kid, field: 'f_prio' }); // columns: No Priority, P0, P1
+      const c = bob.getElement<CardElement>(id)!;
+      const to = k(bob, kid).x + kanbanColumnLeft(k(bob, kid), 2) + k(bob, kid).colW / 2; // Bob drags it into Done meanwhile
+      bob.beginGesture();
+      bob.moveBy([{ id, dx: to - (c.x + c.w / 2), dy: 0 }]);
+      bob.endGesture();
+      // Both offline a while: when the changes meet, neither re-lays the board out (KAI-75 only
+      // fixes a merge right after one's own layout), so the card stays where the old grouping put it.
+      vi.advanceTimersByTime(10_000);
+      board.sync();
+      vi.advanceTimersByTime(5000);
+      board.sync();
+      const priority = () => cardValue(k(ann, kid), ann.getElement<CardElement>(id)!, collectionSchema(k(ann, kid)).find((f) => f.id === 'f_prio')!);
+      if (stalePlacement(k(ann, kid), ann.getElement<CardElement>(id)!) && columnOf(ann, kid, id) === 'o_p1') {
+        raced++;
+        expect(priority()).toBe('o_p0');
+        ann.runCommand('card.setValues', { id, values: { f_prio: 'o_p1' } });
+        vi.advanceTimersByTime(5000);
+        board.sync();
+        expect(priority()).toBe('o_p1');
+        expect(columnOf(bob, kid, id)).toBe('o_p1');
+      }
+      board.destroy();
+      board = null;
+    }
+    expect(raced).toBeGreaterThan(0);
   });
 });
 

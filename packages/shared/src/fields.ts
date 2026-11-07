@@ -21,7 +21,7 @@
 // Values that don't fit their field any more (an option deleted, a field's type changed) read as
 // empty; values of deleted fields stay on the cards, dormant, so undoing the delete brings them
 // back without a mass write.
-import type { BoardElement, CardElement, CardStatus, KanbanColumn, KanbanElement } from './elements';
+import type { BoardElement, CardElement, CardPlacement, CardStatus, KanbanColumn, KanbanElement } from './elements';
 import { kanbanColumnAt } from './elements';
 import { isISODate } from './layout/timeline';
 import { plainToRichText, richTextToPlain } from './text';
@@ -397,6 +397,18 @@ export function settledValues(k: KanbanElement, card: CardElement, schema: reado
   }
   delete values[gid];
   return values;
+}
+
+/**
+ * The patch that records card `card` as put into column `key` of `k` now, by someone who sees the
+ * board as it is (an agent's or a tracker's value for the group field, card details): its values
+ * settled and its placement the current grouping's, so a card a regroup had left stale isn't
+ * settled back into its stored value's column when the move happens to leave its x where it was.
+ */
+export function placedNow(k: KanbanElement, card: CardElement, key: string, schema: readonly FieldDef[] = collectionSchema(k)): { values?: FieldValues; placed: CardPlacement } {
+  const values = settledValues(k, card, schema);
+  const changed = JSON.stringify(values) !== JSON.stringify(card.values ?? {});
+  return { ...(changed ? { values } : {}), placed: { kanban: k.id, rev: groupRevOf(k), field: groupFieldId(k), key } };
 }
 
 /**

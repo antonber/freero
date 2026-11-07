@@ -398,6 +398,36 @@ it('on a kanban with swimlanes by Priority, a priority pulled from the tracker m
   expect(a2.y).toBeGreaterThanOrEqual(b2.y + b2.h);
 });
 
+it('a priority pulled from the tracker for a card a regroup left where the old grouping put it (its x happens to be that priority’s column) moves it there, and the layout doesn’t put it back in its old priority’s column', () => {
+  // Grouped by Priority (No Priority / High / Low). The card's last write was a drag into Done made
+  // before the regroup: it stands at Low's x, but its stored Priority is High (#197).
+  const k = sprint(
+    [
+      { id: '~none', title: 'No Priority', status: null, color: '#000' },
+      { id: 'hi', title: 'High', status: null, color: '#000' },
+      { id: 'lo', title: 'Low', status: null, color: '#000' },
+    ],
+    {
+      fields: [
+        { id: 'stage', name: 'Stage', type: 'select', options: [{ id: 'todo', label: 'To do', color: '#000', status: 'todo' }, { id: 'done', label: 'Done', color: '#000', status: 'done' }] },
+        { id: 'p', name: 'Priority', type: 'select' },
+      ],
+      views: [{ id: 'board', name: 'Board', layout: 'board', groupBy: 'p' }] as never,
+      groupRev: '1:p',
+    },
+  );
+  const c = cardIn(k, 2, 'c', { values: { p: 'hi' }, placed: { kanban: 'kb', rev: '', field: 'stage', key: 'done' } });
+  const priority = priorityFieldOf(collectionSchema(k))!;
+  expect(cardValue(k, c, priority)).toBe('hi');
+
+  const plan = planPull(viewOf(k, c), [c], { priority: 'Low' }, { fields: new Set(['priority']), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'x' });
+  const c2 = { ...c, ...plan.update.find((u) => u.id === 'c')?.patch } as CardElement;
+  expect(cardValue(k, c2, priority)).toBe('lo');
+  expect(k.columns[kanbanColumnAt(k, c2.x + c2.w / 2)].id).toBe('lo');
+  // What it stood for under the old grouping is kept.
+  expect(cardValue(k, c2, collectionSchema(k).find((f) => f.id === 'stage')!)).toBe('done');
+});
+
 it('issues imported into a kanban with a new status column opening before Done leave the cards already in Done there, still done', () => {
   const k = sprint([
     { id: 'todo', title: 'To do', status: 'todo', color: '#000' },
