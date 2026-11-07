@@ -30,7 +30,8 @@ export default function realtimeWs(ctx: ServerContext): WsRoute[] {
     stopTracking();
     stopWatchingProfiles();
   });
-  // Access changes, deleted boards and logouts handled by other instances (REDIS_URL).
+  // Access changes, deleted boards and logouts handled by other instances (REDIS_URL), and the
+  // periodic re-check of every open socket's access (the backstop for a change never announced).
   ctx.onShutdown(listenToOtherInstances());
   gaugeFn('freero_realtime_loaded_docs', 'Board documents loaded in memory', loadedRoomCount);
   gaugeFn('freero_realtime_persist_queue', 'Loaded board documents with changes not yet persisted', pendingPersistCount);

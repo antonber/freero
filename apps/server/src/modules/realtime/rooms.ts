@@ -187,6 +187,17 @@ class RequestOrigin {
 export const AGENT_PRESENCE_MS = 6000;
 /** How long to wait for the other instances holding a board to send what we lack. */
 const PEER_CATCH_UP_TIMEOUT_MS = 2000;
+/** First retry of an access refresh whose read failed (database blip); doubles up to the max. */
+const ACCESS_RETRY_MS = 1000;
+const ACCESS_RETRY_MAX_MS = 60_000;
+/**
+ * How often every open socket's access is read again: the backstop for an access change this
+ * instance was never told of (a control message lost in a Redis gap, a change made by the
+ * operator CLI). Bounds how long a removed member can stay connected.
+ */
+export const ACCESS_RECHECK_MS = 5 * 60_000;
+/** Times an admission reads access again because it kept changing meanwhile, before it gives up (1013). */
+const MAX_ADMISSION_RECHECKS = 3;
 
 /** Who a socket is, decided once at admission. */
 export interface Admission {
@@ -399,6 +410,9 @@ class Room {
   private saving: Promise<void> = Promise.resolve();
   private pendingSaves = 0;
   private refreshing: Promise<void> = Promise.resolve();
+  /** A failed access refresh runs again (see retryAccessLater); the delay of the next retry. */
+  private accessRetry: NodeJS.Timeout | null = null;
+  private accessRetryMs = 0;
   private subscription: Subscription | null = null;
   /** Called with the sender of every sync-reply addressed to us (see catchUpWithPeers). */
   private replyWaiters = new Set<(from: string) => void>();
@@ -1356,8 +1370,10 @@ class Room {
   }
 
   /**
-   * Re-resolves every connection's role (after membership / link access changes). Refreshes run
-   * one after another, so the last one always reflects the latest committed access.
+   * Re-resolves every connection's role (after membership / link access changes, and every
+   * ACCESS_RECHECK_MS). Refreshes run one after another, so the last one always reflects the
+   * latest committed access. A socket whose access could not be read keeps its role only until
+   * the retry (retryAccessLater): a failed read never ends a revocation.
    */
   refreshAccess(): Promise<void> {
     this.refreshing = this.refreshing.then(
@@ -1369,31 +1385,44 @@ class Room {
 
   private async doRefreshAccess(): Promise<void> {
     const conns = [...this.conns.values()];
-    const resolved = await Promise.all(
-      // As from the socket's own address (#156: IP allowlists), not the refresh's trigger.
-      conns.map((c) =>
-        runWithRequestContext({ reqId: `access-refresh:${this.id}`, userId: c.userId, ip: c.ip, userAgent: null }, async () => {
-          if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false, guestEdit: false };
-          const a = await getBoardAccess(this.id, c.userId);
-          return { role: a.role, coOwner: a.coOwner, guestEdit: a.guestEdit === true };
-        }),
-      ),
-    );
-    conns.forEach((conn, i) => {
-      if (!this.conns.has(conn.ws)) return; // left meanwhile
-      const own = resolved[i].role;
-      conn.coOwner = resolved[i].coOwner;
+    const resolved = await Promise.allSettled(conns.map((c) => readAccess(this.id, c)));
+    let failure: unknown[] = [];
+    for (const [i, conn] of conns.entries()) {
+      if (!this.conns.has(conn.ws)) continue; // left meanwhile
+      const r = resolved[i];
+      if (r.status === 'rejected') {
+        failure = [r.reason];
+        continue;
+      }
+      const own = r.value.role;
+      conn.coOwner = r.value.coOwner;
       const role = own && capRole(own, conn.maxRole);
       if (!own || !role) {
         conn.ws.close(4403, 'Access revoked');
         this.leave(conn);
-      } else if (role !== conn.access || own !== conn.ownAccess || resolved[i].guestEdit !== conn.guestEdit) {
+      } else if (role !== conn.access || own !== conn.ownAccess || r.value.guestEdit !== conn.guestEdit) {
         conn.access = role;
         conn.ownAccess = own;
-        conn.guestEdit = resolved[i].guestEdit;
+        conn.guestEdit = r.value.guestEdit;
         this.setEffective(conn);
       }
-    });
+    }
+    if (failure.length) {
+      this.retryAccessLater();
+      throw failure[0];
+    }
+    this.accessRetryMs = 0;
+  }
+
+  /** Runs the access refresh again soon (backing off while reads keep failing). */
+  private retryAccessLater(): void {
+    if (this.destroyed || this.accessRetry) return;
+    this.accessRetryMs = Math.min(ACCESS_RETRY_MAX_MS, this.accessRetryMs ? this.accessRetryMs * 2 : ACCESS_RETRY_MS);
+    this.accessRetry = setTimeout(() => {
+      this.accessRetry = null;
+      if (!this.destroyed) void this.refreshAccess();
+    }, this.accessRetryMs);
+    this.accessRetry.unref();
   }
 
   private markDirty(): void {
@@ -1524,6 +1553,7 @@ class Room {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
     if (this.facilitatorTimer) clearTimeout(this.facilitatorTimer);
+    if (this.accessRetry) clearTimeout(this.accessRetry);
     for (const t of this.agents.values()) clearTimeout(t);
     this.destroyed = true;
     this.subscription?.close();
@@ -1539,10 +1569,36 @@ class Room {
 }
 
 const rooms = new Map<string, Room>();
-/** Bumped by every access refresh, so a socket admitted with an older answer re-checks. */
-const accessEpochs = new Map<string, number>();
+/**
+ * Access changes on this instance, in order: every access refresh and every board closed for
+ * everyone (deleted, trashed, taken down) takes the next `accessVersion`, and `accessChangedAt`
+ * keeps each board's latest. An admission reads the version BEFORE it authorizes and joins only
+ * once no change to its board came after that (else it reads access again), so a socket never
+ * joins with a role that ended while it was being admitted. Only admissions in flight compare
+ * against it: cleared whenever none is.
+ */
+let accessVersion = 0;
+const accessChangedAt = new Map<string, number>();
+function accessChanged(boardId: string): void {
+  accessChangedAt.set(boardId, ++accessVersion);
+}
 /** Sockets between upgrade and join (for logout). */
 const admitting = new Set<{ ws: WebSocket; sessionKey: string | null }>();
+
+/**
+ * A socket's access as it is now: its own `resolveRole`, else the user's role on the board. Read
+ * as from the socket's own address (#156: IP allowlists), not the refresh's trigger.
+ */
+function readAccess(
+  boardId: string,
+  s: { userId: string; ip?: string | null; resolveRole?: () => Promise<Role | null> },
+): Promise<{ role: Role | null; coOwner: boolean; guestEdit: boolean; removed: boolean }> {
+  return runWithRequestContext({ reqId: `access-refresh:${boardId}`, userId: s.userId, ip: s.ip ?? null, userAgent: null }, async () => {
+    if (s.resolveRole) return { role: await s.resolveRole(), coOwner: false, guestEdit: false, removed: false };
+    const a = await getBoardAccess(boardId, s.userId);
+    return { role: a.role, coOwner: a.coOwner, guestEdit: a.guestEdit === true, removed: a.removed };
+  });
+}
 
 function getRoom(boardId: string): Room {
   let room = rooms.get(boardId);
@@ -1623,33 +1679,51 @@ export async function admitSocket(
   admitting.add(entry);
   const ip = currentRequestContext()?.ip ?? null; // the upgrade's address (#156)
   try {
+    let since = accessVersion; // before authorizing: a change from here on makes its answer stale
     const authorized = await authorize();
-    const a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip };
+    let a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip };
     if ('code' in a) return ws.close(a.code, a.reason);
-    const epoch = accessEpochs.get(a.boardId) ?? 0;
-    const room = getRoom(a.boardId);
-    room.pendingJoins++;
-    try {
-      await room.ready;
-    } finally {
-      room.pendingJoins--;
+    for (let rechecks = 0; ; rechecks++) {
+      const room = getRoom(a.boardId);
+      room.pendingJoins++;
+      try {
+        await room.ready;
+      } finally {
+        room.pendingJoins--;
+      }
+      // Gone while waiting (closed, signed out), or turned away: don't leave an empty room loaded forever.
+      const leaveRoom = () => {
+        if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
+      };
+      if (ws.readyState !== WebSocket.OPEN) return leaveRoom();
+      if ((accessChangedAt.get(a.boardId) ?? 0) <= since) {
+        if (room.destroyed || rooms.get(a.boardId) !== room) return ws.close(4403, 'Board deleted');
+        // Nothing awaited since the check: no access change can land between it and the join.
+        ws.off('message', hold);
+        room.join(ws, a, queue);
+        return;
+      }
+      // The board's access changed (a member removed, the board trashed or taken down) after the
+      // answer above was read: read it again, and join (a current room) only with the new answer.
+      if (rechecks === MAX_ADMISSION_RECHECKS) {
+        leaveRoom();
+        return ws.close(1013, 'Board access is changing; try again');
+      }
+      since = accessVersion;
+      const now = await readAccess(a.boardId, a);
+      if (!now.role) {
+        leaveRoom();
+        return now.removed ? ws.close(WS_CLOSE_BOARD_REMOVED, 'Board removed for review') : ws.close(4403, 'Access revoked');
+      }
+      a = a.resolveRole ? { ...a, role: now.role } : { ...a, role: now.role, coOwner: now.coOwner, guestEdit: now.guestEdit };
     }
-    if (ws.readyState !== WebSocket.OPEN) {
-      // Gone while waiting (closed, signed out): don't leave an empty room loaded forever.
-      if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
-      return;
-    }
-    if (room.destroyed) return ws.close(4403, 'Board deleted');
-    ws.off('message', hold);
-    room.join(ws, a, queue);
-    // Membership or link access changed after we resolved this socket's role.
-    if ((accessEpochs.get(a.boardId) ?? 0) !== epoch) await room.refreshAccess();
   } catch (err) {
     logError('realtime: could not open a board socket', err);
     if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'Could not open the board');
   } finally {
     ws.off('message', hold);
     admitting.delete(entry);
+    if (admitting.size === 0) accessChangedAt.clear();
   }
 }
 
@@ -1707,8 +1781,17 @@ export function* liveSessionKeys(): Iterable<string> {
 }
 
 async function refreshAccessHere(boardId: string): Promise<void> {
-  accessEpochs.set(boardId, (accessEpochs.get(boardId) ?? 0) + 1);
+  accessChanged(boardId);
   await rooms.get(boardId)?.refreshAccess();
+}
+
+/**
+ * Reads the access of every socket on this instance again, one board after another (every
+ * ACCESS_RECHECK_MS, and after the control channel was down): a removal whose announcement never
+ * reached this instance still closes the removed member's sockets.
+ */
+export async function recheckBoardAccess(): Promise<void> {
+  for (const room of [...rooms.values()]) if (!room.destroyed && room.conns.size > 0) await room.refreshAccess();
 }
 
 /**
@@ -1720,9 +1803,18 @@ export async function refreshRoomAccess(boardId: string): Promise<void> {
   await refreshAccessHere(boardId);
 }
 
-/** Starts applying other instances' control messages; returns the stop function. */
+/** Starts applying other instances' control messages and re-checking access; returns the stop function. */
 export function listenToOtherInstances(): () => void {
+  // Control messages are fire-and-forget: re-check every socket's access after a gap in the
+  // channel, and periodically (a publisher's gap, or a change no instance announced).
+  let rechecking: Promise<void> = Promise.resolve();
+  const recheck = () => {
+    rechecking = rechecking.then(recheckBoardAccess, recheckBoardAccess).catch((err) => logError('realtime: could not re-check board access', err));
+  };
+  const timer = setInterval(recheck, ACCESS_RECHECK_MS);
+  timer.unref();
   const sub = subscribe(CONTROL_CHANNEL, {
+    resubscribed: recheck,
     message(data) {
       try {
         const { from, msg } = decodeControl(data);
@@ -1738,7 +1830,10 @@ export function listenToOtherInstances(): () => void {
       }
     },
   });
-  return sub.close;
+  return () => {
+    clearInterval(timer);
+    sub.close();
+  };
 }
 
 /** The board was closed (deleted, trashed) while a request was using its doc. */
@@ -2150,6 +2245,7 @@ export async function closeBoardDoc(boardId: string, why: 'deleted' | 'removed' 
 }
 
 async function closeBoardHere(boardId: string, why: 'deleted' | 'removed'): Promise<void> {
+  accessChanged(boardId); // also when not loaded here: a socket being admitted to it must re-check
   const room = rooms.get(boardId);
   if (!room) return;
   rooms.delete(boardId);
