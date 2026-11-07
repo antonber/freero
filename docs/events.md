@@ -97,10 +97,15 @@ every reader sees (above).
   `WEBHOOK_RETRY_BASE_MS` × 4ⁿ (10 s, 40 s, 2.7 min, 11 min, 43 min, 2.8 h; at most 6 h apart) up to
   `WEBHOOK_MAX_ATTEMPTS` (7) attempts.
 - After `WEBHOOK_DISABLE_AFTER_FAILURES` (15) failed attempts in a row Freero turns the endpoint
-  off, records `webhook.disabled` in the audit log and emails whoever added it. Deliveries made
-  meanwhile wait; turning the endpoint back on sends them.
+  off, records `webhook.disabled` in the audit log and emails whoever added it. Deliveries already
+  waiting, and those of events that happen while it is off, wait; turning the endpoint back on sends
+  them. An endpoint an admin turns off collects nothing new (what was already waiting is sent when it
+  is turned back on).
+- Removing an endpoint, turning it off, changing its URL or rotating its secret holds from the next
+  send, even for deliveries the delivery job had already picked up.
 - The delivery log (admin console → Webhooks → Delivery log) keeps 30 days: status, attempts, the
-  receiver's answer, timing, and "Send again".
+  receiver's answer, timing, and "Send again". A delivery still waiting after 30 days is dropped
+  with it.
 
 ## Formats
 
