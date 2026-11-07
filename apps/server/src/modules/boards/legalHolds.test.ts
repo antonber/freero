@@ -2,7 +2,7 @@
 // the trash purge, not its owner's "delete forever", not the account purge, not workspace deletion,
 // not even a statement that bypasses the service — and a custodian's board stays held when it changes
 // hands. Releasing the case lets normal retention resume.
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { Account } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { closeTestDb, openTestDb } from '../../platform/testing';
@@ -79,6 +79,20 @@ it('no path deletes a held board: the trash purge, its owner’s delete forever,
   for (const b of [evidence, named, later]) expect(await exists(b.id)).toBe(false);
   await purgeDueAccounts(afterGrace);
   expect(await getUser(custodian.id)).toBeNull();
+});
+
+it('“delete forever” racing a legal hold placed after its check keeps the board as silently as an earlier hold, without an error', async () => {
+  const owner = await user('Owner');
+  const custodian = await user('Custodian');
+  const ws = await team(owner, [custodian]);
+  const board = await createBoard(custodian.id, 'Minutes', '', 'none', { workspaceId: ws.id });
+  await moveToTrash(board, custodian.id);
+  await createCase(ws.id, owner.id, { name: 'Late hold', custodianIds: [custodian.id] });
+  // The hold commits just after "delete forever" looked for one: that look misses it.
+  vi.spyOn(repo, 'heldAmong').mockResolvedValueOnce(new Set());
+  await expect(deleteForever(board.id, custodian.id)).resolves.toBeUndefined();
+  expect(await listBoards(custodian.id, 'trash', '', { workspaceId: ws.id })).toEqual([]);
+  expect(await exists(board.id)).toBe(true);
 });
 
 it('a custodian’s board stays held after it is handed to someone else, and leaves the hold only with its custodian', async () => {
