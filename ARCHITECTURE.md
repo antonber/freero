@@ -3966,7 +3966,14 @@ room subscribes, loads, then asks the other instances for what the database lack
 sync-reply, also after a Redis reconnect). Presence from another instance never overrides a client
 id owned by a local socket (a client that moved here). A room that applied remote changes appends
 what the database still lacks before it unloads. Access refreshes, board deletion and logouts go to
-all instances on a control channel. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
+all instances on a control channel. That channel keeps nothing, so every instance also re-reads the
+access of all its open sockets every `ACCESS_RECHECK_MS` (5 min) and after the channel was down,
+and a refresh whose read failed (a database blip) runs again with backoff: a removed member's socket
+closes even when the announcement or the first read was lost. Admission is compare-and-set against
+the instance's access version (`realtime/rooms.ts` `accessVersion`): it is read before authorizing,
+every refresh and every board closed for everyone (delete, trash, takedown) bumps it, and a socket
+whose board changed meanwhile reads its access again before joining — it never joins with a role
+that ended while it was being admitted. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
 instances and checks all of this with clients on each.
 
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
@@ -4325,7 +4332,9 @@ the board, deletions. A suggestion is not board content until someone who can ed
   refresh token), an app (its developer) or all of a person's (revoke-all, signed out everywhere);
   realtime's `suggestion-withdrawals` consumer (`realtime/withdrawals.ts`) finds the boards in
   `board_suggestion_authors` — a hint realtime owns: `proposeSuggestions` notes (board, person,
-  credential) BEFORE writing the records, a room load forgets authors with nothing pending — and
+  credential) BEFORE writing the records, a room load or a withdrawal forgets authors with nothing
+  pending, but never a hint noted within the last hour (`noted_at`: the view it works from can
+  predate a proposal noted moments ago, on this instance or another) — and
   `withdrawSuggestionsOn` decides them on the live room as rejected by `WITHDRAWN_BY` with `withdrawn`
   (no socket names that id, so none reopens them), audited `via: 'revoked'` in the person's name.
   Keyed by person AND credential: an app's credential id is its client id, shared by everyone who

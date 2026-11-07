@@ -581,13 +581,13 @@ export interface SuggestionAuthorKey {
   credentialId: string;
 }
 
-/** Notes that `boardId` holds pending suggestions of `author` (idempotent). */
+/** Notes that `boardId` holds pending suggestions of `author` (idempotent; a repeat notes it anew). */
 export async function noteSuggestionAuthor(boardId: string, author: SuggestionAuthorKey): Promise<void> {
-  await query(`INSERT INTO board_suggestion_authors (board_id, user_id, credential_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [
-    boardId,
-    author.userId,
-    author.credentialId,
-  ]);
+  await query(
+    `INSERT INTO board_suggestion_authors (board_id, user_id, credential_id, noted_at) VALUES ($1, $2, $3, now())
+     ON CONFLICT (board_id, user_id, credential_id) DO UPDATE SET noted_at = now()`,
+    [boardId, author.userId, author.credentialId],
+  );
 }
 
 /** Boards that may hold pending suggestions of the person (null: anyone's) through the credential (null: any). */
@@ -601,11 +601,16 @@ export async function boardsWithSuggestionsOf(who: { userId: string | null; cred
   return rows.map((r) => r.board_id);
 }
 
-/** Forgets every author of `boardId` but those in `pending` (whose suggestions still wait there). */
+/**
+ * Forgets every author of `boardId` but those in `pending` (whose suggestions still wait there).
+ * `pending` is a view of the board that can predate a proposal noted moments ago (its records not
+ * yet written, saved or relayed), so a hint noted within the last hour is always kept.
+ */
 export async function keepSuggestionAuthors(boardId: string, pending: readonly SuggestionAuthorKey[]): Promise<void> {
   await query(
     `DELETE FROM board_suggestion_authors
-     WHERE board_id = $1 AND (user_id, credential_id) NOT IN (SELECT u, c FROM unnest($2::text[], $3::text[]) AS p(u, c))`,
+     WHERE board_id = $1 AND noted_at < now() - interval '1 hour'
+       AND (user_id, credential_id) NOT IN (SELECT u, c FROM unnest($2::text[], $3::text[]) AS p(u, c))`,
     [boardId, pending.map((p) => p.userId), pending.map((p) => p.credentialId)],
   );
 }
