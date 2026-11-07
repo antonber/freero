@@ -206,6 +206,8 @@ export async function authenticate(req: Request, resource: string): Promise<ApiC
   if (token.expiresAt !== null && token.expiresAt <= now) throw fail(401, 'This token has expired', 'invalid_token', 'invalid_token');
   if (token.pausedAt !== null) throw fail(401, 'This token is paused. Resume it in your Freero settings.', 'invalid_token', 'invalid_token');
   if (token.resource !== null && token.resource !== resource) throw fail(401, 'This token is for another Freero resource', 'invalid_token', 'invalid_token');
+  // An app's token does what its consent allows now: the person may have connected it again since, with less.
+  if (token.grantId !== null && token.grantResource !== token.resource) throw fail(401, 'This app was connected again since; use its newer token', 'invalid_token', 'invalid_token');
   let account: Account;
   try {
     account = await getAccount(token.userId);
@@ -233,7 +235,10 @@ export async function authenticate(req: Request, resource: string): Promise<ApiC
     label: oauth ? (token.clientName ?? 'App') : token.name,
     clientId: token.clientId,
     // An operator scope counts only on a personal token, while its account is an operator (OPERATOR_EMAILS, verified).
-    scopes: token.scopes.filter(isApiScope).filter((s) => !isOperatorScope(s) || (!oauth && isOperator(account))),
+    scopes: token.scopes
+      .filter(isApiScope)
+      .filter((s) => token.grantScopes === null || token.grantScopes.includes(s))
+      .filter((s) => !isOperatorScope(s) || (!oauth && isOperator(account))),
     account,
     grantId: token.grantId,
     issuedVia: token.issuedVia,
