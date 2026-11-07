@@ -16,8 +16,16 @@ import { completeSignIn, createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { uploadBytesUsed } from '../uploads/index';
 import importersRoutes from './routes';
+import { importFromMiro } from './service';
 
-type MockMiro = { url: string; requests: Array<{ method: string; path: string; authorized: boolean }>; rateLimited: boolean; hugeBoard(n: number): string; close(): Promise<void> };
+type MockMiro = {
+  url: string;
+  requests: Array<{ method: string; path: string; authorized: boolean }>;
+  rateLimited: boolean;
+  hugeBoard(n: number): string;
+  hold(kind: 'items' | 'connectors' | 'tags'): { readonly waiting: number; release(): void };
+  close(): Promise<void>;
+};
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 
 let miro: MockMiro;
@@ -109,6 +117,20 @@ it('a huge Miro board is read page by page and stops at the cap instead of readi
   // 50 a page: the pages for the cap (and one more to see it was reached), not the 6,000-item board.
   const itemPages = miro.requests.filter((r) => r.path.endsWith('/items')).length;
   expect(itemPages).toBeLessThanOrEqual(MIRO_MAX_ITEMS / 50 + 1);
+});
+
+it('an import the person cancelled while Miro was still listing the board copies none of its pictures into their uploads', async () => {
+  const { user, board } = await signedIn('Noor');
+  miro.requests.length = 0;
+  const items = miro.hold('items');
+  const cancelled = new AbortController();
+  const reading = importFromMiro(board.id, user.id, { board: BOARD, token: TOKEN }, cancelled.signal);
+  await vi.waitFor(() => expect(items.waiting).toBe(1));
+  cancelled.abort(); // the browser went away (Cancel in the import dialog)
+  items.release();
+  await expect(reading).rejects.toMatchObject({ code: 'import_cancelled' });
+  expect(miro.requests.filter((r) => r.path.includes('/resources/images/') || r.path.startsWith('/cdn/'))).toEqual([]);
+  expect(await uploadBytesUsed(user.id)).toBe(0);
 });
 
 it('Miro asking Freero to slow down ends the import with a rate-limit answer instead of retrying', async () => {
