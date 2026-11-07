@@ -25,6 +25,11 @@ Contributors — human or agent — usually see a narrow slice of the code, so t
 5. **Exceptions are narrow, explicit and reviewed** — `dune.exceptions.json`, each with a reason.
    If the same review comment appears twice, encode it as a check, type, test or directory.
 
+Every lifecycle in the app — explicit (a `status` column, a `phase` on a board) or implicit
+(`used_at` + `expires_at`, a row present or not, a session's tombstone) — is described with its
+states, invariants and transitions in docs/design/state-machines.md. A change that adds a state, a
+transition or a guard updates its machine there in the same commit.
+
 ## Stack
 
 - npm workspaces. Node 22, no native deps. `npm run dev` starts both apps (no Docker needed).
