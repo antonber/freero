@@ -403,7 +403,9 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
     if (d && !DATE.test(d)) throw badRequest('startDate must be YYYY-MM-DD');
     patch.startDate = d ?? null;
   }
-  if (el.type === 'card') {
+  // Checked only when the change sets a date: a card already stored the wrong way round (written
+  // before the toolbar kept the order) can still be renamed, moved or recoloured.
+  if (el.type === 'card' && (patch.startDate !== undefined || patch.dueDate !== undefined)) {
     const start = patch.startDate !== undefined ? patch.startDate : el.startDate;
     const due = patch.dueDate !== undefined ? patch.dueDate : el.dueDate;
     if (typeof start === 'string' && typeof due === 'string' && start > due) throw badRequest(`startDate (${start}) can’t be after dueDate (${due})`);
