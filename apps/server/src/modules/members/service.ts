@@ -5,10 +5,10 @@ import { BOARD_SHARING_RESTRICTED, type Account, type BoardMember, type InviteRe
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { recordAuditQuietly } from '../audit/index';
 import { findUserByEmail, getUser, getUsers, normalizeEmail } from '../auth/index';
-import { requireBoardAccess, teamAccessMembers } from '../boards/index';
+import { lockBoardSharing, requireBoardAccess, teamAccessMembers } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
 import { boardShared } from './events';
-import { inviteByEmail } from './invites';
+import { mailInvite, saveInviteByEmail } from './invites';
 import * as repo from './repo';
 import { atLeast, isBoardMemberRole, isMemberRole, memberRoleOf } from './roles';
 
@@ -37,6 +37,17 @@ export function requireMayInvite(access: { manages: boolean; editorsCanShare: bo
 }
 
 const boardGone = () => notFound('Board not found');
+
+/**
+ * Inside `repo.transaction()`: locks the board's sharing, then checks the actor's access as it is
+ * now. Checking first would let a request that started while its actor was a co-owner (or an
+ * editor) still change who has the board after they were demoted or removed.
+ */
+async function lockAndRequire(boardId: string, userId: string, min?: Role): ReturnType<typeof requireBoardAccess> {
+  await lockBoardSharing(boardId);
+  return requireBoardAccess(boardId, userId, min);
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Everyone with access: the owner, invited members, then people the team gives access. */
@@ -67,39 +78,48 @@ export async function listBoardMembers(boardId: string, meId: string): Promise<B
  * share; a verified email). `req` builds the emailed link.
  */
 export async function inviteBoardMember(req: Request | null, boardId: string, me: Account, body: { email?: unknown; role?: unknown }): Promise<InviteResponse> {
-  const access = await requireBoardAccess(boardId, me.id, 'editor');
-  const { ownerId, title, canShareExternally, inWorkspace, workspaceId, manages } = access;
-  requireMayInvite(access);
-  const board = { type: 'board', id: boardId, label: title };
   const email = normalizeEmail(body.email);
-  const role = body.role;
-  if (!email) throw badRequest('email is required');
-  if (!EMAIL_RE.test(email) || email.length > 254) throw badRequest('Enter a valid email address');
-  if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
-  // Otherwise anyone could sign up with a made-up address and mail invites in its name.
-  if (!me.emailVerified) throw forbidden('Verify your email address before inviting people');
-  const invitee = await findUserByEmail(email);
-  // Workspace policy "external sharing": people outside the board's workspace (an address
-  // without an account always is) need someone allowed to share outside it.
-  if (!canShareExternally && !(invitee && (await inWorkspace(invitee.id))))
-    throw forbidden('This workspace only lets you share its boards with people in it');
+  // Authorised and written under the board's sharing lock; the mail, audit and live refresh follow.
+  const done = await repo.transaction(async () => {
+    const access = await lockAndRequire(boardId, me.id, 'editor');
+    const { ownerId, title, canShareExternally, inWorkspace, workspaceId, manages } = access;
+    requireMayInvite(access);
+    const role = body.role;
+    if (!email) throw badRequest('email is required');
+    if (!EMAIL_RE.test(email) || email.length > 254) throw badRequest('Enter a valid email address');
+    if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
+    // Otherwise anyone could sign up with a made-up address and mail invites in its name.
+    if (!me.emailVerified) throw forbidden('Verify your email address before inviting people');
+    const invitee = await findUserByEmail(email);
+    // Workspace policy "external sharing": people outside the board's workspace (an address
+    // without an account always is) need someone allowed to share outside it.
+    if (!canShareExternally && !(invitee && (await inWorkspace(invitee.id))))
+      throw forbidden('This workspace only lets you share its boards with people in it');
+    if (!invitee) {
+      const out = await saveInviteByEmail({ boardId, email, role, inviter: me, mayChangeRole: manages });
+      if (out === 'board-gone') throw boardGone();
+      if (out === 'role-conflict') throw new HttpError(409, `${email} is already invited. Only the board’s owner and co-owners can change their role.`);
+      return { title, workspaceId, role, pending: out, invitee: null };
+    }
+    if (invitee.id === ownerId) throw new HttpError(409, 'That person already owns this board');
+    if (manages) {
+      if (!(await repo.upsertMember(boardId, invitee.id, role, Date.now(), { actorId: me.id }))) throw boardGone();
+    } else {
+      // Re-inviting changes an existing member's role, which only owners and co-owners may do (PATCH
+      // is theirs too): editors could otherwise promote viewers or demote other editors.
+      // One conditional insert, so a concurrent role change cannot slip between check and write.
+      const now = await repo.addMemberIfAbsent(boardId, invitee.id, role, Date.now(), { actorId: me.id });
+      if (now === null) throw boardGone();
+      if (now !== role) throw new HttpError(409, `${invitee.name} already has access. Only the board’s owner and co-owners can change their role.`);
+    }
+    return { title, workspaceId, role, pending: null, invitee };
+  });
+  const { title, workspaceId, role, invitee } = done;
+  const board = { type: 'board', id: boardId, label: title };
   if (!invitee) {
-    const out = await inviteByEmail(req, { boardId, boardTitle: title, email, role, inviter: me, mayChangeRole: manages });
-    if (out === 'board-gone') throw boardGone();
-    if (out === 'role-conflict') throw new HttpError(409, `${email} is already invited. Only the board’s owner and co-owners can change their role.`);
+    await mailInvite(req, done.pending!, title, me);
     await recordAuditQuietly({ action: 'board.member_invited', workspaceId, actorId: me.id, target: board, metadata: { email, role, pending: true } });
-    return { invite: out };
-  }
-  if (invitee.id === ownerId) throw new HttpError(409, 'That person already owns this board');
-  if (manages) {
-    if (!(await repo.upsertMember(boardId, invitee.id, role, Date.now(), { actorId: me.id }))) throw boardGone();
-  } else {
-    // Re-inviting changes an existing member's role, which only owners and co-owners may do (PATCH
-    // is theirs too): editors could otherwise promote viewers or demote other editors.
-    // One conditional insert, so a concurrent role change cannot slip between check and write.
-    const now = await repo.addMemberIfAbsent(boardId, invitee.id, role, Date.now(), { actorId: me.id });
-    if (now === null) throw boardGone();
-    if (now !== role) throw new HttpError(409, `${invitee.name} already has access. Only the board’s owner and co-owners can change their role.`);
+    return { invite: done.pending!.invite };
   }
   await refreshBoardAccess(boardId);
   await recordAuditQuietly({ action: 'board.member_invited', workspaceId, actorId: me.id, target: board, metadata: { email, userId: invitee.id, role, pending: false } });
@@ -114,22 +134,25 @@ export async function inviteBoardMember(req: Request | null, boardId: string, me
  * other role ends that. Audited with the roles as PATCH takes them, so co-owner changes show.
  */
 export async function setBoardMemberRole(boardId: string, meId: string, userId: string, role: unknown): Promise<BoardMember> {
-  const { workspaceId, title, manages } = await requireBoardAccess(boardId, meId, 'editor');
-  if (!manages) throw forbidden('Only the board’s owner and co-owners can change people’s access');
-  if (!isBoardMemberRole(role)) throw badRequest('role must be coowner, editor, commenter or viewer');
-  const coOwner = role === 'coowner';
-  const stored = coOwner ? 'editor' : role;
-  const u = await getUser(userId);
-  const before = await repo.getMembership(boardId, userId);
-  if (!u || !(await repo.setRole(boardId, userId, stored, { actorId: meId }, coOwner))) throw notFound('That person is not a member of this board');
+  const { workspaceId, title, u, before, to, coOwner, stored } = await repo.transaction(async () => {
+    const { workspaceId, title, manages } = await lockAndRequire(boardId, meId, 'editor');
+    if (!manages) throw forbidden('Only the board’s owner and co-owners can change people’s access');
+    if (!isBoardMemberRole(role)) throw badRequest('role must be coowner, editor, commenter or viewer');
+    const coOwner = role === 'coowner';
+    const stored = coOwner ? 'editor' : role;
+    const u = await getUser(userId);
+    const before = await repo.getMembership(boardId, userId);
+    if (!u || !(await repo.setRole(boardId, userId, stored, { actorId: meId }, coOwner))) throw notFound('That person is not a member of this board');
+    return { workspaceId, title, u, before, to: role, coOwner, stored };
+  });
   const from = memberRoleOf(before);
-  if (from !== role)
+  if (from !== to)
     await recordAuditQuietly({
       action: 'board.member_role_changed',
       actorId: meId,
       workspaceId,
       target: { type: 'board', id: boardId, label: title },
-      metadata: { userId, email: u.email, from, to: role },
+      metadata: { userId, email: u.email, from, to },
     });
   await refreshBoardAccess(boardId);
   return toMember(u, stored, true, coOwner);
@@ -140,9 +163,12 @@ export async function setBoardMemberRole(boardId: string, meId: string, userId: 
  * access at once. The owner holds no membership, so nobody can remove them.
  */
 export async function removeBoardMember(boardId: string, meId: string, userId: string): Promise<void> {
-  const { workspaceId, title, manages } = await requireBoardAccess(boardId, meId);
-  if (!manages && userId !== meId) throw forbidden('Only the board’s owner and co-owners can remove people');
-  if (!(await repo.removeMember(boardId, userId, { actorId: meId }))) throw notFound('That person is not a member of this board');
+  const { workspaceId, title } = await repo.transaction(async () => {
+    const access = await lockAndRequire(boardId, meId);
+    if (!access.manages && userId !== meId) throw forbidden('Only the board’s owner and co-owners can remove people');
+    if (!(await repo.removeMember(boardId, userId, { actorId: meId }))) throw notFound('That person is not a member of this board');
+    return access;
+  });
   await recordAuditQuietly({ action: 'board.member_removed', workspaceId, actorId: meId, target: { type: 'board', id: boardId, label: title }, metadata: { userId, left: userId === meId } });
   await refreshBoardAccess(boardId);
 }

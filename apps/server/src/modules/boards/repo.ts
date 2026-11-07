@@ -364,6 +364,15 @@ export async function deleteAllInWorkspace(workspaceId: string): Promise<Array<{
   return query<{ id: string; thumbnail: string | null }>(`DELETE FROM boards WHERE workspace_id = $1 RETURNING id, thumbnail`, [workspaceId]);
 }
 
+/**
+ * Inside a transaction: holds the board's row until it ends (as changing its owner does), so
+ * changes to who has it and who may share it run one at a time. Doesn't block reads, nor rows that
+ * only reference the board. False if there is no such board.
+ */
+export async function lockBoardSharing(id: string): Promise<boolean> {
+  return (await one(`SELECT 1 FROM boards WHERE id = $1 FOR NO KEY UPDATE`, [id])) !== null;
+}
+
 /** Hands a board to `ownerId`, possibly into another workspace / project. False if the board is gone. */
 export async function setOwner(id: string, ownerId: string, workspaceId: string, projectId: string | null, now: number): Promise<boolean> {
   return (
