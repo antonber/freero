@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "לא ניתן היה לפתוח את הסיור המודרך הזה.",
   "walkthroughsNeedAFreeroServer": "סיורים מודרכים דורשים שרת Freero.",
@@ -298,5 +299,6 @@
   "presentersNames": "מציגים: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "עוקבים אחרי מי שמדבר (מעבר לתצוגה של {name} בלבד)",
-  "followingName": "עוקבים אחרי התצוגה של {name} (מעבר למי שמדבר)"
+  "followingName": "עוקבים אחרי התצוגה של {name} (מעבר למי שמדבר)",
+  "youLeftTheBoardSoThe": "יצאת מהלוח, ולכן ההקלטה נמחקה."
 }

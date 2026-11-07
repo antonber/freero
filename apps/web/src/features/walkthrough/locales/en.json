@@ -147,5 +147,6 @@
   "presentersNames": "Presenters: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "Following whoever speaks (switch to {name}’s view only)",
-  "followingName": "Following {name}’s view (switch to whoever speaks)"
+  "followingName": "Following {name}’s view (switch to whoever speaks)",
+  "youLeftTheBoardSoThe": "You left the board, so the recording was discarded."
 }
