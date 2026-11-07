@@ -9,11 +9,15 @@ import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { initBoardDoc, storedBoardView } from '../realtime/index';
 import { boardAccess, createTeamWorkspace } from '../workspaces/index';
-import { checkKeys, createKey, keyStatus } from './service';
+import { newDataKey } from './envelope';
+import { unwrapDataKey, wrapDataKey } from './kek';
+import * as repo from './repo';
+import { checkKeys, createKey, currentSealRef, forgetAllCachedKeys, keyStatus } from './service';
 import { signRequest } from './sigv4';
 
 const ARN = 'arn:aws:kms:eu-west-1:111122223333:key/0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0';
 const OTHER_ARN = 'arn:aws:kms:eu-west-1:111122223333:key/ffffffff-0000-1111-2222-333333333333';
+const MOVED_ARN = 'arn:aws:kms:eu-west-1:111122223333:key/12345678-9abc-def0-1234-56789abcdef0';
 
 /** A stand-in for AWS KMS: Encrypt / Decrypt bound to the encryption context, keys that can be disabled. */
 const kms = { disabled: new Set<string>(), calls: 0 };
@@ -71,6 +75,31 @@ it("a customer revoking their AWS KMS key closes the workspace's boards although
   await checkKeys();
   expect((await keyStatus(ws, me.id)).key?.state).toBe('active');
   expect((await storedBoardView(board.id))?.elements).toHaveLength(1);
+});
+
+it('an instance still caching the key row from before another instance moved the key to a KMS key opens the board and never marks the key unavailable', async () => {
+  const me = await createUser({ name: 'Rotator', email: 'kms3@keys.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const ws = (await createTeamWorkspace(me.id, 'Rotating')).id;
+  await createKey(ws, me.id, {}); // the instance's key
+  const board = await createBoard(me.id, 'Ledger 2', '', 'none', { workspaceId: ws });
+  const doc = new Y.Doc();
+  doc.getMap('elements').set('s1', { id: 's1', type: 'sticky', x: 0, y: 0, w: 1, h: 1, text: 'account 4712' });
+  await initBoardDoc(board.id, Y.encodeStateAsUpdate(doc));
+
+  forgetAllCachedKeys();
+  await currentSealRef(ws); // this instance caches the key row (the instance's KEK), no data key yet
+  // Another instance rotates to the customer's KMS key; its invalidation hasn't reached this one.
+  const theirs = { provider: 'aws-kms' as const, kmsKeyId: MOVED_ARN };
+  const rewrapped = [];
+  for (const d of await repo.dataKeys(ws)) {
+    const { dek } = await unwrapDataKey({ provider: 'instance', kmsKeyId: null }, ws, d.wrapped);
+    rewrapped.push({ version: d.version, from: d.wrapped, to: await wrapDataKey(theirs, ws, dek) });
+  }
+  const next = { version: 2, wrapped: await wrapDataKey(theirs, ws, newDataKey()) };
+  expect(await repo.rotate(ws, { ...theirs, rewrapped, kekRef: MOVED_ARN, next }, Date.now(), async () => {})).toBe(true);
+
+  expect((await storedBoardView(board.id))?.elements).toHaveLength(1);
+  expect((await keyStatus(ws, me.id)).key?.state).toBe('active');
 });
 
 it("a workspace can't turn on a KMS key Freero can't use, so it never seals content it couldn't open again", async () => {
