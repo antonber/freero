@@ -6,14 +6,14 @@ import type { BoardElement } from '@freero/shared';
 import { definePanel, useCanEdit, useCollection, useParticipant, useElement, usePeers, usePrivateCollection, useCamera, type Editor } from '@engine';
 import { AvatarStack, Button, Input, Modal, SegmentedControl, Tooltip } from '@ui';
 import { accept, canManage, COLLECTION, currentItem, end, goTo, itemsToEstimate, pick, reveal, revote, start } from './lib/actions';
-import { DECKS, ROUND_KEY, estimatesOf, parseCustomDeck, readRound, results, voteKey, type DeckKind, type Estimate, type EstimationValue, type Round } from './lib/model';
+import { DECKS, estimatesOf, parseCustomDeck, results, roundOf, voteKey, type DeckKind, type Estimate, type EstimationValue, type Round } from './lib/model';
 import { START_DIALOG_ID } from './lib/ids';
 import { t } from './messages';
 import './estimation.css';
 
 function useRound(): { round: Round | undefined; entries: Array<[string, EstimationValue]> } {
   const entries = useCollection<EstimationValue>(COLLECTION);
-  const round = useMemo(() => readRound(entries.find(([k]) => k === ROUND_KEY)?.[1]), [entries]);
+  const round = useMemo(() => roundOf((key) => entries.find(([k]) => k === key)?.[1]), [entries]);
   return { round, entries };
 }
 

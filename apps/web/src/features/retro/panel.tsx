@@ -4,13 +4,13 @@ import { useMemo, useState } from 'react';
 import { ArrowRight, Check, History, LayoutGrid, ListPlus, X } from 'lucide-react';
 import { definePanel, useCollection, type Editor } from '@engine';
 import { Button, Modal, SegmentedControl, Toggle } from '@ui';
-import { addAction, advance, canManage, clusterAll, end, FORMATS, PHASES, readSession, RETRO_COLLECTION, start, START_DIALOG_ID, type RetroSession } from './lib/flow';
+import { addAction, advance, canManage, clusterAll, end, FORMATS, PHASES, RETRO_COLLECTION, sessionOf, start, START_DIALOG_ID, type RetroSession } from './lib/flow';
 import { t } from './messages';
 import './retro.css';
 
 function useSession(): RetroSession | undefined {
   const entries = useCollection<RetroSession>(RETRO_COLLECTION);
-  return useMemo(() => readSession(entries.find(([k]) => k === 'session')?.[1]), [entries]);
+  return useMemo(() => sessionOf((key) => entries.find(([k]) => k === key)?.[1]), [entries]);
 }
 
 function StartDialog({ editor }: { editor: Editor }) {
@@ -117,7 +117,14 @@ function StepperBar({ editor }: { editor: Editor }) {
           </Button>
         )}
         {manage && phase.next && (
-          <Button size="sm" variant="primary" iconRight={ArrowRight} onClick={() => advance(editor)}>
+          <Button
+            size="sm"
+            variant="primary"
+            iconRight={ArrowRight}
+            // The next step's button appears under the pointer: the second click of a double click
+            // (detail 2) lands on it and is not a request to move on again (FAC-3).
+            onClick={(e) => e.detail < 2 && advance(editor, session.phase)}
+          >
             {phase.next}
           </Button>
         )}

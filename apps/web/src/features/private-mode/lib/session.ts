@@ -13,7 +13,23 @@
 // Participants (commenters and guests while the board lets them, Editor.isParticipant) draft too:
 // the same rule places what they add, and the server takes from them only drafts of
 // PRIVATE_MODE_TYPES while a session runs (realtime participation.ts).
-import { PRIVATE_MODE_COLLECTION, PRIVATE_MODE_KEY, PRIVATE_MODE_TYPES, type BoardElement, type ElementType, type PrivateModeSession } from '@freero/shared';
+//
+// Each session has an id (FAC-1), and its end is kept as a tombstone under `ended:<id>` too
+// (@freero/shared sessions.ts): an "Anonymous" switched at the same moment as the reveal, or
+// offline, can't make an ended session active again. The reveal and the end are one step, and a
+// reveal that waits offline is tied to its session (FAC-8: it never reveals a later one's drafts).
+import { nanoid } from 'nanoid';
+import {
+  liveSession,
+  PRIVATE_MODE_COLLECTION,
+  PRIVATE_MODE_KEY,
+  PRIVATE_MODE_TYPES,
+  sessionValue,
+  writeSessionEnd,
+  type BoardElement,
+  type ElementType,
+  type PrivateModeSession,
+} from '@freero/shared';
 import type { Editor } from '@engine';
 
 import { t } from '../messages';
@@ -26,13 +42,18 @@ const KEY = PRIVATE_MODE_KEY;
  */
 export const PRIVATE_TYPES: ReadonlySet<ElementType> = new Set<ElementType>(PRIVATE_MODE_TYPES);
 
-export function getSession(editor: Pick<Editor, 'collection'>): PrivateModeSession | undefined {
-  const s = editor.collection<PrivateModeSession>(COLLECTION).get(KEY);
+/** The running session, from a getter over the collection (none once it ended, whatever was written since). */
+export function runningSession(get: (key: string) => unknown): PrivateModeSession | undefined {
+  const s = liveSession(get, KEY) as PrivateModeSession | undefined;
   return s && s.active ? s : undefined;
 }
 
+export const getSession = (editor: Pick<Editor, 'collection'>): PrivateModeSession | undefined =>
+  runningSession((k) => editor.collection<PrivateModeSession>(COLLECTION).get(k));
+
 /** The running session, else the one that ran last (ended: its leftovers keep its anonymity). */
-const lastSession = (editor: Pick<Editor, 'collection'>): PrivateModeSession | undefined => editor.collection<PrivateModeSession>(COLLECTION).get(KEY);
+const lastSession = (editor: Pick<Editor, 'collection'>): PrivateModeSession | undefined =>
+  sessionValue((k) => editor.collection<PrivateModeSession>(COLLECTION).get(k), KEY) as PrivateModeSession | undefined;
 
 /** May this user reveal / end it from the bar (the starter or the owner; any editor via the board menu). */
 export function canManage(editor: Editor, s: PrivateModeSession): boolean {
@@ -65,6 +86,7 @@ export function selectedFrame(editor: Editor): BoardElement | undefined {
 export function start(editor: Editor, frameId: string | null, opts: { anonymous?: boolean } = {}): void {
   if (!editor.can('editor') || getSession(editor)) return;
   const session: PrivateModeSession = {
+    id: nanoid(10),
     active: true,
     startedBy: editor.user.id,
     startedByName: editor.user.name,
@@ -92,11 +114,19 @@ export function shareLeftovers(editor: Editor): void {
   editor.revealPrivate('elements', { mine: true, anonymous: !!lastSession(editor)?.anonymous });
 }
 
-/** Reveals everyone's private content at once (on the server, authors online or not) and ends. */
-export function revealAndEnd(editor: Editor): void {
+/**
+ * Reveals everyone's private content at once (on the server, authors online or not) and ends —
+ * only the session `id`, when given (another feature ends the session it started).
+ */
+export function revealAndEnd(editor: Editor, id?: string): void {
   const s = getSession(editor);
-  if (!editor.can('editor') || !s) return;
-  editor.revealPrivate('elements', { anonymous: !!s.anonymous });
-  editor.collection<PrivateModeSession>(COLLECTION).set(KEY, { ...s, active: false });
+  if (!editor.can('editor') || !s || (id !== undefined && s.id !== id)) return;
+  const store = editor.collection<PrivateModeSession>(COLLECTION);
+  editor.transact(() => {
+    editor.revealPrivate('elements', { anonymous: !!s.anonymous, ...(s.id ? { session: { collection: COLLECTION, key: KEY, id: s.id } } : {}) });
+    // Ended, kept for its anonymity (see the header); a session from before ids has no marker to keep.
+    if (s.id) writeSessionEnd(store, KEY, { ...s, id: s.id, active: false, ended: true }, { keep: true });
+    else store.set(KEY, { ...s, active: false });
+  });
   editor.host.notify(s.anonymous ? t('privateContentRevealedToEveryone') : t('privateContentRevealedToEveryone2'), 'success');
 }

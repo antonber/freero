@@ -1,7 +1,8 @@
 // Pure timer model. The doc stores only `endsAt` (running) or `pausedRemaining` (paused) in
 // server-clock milliseconds; every client derives the countdown locally, so nothing is written
 // while the timer ticks. All `now` values here are server-clock ms (see ./clock.ts).
-import type { TimerState } from '@freero/shared';
+import { nanoid } from 'nanoid';
+import { liveSession, sessionIdOf, writeSessionEnd, type TimerState } from '@freero/shared';
 
 export const MINUTE = 60_000;
 /** Longest timer anyone can set (99:59). */
@@ -27,7 +28,38 @@ export function phaseOf(state: TimerState | undefined | null, now: number): Time
 
 export function startTimer(duration: number, now: number, userId: string): TimerState {
   const d = Math.min(MAX_DURATION, Math.max(1000, Math.round(duration)));
-  return { endsAt: now + d, duration: d, pausedRemaining: null, running: true, startedBy: userId };
+  return { id: nanoid(10), endsAt: now + d, duration: d, pausedRemaining: null, running: true, startedBy: userId };
+}
+
+// ---------------------------------------------------------------- the stored run (FAC-1)
+// One run per Start (its `id`). Stop is kept as a tombstone under `ended:<id>` (@freero/shared
+// sessions.ts), so a Pause, "+1 min" or music change someone made at the same moment, or offline,
+// never brings a stopped timer back: writes go to the run they read, and a run that ended stays ended.
+
+export const TIMER_KEY = 'state';
+export interface TimerStore {
+  get(key: string): unknown;
+  set(key: string, value: never): void;
+  delete(key: string): void;
+}
+
+/** The running or paused timer (none once stopped, whatever anyone wrote since). */
+export const readTimer = (store: Pick<TimerStore, 'get'>): TimerState | undefined => liveSession((k) => store.get(k), TIMER_KEY) as TimerState | undefined;
+
+/** Changes the current run (Pause, Resume, +1 min, music); nothing when there is none. */
+export function changeTimer(store: TimerStore, change: (s: TimerState) => TimerState): void {
+  const cur = readTimer(store);
+  if (cur) store.set(TIMER_KEY, change(cur) as never);
+}
+
+/** Stop: ends the current run for good. */
+export function stopTimer(store: TimerStore): void {
+  const cur = readTimer(store);
+  if (!cur) return;
+  const id = sessionIdOf(cur);
+  // A run started by a client from before run ids has nothing to pin its end on: removed as it used to be.
+  if (id) writeSessionEnd(store, TIMER_KEY, { id, ended: true }, { keep: true });
+  else store.delete(TIMER_KEY);
 }
 
 export function pauseTimer(state: TimerState, now: number): TimerState {

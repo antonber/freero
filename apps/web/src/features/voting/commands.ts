@@ -36,6 +36,7 @@ export default defineCommands([
     label: t('endVoting'),
     menus: ['board'],
     when: (editor) => !!session(editor)?.active,
-    run: (editor) => end(editor),
+    // args { id } (a retro): ends only that vote.
+    run: (editor, args) => end(editor, typeof args?.id === 'string' ? args.id : undefined),
   },
 ]);

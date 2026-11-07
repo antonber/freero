@@ -22,8 +22,11 @@ import {
   VOTES_PER_USER_MIN,
   VOTING_HISTORY_MAX,
   VOTING_SESSION_KEY,
+  isSessionEndKey,
   isVotingHistoryKey,
+  liveSession,
   votingHistoryKey,
+  writeSessionEnd,
   type BoardElement,
   type ElementType,
   type VoteBallot,
@@ -55,10 +58,17 @@ export interface Voter {
 
 export const ballotKey = (sessionId: string, userId: string) => `${sessionId}:${userId}`;
 
+/**
+ * The current vote, running or ended (its results showing). None once its results were cleared, also
+ * when someone ended it at the same moment (FAC-1: the clear is kept under `ended:<id>`).
+ */
 export function getSession(store: Pick<VotingStore, 'get'>): VotingSession | undefined {
-  const s = store.get(SESSION_KEY);
+  const s = liveSession((k) => store.get(k), SESSION_KEY) as VotingValue | undefined;
   return s && 'votesPerUser' in s ? s : undefined;
 }
+
+/** Keys a new vote or a clear removes: everything but the history and the cleared votes' markers. */
+const isCurrentKey = (key: string) => !isVotingHistoryKey(key) && !isSessionEndKey(key);
 
 export function isEligible(session: VotingSession, el: Pick<BoardElement, 'id' | 'type'>): boolean {
   return session.elementIds ? session.elementIds.includes(el.id) : VOTABLE_TYPES.has(el.type);
@@ -216,7 +226,7 @@ export const MAX_VOTE_DURATION = 99 * 60_000;
  */
 export function startSession(store: VotingStore, opts: SessionOptions, user: Actor, now: number, exists: (id: string) => boolean = () => true): VotingSession {
   archive(store, exists, now);
-  for (const [key] of store.entries()) if (!isVotingHistoryKey(key)) store.delete(key);
+  for (const [key] of store.entries()) if (isCurrentKey(key)) store.delete(key);
   const votesPerUser = Math.min(MAX_VOTES, Math.max(MIN_VOTES, Math.round(opts.votesPerUser)));
   const cap = opts.maxPerItem ? Math.min(votesPerUser, Math.max(1, Math.round(opts.maxPerItem))) : null;
   const duration = opts.durationMs ? Math.min(MAX_VOTE_DURATION, Math.max(10_000, Math.round(opts.durationMs))) : null;
@@ -271,10 +281,17 @@ export function endSession(store: VotingStore, now: number): void {
   if (session?.active) store.set(SESSION_KEY, { ...session, active: false, endedAt: now });
 }
 
-/** Removes the current results from the board (session + ballots); they stay in the history. */
+/**
+ * Removes the current results from the board (session + ballots); they stay in the history. The
+ * clear is kept as the vote's end marker, so an End someone pressed at the same moment can't
+ * bring back an empty vote.
+ */
 export function clearSession(store: VotingStore, exists: (id: string) => boolean = () => true, now = Date.now()): void {
+  const session = getSession(store);
   archive(store, exists, now);
-  for (const [key] of store.entries()) if (!isVotingHistoryKey(key)) store.delete(key);
+  for (const [key] of store.entries()) if (isCurrentKey(key)) store.delete(key);
+  // The key itself is deleted, not tombstoned: a server from before markers refuses a malformed session there.
+  if (session) writeSessionEnd(store, SESSION_KEY, { id: session.id, ended: true });
 }
 
 /** Forgets one past vote. */

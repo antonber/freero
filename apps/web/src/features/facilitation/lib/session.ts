@@ -2,12 +2,20 @@
 // @freero/shared). The SERVER reads it and enforces the lock and the allowed types
 // (apps/server/src/modules/realtime/facilitation.ts); this client only writes it and applies the
 // two parts that are views (following the facilitator, hidden cursors).
+//
+// Each session has an id (FAC-1) and its end is kept under `ended:<id>` (@freero/shared sessions.ts),
+// so an owner's change made at the same moment as the end, or offline, can't keep it running. The
+// server holds the same rule (realtime sessionEnds.ts) and lets only the facilitator or the owner
+// write that marker.
 import { create } from 'zustand';
+import { nanoid } from 'nanoid';
 import {
   FACILITATION_COLLECTION,
   FACILITATION_KEY,
+  liveSession,
   PARTICIPATION_KEY,
   participationOpen,
+  writeSessionEnd,
   type ElementType,
   type FacilitationSession,
   type ParticipationSetting,
@@ -23,6 +31,7 @@ export function readSession(v: unknown): FacilitationSession | undefined {
   const s = v as Partial<FacilitationSession> | undefined;
   if (!s || typeof s.by !== 'string' || typeof s.byName !== 'string') return undefined;
   return {
+    ...(typeof s.id === 'string' && s.id ? { id: s.id } : {}),
     by: s.by,
     byName: s.byName,
     startedAt: typeof s.startedAt === 'number' ? s.startedAt : 0,
@@ -33,7 +42,9 @@ export function readSession(v: unknown): FacilitationSession | undefined {
   };
 }
 
-export const getSession = (editor: Pick<Editor, 'collection'>) => readSession(store(editor).get(FACILITATION_KEY));
+/** The running session, from a getter over the collection (none once ended, whatever was written since). */
+export const sessionOf = (get: (key: string) => unknown) => readSession(liveSession(get, FACILITATION_KEY));
+export const getSession = (editor: Pick<Editor, 'collection'>) => sessionOf((k) => store(editor).get(k));
 
 /** The facilitator runs it; the board owner may too (the server allows exactly these two). */
 export function canManage(editor: Editor, s: FacilitationSession): boolean {
@@ -43,6 +54,7 @@ export function canManage(editor: Editor, s: FacilitationSession): boolean {
 export function start(editor: Editor, patch: SessionPatch = {}): void {
   if (!editor.can('editor') || getSession(editor)) return;
   const session: FacilitationSession = {
+    id: nanoid(10),
     by: editor.user.id,
     byName: editor.user.name,
     startedAt: editor.host.serverNow(),
@@ -55,16 +67,29 @@ export function start(editor: Editor, patch: SessionPatch = {}): void {
   store(editor).set(FACILITATION_KEY, session);
 }
 
-export function change(editor: Editor, patch: SessionPatch): void {
+/**
+ * Is `s` the session `id` a caller started (any session when no id is given)? One without an id
+ * counts: a client from before ids drops it when it changes the session.
+ */
+const isSession = (s: FacilitationSession, id: string | undefined) => id === undefined || !s.id || s.id === id;
+
+/** Changes the running session (only the session `id`, when given: another feature changes the one it started). */
+export function change(editor: Editor, patch: SessionPatch, id?: string): void {
   const s = getSession(editor);
-  if (!s || !canManage(editor, s)) return;
+  if (!s || !canManage(editor, s) || !isSession(s, id)) return;
   store(editor).set(FACILITATION_KEY, { ...s, ...patch });
 }
 
-export function end(editor: Editor): void {
+/** Ends the running session (only the session `id`, when given). */
+export function end(editor: Editor, id?: string): void {
   const s = getSession(editor);
-  if (!s || !canManage(editor, s)) return;
-  store(editor).delete(FACILITATION_KEY);
+  if (!s || !canManage(editor, s) || !isSession(s, id)) return;
+  // The key itself is deleted (a server from before markers refuses anything else there); the
+  // marker pins the end. A session from before ids is removed as it used to be.
+  editor.transact(() => {
+    if (s.id) writeSessionEnd(store(editor), FACILITATION_KEY, { id: s.id, ended: true });
+    else store(editor).delete(FACILITATION_KEY);
+  });
 }
 
 /** Validated `facilitation.set` / `facilitation.start` args (other features drive sessions). */

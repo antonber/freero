@@ -28,6 +28,7 @@ export default defineCommands([
     label: t('revealPrivateContentAndEnd'),
     menus: ['board'],
     when: (editor) => !!getSession(editor),
-    run: (editor) => revealAndEnd(editor),
+    // args { id } (a retro): reveals and ends only that session.
+    run: (editor, args) => revealAndEnd(editor, typeof args?.id === 'string' ? args.id : undefined),
   },
 ]);
