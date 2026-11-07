@@ -11,6 +11,7 @@ import {
   API_URL_ITEM_TYPES,
   NO_GROUP,
   groupFieldId,
+  cardValue,
   groupKeyOf,
   collectionSchema,
   connectorDraft,
@@ -354,7 +355,8 @@ function fieldValues(card: CardElement, raw: unknown, view: BoardView): { values
       kanban = { id: k.id, patch: { columns, w: kanbanBoardWidth({ ...k, columns }) } };
     }
     const next = { ...k, columns } as KanbanElement;
-    if (k.columns.length && k.columns[kanbanColumnAt(k, card.x + card.w / 2)]?.id === key) continue;
+    // Already its value (the column it stands in; for a card placed under an earlier grouping, #197, its stored value).
+    if (k.columns.length && groupKeyOf(f, cardValue(k, card, f)) === key) continue;
     const x = k.x + kanbanColumnLeft(next, to) + kanbanColumnWidth(next, to) / 2 - card.w / 2;
     if (k.lanes?.length) move = { x };
     else {

@@ -39,6 +39,7 @@ import {
   rankColor,
   readValue,
   savedViews,
+  stalePlacement,
   sprintFieldOf,
   storedFields,
   withOptions,
@@ -171,7 +172,9 @@ function withColumns(k: KanbanElement, adds: KanbanColumn[]): KanbanElement {
  * those moving in this change). Null when it already stands in that column.
  */
 export function columnSpot(view: Elements, k: KanbanElement, card: BoardElement, col: number, moving: ReadonlySet<string>): { x: number; y: number; color?: string } | null {
-  if (col < 0 || col >= k.columns.length || kanbanColumnAt(k, card.x + card.w / 2) === col) return null;
+  if (col < 0 || col >= k.columns.length) return null;
+  // Already there (a card placed under an earlier grouping, #197, is in no column yet: it moves).
+  if (kanbanColumnAt(k, card.x + card.w / 2) === col && !(card.type === 'card' && stalePlacement(k, card as CardElement))) return null;
   const { itemGap, headerH, colHeadH, pad } = KANBAN_LAYOUT;
   const inCol = (el: BoardElement) => el.frameId === k.id && el.id !== card.id && !moving.has(el.id) && kanbanColumnAt(k, el.x + el.w / 2) === col;
   const bottom = view.elements
