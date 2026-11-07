@@ -311,6 +311,12 @@ export async function idsInWorkspace(workspaceId: string): Promise<string[]> {
   return (await query<{ id: string }>(`SELECT id FROM boards WHERE workspace_id = $1`, [workspaceId])).map((r) => r.id);
 }
 
+/** Every board (trash, discarded and taken-down ones too) after `after` by id, with its workspace: for jobs that sweep all boards a page at a time. */
+export async function workspacesAfter(after: string, limit: number): Promise<Array<{ id: string; workspaceId: string }>> {
+  const rows = await query<{ id: string; workspace_id: string }>(`SELECT id, workspace_id FROM boards WHERE id > $1 ORDER BY id LIMIT $2`, [after, limit]);
+  return rows.map((r) => ({ id: r.id, workspaceId: r.workspace_id }));
+}
+
 /** Usage of a workspace's boards (admin console): counts, live boards per owner, recent openers. */
 export async function workspaceStats(
   workspaceId: string,
@@ -607,12 +613,39 @@ export async function heldAmong(ids: string[]): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
+/**
+ * Taken by every hold placement and by whatever destroys held content that isn't a board row (a
+ * workspace's key), each in its transaction: one waits for the other to commit, so a destroy never
+ * misses a hold placed at the same moment. One lock for every hold: both are rare.
+ */
+async function lockLegalHolds(): Promise<void> {
+  await query(`SELECT pg_advisory_xact_lock(hashtext('boards.legal_holds'), 0)`);
+}
+
+/** In the caller's transaction: waits for holds being placed, then counts what `legalHoldCount` counts; no hold is placed until that transaction ends. */
+export async function legalHoldCountLocked(by: { workspaceId: string }): Promise<number> {
+  return tx(async () => {
+    await lockLegalHolds();
+    return legalHoldCount(by);
+  });
+}
+
 /** Puts boards (that still exist) and custodians — every board a person owns in a workspace — under hold `holdId`. */
 export async function placeLegalHold(
   holdId: string,
   scope: { boardIds: string[]; custodians: Array<{ workspaceId: string; ownerId: string }> },
   now: number,
 ): Promise<void> {
+  if (!scope.boardIds.length && !scope.custodians.length) return;
+  await tx(() => placeLegalHoldLocked(holdId, scope, now));
+}
+
+async function placeLegalHoldLocked(
+  holdId: string,
+  scope: { boardIds: string[]; custodians: Array<{ workspaceId: string; ownerId: string }> },
+  now: number,
+): Promise<void> {
+  await lockLegalHolds();
   if (scope.boardIds.length)
     await query(
       `INSERT INTO board_legal_holds (hold_id, board_id, via_owner, created_at)
