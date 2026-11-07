@@ -179,46 +179,89 @@ export async function exportsOf(caseId: string): Promise<ExportRecord[]> {
   return (await query<ExportRow>(`SELECT * FROM legal_case_exports WHERE case_id = $1 ORDER BY created_at DESC LIMIT 20`, [caseId])).map(toExport);
 }
 
-/** Claims the oldest pending export (one statement: two instances never build the same one). */
-export async function claimNext(now: number): Promise<ExportRecord | null> {
+// The job's lifecycle is the same as modules/privacy's data exports (pending → running → ready →
+// expired, running → pending | failed): keep the two in step.
+
+/**
+ * How many times an export is built before it fails for good, whether its build threw (markFailed)
+ * or took its instance down (requeueStale). A failed export no longer blocks a new request.
+ */
+export const MAX_EXPORT_ATTEMPTS = 3;
+
+/**
+ * Claims the oldest pending export (one statement: two instances never build the same one). The
+ * archive's key is recorded here, before anything is written: the first claim takes `fileKey`,
+ * later attempts keep the recorded one (and overwrite its file). So every archive in storage is
+ * named by its row, and filesToDrop finds it whatever happened to the build.
+ */
+export async function claimNext(now: number, fileKey: string): Promise<ExportRecord | null> {
   const r = await one<ExportRow>(
-    `UPDATE legal_case_exports SET status = 'running', started_at = $1, attempts = attempts + 1
-     WHERE id = (SELECT id FROM legal_case_exports WHERE status = 'pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+    `UPDATE legal_case_exports SET status = 'running', started_at = $1, attempts = attempts + 1, file_key = COALESCE(file_key, $2)
+     WHERE id = (SELECT id FROM legal_case_exports WHERE status = 'pending' ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
      RETURNING *`,
-    [new Date(now)],
+    [new Date(now), fileKey],
   );
   return r ? toExport(r) : null;
 }
 
-export async function markReady(id: string, fileKey: string, bytes: number, now: number, expiresAt: number): Promise<boolean> {
+/** The claimed attempt stored its archive: ready. False when that attempt no longer owns the row. */
+export async function markReady(id: string, attempt: number, bytes: number, now: number, expiresAt: number): Promise<boolean> {
   return (
-    (
-      await query(`UPDATE legal_case_exports SET status = 'ready', file_key = $2, bytes = $3, ready_at = $4, expires_at = $5 WHERE id = $1 AND status = 'running' RETURNING 1`, [
-        id,
-        fileKey,
-        bytes,
-        new Date(now),
-        new Date(expiresAt),
-      ])
-    ).length > 0
+    await query(
+      `UPDATE legal_case_exports SET status = 'ready', bytes = $3, ready_at = $4, expires_at = $5, error = NULL
+       WHERE id = $1 AND status = 'running' AND attempts = $2 RETURNING 1`,
+      [id, attempt, bytes, new Date(now), new Date(expiresAt)],
+    )
+  ).length > 0;
+}
+
+/** The claimed attempt threw: back to pending, or failed after MAX_EXPORT_ATTEMPTS. Never touches a later attempt's state. */
+export async function markFailed(id: string, attempt: number, error: string): Promise<void> {
+  await query(
+    `UPDATE legal_case_exports SET status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'pending' END, error = $4
+     WHERE id = $1 AND status = 'running' AND attempts = $2`,
+    [id, attempt, MAX_EXPORT_ATTEMPTS, error.slice(0, 500)],
   );
 }
 
-export async function markFailed(id: string, error: string, maxAttempts: number): Promise<void> {
-  await query(`UPDATE legal_case_exports SET status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'pending' END, error = $2 WHERE id = $1`, [id, error.slice(0, 500), maxAttempts]);
-}
-
+/**
+ * Exports left running by an instance that died (started before `before`): retried, or failed once
+ * they have had MAX_EXPORT_ATTEMPTS (a build that takes its instance down must not do so forever).
+ */
 export async function requeueStale(before: number): Promise<void> {
-  await query(`UPDATE legal_case_exports SET status = 'pending' WHERE status = 'running' AND started_at < $1`, [new Date(before)]);
+  await query(
+    `UPDATE legal_case_exports SET status = CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
+       error = CASE WHEN attempts >= $2 THEN 'the build stopped before it finished' ELSE error END
+     WHERE status = 'running' AND started_at < $1`,
+    [new Date(before), MAX_EXPORT_ATTEMPTS],
+  );
 }
 
-/** Ready exports past their expiry: their files go, the rows stay (expired) for the record. */
-export async function expiredFiles(now: number): Promise<Array<{ id: string; fileKey: string | null }>> {
+/**
+ * Files to delete: ready exports past their expiry, and failed exports whose build may have stored
+ * an archive. The rows stay (expired / failed) for the record.
+ */
+export async function filesToDrop(now: number): Promise<Array<{ id: string; fileKey: string }>> {
   return (
-    await query<{ id: string; file_key: string | null }>(`SELECT id, file_key FROM legal_case_exports WHERE status = 'ready' AND expires_at <= $1`, [new Date(now)])
+    await query<{ id: string; file_key: string }>(
+      `SELECT id, file_key FROM legal_case_exports
+       WHERE file_key IS NOT NULL AND ((status = 'ready' AND expires_at <= $1) OR status = 'failed')
+       LIMIT 200`,
+      [new Date(now)],
+    )
   ).map((r) => ({ id: r.id, fileKey: r.file_key }));
 }
 
-export async function markExpired(id: string): Promise<void> {
-  await query(`UPDATE legal_case_exports SET status = 'expired', file_key = NULL WHERE id = $1`, [id]);
+/** Its file is deleted: a ready export becomes expired, a failed one stays failed. */
+export async function fileDropped(id: string): Promise<void> {
+  await query(
+    `UPDATE legal_case_exports SET status = CASE WHEN status = 'ready' THEN 'expired' ELSE status END, file_key = NULL
+     WHERE id = $1 AND status IN ('ready', 'failed')`,
+    [id],
+  );
+}
+
+/** Whether the export still names this archive (if not, the run that wrote it deletes it). */
+export async function namesFile(id: string, fileKey: string): Promise<boolean> {
+  return (await one(`SELECT 1 FROM legal_case_exports WHERE id = $1 AND file_key = $2`, [id, fileKey])) !== null;
 }
