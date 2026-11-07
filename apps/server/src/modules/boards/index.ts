@@ -181,6 +181,14 @@ export async function setBoardSharingSettings(boardId: string, userId: string, s
 }
 
 /**
+ * Inside a transaction (modules/members): serialises changes to who has the board and who may share
+ * it, so each is authorised (`requireBoardAccess` after this) against what the previous one left.
+ */
+export async function lockBoardSharing(boardId: string): Promise<void> {
+  await repo.lockBoardSharing(boardId);
+}
+
+/**
  * Throws a 404/403 HttpError unless the user has at least `min` on the board. `manages` (#122): its
  * owner or a co-owner, who manage its sharing; `editorsCanShare` (#123): the board lets its editors
  * invite people.
