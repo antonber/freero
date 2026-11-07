@@ -2,6 +2,7 @@
   "emptySticky": "Empty sticky",
   "untitledCard": "Untitled card",
   "timeSUpThisVote": "Time's up: this vote takes no more votes.",
+  "clockNotSyncedYet": "A vote's timer counts in the server's time, which this page hasn't measured yet. Try again in a moment, or start it without a timer.",
   "atMostMaxperitemOfYour": "At most {maxPerItem} of your votes can go to one item.",
   "youVeUsedAllVotesperuser": "You've used all {votesPerUser} of your votes. Remove one to vote again.",
   "startVoting": "Start voting…",

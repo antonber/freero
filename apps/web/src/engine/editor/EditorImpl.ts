@@ -1781,7 +1781,7 @@ export class EditorImpl implements Editor {
     if (tool && !this.canUseTool(tool.def)) this.setTool('select');
   }
 
-  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean; anonymous?: boolean }): void {
+  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean; anonymous?: boolean; session?: { collection: string; key: string; id: string } }): void {
     if (!this.guardWrite()) return;
     this.core.store.runLayerOp({
       type: 'reveal',
@@ -1789,6 +1789,7 @@ export class EditorImpl implements Editor {
       ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}),
       ...(opts?.mine ? { mine: true } : {}),
       ...(opts?.anonymous ? { anonymous: true } : {}),
+      ...(opts?.session ? { session: { collection: opts.session.collection, key: opts.session.key, id: opts.session.id } } : {}),
     });
   }
 

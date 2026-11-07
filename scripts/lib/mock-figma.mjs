@@ -8,8 +8,9 @@
 //   GET  /render/:key/:node.png      the "rendered" PNGs /v1/images links to (a solid colour)
 //
 // Tests steer it: `revokeAll()` (Figma refuses every token, refreshes too), `expireAccess()` (the
-// access tokens stop working, refreshing still works), `renders = 'html'` (renders come back as
-// an HTML page instead of a PNG), `renderBytes = n` (renders that big).
+// access tokens stop working, refreshing still works), `holdRefreshes()` (refreshes wait until
+// `.release()`, or `.release({ refuse: true })` to refuse them), `renders = 'html'` (renders come
+// back as an HTML page instead of a PNG), `renderBytes = n` (renders that big).
 //
 //   node scripts/lib/mock-figma.mjs --port 4471
 
@@ -76,7 +77,7 @@ export async function startMockFigma({ port = 0, host = '127.0.0.1' } = {}) {
   const access = new Map(); // token -> user
   const refresh = new Set();
   const requests = [];
-  const state = { renders: 'png', renderBytes: 0, url: '' };
+  const state = { renders: 'png', renderBytes: 0, url: '', heldRefreshes: null };
 
   const json = (res, status, body) => {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -117,6 +118,10 @@ export async function startMockFigma({ port = 0, host = '127.0.0.1' } = {}) {
         codes.delete(form.get('code'));
         if (!redirect || redirect !== form.get('redirect_uri')) return json(res, 400, { error: 'invalid_grant' });
         return json(res, 200, issue());
+      }
+      if (state.heldRefreshes) {
+        const refuse = await new Promise((resolve) => state.heldRefreshes.push(resolve));
+        if (refuse) return json(res, 400, { error: 'invalid_grant' });
       }
       if (!refresh.has(form.get('refresh_token'))) return json(res, 400, { error: 'invalid_grant' });
       const t = issue();
@@ -194,6 +199,18 @@ export async function startMockFigma({ port = 0, host = '127.0.0.1' } = {}) {
     },
     expireAccess() {
       access.clear();
+    },
+    holdRefreshes() {
+      const waiting = (state.heldRefreshes = []);
+      return {
+        get waiting() {
+          return waiting.length;
+        },
+        release({ refuse = false } = {}) {
+          state.heldRefreshes = null;
+          for (const answer of waiting.splice(0)) answer(refuse);
+        },
+      };
     },
     close: () => new Promise((r) => server.close(r)),
   };

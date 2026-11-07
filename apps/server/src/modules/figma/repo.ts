@@ -1,6 +1,6 @@
 // The only writer of `figma_accounts`, `figma_oauth_flows`, `figma_recent_files` and
 // `figma_plugin_codes` [S4] (#171, #172).
-import { one, query } from '../../platform/db';
+import { one, query, tx } from '../../platform/db';
 
 // ---- connected accounts (tokens arrive and leave sealed: service.ts seals them) ----
 
@@ -14,7 +14,12 @@ export interface FigmaAccountRow {
   expiresAt: number | null;
 }
 
-export async function account(userId: string): Promise<FigmaAccountRow | null> {
+/** A connection as read: `linkedAt` (set by each connect) names it for the writes that must not touch a newer one. */
+export interface FigmaConnection extends FigmaAccountRow {
+  linkedAt: number;
+}
+
+export async function account(userId: string): Promise<FigmaConnection | null> {
   const r = await one<{
     user_id: string;
     figma_user_id: string;
@@ -23,7 +28,8 @@ export async function account(userId: string): Promise<FigmaAccountRow | null> {
     access_token: string;
     refresh_token: string | null;
     expires_at: Date | null;
-  }>(`SELECT user_id, figma_user_id, handle, email, access_token, refresh_token, expires_at FROM figma_accounts WHERE user_id = $1`, [userId]);
+    linked_at: Date;
+  }>(`SELECT user_id, figma_user_id, handle, email, access_token, refresh_token, expires_at, linked_at FROM figma_accounts WHERE user_id = $1`, [userId]);
   return r
     ? {
         userId: r.user_id,
@@ -33,6 +39,7 @@ export async function account(userId: string): Promise<FigmaAccountRow | null> {
         accessToken: r.access_token,
         refreshToken: r.refresh_token,
         expiresAt: r.expires_at ? r.expires_at.getTime() : null,
+        linkedAt: r.linked_at.getTime(),
       }
     : null;
 }
@@ -47,14 +54,26 @@ export async function setAccount(a: FigmaAccountRow, now: number): Promise<void>
   );
 }
 
-/** New tokens after a refresh; only while the account is still connected (a disconnect wins). */
-export async function setTokens(userId: string, accessToken: string, refreshToken: string | null, expiresAt: number | null): Promise<void> {
-  await query(`UPDATE figma_accounts SET access_token = $2, refresh_token = COALESCE($3, refresh_token), expires_at = $4 WHERE user_id = $1`, [
-    userId,
+/**
+ * New tokens after a refresh (or a stale seal re-sealed), for the connection that was read: a
+ * disconnect, or a connect made since (#193), wins.
+ */
+export async function setTokens(c: { userId: string; linkedAt: number }, accessToken: string, refreshToken: string | null, expiresAt: number | null): Promise<void> {
+  await query(`UPDATE figma_accounts SET access_token = $3, refresh_token = COALESCE($4, refresh_token), expires_at = $5 WHERE user_id = $1 AND linked_at = $2`, [
+    c.userId,
+    new Date(c.linkedAt),
     accessToken,
     refreshToken,
     expiresAt === null ? null : new Date(expiresAt),
   ]);
+}
+
+/** Drops the connection that was read (Figma refused its tokens); one made since stays (#193). */
+export async function dropConnection(c: { userId: string; linkedAt: number }): Promise<void> {
+  await tx(async () => {
+    if (!(await one(`DELETE FROM figma_accounts WHERE user_id = $1 AND linked_at = $2 RETURNING 1`, [c.userId, new Date(c.linkedAt)]))) return;
+    await query(`DELETE FROM figma_recent_files WHERE user_id = $1`, [c.userId]);
+  });
 }
 
 /** Disconnects: the tokens and the recent files go. True when something was connected. */

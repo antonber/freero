@@ -104,6 +104,25 @@ export interface StorePersistence {
 /** At most one device-copy save per this many ms while changes keep coming. */
 const PERSIST_EVERY_MS = 800;
 
+/**
+ * Ops kept with the device copy while they wait (FAC-8): reveals only. A reveal that never reaches
+ * the server leaves what it should have shown sealed for good (a vote's ballots under an ended
+ * vote); a discard that never does leaves only private leftovers that the next start discards, while
+ * one sent again much later could drop what a newer session holds.
+ */
+const isKeptOp = (op: LayerOp) => op.type === 'reveal';
+
+/** The kept ops of a device copy (none when absent or unreadable). */
+function readKeptOps(bytes: Uint8Array | undefined): LayerOp[] {
+  if (!bytes) return [];
+  try {
+    const v: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return Array.isArray(v) ? v.filter((op): op is LayerOp => !!op && typeof op === 'object' && isKeptOp(op as LayerOp) && typeof (op as LayerOp).collection === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 type Listener = () => void;
 
 /** An element-content entry that is not in its element's doc, and where it belongs. */
@@ -275,6 +294,10 @@ export class BoardStore {
         }
       };
       provider.on('status', ({ status }: { status: string }) => {
+        // On (re)connecting, before the provider sends anything (FAC-8): the reveals asked for
+        // offline go first, so the server applies them before this client's offline doc changes
+        // (its answer to the server's sync step 1), e.g. a sealed vote's ballots before its end.
+        if (status === 'connected') this.flushLayerOps();
         if (status === 'connected') for (const name of BOARD_LAYERS) this.requestLayerSync(name);
         if (connectionEnded(this.status)) return;
         this.status = status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected';
@@ -410,6 +433,8 @@ export class BoardStore {
     };
     apply(this.doc, copy.shared);
     apply(this.layers.private.doc, copy.private);
+    // Reveals that were waiting when the page closed (FAC-8): sent first on connecting.
+    this.pendingOps.unshift(...readKeptOps(copy.ops));
     // Kept only for an owner / editor, and read back only while this person still is one.
     if (persist.keeps('editors')) apply(this.layers.editors.doc, copy.editors);
     this.restored = true;
@@ -429,6 +454,8 @@ export class BoardStore {
     if (!p) return;
     const copy: OfflineCopy = { shared: Y.encodeStateAsUpdate(this.doc), private: Y.encodeStateAsUpdate(this.layers.private.doc) };
     if (p.keeps('editors')) copy.editors = Y.encodeStateAsUpdate(this.layers.editors.doc);
+    const kept = this.pendingOps.filter(isKeptOp);
+    if (kept.length) copy.ops = new TextEncoder().encode(JSON.stringify(kept));
     void p.save(copy).catch(() => undefined);
   }
 
@@ -449,21 +476,33 @@ export class BoardStore {
     if (p) void p.forget().catch(() => undefined);
   }
 
-  /** Runs a reveal/discard on the server (in order with this socket's updates); offline: queued. */
+  /**
+   * Runs a reveal/discard on the server (in order with this socket's updates); offline: queued, and
+   * a queued reveal is kept with the device copy (with the doc changes made after it, e.g. the end
+   * of the vote it reveals) until it is sent first thing on the next connection (FAC-8).
+   */
   runLayerOp(op: LayerOp): void {
     if (!this.provider) return this.applyLayerOpLocally(op);
     this.pendingOps.push(op);
-    if (this.synced) this.flushLayerOps();
+    if (isKeptOp(op)) this.schedulePersist();
+    this.flushLayerOps();
   }
 
   private flushLayerOps(): void {
     const p = this.provider;
-    if (!p || !p.wsconnected || !p.ws) return;
-    for (const op of this.pendingOps.splice(0)) {
+    if (!p || !p.wsconnected || !p.ws || !this.pendingOps.length) return;
+    const ops = this.pendingOps.splice(0);
+    for (const op of ops) {
       const e = encoding.createEncoder();
       encoding.writeVarUint(e, WS_MESSAGE_LAYER_OP);
       encoding.writeVarString(e, JSON.stringify(op));
       p.ws.send(encoding.toUint8Array(e));
+    }
+    // Sent: the device copy lets go of them at once (one sent again later would reveal twice).
+    if (ops.some(isKeptOp)) {
+      if (this.persistSaveTimer) clearTimeout(this.persistSaveTimer);
+      this.persistSaveTimer = null;
+      this.savePersisted();
     }
   }
 

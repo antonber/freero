@@ -144,9 +144,11 @@ applies here too (`apiauth` `integrationMayReach`).
 **Disconnecting.** **Disconnect Slack** in Settings removes the link at once: no more messages,
 previews of private boards or commands for that person. Freero holds no token of the person's — the
 app's bot writes to them — so there is none of theirs to revoke. When nobody in that Slack workspace
-is connected any more, Freero deletes the app's token there and revokes it with Slack
-(`auth.revoke`), unless it is `SLACK_BOT_TOKEN`, your own, which only you manage. Deleting a Freero
-account disconnects it too. Removing the app from a Slack workspace (Slack sends `app_uninstalled`
+is connected any more — whether the last person disconnected, connected a different Slack
+workspace instead, or deleted their Freero account — Freero deletes the app's token there and
+revokes it with Slack (`auth.revoke`), unless it is `SLACK_BOT_TOKEN`, your own, which only you
+manage. Someone connecting in that Slack workspace at that very moment keeps a working token, or is
+asked to try again; a connection that fails halfway keeps no token. Removing the app from a Slack workspace (Slack sends `app_uninstalled`
 or `tokens_revoked`) disconnects everyone there.
 
 ## How Freero handles a request

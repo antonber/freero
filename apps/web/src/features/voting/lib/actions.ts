@@ -5,7 +5,7 @@
 // take part: Editor.isParticipant) — the server holds everyone to their own ballot. Who runs a
 // vote (start, end, clear, the history): owners and editors.
 import { nanoid } from 'nanoid';
-import type { Editor } from '@engine';
+import { deadlineClock, type Editor } from '@engine';
 import {
   ballotKey,
   castVote,
@@ -76,24 +76,32 @@ export function unvote(editor: Editor, elementId: string): void {
 
 export function start(editor: Editor, opts: Omit<SessionOptions, 'id'>): void {
   if (!editor.can('editor')) return;
+  // A vote's timer is enforced by the server on its clock (FAC-9): never set in an unmeasured one.
+  const now = opts.durationMs ? deadlineClock(editor.host) : editor.host.serverNow();
+  if (now === null) return editor.host.notify(t('clockNotSyncedYet'), 'info');
   // Sealed ballots of a session that was cleared before it ended: never revealed, now dropped.
   editor.discardPrivate(COLLECTION);
   const exists = (id: string) => !!editor.getElement(id);
   // One update for everyone: old ballots disappear together with the new session appearing (the
   // ended vote's totals stay in the history).
   editor.transact(() => {
-    startSession(store(editor), { ...opts, id: nanoid(10) }, actor(editor), editor.host.serverNow(), exists);
+    startSession(store(editor), { ...opts, id: nanoid(10) }, actor(editor), now, exists);
   });
 }
 
-export function end(editor: Editor): void {
+/** Ends the running vote (only the vote `id`, when given: another feature ends the vote it started). */
+export function end(editor: Editor, id?: string): void {
   if (!editor.can('editor')) return;
   const session = getSession(store(editor));
+  if (!session?.active || (id !== undefined && session.id !== id)) return;
   // The server moves every voter's sealed ballot into the shared collection (replacing the
   // markers; without names in an anonymous vote) before the session reads as ended: results never
-  // show half the votes.
-  if (session?.active && session.anonymous) editor.revealPrivate(COLLECTION, { prefix: `${session.id}:` });
-  endSession(store(editor), editor.host.serverNow());
+  // show half the votes. One step with the end: offline, both wait together (FAC-8: the store sends
+  // the reveal first on reconnecting, and keeps it with the device copy until then).
+  editor.transact(() => {
+    if (session.anonymous) editor.revealPrivate(COLLECTION, { prefix: `${session.id}:` });
+    endSession(store(editor), editor.host.serverNow());
+  });
   editor.openDock(RESULTS_PANEL_ID);
 }
 

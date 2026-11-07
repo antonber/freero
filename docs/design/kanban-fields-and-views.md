@@ -829,6 +829,17 @@ What the next steps need:
   who has cards; giving a card to someone without a column adds theirs (`kanban.moveToColumn`).
   Columns that are a select's options are added, renamed and deleted as options; people, checkbox
   values and "No <field>" only change their look and limits.
+- **A drag racing a regroup** (#197): an element is one value, so when someone's drag that hadn't
+  seen a regroup wins the card, its x is a column of the *old* grouping. Each regroup writes the
+  kanban's next `groupRev` ('<n>:<field id>'), and the layout and the regroup record on every card
+  they place where they put it (`placed`: kanban, rev, field id, column key). A card of the kanban
+  whose `placed.rev` isn't the current one (`stalePlacement`) is read by what it was placed for —
+  its column key is its value of `placed.field`, the group field's value is its stored one
+  (`cardValue`, `settledValues`) — and the next layout pass (KAI-75's re-arrange, or anyone's
+  change to the board) writes those values and moves it to its value's column, unless that change
+  moved it. Whoever sets such a card's group value (card details' `kanban.moveToColumn`, an
+  agent's `update_items`, a tracker pull) records it as placed now (`placedNow`), since its x may
+  already fall in that column and no move would show. Older clients' regroups don't touch `groupRev`, so their cards keep reading by position.
 - **"A value changed in place moves the card"**: for the grouped field it is `card.setValues` →
   `kanban.moveToColumn` (positional, as Stage in 2a), for a swimlane field the layout moves a card
   whose stored row value changed where it stood to the bottom of that row.

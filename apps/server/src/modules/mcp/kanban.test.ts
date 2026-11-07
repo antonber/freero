@@ -6,13 +6,13 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport, type CallToolResult } from '@modelcontextprotocol/client';
-import { KANBAN_LAYOUT, kanbanColumnAt, kanbanLaneAt, kanbanLanesTop, type BoardElement, type CardElement, type KanbanElement } from '@freero/shared';
+import { COLUMN_FIELD_ID, KANBAN_LAYOUT, cardValue, collectionSchema, kanbanColumnAt, kanbanColumnLeft, kanbanColumnWidth, kanbanLaneAt, kanbanLanesTop, type BoardElement, type CardElement, type KanbanElement } from '@freero/shared';
 import { apiNotFound, createApp, errorHandler } from '../../platform/http';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createPersonalToken } from '../apiauth/index';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
-import { readBoardView } from '../realtime/index';
+import { changeBoard, readBoardView } from '../realtime/index';
 import mcpRoutes, { mountPath } from './routes';
 
 let server: http.Server;
@@ -116,6 +116,46 @@ it('update_items setting a card’s Team moves it to that swimlane, and its Stag
   expect(await where(boardId, kanbanId, card)).toEqual({ column: 'To do', row: 'Web', status: 'todo', inRow: true });
   await call('update_items', { boardId, items: [{ id: card, fields: { Stage: 'Done' } }] });
   expect(await where(boardId, kanbanId, card)).toEqual({ column: 'Done', row: 'Web', status: 'done', inRow: true });
+});
+
+it('an agent setting the Priority of a card a regroup left where the old grouping put it (its x happens to be in that priority’s column) moves it there, and the layout doesn’t move it back to its old priority', async () => {
+  const { boardId, kanbanId, ids } = await sprint(['Fix login']);
+  const [card] = ids;
+  await call('update_items', { boardId, items: [{ id: card, fields: { Priority: 'P0' } }] });
+  await call('configure_view', { boardId, kanbanId, groupBy: 'Priority' }); // columns: No Priority, P0, P1
+  // Someone's drag into Done that hadn't seen the regroup wins the card (#197): it stands at P1's
+  // x, placed under the old grouping, its stored Priority still P0.
+  const els = await elements(boardId);
+  const k = els.get(kanbanId) as KanbanElement;
+  const c = els.get(card) as CardElement;
+  const schema = collectionSchema(k);
+  const field = (name: string) => schema.find((f) => f.name === name)!;
+  const done = field('Stage').options!.find((o) => o.label === 'Done')!.id;
+  const p1 = k.columns.findIndex((col) => col.title.replace(/<[^>]+>/g, '') === 'P1');
+  await changeBoard(boardId, { userId: ownerId, role: 'owner' }, () => ({
+    change: {
+      update: [
+        {
+          id: card,
+          patch: {
+            x: k.x + kanbanColumnLeft(k, p1) + kanbanColumnWidth(k, p1) / 2 - c.w / 2,
+            values: { [field('Priority').id]: k.columns[p1 - 1].id },
+            placed: { kanban: kanbanId, rev: '', field: COLUMN_FIELD_ID, key: done },
+          },
+        },
+      ],
+    },
+  }));
+  const raced = (await elements(boardId)).get(card) as CardElement;
+  expect(cardValue(k, raced, field('Priority'))).toBe(k.columns[p1 - 1].id); // still reads P0
+
+  await call('update_items', { boardId, items: [{ id: card, fields: { Priority: 'P1' } }] });
+  const after = await elements(boardId);
+  const [k2, c2] = [after.get(kanbanId) as KanbanElement, after.get(card) as CardElement];
+  expect((k2.columns[kanbanColumnAt(k2, c2.x + c2.w / 2)].title as string).replace(/<[^>]+>/g, '')).toBe('P1');
+  expect(cardValue(k2, c2, field('Priority'))).toBe(k.columns[p1].id);
+  // What it stood for under the old grouping is kept.
+  expect(cardValue(k2, c2, field('Stage'))).toBe(done);
 });
 
 it('a saved filter set by configure_view folds the cards it leaves out away below the board and the outline marks them; query_cards reads the same cards by the same rules, sorted and in pages', async () => {

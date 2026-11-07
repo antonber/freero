@@ -5,8 +5,8 @@ import { create } from 'zustand';
 import type { BoardElement, VotingHistoryEntry, VotingSession } from '@freero/shared';
 import { useCollection, useEditor, useElements, useParticipant, usePrivateCollection, useRole, richTextToPlain, type Editor } from '@engine';
 import {
-  SESSION_KEY,
   ballotKey,
+  getSession,
   ballotsOf,
   countedVotes,
   historyOf,
@@ -77,8 +77,7 @@ export interface VotingView {
 }
 
 export function readSession(entries: Array<[string, VotingValue]>): VotingSession | undefined {
-  const v = entries.find(([k]) => k === SESSION_KEY)?.[1];
-  return v && 'votesPerUser' in v ? v : undefined;
+  return getSession({ get: (key) => entries.find(([k]) => k === key)?.[1] });
 }
 
 export function useVoting(): VotingView {

@@ -45,6 +45,8 @@ interface BoardRecord {
   shared: Sealed;
   private?: Sealed;
   editors?: Sealed;
+  /** Reveals waiting to be sent (OfflineCopy.ops). */
+  ops?: Sealed;
 }
 
 const META = 'meta';
@@ -143,6 +145,7 @@ export class OfflineVault {
       shared: await this.seal(key, aad('shared'), copy.shared),
       ...(copy.private ? { private: await this.seal(key, aad('private'), copy.private) } : {}),
       ...(copy.editors ? { editors: await this.seal(key, aad('editors'), copy.editors) } : {}),
+      ...(copy.ops ? { ops: await this.seal(key, aad('ops'), copy.ops) } : {}),
     };
     const known = await this.boardIds();
     await this.db.put(BOARD + id, record);
@@ -172,6 +175,7 @@ export class OfflineVault {
       const copy: OfflineCopy = { shared: await this.open(key, aad('shared'), r.shared) };
       if (r.private) copy.private = await this.open(key, aad('private'), r.private);
       if (r.editors) copy.editors = await this.open(key, aad('editors'), r.editors);
+      if (r.ops) copy.ops = await this.open(key, aad('ops'), r.ops);
       return { info, copy };
     } catch {
       return null;

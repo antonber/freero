@@ -39,12 +39,15 @@ import {
   rankColor,
   readValue,
   savedViews,
+  placedNow,
+  stalePlacement,
   sprintFieldOf,
   storedFields,
   withOptions,
   groupKeyOf,
   type BoardElement,
   type CardElement,
+  type CardPlacement,
   type CardStatus,
   type CustomValue,
   type FieldDef,
@@ -170,8 +173,19 @@ function withColumns(k: KanbanElement, adds: KanbanColumn[]): KanbanElement {
  * Where a card goes in column `col` of `k`: centered in it, below the cards already there (not
  * those moving in this change). Null when it already stands in that column.
  */
-export function columnSpot(view: Elements, k: KanbanElement, card: BoardElement, col: number, moving: ReadonlySet<string>): { x: number; y: number; color?: string } | null {
-  if (col < 0 || col >= k.columns.length || kanbanColumnAt(k, card.x + card.w / 2) === col) return null;
+export function columnSpot(
+  view: Elements,
+  k: KanbanElement,
+  card: BoardElement,
+  col: number,
+  moving: ReadonlySet<string>,
+): { x: number; y: number; color?: string; values?: FieldValues; placed?: CardPlacement } | null {
+  if (col < 0 || col >= k.columns.length) return null;
+  // A card a regroup left where the old grouping put it (#197) is in no column yet: it is put there
+  // now, recorded as such (its x may not change, and the layout would settle it back).
+  const stale = card.type === 'card' && stalePlacement(k, card as CardElement);
+  if (kanbanColumnAt(k, card.x + card.w / 2) === col && !stale) return null;
+  const settle = stale ? placedNow(k, card as CardElement, k.columns[col].id) : {};
   const { itemGap, headerH, colHeadH, pad } = KANBAN_LAYOUT;
   const inCol = (el: BoardElement) => el.frameId === k.id && el.id !== card.id && !moving.has(el.id) && kanbanColumnAt(k, el.x + el.w / 2) === col;
   const bottom = view.elements
@@ -180,7 +194,7 @@ export function columnSpot(view: Elements, k: KanbanElement, card: BoardElement,
     .reduce((m, el) => Math.max(m, el.y + el.h), k.y + headerH + colHeadH + pad - itemGap);
   // Older clients read the column colour off the card on boards that colour cards by column.
   const color = k.colorCards ? k.columns[col].color : undefined;
-  return { x: Math.round(k.x + kanbanColumnLeft(k, col) + kanbanColumnWidth(k, col) / 2 - card.w / 2), y: Math.round(bottom + itemGap), ...(color ? { color } : {}) };
+  return { x: Math.round(k.x + kanbanColumnLeft(k, col) + kanbanColumnWidth(k, col) / 2 - card.w / 2), y: Math.round(bottom + itemGap), ...(color ? { color } : {}), ...settle };
 }
 
 export interface KanbanPull {

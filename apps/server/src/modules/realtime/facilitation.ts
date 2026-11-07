@@ -28,8 +28,22 @@
 // owner, or by an editor while nobody facilitates, or by the facilitator. Other writes are
 // compensated the same way. Following and hidden cursors are
 // views each client applies; they are not enforceable and not enforced.
+//
+// A session's end is kept under `ended:<id>` (FAC-1, @freero/shared sessions.ts; the general rules
+// are in sessionEnds.ts). Writing the marker of the RUNNING session ends it, so only its facilitator
+// or the board owner may, like a delete of the session.
 import * as Y from 'yjs';
-import { FACILITATION_COLLECTION, FACILITATION_KEY, PARTICIPATION_KEY, type FacilitationSession, type Role, type SessionLimits } from '@freero/shared';
+import {
+  FACILITATION_COLLECTION,
+  FACILITATION_KEY,
+  isSessionEndKey,
+  PARTICIPATION_KEY,
+  SESSION_END_PREFIX,
+  sessionIdOf,
+  type FacilitationSession,
+  type Role,
+  type SessionLimits,
+} from '@freero/shared';
 
 const canEdit = (role: Role) => role === 'owner' || role === 'editor';
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -168,10 +182,13 @@ export function guardSession(tr: Y.Transaction, doc: Y.Doc, who: { userId: strin
   let reverted = false;
   const changes = changedKeys(tr, map);
   // The switch is judged against the session as it was: a facilitator can't be bypassed by ending the session in the same update.
-  const sessionBefore = asSession(changes.get(FACILITATION_KEY)?.before ?? map.get(FACILITATION_KEY));
+  const rawBefore = changes.has(FACILITATION_KEY) ? changes.get(FACILITATION_KEY)!.before : map.get(FACILITATION_KEY);
+  const sessionBefore = asSession(rawBefore);
   for (const [key, { before, after }] of changes) {
     if (key === FACILITATION_KEY && mayChangeSession(before, after, who)) continue;
     if (key === PARTICIPATION_KEY && mayChangeParticipation(before, after, who, sessionBefore)) continue;
+    // Its form and permanence are sessionEnds.ts's; here: ending the running session is the facilitator's or the owner's.
+    if (isSessionEndKey(key) && canEdit(who.access) && (sessionIdOf(rawBefore) !== key.slice(SESSION_END_PREFIX.length) || mayChangeSession(rawBefore, undefined, who))) continue;
     restore(map, key, before);
     reverted = true;
   }

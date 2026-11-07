@@ -91,13 +91,37 @@ export function parseLayerOp(json: string): LayerOp | null {
     return null;
   }
   if (!v || typeof v !== 'object') return null;
-  const { type, collection, prefix, mine, anonymous } = v as Record<string, unknown>;
+  const { type, collection, prefix, mine, anonymous, session } = v as Record<string, unknown>;
   if (type !== 'reveal' && type !== 'discard') return null;
   if (typeof collection !== 'string' || !NAME_RE.test(collection)) return null;
   if (prefix !== undefined && (typeof prefix !== 'string' || prefix.length > 200)) return null;
   if (mine !== undefined && typeof mine !== 'boolean') return null;
   if (anonymous !== undefined && typeof anonymous !== 'boolean') return null;
-  return { type, collection, ...(prefix !== undefined ? { prefix } : {}), ...(mine ? { mine: true } : {}), ...(anonymous ? { anonymous: true } : {}) };
+  let tied: LayerOp['session'];
+  if (session !== undefined) {
+    if (!isObj(session)) return null;
+    const { collection: c, key, id } = session;
+    if (typeof c !== 'string' || !NAME_RE.test(c) || typeof key !== 'string' || !key || key.length > 200 || typeof id !== 'string' || !id || id.length > 200) return null;
+    tied = { collection: c, key, id };
+  }
+  return {
+    type,
+    collection,
+    ...(prefix !== undefined ? { prefix } : {}),
+    ...(mine ? { mine: true } : {}),
+    ...(anonymous ? { anonymous: true } : {}),
+    ...(tied ? { session: tied } : {}),
+  };
+}
+
+/**
+ * Does the session an op is tied to (LayerOp.session) still hold the shared doc's session key:
+ * running or ended, but not replaced by a later one (nor gone)? An op without one always applies.
+ */
+export function layerOpSessionHolds(session: NonNullable<LayerOp['session']>, main: Y.Doc): boolean {
+  if (!main.share.has(session.collection)) return false;
+  const v = main.getMap<unknown>(session.collection).get(session.key);
+  return isObj(v) && v.id === session.id;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);

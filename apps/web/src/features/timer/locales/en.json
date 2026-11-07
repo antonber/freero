@@ -1,6 +1,7 @@
 {
   "startTheTimer": "Start the timer",
   "stopTheTimer": "Stop the timer",
+  "clockNotSyncedYet": "The timer counts in the server's time, which this page hasn't measured yet. Try again in a moment.",
   "chimeMutedForYou": "Chime muted for you",
   "chimeOnForYou": "Chime on for you",
   "presets": "Presets",

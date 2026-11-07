@@ -38,5 +38,7 @@
   "clusterByColour": "Cluster by colour",
   "addActionItem": "Add action item",
   "end": "End",
-  "finishRetro": "Finish retro"
+  "finishRetro": "Finish retro",
+  "privateModeIsAlreadyRunning": "Private mode is already running. Reveal it first: the retro runs its own.",
+  "aVoteIsAlreadyRunning": "A vote is already running ({title}). End it first: the retro runs its own vote."
 }

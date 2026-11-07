@@ -573,6 +573,24 @@ export async function boardsNotSealedWith(boardIds: string[], ref: string | null
   return rows.map((r) => r.board_id);
 }
 
+/** The boards among these with a row sealed under another workspace's key than the one given for them (a save that raced a move). */
+export async function boardsSealedOutside(boards: Array<{ id: string; workspaceId: string }>): Promise<string[]> {
+  if (!boards.length) return [];
+  const ids = boards.map((b) => b.id);
+  const rows = await query<{ board_id: string }>(
+    `SELECT DISTINCT s.board_id FROM (
+       SELECT board_id, sealed_with FROM board_docs WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_doc_updates WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_doc_snapshots WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_layers WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+       UNION ALL SELECT board_id, sealed_with FROM board_layer_updates WHERE board_id = ANY($1::text[]) AND sealed_with IS NOT NULL
+     ) s JOIN unnest($1::text[], $2::text[]) AS b(id, workspace_id) ON b.id = s.board_id
+     WHERE regexp_replace(s.sealed_with, ':[0-9]+$', '') <> b.workspace_id ORDER BY s.board_id`,
+    [ids, boards.map((b) => b.workspaceId)],
+  );
+  return rows.map((r) => r.board_id);
+}
+
 // ---- who has pending suggestions where (KAI-224; a hint for withdrawing them) ----
 
 /** One app or token acting for one person, as suggestion records name it (`author`). */

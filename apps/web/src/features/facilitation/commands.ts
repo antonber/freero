@@ -22,7 +22,8 @@ export default defineCommands([
       const s = getSession(editor);
       return !!s && canManage(editor, s);
     },
-    run: (editor, args) => change(editor, patchFromArgs(args)),
+    // args { id }: only that session (the one the calling feature started).
+    run: (editor, args) => change(editor, patchFromArgs(args), typeof args?.id === 'string' ? args.id : undefined),
   },
   {
     id: 'facilitation.end',
@@ -34,7 +35,8 @@ export default defineCommands([
       return !!s && canManage(editor, s);
     },
     disabledReason: t('onlyTheFacilitatorOrThe'),
-    run: (editor) => end(editor),
+    // args { id } (a retro): only that session.
+    run: (editor, args) => end(editor, typeof args?.id === 'string' ? args.id : undefined),
   },
   {
     // Parity rank 1: commenters and guests vote, estimate and write private drafts (their own only).

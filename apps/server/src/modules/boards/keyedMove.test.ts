@@ -4,16 +4,37 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as Y from 'yjs';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { initStorage } from '../../platform/storage';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
-import { createKey, forgetAllCachedKeys, suspendKey } from '../keys/index';
+import { createKey, forgetAllCachedKeys, sealPendingContent, suspendKey } from '../keys/index';
 import { boardsNeedingReseal, initBoardDoc, storedBoardView } from '../realtime/index';
 import { followBoardMoves, readUpload, saveUpload } from '../uploads/index';
 import { createTeamWorkspace } from '../workspaces/index';
 import * as repo from './repo';
 import { createBoard, moveToWorkspace } from './service';
+
+// When armed: an open room saves while the move is under way (after the reseal for the target,
+// before the move commits), and the reseal after the move then fails.
+const move = vi.hoisted(() => ({ saveMeanwhile: null as null | (() => Promise<void>) }));
+vi.mock('../realtime/index', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../realtime/index')>();
+  return {
+    ...real,
+    resealBoard: async (boardId: string, workspaceId?: string) => {
+      const save = move.saveMeanwhile;
+      if (!save) return real.resealBoard(boardId, workspaceId);
+      if (workspaceId !== undefined) {
+        const n = await real.resealBoard(boardId, workspaceId);
+        await save();
+        return n;
+      }
+      move.saveMeanwhile = null;
+      throw new Error('the key service timed out');
+    },
+  };
+});
 
 let dir = '';
 beforeAll(async () => {
@@ -95,4 +116,24 @@ it("a moved board takes its own files to the target's key; a file a board left b
   forgetAllCachedKeys();
   expect((await readUpload(own))?.toString('latin1')).toContain('only on the moving board');
   expect(await readUpload(shared)).toBeNull();
+});
+
+it("a save made during a move into a workspace without a key, left under the source's key when the reseal after the move failed, is opened by the background job, so the source's key no longer decides the board", async () => {
+  const me = await createUser({ name: 'Mover 4', email: 'mover4@keys.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const keyed = (await createTeamWorkspace(me.id, 'Keyed 4')).id;
+  const plain = (await createTeamWorkspace(me.id, 'Plain 4')).id;
+  await createKey(keyed, me.id, {});
+  const board = await createBoard(me.id, 'Leaving', '', 'none', { workspaceId: keyed });
+  await initBoardDoc(board.id, sticky('before the move'));
+
+  move.saveMeanwhile = () => initBoardDoc(board.id, sticky('saved during the move'));
+  await moveToWorkspace((await repo.getBoard(board.id))!, me.id, { workspaceId: plain });
+  expect(move.saveMeanwhile).toBeNull(); // the reseal after the move did fail
+  expect(await boardsNeedingReseal([board.id], null)).toEqual([board.id]); // a row still under the source's key
+
+  await sealPendingContent();
+  expect(await boardsNeedingReseal([board.id], null)).toEqual([]);
+  await suspendKey(keyed, me.id);
+  forgetAllCachedKeys();
+  expect(await textOn(board.id)).toBe('saved during the move');
 });

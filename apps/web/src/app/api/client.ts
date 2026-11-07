@@ -222,12 +222,13 @@ async function failure(res: Response): Promise<ApiError> {
   return new ApiError(res.status, message, code);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   if (!res.ok) throw await failure(res);
   return res.json() as Promise<T>;
@@ -961,8 +962,8 @@ export const api = {
   placeFigmaFrame: (boardId: string, fileKey: string, nodeId: string) =>
     request<FigmaPlaceResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/figma/place`, { fileKey, nodeId }),
   // Import from Miro with the person's own token (#62): the server reads the board and keeps neither.
-  importFromMiro: (boardId: string, board: string, token: string) =>
-    request<MiroImportResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/import/miro`, { board, token } satisfies MiroImportRequest),
+  importFromMiro: (boardId: string, board: string, token: string, signal?: AbortSignal) =>
+    request<MiroImportResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/import/miro`, { board, token } satisfies MiroImportRequest, signal),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });

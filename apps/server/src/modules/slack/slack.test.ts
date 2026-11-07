@@ -1,7 +1,8 @@
 // The operator's Slack app over real HTTP, against a stand-in for Slack's Web API (SLACK_API_URL):
 // link unfurls (#88) — what a signed link_shared event makes Freero send to chat.unfurl, and which
 // requests it refuses — and personal Slack (#105): Connect Slack's OAuth state, /freero, previews
-// of private boards for people who connected, direct messages, disconnecting.
+// of private boards for people who connected, direct messages, disconnecting, and the app's token in
+// a Slack workspace kept exactly while someone there is linked or connecting (#193).
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -14,7 +15,9 @@ import { apiNotFound, createApp, errorHandler } from '../../platform/http';
 import { runWithRequestContext } from '../../platform/requestContext';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { ipExemptionsOf, setCredentialIpExempt, setWorkspaceApiAccess } from '../apiauth/index';
-import { createUser } from '../auth/index';
+import { purgeDueAccounts } from '../accounts/index';
+import { createUser, scheduleAccountDeletion } from '../auth/index';
+import { getConfig } from '../../platform/config';
 import { createBoard, listBoardsIn } from '../boards/index';
 import { createTeamWorkspace, ensurePersonalWorkspace, setIpExemptionReader, updateWorkspaceSettings } from '../workspaces/index';
 import { sendSlackDm } from './dm';
@@ -31,6 +34,9 @@ const CLIENT_SECRET = 'slack-client-secret-for-tests';
 type Call = { method: string; auth: string | undefined; body: Record<string, any> };
 const calls: Array<Call> = [];
 const callsTo = (method: string) => calls.filter((c) => c.method === method);
+/** A slow Slack: the calls named here ("users.info:<user>", "auth.revoke:<token>") wait until the test answers them. */
+const hold = new Set<string>();
+const held = new Map<string, () => void>();
 let slackApi: http.Server;
 let freero: http.Server;
 let base: string;
@@ -66,12 +72,19 @@ beforeAll(async () => {
         method === 'oauth.v2.access'
           ? oauthAnswer(new URLSearchParams(raw))
           : method === 'conversations.open'
-            ? { ok: true, channel: { id: `D-${body.users}` } }
+            ? body.users === 'UNODM'
+              ? { ok: false, error: 'cannot_dm_bot' }
+              : { ok: true, channel: { id: `D-${body.users}` } }
             : method === 'users.info'
               ? { ok: true, user: { name: 'ines', profile: { display_name: 'Ines P.' } } }
               : { ok: true };
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(answer));
+      const send = () => {
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(answer));
+      };
+      const key = `${method}:${method === 'auth.revoke' ? req.headers.authorization?.replace(/^Bearer /, '') : body.user}`;
+      if (hold.has(key)) held.set(key, send);
+      else send();
     });
   });
   await new Promise<void>((r) => slackApi.listen(0, '127.0.0.1', r));
@@ -338,6 +351,64 @@ it('disconnecting stops /freero for that person and revokes the app’s token in
   expect(await repo.teamToken('TPAT')).toBeNull();
   await unlinkSlack(op);
   expect(callsTo('auth.revoke')).toHaveLength(1);
+  calls.length = 0;
+});
+
+it('someone connecting Slack while the last other person in that Slack workspace disconnects is never left linked with a revoked token: they keep a working one, or are asked to try again', async () => {
+  const pat = await linked('Pat', 'TRACE', 'UPATR');
+  const sam = await person('Sam');
+  // Sam's consent comes back from Slack, then Slack is slow to say who Sam is…
+  hold.add('users.info:USAMR');
+  const s = await start(sam);
+  const samConnects = finish(sam, { state: s.state, code: 'code:TRACE:USAMR' }, s.cookie);
+  await vi.waitFor(() => expect(held.has('users.info:USAMR')).toBe(true));
+  // …and meanwhile Pat, the only one linked in that workspace so far, disconnects.
+  await unlinkSlack(pat);
+  held.get('users.info:USAMR')!();
+  expect(await samConnects).toBe('/settings?slack=connected#slack');
+  expect(callsTo('auth.revoke')).toEqual([]); // the token Sam's link relies on stays valid
+  calls.length = 0;
+  expect(await sendSlackDm(sam, { title: 'Hi', url: 'https://freero.test/board/x', linkLabel: 'Open' })).toBe('sent');
+  expect(callsTo('chat.postMessage')[0].auth).toBe('Bearer xoxb-TRACE');
+
+  // The other way round: Sam, now the last one, disconnects and Slack is slow to revoke the token;
+  // Lou's consent meanwhile gets that same token from Slack.
+  hold.add('auth.revoke:xoxb-TRACE');
+  const samLeaves = unlinkSlack(sam);
+  await vi.waitFor(() => expect(held.has('auth.revoke:xoxb-TRACE')).toBe(true));
+  const lou = await person('Lou');
+  const l = await start(lou);
+  expect(await finish(lou, { state: l.state, code: 'code:TRACE:ULOU' }, l.cookie)).toMatch(/^\/settings\?slack_error=/);
+  held.get('auth.revoke:xoxb-TRACE')!();
+  await samLeaves;
+  expect(await repo.linkOf(lou)).toBeNull();
+  expect(await repo.teamToken('TRACE')).toBeNull();
+  calls.length = 0;
+});
+
+it('the app’s token in a Slack workspace goes when its last link does, whichever way: reconnecting to another Slack workspace, the account being deleted, a consent that failed after Slack answered', async () => {
+  const revoked = () => callsTo('auth.revoke').map((c) => c.auth);
+  // Reconnecting to another Slack workspace.
+  const ana = await linked('Ana', 'TOLD', 'UANA');
+  const again = await start(ana);
+  expect(await finish(ana, { state: again.state, code: 'code:TNEW:UANA2' }, again.cookie)).toBe('/settings?slack=connected#slack');
+  expect(await repo.teamToken('TOLD')).toBeNull();
+  expect(revoked()).toEqual(['Bearer xoxb-TOLD']);
+
+  // The account deleted (its link goes with it).
+  const bo = await linked('Bo', 'TGONE', 'UBO');
+  await scheduleAccountDeletion(null, bo, 'password-123');
+  await purgeDueAccounts(Date.now() + getConfig().accountDeletionGraceMs + 60_000);
+  expect(await repo.linkOf(bo)).toBeNull();
+  expect(await repo.teamToken('TGONE')).toBeNull();
+  expect(revoked()).toEqual(['Bearer xoxb-TOLD', 'Bearer xoxb-TGONE']);
+
+  // Slack installed the app, then the consent failed: nobody was linked, so no token is kept.
+  const cy = await person('Cy');
+  const c = await start(cy);
+  expect(await finish(cy, { state: c.state, code: 'code:TFAIL:UNODM' }, c.cookie)).toMatch(/^\/settings\?slack_error=/);
+  expect(await repo.linkOf(cy)).toBeNull();
+  expect(await repo.teamToken('TFAIL')).toBeNull();
   calls.length = 0;
 });
 
