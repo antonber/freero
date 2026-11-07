@@ -20,7 +20,7 @@ import { deriveDueBoards, EVENTS_CONSUMER, eventsConsumer } from '../events/inde
 import { inviteBoardMember } from '../members/index';
 import { changeBoard, initBoardDoc } from '../realtime/index';
 import { createProject, createTeamWorkspace, inviteToWorkspace } from '../workspaces/index';
-import { createEndpoint, deliverDue, listDeliveries, updateEndpoint, webhooksConsumer } from './service';
+import { createEndpoint, deleteEndpoint, deliverDue, listDeliveries, pruneDeliveries, rotateSecret, testEndpoint, updateEndpoint, webhooksConsumer } from './service';
 
 const SCHEMA = JSON.parse(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../docs/events.schema.json'), 'utf8'));
 
@@ -43,11 +43,15 @@ interface Received {
 async function receiver() {
   const got: Received[] = [];
   let status = 200;
+  let during: (() => Promise<unknown>) | null = null;
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
-    req.on('end', () => {
+    req.on('end', async () => {
       got.push({ headers: req.headers, body });
+      const f = during;
+      during = null;
+      if (f) await f();
       res.statusCode = status;
       if (status === 302) res.setHeader('location', 'http://127.0.0.1:9/elsewhere');
       res.end('ok');
@@ -58,6 +62,8 @@ async function receiver() {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/hook`,
     got,
     answer: (s: number) => (status = s),
+    /** Runs `f` while the next request is still unanswered (something an admin does mid-delivery). */
+    whileAnswering: (f: () => Promise<unknown>) => (during = f),
     close: () => new Promise((r) => server.close(r)),
   };
 }
@@ -158,7 +164,7 @@ it('an endpoint gets one signed delivery per event it wants, only about boards t
   }
 });
 
-it('a failing receiver is retried with backoff, a redirect is a failure that is never followed, and after three failures in a row the endpoint turns off — audited, its creator told — until an admin turns it back on', async () => {
+it('a failing receiver is retried with backoff, a redirect is a failure that is never followed, and after three failures in a row the endpoint turns off — audited, its creator told — and what happens meanwhile is sent when an admin turns it back on (nothing is collected while an admin has it off)', async () => {
   const owner = await user('Keeper');
   const ws = await createTeamWorkspace(owner.id, 'Ops');
   const b = await createBoard(owner.id, 'Incidents', '', 'none', { workspaceId: ws.id });
@@ -187,15 +193,87 @@ it('a failing receiver is retried with backoff, a redirect is a failure that is 
     expect((await listAuditEvents({ workspaceId: ws.id }, 100)).some((e) => e.action === 'webhook.disabled')).toBe(true);
     await expect.poll(() => mails.some((m) => m.startsWith(owner.email) && /turned off/.test(m))).toBe(true);
 
+    // What happens while Freero has it off waits for it, as the email says.
+    const meanwhile = await createBoard(owner.id, 'Postmortem', '', 'none', { workspaceId: ws.id });
+    await save(meanwhile.id, [sticky('y', 'root cause', owner.id)]);
+    await flow(t);
+    expect(r.got).toHaveLength(3);
+
     r.answer(200);
     await updateEndpoint(ws.id, owner.id, endpoint.id, { enabled: true });
     await deliverDue(t + 7200_000);
-    expect(r.got).toHaveLength(4);
-    expect((await listDeliveries(ws.id, owner.id, endpoint.id))[0]).toMatchObject({ status: 'delivered', attempts: 4, responseStatus: 200 });
+    expect(r.got.slice(3).map((g) => (JSON.parse(g.body) as { data: { item: { text?: string } } }).data.item.text).sort()).toEqual(['outage', 'root cause']);
+    expect(await listDeliveries(ws.id, owner.id, endpoint.id)).toEqual([
+      expect.objectContaining({ status: 'delivered', attempts: 1 }),
+      expect.objectContaining({ status: 'delivered', attempts: 4, responseStatus: 200 }),
+    ]);
+
+    // An admin who turns it off on purpose stops it collecting: turning it on again sends nothing old.
+    await updateEndpoint(ws.id, owner.id, endpoint.id, { enabled: false });
+    const paused = await createBoard(owner.id, 'Paused', '', 'none', { workspaceId: ws.id });
+    await save(paused.id, [sticky('z', 'not for them', owner.id)]);
+    await flow(t);
+    await updateEndpoint(ws.id, owner.id, endpoint.id, { enabled: true });
+    await deliverDue(t + 7200_000);
+    expect(r.got).toHaveLength(5);
   } finally {
     stop();
     await r.close();
   }
+});
+
+it.each([
+  ['deleted', (wsId: string, userId: string, id: string) => deleteEndpoint(wsId, userId, id)],
+  ['turned off', (wsId: string, userId: string, id: string) => updateEndpoint(wsId, userId, id, { enabled: false })],
+])('a webhook an admin %s while the delivery job is sending to it gets nothing more from that run', async (_, revoke) => {
+  const owner = await user('Revoker');
+  const ws = await createTeamWorkspace(owner.id, 'Leaky');
+  const r = await receiver();
+  try {
+    const { endpoint } = await createEndpoint(ws.id, owner.id, { url: r.url, events: ['item.created'] });
+    for (let i = 0; i < 3; i++) await testEndpoint(ws.id, owner.id, endpoint.id);
+    r.whileAnswering(() => revoke(ws.id, owner.id, endpoint.id));
+    await deliverDue(Date.now() + 1000);
+    expect(r.got).toHaveLength(1);
+  } finally {
+    await r.close();
+  }
+});
+
+it('a webhook moved to a new URL and secret while the delivery job is sending to it gets the rest of that run there, signed with the new secret', async () => {
+  const owner = await user('Mover');
+  const ws = await createTeamWorkspace(owner.id, 'Moving');
+  const before = await receiver();
+  const after = await receiver();
+  try {
+    const { endpoint, secret: oldSecret } = await createEndpoint(ws.id, owner.id, { url: before.url, events: ['item.created'] });
+    for (let i = 0; i < 2; i++) await testEndpoint(ws.id, owner.id, endpoint.id);
+    let newSecret = '';
+    before.whileAnswering(async () => {
+      await updateEndpoint(ws.id, owner.id, endpoint.id, { url: after.url });
+      newSecret = (await rotateSecret(ws.id, owner.id, endpoint.id)).secret;
+    });
+    await deliverDue(Date.now() + 1000);
+    expect(before.got).toHaveLength(1);
+    expect(after.got).toHaveLength(1);
+    expect(verifies(newSecret, after.got[0])).toBe(true);
+    expect(verifies(oldSecret, after.got[0])).toBe(false);
+  } finally {
+    await before.close();
+    await after.close();
+  }
+});
+
+it('deliveries waiting on a webhook that stays off are dropped with the 30-day delivery log, not kept forever', async () => {
+  const owner = await user('Forgetful');
+  const ws = await createTeamWorkspace(owner.id, 'Dusty');
+  const { endpoint } = await createEndpoint(ws.id, owner.id, { url: 'http://127.0.0.1:9/hook', events: ['item.created'] });
+  await testEndpoint(ws.id, owner.id, endpoint.id);
+  await updateEndpoint(ws.id, owner.id, endpoint.id, { enabled: false });
+  await pruneDeliveries(Date.now() + 29 * 86_400_000);
+  expect(await listDeliveries(ws.id, owner.id, endpoint.id)).toHaveLength(1);
+  await pruneDeliveries(Date.now() + 31 * 86_400_000);
+  expect(await listDeliveries(ws.id, owner.id, endpoint.id)).toEqual([]);
 });
 
 it('an endpoint scoped to an agent’s lane gets only what happens in it — its cards, comments on them, a card deleted from it — and only a board the whole team can open may be its scope', async () => {

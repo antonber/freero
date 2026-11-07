@@ -97,10 +97,16 @@ export async function endpointsOf(workspaceId: string): Promise<EndpointRow[]> {
   return (await query<ERow>(`SELECT * FROM webhook_endpoints WHERE workspace_id = $1 ORDER BY created_at, id`, [workspaceId])).map(toEndpoint);
 }
 
-/** Enabled endpoints of these workspaces (the fan-out). */
-export async function enabledEndpointsIn(workspaceIds: string[]): Promise<EndpointRow[]> {
+/**
+ * Endpoints of these workspaces that collect deliveries (the fan-out): those that are on, and those
+ * Freero turned off after failures, whose events wait for an admin to turn them back on. One an admin
+ * turned off collects nothing (turning it on or off clears `disabled_reason`).
+ */
+export async function collectingEndpointsIn(workspaceIds: string[]): Promise<EndpointRow[]> {
   if (!workspaceIds.length) return [];
-  return (await query<ERow>(`SELECT * FROM webhook_endpoints WHERE workspace_id = ANY($1::text[]) AND enabled`, [workspaceIds])).map(toEndpoint);
+  return (
+    await query<ERow>(`SELECT * FROM webhook_endpoints WHERE workspace_id = ANY($1::text[]) AND (enabled OR disabled_reason IS NOT NULL)`, [workspaceIds])
+  ).map(toEndpoint);
 }
 
 /**
@@ -219,21 +225,29 @@ export async function enqueueDeliveries(rows: Array<{ id: string; endpointId: st
 }
 
 /** Pending deliveries that are due, of endpoints that are on, oldest first. */
-export async function dueDeliveries(now: number, limit: number): Promise<Array<DeliveryRow & { endpoint: EndpointRow }>> {
-  const rows = await query<DRow & { e: ERow }>(
-    `SELECT d.*, row_to_json(e.*) AS e FROM webhook_deliveries d JOIN webhook_endpoints e ON e.id = d.endpoint_id
-     WHERE d.status = 'pending' AND d.next_attempt_at <= $1 AND e.enabled
-     ORDER BY d.next_attempt_at, d.id LIMIT $2`,
-    [new Date(now), limit],
+export async function dueDeliveries(now: number, limit: number): Promise<DeliveryRow[]> {
+  return (
+    await query<DRow>(
+      `SELECT d.* FROM webhook_deliveries d JOIN webhook_endpoints e ON e.id = d.endpoint_id
+       WHERE d.status = 'pending' AND d.next_attempt_at <= $1 AND e.enabled
+       ORDER BY d.next_attempt_at, d.id LIMIT $2`,
+      [new Date(now), limit],
+    )
+  ).map(toDelivery);
+}
+
+/**
+ * Where a delivery goes right now: its endpoint as it is at this moment, or null when the delivery is
+ * no longer pending or its endpoint was deleted or turned off. Read just before each attempt, so a
+ * change an admin makes mid-run (delete, turn off, new URL, rotated secret) holds for the next send.
+ */
+export async function liveTarget(deliveryId: string): Promise<EndpointRow | null> {
+  const r = await one<ERow>(
+    `SELECT e.* FROM webhook_deliveries d JOIN webhook_endpoints e ON e.id = d.endpoint_id
+     WHERE d.id = $1 AND d.status = 'pending' AND e.enabled`,
+    [deliveryId],
   );
-  return rows.map((r) => {
-    const e = (typeof r.e === 'string' ? JSON.parse(r.e) : r.e) as Record<string, unknown>;
-    const date = (v: unknown) => (v ? new Date(v as string) : null);
-    return {
-      ...toDelivery(r),
-      endpoint: toEndpoint({ ...(e as unknown as ERow), created_at: date(e.created_at)!, updated_at: date(e.updated_at)!, last_delivery_at: date(e.last_delivery_at) }),
-    };
-  });
+  return r ? toEndpoint(r) : null;
 }
 
 /** A successful attempt: the delivery is done and the endpoint's failure streak ends. */
@@ -297,7 +311,7 @@ export async function redeliver(id: string, now: number): Promise<boolean> {
   return (await query(`UPDATE webhook_deliveries SET status = 'pending', next_attempt_at = $2 WHERE id = $1 AND status <> 'delivered' RETURNING 1`, [id, new Date(now)])).length > 0;
 }
 
-/** Retention of the delivery log. */
+/** Retention of the delivery log: every delivery made before then, a waiting one included. */
 export async function pruneDeliveriesBefore(before: number): Promise<number> {
-  return (await query(`DELETE FROM webhook_deliveries WHERE created_at < $1 AND status <> 'pending' RETURNING 1`, [new Date(before)])).length;
+  return (await query(`DELETE FROM webhook_deliveries WHERE created_at < $1 RETURNING 1`, [new Date(before)])).length;
 }

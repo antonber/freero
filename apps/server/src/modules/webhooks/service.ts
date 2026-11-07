@@ -372,7 +372,7 @@ function actorOf(e: StoredEvent, name: (id: string | null | undefined) => string
 export async function fanOut(eventIds: number[], now = Date.now()): Promise<number> {
   if (!getConfig().webhooks.enabled) return 0;
   const events = await eventsByIds(eventIds);
-  const endpoints = await repo.enabledEndpointsIn([...new Set(events.map((e) => e.workspaceId))]);
+  const endpoints = await repo.collectingEndpointsIn([...new Set(events.map((e) => e.workspaceId))]);
   if (!endpoints.length) return 0;
   // Project filters need where each board is now (boardsOpenToTheirTeam says it, below).
   const wantedByType = events.filter((e) => endpoints.some((p) => p.workspaceId === e.workspaceId && p.events.includes(e.type)));
@@ -453,17 +453,25 @@ async function tellEndpointTurnedOff(e: repo.EndpointRow, failures: number): Pro
       title: 'We turned off a webhook',
       paragraphs: [
         `The webhook to ${e.urlDisplay} failed ${failures} times in a row, so Freero stopped sending to it.`,
-        'Events that happened meanwhile are kept in its delivery log for 30 days. Fix the receiving end, then turn the webhook back on in the admin console — waiting deliveries are sent again.',
+        'Events that happen while it is off wait in its delivery log for up to 30 days. Fix the receiving end, then turn the webhook back on in the admin console — the waiting deliveries are sent then.',
       ],
       action: { label: 'Open webhooks', url: appUrl(null, `/admin/${encodeURIComponent(e.workspaceId)}?tab=webhooks`) },
     }),
   });
 }
 
-/** Sends one due delivery and records the outcome (retry with backoff, or give up; maybe turn the endpoint off). */
-async function attempt(d: repo.DeliveryRow & { endpoint: repo.EndpointRow }, now: number): Promise<boolean> {
+/**
+ * Sends one due delivery and records the outcome (retry with backoff, or give up; maybe turn the
+ * endpoint off). The endpoint is read again just before sending, so an admin's change mid-run (delete,
+ * turn off, new URL or secret) holds from the next send. Returns false when the rest of this
+ * endpoint's queue waits for a later run: the endpoint is gone or off, the delivery is no longer
+ * waiting, or this attempt turned the endpoint off.
+ */
+async function attempt(d: repo.DeliveryRow, now: number): Promise<boolean> {
   const cfg = getConfig().webhooks;
-  const open = await openEndpoint(d.endpoint);
+  const endpoint = await repo.liveTarget(d.id);
+  if (!endpoint) return false;
+  const open = await openEndpoint(endpoint);
   const ts = Math.floor(Date.now() / 1000);
   const outcome = open
     ? await postOnce(
@@ -495,8 +503,8 @@ async function attempt(d: repo.DeliveryRow & { endpoint: repo.EndpointRow }, now
     Date.now(),
   );
   if (disabled) {
-    log(`webhooks: turned off endpoint ${d.endpointId} of workspace ${d.endpoint.workspaceId} after ${failures} failures`);
-    await tellEndpointTurnedOff(d.endpoint, failures);
+    log(`webhooks: turned off endpoint ${d.endpointId} of workspace ${endpoint.workspaceId} after ${failures} failures`);
+    await tellEndpointTurnedOff(endpoint, failures);
   }
   return !disabled;
 }
@@ -512,7 +520,7 @@ export async function deliverDue(now = Date.now(), limit = 25): Promise<number> 
     for (let q = queues.shift(); q; q = queues.shift())
       for (const d of q) {
         try {
-          // Turned off by this attempt: the rest of its queue waits until it is back on.
+          // Gone, off, or turned off by this attempt: the rest of its queue waits (until it is back on).
           if (!(await attempt(d, now))) break;
         } catch (e) {
           logError(`webhooks: delivery ${d.id} could not be recorded`, e);
