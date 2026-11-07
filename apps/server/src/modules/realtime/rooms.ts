@@ -129,6 +129,11 @@ import { auditDecisions } from './suggestionAudit';
 import {
   guardSuggestionWrites,
   planDecision,
+  elementWritesIn,
+  rejectedCreatesAdded,
+  revertLostAccepts,
+  undoLostAccepts,
+  type ElementWrites,
   proposeRecords,
   pruneDecided,
   suggestionEntries,
@@ -196,6 +201,13 @@ const ACCESS_RETRY_MAX_MS = 60_000;
  * operator CLI). Bounds how long a removed member can stay connected.
  */
 export const ACCESS_RECHECK_MS = 5 * 60_000;
+/**
+ * How long after a socket's accept lost to an earlier rejection its next shared-doc update is taken
+ * as that accept's change (Editor.acceptSuggestions sends the decision, then the change, at once).
+ */
+const LOST_ACCEPT_WINDOW_MS = 5000;
+/** Saves a closing room makes for changes requests add while it closes, before it gives up on them. */
+const CLOSE_SAVE_ROUNDS = 3;
 /** Times an admission reads access again because it kept changing meanwhile, before it gives up (1013). */
 const MAX_ADMISSION_RECHECKS = 3;
 
@@ -308,6 +320,16 @@ interface Conn {
   /** #97: the guest socket's update rate, and when it was last told of each refusal. */
   bucket: TokenBucket | null;
   noticeAt: Map<GuestEditNoticeCode, number>;
+  /**
+   * Suggestions this socket accepted after they were rejected (suggestions.ts guardSuggestionWrites),
+   * and when: its next shared-doc update is that accept's change, undone as it is applied.
+   */
+  lostAccepts: { records: SuggestionRecord[]; at: number } | null;
+  /**
+   * What this socket's last sync step 2 wrote to the shared doc's items, and when: a reconnecting
+   * client sends what it did offline as step 2s, the shared doc's before the layers' (onLayerMessage).
+   */
+  offlineWrites: { writes: ElementWrites; at: number } | null;
 }
 
 /** One layer doc of a room (see "Board layers" above). */
@@ -398,6 +420,9 @@ class Room {
   pendingJoins = 0;
   destroyed = false;
   private dirty = false;
+  /** Changes this room made (sockets, requests, the server) so far, and how many of them are saved. */
+  private changeCount = 0;
+  private savedCount = 0;
   /** Changes made through this room's sockets since the last successful save, in order. */
   private unsaved: Uint8Array[] = [];
   /** Rows in the board's log that this room knows of (loaded + appended); compaction trigger. */
@@ -743,9 +768,11 @@ class Room {
       const before = Y.encodeStateVector(doc);
       let fixed = false;
       let decided: ReturnType<typeof guardSuggestionWrites>['decided'] = [];
+      let lost: SuggestionRecord[] = [];
       doc.getMap<unknown>(VOTING_COLLECTION);
       if (participant) for (const n of PARTICIPANT_LAYER_ROOTS) doc.getMap<unknown>(n);
       prepareServerCollections(doc);
+      for (const n of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) doc.getMap<unknown>(n);
       const overrides = mayProtectOn(conn);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
@@ -765,9 +792,24 @@ class Room {
           const g = guardSuggestionWrites(tr, doc, conn.userId);
           fixed = g.reverted > 0 || fixed;
           decided = g.decided;
+          lost = g.lost;
         }
+        // An accept that lost to a rejection changes nothing: its part in this doc (an item in a
+        // hidden frame) is undone here, the shared-doc part when it arrives (onUpdate).
+        const suggestions = name === EDITORS_LAYER ? doc : this.layers.get(EDITORS_LAYER)?.doc;
+        fixed = revertLostAccepts(tr, doc, [...lost, ...rejectedCreatesAdded(tr, doc, suggestions)]) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(doc, before))));
+      if (lost.length) {
+        const now = Date.now();
+        const offline = conn.offlineWrites;
+        // Live, the accept's change is this socket's next shared-doc update (BoardStore sends the
+        // decision first). Sent from offline (sync step 2s), it came first: undone now if nobody
+        // changed those items since (published, saved, sent to everyone: a change of the server's).
+        if (syncType !== syncProtocol.messageYjsSyncStep2) conn.lostAccepts = { records: lost, at: now };
+        else if (offline && now - offline.at <= LOST_ACCEPT_WINDOW_MS)
+          this.doc.transact(() => undoLostAccepts(this.doc, offline.writes, lost, { onlyIfCurrent: true }), SERVER_ORIGIN);
+      }
       if (decided.length) {
         void auditDecisions(this.id, conn.userId, decided, 'board');
         emitSuggestionsDecided(this.id, conn.userId, decided);
@@ -1105,6 +1147,8 @@ class Room {
       guestGrant: null,
       bucket: null,
       noticeAt: new Map(),
+      lostAccepts: null,
+      offlineWrites: null,
     };
     conn.guestGrant = guestGrantOf(conn, conn.role, session);
     this.conns.set(ws, conn);
@@ -1197,9 +1241,13 @@ class Room {
       let fixed = false;
       let moved: MovedEntry[] = [];
       const overrides = mayProtectOn(conn);
+      // The change of an accept that lost to a rejection (onLayerMessage): this socket's next update.
+      const lost = conn.lostAccepts && Date.now() - conn.lostAccepts.at <= LOST_ACCEPT_WINDOW_MS ? conn.lostAccepts.records : [];
+      conn.lostAccepts = null;
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
-        fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
+        fixed = revertLostAccepts(tr, this.doc, [...lost, ...rejectedCreatesAdded(tr, this.doc, this.layers.get(EDITORS_LAYER)?.doc)]) > 0;
+        fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access }) || fixed;
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
@@ -1211,6 +1259,7 @@ class Room {
         const homes = { editors: this.layers.get(EDITORS_LAYER)?.doc, own: this.layers.get(privateLayerOf(conn.userId))?.doc };
         moved = guardContentPlacement(tr, this.doc, homes, SERVER_ORIGIN);
         fixed = moved.length > 0 || fixed;
+        if (syncType === syncProtocol.messageYjsSyncStep2) conn.offlineWrites = { writes: elementWritesIn(tr, this.doc), at: Date.now() };
       }, conn.ws);
       this.reportMovedComments(moved, conn.userId);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
@@ -1427,6 +1476,7 @@ class Room {
 
   private markDirty(): void {
     if (this.destroyed) return;
+    this.changeCount++;
     const now = Date.now();
     if (!this.dirty) this.firstDirtyAt = now;
     this.dirty = true;
@@ -1453,9 +1503,22 @@ class Room {
     return this.saving;
   }
 
+  /**
+   * flush() for a write made on a request: resolves once every change made so far is saved, and
+   * throws BoardClosedError when the board's room was closed (trashed, deleted, taken down) before
+   * they were, so the request fails instead of reporting a write that is lost. (A save that failed
+   * for another reason is retried, as for sockets' changes: the change is still kept.)
+   */
+  async saveNow(): Promise<void> {
+    const upTo = this.changeCount;
+    await this.flush();
+    if (this.destroyed && this.savedCount < upTo) throw new BoardClosedError(this.id);
+  }
+
   private async persist(): Promise<void> {
     if (!this.dirty || this.destroyed) return;
     this.dirty = false;
+    const upTo = this.changeCount;
     const now = Date.now();
     const timer = persistDuration.startTimer();
     const updates = this.unsaved;
@@ -1476,6 +1539,7 @@ class Room {
         await layerStore.appendLayerUpdates(this.id, name, u, now);
         layerSaves.shift();
       }
+      this.savedCount = upTo;
       timer();
       if (this.logRows >= store.COMPACT_AFTER_ROWS || this.logBytes >= store.COMPACT_AFTER_BYTES) await this.compact();
     } catch (err) {
@@ -1878,7 +1942,7 @@ export async function restoreBoardDoc(boardId: string, version: Uint8Array, befo
     await before(Y.encodeStateAsUpdate(room.doc));
     if (room.destroyed) throw new BoardClosedError(boardId);
     room.restore(version);
-    await room.flush();
+    await room.saveNow();
   });
 }
 
@@ -1928,7 +1992,7 @@ export async function changeBoard<T extends { change: BoardChange }>(
     // A comment written on a request is the actor's, like one from their socket (mentions, replies).
     if (before.size && hasCommentListeners())
       emitCommentMessages(room.commentEvents(before, actor.userId).map((e) => (actor.via ? { ...e, via: actor.via } : e)));
-    await room.flush();
+    await room.saveNow();
     return { ...planned, applied };
   });
 }
@@ -1967,7 +2031,7 @@ export async function proposeSuggestions<T extends { change: BoardChange; conten
     const records = proposeRecords(view, planned.change, { author, description: opts.description, content: planned.content, newId: () => newId(16), pending: view.suggestions.length });
     if (room.destroyed) throw new BoardClosedError(boardId);
     writeProposal(editors, records, SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
     return { ...planned, records };
   });
   // The activity feed's "suggested N changes" (owners and editors only, like the suggestions).
@@ -2006,7 +2070,7 @@ export async function decideSuggestions(
     // Applied like any request write: attributed to the actor (and the app acting for them) in activity.
     const applied = create.length || update.length || remove.length ? applyChange(room.doc, docs, plan.change, actor, new RequestOrigin(actor)) : null;
     writeDecisions(editors, plan.records, plan.decision, SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
     return { records: plan.records, decision: plan.decision, applied };
   });
   const steps = out.records.map((record) => ({ record, from: undefined, to: out.decision }));
@@ -2046,7 +2110,7 @@ export async function withdrawSuggestionsOn(boardId: string, who: { userId: stri
     const decision: SuggestionDecision = { status: 'rejected', by: WITHDRAWN_BY, at: Date.now(), withdrawn: true };
     if (records.length) {
       writeDecisions(editors, records, decision, SERVER_ORIGIN);
-      await room.flush();
+      await room.saveNow();
     }
     await keepSuggestionAuthors(boardId, pendingAppAuthors(editors));
     return { records, decision };
@@ -2074,7 +2138,7 @@ export async function writeServerCollection(boardId: string, collection: string,
     if (isElementContentCollection(collection)) {
       // An activity's results go where the activity is: a hidden frame's to owners/editors only.
       writeElementContent(room.doc, layerDocs(room), collection, entries, SERVER_ORIGIN);
-      await room.flush();
+      await room.saveNow();
       return;
     }
     const map = room.doc.getMap<unknown>(collection);
@@ -2084,7 +2148,7 @@ export async function writeServerCollection(boardId: string, collection: string,
         else map.set(k, v);
       }
     }, SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
   });
 }
 
@@ -2106,7 +2170,7 @@ export async function updateServerEntry<T>(
     const next = update(map.get(key), room.peopleHere());
     if (next === undefined) return undefined;
     room.doc.transact(() => (next === null ? map.delete(key) : map.set(key, next)), SERVER_ORIGIN);
-    await room.flush();
+    await room.saveNow();
     return next;
   });
 }
@@ -2184,7 +2248,7 @@ export async function appendDocBlocks(docId: string, actor: BoardActor, blocks: 
   if (!blocks.length) return;
   await withLiveRoom(docId, async (room) => {
     room.doc.transact(() => writeDocBlocks(room.doc, blocks, () => newId(16)), new RequestOrigin(actor));
-    await room.flush();
+    await room.saveNow();
   });
 }
 
@@ -2196,7 +2260,7 @@ export async function editDocBlocks(docId: string, actor: BoardActor, edit: DocE
   return withLiveRoom(docId, async (room) => {
     let ids: string[] = [];
     room.doc.transact(() => (ids = applyDocEdit(room.doc, edit, () => newId(16))), new RequestOrigin(actor));
-    await room.flush();
+    await room.saveNow();
     return ids;
   });
 }
@@ -2254,7 +2318,13 @@ async function closeBoardHere(boardId: string, why: 'deleted' | 'removed'): Prom
   // Save what this instance's sockets changed and nobody saved yet, then drop the doc: a trashed
   // board keeps those edits (each instance saves its own); for a deleted board the save finds no
   // board and is dropped. Queued behind any save in flight, so nothing lands after this returns.
-  await room.flush();
+  // A request already writing to the room (it was in it before it closed) may add a change while
+  // that save runs: saved too, in another round. One that still can't be saved fails its request
+  // (saveNow), never reported made and lost.
+  for (let round = 0; round < CLOSE_SAVE_ROUNDS && !room.destroyed; round++) {
+    await room.flush();
+    if (!room.hasPendingWrites) break;
+  }
   if (!room.destroyed) room.destroy();
 }
 
@@ -2279,7 +2349,7 @@ export async function renameCommentAuthor(boardId: string, userId: string, name:
           }
         }, SERVER_ORIGIN);
       }
-      await room.flush();
+      await room.saveNow();
     });
   } catch (err) {
     if (!(err instanceof BoardClosedError)) throw err;
@@ -2315,7 +2385,7 @@ export async function removeGuestItems(boardId: string, guestId: string): Promis
       }, SERVER_ORIGIN);
       n += ids.length;
     }
-    if (n) await room.flush();
+    if (n) await room.saveNow();
     return n;
   });
 }

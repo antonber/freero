@@ -34,6 +34,7 @@ import {
   tableCellEntries,
   chartCellEntries,
   CHART_CELLS,
+  ELEMENT_CONTENT_COLLECTIONS,
   withoutDanglingRefs,
   type BoardElement,
   type ElementDraft,
@@ -44,7 +45,8 @@ import {
   type TableCopyContent,
   type ChartCopyContent,
 } from '@freero/shared';
-import { changedKeys } from './facilitation';
+import { ELEMENTS } from './changes';
+import { changedKeys, writesIn } from './facilitation';
 import { BoardChangeError, type BoardChange, type BoardView } from './view';
 
 export { SUGGESTIONS_COLLECTION };
@@ -74,7 +76,7 @@ export function reviewSuggestions(records: readonly SuggestionRecord[], view: Bo
 /**
  * The records a proposal becomes: one per new item, per changed item and per deleted item, all
  * in one new group. `change` is planned against `view` (the proposer's editor view) exactly like
- * a direct write would be — the same planners — so accepting it later does what writing it now
+ * a direct write would be â€” the same planners â€” so accepting it later does what writing it now
  * would have done. `content`: what new tables and charts hold (by element id).
  */
 export function proposeRecords(
@@ -211,7 +213,7 @@ export function writeProposal(doc: Y.Doc, records: readonly SuggestionRecord[], 
   }, origin);
 }
 
-/** A decision change a socket made: from → to (undefined: pending). */
+/** A decision change a socket made: from â†’ to (undefined: pending). */
 export interface DecisionChange {
   record: SuggestionRecord;
   from: SuggestionDecision | undefined;
@@ -237,23 +239,29 @@ export function maySocketChangeSuggestion(before: unknown, after: unknown, userI
   const to = a.decision ? asDecision(a.decision) : undefined;
   if (!from && to) return to.by === userId;
   if (from && !to) return from.by === userId;
-  return false; // decided → decided differently: undo first
+  return false; // decided â†’ decided differently: undo first
 }
 
 /**
  * Undoes, inside the transaction applying a socket's update to the editors layer, every change
  * of the suggestions collection the socket may not make (see maySocketChangeSuggestion), and
  * returns how many it undid plus the decisions it let through (for the audit log).
+ *
+ * Deciding is first come, first served (a compare-and-set on the decision): a decision of a
+ * record someone decided already is refused. `lost` are the records this socket ACCEPTED after
+ * they were rejected (by a reviewer, a request or a withdrawal): the client made the accepted
+ * change too, which must not land either (revertLostAccepts).
  */
-export function guardSuggestionWrites(tr: Y.Transaction, doc: Y.Doc, userId: string): { reverted: number; decided: DecisionChange[] } {
-  if (!doc.share.has(SUGGESTIONS_COLLECTION)) return { reverted: 0, decided: [] };
+export function guardSuggestionWrites(tr: Y.Transaction, doc: Y.Doc, userId: string): { reverted: number; decided: DecisionChange[]; lost: SuggestionRecord[] } {
+  if (!doc.share.has(SUGGESTIONS_COLLECTION)) return { reverted: 0, decided: [], lost: [] };
   const map = doc.getMap<unknown>(SUGGESTIONS_COLLECTION);
   let reverted = 0;
   const decided: DecisionChange[] = [];
+  const lost: SuggestionRecord[] = [];
   for (const [key, { before, after }] of changedKeys(tr, map)) {
+    const a = asSuggestionRecord(after);
+    const b = asSuggestionRecord(before);
     if (maySocketChangeSuggestion(before, after, userId)) {
-      const a = asSuggestionRecord(after);
-      const b = asSuggestionRecord(before);
       if (a && b && stableJson(a.decision) !== stableJson(b.decision)) decided.push({ record: a, from: b.decision, to: a.decision });
       continue;
     }
@@ -261,7 +269,111 @@ export function guardSuggestionWrites(tr: Y.Transaction, doc: Y.Doc, userId: str
     else map.set(key, before);
     reverted++;
   }
-  return { reverted, decided };
+  // An accept of a record that stays rejected: refused above, or never shown at all (concurrent
+  // with the rejection, it lost on Yjs' client order).
+  for (const [key, values] of writesIn(tr, map)) {
+    const now = asSuggestionRecord(map.get(key), key);
+    if (now?.decision?.status !== 'rejected') continue;
+    if (values.some((v) => asSuggestionRecord(v)?.decision?.status === 'accepted' && asSuggestionRecord(v)?.decision?.by === userId)) lost.push(now);
+  }
+  return { reverted, decided, lost };
+}
+
+/** The element ids accepting `r` writes: the new item, or the item it changes or deletes. */
+const targetOf = (r: SuggestionRecord): string | undefined => (r.op === 'create' ? r.element?.id : r.targetId);
+
+/** Keys a doc's `elements` and element-content collections changed: collection -> key -> before / after. */
+export type ElementWrites = Map<string, Map<string, { before: unknown; after: unknown }>>;
+
+/**
+ * What this transaction changed so far in `doc`'s `elements` and element-content collections (each
+ * must exist before the transaction: changedKeys).
+ */
+export function elementWritesIn(tr: Y.Transaction, doc: Y.Doc): ElementWrites {
+  const out: ElementWrites = new Map();
+  for (const name of [ELEMENTS, ...Object.keys(ELEMENT_CONTENT_COLLECTIONS)]) {
+    if (!doc.share.has(name)) continue;
+    const changes = changedKeys(tr, doc.getMap<unknown>(name));
+    if (changes.size) out.set(name, changes);
+  }
+  return out;
+}
+
+/**
+ * Undoes what `writes` (one update of a socket to `doc`: the shared doc or a layer) did as the
+ * accepted change of `lost` suggestions (see guardSuggestionWrites): the new item is taken out
+ * again, the changed one gets its value back, and the deleted one comes back with what was deleted
+ * along with it (lines attached to it, a frame's contents), and so do the element-content entries
+ * (a table's cells) the update wrote for them. Everything else the update did stands.
+ * `onlyIfCurrent`: undo an entry only while it still holds what the update left (the update was
+ * applied earlier, and someone may have changed the item since). Returns how many entries it undid.
+ */
+export function undoLostAccepts(doc: Y.Doc, writes: ElementWrites, lost: readonly SuggestionRecord[], opts: { onlyIfCurrent?: boolean } = {}): number {
+  const changes = writes.get(ELEMENTS);
+  if (!lost.length || !changes) return 0;
+  const restored = new Set<string>();
+  for (const r of lost) {
+    const id = targetOf(r);
+    const c = id === undefined ? undefined : changes.get(id);
+    if (!c || !id) continue;
+    if (r.op === 'create' ? c.before === undefined : r.op === 'update' ? c.before !== undefined && c.after !== undefined : c.after === undefined) restored.add(id);
+  }
+  if (!restored.size) return 0;
+  // What a deletion took with it (Editor.withDependents): items deleted in the same update that
+  // name a restored one (a line's end, a frame's child), and theirs in turn.
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [key, { before, after }] of changes) {
+      if (restored.has(key) || after !== undefined || before === undefined) continue;
+      const json = JSON.stringify(before);
+      if ([...restored].some((id) => json.includes(JSON.stringify(id)))) {
+        restored.add(key);
+        grew = true;
+      }
+    }
+  }
+  let n = 0;
+  const undo = (map: Y.Map<unknown>, key: string, { before, after }: { before: unknown; after: unknown }) => {
+    if (opts.onlyIfCurrent && map.get(key) !== after) return; // changed since: theirs now
+    if (before === undefined) map.delete(key);
+    else map.set(key, before);
+    n++;
+  };
+  const elements = doc.getMap<unknown>(ELEMENTS);
+  for (const id of restored) undo(elements, id, changes.get(id)!);
+  for (const [name, rule] of Object.entries(ELEMENT_CONTENT_COLLECTIONS)) {
+    const entries = writes.get(name);
+    if (!entries) continue;
+    const map = doc.getMap<unknown>(name);
+    for (const [key, c] of entries) if (rule.owners(key, c.after ?? c.before, (k) => map.get(k)).some((o) => restored.has(o))) undo(map, key, c);
+  }
+  return n;
+}
+
+/**
+ * undoLostAccepts inside the transaction applying the update (see elementWritesIn): nobody else
+ * ever receives what it undoes.
+ */
+export function revertLostAccepts(tr: Y.Transaction, doc: Y.Doc, lost: readonly SuggestionRecord[]): number {
+  return lost.length ? undoLostAccepts(doc, elementWritesIn(tr, doc), lost) : 0;
+}
+/**
+ * The rejected suggestions whose new item this transaction ADDED to `doc`: an accept that reached
+ * the server after the rejection, whichever of its two messages came first (a reconnecting client
+ * sends its offline change before its decision). Nothing else ever writes an item under a
+ * suggestion's proposed id. `suggestions`: the board's editors layer.
+ */
+export function rejectedCreatesAdded(tr: Y.Transaction, doc: Y.Doc, suggestions: Y.Doc | undefined): SuggestionRecord[] {
+  if (!suggestions?.share.has(SUGGESTIONS_COLLECTION) || !doc.share.has(ELEMENTS)) return [];
+  const added = [...changedKeys(tr, doc.getMap<unknown>(ELEMENTS))].filter(([, c]) => c.before === undefined && c.after !== undefined).map(([k]) => k);
+  if (!added.length) return [];
+  const ids = new Set(added);
+  const out: SuggestionRecord[] = [];
+  for (const [k, v] of suggestions.getMap<unknown>(SUGGESTIONS_COLLECTION).entries()) {
+    const r = asSuggestionRecord(v, k);
+    if (r?.op === 'create' && r.decision?.status === 'rejected' && r.element && ids.has(r.element.id)) out.push(r);
+  }
+  return out;
 }
 
 /** Deletes records decided longer than the undo window ago (`origin`: the server). Returns how many. */

@@ -19,6 +19,8 @@ export {
   removeGuestItems,
   readBoardView,
   changeBoard,
+  // A request's write that the board's closing (trash, delete) kept from being saved: not made.
+  BoardClosedError,
   proposeSuggestions,
   decideSuggestions,
   // Results only the server computes (live activities, KAI-132): the one writer of those collections.

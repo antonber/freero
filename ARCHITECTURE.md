@@ -3956,7 +3956,9 @@ holding it — it sends a sync-request and waits for one sync-reply per other su
 board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
 the board as collaborators see it, including edits not saved yet anywhere (KAI-73). Closing a
 board's rooms (trash, delete) saves what each instance's sockets changed before dropping the doc
-(for a deleted board that save finds no board and is dropped).
+(for a deleted board that save finds no board and is dropped). A request already writing to the
+room as it closes is saved with it, or fails (`Room.saveNow` throws `BoardClosedError`; the API
+answers 409 `board_closed`): it is never answered as done and then lost.
 
 Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
 messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'
@@ -4312,7 +4314,15 @@ the board, deletions. A suggestion is not board content until someone who can ed
   badge ("Claude for Maria", "AI for Maria") can't be forged by a socket. A SOCKET may only set or
   clear the `decision` of an existing record, naming itself (`realtime/suggestions.ts`
   `guardSuggestionWrites`, inside the transaction that applies its editors-layer update, like the
-  facilitation guards: what it undoes reaches nobody, the sender gets the correction). Decided
+  facilitation guards: what it undoes reaches nobody, the sender gets the correction). Deciding is
+  first come, first served (a compare-and-set on the decision): a decision of a record someone
+  decided already is refused, and an accept that lost to a rejection (a reviewer's, a request's, a
+  withdrawal) changes nothing on the board either. Its change is undone in the transaction that
+  applies it (`revertLostAccepts`): the socket's next shared-doc update (`BoardStore` sends the
+  decision first, then the change), its part in a layer (an item in a hidden frame), and in any order
+  a new item under a rejected suggestion's proposed id (a reconnecting client sends its offline
+  change first). Not covered: an offline accept of a change or deletion, sent before its decision,
+  of a suggestion rejected meanwhile stays as the acceptor's own edit. Decided
   records stay a day (undo needs them) and are pruned when a room loads.
 - **Accepting** in the app (`Editor.acceptSuggestions`) is an ordinary edit by the acceptor plus the
   decision, in ONE undo step across the shared doc and the editors layer (its undo manager tracks

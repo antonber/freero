@@ -639,6 +639,9 @@ export class BoardStore {
   /** Runs `fn` as one transaction on every doc it may write (the shared doc and the layers). */
   private transactAll(fn: () => void, origin: object): void {
     const { private: p, editors: e } = this.layers;
+    // The innermost transaction ends (and is sent) first: the editors layer, then the private one,
+    // then the shared doc. The server relies on it: a suggestion's decision arrives before the
+    // board change of the same accept (realtime/suggestions.ts revertLostAccepts).
     this.doc.transact(() => p.doc.transact(() => e.doc.transact(fn, origin), origin), origin);
   }
 
