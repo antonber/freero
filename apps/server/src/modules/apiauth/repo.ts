@@ -50,6 +50,12 @@ export interface TokenRow {
   /** The app behind an access / refresh token. */
   clientId: string | null;
   clientName: string | null;
+  /**
+   * An app token's consent as it stands now (null for a personal token): the source of truth for
+   * what the token may do. A newer consent can narrow it; the token never carries more.
+   */
+  grantScopes: string[] | null;
+  grantResource: string | null;
 }
 
 interface TokenDbRow {
@@ -69,6 +75,8 @@ interface TokenDbRow {
   used_at: Date | null;
   client_id: string | null;
   client_name: string | null;
+  grant_scopes?: string | null;
+  grant_resource?: string | null;
 }
 
 export const splitScopes = (s: string): string[] => s.split(' ').filter(Boolean);
@@ -90,9 +98,11 @@ const toToken = (r: TokenDbRow): TokenRow => ({
   usedAt: ms(r.used_at),
   clientId: r.client_id,
   clientName: r.client_name,
+  grantScopes: r.grant_scopes == null ? null : splitScopes(r.grant_scopes),
+  grantResource: r.grant_resource ?? null,
 });
 
-const TOKEN_SELECT = `SELECT t.*, g.client_id, c.name AS client_name
+const TOKEN_SELECT = `SELECT t.*, g.client_id, c.name AS client_name, g.scopes AS grant_scopes, g.resource AS grant_resource
   FROM api_tokens t LEFT JOIN oauth_grants g ON g.id = t.grant_id LEFT JOIN oauth_clients c ON c.id = g.client_id`;
 
 export interface NewToken {
@@ -108,13 +118,15 @@ export interface NewToken {
   issuedVia: string;
   createdAt: number;
   expiresAt: number | null;
+  /** A refresh token issued by rotating another: that one's id. */
+  rotatedFrom?: string | null;
 }
 
 export async function insertToken(t: NewToken): Promise<void> {
   await query(
-    `INSERT INTO api_tokens (id, user_id, kind, name, token_hash, hint, scopes, resource, grant_id, issued_via, created_at, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-    [t.id, t.userId, t.kind, t.name, t.tokenHash, t.hint, t.scopes.join(' '), t.resource, t.grantId, t.issuedVia, new Date(t.createdAt), d(t.expiresAt)],
+    `INSERT INTO api_tokens (id, user_id, kind, name, token_hash, hint, scopes, resource, grant_id, issued_via, created_at, expires_at, rotated_from)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    [t.id, t.userId, t.kind, t.name, t.tokenHash, t.hint, t.scopes.join(' '), t.resource, t.grantId, t.issuedVia, new Date(t.createdAt), d(t.expiresAt), t.rotatedFrom ?? null],
   );
 }
 
@@ -167,18 +179,39 @@ export async function touchToken(id: string, grantId: string | null, at: number)
   if (grantId) await query(`UPDATE oauth_grants SET last_used_at = $2 WHERE id = $1`, [grantId, new Date(at)]);
 }
 
-/**
- * Marks a refresh token used, once: the rotation step. Null when it was already used (replayed:
- * someone else holds a copy) or doesn't exist.
+/*
+ * Refresh-token rotation runs in one transaction (oauth.ts), in this lock order: the consent row
+ * first (lockGrant), then the refresh token (lockRefreshToken). Every rotation, redemption and
+ * deletion of a consent takes the consent row first, so they queue instead of deadlocking, and
+ * tokens are never inserted under a consent that is being deleted.
  */
-export async function useRefreshToken(tokenHash: string, at: number): Promise<TokenRow | null> {
-  const r = await one<{ id: string }>(`UPDATE api_tokens SET used_at = $2 WHERE token_hash = $1 AND kind = 'refresh' AND used_at IS NULL RETURNING id`, [
-    tokenHash,
-    new Date(at),
-  ]);
-  if (!r) return null;
-  const row = await one<TokenDbRow>(`${TOKEN_SELECT} WHERE t.id = $1`, [r.id]);
-  return row ? toToken(row) : null;
+
+/** The consent, locked until the transaction ends (null: it is gone). */
+export async function lockGrant(id: string): Promise<GrantRow | null> {
+  const r = await one<GrantDbRow>(`SELECT * FROM oauth_grants WHERE id = $1 FOR UPDATE`, [id]);
+  return r ? toGrant(r) : null;
+}
+
+/** The person's consent to the app, locked until the transaction ends (null: there is none). */
+export async function lockGrantOf(clientId: string, userId: string): Promise<GrantRow | null> {
+  const r = await one<GrantDbRow>(`SELECT * FROM oauth_grants WHERE client_id = $1 AND user_id = $2 FOR UPDATE`, [clientId, userId]);
+  return r ? toGrant(r) : null;
+}
+
+/** A refresh token by its hash, locked until the transaction ends. */
+export async function lockRefreshToken(tokenHash: string): Promise<TokenRow | null> {
+  const r = await one<TokenDbRow>(`${TOKEN_SELECT} WHERE t.token_hash = $1 AND t.kind = 'refresh' FOR UPDATE OF t`, [tokenHash]);
+  return r ? toToken(r) : null;
+}
+
+/** The rotation step: marks a fresh refresh token used (false when it already was). */
+export async function markRefreshTokenUsed(id: string, at: number): Promise<boolean> {
+  return (await query(`UPDATE api_tokens SET used_at = $2 WHERE id = $1 AND kind = 'refresh' AND used_at IS NULL RETURNING id`, [id, new Date(at)])).length > 0;
+}
+
+/** Whether a refresh token issued in place of this one has itself been used (the app moved on). */
+export async function successorUsed(id: string): Promise<boolean> {
+  return (await query(`SELECT 1 FROM api_tokens WHERE rotated_from = $1 AND used_at IS NOT NULL LIMIT 1`, [id])).length > 0;
 }
 
 /** Deletes one token by its hash, if it belongs to an app grant of `clientId`; returns it. */
@@ -359,11 +392,6 @@ export async function upsertGrant(g: { id: string; clientId: string; userId: str
   return toGrant(r!);
 }
 
-export async function getGrant(id: string): Promise<GrantRow | null> {
-  const r = await one<GrantDbRow>(`SELECT * FROM oauth_grants WHERE id = $1`, [id]);
-  return r ? toGrant(r) : null;
-}
-
 export async function grantsOf(userId: string): Promise<Array<GrantRow & { client: ClientRow }>> {
   const rows = await query<GrantDbRow & { c_id: string; c_name: string; c_website: string | null; c_redirect_uris: string; c_owner_id: string | null; c_secret_hash: string | null; c_created_at: Date; c_metadata_expires_at: Date | null }>(
     `SELECT g.*, c.id AS c_id, c.name AS c_name, c.website AS c_website, c.redirect_uris AS c_redirect_uris, c.owner_id AS c_owner_id,
@@ -459,8 +487,9 @@ export interface EmbedRow {
   /** The personal token behind it, when it is one: paused / expires (null otherwise). */
   parentPausedAt: number | null;
   parentExpiresAt: number | null;
-  /** The app behind it, when it is one. */
+  /** The app behind it, when it is one, and what its consent allows now. */
   clientId: string | null;
+  grantScopes: string[] | null;
 }
 interface EmbedDbRow {
   id: string;
@@ -476,6 +505,7 @@ interface EmbedDbRow {
   parent_paused_at: Date | null;
   parent_expires_at: Date | null;
   client_id: string | null;
+  grant_scopes: string | null;
 }
 const toEmbed = (r: EmbedDbRow): EmbedRow => ({
   id: r.id,
@@ -491,8 +521,9 @@ const toEmbed = (r: EmbedDbRow): EmbedRow => ({
   parentPausedAt: ms(r.parent_paused_at),
   parentExpiresAt: ms(r.parent_expires_at),
   clientId: r.client_id,
+  grantScopes: r.grant_scopes === null ? null : splitScopes(r.grant_scopes),
 });
-const EMBED_SELECT = `SELECT e.*, p.paused_at AS parent_paused_at, p.expires_at AS parent_expires_at, g.client_id
+const EMBED_SELECT = `SELECT e.*, p.paused_at AS parent_paused_at, p.expires_at AS parent_expires_at, g.client_id, g.scopes AS grant_scopes
   FROM api_embed_tokens e LEFT JOIN api_tokens p ON p.id = e.personal_token_id LEFT JOIN oauth_grants g ON g.id = e.grant_id`;
 
 export async function insertEmbedTicket(e: {
@@ -560,7 +591,7 @@ export async function insertExportTicket(e: {
 export async function redeemExportTicket(ticketHash: string, now: number): Promise<(EmbedRow & { spec: Record<string, unknown> }) | null> {
   const r = await one<Omit<EmbedDbRow, 'max_role'> & { spec: Record<string, unknown> | string }>(
     `WITH t AS (DELETE FROM api_export_tickets WHERE ticket_hash = $1 AND expires_at > $2 RETURNING *)
-     SELECT t.*, p.paused_at AS parent_paused_at, p.expires_at AS parent_expires_at, g.client_id
+     SELECT t.*, p.paused_at AS parent_paused_at, p.expires_at AS parent_expires_at, g.client_id, g.scopes AS grant_scopes
      FROM t LEFT JOIN api_tokens p ON p.id = t.personal_token_id LEFT JOIN oauth_grants g ON g.id = t.grant_id`,
     [ticketHash, new Date(now)],
   );

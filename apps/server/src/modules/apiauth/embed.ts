@@ -26,11 +26,12 @@ export const EMBED_TOKEN_MS = 60 * 60_000;
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 
 /** The role a credential's live view may have at most (its own role on the board caps it too). */
-export function embedRoleFor(cred: Pick<ApiCredential, 'scopes'>): repo.EmbedRole {
+export function embedRoleFor(cred: { scopes: readonly string[] }): repo.EmbedRole {
   if (cred.scopes.includes('boards:write')) return 'editor';
   if (cred.scopes.includes('comments:write')) return 'commenter';
   return 'viewer';
 }
+const EMBED_RANK: Record<repo.EmbedRole, number> = { viewer: 0, commenter: 1, editor: 2 };
 
 /** A ticket for one live view of `boardId`, acting for the credential's person. */
 export async function mintEmbedTicket(cred: ApiCredential, boardId: string): Promise<{ ticket: string; expiresAt: number; maxRole: repo.EmbedRole }> {
@@ -76,6 +77,8 @@ export const EMBED_SESSION_PREFIX = 'embed:';
 async function actingCredential(row: repo.EmbedRow, now: number): Promise<ApiCredential | null> {
   if (row.expiresAt <= now) return null;
   if (row.personalTokenId && (row.parentPausedAt !== null || (row.parentExpiresAt !== null && row.parentExpiresAt <= now))) return null;
+  // An app's view does no more than its consent allows now: reconnected with less, the view stops.
+  if (row.grantScopes && EMBED_RANK[embedRoleFor({ scopes: row.grantScopes })] < EMBED_RANK[row.maxRole]) return null;
   let account: Account;
   try {
     account = await getAccount(row.userId);
