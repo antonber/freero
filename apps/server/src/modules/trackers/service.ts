@@ -640,7 +640,14 @@ export const trackersConsumer: OutboxConsumer = {
 /** Queues links whose retry is due and polls connections that are due; returns how many were queued. */
 export async function pollOnce(now = Date.now()): Promise<number> {
   const cfg = getConfig().trackers;
-  const queued = new Set(await repo.claimRetries(now));
+  // Retries that are due are taken and queued in one transaction, before any tracker call: a poll
+  // cut short below (a deploy, a crash) must not leave them taken but never queued.
+  const retried = await repo.transaction(async () => {
+    const ids = await repo.claimRetries(now);
+    await enqueueSync(ids);
+    return ids;
+  });
+  const queued = new Set<string>();
   // Webhooks Freero registers itself (Asana, monday.com, ClickUp, Trello) that failed a while ago are tried again.
   await retryWebhooks(now).catch((e) => logError('trackers: registering webhooks again failed', e));
   for (const conn of await repo.connectionsWithLinks()) {
@@ -668,7 +675,7 @@ export async function pollOnce(now = Date.now()): Promise<number> {
     }
   }
   await enqueueSync([...queued]);
-  return queued.size;
+  return new Set([...retried, ...queued]).size;
 }
 
 // ---- webhooks ----
