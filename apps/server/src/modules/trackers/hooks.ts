@@ -74,7 +74,9 @@ export async function ensureWebhooks(conn: StoredConnection, projects: Array<str
       if (made.secret && (!row || !(await keepHandshakeSecret(row, made.secret)))) throw new TrackerError('The webhook’s secret couldn’t be kept.', 'invalid');
       // Asana and ClickUp sign every delivery with the secret they issued: none kept, none verifies.
       if (provider.webhooks.signed && !(await repo.getHook(h))?.secretSealed) throw new TrackerError('The tracker registered the webhook without the handshake.', 'invalid');
-      await repo.activateHook(h, externalId);
+      // Dropped while the tracker answered (switched to polling, removed, a new secret) or replaced
+      // by a newer registration: what this one made in the tracker is undone, never left posting.
+      if (!(await repo.activateHook(h, externalId))) await provider.webhooks.unregister(pc, externalId).catch(() => undefined);
     } catch (e) {
       if (externalId) await provider.webhooks.unregister(pc, externalId).catch(() => undefined);
       await repo.failHook(h, e instanceof TrackerError ? e.message : 'The webhook couldn’t be registered.');
