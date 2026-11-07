@@ -2478,9 +2478,14 @@ export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
 //            (ANONYMOUS_AUTHOR, no app, reveal-time timestamps) and without the comment threads
 //            on them (whose records name their writer: the author). Drafts written during an
 //            anonymous session are revealed so whatever the op says.
+//   `session` [additive, FAC-8]: applied only while the shared doc's `collection`/`key` value carries
+//            session id `id` (running or ended), so an op that waited offline — or in a device copy —
+//            never reveals a later session's content. Servers from before it ignore it.
 // Only the private layers of people who may still edit the board — or take part as participants
 // (RoleMessage.participant) — are revealed; the server holds
-// the sender's later messages until the op is applied, so it stays in order with them.
+// the sender's later messages until the op is applied, so it stays in order with them. A client
+// sends the ops it queued offline first thing on (re)connecting, before its offline doc changes
+// (a vote's end after its ballots' reveal), and keeps queued reveals in its device copy.
 export const WS_MESSAGE_LAYER_OP = 102;
 export interface LayerOp {
   type: 'reveal' | 'discard';
@@ -2488,6 +2493,7 @@ export interface LayerOp {
   prefix?: string;
   mine?: boolean;
   anonymous?: boolean;
+  session?: { collection: string; key: string; id: string };
 }
 
 // ---- Board outline (KAI-166): GET /api/boards/:id/outline ----
