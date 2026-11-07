@@ -14,6 +14,22 @@ function patchAll(editor: Editor, cards: CardElement[], patch: Partial<CardEleme
   editor.updateMany(cards.map((c) => ({ id: c.id, patch })));
 }
 
+/**
+ * Dates from the toolbar, through `card.setDates` (cards keep one writer, and its rule: a start is
+ * never after the due date). A due date picked before a card's start brings the start along to it;
+ * a start picked after a card's due date isn't stored for that card. One undo step.
+ */
+function setDates(editor: Editor, cards: CardElement[], change: { startDate?: string | null; dueDate?: string | null }) {
+  editor.transact(() => {
+    for (const c of cards) {
+      const start = editor.getElement<CardElement>(c.id)?.startDate;
+      const args: Record<string, unknown> = { id: c.id, ...change };
+      if (change.dueDate && change.startDate === undefined && start && start > change.dueDate) args.startDate = change.dueDate;
+      editor.runCommand('card.setDates', args);
+    }
+  });
+}
+
 function same<K extends keyof CardElement>(cards: CardElement[], key: K): CardElement[K] | undefined {
   const v = cards[0][key];
   return cards.every((c) => c[key] === v) ? v : undefined;
@@ -84,6 +100,8 @@ function DueControl({ editor, cards }: Props) {
   const ref = useRef<HTMLButtonElement>(null);
   const due = same(cards, 'dueDate') ?? null;
   const start = same(cards, 'startDate') ?? null;
+  // The picker offers no start after the earliest due date of the cards (the rest are refused anyway).
+  const latestStart = cards.reduce<string | null>((m, c) => (c.dueDate && (!m || c.dueDate < m) ? c.dueDate : m), null);
   return (
     <>
       <ToolbarButton ref={ref} className="fr-card-fmt-btn" label={t('dueDate')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -97,7 +115,7 @@ function DueControl({ editor, cards }: Props) {
             type="date"
             aria-label={t('dueDate')}
             value={due ?? ''}
-            onChange={(e) => patchAll(editor, cards, { dueDate: e.target.value || null })}
+            onChange={(e) => setDates(editor, cards, { dueDate: e.target.value || null })}
           />
           {/* A start date makes the card span days on a timeline. */}
           <div className="fr-card-pop__label">{t('startDate')}</div>
@@ -105,12 +123,12 @@ function DueControl({ editor, cards }: Props) {
             type="date"
             aria-label={t('startDate')}
             value={start ?? ''}
-            max={due ?? undefined}
-            onChange={(e) => patchAll(editor, cards, { startDate: e.target.value || null })}
+            max={latestStart ?? undefined}
+            onChange={(e) => setDates(editor, cards, { startDate: e.target.value || null })}
           />
           <div className="fr-card-pop__row">
-            <Button size="sm" variant="secondary" onClick={() => patchAll(editor, cards, { dueDate: localISODate(new Date(editor.host.serverNow())) })}>{t('today')}</Button>
-            <Button size="sm" variant="ghost" disabled={!due && cards.every((c) => !c.dueDate)} onClick={() => patchAll(editor, cards, { dueDate: null })}>{t('clear')}</Button>
+            <Button size="sm" variant="secondary" onClick={() => setDates(editor, cards, { dueDate: localISODate(new Date(editor.host.serverNow())) })}>{t('today')}</Button>
+            <Button size="sm" variant="ghost" disabled={!due && cards.every((c) => !c.dueDate)} onClick={() => setDates(editor, cards, { dueDate: null })}>{t('clear')}</Button>
           </div>
         </div>
       </Popover>
