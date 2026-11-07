@@ -54,7 +54,7 @@ it('"Enforce SSO" refuses other ways in for the domain; the break-glass exemptio
   setTxtLookupForTests(async (name) => (name === txtName(domain) ? [txtValue(claim.token)] : []));
   await verifyDomain(ws.id, claim.id, owner.id);
   await saveConnection(ws.id, owner.id, { protocol: 'oidc', enabled: true, oidcIssuer: 'https://idp.example', oidcClientId: 'c', oidcClientSecret: 's' });
-  await repo.markTested(ws.id, Date.now());
+  await repo.markTested(ws.id, Date.now(), (await repo.getConnection(ws.id))!.updatedAt);
   await setEnforcement(ws.id, { id: owner.id, role: 'owner' }, { enforced: true, breakGlassUserId: owner.id });
 
   const attempt = (u: Account, method: string) => enforcedSsoRestriction({ email: u.email, userId: u.id, method });
@@ -76,7 +76,7 @@ it('pointing the connection at another identity provider turns enforcement off u
   const conn = { protocol: 'oidc' as const, enabled: true, oidcIssuer: 'https://idp-a.example', oidcClientId: 'c', oidcClientSecret: 's' };
   const actor = { id: owner.id, role: 'owner' as const };
   await saveConnection(ws.id, owner.id, conn);
-  await repo.markTested(ws.id, Date.now());
+  await repo.markTested(ws.id, Date.now(), (await repo.getConnection(ws.id))!.updatedAt);
   await setEnforcement(ws.id, actor, { enforced: true, breakGlassUserId: owner.id });
   await saveConnection(ws.id, owner.id, { ...conn, defaultRole: 'guest' }); // same provider: still enforced
   expect((await repo.getConnection(ws.id))?.enforced).toBe(true);
