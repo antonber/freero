@@ -206,6 +206,8 @@ export function createCore(
     // Web fonts arrived: text measured with fallback fonts gets its real size (locally, no undo).
     subscribeFontEpoch(() => core.editor.renormalizeMeasured()),
     store.subscribeStatus(() => {
+      // (Re)connected: the host re-measures what may have drifted meanwhile (the server clock, FAC-9).
+      if (store.status === 'connected' && ui.getState().connection !== 'connected') core.hostRef.current.onConnected?.();
       ui.setState({ connection: store.status, synced: store.synced, restored: store.restored });
       core.emitter.emit('connection');
       if (store.ended && !endReported) {
