@@ -205,3 +205,32 @@ describe('card notes survive the details', () => {
     expect(card().description).toBe(steps);
   });
 });
+
+describe('dates from the toolbar', () => {
+  /** A date set in the toolbar's date input named `label`, as the browser's picker sets it. */
+  function pick(label: string, date: string) {
+    const input = document.querySelector<HTMLInputElement>(`input[type="date"][aria-label="${label}"]`)!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, date);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  it('the toolbar never stores a start after the due date: a due date picked before the start brings the start along, a start picked after a card’s due date is refused for that card', () => {
+    const { ann, id, card } = boardWithCard();
+    ann.update<CardElement>(id, { startDate: '2026-11-10', dueDate: '2026-11-20' });
+    const { id: _o, ...draft } = cardDraft({ text: 'Beta', dueDate: '2026-12-15' }, 'y', 0, 400, 300, null);
+    const other = ann.create(draft as never);
+    const Format = (cardFormat as FormatDefinition).Component;
+    render(<Format editor={ann} selection={[card()]} />);
+    act(() => document.querySelector<HTMLButtonElement>('button[aria-label="Due date"]')!.click());
+    pick('Due date', '2026-11-05');
+    expect([card().startDate, card().dueDate]).toEqual(['2026-11-05', '2026-11-05']);
+
+    // Both selected (their due dates differ): one start for both.
+    act(() => root!.render(<StrictMode><Format editor={ann} selection={[card(), ann.getElement<CardElement>(other)!]} /></StrictMode>));
+    pick('Start date', '2026-12-01');
+    expect(card().startDate).toBe('2026-11-05');
+    expect(ann.getElement<CardElement>(other)!.startDate).toBe('2026-12-01');
+  });
+});

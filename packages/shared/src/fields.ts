@@ -13,11 +13,15 @@
 // under its center: on the board the position IS the value (one write moves the card and changes
 // its value; nobody ever sees a card in one column with another column's value). Every other
 // field's values are stored on the cards, Stage's too while the board is grouped by something else.
+// One exception (#197): a card whose last write hadn't seen the latest regroup (a drag racing it;
+// an element is one value, so its x and values come from that write) stands where the earlier
+// grouping put it. Its `placed` names that grouping, and it is read by its values (`stalePlacement`)
+// until the layout moves it to its column.
 //
 // Values that don't fit their field any more (an option deleted, a field's type changed) read as
 // empty; values of deleted fields stay on the cards, dormant, so undoing the delete brings them
 // back without a mass write.
-import type { BoardElement, CardElement, CardStatus, KanbanColumn, KanbanElement } from './elements';
+import type { BoardElement, CardElement, CardPlacement, CardStatus, KanbanColumn, KanbanElement } from './elements';
 import { kanbanColumnAt } from './elements';
 import { isISODate } from './layout/timeline';
 import { plainToRichText, richTextToPlain } from './text';
@@ -362,9 +366,65 @@ export function groupKeyValue(f: FieldDef, key: string): FieldValue | null {
   return readValue(f, key);
 }
 
-/** Card `card`'s value for field `f` of kanban `k`: the group field's is the column under it. */
+/** Kanban `k`'s grouping now, as cards record it (`CardElement.placed.rev`). */
+export const groupRevOf = (k: Pick<KanbanElement, 'groupRev'>): string => k.groupRev ?? '';
+
+/**
+ * True for a card of `k` placed under an earlier grouping of `k` (#197): someone's write that hadn't
+ * seen the latest regroup won, so where it stands says nothing about the field the board is grouped
+ * by now. Its values say it (`settledValues`).
+ */
+export function stalePlacement(k: KanbanElement, card: CardElement): boolean {
+  const p = card.placed;
+  return !!p && p.kanban === k.id && p.rev !== groupRevOf(k) && isMember(k, card);
+}
+
+/**
+ * The values of a card of `k` as they stand once its placement is settled: a stale one's column
+ * under its old grouping becomes that field's value, and the group field's value comes from what
+ * it stores (dropped from its values: the column says it once it is moved there). Others: as stored.
+ */
+export function settledValues(k: KanbanElement, card: CardElement, schema: readonly FieldDef[] = collectionSchema(k)): FieldValues {
+  const values = { ...(card.values ?? {}) };
+  if (!stalePlacement(k, card)) return values;
+  const p = card.placed!;
+  const gid = groupFieldId(k);
+  const was = p.field !== gid ? schema.find((f) => f.id === p.field) : undefined;
+  if (was && isGroupable(was)) {
+    const v = groupKeyValue(was, p.key);
+    if (v === null) delete values[was.id];
+    else values[was.id] = v;
+  }
+  delete values[gid];
+  return values;
+}
+
+/**
+ * The patch that records card `card` as put into column `key` of `k` now, by someone who sees the
+ * board as it is (an agent's or a tracker's value for the group field, card details): its values
+ * settled and its placement the current grouping's, so a card a regroup had left stale isn't
+ * settled back into its stored value's column when the move happens to leave its x where it was.
+ */
+export function placedNow(k: KanbanElement, card: CardElement, key: string, schema: readonly FieldDef[] = collectionSchema(k)): { values?: FieldValues; placed: CardPlacement } {
+  const values = settledValues(k, card, schema);
+  const changed = JSON.stringify(values) !== JSON.stringify(card.values ?? {});
+  return { ...(changed ? { values } : {}), placed: { kanban: k.id, rev: groupRevOf(k), field: groupFieldId(k), key } };
+}
+
+/**
+ * Card `card`'s value for field `f` of kanban `k`: the group field's is the column under it. A card
+ * placed under an earlier grouping (`stalePlacement`) is read by what it was placed for: the column
+ * it was placed in is the value of the field that column stood for, and the group field's value is
+ * its stored one.
+ */
 export function cardValue(k: KanbanElement, card: CardElement, f: FieldDef): FieldValue | null {
-  if (f.id === groupFieldId(k)) return isMember(k, card) && k.columns.length ? groupKeyValue(f, k.columns[kanbanColumnAt(k, card.x + card.w / 2)].id) : null;
+  const stale = stalePlacement(k, card);
+  if (f.id === groupFieldId(k)) {
+    if (!isMember(k, card) || !k.columns.length) return null;
+    if (!stale) return groupKeyValue(f, k.columns[kanbanColumnAt(k, card.x + card.w / 2)].id);
+    return card.placed!.field === f.id ? groupKeyValue(f, card.placed!.key) : readValue(f, card.values?.[f.id]);
+  }
+  if (stale && f.id === card.placed!.field && isGroupable(f)) return groupKeyValue(f, card.placed!.key);
   return readValue(f, card.values?.[f.id]);
 }
 

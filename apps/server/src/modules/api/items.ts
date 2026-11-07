@@ -11,7 +11,12 @@ import {
   API_URL_ITEM_TYPES,
   NO_GROUP,
   groupFieldId,
+  cardValue,
   groupKeyOf,
+  placedNow,
+  settledValues,
+  stalePlacement,
+  type CardPlacement,
   collectionSchema,
   connectorDraft,
   findFreeSpot,
@@ -329,13 +334,20 @@ const GROUP_COLORS = ['#8A89A3', '#2E9BF0', '#F5A524', '#1FA463', '#8B5CF6', '#E
  * person without a column yet gets one. The layout (withKanbanLayout) then stacks it there and sets
  * the column's status, as for a drop.
  */
-function fieldValues(card: CardElement, raw: unknown, view: BoardView): { values: FieldValues; move?: { x: number; y?: number }; kanban?: { id: string; patch: Record<string, unknown> } } {
+function fieldValues(
+  card: CardElement,
+  raw: unknown,
+  view: BoardView,
+): { values: FieldValues; move?: { x: number; y?: number }; placed?: CardPlacement; kanban?: { id: string; patch: Record<string, unknown> } } {
   const k = card.frameId ? view.elements.find((e) => e.el.id === card.frameId)?.el : undefined;
   if (k?.type !== 'kanban') throw badRequest('fields: this card is not on a kanban (a card’s fields are its kanban’s)');
   const schema = collectionSchema(k);
   const read = readFieldInputs(schema, raw);
   if ('error' in read) throw badRequest(`fields: ${read.error}`);
-  const values: FieldValues = { ...(card.values ?? {}) };
+  // A card a regroup left where the old grouping put it (#197) is read by its values, settled here.
+  const stale = stalePlacement(k, card);
+  const values: FieldValues = stale ? settledValues(k, card, schema) : { ...(card.values ?? {}) };
+  let placed: CardPlacement | undefined;
   let move: { x: number; y?: number } | undefined;
   let kanban: { id: string; patch: Record<string, unknown> } | undefined;
   for (const { field: f, value } of read.values) {
@@ -354,7 +366,10 @@ function fieldValues(card: CardElement, raw: unknown, view: BoardView): { values
       kanban = { id: k.id, patch: { columns, w: kanbanBoardWidth({ ...k, columns }) } };
     }
     const next = { ...k, columns } as KanbanElement;
-    if (k.columns.length && k.columns[kanbanColumnAt(k, card.x + card.w / 2)]?.id === key) continue;
+    // Already its value (the column it stands in; for a card placed under an earlier grouping, #197, its stored value).
+    if (k.columns.length && groupKeyOf(f, cardValue(k, card, f)) === key) continue;
+    // Put there now: the layout mustn't settle it back by its stored value (its x may not change).
+    if (stale) placed = placedNow(k, card, key, schema).placed;
     const x = k.x + kanbanColumnLeft(next, to) + kanbanColumnWidth(next, to) / 2 - card.w / 2;
     if (k.lanes?.length) move = { x };
     else {
@@ -366,7 +381,7 @@ function fieldValues(card: CardElement, raw: unknown, view: BoardView): { values
       move = { x, y: below + 1 };
     }
   }
-  return { values, ...(move ? { move } : {}), ...(kanban ? { kanban } : {}) };
+  return { values, ...(move ? { move } : {}), ...(placed ? { placed } : {}), ...(kanban ? { kanban } : {}) };
 }
 
 /**
@@ -403,7 +418,9 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
     if (d && !DATE.test(d)) throw badRequest('startDate must be YYYY-MM-DD');
     patch.startDate = d ?? null;
   }
-  if (el.type === 'card') {
+  // Checked only when the change sets a date: a card already stored the wrong way round (written
+  // before the toolbar kept the order) can still be renamed, moved or recoloured.
+  if (el.type === 'card' && (patch.startDate !== undefined || patch.dueDate !== undefined)) {
     const start = patch.startDate !== undefined ? patch.startDate : el.startDate;
     const due = patch.dueDate !== undefined ? patch.dueDate : el.dueDate;
     if (typeof start === 'string' && typeof due === 'string' && start > due) throw badRequest(`startDate (${start}) can’t be after dueDate (${due})`);
@@ -437,6 +454,7 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
     const fv = fieldValues(el as CardElement, it.fields, view);
     patch.values = fv.values;
     if (fv.move) Object.assign(patch, fv.move);
+    if (fv.placed) patch.placed = fv.placed;
     if (fv.kanban) patch.__kanban = fv.kanban;
   }
   for (const k of ['x', 'y', 'w', 'h', 'rotation'] as const) {

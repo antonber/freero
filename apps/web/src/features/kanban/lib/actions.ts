@@ -1,7 +1,7 @@
 // Kanban edits: every one is a single Editor.transact (one undo step), after which the engine's
 // arrange pass re-stacks the columns.
 import { nanoid } from 'nanoid';
-import { NO_GROUP, boardView, collectionSchema, groupFieldId, kanbanLaneAt, type BoardElement, type CardStatus, type KanbanColumn, type KanbanElement } from '@freero/shared';
+import { NO_GROUP, boardView, collectionSchema, groupFieldId, kanbanLaneAt, placedNow, stalePlacement, type BoardElement, type CardElement, type CardStatus, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import type { Editor, ElementPatch, NewElement, Point } from '@engine';
 import { DEFAULT_COL_W, MAX_COL_W, MIN_COL_W, boardWidth, colLeft, colWidth, columnOrder, columnsOfChildren, kanbanWidth, reflowMoves } from './layout';
 import { COLUMN_COLORS, DEFAULT_COLUMNS } from './constants';
@@ -150,8 +150,12 @@ export function moveToColumn(editor: Editor, itemId: string, colId: string): boo
     to = k.columns.findIndex((c) => c.id === colId);
     if (to < 0) return false;
   }
+  // A card a regroup left where the old grouping put it (#197) is put there now, even if its x
+  // already falls in that column (else the layout would settle it back by its stored value).
+  const stale = el.type === 'card' && stalePlacement(k, el as CardElement);
+  if (stale) editor.update<CardElement>(el.id, placedNow(k, el as CardElement, colId));
   const all = editor.getElements();
-  if (columnsOfChildren(k, all).get(el.id) === to) return false;
+  if (columnsOfChildren(k, all).get(el.id) === to) return stale;
   const cx = k.x + colLeft(k, to) + colWidth(k, to) / 2;
   if (k.lanes?.length) {
     // Across, in its own row (the row under it is its row value); the layout stacks it there.
