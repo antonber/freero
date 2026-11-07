@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "Impossible d’ouvrir cette visite guidée.",
   "walkthroughsNeedAFreeroServer": "Les visites guidées nécessitent un serveur Freero.",
@@ -298,5 +299,6 @@
   "presentersNames": "Présentateurs : {names}",
   "speakerSays": "{name} :",
   "followingWhoeverSpeaks": "Suit la personne qui parle (passer à la vue de {name} uniquement)",
-  "followingName": "Suit la vue de {name} (passer à la personne qui parle)"
+  "followingName": "Suit la vue de {name} (passer à la personne qui parle)",
+  "youLeftTheBoardSoThe": "Vous avez quitté le tableau, l’enregistrement a donc été supprimé."
 }

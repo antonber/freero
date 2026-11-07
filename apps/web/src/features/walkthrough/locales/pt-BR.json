@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "Não foi possível abrir este tour guiado.",
   "walkthroughsNeedAFreeroServer": "Tours guiados precisam de um servidor Freero.",
@@ -298,5 +299,6 @@
   "presentersNames": "Apresentadores: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "Seguindo quem fala (mudar só para a visão de {name})",
-  "followingName": "Seguindo a visão de {name} (mudar para quem fala)"
+  "followingName": "Seguindo a visão de {name} (mudar para quem fala)",
+  "youLeftTheBoardSoThe": "Você saiu do quadro, então a gravação foi descartada."
 }

@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "이 워크스루를 열지 못했어요.",
   "walkthroughsNeedAFreeroServer": "워크스루를 사용하려면 Freero 서버가 필요해요.",
@@ -298,5 +299,6 @@
   "presentersNames": "발표자: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "말하는 사람을 따라가는 중({name} 님 화면만 보기로 전환)",
-  "followingName": "{name} 님의 화면을 따라가는 중(말하는 사람으로 전환)"
+  "followingName": "{name} 님의 화면을 따라가는 중(말하는 사람으로 전환)",
+  "youLeftTheBoardSoThe": "보드를 떠나서 녹화가 삭제되었어요."
 }

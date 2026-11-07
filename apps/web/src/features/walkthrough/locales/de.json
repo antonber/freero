@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "Dieser Rundgang konnte nicht geöffnet werden.",
   "walkthroughsNeedAFreeroServer": "Rundgänge benötigen einen Freero-Server.",
@@ -298,5 +299,6 @@
   "presentersNames": "Präsentierende: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "Folgt der sprechenden Person (nur zur Ansicht von {name} wechseln)",
-  "followingName": "Folgt der Ansicht von {name} (zur sprechenden Person wechseln)"
+  "followingName": "Folgt der Ansicht von {name} (zur sprechenden Person wechseln)",
+  "youLeftTheBoardSoThe": "Sie haben das Board verlassen, daher wurde die Aufnahme verworfen."
 }

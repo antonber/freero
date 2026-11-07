@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "无法打开此讲解视频。",
   "walkthroughsNeedAFreeroServer": "讲解视频需要 Freero 服务器。",
@@ -298,5 +299,6 @@
   "presentersNames": "讲解人：{names}",
   "speakerSays": "{name}：",
   "followingWhoeverSpeaks": "正在跟随说话的人（切换为只看 {name} 的视图）",
-  "followingName": "正在跟随 {name} 的视图（切换为跟随说话的人）"
+  "followingName": "正在跟随 {name} 的视图（切换为跟随说话的人）",
+  "youLeftTheBoardSoThe": "你已离开白板，录制已丢弃。"
 }
