@@ -18,7 +18,17 @@ browser ──▶ │ reverse proxy / load balancer (Caddy, nginx, ALB…) │
                        └── S3-compatible bucket (uploads, thumbnails)
 ```
 
-## Build the image
+## Get the image
+
+Every commit on `main` that passes the image smoke test is published to GitHub's registry, and so is
+every release tag:
+
+```bash
+docker pull ghcr.io/antonber/freero:latest   # main; or :0.1 / :0.1.0 for a release, :sha-<short> for one commit
+```
+
+`FREERO_RELEASE` isn't baked into the published image; set it to the tag you run if you want logs
+and error reports to name it. To build it yourself instead:
 
 ```bash
 docker build -t freero:$(git rev-parse --short HEAD) .
