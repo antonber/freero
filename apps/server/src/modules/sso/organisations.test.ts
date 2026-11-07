@@ -35,7 +35,7 @@ it('the organisation’s "Enforce SSO" refuses password and provider sign-in for
   setTxtLookupForTests(async (name) => (name === txtName(domain) ? [txtValue(claim.token)] : []));
   await verifyDomain(org.id, claim.id, owner.id);
   await saveConnection(org.id, owner.id, { protocol: 'oidc', enabled: true, oidcIssuer: 'https://idp.group.example', oidcClientId: 'c', oidcClientSecret: 's' });
-  await repo.markTested(org.id, Date.now());
+  await repo.markTested(org.id, Date.now(), (await repo.getConnection(org.id))!.updatedAt);
   await setEnforcement(org.id, { id: owner.id, role: 'owner' }, { enforced: true, breakGlassUserId: owner.id });
 
   for (const person of [alice, bob]) {

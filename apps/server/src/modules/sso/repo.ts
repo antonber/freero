@@ -224,8 +224,13 @@ export async function setEnforced(workspaceId: string, enforced: boolean, breakG
   return rows.length > 0;
 }
 
-export async function markTested(workspaceId: string, now: number): Promise<void> {
-  await query(`UPDATE sso_connections SET tested_at = $2 WHERE workspace_id = $1`, [workspaceId, new Date(now)]);
+/**
+ * A sign-in went through the connection as it was at `seenUpdatedAt` (when its answer was
+ * validated): marks it tested only if it was not saved since — a provider an admin switched to
+ * meanwhile has proven nothing.
+ */
+export async function markTested(workspaceId: string, now: number, seenUpdatedAt: number): Promise<void> {
+  await query(`UPDATE sso_connections SET tested_at = $2 WHERE workspace_id = $1 AND updated_at = $3`, [workspaceId, new Date(now), new Date(seenUpdatedAt)]);
 }
 
 export async function resealClientSecret(workspaceId: string, sealed: string, resealed: string): Promise<void> {

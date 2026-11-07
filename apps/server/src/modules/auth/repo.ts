@@ -857,6 +857,24 @@ async function takeBack(userId: string, passwordHash: string | null, keepLinks: 
   await deleteTokensExcept(userId, keepLinks);
 }
 
+/**
+ * An authority vouched that `email` belongs to the person signing in or being provisioned (a
+ * provider asserting it verified, a workspace's directory at its verified domain) while the
+ * account with it never proved it: whoever created the account may be someone else. In one
+ * transaction, only while the account still has that address unverified: no password, no two-step
+ * verification, no provider sign-ins, no pending links, and the address verified. False when it was
+ * verified or changed meanwhile (nothing to take from anyone). The caller ends the sessions.
+ */
+export async function claimUnverifiedAccount(userId: string, email: string, now: number): Promise<boolean> {
+  return tx(async () => {
+    const unverified = await one(`SELECT 1 FROM users WHERE id = $1 AND email = $2 AND email_verified_at IS NULL FOR UPDATE`, [userId, email]);
+    if (!unverified) return false;
+    await takeBack(userId, null, []);
+    await query(`UPDATE users SET email_verified_at = $2 WHERE id = $1`, [userId, new Date(now)]);
+    return true;
+  });
+}
+
 /** The previous address's way back after an email change survives taking an account back. */
 async function revertLinks(userId: string): Promise<{ purpose: TokenPurpose; email: string }[]> {
   const rows = await query<{ email: string }>(`SELECT DISTINCT email FROM auth_tokens WHERE user_id = $1 AND purpose = 'revert_email'`, [userId]);
