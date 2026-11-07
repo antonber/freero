@@ -3896,7 +3896,10 @@ operations). What a module needs to know:
   the owner stores it sealed again), which makes the secret rotatable (docs/operations.md).
 - **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
   run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
-  idempotent. `runExclusive(lockKey, fn)` for a one-off.
+  idempotent. `runExclusive(lockKey, fn)` for a one-off. Each lock key belongs to one job or outbox
+  consumer: a second one registered under a key already taken fails at startup, naming both (the
+  `startup.test.ts` test starts every module's init.ts). A graceful shutdown waits (10 s in all) for
+  runs in progress and then (5 s) for mail queued with `sendMailLater` before the database closes.
 - **Outbox** (`platform/outbox.ts`): `appendOutbox(topic, key)` inside the change's transaction,
   `consumeOutbox(ctx, consumer)` from an init.ts — reliable reactions and derived indexes (see
   "Suite foundation"). `afterCommit(fn)` (`platform/db.ts`) runs a nudge once the caller's

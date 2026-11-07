@@ -88,9 +88,21 @@ export function onOutboxMail(listener: (mail: Mail) => void): () => void {
   return () => outboxListeners.delete(listener);
 }
 
-/** Resolves once every sendMailLater started so far has finished (a short-lived process exiting: the admin CLI). */
-export async function mailSettled(): Promise<void> {
-  await mailIdle();
+/**
+ * Resolves once every sendMailLater started so far has finished (a process exiting: the admin CLI,
+ * a graceful shutdown before the database closes; a mail may still be worded from a lookup). With
+ * `timeoutMs`, gives up after that long and logs how many were left; resolves to whether all were sent.
+ */
+export async function mailSettled(timeoutMs?: number): Promise<boolean> {
+  if (timeoutMs === undefined) {
+    await mailIdle();
+    return true;
+  }
+  let timer: NodeJS.Timeout | undefined;
+  const settled = await Promise.race([mailIdle().then(() => true), new Promise<false>((res) => (timer = setTimeout(() => res(false), timeoutMs)))]);
+  clearTimeout(timer);
+  if (!settled) logError(`mail: ${pending.size} queued mail(s) still not sent after ${timeoutMs / 1000}s; stopping without them`, null);
+  return settled;
 }
 
 /**
