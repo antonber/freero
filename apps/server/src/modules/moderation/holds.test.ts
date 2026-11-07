@@ -11,7 +11,7 @@ import { boardForModeration, createBoard, getBoardAccess } from '../boards/index
 import { isUploadRemoved, saveUpload, uploadForModeration } from '../uploads/index';
 import { createTeamWorkspace } from '../workspaces/index';
 import * as repo from './repo';
-import { act, purgeExpiredKeptCopies, submitAppeal, appealToken } from './service';
+import { act, appealInfo, purgeExpiredKeptCopies, submitAppeal, appealToken } from './service';
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -121,4 +121,18 @@ it('kept copies of removed files are deleted for good once their retention is ov
   const [record] = (await repo.actionsAbout(expired)).filter((a) => a.action === 'upload.purge');
   expect(record).toMatchObject({ operatorId: null, subjectEmail: owner.email, reason: 'illegal' });
   expect(await purgeExpiredKeptCopies(later)).toBe(0); // idempotent
+});
+
+it('an appeal against a file removal is refused once the file’s kept copy is deleted for good, since it could never be granted', async () => {
+  const operator = await user('FinalOp');
+  const owner = await user('LateAppellant');
+  const file = (await saveUpload(PNG, 'image/png', owner.id)).slice('/uploads/'.length);
+  const removal = await act(operator.id, { action: 'upload.remove', targetId: file, reason: 'copyright', statement: 'Reported as a copy.' });
+  // Nobody appealed within the retention: the kept copy goes (no notice to the owner).
+  expect(await purgeExpiredKeptCopies(Date.now() + getConfig().moderationKeepRemovedMs + 60_000)).toBe(1);
+
+  const token = appealToken(removal.id);
+  expect(await appealInfo(token)).toMatchObject({ reversed: false, final: true });
+  await expect(submitAppeal({ token, message: 'I made this picture.' })).rejects.toMatchObject({ status: 409, code: 'appeal_final' });
+  expect(await repo.openAppealFor(removal.id)).toBe(false);
 });

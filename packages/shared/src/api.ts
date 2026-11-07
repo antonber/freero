@@ -3042,6 +3042,11 @@ export interface AppealInfo {
   pending: boolean;
   /** It was reversed meanwhile. */
   reversed: boolean;
+  /**
+   * It can't be undone any more: what it was about is gone for good (a removed file's kept copy
+   * was deleted, the board deleted, the listing or template withdrawn), so no appeal is taken.
+   */
+  final: boolean;
 }
 /** `code` of a board Freero's moderators took down (HTTP 451 on REST). */
 export const BOARD_REMOVED = 'board_removed';
