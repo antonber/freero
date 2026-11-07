@@ -106,6 +106,11 @@ function ConnectionBanner() {
       <div className="fr-connection fr-connection--error" role="status">
         <WifiOff size={14} />{' '}{t('youNoLongerHaveAccess')}</div>
     );
+  if (status === 'refused')
+    return (
+      <div className="fr-connection fr-connection--error" role="status">
+        <WifiOff size={14} />{' '}{t('aChangeHereIsTooLarge')}</div>
+    );
   // #178: offline. With a copy on this device, edits survive a reload; without one, only this tab holds them.
   if (!online || (restored && !wasSynced.current && status === 'disconnected'))
     return (

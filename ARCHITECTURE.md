@@ -407,6 +407,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   tab's view every frame, publishes `PresenceState.following` (the followed user id) and, while
   anyone follows this user, publishes its viewport every 50 ms instead of 200 ms. Any other camera
   write (user move, a feature's `setCamera`), a canvas click, Esc, or the person leaving ends it.
+  This tab's own connection dropping does not (everyone's presence goes with it): following waits
+  until it is back and `PRESENCE_RESYNC_MS` after, and a presentation still the presenter's on the
+  server is still followed.
   Presence (avatars) and present (the "is presenting" banner) both use it; presence owns the
   "Following … · Stop" pill and "Bring everyone to me" (`presence.bringEveryone`).
 - `ToolDefinition.onCanvasDoubleClick?(editor, point)`: double-click on empty canvas (or a frame's
@@ -3533,7 +3536,9 @@ network, also after a reload, and syncs when the network is back.
   does not protect against someone who can read the browser profile while the person is signed
   in: that is why keyed workspaces keep no copies unless their policy says 'all'.
 - **When copies go**: sign-out / session gone / another person (above); a board whose socket the
-  server ends for good (4401 / 4403 / taken down: `BoardStore` stops saving and calls `forget`);
+  server ends for good (4401 / 4403 / taken down, and 1009: a change it holds that the server
+  refused as too large, which every reconnect and every reload would send again — `BoardStore`,
+  status 'refused', stops saving and calls `forget`);
   `GET /boards/:id` answering 403 / 404 / 451; and on every online start the app asks
   `POST /api/boards/offline-check { ids }` → `{ keep }` (the boards this person can still open
   and may keep, never counted as opening them) and deletes the rest — so a person removed while
@@ -3542,7 +3547,11 @@ network, also after a reload, and syncs when the network is back.
   exchange (and the layers' own) sends exactly what the server lacks. The server applies its rules
   to them as to any update — a person made a viewer while offline has their offline edits refused,
   layer writes they may no longer make are dropped, private-mode and hidden-frame placement are
-  checked as usual. Tested with real sockets (`realtime/offline.test.ts`).
+  checked as usual. Tested with real sockets (`realtime/offline.test.ts`). A socket the server
+  closes soon after it opened (4429 too many connections, 1011 the board could not be loaded, 1013)
+  is retried later and later, from 0.25–0.5 s doubling up to 30 s (`engine/store/reconnect.ts`);
+  one that stayed open 30 s was healthy, and its close reconnects at once (y-websocket backs off
+  only while a socket fails to open).
 - **Opening offline**: the service worker answers `/board/:id` with this build's `index.html`
   when the network fails (only boards; the app's chunks are cache-first once loaded). The auth
   context falls back to the account card in the vault when the session check can't reach the
@@ -3965,7 +3974,9 @@ messages in `realtime/peers.ts`): every instance holding a board publishes its o
 updates and presence on the board's channel and applies the others' with `REMOTE_ORIGIN` (relayed
 to its sockets, never re-published or saved: the instance whose socket made a change saves it). A
 room subscribes, loads, then asks the other instances for what the database lacks (sync-request /
-sync-reply, also after a Redis reconnect). Presence from another instance never overrides a client
+sync-reply, also after a Redis reconnect). It goes both ways: an instance asked by one that holds
+something it lacks (changes made while the asker's publishes were lost) asks back, so after a
+Redis gap on either side every copy of the board converges. Presence from another instance never overrides a client
 id owned by a local socket (a client that moved here). A room that applied remote changes appends
 what the database still lacks before it unloads. Access refreshes, board deletion and logouts go to
 all instances on a control channel. That channel keeps nothing, so every instance also re-reads the

@@ -1005,9 +1005,14 @@ class Room {
           this.applyPeerAwareness(msg.update);
           break;
         case 'sync-request':
-          // Answer from the loaded doc (a request can arrive while we are still loading).
+          // Answer from the loaded doc (a request can arrive while we are still loading). Both ways:
+          // when the asker holds something we lack (changes it made while its publishes were lost,
+          // a Redis gap on its side), ask it back, or our copy stays behind for the room's lifetime.
           this.ready.then(
-            () => this.answerPeer(from, msg.stateVector, msg.layers ?? []),
+            () => {
+              this.answerPeer(from, msg.stateVector, msg.layers ?? []);
+              if (!this.destroyed && this.lacksFrom(msg.stateVector, msg.layers ?? [])) this.requestPeerSync();
+            },
             () => {},
           );
           break;
@@ -1071,6 +1076,16 @@ class Room {
       return false;
     });
     if (ours) awarenessProtocol.applyAwarenessUpdate(this.awareness, ours, REMOTE_ORIGIN);
+  }
+
+  /** Do these state vectors (another instance's doc and layers) cover anything this room lacks? */
+  private lacksFrom(stateVector: Uint8Array, layerVectors: Array<{ layer: string; data: Uint8Array }>): boolean {
+    const ahead = (theirs: Uint8Array, doc: Y.Doc | undefined) => {
+      const ours = doc ? Y.decodeStateVector(Y.encodeStateVector(doc)) : new Map<number, number>();
+      for (const [client, clock] of Y.decodeStateVector(theirs)) if (clock > (ours.get(client) ?? 0)) return true;
+      return false;
+    };
+    return ahead(stateVector, this.doc) || layerVectors.some((l) => isLayerName(l.layer) && ahead(l.data, this.layers.get(l.layer)?.doc));
   }
 
   private answerPeer(to: string, stateVector: Uint8Array, layerVectors: Array<{ layer: string; data: Uint8Array }>): void {

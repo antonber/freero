@@ -54,6 +54,7 @@
   "docTitle": "Doc title",
   "noAccess": "No access",
   "removedForReview": "Removed for review",
+  "changeTooLargeReload": "A change is too large to save: reload",
   "canComment": "Can comment",
   "viewOnly": "View only",
   "connecting": "Connecting…",

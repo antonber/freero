@@ -57,7 +57,9 @@ function objectDocRoute(kind: ObjectKind, PREFIX: string): WsRoute {
             : null;
         const key = account ? accountKey : guest ? guestKeyFromCookieHeader(cookie) : null;
         if (!user || !key) return { code: 4401, reason: 'Not logged in' };
-        // Per-user connect limit (the per-IP one runs at the upgrade); the client retries with backoff.
+        // Per-user connect limit (the per-IP one runs at the upgrade). Refused after the upgrade: the
+        // client waits longer before each retry of a socket closed soon after it opened
+        // (web engine/store/reconnect.ts; y-websocket alone would retry every 100 ms).
         if (!(await checkRateLimit('wsConnect', `user:${user.id}`)).allowed) return { code: 4429, reason: 'Too many connections' };
         let boardId = '';
         try {

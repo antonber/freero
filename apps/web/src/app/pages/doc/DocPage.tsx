@@ -106,7 +106,7 @@ function DocView({ initial }: { initial: BoardSummary }) {
   const live = useObjectDocState(store);
   // The server's word on this socket's role wins (a role changed while the doc is open).
   const role = live.role ?? doc.role;
-  const canEdit = (role === 'owner' || role === 'editor') && live.status !== 'denied' && live.status !== 'removed';
+  const canEdit = (role === 'owner' || role === 'editor') && live.status !== 'denied' && live.status !== 'removed' && live.status !== 'refused';
   const canComment = canEdit || role === 'commenter';
   const docs = useMemo(() => docsFrom(null, navigate), [navigate]);
 
@@ -195,7 +195,7 @@ function DocView({ initial }: { initial: BoardSummary }) {
           }}
         />
         <span className="fr-docpage-status" aria-live="polite">
-          {live.status === 'denied' ? tr('noAccess') : live.status === 'removed' ? tr('removedForReview') : live.status === 'connected' ? (canEdit ? '' : role === 'commenter' ? tr('canComment') : tr('viewOnly')) : tr('connecting')}
+          {live.status === 'denied' ? tr('noAccess') : live.status === 'removed' ? tr('removedForReview') : live.status === 'refused' ? tr('changeTooLargeReload') : live.status === 'connected' ? (canEdit ? '' : role === 'commenter' ? tr('canComment') : tr('viewOnly')) : tr('connecting')}
         </span>
         <div className="fr-docpage-spacer" />
         {peers.length > 0 && <AvatarStack className="fr-docpage-wide" users={peers} max={5} size={28} />}

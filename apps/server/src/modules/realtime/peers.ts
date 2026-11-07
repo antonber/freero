@@ -3,7 +3,8 @@
 // Board channel (one per board, joined by every instance that has the board loaded):
 //   update        a Yjs update made through one of the sender's sockets (already role-checked)
 //   awareness     presence of the sender's sockets (already sanitized)
-//   sync-request  "I just opened this board (or reconnected): send me what my state vector lacks"
+//   sync-request  "I just opened this board (or reconnected): send me what my state vector lacks";
+//                 a receiver whose doc lacks something the asker's state vector has asks back
 //   sync-reply    the answer, addressed to one instance: missing updates + its sockets' presence
 //   layer-update  a Yjs update of one of the board's LAYER docs (layers.ts), made through one of the
 //                 sender's sockets or by the sender itself (a reveal); receivers re-check access
