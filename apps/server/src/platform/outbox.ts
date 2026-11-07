@@ -25,7 +25,8 @@
 //   an event that still fails is skipped and counted (freero_outbox_skipped_total) — a rebuild
 //   repairs what it would have derived.
 import type { ServerContext } from './context';
-import { afterCommit, one, query, withAdvisoryLock } from './db';
+import { afterCommit, one, query, reserveLockKey, withAdvisoryLock } from './db';
+import { scheduleExclusiveJob, settleOnShutdown } from './jobs';
 import { log, logError } from './log';
 import { counter, gaugeFn } from './metrics';
 
@@ -99,6 +100,7 @@ function wakeAll(): void {
 
 /** Registers a consumer without scheduling it (tests drive it with drainOutbox). */
 export function registerOutboxConsumer(consumer: OutboxConsumer): void {
+  reserveLockKey(consumer.lockKey, `outbox consumer ${consumer.name}`);
   const known = consumers.get(consumer.name);
   if (known) known.consumer = consumer;
   else consumers.set(consumer.name, { consumer, waitingSince: null, failures: null });
@@ -300,7 +302,7 @@ export function consumeOutbox(ctx: ServerContext, consumer: OutboxConsumer): voi
     stopped = true;
     reg.wake = undefined;
     if (timer) clearTimeout(timer);
-    await running;
+    await settleOnShutdown(ctx, `outbox consumer ${consumer.name}`, running);
   });
   if (!pruneScheduled) {
     pruneScheduled = true;
@@ -309,17 +311,7 @@ export function consumeOutbox(ctx: ServerContext, consumer: OutboxConsumer): voi
 }
 
 function schedulePrune(ctx: ServerContext): void {
-  const run = () => withAdvisoryLock(PRUNE_LOCK_KEY, pruneOutbox).catch((e) => logError('outbox: prune failed', e));
-  let running: Promise<unknown> = Promise.resolve();
-  const timer = setInterval(() => (running = run()), 3600_000);
-  timer.unref();
-  const first = setTimeout(() => (running = run()), 60_000);
-  first.unref();
-  ctx.onShutdown(async () => {
-    clearInterval(timer);
-    clearTimeout(first);
-    await running;
-  });
+  scheduleExclusiveJob(ctx, { name: 'outbox:prune', lockKey: PRUNE_LOCK_KEY, intervalMs: 3600_000, firstRunMs: 60_000, run: () => pruneOutbox() });
 }
 
 /**

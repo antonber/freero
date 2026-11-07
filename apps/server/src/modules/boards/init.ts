@@ -12,7 +12,7 @@ import * as repo from './repo';
 import { applyRetentionLocked, RETENTION_LOCK_KEY } from './retention';
 import { purgeExpiredTrashLocked, TRASH_PURGE_LOCK_KEY } from './service';
 
-const LINK_EXPIRY_LOCK_KEY = 7_202_611_031; // arbitrary, constant across releases
+const LINK_EXPIRY_LOCK_KEY = 7_202_611_033; // arbitrary, constant across releases (7_202_611_031 is the references consumer's)
 const SEAL_CALL_LINKS_LOCK_KEY = 7_202_611_432; // arbitrary, constant across releases
 
 export default function initBoards(ctx: ServerContext): void {

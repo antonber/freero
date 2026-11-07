@@ -7,7 +7,7 @@ import { recordSamlSession, samlSignOutRedirect } from './logout';
 import { enforcedSsoRestriction } from './policy';
 import * as repo from './repo';
 
-const CLEANUP_LOCK_KEY = 7_202_610_301; // arbitrary, constant across releases
+const CLEANUP_LOCK_KEY = 7_202_610_303; // arbitrary, constant across releases (7_202_610_301 is auth:two-factor-recovery's)
 const CAPTURE_LOCK_KEY = 7_202_611_231;
 
 export default function initSso(ctx: ServerContext): void {
