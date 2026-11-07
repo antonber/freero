@@ -22,7 +22,7 @@ token endpoint and sends no `code_verifier`. A challenge it does send is always 
 |---|---|
 | authorization | `GET /oauth/authorize?response_type=code&client_id=…&redirect_uri=…&scope=…&state=…&code_challenge=…&code_challenge_method=S256[&resource=<origin>/api/v1]` |
 | token | `POST /api/oauth/token` (form): `grant_type=authorization_code`, `code`, `code_verifier`, `client_id`, `redirect_uri` → `{ access_token, refresh_token, expires_in: 3600, scope }` |
-| refresh | `POST /api/oauth/token`: `grant_type=refresh_token`, `refresh_token`, `client_id` (rotates; a refresh token used twice ends the app's access) |
+| refresh | `POST /api/oauth/token`: `grant_type=refresh_token`, `refresh_token`, `client_id` (rotates; a refresh token used twice ends the app's access, except the same app retrying within 60 s before it used the new one) |
 | revoke | `POST /api/oauth/revoke`: `token`, `client_id` |
 | metadata | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/api/v1` |
 

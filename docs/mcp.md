@@ -360,7 +360,10 @@ board, one lane each (`agent` names it; default the app's name).
    (the name is the app's claim, the host is not), its `client_uri` only when it is on that host,
    never its logo, and warns when it sends you back to a program on this computer.
 6. `POST /api/oauth/token`: access token `fro_…` (1 hour) + refresh token `frr_…` (30 days, rotating; a
-   replayed refresh token ends the whole consent). The response's `scope` is what the person granted.
+   replayed refresh token ends the whole consent). The same app sending the old refresh token again
+   within 60 seconds, before it has used the new one (parallel tool calls, a lost response), gets
+   another pair instead. The response's `scope` is what the person granted; when they connect the app
+   again with less, the tokens it already holds lose the rest at once.
 
 Personal access tokens (`frp_…`) are accepted as `Authorization: Bearer` too.
 
