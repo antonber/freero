@@ -3,7 +3,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { MAX_PROBLEM_DIAGNOSTICS_BYTES, MAX_PROBLEM_SCREENSHOT_BYTES } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { apiNotFound, createApp, errorHandler } from '../../platform/http';
@@ -16,6 +16,22 @@ import { openPrivateImage, uploadName } from '../uploads/index';
 import * as repo from './repo';
 import problemRoutes from './routes';
 import { createProblem, problemDetail, purgeClosedProblems, updateProblem } from './service';
+
+// The storage refusing the next screenshot deletes (an outage, a permission error).
+let failDeletes = 0;
+vi.mock('../uploads/index', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../uploads/index')>();
+  return {
+    ...real,
+    deletePrivateImage: async (key: string | null | undefined) => {
+      if (failDeletes > 0) {
+        failDeletes--;
+        throw new Error('storage unavailable');
+      }
+      return real.deletePrivateImage(key);
+    },
+  };
+});
 
 const OPERATOR = 'op@problems.test.freero.app';
 const UNPROVEN = 'unproven@problems.test.freero.app';
@@ -196,6 +212,29 @@ it('a closed report is deleted with its screenshot once the retention period aft
   expect(await openPrivateImage(key)).toBeNull();
   expect(await repo.get(reopened)).not.toBeNull();
   expect(await repo.get(open)).not.toBeNull();
+});
+
+it('a screenshot whose file delete fails is still deleted by the next retention run, whether its report went with the account or with the retention period', async () => {
+  const leaving = await person();
+  const leavingKeys: string[] = [];
+  for (let i = 0; i < 2; i++) leavingKeys.push((await repo.get(await reportWithScreenshot(leaving)))!.screenshotKey!);
+  const staying = await person();
+  const closed = await reportWithScreenshot(staying);
+  const closedKey = (await repo.get(closed))!.screenshotKey!;
+  await updateProblem('operator', closed, { status: 'wontfix' }, 'app');
+
+  // The storage fails on the first screenshot of the account, then on the closed report's.
+  failDeletes = 1;
+  await scheduleAccountDeletion(null, leaving.id, 'password-123');
+  await purgeDueAccounts(Date.now() + getConfig().accountDeletionGraceMs + 60_000);
+  failDeletes = 1;
+  await purgeClosedProblems(Date.now() + getConfig().problemRetentionMs + 60_000);
+  expect(await repo.get(closed)).toBeNull();
+  expect(await repo.ofUser(leaving.id, 10)).toEqual([]);
+
+  // The storage works again: the next run finishes the job.
+  await purgeClosedProblems(Date.now());
+  for (const key of [...leavingKeys, closedKey]) expect(await openPrivateImage(key), key).toBeNull();
 });
 
 it('marking a report fixed tells its reporter once, even when it is reopened and fixed again', async () => {

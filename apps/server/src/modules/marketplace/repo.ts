@@ -109,10 +109,14 @@ export async function getMany(ids: readonly string[]): Promise<ListingRow[]> {
   return (await query<Raw>(`SELECT ${COLUMNS} FROM marketplace_listings WHERE id = ANY($1::text[])`, [ids])).map(toRow);
 }
 
-/** Listings in one status: featured first, then newest. */
-export async function byStatus(status: ListingStatus, limit: number): Promise<ListingRow[]> {
+/** Listings in one status (except those of `exceptSubmitters`): featured first, then newest. */
+export async function byStatus(status: ListingStatus, limit: number, exceptSubmitters: readonly string[] = []): Promise<ListingRow[]> {
   return (
-    await query<Raw>(`SELECT ${COLUMNS} FROM marketplace_listings WHERE status = $1 ORDER BY featured DESC, created_at DESC, id LIMIT $2`, [status, limit])
+    await query<Raw>(
+      `SELECT ${COLUMNS} FROM marketplace_listings WHERE status = $1 AND submitter_id <> ALL($3::text[])
+       ORDER BY featured DESC, created_at DESC, id LIMIT $2`,
+      [status, limit, exceptSubmitters],
+    )
   ).map(toRow);
 }
 

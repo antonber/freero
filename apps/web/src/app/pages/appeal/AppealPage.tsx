@@ -77,6 +77,8 @@ export function AppealPage() {
       </div>
       {info.reversed ? (
         <AuthNotice kind="success">{t('thisDecisionWasReversedThere')}</AuthNotice>
+      ) : info.final && !sent ? (
+        <AuthNotice kind="error">{t('thisDecisionIsFinal')}</AuthNotice>
       ) : sent || info.pending ? (
         <AuthNotice kind="success">
           {sent ? t('thanksAModeratorWillReview') : t('yourAppealIsWaitingFor')}

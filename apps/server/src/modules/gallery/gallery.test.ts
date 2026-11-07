@@ -9,7 +9,7 @@ import * as Y from 'yjs';
 import type { BoardElement } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { initStorage } from '../../platform/storage';
-import { createUser, getAccount } from '../auth/index';
+import { createUser, getAccount, suspendUser, unsuspendUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { inviteBoardMember } from '../members/index';
 import { initBoardDoc, initBoardLayer, readBoardView } from '../realtime/index';
@@ -123,6 +123,25 @@ it('a template is public only while approved: pending, declined and removed ones
 
   expect(await decideGalleryTemplate(t.id, 'restore', '')).toBe(true);
   expect(await publicTemplate(t.id)).toMatchObject({ id: t.id, title: 'Sailboat retro', author: 'Ann', licence: 'cc-by-4.0' });
+});
+
+it('a suspended account’s public template is hidden everywhere — page, list, preview, install, report — while it is suspended, and back as it was once lifted', async () => {
+  const [ben, reader] = await Promise.all([account('Ben'), account('Visitor')]);
+  const board = await retroBoard(ben.id);
+  const t = await submit(ben, board.id, 'Starfish retro');
+  expect(await decideGalleryTemplate(t.id, 'approve', '')).toBe(true);
+  const shown = async () => ({
+    listed: (await publicTemplates('', null)).some((x) => x.id === t.id),
+    page: (await publicTemplate(t.id)) !== null,
+    preview: (await previewFor(t.id, { userId: null, operator: false })) !== null,
+    install: await installTemplate(reader.id, t.id, {}).then(() => true, (e: { status: number }) => e.status),
+    reportable: (await reportableGalleryTemplate(t.id)) !== null,
+  });
+
+  await suspendUser(ben.id);
+  expect(await shown()).toEqual({ listed: false, page: false, preview: false, install: 404, reportable: false });
+  await unsuspendUser(ben.id);
+  expect(await shown()).toEqual({ listed: true, page: true, preview: true, install: true, reportable: true });
 });
 
 it('only someone who can edit the board submits it, and a viewer’s attempt copies nothing', async () => {

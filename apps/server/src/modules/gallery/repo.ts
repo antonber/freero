@@ -99,9 +99,12 @@ export async function previewOf(id: string): Promise<string | null> {
   return (await one<{ preview_svg: string }>('SELECT preview_svg FROM gallery_templates WHERE id = $1', [id]))?.preview_svg ?? null;
 }
 
-/** Approved templates, newest first, matching every word of `words` (title, description, author) and `category`. */
-export async function published(opts: { words: string[]; category: string | null; limit: number }): Promise<GalleryRow[]> {
-  const params: unknown[] = [opts.category, opts.limit];
+/**
+ * Approved templates, newest first, matching every word of `words` (title, description, author) and
+ * `category`, except those of `exceptSubmitters`.
+ */
+export async function published(opts: { words: string[]; category: string | null; limit: number; exceptSubmitters: readonly string[] }): Promise<GalleryRow[]> {
+  const params: unknown[] = [opts.category, opts.limit, opts.exceptSubmitters];
   const conds = opts.words.map((w) => {
     params.push(`%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
     const p = `$${params.length}`;
@@ -109,7 +112,7 @@ export async function published(opts: { words: string[]; category: string | null
   });
   const rows = await query<Row>(
     `SELECT ${COLUMNS} FROM gallery_templates
-     WHERE status = 'approved' AND ($1::text IS NULL OR category = $1) ${conds.map((c) => `AND ${c}`).join(' ')}
+     WHERE status = 'approved' AND ($1::text IS NULL OR category = $1) AND submitted_by <> ALL($3::text[]) ${conds.map((c) => `AND ${c}`).join(' ')}
      ORDER BY published_at DESC, id LIMIT $2`,
     params,
   );

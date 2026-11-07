@@ -1569,7 +1569,7 @@ and decision snapshots" below, `marketplace` (marketplace_listings: community li
 agents; see "Apps & agents" below), `gallery` (gallery_templates: the community template gallery,
 #162; see "Community template gallery" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
-encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports: “Report a problem”, see "Problem
+encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports, problem_screenshot_deletions: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
@@ -1811,6 +1811,15 @@ reports" below).
 - Suspensions (KAI-180): `user.suspend` with `boards: 'take_down' | 'disable_link'` acts on every
   board the account has in service, each recorded with `parent_id` = the suspension; `user.restore`
   reverses those children not reversed or deleted since (children of the lift). One notice.
+  A suspended account's community listings and templates are not public while it is suspended:
+  marketplace and gallery ask auth's `suspendedUserIds` on every public read (lists, pages,
+  previews, installs, reports) instead of writing a status, so the operator's decisions (approved,
+  featured) are untouched and lifting the suspension brings them back as they were (#192).
+- Appeals are refused (409 `appeal_final`, and `AppealInfo.final` on the page) once the action
+  can't be undone any more: the removed file's kept copy was deleted, the board deleted for good,
+  the listing or template withdrawn. A listing or template decision and its record are one
+  transaction; the other actions apply side effects other instances must see at once (sockets,
+  sessions, files) and are recorded right after.
 - Community listings (#87, `modules/marketplace`): their status is marketplace's, written only
   through its `decideListing`; moderation owns the decisions (`listing.approve` / `reject` /
   `remove` / `restore` / `feature` / `unfeature` are actions like the others: recorded, audited,
@@ -1852,8 +1861,10 @@ reports" below).
 - **Retention.** The `problems:retention` exclusive job deletes reports closed (fixed, wontfix,
   duplicate) longer than `PROBLEM_RETENTION_DAYS` ago, row first, then the screenshot; reopening
   clears `closed_at`. The account purge deletes a person's reports and screenshots
-  (`deleteProblemsOf`; rows would cascade, files wouldn't); the data export carries them
-  (`problems/`). The privacy policy states the period through the `problemRetentionDays` legal token.
+  (`deleteProblemsOf`; rows would cascade, files wouldn't). Deleting a report lists its
+  screenshot in `problem_screenshot_deletions` in the same statement, and the key leaves that list
+  only once the file's delete succeeded, so a storage error is retried by the next retention run
+  instead of leaving the file for good (#192). The data export carries them (`problems/`). The privacy policy states the period through the `problemRetentionDays` legal token.
 - **Web.** The dialog is the app shell's (`app/problems/`), because it opens on every signed-in page:
   `ProblemReportProvider` (in `App`) owns it and the shortcut `mod+alt+p` outside boards; the help menu
   (`HelpMenu`: dashboard and settings top bars) and the dashboard's account menu open it; on a board,

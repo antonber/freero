@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { registerOAuthApp } from '../apiauth/index';
-import { createUser, getAccount } from '../auth/index';
-import { decideListing, listingFor, listingsForReview, liveListings, ownListings, submitListing } from './service';
+import { createUser, getAccount, suspendUser, unsuspendUser } from '../auth/index';
+import { decideListing, listingFor, listingsForReview, liveListings, ownListings, reportableListing, submitListing } from './service';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
@@ -43,6 +43,24 @@ it('a pending submission is seen only by its submitter and the operators’ revi
   await decideListing(listing.id, 'remove', 'Broken link.');
   await expect(listingFor(listing.id, other.id)).rejects.toMatchObject({ status: 404 });
   expect(await listingFor(listing.id, dev.id)).toMatchObject({ status: 'removed', statusNote: 'Broken link.' });
+});
+
+it('a suspended developer’s live listing is hidden from everyone while the account is suspended, and back as it was (featured too) once lifted', async () => {
+  const dev = await account('Suspended');
+  const other = await account('Onlooker');
+  const listing = await submitListing(dev, submission({ name: 'Pushy bot' }));
+  expect(await decideListing(listing.id, 'approve', '')).toBe(true);
+  expect(await decideListing(listing.id, 'feature', '')).toBe(true);
+  const shown = async () => ({
+    listed: (await liveListings()).find((l) => l.id === listing.id)?.featured ?? null,
+    page: await listingFor(listing.id, other.id).then(() => true, (e: { status: number }) => e.status),
+    reportable: (await reportableListing(listing.id)) !== null,
+  });
+
+  await suspendUser(dev.id);
+  expect(await shown()).toEqual({ listed: null, page: 404, reportable: false });
+  await unsuspendUser(dev.id);
+  expect(await shown()).toEqual({ listed: true, page: true, reportable: true });
 });
 
 it('a listing’s links must be https: plain http, scripts, data and links with credentials are refused', async () => {

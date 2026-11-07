@@ -120,9 +120,25 @@ async function presentOwn(rows: repo.ListingRow[]): Promise<OwnListing[]> {
 
 // ---- people ----
 
+/**
+ * Whether a listing is live for everyone: approved, and its submitter's account isn't suspended
+ * (#192). A suspension hides what the account published for as long as it lasts and lifting it
+ * brings it all back, without writing anything here: the operator's decisions (approved,
+ * featured) stay as they were, and one taken while the account is suspended counts once it isn't.
+ */
+async function live(r: repo.ListingRow): Promise<boolean> {
+  return r.status === 'approved' && !(await suspendedUserIds([r.submitterId])).size;
+}
+
 /** The live listings everyone signed in sees: featured first, then newest. */
 export async function liveListings(): Promise<CommunityListing[]> {
-  return present(await repo.byStatus('approved', LIST_LIMIT));
+  const suspended: string[] = [];
+  for (;;) {
+    const rows = await repo.byStatus('approved', LIST_LIMIT, suspended);
+    const more = await suspendedUserIds([...new Set(rows.map((r) => r.submitterId))]);
+    if (!more.size) return present(rows);
+    suspended.push(...more);
+  }
 }
 
 export async function ownListings(userId: string): Promise<OwnListing[]> {
@@ -133,7 +149,7 @@ export async function ownListings(userId: string): Promise<OwnListing[]> {
 export async function listingFor(id: string, userId: string): Promise<CommunityListing | OwnListing> {
   const r = await repo.get(id);
   if (r && r.submitterId === userId) return (await presentOwn([r]))[0];
-  if (r?.status === 'approved') return (await present([r]))[0];
+  if (r && (await live(r))) return (await present([r]))[0];
   throw notFound('No such listing');
 }
 
@@ -186,7 +202,7 @@ function alertOperators(name: string): void {
 /** A listing anyone signed in may report: only live ones (others aren't shown to reporters). */
 export async function reportableListing(id: string): Promise<{ id: string; name: string } | null> {
   const r = await repo.get(id);
-  return r?.status === 'approved' ? { id: r.id, name: r.name } : null;
+  return r && (await live(r)) ? { id: r.id, name: r.name } : null;
 }
 
 /** The facts a moderation decision needs. */
