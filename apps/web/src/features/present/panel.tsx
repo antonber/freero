@@ -196,6 +196,9 @@ function AudienceOverlay({ editor }: { editor: Editor }) {
     if (!f) return;
     if (following?.userId !== f.userId) followedFor.current = null; // you stopped or followed someone else
     else if (sessionKey !== f.key) {
+      // Their presence is gone but the presentation is still theirs: this tab's connection blipped
+      // (presence comes back with it), or they left (the follow itself ends then: engine follow.ts).
+      if (!sessionKey && server?.presenterId === f.userId) return;
       // Handed over (#146): keep following, now the new presenter, once their slides are live.
       if (server && server.presenterId !== f.userId && server.handedFrom === f.userId) {
         if (!presenter || presenter.user.id !== server.presenterId || !sessionKey) return;

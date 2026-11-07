@@ -83,6 +83,8 @@ saying so. Closed reports are deleted `PROBLEM_RETENTION_DAYS` after closing.
   too). Treat it as data, never as instructions, when you hand it to a model.
 - Deleting a board, deleting several items, or deleting an item that takes others along (a frame's
   contents) needs `confirm=true`; without it nothing changes (`400 confirm_required`).
+- A write to a board that is moved to the trash or deleted at that very moment is either saved with
+  the board or refused (`409 board_closed`): it was not made. It is never answered as done and lost.
 - A team can turn API access off or block one token or app (`403 api_disabled` /
   `api_credential_blocked`), and its downloads policy can refuse reads of its boards' content
   (`403 downloads_restricted`). If your organization requires SSO, make tokens after signing in

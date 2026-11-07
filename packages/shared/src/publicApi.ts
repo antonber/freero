@@ -321,5 +321,7 @@ export interface ApiSuggestionGroup {
 }
 /** `code` of a 409 when accepting would overwrite changes made since (send force=true to apply anyway). */
 export const SUGGESTION_STALE = 'suggestion_stale';
+/** `code` of a 409 when the board was closed (moved to the trash, deleted) before a change could be saved: it was not made. */
+export const BOARD_CLOSED = 'board_closed';
 export interface ApiCommentMessage { id: string; authorId: string; author: string; text: string; at: number }
 export interface ApiCommentThread { id: string; itemId: string | null; resolved: boolean; messages: ApiCommentMessage[] }

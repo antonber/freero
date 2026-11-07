@@ -6164,7 +6164,7 @@
         },
         "code": {
           "type": "string",
-          "description": "insufficient_scope, api_disabled, api_credential_blocked, downloads_restricted, sso_required, confirm_required, agent_paused, invalid_token, url_blocked, url_unusable, board_too_large, export_link_gone, …"
+          "description": "insufficient_scope, api_disabled, api_credential_blocked, downloads_restricted, sso_required, confirm_required, agent_paused, board_closed, invalid_token, url_blocked, url_unusable, board_too_large, export_link_gone, …"
         }
       }
     },

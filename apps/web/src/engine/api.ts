@@ -349,8 +349,8 @@ export interface Host {
   syncProtocols?: string[];
   /**
    * [additive] The server closed the board's socket for good, with its close code: access gone
-   * (4401 / 4403), the board removed, or too many visitors on a board embedded on another site
-   * (WS_CLOSE_EMBED_FULL, #60). The board shows its own banner either way; a host that can offer
+   * (4401 / 4403), the board removed, too many visitors on a board embedded on another site
+   * (WS_CLOSE_EMBED_FULL, #60), or a change this tab holds refused as too large (1009). The board shows its own banner either way; a host that can offer
    * more (an embed: sign in again, open in Freero) does it here. Called once per board load.
    */
   onConnectionEnded?(end: { code: number; reason: string }): void;

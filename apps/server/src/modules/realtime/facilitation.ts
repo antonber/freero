@@ -140,6 +140,24 @@ export function changedKeys(tr: Y.Transaction, map: Y.Map<unknown>): Map<string,
   return out;
 }
 
+/**
+ * Every value this transaction wrote under a key of `map` so far, by key, oldest first — also a
+ * value that never showed: a write concurrent with one already there loses or wins by Yjs'
+ * client order, not by arrival, and a losing one is deleted as it is applied (changedKeys sees
+ * no change then).
+ */
+export function writesIn(tr: Y.Transaction, map: Y.Map<unknown>): Map<string, unknown[]> {
+  const out = new Map<string, unknown[]>();
+  const items = (map as unknown as { _map: Map<string, ItemLike> })._map;
+  for (const key of tr.changed.get(map as unknown as Y.AbstractType<Y.YEvent<any>>) ?? []) {
+    if (key === null) continue;
+    const values: unknown[] = [];
+    for (let item = items.get(key) ?? null; item; item = item.left) if (addedIn(tr, item)) values.unshift(lastValue(item));
+    if (values.length) out.set(key, values);
+  }
+  return out;
+}
+
 function restore(map: Y.Map<unknown>, key: string, before: unknown): void {
   if (before === undefined) map.delete(key);
   else map.set(key, before);

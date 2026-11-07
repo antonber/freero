@@ -5,18 +5,18 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { WebSocket, WebSocketServer } from 'ws';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
-import { WS_MESSAGE_ROLE } from '@freero/shared';
+import { SUGGESTIONS_COLLECTION, WS_MESSAGE_ROLE, type BoardElement } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
-import { createBoard } from '../boards/index';
+import { createBoard, trashBoard } from '../boards/index';
 import { loadDoc } from './docStore';
 import * as repo from './repo';
-import { admitSocket, loadedRoomCount } from './rooms';
+import { admitSocket, changeBoard, loadedRoomCount, proposeSuggestions, snapshotBoardLayer } from './rooms';
 
 // Gates let a test hold a doc load or save "in flight" while clients come and go.
 const gates = vi.hoisted(() => {
   const open = () => Promise.resolve();
-  return { load: open(), save: open() };
+  return { load: open(), save: open(), note: open(), failSaves: 0 };
 });
 function gate(): { promise: Promise<void>; release: () => void } {
   let release!: () => void;
@@ -32,8 +32,13 @@ vi.mock('./repo', async (importOriginal) => {
       return real.loadDoc(id);
     },
     appendUpdate: async (id: string, update: Uint8Array, now: number) => {
+      if (gates.failSaves > 0 && gates.failSaves--) throw new Error('connection terminated unexpectedly');
       await gates.save;
       return real.appendUpdate(id, update, now);
+    },
+    noteSuggestionAuthor: async (...args: Parameters<typeof real.noteSuggestionAuthor>) => {
+      await gates.note;
+      return real.noteSuggestionAuthor(...args);
     },
   };
 });
@@ -97,6 +102,8 @@ beforeAll(async () => {
 beforeEach(() => {
   gates.load = Promise.resolve();
   gates.save = Promise.resolve();
+  gates.note = Promise.resolve();
+  gates.failSaves = 0;
 });
 
 afterAll(async () => {
@@ -148,4 +155,35 @@ it('a client that opens the board while its idle doc is being saved and unloaded
 
   const third = connect(boardId);
   await waitFor(() => third.provider.synced && has(third.doc, 'x1', 'x2'), 'both edits after a reload');
+});
+
+it('an app’s proposal that lands while its board is being moved to the trash is kept with the board, never reported made and lost', async () => {
+  const boardId = await newBoard();
+  const owner = { userId, role: 'owner' as const };
+  const sticky = (id: string) => ({ id, type: 'sticky', x: 0, y: 0, w: 200, h: 200, rotation: 0, text: id, color: 'yellow' }) as unknown as BoardElement;
+  // An edit whose save failed once: the room holds it, to save again.
+  gates.failSaves = 1;
+  await changeBoard(boardId, owner, () => ({ change: { create: [sticky('a')] } }));
+
+  // An app proposes; it has read the board and is about to write its proposal…
+  const note = gate();
+  gates.note = note.promise;
+  const proposing = proposeSuggestions(boardId, owner, { author: { kind: 'app', name: 'Planner', userId, userName: 'Racer', credentialId: 'tok' }, description: 'Ideas' }, () => ({
+    change: { create: [sticky('idea')] },
+  }));
+  await sleep(50);
+  // …when the owner moves the board to the trash: closing the room saves what it holds (held).
+  const save = gate();
+  gates.save = save.promise;
+  const trashing = trashBoard(boardId, userId);
+  await sleep(200);
+  note.release(); // the proposal is written while that save is in flight
+  await sleep(50);
+  save.release();
+
+  await trashing;
+  await proposing; // reported made…
+  const stored = new Y.Doc();
+  Y.applyUpdate(stored, (await snapshotBoardLayer(boardId, 'editors'))!);
+  expect(stored.getMap(SUGGESTIONS_COLLECTION).size).toBe(1); // …and kept with the trashed board
 });

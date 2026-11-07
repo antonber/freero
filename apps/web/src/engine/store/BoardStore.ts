@@ -45,6 +45,7 @@ import {
 import type { ElementLayer, OfflineCopy } from '../api';
 import { compareRenderOrder } from '../geometry/spatial';
 import { UndoHistory } from './undo';
+import { backOffQuickCloses, isRefusal, type Backoff } from './reconnect';
 
 /** Transaction origin for every local write; the undo manager tracks only this. */
 export const LOCAL_ORIGIN = { source: 'freero-local' };
@@ -53,8 +54,15 @@ export const SILENT_ORIGIN = { source: 'freero-silent' };
 /** Layer updates received from the server (never sent back). */
 const LAYER_REMOTE_ORIGIN = { source: 'freero-layer-remote' };
 
-/** 'removed': Freero's moderators took the board down (WS_CLOSE_BOARD_REMOVED); otherwise like 'denied'. */
-export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied' | 'removed';
+/**
+ * 'denied', 'removed' and 'refused' are final: no more reconnecting, read-only, the device copy
+ * forgotten. 'removed': Freero's moderators took the board down (WS_CLOSE_BOARD_REMOVED); 'refused':
+ * the server refused a change this client holds as too large (1009), which every reconnect would
+ * send again (reconnect.ts); otherwise like 'denied'.
+ */
+export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied' | 'removed' | 'refused';
+/** Has the server ended this connection for good? */
+export const connectionEnded = (s: ConnectionStatus): boolean => s === 'denied' || s === 'removed' || s === 'refused';
 /** Decides the layer an element is written to, given where it is now (null = new). */
 export type Placement = (el: BoardElement, current: ElementLayer | null) => ElementLayer;
 
@@ -147,7 +155,7 @@ export class BoardStore {
   readonly layers: Record<BoardLayer, LayerDoc>;
 
   status: ConnectionStatus;
-  /** Why the server closed the socket for good ('denied' / 'removed'), or null. */
+  /** Why the server closed the socket for good ('denied' / 'removed' / 'refused'), or null. */
   ended: { code: number; reason: string } | null = null;
   synced = false;
   serverRole: Role | null = null;
@@ -198,6 +206,7 @@ export class BoardStore {
   private baseCaptureTimeout: number;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private backoff: Backoff | null = null;
   private destroyed = false;
   /** Collections whose local writes are undoable (FeatureManifest.undoable), in every doc. */
   private undoable = new Set<string>();
@@ -290,7 +299,7 @@ export class BoardStore {
         // (its answer to the server's sync step 1), e.g. a sealed vote's ballots before its end.
         if (status === 'connected') this.flushLayerOps();
         if (status === 'connected') for (const name of BOARD_LAYERS) this.requestLayerSync(name);
-        if (this.status === 'denied' || this.status === 'removed') return;
+        if (connectionEnded(this.status)) return;
         this.status = status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected';
         this.emit(this.statusListeners);
       });
@@ -301,8 +310,9 @@ export class BoardStore {
         this.emit(this.statusListeners);
       });
       provider.on('connection-close', (event: CloseEvent | null) => {
-        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || event.code === WS_CLOSE_EMBED_FULL)) {
-          this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : 'denied';
+        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || event.code === WS_CLOSE_EMBED_FULL || isRefusal(event.code))) {
+          this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : isRefusal(event.code) ? 'refused' : 'denied';
+          this.backoff?.stop();
           this.ended = { code: event.code, reason: event.reason };
           this.dropPersisted();
           provider.shouldConnect = false;
@@ -318,6 +328,8 @@ export class BoardStore {
           this.emit(this.roleListeners);
         }
       });
+      // Other closes soon after opening (4429, 1011, 1013): reconnect later and later, not at once.
+      this.backoff = backOffQuickCloses(provider);
     } else {
       this.status = 'local';
       this.synced = true;
@@ -678,6 +690,9 @@ export class BoardStore {
   /** Runs `fn` as one transaction on every doc it may write (the shared doc and the layers). */
   private transactAll(fn: () => void, origin: object): void {
     const { private: p, editors: e } = this.layers;
+    // The innermost transaction ends (and is sent) first: the editors layer, then the private one,
+    // then the shared doc. The server relies on it: a suggestion's decision arrives before the
+    // board change of the same accept (realtime/suggestions.ts revertLostAccepts).
     this.doc.transact(() => p.doc.transact(() => e.doc.transact(fn, origin), origin), origin);
   }
 
@@ -1163,6 +1178,7 @@ export class BoardStore {
     if (this.destroyed) return;
     this.destroyed = true;
     if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.backoff?.stop();
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;

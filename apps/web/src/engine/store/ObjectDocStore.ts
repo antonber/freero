@@ -11,7 +11,8 @@ import { WebsocketProvider } from 'y-websocket';
 import { Awareness } from 'y-protocols/awareness';
 import * as decoding from 'lib0/decoding';
 import { DOC_FRAGMENT, WS_CLOSE_BOARD_REMOVED, WS_MESSAGE_ROLE, type Role, type RoleMessage } from '@freero/shared';
-import type { ConnectionStatus } from './BoardStore';
+import { connectionEnded, type ConnectionStatus } from './BoardStore';
+import { backOffQuickCloses, isRefusal, type Backoff } from './reconnect';
 
 /** Transaction origin of this client's comment writes (never the editor's own origin). */
 const COMMENT_ORIGIN = { source: 'freero-doc-comments' };
@@ -44,6 +45,7 @@ export class ObjectDocStore {
   private version = 0;
   private destroyed = false;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private backoff: Backoff | null = null;
 
   constructor(readonly opts: ObjectDocStoreOptions) {
     this.fragment = this.doc.getXmlFragment(DOC_FRAGMENT);
@@ -71,7 +73,7 @@ export class ObjectDocStore {
         }
       };
       provider.on('status', ({ status }: { status: string }) => {
-        if (this.status === 'denied' || this.status === 'removed') return;
+        if (connectionEnded(this.status)) return;
         this.status = status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected';
         this.emit();
       });
@@ -80,15 +82,19 @@ export class ObjectDocStore {
         this.emit();
       });
       provider.on('connection-close', (event: CloseEvent | null) => {
-        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED)) {
-          // No access (or no longer): read-only from now on, nothing written could reach the server.
-          this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : 'denied';
+        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED || isRefusal(event.code))) {
+          // No access (or no longer), or a change the server will never take: read-only from now on,
+          // nothing written could reach the server.
+          this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : isRefusal(event.code) ? 'refused' : 'denied';
+          this.backoff?.stop();
           this.serverRole = 'viewer';
           provider.shouldConnect = false;
           provider.disconnect();
           this.emit();
         }
       });
+      // Other closes soon after opening (4429, 1011): reconnect later and later (reconnect.ts).
+      this.backoff = backOffQuickCloses(provider);
       provider.awareness.on('change', () => this.emit());
     } else {
       this.status = 'local';
@@ -160,6 +166,7 @@ export class ObjectDocStore {
   destroy(): void {
     this.destroyed = true;
     if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.backoff?.stop();
     this.listeners.clear();
     this.provider?.destroy();
     if (!this.provider) this.awareness.destroy();

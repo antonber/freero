@@ -178,6 +178,7 @@
   "bottomPanel": "Bottom panel",
   "thisBoardWasRemovedBy": "This board was removed by Freero’s moderators while they review a report.",
   "youNoLongerHaveAccess": "You no longer have access to this board.",
+  "aChangeHereIsTooLarge": "A change made here is too large to save, so this board stopped syncing. Reload it to keep working (changes not saved yet are lost).",
   "connecting": "Connecting…",
   "reconnectingYourChangesAreKept": "Reconnecting… your changes are kept and will sync.",
   "youReOfflineChangesAreKeptOnDevice": "You’re offline. Changes are kept on this device and sync when you’re back online.",
