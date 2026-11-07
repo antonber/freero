@@ -16,6 +16,8 @@
 //                           (budget, caps, sealing, anonymity, scope) —
 //                           editors only
 //   h:<id> (shared only)    editors only                                     editors only
+//   ended:<id> (shared)     editors only: a cleared vote's end (FAC-1;       never (sessionEnds.ts)
+//                           its form and permanence: sessionEnds.ts)
 //   <sid>:<uid>             its OWN ballot (uid and userId are the socket's   editors: always (a new vote
 //                           user, the key is `${sessionId}:${userId}`) for    wipes everyone's ballots);
 //                           the RUNNING session sid before its deadline,      participants: only their own
@@ -36,6 +38,7 @@
 import * as Y from 'yjs';
 import {
   ANONYMOUS_VOTER_PREFIX,
+  isSessionEndKey,
   isVotingHistoryKey,
   VOTE_DEADLINE_GRACE_MS,
   VOTES_PER_USER_MAX,
@@ -141,7 +144,8 @@ export function guardVotes(tr: Y.Transaction, doc: Y.Doc, shared: Y.Doc, who: st
   const running = asVotingSession(shared.getMap<unknown>(VOTING_COLLECTION).get(VOTING_SESSION_KEY));
   for (const [key, { before, after }] of changes) {
     if (key === VOTING_SESSION_KEY || same(before, after)) continue;
-    if (isVotingHistoryKey(key)) {
+    // A cleared vote's end marker (FAC-1): editors, in the shared doc; its form is sessionEnds.ts's.
+    if (isVotingHistoryKey(key) || isSessionEndKey(key)) {
       if (doc !== shared || participant) {
         restore(map, key, before);
         reverted = true;

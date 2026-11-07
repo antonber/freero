@@ -45,7 +45,7 @@ import {
 } from '../hostServices';
 import { holdBackup, RESTORE_PATH } from '../lib/pendingBackup';
 import { takeShare } from '../lib/pendingShare';
-import { serverNow, syncServerClock } from './serverClock';
+import { measuredServerNow, remeasureServerClock, serverNow, syncServerClock } from './serverClock';
 import { getThemePreference, setThemePreference } from '../lib/theme';
 
 import { t } from '../messages';
@@ -227,6 +227,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     notify: deps.notify,
     track,
     serverNow,
+    measuredServerNow,
+    onConnected: remeasureServerClock,
     listMembers: () => listMembers(board.id),
     lookupUsers: (ids) => lookupUsers(board.id, ids),
     inviteMember: (email, role) => inviteMember(board.id, email, role),
@@ -346,6 +348,8 @@ export function createGuestHost(
     navigate: (path) => (path === '/app' || path === '/' ? signUp() : deps.navigate(path)),
     notify: deps.notify,
     serverNow,
+    measuredServerNow,
+    onConnected: remeasureServerClock,
     // Guests never see the member directory (nor anyone's email); presence and comments name people.
     listMembers: async () => [],
     lookupUsers: (ids) => lookupUsers(board.id, ids),

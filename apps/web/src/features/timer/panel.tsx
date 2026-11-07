@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bell, BellOff, Music, Pause, Play, Plus, Square, Timer as TimerIcon, VolumeX } from 'lucide-react';
 import type { TimerState } from '@freero/shared';
-import { definePanel, useCanEdit, useCollection, type Editor } from '@engine';
+import { deadlineClock, definePanel, useCanEdit, useCollection, type Editor } from '@engine';
 import { Button, IconButton, Input, Popover, Select, Slider, Tooltip } from '@ui';
 import {
   MINUTE,
@@ -12,8 +12,12 @@ import {
   pauseTimer,
   phaseOf,
   remainingMs,
+  readTimer,
   resumeTimer,
   startTimer,
+  changeTimer,
+  stopTimer,
+  TIMER_KEY,
   type TimerPhase,
 } from './lib/timer';
 import { playChime } from './lib/chime';
@@ -24,7 +28,6 @@ import { hearsMusic, readMusicPref, readMuted, readVolume, writeMusicPref, write
 import { t } from './messages';
 import './timer.css';
 
-const KEY = 'state';
 const PRESETS = [1, 3, 5, 10, 15];
 /** How long the pill flashes after reaching zero before settling into "Time's up". */
 const FLASH_MS = 3200;
@@ -155,9 +158,15 @@ function Setup({ onStart }: { onStart: (ms: number, music: MusicTrack | null) =>
   );
 }
 
+/** Every timer write is in server time (FAC-9): none until this page has measured the server's clock. */
+function writeTimer(editor: Editor, change: (s: TimerState, now: number) => TimerState): void {
+  const now = deadlineClock(editor.host);
+  if (now === null) return editor.host.notify(t('clockNotSyncedYet'), 'info');
+  changeTimer(editor.collection<TimerState>('timer'), (s) => change(s, now));
+}
+
 function Controls({ editor, state, phase, now }: { editor: Editor; state: TimerState; phase: TimerPhase; now: number }) {
   const canEdit = useCanEdit();
-  const write = (next: TimerState) => editor.collection<TimerState>('timer').set(KEY, next);
   return (
     <div className="fr-timer-controls">
       <div className={`fr-timer-big${phase === 'paused' ? ' is-paused' : ''}`} aria-live="off">
@@ -167,21 +176,18 @@ function Controls({ editor, state, phase, now }: { editor: Editor; state: TimerS
       {canEdit && (
         <div className="fr-timer-row">
           {phase === 'paused' ? (
-            <Button size="sm" variant="primary" icon={Play} onClick={() => write(resumeTimer(state, editor.host.serverNow()))}>{t('resume')}</Button>
+            <Button size="sm" variant="primary" icon={Play} onClick={() => writeTimer(editor, resumeTimer)}>{t('resume')}</Button>
           ) : (
-            <Button size="sm" icon={Pause} onClick={() => write(pauseTimer(state, editor.host.serverNow()))}>{t('pause')}</Button>
+            <Button size="sm" icon={Pause} onClick={() => writeTimer(editor, pauseTimer)}>{t('pause')}</Button>
           )}
-          <Button size="sm" icon={Plus} onClick={() => write(addTime(state, editor.host.serverNow()))}>{t('n1Min')}</Button>
-          <Button size="sm" variant="ghost" icon={Square} onClick={() => editor.collection<TimerState>('timer').delete(KEY)}>{t('stop')}</Button>
+          <Button size="sm" icon={Plus} onClick={() => writeTimer(editor, (s, at) => addTime(s, at))}>{t('n1Min')}</Button>
+          <Button size="sm" variant="ghost" icon={Square} onClick={() => stopTimer(editor.collection<TimerState>('timer'))}>{t('stop')}</Button>
         </div>
       )}
       {canEdit && (
         <MusicSelect
           value={musicOf(state) ?? 'none'}
-          onChange={(v) => {
-            const cur = editor.collection<TimerState>('timer').get(KEY);
-            if (cur) write({ ...cur, music: v === 'none' ? null : { track: v } });
-          }}
+          onChange={(v) => changeTimer(editor.collection<TimerState>('timer'), (cur) => ({ ...cur, music: v === 'none' ? null : { track: v } }))}
         />
       )}
     </div>
@@ -190,7 +196,7 @@ function Controls({ editor, state, phase, now }: { editor: Editor; state: TimerS
 
 function TimerPanel({ editor }: { editor: Editor }) {
   const entries = useCollection<TimerState>('timer');
-  const state = entries.find(([k]) => k === KEY)?.[1];
+  const state = readTimer({ get: (k) => entries.find(([key]) => key === k)?.[1] });
   const canEdit = useCanEdit();
   const [open, setOpen] = useState(false);
   const [muted, setMuted] = useMuted();
@@ -252,7 +258,9 @@ function TimerPanel({ editor }: { editor: Editor }) {
   if (phase === 'idle' && !canEdit) return null;
 
   const start = (ms: number, music: MusicTrack | null) => {
-    editor.collection<TimerState>('timer').set(KEY, { ...startTimer(ms, editor.host.serverNow(), editor.user.id), music: music ? { track: music } : null });
+    const at = deadlineClock(editor.host);
+    if (at === null) return editor.host.notify(t('clockNotSyncedYet'), 'info');
+    editor.collection<TimerState>('timer').set(TIMER_KEY, { ...startTimer(ms, at, editor.user.id), music: music ? { track: music } : null });
     setDismissedAt(null);
     setOpen(false);
   };

@@ -72,6 +72,8 @@ import {
   GUEST_EDIT_LIMITS,
   type GuestEditGrant,
   type GuestEditNoticeCode,
+  sessionEndKey,
+  sessionIdOf,
 } from '@freero/shared';
 import { guardProtectedLocks } from './protectedLock';
 import {
@@ -101,6 +103,7 @@ import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentList
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
+import { guardSessionEnds, prepareSessionEnds } from './sessionEnds';
 import { attributionOf, creatorOf, guardAttribution, type Attribution } from './attribution';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
 import { guardContentPlacement, placeElementContent, writeElementContent, type MovedEntry } from './elementContent';
@@ -113,6 +116,7 @@ import {
   EDITORS_LAYER,
   isLayerName,
   isPrivateLayer,
+  layerOpSessionHolds,
   mayRunLayerOp,
   mayWriteLayer,
   participantMayWriteLayer,
@@ -495,6 +499,8 @@ class Room {
     this.doc.getMap<unknown>(VOTING_COLLECTION);
     // Results only the server writes (serverCollections.ts): likewise.
     prepareServerCollections(this.doc);
+    // Sessions whose end is kept (sessionEnds.ts): likewise.
+    prepareSessionEnds(this.doc);
     // Element content (elementContent.ts): likewise, for the placement guard.
     for (const name of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) this.doc.getMap<unknown>(name);
     // A doc's document (KAI-162; @freero/shared docs.ts): typed up front, so nothing ever reads
@@ -891,7 +897,13 @@ class Room {
       this.facilitatorTimer = null;
       const now = readFacilitation(this.doc);
       if (this.destroyed || !now || now.by !== session.by || now.startedAt !== session.startedAt || this.facilitatorPresent(now.by)) return;
-      this.doc.transact(() => this.doc.getMap<unknown>(FACILITATION_COLLECTION).delete(FACILITATION_KEY), SERVER_ORIGIN);
+      this.doc.transact(() => {
+        const map = this.doc.getMap<unknown>(FACILITATION_COLLECTION);
+        // Kept as the session's end (sessionEnds.ts) when it has an id: a stale change can't revive it.
+        const id = sessionIdOf(map.get(FACILITATION_KEY));
+        if (id && !map.has(sessionEndKey(id))) map.set(sessionEndKey(id), { id, ended: true });
+        map.delete(FACILITATION_KEY);
+      }, SERVER_ORIGIN);
     }, getConfig().facilitatorGraceMs);
     this.facilitatorTimer.unref();
   }
@@ -909,6 +921,8 @@ class Room {
     void Promise.all(names.map(async (n) => ((await getBoardAccess(this.id, privateLayerOwner(n)!)).role)))
       .then((roles) => {
         if (this.destroyed || !this.conns.has(conn.ws) || !mayRunLayerOp(conn)) return;
+        // An op tied to a session (it waited offline) applies only while that session is the one on the board.
+        if (op.session && !layerOpSessionHolds(op.session, this.doc)) return;
         const docs = new Map<string, Y.Doc>();
         // Participants' layers too, while the board lets them take part (participation.ts).
         const open = participationIsOpen(this.doc);
@@ -1202,6 +1216,8 @@ class Room {
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
+        // An ended session stays ended, whoever wrote it since (sessionEnds.ts): after the owners' rules above.
+        fixed = guardSessionEnds(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
         // Only the owner changes protected items (protectedLock.ts).
         if (!overrides) fixed = guardProtectedLocks(tr, this.doc.getMap<unknown>(ELEMENTS), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;

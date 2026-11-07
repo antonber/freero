@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { estimateOffset, type ClockSample } from './serverClock';
+import { describe, expect, it, vi } from 'vitest';
+import { createServerClock, estimateOffset, type ClockSample } from './serverClock';
 
 const MINUTE = 60_000;
 
@@ -28,5 +28,28 @@ describe('server clock estimate', () => {
     const after = samplesFor(-5 * MINUTE, 1_700_000_000_500).slice(2);
     const offset = estimateOffset([...before, ...after])!;
     expect(Math.abs(offset - 5 * MINUTE)).toBeLessThan(1500);
+  });
+
+  it('a page whose clock measurement failed (opened offline) measures again, and has no time for a deadline until it has', async () => {
+    vi.useFakeTimers({ now: 1_700_000_000_000 });
+    try {
+      const skew = 7 * MINUTE; // this computer's clock is 7 minutes fast
+      let online = false;
+      const sample = async (): Promise<ClockSample | null> => {
+        if (!online) return null;
+        const sentAt = Date.now();
+        return { sentAt, receivedAt: sentAt + 80, serverDate: Math.floor((sentAt - skew + 40) / 1000) * 1000 };
+      };
+      const clock = createServerClock(sample);
+      clock.sync();
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(clock.measuredNow()).toBeNull(); // a timer started now would end 7 minutes early for everyone
+
+      online = true;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(Math.abs(clock.measuredNow()! - (Date.now() - skew))).toBeLessThan(1_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

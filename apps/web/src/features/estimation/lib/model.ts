@@ -9,7 +9,7 @@
 //
 // One key per voter per item, so concurrent picks never overwrite each other, and a second tab of
 // the same person replaces their pick instead of adding one.
-import { ESTIMATION_ROUND_KEY, estimateKey, estimatePrefix } from '@freero/shared';
+import { ESTIMATION_ROUND_KEY, estimateKey, estimatePrefix, liveSession } from '@freero/shared';
 
 import { t } from '../messages';
 export type DeckKind = 'fibonacci' | 'tshirt' | 'custom';
@@ -74,6 +74,12 @@ export function readRound(v: unknown): Round | undefined {
   if (!r || typeof r.id !== 'string' || !Array.isArray(r.itemIds) || !r.deck || !Array.isArray(r.deck.values)) return undefined;
   return r as Round;
 }
+
+/**
+ * The running round, from a getter over the collection: none once it was ended, also when the owner
+ * moved it on at the same moment (FAC-1: the end is kept under `ended:<id>`, @freero/shared sessions.ts).
+ */
+export const roundOf = (get: (key: string) => unknown): Round | undefined => readRound(liveSession(get, ROUND_KEY));
 
 /** Estimates of `itemId` in `round` (markers included), one per voter, from a collection's entries. */
 export function estimatesOf(entries: Array<[string, unknown]>, round: Round, itemId: string): Estimate[] {

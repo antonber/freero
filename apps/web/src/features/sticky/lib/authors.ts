@@ -1,7 +1,7 @@
 // Sticky author labels (KAI-112): a board setting, off by default, that shows in a corner of each
 // sticky who wrote it. The setting is the `stickyLabels` collection (key 'authors'), written only
 // by this feature; the names come from the board's people lookup (current names, never stored ones).
-import { actingFor, ANONYMOUS_NAME, isAnonymousAuthor, type BoardElement, type PrivateModeSession } from '@freero/shared';
+import { actingFor, ANONYMOUS_NAME, isAnonymousAuthor, liveSession, PRIVATE_MODE_KEY, type BoardElement, type PrivateModeSession } from '@freero/shared';
 import type { Editor, ElementLayer, HostUser } from '@engine';
 
 import { t } from '../messages';
@@ -26,7 +26,8 @@ export function setAuthorLabels(editor: Editor, on: boolean): void {
 export const authorLabelsShown = (editor: Editor): boolean => !!editor.collection<AuthorLabels>(COLLECTION).get(KEY)?.on;
 
 /** Private mode is running (its `privateMode` collection): every label is hidden, so nobody is named while people write. */
-export const privateModeRunning = (entries: ReadonlyArray<[string, PrivateModeSession]>): boolean => entries.some(([, s]) => s?.active);
+export const privateModeRunning = (entries: ReadonlyArray<[string, PrivateModeSession]>): boolean =>
+  (liveSession((key) => entries.find(([k]) => k === key)?.[1], PRIVATE_MODE_KEY) as PrivateModeSession | undefined)?.active === true;
 
 /**
  * What the label on `el` says, or null for none. Never a name for a private draft (its author is
