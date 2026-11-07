@@ -123,7 +123,7 @@ export async function syncPerson(workspaceId: string, userId: string, alsoProjec
   const su = await repo.getUser(workspaceId, userId);
   if (!su) return;
   if (!su.active) {
-    await deactivate(workspaceId, su.userId, true, async () => {});
+    await deactivate(workspaceId, su.userId, true, async () => {}, { asRecorded: true });
     return;
   }
   const [all, mine] = await Promise.all([repo.listGroups(workspaceId), repo.groupsOfUser(workspaceId, userId)]);
@@ -144,11 +144,30 @@ export async function syncPerson(workspaceId: string, userId: string, alsoProjec
   for (const ws of new Set(leftWorkspaces)) if (!grants.has(ws)) await setDirectoryWorkspaceMembership(workspaceId, ws, userId, null);
 }
 
-/** The admin console's deactivation, by the directory (SCIM errors for its refusals). True when it changed. */
-async function deactivate(workspaceId: string, userId: string, deactivated: boolean, record: () => Promise<void>): Promise<boolean> {
+class Superseded extends Error {}
+
+/**
+ * The admin console's deactivation, by the directory (SCIM errors for its refusals): 'changed', or
+ * 'unchanged' when the person already was that way. `asRecorded`: it follows the directory's record
+ * (`active`), and is made only while the record still says so — checked under the workspace lock
+ * the change takes, so when two updates of the record race, the one whose change lands last can't
+ * undo the later record ('superseded': nothing changed, the other update applies its own).
+ */
+async function deactivate(
+  workspaceId: string,
+  userId: string,
+  deactivated: boolean,
+  record: () => Promise<void>,
+  { asRecorded = false }: { asRecorded?: boolean } = {},
+): Promise<'changed' | 'unchanged' | 'superseded'> {
   try {
-    return await setDirectoryDeactivated(workspaceId, userId, deactivated, record);
+    const changed = await setDirectoryDeactivated(workspaceId, userId, deactivated, async () => {
+      if (asRecorded && (await repo.getUser(workspaceId, userId))?.active !== !deactivated) throw new Superseded();
+      await record();
+    });
+    return changed ? 'changed' : 'unchanged';
   } catch (e) {
+    if (e instanceof Superseded) return 'superseded';
     if (e instanceof HttpError && e.status === 409) throw new ScimError(409, e.message, 'mutability');
     throw e;
   }
@@ -161,13 +180,20 @@ const directoryEvent = (action: AuditAction, workspaceId: string, su: { userId: 
 /**
  * Deprovisioning: deactivated in the workspace (keeps role and boards, opens nothing there, live on
  * every instance) and — the account being the organization's (its verified domain) — signed out
- * everywhere. The audit event commits with the deactivation.
+ * everywhere. The audit event commits with the deactivation. `asRecorded`: an `active: false`
+ * update, which a later `active: true` supersedes (see deactivate).
  */
-async function deprovision(workspaceId: string, su: repo.ScimUser, action: 'scim.user_deprovisioned' | 'scim.user_deleted'): Promise<void> {
+async function deprovision(
+  workspaceId: string,
+  su: repo.ScimUser,
+  action: 'scim.user_deprovisioned' | 'scim.user_deleted',
+  { asRecorded }: { asRecorded: boolean },
+): Promise<void> {
   const organization = await isOrganizationEmail(workspaceId, su.email);
   const metadata = { signedOutEverywhere: organization };
-  const changed = await deactivate(workspaceId, su.userId, true, () => directoryEvent(action, workspaceId, su, metadata));
-  if (!changed) await directoryEvent(action, workspaceId, su, { ...metadata, alreadyDeactivated: true });
+  const r = await deactivate(workspaceId, su.userId, true, () => directoryEvent(action, workspaceId, su, metadata), { asRecorded });
+  if (r === 'superseded') return;
+  if (r === 'unchanged') await directoryEvent(action, workspaceId, su, { ...metadata, alreadyDeactivated: true });
   if (organization) await endSessionsOf(su.userId);
 }
 
@@ -203,22 +229,27 @@ export async function replaceUser(workspaceId: string, userId: string, body: unk
   // own (verified) change, not the directory's. The record keeps what the directory sent.
   if (u.email !== prev.email && !(await isOrganizationEmail(workspaceId, u.email)))
     throw new ScimError(400, `${u.email} is not at a domain this workspace has verified`, 'invalidValue');
+  let updated;
   try {
-    await repo.updateUser({ workspaceId, userId, ...u }, Date.now());
+    updated = await repo.updateUser({ workspaceId, userId, ...u }, Date.now());
   } catch (e) {
     if (e instanceof repo.UserNameTakenError) throw new ScimError(409, `userName ${u.userName} is already provisioned`, 'uniqueness');
     throw e;
   }
+  if (!updated) throw new ScimError(404, 'User not found');
   const name = personName(u);
   if (name && name !== personName(prev)) await setAccountName(userId, name);
-  if (prev.active && !u.active) {
-    await deprovision(workspaceId, prev, 'scim.user_deprovisioned');
+  // What THIS update changed (the record's value just before it, not `prev`: a concurrent update
+  // may have flipped `active` in between).
+  if (updated.wasActive && !u.active) {
+    await deprovision(workspaceId, prev, 'scim.user_deprovisioned', { asRecorded: true });
   } else if (u.active) {
-    if (!prev.active) {
+    if (!updated.wasActive) {
       // Reactivated by the directory: the deactivation it made (or an admin's) is lifted.
       await syncPerson(workspaceId, userId); // a member again (if they had left meanwhile)
-      const changed = await deactivate(workspaceId, userId, false, () => directoryEvent('scim.user_reactivated', workspaceId, { userId, email: u.email }));
-      if (!changed) await directoryEvent('scim.user_reactivated', workspaceId, { userId, email: u.email });
+      const event = () => directoryEvent('scim.user_reactivated', workspaceId, { userId, email: u.email });
+      const r = await deactivate(workspaceId, userId, false, event, { asRecorded: true });
+      if (r === 'unchanged') await event();
     }
     await syncPerson(workspaceId, userId);
   }
@@ -232,7 +263,7 @@ export async function replaceUser(workspaceId: string, userId: string, body: unk
 export async function deleteUser(workspaceId: string, userId: string): Promise<void> {
   const su = await repo.getUser(workspaceId, userId);
   if (!su) throw new ScimError(404, 'User not found');
-  await deprovision(workspaceId, su, 'scim.user_deleted');
+  await deprovision(workspaceId, su, 'scim.user_deleted', { asRecorded: false });
   await repo.deleteUser(workspaceId, userId);
 }
 
