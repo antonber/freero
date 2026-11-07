@@ -11,11 +11,16 @@ import { contentMatches, FILE_NAME_RE } from './store';
 
 const PRIVATE_KEY_RE = /^private-[A-Za-z0-9_-]{16,64}\.zip$/;
 
-/** Stores an archive; returns its key. */
-export async function savePrivateFile(data: Uint8Array): Promise<string> {
-  const key = `private-${newId(32)}.zip`;
+/**
+ * A fresh key for an archive. Whoever stores one records the key first, then writes it with
+ * savePrivateFile, so a file is never in storage without a record that will delete it.
+ */
+export const newPrivateFileKey = (): string => `private-${newId(32)}.zip`;
+
+/** Stores (or replaces) the archive at `key`, a key from newPrivateFileKey. */
+export async function savePrivateFile(key: string, data: Uint8Array): Promise<void> {
+  if (!PRIVATE_KEY_RE.test(key)) throw new Error('not a private file key');
   await storage().put(key, data, 'application/zip');
-  return key;
 }
 
 export async function openPrivateFile(key: string): Promise<{ body: Readable; size: number | null } | null> {

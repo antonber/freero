@@ -12,13 +12,12 @@ import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { formatWhen } from '../../platform/time';
 import { getUser, timeZonesOf } from '../auth/index';
-import { deletePrivateFile, openPrivateFile, savePrivateFile } from '../uploads/index';
+import { deletePrivateFile, newPrivateFileKey, openPrivateFile, savePrivateFile } from '../uploads/index';
 import { getWorkspaceInfo, workspaceRole } from '../workspaces/index';
 import { buildUserArchive, buildWorkspaceArchive } from './archive';
 import * as repo from './repo';
 
 export const EXPORT_LOCK_KEY = 7_202_610_302; // arbitrary, constant across releases
-const MAX_ATTEMPTS = 3;
 const STALE_MS = 30 * 60_000;
 
 const info = (e: repo.ExportRecord): DataExportInfo => ({
@@ -71,25 +70,28 @@ export async function openExport(id: string, userId: string) {
   return { ...file, filename: `freero-${e.kind === 'workspace' ? 'workspace' : 'my-data'}-${new Date(e.readyAt ?? Date.now()).toISOString().slice(0, 10)}.zip` };
 }
 
-/** One job round: drop expired / orphaned files, retry stale ones, build every pending export. */
+/**
+ * One job round: drop expired, failed and orphaned files, retry (or fail) stale builds, build every
+ * pending export.
+ */
 export async function processExports(req: Request | null = null): Promise<number> {
   const now = Date.now();
   for (const f of await repo.filesToDrop(now)) {
     if (f.fileKey) await deletePrivateFile(f.fileKey);
     if (f.orphan) await repo.deleteExport(f.id);
-    else await repo.markExpired(f.id);
+    else await repo.fileDropped(f.id);
   }
   await repo.requeueStale(now - STALE_MS);
   let built = 0;
   for (;;) {
-    const e = await repo.claimNext(Date.now());
+    const e = await repo.claimNext(Date.now(), newPrivateFileKey());
     if (!e) return built;
     try {
       await build(req, e);
       built++;
     } catch (err) {
       logError(`privacy: data export ${e.id} failed (attempt ${e.attempts})`, err);
-      await repo.markFailed(e.id, err instanceof Error ? err.message : String(err), MAX_ATTEMPTS);
+      await repo.markFailed(e.id, e.attempts, err instanceof Error ? err.message : String(err));
     }
   }
 }
@@ -98,11 +100,14 @@ async function build(req: Request | null, e: repo.ExportRecord): Promise<void> {
   if (!e.requestedBy) throw new Error('the requester is gone');
   const origin = appUrl(req, '');
   const zip = e.kind === 'workspace' ? await buildWorkspaceArchive(e.workspaceId!, origin) : await buildUserArchive(e.requestedBy, origin);
-  const key = await savePrivateFile(zip);
+  const key = e.fileKey!; // recorded by the claim, so whatever happens next the row still names the file
+  await savePrivateFile(key, zip);
   const now = Date.now();
   const expiresAt = now + getConfig().dataExportTtlMs;
-  if (!(await repo.markReady(e.id, key, zip.byteLength, now, expiresAt))) {
-    await deletePrivateFile(key); // requeued meanwhile (taken for stale): the other run's file wins
+  if (!(await repo.markReady(e.id, e.attempts, zip.byteLength, now, expiresAt))) {
+    // This attempt lost the row (taken for stale meanwhile). While the row names the file, the
+    // newer attempt or filesToDrop deals with it; a row that no longer does never will.
+    if (!(await repo.namesFile(e.id, key))) await deletePrivateFile(key);
     return;
   }
   log(`privacy: data export ${e.id} ready (${zip.byteLength} bytes)`);
