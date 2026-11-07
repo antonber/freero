@@ -22,8 +22,8 @@ import { appendOutbox } from '../../platform/outbox';
 import { publish, subscribe } from '../../platform/pubsub';
 import { requireAdmin } from '../admin/index';
 import { recordAudit } from '../audit/index';
-import { boardIdsInWorkspace, underLegalHold } from '../boards/index';
-import { BOARD_CONTENT_TOPIC, boardsNeedingReseal, resealBoard } from '../realtime/index';
+import { boardIdsInWorkspace, boardWorkspacesAfter, underLegalHoldUntilCommit } from '../boards/index';
+import { BOARD_CONTENT_TOPIC, boardsNeedingReseal, boardsSealedForAnotherWorkspace, resealBoard } from '../realtime/index';
 import { refreshWorkspaceBoards, requireWorkspace } from '../workspaces/index';
 import { newDataKey, openBlob, sealBlob } from './envelope';
 import { KeyRefusedError, kekRefOf, KMS_PROVIDERS, KmsUnreachableError, parseKmsKeyId, unwrapDataKey, wrapDataKey, type KekRef } from './kek';
@@ -107,8 +107,13 @@ async function keyOf(workspaceId: string): Promise<repo.KeyRow | null> {
 
 const kekOf = (k: { provider: WorkspaceKeyProvider; kmsKeyId: string | null }): KekRef => ({ provider: k.provider, kmsKeyId: k.kmsKeyId });
 
-/** Unwraps one data key (cached); a refusal by the KMS makes the key unavailable. */
-async function dataKeyOf(key: repo.KeyRow, version: number): Promise<Buffer> {
+/**
+ * Unwraps one data key (cached); a refusal by the KMS makes the key unavailable. `key` may be a
+ * cached row from before a rotation on another instance changed the KEK: the refusal then changes
+ * nothing (the state change is conditional on what was tried still being stored), and the unwrap is
+ * tried once more with the key as stored now.
+ */
+async function dataKeyOf(key: repo.KeyRow, version: number, retried = false): Promise<Buffer> {
   const id = `${key.workspaceId}:${version}`;
   const hit = deks.get(id);
   if (hit && hit.until > Date.now()) return hit.dek;
@@ -122,7 +127,15 @@ async function dataKeyOf(key: repo.KeyRow, version: number): Promise<Buffer> {
     if (out.stale) void wrapDataKey(kekOf(key), key.workspaceId, dek).then((w) => repo.rewrap(key.workspaceId, version, row.wrapped, w, row.kekRef)).catch(() => {});
   } catch (e) {
     if (e instanceof KeyRefusedError) {
-      await markUnavailable(key.workspaceId, e.message).catch((err) => logError('keys: could not record an unusable key', err));
+      const marked = await markUnavailable(key.workspaceId, e.message, { ...kekOf(key), dataKey: { version, wrapped: row.wrapped } }).catch((err) => {
+        logError('keys: could not record an unusable key', err);
+        return true;
+      });
+      if (!marked && !retried) {
+        forgetLocally(key.workspaceId, false);
+        const now = await keyOf(key.workspaceId);
+        if (now && now.state === 'active') return dataKeyOf(now, version, true);
+      }
       throw new KeyUnavailableError(key.workspaceId, 'its key management service refused it');
     }
     if (e instanceof KmsUnreachableError) throw new KeyUnavailableError(key.workspaceId, 'its key management service could not be reached');
@@ -255,34 +268,44 @@ async function changeState(
   to: repo.KeyRow['state'],
   reason: string | null,
   audit: { action: 'key.suspended' | 'key.resumed' | 'key.destroyed' | 'key.unavailable' | 'key.available'; actorId: string | null; metadata?: Record<string, string | number | null> },
+  opts: { guard?: () => Promise<void>; onlyIf?: repo.UnwrapTried } = {},
 ): Promise<boolean> {
   const boards = await boardIdsInWorkspace(workspaceId);
-  const moved = await repo.setState(workspaceId, from, to, reason, Date.now(), async () => {
-    await recordAudit({ action: audit.action, workspaceId, actorId: audit.actorId, target: { type: 'workspace', id: workspaceId, label: null }, metadata: audit.metadata ?? {} });
-    for (const id of boards) await appendOutbox(BOARD_CONTENT_TOPIC, `board:${id}`);
-  });
+  const moved = await repo.setState(
+    workspaceId,
+    from,
+    to,
+    reason,
+    Date.now(),
+    async () => {
+      await recordAudit({ action: audit.action, workspaceId, actorId: audit.actorId, target: { type: 'workspace', id: workspaceId, label: null }, metadata: audit.metadata ?? {} });
+      for (const id of boards) await appendOutbox(BOARD_CONTENT_TOPIC, `board:${id}`);
+    },
+    opts,
+  );
   if (!moved) return false;
   forgetEverywhere(workspaceId, to === 'destroyed');
   await refreshWorkspaceBoards(workspaceId);
   return true;
 }
 
-export async function markUnavailable(workspaceId: string, reason: string): Promise<boolean> {
-  const done = await changeState(workspaceId, ['active'], 'unavailable', reason.slice(0, 300), { action: 'key.unavailable', actorId: null, metadata: { reason: reason.slice(0, 300) } });
+/** An active key refused at its KMS becomes unavailable — only if `tried` (what was refused) is still how the key is stored. */
+async function markUnavailable(workspaceId: string, reason: string, tried: repo.UnwrapTried): Promise<boolean> {
+  const done = await changeState(workspaceId, ['active'], 'unavailable', reason.slice(0, 300), { action: 'key.unavailable', actorId: null, metadata: { reason: reason.slice(0, 300) } }, { onlyIf: tried });
   if (done) log(`keys: the key of workspace ${workspaceId} is unavailable: ${reason}`);
   return done;
 }
 
-/** Tries the key's current data key at its KMS now (no cache): 'ok', 'refused' or 'unreachable'. */
-async function probe(key: repo.KeyRow): Promise<'ok' | 'refused' | 'unreachable'> {
+/** Tries the key's current data key at its KMS now (no cache): 'ok', 'unreachable', or refused (with what was tried). */
+async function probe(key: repo.KeyRow): Promise<{ r: 'ok' | 'unreachable' } | { r: 'refused'; tried: repo.UnwrapTried }> {
   const row = await repo.dataKey(key.workspaceId, key.currentVersion);
-  if (!row) return 'refused';
+  if (!row) return { r: 'refused', tried: kekOf(key) };
   try {
     await unwrapDataKey(kekOf(key), key.workspaceId, row.wrapped);
-    return 'ok';
+    return { r: 'ok' };
   } catch (e) {
-    if (e instanceof KeyRefusedError) return 'refused';
-    if (e instanceof KmsUnreachableError) return 'unreachable';
+    if (e instanceof KeyRefusedError) return { r: 'refused', tried: { ...kekOf(key), dataKey: { version: row.version, wrapped: row.wrapped } } };
+    if (e instanceof KmsUnreachableError) return { r: 'unreachable' };
     throw e;
   }
 }
@@ -295,9 +318,9 @@ async function probe(key: repo.KeyRow): Promise<'ok' | 'refused' | 'unreachable'
 export async function checkKeys(): Promise<void> {
   for (const key of await repo.keysIn(['active', 'unavailable'])) {
     try {
-      const r = await probe(key);
-      if (key.state === 'active' && r === 'refused') await markUnavailable(key.workspaceId, 'the key management service refused the key');
-      else if (key.state === 'unavailable' && r === 'ok') await changeState(key.workspaceId, ['unavailable'], 'active', null, { action: 'key.available', actorId: null });
+      const p = await probe(key);
+      if (key.state === 'active' && p.r === 'refused') await markUnavailable(key.workspaceId, 'the key management service refused the key', p.tried);
+      else if (key.state === 'unavailable' && p.r === 'ok') await changeState(key.workspaceId, ['unavailable'], 'active', null, { action: 'key.available', actorId: null });
     } catch (e) {
       logError(`keys: checking the key of workspace ${key.workspaceId} failed`, e);
     }
@@ -310,6 +333,7 @@ export async function checkKeys(): Promise<void> {
  * key by a move) is sealed again, a few boards per round. Returns how many boards it resealed.
  */
 export async function sealPendingContent(maxBoards = 50): Promise<number> {
+  if (!(await keysInUse())) return 0; // nothing was ever sealed
   let done = 0;
   for (const key of await repo.keysIn(['active'])) {
     if (done >= maxBoards) break;
@@ -324,7 +348,44 @@ export async function sealPendingContent(maxBoards = 50): Promise<number> {
       logError(`keys: sealing content of workspace ${key.workspaceId} failed this round`, e);
     }
   }
+  if (done < maxBoards) done += await sealStrayContent(maxBoards - done);
   return done;
+}
+
+/** How many boards the sweep below looks at per round. */
+const STRAY_PAGE = 1000;
+/** Where that sweep goes on next round (kept per instance: any instance's round moves it on; a restart starts over). */
+let strayAfter = '';
+
+/**
+ * Boards holding a row sealed under another workspace's key than the one they are in now — a save
+ * that sealed for the board's previous workspace while it moved (rows are sealed before the
+ * transaction that writes them), left when the reseal after the move failed. The loop above only
+ * looks at workspaces with an active key; this finds them wherever they are now, keyed or not, a
+ * page of boards per round, resumed where the previous round stopped. Boards whose own workspace's
+ * key can't seal now wait for it (the loop above takes them once it is active again).
+ */
+async function sealStrayContent(budget: number): Promise<number> {
+  const page = await boardWorkspacesAfter(strayAfter, STRAY_PAGE);
+  const stray = new Set(await boardsSealedForAnotherWorkspace(page));
+  const waiting = stray.size ? await unusableKeysAmong([...new Set(page.filter((b) => stray.has(b.id)).map((b) => b.workspaceId))]) : new Set<string>();
+  let tried = 0;
+  let resealed = 0;
+  for (const b of page) {
+    if (stray.has(b.id) && !waiting.has(b.workspaceId)) {
+      if (tried >= budget) return resealed; // the rest of this page next round
+      tried++;
+      try {
+        await resealBoard(b.id);
+        resealed++;
+      } catch (e) {
+        logError(`keys: board ${b.id} holds content sealed under another workspace's key, and sealing it for its own failed this round`, e);
+      }
+    }
+    strayAfter = b.id;
+  }
+  if (page.length < STRAY_PAGE) strayAfter = ''; // every board looked at: start over
+  return resealed;
 }
 
 // ---- the admin console (security admins; destroying: owners) ----
@@ -449,7 +510,7 @@ export async function resumeKey(workspaceId: string, userId: string): Promise<Wo
   await requireAdmin(workspaceId, userId, { scope: 'security' });
   const key = await repo.getKey(workspaceId);
   if (!key || key.state !== 'suspended') throw new HttpError(409, 'Only a suspended key can be resumed', 'key_state');
-  const r = await probe(key);
+  const { r } = await probe(key);
   if (r !== 'ok') throw new HttpError(409, r === 'refused' ? 'The key management service refuses the key; restore access to it first' : 'The key management service could not be reached; try again', KEY_UNAVAILABLE);
   if (!(await changeState(workspaceId, ['suspended'], 'active', null, { action: 'key.resumed', actorId: userId }))) throw new HttpError(409, 'The key changed meanwhile', 'key_state');
   return keyStatus(workspaceId, userId);
@@ -459,9 +520,12 @@ export async function resumeKey(workspaceId: string, userId: string): Promise<Wo
 export async function destroyKey(workspaceId: string, userId: string, body: Record<string, unknown>): Promise<WorkspaceKeyStatus> {
   const { workspace } = await requireWorkspace(workspaceId, userId, 'owner');
   if (body.confirm !== workspace.name) throw forbidden('Type the workspace’s name to destroy its key');
-  // Destroying the key destroys the content: a legal hold (#157) on anything here outranks it.
-  if (await underLegalHold({ workspaceId })) throw new HttpError(409, 'A legal hold keeps content in this workspace: its key can’t be destroyed until the hold is released.', 'legal_hold');
-  if (!(await changeState(workspaceId, ['active', 'suspended', 'unavailable'], 'destroyed', null, { action: 'key.destroyed', actorId: userId })))
+  // Destroying the key destroys the content: a legal hold (#157) on anything here outranks it —
+  // checked in the transaction that destroys, so a hold placed meanwhile either stops it or comes after.
+  const noHold = async () => {
+    if (await underLegalHoldUntilCommit({ workspaceId })) throw new HttpError(409, 'A legal hold keeps content in this workspace: its key can’t be destroyed until the hold is released.', 'legal_hold');
+  };
+  if (!(await changeState(workspaceId, ['active', 'suspended', 'unavailable'], 'destroyed', null, { action: 'key.destroyed', actorId: userId }, { guard: noHold })))
     throw new HttpError(409, 'There is no key to destroy', 'key_state');
   return { providers: offered(), key: (await keyStatusQuiet(workspaceId)) ?? null };
 }

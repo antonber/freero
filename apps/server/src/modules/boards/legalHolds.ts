@@ -64,3 +64,13 @@ export function legallyHeldAmong(ids: string[]): Promise<Set<string>> {
 export async function underLegalHold(by: { ownerId: string } | { workspaceId: string }): Promise<boolean> {
   return (await repo.legalHoldCount(by)) > 0;
 }
+
+/**
+ * The check for destroying held content outside the board rows (modules/keys destroying a
+ * workspace's key): call it in the transaction that destroys. It waits for any hold being placed to
+ * commit and answers whether a hold touches the workspace; no new hold is placed until that
+ * transaction ends, so a hold either stops the destroy or comes after it.
+ */
+export async function underLegalHoldUntilCommit(by: { workspaceId: string }): Promise<boolean> {
+  return (await repo.legalHoldCountLocked(by)) > 0;
+}
