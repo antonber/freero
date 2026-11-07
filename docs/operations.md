@@ -533,6 +533,12 @@ an optional internal note. Every action is recorded with who, when, why and what
 | Remove file | `/uploads/<name>` answers 410 Gone wherever the file is used. The bytes move to a kept copy under a name that is never served (with S3, under the bucket's `private/` prefix, outside the `uploads/*` a public bucket exposes); the uploads sweep neither deletes the record nor brings the file back. The kept copy is deleted automatically after `MODERATION_KEEP_REMOVED_DAYS` (30), unless a report or appeal about the file is still open — recorded as an automatic "Delete kept copy". | Restore file — the same bytes, same URL, while the kept copy exists. **Delete kept copy** removes them for good at once (e.g. illegal content); the URL keeps answering 410. |
 | Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". **Their boards**: leave them, take down every board the account owns, or turn off the link of every board it shares — each board is recorded as its own action under the suspension, and the suspension notice mentions them (one email, not one per board). | Lift suspension — also brings back every board the suspension took down or closed to its link, except those you restored or deleted separately since |
 
+While an account is suspended, its community listings and templates are not shown to anyone (lists,
+pages, previews, installs, reports answer as if they didn't exist); your decisions on them are kept,
+and they are back as they were when the suspension is lifted. An appeal against a decision that
+can't be undone any more — the file's kept copy or the board was deleted for good, the listing or
+template withdrawn — is refused with that explanation.
+
 **Legal hold.** A taken-down board is kept until you restore it or delete it for good: owners
 can't trash or delete it, the trash purge skips it, deleting a team workspace that holds one is
 refused ("under review"), and an account deletion waits — the account stays signed out and nothing
@@ -579,7 +585,9 @@ reporter's inbox (once per report). Viewing a screenshot and every change is an 
 reporter's account (`problems.screenshot_viewed`, `problems.updated`). Rate limit
 `RATE_LIMIT_PROBLEM_REPORT` (10 an hour per person); the screenshot is capped at 2 MB, the
 diagnostics at 32 KB. Closed reports and their screenshots are deleted `PROBLEM_RETENTION_DAYS`
-(90) after closing; reopening one stops the clock; a person's reports go with their account.
+(90) after closing; reopening one stops the clock; a person's reports go with their account. A
+screenshot whose file can't be deleted at that moment (a storage error) is deleted by a later
+retention run.
 
 **Machine access (the morning review).** An operator makes a personal access token with the
 `problems:triage` scope (Settings → API tokens: the scope is offered only to operators, and the
