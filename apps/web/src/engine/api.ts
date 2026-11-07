@@ -1228,6 +1228,14 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    */
   onOpen?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
   /**
+   * [additive] In the phone layout's view mode (usePhoneLayout() === 'phone'), a finger's tap that
+   * selected the element (the select tool's click; not a double tap, a long press, a pan or a
+   * pinch): what a tap opens there (a kanban's focus mode). Shows something (`editor.openPanel`);
+   * it must not write, since it runs for viewers as well. `point` is in world coordinates; `editor`
+   * is scoped to the defining feature.
+   */
+  onPhoneTap?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
+  /**
    * [additive] Containers that LAY OUT their children (kanban columns, frame grids). After every
    * LOCAL change — when the outermost gesture ends if one is open (drag, edit session), else
    * right after the write — the engine asks each element of this type for the patches that put

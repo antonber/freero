@@ -13,6 +13,7 @@ import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, Ho
 import { unavailableVersionHistory } from './api';
 import { ElementPreview, ElementView, WorldElements, WorldViewProvider } from './canvas/WorldLayer';
 import { EngineContext } from './context';
+import { Canvas } from './canvas/Canvas';
 import { createCore, type EngineCore } from './runtime/core';
 import { dispatchToolPointer } from './interaction/toolDispatch';
 import { serverPropose, syncStores } from './store/replicas';
@@ -65,6 +66,12 @@ export interface TestBoard {
    * 1000 × 800): every visible item, culled and in low detail as on screen.
    */
   world(user: number): ReactElement;
+  /**
+   * [additive] Replica `user`'s canvas: the viewport with its own pointer routing (tools, fingers,
+   * pans, pinches, long presses), so a test can send it the pointer events a person's hand makes.
+   * The page has no layout in tests: client coordinates are screen coordinates.
+   */
+  canvas(user: number): ReactElement;
   /**
    * [additive] Replica `user` presses and releases the select tool's primary button at world
    * point `at`, as the canvas dispatches it; `count: 2` is the second press of a double-click
@@ -172,6 +179,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       return createElement(EngineContext.Provider, { value: cores[user] }, el ? createElement(ElementPreview, { element: el }) : null);
     },
     world: (user) => createElement(EngineContext.Provider, { value: cores[user] }, createElement(WorldElements)),
+    canvas: (user) => createElement(EngineContext.Provider, { value: cores[user] }, createElement(Canvas)),
     click: (user, at, opts) => {
       const core = cores[user];
       const tool = core.registry.toolsById.get('select')!;

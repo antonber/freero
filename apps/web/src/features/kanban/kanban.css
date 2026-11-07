@@ -1149,9 +1149,27 @@
   padding: 12px;
 }
 
+/* A title of one long word wraps instead of pushing the close button off the page. */
+.fr-kanban-focus .fr-modal__title {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 600px) {
+  /* On a phone the controls are one row that scrolls sideways under the title, as the groups
+     below it do: the header with its close button stays where it is, and the cards keep the room
+     four wrapped rows of controls would take. */
   .fr-kanban-focus__bar {
-    padding: 0 12px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding: 4px 12px;
+  }
+  .fr-kanban-focus__bar::-webkit-scrollbar {
+    display: none;
+  }
+  .fr-kanban-focus__bar > * {
+    flex: none;
   }
   .fr-kanban-focus__groups {
     padding: 0 12px 2px;

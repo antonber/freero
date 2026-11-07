@@ -15,6 +15,7 @@ import type { ToolDefinition } from '../api';
 import { publicCursor } from '../editor/layers';
 import { LONG_PRESS_MS, routePress, TOUCH_HIT_PX, TOUCH_SLOP_PX } from '../interaction/touch';
 import { LASSO_TOOL } from '../interaction/selectTool';
+import { isCompactLayout } from '../ui/compact';
 import { t as tr } from '../messages';
 import './canvas.css';
 
@@ -103,8 +104,11 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     let penSeen = false;
     /** A still finger's long press (context menu); cancelled by moving, lifting or a second finger. */
     let longPress: { timer: ReturnType<typeof setTimeout>; pointerId: number; start: Point } | null = null;
-    /** A one-finger pan that hasn't moved yet: lifting it is a tap. */
-    let tap: { pointerId: number; start: Point } | null = null;
+    /**
+     * A one-finger pan that hasn't moved yet: lifting it is a tap. `press` (route 'pan-or-tap'): the
+     * press the tool gets on that tap, as a click where the finger landed.
+     */
+    let tap: { pointerId: number; start: Point; press?: { e: PointerEvent; world: Point; handle: string | null } } | null = null;
     const cancelLongPress = () => {
       if (longPress) clearTimeout(longPress.timer);
       longPress = null;
@@ -254,26 +258,26 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
             navigator.vibrate?.(10);
           }, LONG_PRESS_MS),
         };
+        const s = ui.getState();
         const route = routePress({
           pointerType: e.pointerType,
           pensDown: pens.size,
           penSeen,
-          toolId: ui.getState().toolId,
+          toolId: s.toolId,
           onItem: !!t.closest('[data-handle]') || !!editor.hitTest(world, { tolerancePx: TOUCH_HIT_PX }),
+          // A guest who may edit has no "Edit board" button: on a phone they are always editing.
+          phoneView: isCompactLayout() && !s.phoneEditing && !s.guestEdit,
         });
-        if (route === 'pan') {
+        if (route === 'pan' || route === 'pan-or-tap') {
           e.preventDefault();
           tap = { pointerId: e.pointerId, start: screen };
+          if (route === 'pan-or-tap') tap.press = { e, world, handle: t.closest('[data-handle]')?.getAttribute('data-handle') ?? null };
           startPan(e, screen);
           return;
         }
       }
 
-      const now = performance.now();
-      if (now - lastDown.t < DOUBLE_CLICK_MS && Math.hypot(screen.x - lastDown.x, screen.y - lastDown.y) < DOUBLE_CLICK_PX)
-        lastDown = { t: now, x: screen.x, y: screen.y, count: lastDown.count + 1 };
-      else lastDown = { t: now, x: screen.x, y: screen.y, count: 1 };
-      core.interaction.clickCount = lastDown.count;
+      countClick(screen);
 
       const s = ui.getState();
       if (e.button === 1 || (e.button === 0 && (s.spaceHeld || s.toolId === 'hand'))) {
@@ -290,7 +294,21 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (e.button !== 0 || gesture) return;
       const tool = core.registry.toolsById.get(s.toolId);
       if (!tool) return;
-      core.interaction.handle = t.closest('[data-handle]')?.getAttribute('data-handle') ?? null;
+      pressTool(tool, e, screen, world, t.closest('[data-handle]')?.getAttribute('data-handle') ?? null);
+    };
+
+    /** Second press within DOUBLE_CLICK_MS and DOUBLE_CLICK_PX of the last: a double click. */
+    const countClick = (screen: Point) => {
+      const now = performance.now();
+      if (now - lastDown.t < DOUBLE_CLICK_MS && Math.hypot(screen.x - lastDown.x, screen.y - lastDown.y) < DOUBLE_CLICK_PX)
+        lastDown = { t: now, x: screen.x, y: screen.y, count: lastDown.count + 1 };
+      else lastDown = { t: now, x: screen.x, y: screen.y, count: 1 };
+      core.interaction.clickCount = lastDown.count;
+    };
+
+    /** The tool's gesture starts with this press (until the pointer lifts or the gesture is cancelled). */
+    const pressTool = (tool: Registered<ToolDefinition>, e: PointerEvent, screen: Point, world: Point, handle: string | null) => {
+      core.interaction.handle = handle;
       gesture = { pointerId: e.pointerId, tool, cancelled: false };
       editor.beginGesture();
       if (tool.def.id !== 'select' && tool.def.id !== LASSO_TOOL) ui.setState({ transforming: 'tool' });
@@ -364,9 +382,23 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (pan && e.pointerId === pan.pointerId) {
         pan = null;
         ui.setState({ transforming: null });
-        // A finger that didn't move: a tap on empty canvas deselects, like a click there.
-        if (tap?.pointerId === e.pointerId && ui.getState().toolId === 'select') editor.clearSelection();
+        const tapped = tap?.pointerId === e.pointerId ? tap : null;
         tap = null;
+        const select = core.registry.toolsById.get('select');
+        if (!tapped || ui.getState().toolId !== 'select' || !select) return;
+        // A finger that didn't move: a tap on empty canvas deselects, like a click there.
+        if (!tapped.press) return editor.clearSelection();
+        // A tap on an item in the phone's view mode: the select tool's click where the finger
+        // landed (selects it; a second tap is a double click), then what the item's type opens.
+        const { e: down, world } = tapped.press;
+        countClick(tapped.start);
+        pressTool(select, down, tapped.start, world, tapped.press.handle);
+        if (gesture && !gesture.cancelled) dispatch(select, 'onPointerUp', e, tapped.start, world);
+        if (gesture) endGesture();
+        const hit = editor.hitTest(world, { tolerancePx: TOUCH_HIT_PX });
+        const reg = hit && core.registry.elements.get(hit.type);
+        if (reg?.def.onPhoneTap && core.interaction.clickCount === 1 && ui.getState().selection.includes(hit!.id) && !editor.getEditingId())
+          reg.def.onPhoneTap(hit as never, { editor: core.scoped(reg.feature), point: world });
         return;
       }
       if (!gesture || e.pointerId !== gesture.pointerId) return;

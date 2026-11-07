@@ -561,7 +561,10 @@ name.
 
 ### 17. Mobile
 
-Phone layout (≤ 600 px): tapping a kanban offers "Open" → focus mode list. Columns are horizontal
+Phone layout (≤ 600 px): tapping a kanban offers "Open" → focus mode list. Built: in view mode a
+tap on a kanban opens focus mode (`onPhoneTap`); a pan, pinch or long press that starts on it
+never does — one finger pans and two pinch even on items, only Edit mode drags them. Focus mode's
+controls are one row that scrolls sideways under the title, so its close button stays put. Columns are horizontal
 swipe pages, and long-press on a card → "Move to ▸" sheet (no drag needed). Field editing happens in
 the bottom-sheet card details. In phone-edit mode the canvas board still works (drag with the coarse
 pointer sizes). Calendar on phones is the week / agenda variant.

@@ -394,7 +394,8 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   take part (`Editor.isParticipant`). `board.click(user, at, { count? })` presses the select tool
   at a world point as the canvas dispatches it (`count: 2` = a double-click's second press),
   `board.dialog(user)` is the dialog that replica has open, `board.panel(user, id, props?)` a panel
-  as its chrome mounts it.
+  as its chrome mounts it, and `board.canvas(user)` the replica's canvas with its own pointer
+  routing, to send it the pointer events of a person's fingers (taps, pans, pinches, long presses).
 - Collections hold LWW values per key. When several people may change the same logical thing
   at once, give each independent change its own key (one record per message / reaction /
   vote) instead of read-modify-writing one big value. Example: `comments` (layout in
@@ -1148,6 +1149,9 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   the context menu, a cut-off description's corner button and other features
   (`runCommand('card.showDetails', { id })`: a kanban table's description line) open too; it is
   read-only for viewers, commenters and on locked cards.
+- `ElementDefinition.onPhoneTap?(el, { editor, point })`: in the phone layout's view mode, a
+  finger's tap that selected the item (never a double tap, long press, pan or pinch) — what a tap
+  opens there; it shows (`editor.openPanel`), never writes. A kanban opens focus mode.
 - `ElementDefinition.minSize` may be a function of the element (a card drawn as a timeline bar).
 - `useGonePeople(ids)` (`@engine`): the ids the people lookup answered without (deleted accounts).
 - `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
@@ -1183,7 +1187,10 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
 - Touch (`interaction/touch.ts` `routePress`, used by `canvas/Canvas.tsx`): palm rejection while a
   pen is down, "pen draws, finger pans" after a pen was used, one finger pans empty canvas with the
   select tool (tap deselects), a 500 ms still press opens the context menu, fingers hit items 14 px
-  off (`Editor.hitTest(p, { tolerancePx })`). `@media (pointer: coarse)` enlarges handles/controls.
+  off (`Editor.hitTest(p, { tolerancePx })`). In the phone layout's view mode (not "Edit board", not
+  a guest editor) a finger on an item pans too (route `pan-or-tap`): a pan or pinch that starts on a
+  kanban covering the screen never selects it; a tap (lifted within 10 px, no second finger) is
+  the select tool's click where it landed, then the item's `onPhoneTap`. `@media (pointer: coarse)` enlarges handles/controls.
 - Phone layout (≤ 600 px, `ui/compact.ts` `useCompactLayout()`): the board root carries
   `data-fr-layout="phone" | "phone-edit"`; view-and-comment mode shows only tools whose `minRole`
   is commenter or lower, hides the format toolbar, and docks become a bottom sheet; editors toggle
