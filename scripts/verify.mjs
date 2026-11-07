@@ -2825,6 +2825,8 @@ async function multiInstanceChecks() {
       const Z = new User('MZ', two);
       Z.email = `zed@${domain}`;
       await Z.signup(); // a password account at the domain, signed in on instance 2
+      // Verified: provisioning an address whose account was never verified ends what its creator set up.
+      await Z.verifyEmail(path.join(dataDir, 'i1'));
       const ws = (await O.req('POST', '/api/workspaces', { name: 'Directory' })).json.workspace;
       const d = (await O.req('POST', `/api/workspaces/${ws.id}/sso/domains`, { domain })).json.domains[0];
       multiDns.setTxt(d.txtName, [d.txtValue]);
