@@ -251,6 +251,23 @@ export async function requireWorkspace(
   return { workspace, role, scopes, contentRole: contentRole(role, member.adminScopes) };
 }
 
+/**
+ * Inside `repo.transaction()`: locks the workspace for a membership change, then authorises the
+ * actor as `requireWorkspace` does — against their membership as it is now, after every change
+ * that committed before this one. Authorising before the lock would let a request that started
+ * while its actor was still an owner (or an active admin) run after they were demoted, removed or
+ * deactivated.
+ */
+async function lockAndRequire(
+  workspaceId: string,
+  userId: string,
+  min: WorkspaceRole,
+  opts: Parameters<typeof requireWorkspace>[3],
+): ReturnType<typeof requireWorkspace> {
+  if (!(await repo.lockWorkspace(workspaceId, 'update'))) throw notFound('Workspace not found');
+  return requireWorkspace(workspaceId, userId, min, opts);
+}
+
 const SCOPE_LABEL: Record<AdminScope, string> = { members: 'members', content: 'content', security: 'security' };
 
 /** 403 `admin_scope_required` unless `scopes` covers `scope` (#151). */
@@ -591,16 +608,16 @@ async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | nu
  * transaction. Guests can't own a workspace.
  */
 export async function transferWorkspace(workspaceId: string, userId: string, targetId: unknown): Promise<WorkspaceSummary | OrganisationSummary> {
-  const { workspace } = await requireWorkspace(workspaceId, userId, 'owner', { organisation: true });
-  teamOrOrganisation(workspace);
   if (typeof targetId !== 'string' || !targetId) throw badRequest('userId is required');
   if (targetId === userId) throw badRequest('You already own this workspace');
   await repo.transaction(async () => {
-    await repo.lockWorkspace(workspaceId, 'update');
-    if ((await repo.getRole(workspaceId, userId)) !== 'owner') throw forbidden('Only a workspace owner can do that');
-    const target = await repo.getRole(workspaceId, targetId);
+    const { workspace } = await lockAndRequire(workspaceId, userId, 'owner', { organisation: true });
+    teamOrOrganisation(workspace);
+    const target = await repo.getMember(workspaceId, targetId);
     if (!target) throw notFound('That person is not a member of this workspace');
-    if (target === 'guest') throw badRequest('Make them a member first: guests can’t own a workspace');
+    if (target.role === 'guest') throw badRequest('Make them a member first: guests can’t own a workspace');
+    // The caller steps down to admin, so handing over to someone deactivated would leave no owner who can act.
+    if (target.deactivatedAt !== null) throw badRequest('Reactivate them first: a deactivated member can’t take over a workspace');
     await repo.setRole(workspaceId, targetId, 'owner');
     await repo.setRole(workspaceId, userId, 'admin');
     await recordAudit({
@@ -608,7 +625,7 @@ export async function transferWorkspace(workspaceId: string, userId: string, tar
       workspaceId,
       actorId: userId,
       target: { type: 'user', id: targetId, label: (await getUser(targetId))?.email ?? null },
-      metadata: { previousOwnerRole: 'admin', newOwnerPreviousRole: target },
+      metadata: { previousOwnerRole: 'admin', newOwnerPreviousRole: target.role },
     });
   });
   return workspaceSummary(workspaceId, userId);
@@ -664,18 +681,23 @@ function cleanScopes(v: unknown): AdminScope[] | null {
 
 const lastOwner = () => new HttpError(409, 'A workspace needs at least one owner. Make someone else an owner first.');
 
+/** Who inherits a departing member's boards: the longest-standing active owner, else any owner; null if none. */
+async function heirIn(workspaceId: string): Promise<string | null> {
+  const owners = (await repo.listMembers(workspaceId)).filter((m) => m.role === 'owner');
+  return (owners.find((m) => m.deactivatedAt === null) ?? owners[0])?.userId ?? null;
+}
+
 /** Changes a member's role; never leaves the workspace without an owner (checked under its lock). */
 export async function changeRole(workspaceId: string, actorId: string, targetId: string, role: unknown, adminScopes?: unknown): Promise<WorkspaceMember> {
   if (!isWorkspaceRole(role)) throw badRequest('role must be owner, admin, member or guest');
-  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'admin', { organisation: true, scope: 'members' });
-  teamOrOrganisation(workspace);
-  if (workspace.kind === 'organisation' && role === 'guest') throw badRequest('An organisation has owners, admins and members');
   const scopes = adminScopes === undefined ? undefined : cleanScopes(adminScopes);
-  // Only owners decide what an admin administers (#151): an admin can never widen anyone's powers, theirs included.
-  if (scopes !== undefined && actor !== 'owner') throw forbidden(`Only an owner of this ${whatOf(workspace)} can choose what an admin administers`);
-  if (scopes !== undefined && role !== 'admin') throw badRequest('Only admins have admin scopes');
   await repo.transaction(async () => {
-    await repo.lockWorkspace(workspaceId, 'update');
+    const { workspace, role: actor } = await lockAndRequire(workspaceId, actorId, 'admin', { organisation: true, scope: 'members' });
+    teamOrOrganisation(workspace);
+    if (workspace.kind === 'organisation' && role === 'guest') throw badRequest('An organisation has owners, admins and members');
+    // Only owners decide what an admin administers (#151): an admin can never widen anyone's powers, theirs included.
+    if (scopes !== undefined && actor !== 'owner') throw forbidden(`Only an owner of this ${whatOf(workspace)} can choose what an admin administers`);
+    if (scopes !== undefined && role !== 'admin') throw badRequest('Only admins have admin scopes');
     const before = await repo.getMember(workspaceId, targetId);
     if (!before) throw notFound('That person is not a member of this workspace');
     const from = before.role;
@@ -712,18 +734,20 @@ export async function changeRole(workspaceId: string, actorId: string, targetId:
  */
 export async function removeMember(workspaceId: string, actorId: string, targetId: string): Promise<void> {
   const self = actorId === targetId;
-  const { workspace, role: actor, scopes } = await requireWorkspace(workspaceId, actorId, 'guest', { allowDeactivated: self, organisation: true });
-  teamOrOrganisation(workspace);
-  if (!self && actor === 'admin') requireScope(scopes, 'members', whatOf(workspace));
   await repo.transaction(async () => {
-    await repo.lockWorkspace(workspaceId, 'update');
+    const { workspace, role: actor, scopes } = await lockAndRequire(workspaceId, actorId, 'guest', { allowDeactivated: self, organisation: true });
+    teamOrOrganisation(workspace);
+    if (!self && actor === 'admin') requireScope(scopes, 'members', whatOf(workspace));
     const target = await repo.getRole(workspaceId, targetId);
     if (!target) throw notFound('That person is not a member of this workspace');
     if (!self && !mayRemove(actor, target)) throw forbidden('Only a workspace owner can remove owners and admins');
     if (target === 'owner' && (await repo.isLastActiveOwner(workspaceId, targetId))) throw lastOwner();
     await repo.removeMember(workspaceId, targetId);
     await recordMembershipChange(workspaceId, targetId);
-    const heir = self ? (await repo.listMembers(workspaceId)).find((m) => m.role === 'owner')!.userId : actorId;
+    // Leaving: the boards go to an owner who stays. None left (only a workspace whose owners are all
+    // deactivated, which nothing allows any more): refused, so the workspace never ends up ownerless.
+    const heir = self ? await heirIn(workspaceId) : actorId;
+    if (!heir) throw lastOwner();
     const boards = await transferBoardsOwnedIn(workspaceId, targetId, heir);
     await removeBoardMemberships(await boardIdsInWorkspace(workspaceId), targetId);
     await recordAudit({
@@ -749,9 +773,10 @@ export async function removeMemberByDirectory(workspaceId: string, targetId: str
     if (!(await repo.lockWorkspace(workspaceId, 'update'))) return false;
     const target = await repo.getRole(workspaceId, targetId);
     if (!target || target === 'owner') return false;
+    const heir = await heirIn(workspaceId);
+    if (!heir) return false;
     await repo.removeMember(workspaceId, targetId);
     await recordMembershipChange(workspaceId, targetId);
-    const heir = (await repo.listMembers(workspaceId)).find((m) => m.role === 'owner')!.userId;
     const boards = await transferBoardsOwnedIn(workspaceId, targetId, heir);
     await removeBoardMemberships(await boardIdsInWorkspace(workspaceId), targetId);
     await recordAudit({
@@ -773,18 +798,19 @@ export async function removeMemberByDirectory(workspaceId: string, targetId: str
  * Deactivates a member (owners: anyone else; admins: members and guests): they keep their role,
  * boards and invitations but open nothing in the workspace — not even boards they own — and can
  * do nothing there but leave, until reactivated. Their live connections lose access at once.
- * Only an owner deactivates an owner, so an active owner always remains.
+ * Only an owner deactivates an owner, never the last active one, and the actor is authorised under
+ * the workspace's lock: two owners deactivating each other at once leave one of them active.
  */
 export async function setMemberDeactivated(workspaceId: string, actorId: string, targetId: string, deactivated: boolean): Promise<void> {
-  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'admin', { organisation: true, scope: 'members' });
-  teamOrOrganisation(workspace);
   if (actorId === targetId) throw badRequest('You can’t deactivate yourself');
   await repo.transaction(async () => {
-    await repo.lockWorkspace(workspaceId, 'update');
+    const { workspace, role: actor } = await lockAndRequire(workspaceId, actorId, 'admin', { organisation: true, scope: 'members' });
+    teamOrOrganisation(workspace);
     const target = await repo.getMember(workspaceId, targetId);
     if (!target) throw notFound('That person is not a member of this workspace');
     if (!mayRemove(actor, target.role)) throw forbidden('Only a workspace owner can deactivate owners and admins');
     if ((target.deactivatedAt !== null) === deactivated) return;
+    if (deactivated && (await repo.isLastActiveOwner(workspaceId, targetId))) throw lastOwner();
     await repo.setDeactivated(workspaceId, targetId, deactivated ? Date.now() : null);
     await recordAudit({
       action: deactivated ? 'member.deactivated' : 'member.reactivated',

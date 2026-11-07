@@ -173,6 +173,10 @@ export function mayInvite(actor: WorkspaceRole | null, role: InvitableWorkspaceR
   return actor === 'member' && role === 'guest' && p.guestInvites === 'members';
 }
 
+/** The role someone invites with (#151): an admin who doesn't administer members invites like a member. */
+export const invitingRole = (role: WorkspaceRole, adminScopes: AdminScope[] | null): WorkspaceRole =>
+  role === 'admin' && !scopesOf(role, adminScopes).includes('members') ? 'member' : role;
+
 /**
  * May `actor` change `target`'s role from `from` to `to`? Owners change anything (the last-owner
  * rule is checked separately, under a lock); admins only move people among member/guest.
