@@ -4,7 +4,7 @@ export { saveUpload, deleteUpload, uploadBytesUsed, contentMatches, UPLOAD_REF_P
 // Board backups (modules/backup, KAI-137): a carried file re-uploaded for the restorer, checked like any upload.
 export { restoreUploadFile } from './store';
 // Data exports (modules/privacy): archives kept out of /uploads and the sweep, and reading files back.
-export { savePrivateFile, openPrivateFile, deletePrivateFile, readUpload } from './private';
+export { newPrivateFileKey, savePrivateFile, openPrivateFile, deletePrivateFile, readUpload } from './private';
 // Problem reports (modules/problems): screenshots in the private area, never served at /uploads.
 export { savePrivateImage, openPrivateImage, deletePrivateImage } from './private';
 import * as repo from './repo';

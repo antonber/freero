@@ -11,7 +11,7 @@ export default function initKeys(ctx: ServerContext): void {
   const stop = listenForKeyChanges();
   ctx.onShutdown(async () => stop());
   // Half the cache lifetime: a revocation at the KMS takes effect within one cache period.
-  scheduleExclusiveJob(ctx, { name: 'keys:check', lockKey: 7_202_611_301, intervalMs: Math.max(5000, ctx.config.workspaceKeys.cacheMs / 2), run: checkKeys });
+  scheduleExclusiveJob(ctx, { name: 'keys:check', lockKey: 7_202_611_304, intervalMs: Math.max(5000, ctx.config.workspaceKeys.cacheMs / 2), run: checkKeys });
   scheduleExclusiveJob(ctx, {
     name: 'keys:seal',
     lockKey: 7_202_611_302,

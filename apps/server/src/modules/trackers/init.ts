@@ -14,7 +14,7 @@ import { registerIssueObjects } from './objects';
 import * as repo from './repo';
 import { pauseLinksOutside, pollOnce, proposalsDecided, trackersConsumer } from './service';
 
-const POLL_LOCK_KEY = 7_202_611_101; // arbitrary, constant across releases
+const POLL_LOCK_KEY = 7_202_611_102; // arbitrary, constant across releases (7_202_611_101 is the search consumer's)
 
 export default function initTrackers(ctx: ServerContext): void {
   registerIssueObjects();

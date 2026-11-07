@@ -113,6 +113,11 @@ export const TRACKER_SYNC_TOPIC = 'tracker.sync';
 export const TRACKERS_CONSUMER = 'trackers';
 const LOCK_KEY = 7_202_611_100; // arbitrary, constant across releases
 const MAX_ITEMS_PER_SEND = 50;
+/**
+ * A link still pending this long after it was made belongs to a send or import that died (even a
+ * send of 50 issues takes minutes).
+ */
+const PENDING_STALE_MS = 3_600_000;
 const MAX_IMPORT = 100;
 
 const providerName = (c: Pick<StoredConnection, 'provider'>) => TRACKER_PROVIDERS[c.provider];
@@ -200,7 +205,8 @@ async function actorFor(link: Pick<StoredLink, 'boardId' | 'createdBy'>, conn: S
  * tracker and as last agreed.
  */
 async function relationState(link: StoredLink, view: Pick<BoardView, 'elements'>, issue: Pick<RemoteIssue, 'relations'> | null) {
-  const links = (await repo.linksOfBoard(link.boardId)).filter((l) => l.connectionId === link.connectionId);
+  // A pending link has no issue yet (or no card): a dependency on it waits until it does.
+  const links = (await repo.linksOfBoard(link.boardId)).filter((l) => l.connectionId === link.connectionId && l.state !== 'pending');
   const byId = new Map(links.map((l) => [l.id, l]));
   const byExternal = new Map(links.map((l) => [l.externalId, l.id]));
   const itemLink = new Map<string, string>();
@@ -254,16 +260,65 @@ async function writeBoard(boardId: string, actor: BoardActor, plan: (view: Board
   }
 }
 
+/** An unlinked issue on the board: its badge gone, its items no longer marked. */
+const unlinkedChange = (live: BoardView, linkId: string): BoardChange => ({
+  update: live.elements.filter((e) => e.el.trackerLink === linkId).map((e) => ({ id: e.el.id, patch: { trackerLink: null } })),
+  collections: { [TRACKER_COLLECTION]: { [linkId]: null } },
+});
+
+/** Issues of a removed connection on the board: their badges say so; the items stay as they are. */
+function disconnectedChange(live: BoardView, conn: Pick<StoredConnection, 'name'>, linkIds: string[]): BoardChange | null {
+  const recs = live.collection(TRACKER_COLLECTION);
+  const out: Record<string, TrackerIssueRecord> = {};
+  for (const id of linkIds) {
+    const prev = recs.get(id) as TrackerIssueRecord | undefined;
+    if (prev) out[id] = { ...prev, state: 'disconnected', note: `${conn.name} was disconnected: this issue no longer syncs.`, syncedAt: Date.now() };
+  }
+  return Object.keys(out).length ? { collections: { [TRACKER_COLLECTION]: out } } : null;
+}
+
+/** The tracker answered that the linked issue isn't there (deleted, or moved where the connection can't see it). */
+class IssueGone extends TrackerError {}
+/** After this many failed syncs in a row, the last of them finding the issue gone, Freero stops asking. */
+const GONE_AFTER_ATTEMPTS = 3;
+
 async function failLink(link: StoredLink, conn: StoredConnection, err: unknown, actorInfo: { actor: BoardActor; workspaceId: string } | null): Promise<void> {
   const te = err instanceof TrackerError ? err : null;
   if (!te) logError(`trackers: sync of ${link.externalKey} failed`, err);
-  const message = te?.message ?? 'Something went wrong while syncing; Freero will try again.';
+  // An issue still gone after a few tries (not a tracker that was slow to show a new one) is asked
+  // for no more — every few hours, forever, otherwise. The badge says so; Sync now tries again.
+  const gone = err instanceof IssueGone && link.attempts + 1 >= GONE_AFTER_ATTEMPTS;
+  const message = gone
+    ? `${err.message.replace(/\.$/, '')}, so it no longer syncs. Unlink it, or use Sync now once it’s back.`
+    : (te?.message ?? 'Something went wrong while syncing; Freero will try again.');
   await noteOutcome(conn, err);
   // Credentials refused: nothing to retry until someone fixes the connection (that re-queues).
-  const retry = te?.kind === 'auth' ? null : Date.now() + backoff(link.attempts, te?.retryAfterMs ?? null);
+  const retry = te?.kind === 'auth' || gone ? null : Date.now() + backoff(link.attempts, te?.retryAfterMs ?? null);
   const wasOk = link.state === 'ok';
-  await repo.markFailed(link.id, 'error', message, retry);
-  if (!wasOk || !actorInfo) return;
+  // Nothing matched: the link was removed meanwhile (its request or unlink settles the board).
+  if (!(await repo.markFailed(link.id, 'error', message, retry))) return;
+  if (!actorInfo || !(wasOk || (gone && link.lastError !== message))) return;
+  if (wasOk) await auditFailure(link, conn, message, actorInfo);
+  await writeBoard(link.boardId, actorInfo.actor, (view) => {
+    const prev = view.collection(TRACKER_COLLECTION).get(link.id) as TrackerIssueRecord | undefined;
+    // A badge already saying its connection was removed keeps saying so.
+    if (!prev || prev.state === 'disconnected') return null;
+    return {
+      collections: {
+        [TRACKER_COLLECTION]: {
+          [link.id]: {
+            ...prev,
+            state: 'error',
+            note: message,
+            syncedAt: Date.now(),
+          },
+        },
+      },
+    };
+  }).catch(() => undefined);
+}
+
+async function auditFailure(link: StoredLink, conn: StoredConnection, message: string, actorInfo: { workspaceId: string }): Promise<void> {
   await recordAudit({
     action: 'tracker.sync_failed',
     workspaceId: actorInfo.workspaceId,
@@ -283,22 +338,6 @@ async function failLink(link: StoredLink, conn: StoredConnection, err: unknown, 
     issue: link.externalKey,
     reason: message,
   });
-  await writeBoard(link.boardId, actorInfo.actor, (view) => {
-    const prev = view.collection(TRACKER_COLLECTION).get(link.id) as TrackerIssueRecord | undefined;
-    if (!prev) return null;
-    return {
-      collections: {
-        [TRACKER_COLLECTION]: {
-          [link.id]: {
-            ...prev,
-            state: 'error',
-            note: message,
-            syncedAt: Date.now(),
-          },
-        },
-      },
-    };
-  }).catch(() => undefined);
 }
 
 export interface SyncOutcome {
@@ -333,7 +372,9 @@ class RevisionConflict extends Error {
 
 async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome | null> {
   const link = await repo.getLink(linkId);
-  if (!link) return null;
+  // A pending link is its request's (a send creating the issue, an import writing the card): a sync
+  // now would take a card not written yet for one deleted.
+  if (!link || link.state === 'pending') return null;
   const conn = await repo.getConnection(link.connectionId);
   if (!conn) return null;
   const who = await actorFor(link, conn);
@@ -360,7 +401,7 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
     const read = await readItems(view, link.sources, map);
 
     let issue = await provider.getIssue(pc, link.externalId);
-    if (!issue) throw new TrackerError(`${link.externalKey} no longer exists in ${providerName(conn)} (or this connection can’t see it).`, 'not_found', 404);
+    if (!issue) throw new IssueGone(`${link.externalKey} no longer exists in ${providerName(conn)} (or this connection can’t see it).`, 'not_found', 404);
     const merged = issue;
 
     // Items deleted from the board leave the link (and the issue's links back); the issue stays.
@@ -434,6 +475,17 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
     const present = read.items.map((el) => el.id);
     const added = present.filter((id) => !link.backlinks.includes(id));
     const removed = link.backlinks.filter((id) => !present.includes(id));
+    // Unlinked, or its connection removed, while this sync ran: what unlink or markDisconnected
+    // wrote stands, also where this sync's board write landed after theirs — after an unlink no
+    // badge, no marks and none of the issue's links back this sync made; after a removal, the badge
+    // says disconnected.
+    const removedMeanwhile = async (now: RemoteIssue, wrote: boolean): Promise<boolean> => {
+      if (await repo.getLink(link.id)) return false;
+      const unlinked = !!(await repo.getConnection(conn.id));
+      if (unlinked && (added.length || removed.length)) await provider.setBacklinks(pc, now, [], present).catch(() => undefined);
+      if (wrote) await writeBoard(link.boardId, who.actor, (live) => (unlinked ? unlinkedChange(live, link.id) : disconnectedChange(live, conn, [link.id]))).catch(() => undefined);
+      return true;
+    };
     if (added.length || removed.length)
       await provider.setBacklinks(
         pc,
@@ -473,6 +525,7 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
     const sources = present;
     let boardAfter: IssueValues = board;
     const finalIssue = issue;
+    if (await removedMeanwhile(finalIssue, false)) return null;
     const author = {
       id: link.createdBy,
       name: who.actor.name ? `${providerName(conn)} for ${who.actor.name}` : providerName(conn),
@@ -530,6 +583,7 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
       if (!update.length && !Object.keys(collections).length && !create.length && !remove.length) return null;
       return { update, collections, ...(create.length ? { create } : {}), ...(remove.length ? { remove } : {}) };
     });
+    if (await removedMeanwhile(finalIssue, true)) return null;
     // Agreed once both sides hold them: a dependency changed on either side meanwhile is the next sync's.
     if (relations) await repo.setRelations(link.id, relations.plan.agreed.map((p) => ({ blocker: partsOf(p)[0], blocked: partsOf(p)[1] })));
 
@@ -640,7 +694,16 @@ export const trackersConsumer: OutboxConsumer = {
 /** Queues links whose retry is due and polls connections that are due; returns how many were queued. */
 export async function pollOnce(now = Date.now()): Promise<number> {
   const cfg = getConfig().trackers;
-  const queued = new Set(await repo.claimRetries(now));
+  // Retries that are due are taken and queued in one transaction, before any tracker call: a poll
+  // cut short below (a deploy, a crash) must not leave them taken but never queued.
+  const retried = await repo.transaction(async () => {
+    // A send or import that died with links still pending (a crash, a deploy) leaves them to this job.
+    await repo.settleStalePending(now - PENDING_STALE_MS, now);
+    const ids = await repo.claimRetries(now);
+    await enqueueSync(ids);
+    return ids;
+  });
+  const queued = new Set<string>();
   // Webhooks Freero registers itself (Asana, monday.com, ClickUp, Trello) that failed a while ago are tried again.
   await retryWebhooks(now).catch((e) => logError('trackers: registering webhooks again failed', e));
   for (const conn of await repo.connectionsWithLinks()) {
@@ -648,7 +711,7 @@ export async function pollOnce(now = Date.now()): Promise<number> {
     if (conn.cooldownUntil && conn.cooldownUntil > now) continue;
     const every = conn.inbound === 'polling' ? cfg.pollMs : cfg.fallbackPollMs;
     if (conn.polledAt && now - conn.polledAt < every) continue;
-    const links = (await repo.linksOfConnection(conn.id)).filter((l) => l.state !== 'paused');
+    const links = (await repo.linksOfConnection(conn.id)).filter((l) => l.state !== 'paused' && l.state !== 'pending');
     // A minute of overlap: an edit landing while the last poll ran is seen by this one.
     const since = (conn.polledAt ?? now - every) - 60_000;
     try {
@@ -668,7 +731,7 @@ export async function pollOnce(now = Date.now()): Promise<number> {
     }
   }
   await enqueueSync([...queued]);
-  return queued.size;
+  return new Set([...retried, ...queued]).size;
 }
 
 // ---- webhooks ----
@@ -803,11 +866,12 @@ export async function previewSend(userId: string, boardId: string, body: Record<
 export async function sendToTracker(userId: string, boardId: string, body: Record<string, unknown>, origin: string): Promise<TrackerSendResponse> {
   const ctx = await sendContext(userId, boardId, body, origin);
   const { conn, view, read, groups, board, parent } = ctx;
+  const alreadyLinked = (n: number) => new HttpError(409, `${n === 1 ? 'That item is' : `${n} of those items are`} already linked to an issue`, 'tracker_already_linked');
   const linked = await repo.linkedItems(
     boardId,
     read.items.map((el) => el.id),
   );
-  if (linked.size) throw new HttpError(409, `${linked.size === 1 ? 'That item is' : `${linked.size} of those items are`} already linked to an issue`, 'tracker_already_linked');
+  if (linked.size) throw alreadyLinked(linked.size);
   const project = typeof body.project === 'string' && body.project.trim() ? body.project.trim().slice(0, 200) : (conn.settings.project ?? null);
   if (!project) throw badRequest('project is required');
   const issueType = typeof body.issueType === 'string' && body.issueType.trim() ? body.issueType.trim().slice(0, 100) : (conn.settings.issueTypes?.[project] ?? conn.settings.issueType ?? null);
@@ -828,6 +892,37 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
     notes: string[];
     group: BoardElement[];
   }> = [];
+  // Every group's items are claimed (a pending link each, one transaction) before any issue is
+  // created: the same items sent again meanwhile — a double click, an agent retrying the call — are
+  // refused here instead of creating a second issue nothing links to.
+  const reserved = groups.map((group) => ({ id: newId(16), group }));
+  try {
+    await repo.transaction(async () => {
+      for (const r of reserved)
+        await repo.insertLink(
+          {
+            id: r.id,
+            connectionId: conn.id,
+            boardId,
+            externalId: `${repo.RESERVED_ISSUE}${r.id}`,
+            externalKey: '',
+            externalUrl: '',
+            createdBy: userId,
+            appOrigin: origin,
+            base: { board: {}, tracker: {} },
+            backlinks: [],
+            syncedAt: null,
+            createdAt: Date.now(),
+            sources: r.group.map((el) => el.id),
+          },
+          'pending',
+        );
+    });
+  } catch (e) {
+    if (e instanceof repo.ItemAlreadyLinkedError) throw alreadyLinked((await repo.linkedItems(boardId, read.items.map((el) => el.id))).size || read.items.length);
+    throw e;
+  }
+
   let failure: unknown = null;
   let parentKey = ctx.parentKey;
   let madeParent: RemoteIssue | null = null;
@@ -839,7 +934,7 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
       failure = e;
     }
   }
-  for (const group of failure ? [] : groups) {
+  for (const { id: linkId, group } of failure ? [] : reserved) {
     try {
       const { values } = groupValues(provider, view, read, group, origin, boardId, ctx.clusters);
       const { issue, notes } = await provider.createIssue(pc, {
@@ -863,7 +958,7 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
         .catch((e) => notes.push(e instanceof TrackerError ? e.message : 'The links back to the board couldn’t be added; the next sync tries again.'));
       const after = (await provider.getIssue(pc, issue.id)) ?? issue;
       const link: StoredLink = {
-        id: newId(16),
+        id: linkId,
         connectionId: conn.id,
         boardId,
         externalId: after.id,
@@ -881,13 +976,16 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
         createdAt: Date.now(),
         sources: group.map((el) => el.id),
       };
-      await repo.insertLink(link);
+      // The claim was removed meanwhile (its connection removed, or unlinked): the issue stays unlinked.
+      if (!(await repo.activateLink(linkId, link))) throw new TrackerError(`${after.key} was created, but its items were unlinked meanwhile (or the connection removed), so it isn’t linked.`, 'conflict');
       made.push({ link, issue: after, notes, group });
     } catch (e) {
       failure = e;
       break;
     }
   }
+  // Claims whose issue wasn't created free their items again.
+  for (const r of reserved) if (!made.some((m) => m.link.id === r.id)) await repo.deletePendingLink(r.id);
   await noteOutcome(conn, failure);
 
   if (made.length) {
@@ -962,7 +1060,6 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
   if (failure) {
     const what = failure instanceof TrackerError ? failure.message : 'Something went wrong while creating the issue.';
     if (!(failure instanceof TrackerError)) logError('trackers: sending items failed', failure);
-    if (failure instanceof repo.ItemAlreadyLinkedError) throw new HttpError(409, 'Those items were linked meanwhile', 'tracker_already_linked');
     const keys = [...(madeParent ? [madeParent.key] : []), ...made.map((m) => m.link.externalKey)];
     throw new HttpError(failure instanceof TrackerError && failure.kind === 'invalid' ? 400 : 502, keys.length ? `Created ${keys.join(', ')}; then: ${what}` : what, 'tracker_refused');
   }
@@ -1072,7 +1169,9 @@ export async function importIssues(
   const inserted: StoredLink[] = [];
   for (const l of links) {
     try {
-      await repo.insertLink(l);
+      // Pending until its card is on the board: a sync of the board meanwhile (anyone's change)
+      // must not take the card, not written yet, for one deleted and remove the link.
+      await repo.insertLink(l, 'pending');
       inserted.push(l);
     } catch (e) {
       if (!(e instanceof repo.IssueAlreadyLinkedError)) throw e;
@@ -1213,6 +1312,7 @@ export async function importIssues(
     throw e;
   }
   // What both sides agree on now: the cards hold the issues' values (as read back from the board).
+  // The links stop being pending with it: syncs take them from here.
   const view = await readBoardView(boardId, { userId, role: board.role });
   for (const l of inserted) {
     const i = fresh.find((x) => x.id === l.externalId)!;
@@ -1533,10 +1633,8 @@ export async function unlink(userId: string, boardId: string, linkId: string): P
     }
   }
   const user = await getUser(userId);
-  await writeBoard(boardId, { userId, role: board.role, name: user?.name }, (live) => ({
-    update: live.elements.filter((e) => e.el.trackerLink === link.id).map((e) => ({ id: e.el.id, patch: { trackerLink: null } })),
-    collections: { [TRACKER_COLLECTION]: { [link.id]: null } },
-  }));
+  // A sync of this link in flight checks for the link again after its own board write (syncLinkOnce).
+  await writeBoard(boardId, { userId, role: board.role, name: user?.name }, (live) => unlinkedChange(live, link.id));
   await recordAudit({
     action: 'tracker.unlinked',
     workspaceId: board.workspaceId,
@@ -1574,8 +1672,8 @@ export async function pauseLinksOutside(boardId: string, workspaceId: string): P
   for (const link of await repo.linksOfBoard(boardId)) {
     const conn = await repo.getConnection(link.connectionId);
     if (!conn?.workspaceId || conn.workspaceId === workspaceId) continue;
-    await repo.markFailed(link.id, 'paused', movedNote(link, conn), null);
-    paused.push({ link, conn });
+    // A pending link is its request's; its first sync pauses it (syncLinkOnce checks the workspace).
+    if (await repo.markFailed(link.id, 'paused', movedNote(link, conn), null)) paused.push({ link, conn });
   }
   for (const { link, conn } of paused) {
     const who = await actorFor(link, conn);
@@ -1608,21 +1706,7 @@ export async function markDisconnected(conn: StoredConnection, links: Array<{ bo
         }
       }
       if (!writer) continue;
-      await writeBoard(boardId, writer, (live) => {
-        const recs = live.collection(TRACKER_COLLECTION);
-        const out: Record<string, unknown> = {};
-        for (const id of ids) {
-          const prev = recs.get(id) as TrackerIssueRecord | undefined;
-          if (prev)
-            out[id] = {
-              ...prev,
-              state: 'disconnected',
-              note: `${conn.name} was disconnected: this issue no longer syncs.`,
-              syncedAt: Date.now(),
-            };
-        }
-        return Object.keys(out).length ? { collections: { [TRACKER_COLLECTION]: out } } : null;
-      });
+      await writeBoard(boardId, writer, (live) => disconnectedChange(live, conn, ids));
     } catch (e) {
       log(`trackers: couldn’t mark the badges on board ${boardId} as disconnected (${e instanceof Error ? e.message : 'error'})`);
     }

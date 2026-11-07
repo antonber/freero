@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "تعذّر فتح هذه الجولة الإرشادية.",
   "walkthroughsNeedAFreeroServer": "تحتاج الجولات الإرشادية إلى خادم Freero.",
@@ -298,5 +299,6 @@
   "presentersNames": "مقدّمو العرض: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "متابعة من يتحدث (التبديل إلى عرض {name} فقط)",
-  "followingName": "متابعة عرض {name} (التبديل إلى من يتحدث)"
+  "followingName": "متابعة عرض {name} (التبديل إلى من يتحدث)",
+  "youLeftTheBoardSoThe": "غادرت اللوحة، لذا تم تجاهل التسجيل."
 }

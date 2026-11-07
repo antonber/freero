@@ -10,6 +10,16 @@ import * as service from './service';
 
 export const DIGEST_LOCK_KEY = 7_202_610_291; // arbitrary, constant across releases
 
+/** One step of the digest job; a failure is logged and the next run tries it again. */
+async function step<T>(what: string, fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (e) {
+    logError(`notifications: ${what} failed; trying again next run`, e);
+    return null;
+  }
+}
+
 /** Sources of notifications + the email digest job (scheduled on every instance; one runs). */
 export default function initNotifications(ctx: ServerContext): void {
   const stops = [
@@ -37,13 +47,14 @@ export default function initNotifications(ctx: ServerContext): void {
     name: 'notifications:digest',
     lockKey: DIGEST_LOCK_KEY,
     intervalMs: ctx.config.notifyEmailIntervalMs,
+    // Each step on its own: one that fails (logged) never keeps the others' email from going out.
     run: async () => {
-      await service.sweepPendingMentions();
+      await step('sweeping pending mentions', () => service.sweepPendingMentions());
       // Due-date reminders first, so one due now goes out in this run's digest.
-      await cards.sendDueReminders();
-      const sent = await service.sendDigests();
+      await step('due-date reminders', () => cards.sendDueReminders());
+      const sent = await step('the notification digest', () => service.sendDigests());
       // "Changes on your boards" (opt-in, daily / weekly in each person's time zone).
-      await boardChanges.sendBoardChangeDigests();
+      await step('"changes on your boards"', () => boardChanges.sendBoardChangeDigests());
       digestRuns.inc();
       return sent;
     },

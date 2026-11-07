@@ -44,6 +44,34 @@ it('changing the password signs out the other devices but keeps this one', async
   expect((await repo.listSessions(user.id, Date.now())).map((s) => s.tokenHash)).toEqual([here]);
 });
 
+// The "your email is changing" notice tells the owner to change their password if it wasn't them:
+// doing so (by reset link or signed in) must kill the confirmation link the other person holds.
+it('an email change someone else started can not be confirmed once the owner reset the password', async () => {
+  const owner = email('owner');
+  const thief = email('thief');
+  const user = await createUser({ name: 'Owner', email: owner, password: 'password-123' }, { emailVerified: true });
+  await requestEmailChange(null, user.id, thief, 'password-123');
+  const change = await mailedToken(thief, '/confirm-email');
+  requestPasswordReset(null, owner);
+  await resetPassword(null, await mailedToken(owner, '/reset-password'), 'brand-new-password-1');
+
+  await expect(confirmEmailChange(null, change)).rejects.toMatchObject({ status: 400 });
+  expect((await repo.findUserById(user.id))?.email).toBe(owner);
+});
+
+it('an email change someone else started can not be confirmed once the owner changed the password', async () => {
+  const owner = email('owner');
+  const thief = email('thief');
+  const user = await createUser({ name: 'Owner', email: owner, password: 'password-123' }, { emailVerified: true });
+  const here = await session(user.id);
+  await requestEmailChange(null, user.id, thief, 'password-123');
+  const change = await mailedToken(thief, '/confirm-email');
+  await changePassword(null, user.id, here, 'password-123', 'brand-new-password-1');
+
+  await expect(confirmEmailChange(null, change)).rejects.toMatchObject({ status: 400 });
+  expect((await repo.findUserById(user.id))?.email).toBe(owner);
+});
+
 it('an email change to an address someone took meanwhile fails and keeps the old address', async () => {
   const from = email('from');
   const to = email('to');

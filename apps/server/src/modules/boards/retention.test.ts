@@ -16,7 +16,7 @@ import {
 } from '../workspaces/index';
 import { getBoardAccess, recordBoardOpen } from './index';
 import { applyRetentionLocked, onBoardRetentionHold } from './retention';
-import { createBoard, setBoardArchived } from './service';
+import { createBoard, restoreFromTrash, setBoardArchived } from './service';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
@@ -90,6 +90,25 @@ it('a trash rule never removes a board under a legal hold, an archived board, a 
   await applyRetentionLocked(t + (RETENTION_NOTICE_DAYS + 1) * DAY);
   off();
   expect(await state(caseFile.id, owner.id)).toBe('live');
+});
+
+it('a board its owner restored after a trash rule removed it is not trashed again until it is idle for the period again and its owner is warned afresh', async () => {
+  const owner = await user('Owner');
+  const ws = await teamWithRule(owner, 'trash', 30);
+  const board = await createBoard(owner.id, 'Quarterly plan', '', 'none', { workspaceId: ws });
+  const t = Date.now() + 40 * DAY;
+  await applyRetentionLocked(t); // warned
+  const trashedAt = t + (RETENTION_NOTICE_DAYS + 1) * DAY;
+  await applyRetentionLocked(trashedAt);
+  expect(await state(board.id, owner.id)).toBe('gone');
+
+  await restoreFromTrash(board.id, owner.id, trashedAt + 60_000); // "keep it"
+  await applyRetentionLocked(trashedAt + 60 * 60_000); // the next hourly round
+  expect(await state(board.id, owner.id)).toBe('live');
+  await applyRetentionLocked(trashedAt + 31 * DAY); // idle for the period again: warned, not trashed
+  expect(await state(board.id, owner.id)).toBe('live');
+  await applyRetentionLocked(trashedAt + (31 + RETENTION_NOTICE_DAYS + 1) * DAY);
+  expect(await state(board.id, owner.id)).toBe('gone');
 });
 
 it('an organisation’s retention rule is a floor: its workspaces get the stricter action and the shorter period, and can’t ask for less', async () => {

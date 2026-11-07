@@ -350,6 +350,22 @@ export async function withAdvisoryLock<T>(key: number, fn: () => Promise<T>): Pr
 }
 const heldLocks = new Set<number>();
 
+/** Who holds each advisory lock key this process schedules under (reserveLockKey). */
+const lockOwners = new Map<number, string>();
+
+/**
+ * Claims an advisory lock key for one owner (a scheduled job, an outbox consumer) as it is
+ * registered. Two owners on one key would each skip the other's runs, silently and on every
+ * instance; so the second one fails here, at startup, naming both. The same owner registering
+ * again (a re-init in tests) is fine.
+ */
+export function reserveLockKey(key: number, owner: string): void {
+  const held = lockOwners.get(key);
+  if (held !== undefined && held !== owner)
+    throw new Error(`advisory lock key ${key} is used by both ${held} and ${owner}: give one of them a key of its own (constant across releases)`);
+  lockOwners.set(key, owner);
+}
+
 /** Readiness probe. */
 export async function pingDb(): Promise<void> {
   await d().query('SELECT 1', []);
@@ -397,6 +413,7 @@ export const MIGRATION_FILE_RE = /^(\d{12})_([a-z0-9_]+)\.sql$/;
 
 /** Any process starting migrations takes this Postgres advisory lock first. */
 const MIGRATION_LOCK_KEY = 7_202_610_270; // arbitrary, constant across releases
+reserveLockKey(MIGRATION_LOCK_KEY, 'database migrations');
 
 /**
  * Reads modules/<m>/migrations/*.sql under `modulesDir`, plus the platform's own (the `_` tables

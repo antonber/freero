@@ -2,6 +2,8 @@
 // - A provider account (issuer + subject) signs in to the account it is connected to.
 // - It is connected automatically only to the account whose address the provider asserts as
 //   VERIFIED (and, when that account has two-factor on, only after its second step — see signIn.ts).
+//   If that account never verified the address, whatever its creator set up (password, two-step,
+//   other sign-ins, links, sessions) ends first: the provider proved whose address it is.
 // - An address the provider doesn't vouch for never matches an existing account; it may start a
 //   new (unverified) one if nobody uses it.
 // - Signed in, anyone can connect a provider account that is not connected elsewhere.
@@ -15,7 +17,7 @@ import { auditOwnAccount } from './service';
 import type { ProviderClaims } from './oidc';
 import * as repo from './repo';
 import { signupRefusal } from './signups';
-import { endSessionsOf, insertAccount, markEmailVerified, normalizeEmail, validEmail } from './service';
+import { emailVerified, endSessionsOf, insertAccount, markEmailVerified, normalizeEmail, validEmail } from './service';
 
 export function providerConfig(id: string): OidcProviderConfig | null {
   return getConfig().oidcProviders.find((p) => p.id === id) ?? null;
@@ -36,6 +38,19 @@ export function providerLabel(id: string): string {
 
 export function toLinkedIdentity(i: repo.IdentityRecord): LinkedIdentity {
   return { id: i.id, provider: i.provider, providerLabel: providerLabel(i.provider), email: i.email, createdAt: i.createdAt, lastUsedAt: i.lastUsedAt };
+}
+
+/**
+ * An authority (a provider that vouches for the address, a workspace's directory at its verified
+ * domain) says `email` is the person's, and the account using it never proved it: it may have been
+ * registered by someone else. Before it is handed to anyone, what its creator set up stops working
+ * (password, two-step verification, provider sign-ins, pending links, sessions) and the address
+ * counts as verified. A no-op for an account whose address was verified.
+ */
+async function claimVouchedAddress(userId: string, email: string): Promise<void> {
+  if (!(await repo.claimUnverifiedAccount(userId, email, Date.now()))) return;
+  await endSessionsOf(userId);
+  await emailVerified(userId, email);
 }
 
 const linkOf = (provider: string, c: ProviderClaims, email: string | null): repo.PendingLink => ({
@@ -61,7 +76,12 @@ export async function resolveProviderLogin(provider: string, c: ProviderClaims, 
   const email = c.email ? normalizeEmail(c.email) : '';
   if (!email || !validEmail(email)) return { error: 'no_email' };
   const user = await repo.findUserByEmail(email);
-  if (user) return c.emailVerified ? { userId: user.id, link: linkOf(provider, c, email), created: false } : { error: 'email_in_use' };
+  if (user && !c.emailVerified) return { error: 'email_in_use' };
+  if (user) {
+    // Before the second step: one set up on an unverified account was set up by its creator.
+    if (!user.emailVerified) await claimVouchedAddress(user.id, email);
+    return { userId: user.id, link: linkOf(provider, c, email), created: false };
+  }
   if (await signupRefusal(email)) return { error: 'signup_closed' };
   const name = (c.name ?? email.split('@')[0]).slice(0, 80);
   try {
@@ -80,7 +100,8 @@ export async function resolveProviderLogin(provider: string, c: ProviderClaims, 
  * A workspace's own identity provider (single sign-on, modules/sso). The caller has checked that
  * the asserted address is at a domain the workspace proved it controls (DNS), so the provider is
  * the authority for it: an existing account with that address is reached (connected after its
- * second step, like a vouched provider sign-in) and otherwise one is made, verified. The identity
+ * second step, like a vouched provider sign-in; one that never verified the address is claimed
+ * first, claimVouchedAddress) and otherwise one is made, verified. The identity
  * (`provider` = 'sso:<workspaceId>', issuer, subject) keeps signing in to the same account.
  */
 export async function resolveDirectoryLogin(
@@ -97,7 +118,11 @@ export async function resolveDirectoryLogin(
   if (!validEmail(email)) throw new HttpError(400, 'The identity provider sent no usable email address');
   const claims: ProviderClaims = { issuer: c.issuer, subject: c.subject, email, emailVerified: true, name: c.name };
   const user = await repo.findUserByEmail(email);
-  if (user) return { userId: user.id, link: linkOf(provider, claims, email), created: false };
+  if (user) {
+    // Before the workspace grants membership or the sign-in reaches a second step its creator set up.
+    if (!user.emailVerified) await claimVouchedAddress(user.id, email);
+    return { userId: user.id, link: linkOf(provider, claims, email), created: false };
+  }
   try {
     const account = await insertAccount(
       { name: (c.name ?? email.split('@')[0]).slice(0, 80), email, passwordHash: null, emailVerified: true },
@@ -113,21 +138,28 @@ export async function resolveDirectoryLogin(
 
 /**
  * Provisioning (SCIM): the account of an address at a domain the workspace proved it controls —
- * the existing one, or a new passwordless, verified one (its owner signs in through the
- * workspace's single sign-on, or sets a password with a reset link).
+ * the existing one (claimed first if it never verified the address, claimVouchedAddress), or a new
+ * passwordless, verified one (its owner signs in through the workspace's single sign-on, or sets a
+ * password with a reset link).
  */
 export async function provisionDirectoryAccount(emailIn: string, name: string | null): Promise<{ userId: string; created: boolean }> {
   const email = normalizeEmail(emailIn);
   if (!validEmail(email)) throw new HttpError(400, 'Not a valid email address');
   const user = await repo.findUserByEmail(email);
-  if (user) return { userId: user.id, created: false };
+  if (user) {
+    if (!user.emailVerified) await claimVouchedAddress(user.id, email);
+    return { userId: user.id, created: false };
+  }
   try {
     const account = await insertAccount({ name: (name?.trim() || email.split('@')[0]).slice(0, 80), email, passwordHash: null, emailVerified: true });
     return { userId: account.id, created: true };
   } catch (e) {
     if (e instanceof HttpError && e.status === 409) {
       const raced = await repo.findUserByEmail(email);
-      if (raced) return { userId: raced.id, created: false };
+      if (raced) {
+        if (!raced.emailVerified) await claimVouchedAddress(raced.id, email);
+        return { userId: raced.id, created: false };
+      }
     }
     throw e;
   }
@@ -136,12 +168,13 @@ export async function provisionDirectoryAccount(emailIn: string, name: string | 
 /**
  * Connects a provider identity to the account (a sign-in that matched it by verified email, after
  * any second step). If the account's own address was never verified, the provider just proved it
- * belongs to the person signing in now — not necessarily to whoever created the account with it: a
- * password, sessions and pending email links set up by someone else stop working.
+ * belongs to the person signing in now — not necessarily to whoever created the account with it:
+ * what someone else set up there stops working first (claimVouchedAddress).
  */
 export async function connectIdentity(req: Request | null, userId: string, link: repo.PendingLink): Promise<void> {
   const user = await repo.findUserById(userId);
   if (!user) throw new HttpError(401, 'Not logged in');
+  if (link.emailVerified && link.email === user.email && !user.emailVerified) await claimVouchedAddress(userId, user.email);
   try {
     await repo.insertIdentity({ id: newId(), userId, ...link, createdAt: Date.now() });
   } catch (e) {
@@ -150,13 +183,6 @@ export async function connectIdentity(req: Request | null, userId: string, link:
     if (e instanceof repo.ProviderAlreadyLinkedError)
       throw new HttpError(409, `This account is already connected to another ${providerLabel(link.provider)} account`);
     throw e;
-  }
-  if (link.emailVerified && link.email === user.email && !user.emailVerified) {
-    await repo.setPasswordHash(userId, null);
-    await repo.deleteTokens(userId, 'change_email');
-    await repo.deleteTokens(userId, 'reset_password');
-    await endSessionsOf(userId);
-    await markEmailVerified(userId, user.email);
   }
   await auditOwnAccount('auth.provider_connected', userId, { provider: link.provider, providerEmail: link.email });
   sendSecurityNotice(req, user.email, { kind: 'provider_connected', provider: providerLabel(link.provider), providerEmail: link.email });

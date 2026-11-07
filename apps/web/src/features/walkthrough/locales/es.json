@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "No se pudo abrir este recorrido.",
   "walkthroughsNeedAFreeroServer": "Los recorridos necesitan un servidor de Freero.",
@@ -298,5 +299,6 @@
   "presentersNames": "Presentadores: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "Sigue a quien habla (cambiar solo a la vista de {name})",
-  "followingName": "Sigue la vista de {name} (cambiar a quien habla)"
+  "followingName": "Sigue la vista de {name} (cambiar a quien habla)",
+  "youLeftTheBoardSoThe": "Saliste del tablero, así que se descartó la grabación."
 }

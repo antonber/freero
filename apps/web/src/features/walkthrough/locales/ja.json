@@ -148,7 +148,8 @@
     "presentersNames",
     "speakerSays",
     "followingWhoeverSpeaks",
-    "followingName"
+    "followingName",
+    "youLeftTheBoardSoThe"
   ],
   "thisWalkthroughCouldnTBe": "このウォークスルーを開けませんでした。",
   "walkthroughsNeedAFreeroServer": "ウォークスルーには Freero サーバーが必要です。",
@@ -298,5 +299,6 @@
   "presentersNames": "発表者: {names}",
   "speakerSays": "{name}:",
   "followingWhoeverSpeaks": "話している人を追従中（{name} さんの表示のみに切り替え）",
-  "followingName": "{name} さんの表示を追従中（話している人に切り替え）"
+  "followingName": "{name} さんの表示を追従中（話している人に切り替え）",
+  "youLeftTheBoardSoThe": "ボードを離れたため、録画は破棄されました。"
 }

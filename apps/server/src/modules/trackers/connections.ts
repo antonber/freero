@@ -109,15 +109,23 @@ async function refreshed(c: StoredConnection, creds: Extract<Credentials, { kind
   const oauth = oauthProviderOf(c.provider);
   if (!app || !oauth || !creds.refreshToken) throw new TrackerError(`${c.name}’s authorization expired: connect it again.`, 'auth', 401);
   const stored = await repo.getConnection(c.id);
+  const revoked = () => new TrackerError(`${c.name} needs to be connected again.`, 'auth', 401);
+  // Taken back meanwhile (the owner signed out everywhere): a refresh must not bring them back.
+  if (stored && !stored.credentialsSealed) throw revoked();
   if (!force && stored?.credentialsSealed && stored.credentialsSealed !== c.credentialsSealed) {
     c.credentialsSealed = stored.credentialsSealed;
     const theirs = openCredentials(c);
     if (theirs.kind === 'oauth' && (theirs.expiresAt === null || theirs.expiresAt > Date.now() + 60_000)) return theirs;
     if (theirs.kind === 'oauth') creds = theirs;
   }
+  const before = c.credentialsSealed;
   const next = await oauth.refresh({ clientId: app.clientId, clientSecret: app.clientSecret, refreshToken: creds.refreshToken! });
-  c.credentialsSealed = sealCredentials(next);
-  if (stored) await repo.updateConnection(c.id, { credentialsSealed: c.credentialsSealed });
+  const sealed = sealCredentials(next);
+  // Kept only over the credentials this refresh started from: revoked meanwhile, they stay revoked;
+  // replaced meanwhile (connected again, another instance's refresh), theirs are kept and this call
+  // uses its own pair once.
+  if (stored && before && !(await repo.resealCredentials(c.id, before, sealed)) && !(await repo.getConnection(c.id))?.credentialsSealed) throw revoked();
+  c.credentialsSealed = sealed;
   return next;
 }
 
@@ -207,10 +215,14 @@ export function openConnection(c: StoredConnection): ProviderConnection {
   };
 }
 
-/** Remembers how the last call to the tracker went (shown to whoever manages the connection). */
+/**
+ * Remembers how the last call to the tracker went (shown to whoever manages the connection): only
+ * while the connection still holds the credentials the call was made with (`c` as read, refreshed
+ * in hand), so a call that finishes after they were revoked or replaced says nothing about them.
+ */
 export async function noteOutcome(c: StoredConnection, error: unknown): Promise<void> {
-  if (!error) return repo.noteConnectionStatus(c.id, 'active', null);
-  if (error instanceof TrackerError && error.kind === 'auth') return repo.noteConnectionStatus(c.id, c.auth === 'oauth' ? 'needs_auth' : 'error', error.message);
+  if (!error) return repo.noteConnectionStatus(c.id, c.credentialsSealed, 'active', null);
+  if (error instanceof TrackerError && error.kind === 'auth') return repo.noteConnectionStatus(c.id, c.credentialsSealed, c.auth === 'oauth' ? 'needs_auth' : 'error', error.message);
 }
 
 // ---- managing ----
@@ -361,12 +373,11 @@ export async function trackerFieldsOf(id: string, userId: string): Promise<Track
 export async function testConnection(c: StoredConnection): Promise<StoredConnection> {
   try {
     const me = await providerOf(c.provider).whoAmI(openConnection(c));
-    const updated = await repo.updateConnection(c.id, {
-      settings: { ...c.settings, ...foundSettings(c, me.settings), account: me.account },
-      status: 'active',
-      lastError: null,
-    });
-    return updated ?? c;
+    const updated = await repo.updateConnection(c.id, { settings: { ...c.settings, ...foundSettings(c, me.settings), account: me.account } });
+    if (!updated) return c;
+    // Active again only while it holds the credentials just tested.
+    await noteOutcome(c, null);
+    return (await repo.getConnection(c.id)) ?? updated;
   } catch (e) {
     await noteOutcome(c, e);
     throw e instanceof TrackerError ? new HttpError(e.kind === 'auth' ? 400 : 502, e.message, 'tracker_refused') : e;

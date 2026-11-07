@@ -172,6 +172,11 @@ interface DirectoryClaims {
   idpInitiated?: boolean;
   /** SAML (#13): the IdP's session this sign-in belongs to, for single logout. */
   samlSession?: SamlSessionTag['saml'];
+  /**
+   * The connection's `updatedAt` when the answer was validated: it counts as a test of that
+   * connection only (absent in a flow parked by an older server: it counts for nothing).
+   */
+  connectionSeen?: number;
 }
 
 /** What a SAML sign-in tells the session it opens (auth's opaque `sessionTag`; logout.ts reads it). */
@@ -239,6 +244,7 @@ export async function samlAcs(req: Request, res: Response): Promise<void> {
     name: claims.name,
     sessionNotOnOrAfter: claims.sessionNotOnOrAfter,
     samlSession: { nameId: claims.subject, nameIdFormat: claims.nameIdFormat, sessionIndex: claims.sessionIndex },
+    connectionSeen: c.updatedAt,
   };
   if (claims.inResponseTo === null) {
     // Unsolicited: the identity provider started this sign-in (its app tile). The library has
@@ -305,7 +311,7 @@ export async function oidcCallback(req: Request, res: Response): Promise<void> {
     return void fail(res, e instanceof OidcUnavailableError ? 'sso_unavailable' : 'sso_failed');
   }
   if (!claims.email) return void fail(res, 'no_email');
-  await completeDirectorySignIn(req, res, c, { ...claims, email: claims.email.toLowerCase(), sessionNotOnOrAfter: null }, flow.returnTo);
+  await completeDirectorySignIn(req, res, c, { ...claims, email: claims.email.toLowerCase(), sessionNotOnOrAfter: null, connectionSeen: c.updatedAt }, flow.returnTo);
 }
 
 /**
@@ -356,7 +362,7 @@ async function completeDirectorySignIn(req: Request, res: Response, c: repo.Conn
     await refused(workspaceId, e.message, { userId: r.userId, email: claims.email });
     return void fail(res, e.code === SSO_REQUIRED ? 'sso_required' : 'sso_failed');
   }
-  await repo.markTested(workspaceId, Date.now());
+  if (claims.connectionSeen !== undefined) await repo.markTested(workspaceId, Date.now(), claims.connectionSeen);
   await recordAuditQuietly({
     action: 'sso.login',
     workspaceId,

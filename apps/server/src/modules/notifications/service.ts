@@ -407,38 +407,72 @@ const DIGEST_MAX_ITEMS = 20;
 /**
  * Emails everyone whose oldest pending notification is older than the delay one digest with all of
  * them. Read ones, types they opted out of, unverified addresses and accounts being deleted are
- * skipped (and never emailed later). Claim-then-send: a failed send hands them back to the next run.
+ * skipped (and never emailed later). Claim-then-send: a digest that fails before it is sent is
+ * handed back to the next run; one the mail server refuses is tried again later (digestRefused).
  */
 export async function sendDigests(now = Date.now()): Promise<number> {
   const config = getConfig();
   let sent = 0;
-  for (const userId of await repo.usersWithEmailDue(now - config.notifyEmailDelayMs, DIGEST_BATCH)) {
-    const claimed = await repo.claimForEmail(userId, now);
-    const prefs = await repo.prefs(userId);
-    if (prefs.get(ALL) === false) continue;
-    // Direct types were emailed on their own when they were created; ones sent to Slack (#105)
-    // reached the person there.
-    const due = claimed.filter(
-      (r) => r.readAt === null && r.slackedAt === null && isNotificationType(r.type) && !NOTIFICATION_TYPES[r.type].direct && prefs.get(r.type) !== false,
-    );
-    if (!due.length) continue;
-    let account;
+  for (const userId of await repo.usersWithEmailDue(now - config.notifyEmailDelayMs, now, DIGEST_BATCH)) {
+    // Claimed and not dealt with yet: handed back if this person's digest fails before it is sent.
+    let held: string[] = [];
     try {
-      account = await getAccount(userId);
-    } catch {
-      continue; // deleted meanwhile
-    }
-    if (!account.emailVerified || account.deletionScheduledFor) continue;
-    try {
-      await sendMail({ to: account.email, ...(await renderDigest(userId, due, account.locale ?? null)) });
-      sent++;
+      const claimed = await repo.claimForEmail(userId, now);
+      held = claimed.map((r) => r.id);
+      const prefs = await repo.prefs(userId);
+      if (prefs.get(ALL) === false) continue;
+      // Direct types were emailed on their own when they were created; ones sent to Slack (#105)
+      // reached the person there.
+      const due = claimed.filter(
+        (r) => r.readAt === null && r.slackedAt === null && isNotificationType(r.type) && !NOTIFICATION_TYPES[r.type].direct && prefs.get(r.type) !== false,
+      );
+      held = due.map((r) => r.id);
+      if (!due.length) continue;
+      let account;
+      try {
+        account = await getAccount(userId);
+      } catch {
+        continue; // deleted meanwhile
+      }
+      if (!account.emailVerified || account.deletionScheduledFor) continue;
+      const mail = await renderDigest(userId, due, account.locale ?? null);
+      try {
+        await sendMail({ to: account.email, ...mail });
+        sent++;
+      } catch (e) {
+        await digestRefused(due.map((r) => r.id), now, e);
+      }
     } catch (e) {
-      await repo.unclaim(due.map((r) => r.id));
-      logError('notifications: could not send a digest; retrying next run', e);
+      // One person's digest failing (a lookup, a database hiccup) never stops the others'.
+      await repo.unclaim(held).catch(() => {});
+      logError('notifications: could not prepare a digest; retrying next run', e);
     }
   }
   if (sent) log(`notifications: sent ${sent} digest email(s)`);
   return sent;
+}
+
+/** Waits before a refused digest is tried again: doubling from DIGEST_RETRY_MS up to DIGEST_RETRY_MAX_MS. */
+const DIGEST_RETRY_MS = 5 * 60_000;
+const DIGEST_RETRY_MAX_MS = 6 * 3_600_000;
+/** Refused this many times (about 16 hours with the waits above), a digest is given up on. */
+const DIGEST_MAX_ATTEMPTS = 8;
+
+/**
+ * The mail server refused a digest (a mailbox that doesn't exist, an outage): it is tried again
+ * after a growing wait, never on every run, and given up on after DIGEST_MAX_ATTEMPTS. Its
+ * notifications stay in the inbox either way.
+ */
+async function digestRefused(ids: string[], now: number, err: unknown): Promise<void> {
+  const attempts = (await repo.emailAttempts(ids)) + 1;
+  if (attempts >= DIGEST_MAX_ATTEMPTS) {
+    await repo.emailRefused(ids, attempts, null);
+    logError(`notifications: a digest was refused ${attempts} times; giving up on it (its notifications stay in the inbox)`, err);
+    return;
+  }
+  const wait = Math.min(DIGEST_RETRY_MAX_MS, DIGEST_RETRY_MS * 2 ** (attempts - 1));
+  await repo.emailRefused(ids, attempts, now + wait);
+  logError(`notifications: could not send a digest; trying again in ${Math.round(wait / 60_000)} min`, err);
 }
 
 async function renderDigest(userId: string, rows: repo.NotificationRow[], locale: string | null) {

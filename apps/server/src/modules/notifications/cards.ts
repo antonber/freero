@@ -113,27 +113,40 @@ export async function sendDueReminders(now = Date.now()): Promise<number> {
     // else: not tomorrow there yet
   }
   for (const [boardId, watches] of byBoard) {
-    const title = await getBoardTitle(boardId);
-    for (const w of watches) {
-      const { role } = await getBoardAccess(boardId, w.assigneeId);
-      const card =
-        title !== null && role
-          ? (await readBoardView(boardId, { userId: w.assigneeId, role })).elements.find((e) => e.el.id === w.elementId && e.el.type === 'card')?.el
-          : undefined;
-      const still = card && card.type === 'card' && card.assigneeId === w.assigneeId && (card.dueDate ?? '').slice(0, 10) === w.dueDate;
-      if (still && title !== null) {
-        const created = await notify({
-          userId: w.assigneeId,
-          type: 'card.due_soon',
-          actorId: null,
-          boardId,
-          data: { boardTitle: title, elementId: w.elementId, cardTitle: richTextToPlain(card.title ?? '').trim().slice(0, 200) || w.title, dueDate: w.dueDate },
-          dedupeKey: `due:${boardId}:${w.elementId}:${w.dueDate}`,
-        });
-        if (created) sent++;
-      }
-      await repo.markCardReminded(boardId, w.elementId, w.dueDate);
+    // One board that can't be read right now (its document fails to load: a workspace key's KMS
+    // unreachable, a damaged stored row) is tried again next run; the other cards still go.
+    try {
+      sent += await remindOnBoard(boardId, watches);
+    } catch (e) {
+      logError(`notifications: could not check due-date reminders on board ${boardId}; trying again next run`, e);
     }
+  }
+  return sent;
+}
+
+/** The reminders due on one board (sendDueReminders). */
+async function remindOnBoard(boardId: string, watches: repo.CardDueWatch[]): Promise<number> {
+  let sent = 0;
+  const title = await getBoardTitle(boardId);
+  for (const w of watches) {
+    const { role } = await getBoardAccess(boardId, w.assigneeId);
+    const card =
+      title !== null && role
+        ? (await readBoardView(boardId, { userId: w.assigneeId, role })).elements.find((e) => e.el.id === w.elementId && e.el.type === 'card')?.el
+        : undefined;
+    const still = card && card.type === 'card' && card.assigneeId === w.assigneeId && (card.dueDate ?? '').slice(0, 10) === w.dueDate;
+    if (still && title !== null) {
+      const created = await notify({
+        userId: w.assigneeId,
+        type: 'card.due_soon',
+        actorId: null,
+        boardId,
+        data: { boardTitle: title, elementId: w.elementId, cardTitle: richTextToPlain(card.title ?? '').trim().slice(0, 200) || w.title, dueDate: w.dueDate },
+        dedupeKey: `due:${boardId}:${w.elementId}:${w.dueDate}`,
+      });
+      if (created) sent++;
+    }
+    await repo.markCardReminded(boardId, w.elementId, w.dueDate);
   }
   return sent;
 }

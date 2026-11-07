@@ -5,7 +5,7 @@ import { formatWalkthroughTime, MAX_WALKTHROUGH_MS, MAX_WALKTHROUGH_TITLE } from
 import { usePeers, usePointer, type PanelProps } from '@engine';
 import { Avatar, Button, IconButton, Input, Menu, Modal, Spinner, Toggle } from '@ui';
 import { START_ID } from './ids';
-import { clearRecorderError, followHost, joinRecording, notePointer, recordingOf, setInvited, startRecording, stopRecording, useRecorder, type GroupState, type RecordingPresence } from './recorder';
+import { clearRecorderError, endRecordingWithBoard, followHost, joinRecording, notePointer, recordingOf, setInvited, startRecording, stopRecording, useRecorder, type GroupState, type RecordingPresence } from './recorder';
 
 import { t } from '../messages';
 export function StartDialog({ editor }: PanelProps) {
@@ -165,6 +165,8 @@ export function RecordingOverlay({ editor }: PanelProps) {
   const pointer = usePointer();
   const peers = usePeers();
   const recording = rec.phase === 'recording';
+  // This overlay lives exactly as long as the board: leaving it ends the recording made on it.
+  useEffect(() => () => endRecordingWithBoard(editor), [editor]);
   useEffect(() => {
     if (recording) notePointer(pointer);
   }, [recording, pointer]);

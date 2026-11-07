@@ -12,13 +12,12 @@ import { log, logError } from '../../platform/log';
 import { recordAudit } from '../audit/index';
 import { getUsers } from '../auth/index';
 import { boardRecords, boardsUnderLegalHold, legalHoldScope, narrowLegalHold, placeLegalHold, releaseLegalHold } from '../boards/index';
-import { deletePrivateFile, openPrivateFile, savePrivateFile } from '../uploads/index';
+import { deletePrivateFile, newPrivateFileKey, openPrivateFile, savePrivateFile } from '../uploads/index';
 import { attachedWorkspaceIds, getWorkspaceInfo, requireScope, requireWorkspace, workspaceRole } from '../workspaces/index';
 import { buildCaseArchive } from './archive';
 import * as repo from './repo';
 
 const MAX_SUBJECTS = 500;
-const MAX_EXPORT_ATTEMPTS = 3;
 const STALE_MS = 30 * 60_000;
 export const CASE_EXPORT_LOCK_KEY = 7_202_611_311; // arbitrary, constant across releases
 
@@ -297,30 +296,36 @@ export async function openCaseExport(placeId: string, caseId: string, exportId: 
   return { ...file, filename: `freero-case-${c.id}-${new Date(e.readyAt ?? Date.now()).toISOString().slice(0, 10)}.zip` };
 }
 
-/** Expires old files, requeues stale builds, builds every pending export. Claim-based: safe on many instances. */
+/**
+ * Deletes expired and failed exports' files, retries (or fails) stale builds, builds every pending
+ * export. Claim-based: safe on many instances.
+ */
 export async function processCaseExports(): Promise<number> {
   const now = Date.now();
-  for (const f of await repo.expiredFiles(now)) {
-    if (f.fileKey) await deletePrivateFile(f.fileKey);
-    await repo.markExpired(f.id);
+  for (const f of await repo.filesToDrop(now)) {
+    await deletePrivateFile(f.fileKey);
+    await repo.fileDropped(f.id);
   }
   await repo.requeueStale(now - STALE_MS);
   let built = 0;
   for (;;) {
-    const e = await repo.claimNext(Date.now());
+    const e = await repo.claimNext(Date.now(), newPrivateFileKey());
     if (!e) return built;
     try {
       const c = await repo.getCaseById(e.caseId);
       if (!c) throw new Error('the case is gone');
       const zip = await buildCaseArchive(c, await legalHoldScope(c.id), e.requestedBy);
-      const key = await savePrivateFile(zip);
+      const key = e.fileKey!; // recorded by the claim, so whatever happens next the row still names the file
+      await savePrivateFile(key, zip);
       const at = Date.now();
-      if (!(await repo.markReady(e.id, key, zip.byteLength, at, at + getConfig().dataExportTtlMs))) await deletePrivateFile(key);
-      else log(`ediscovery: case export ${e.id} ready (${zip.byteLength} bytes)`);
+      if (await repo.markReady(e.id, e.attempts, zip.byteLength, at, at + getConfig().dataExportTtlMs)) log(`ediscovery: case export ${e.id} ready (${zip.byteLength} bytes)`);
+      // This attempt lost the row (taken for stale meanwhile). While the row names the file, the
+      // newer attempt or filesToDrop deals with it; a row that no longer does never will.
+      else if (!(await repo.namesFile(e.id, key))) await deletePrivateFile(key);
       built++;
     } catch (err) {
       logError(`ediscovery: case export ${e.id} failed (attempt ${e.attempts})`, err);
-      await repo.markFailed(e.id, err instanceof Error ? err.message : String(err), MAX_EXPORT_ATTEMPTS);
+      await repo.markFailed(e.id, e.attempts, err instanceof Error ? err.message : String(err));
     }
   }
 }

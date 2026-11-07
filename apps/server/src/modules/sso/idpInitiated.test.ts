@@ -136,3 +136,26 @@ it('the RelayState of an IdP-initiated sign-in is honoured only as a same-origin
     expect(unsolicitedReturnPath(relay, 'w1'), relay).toBe(dashboard);
   expect(unsolicitedReturnPath('/board/abc?item=1', 'w1')).toBe('/board/abc?item=1');
 });
+
+it('a sign-in the previous identity provider answered does not count as proving the one an admin switched to meanwhile', async () => {
+  await setIdpInitiated(true);
+  // The old provider's answer is validated at the ACS…
+  const acs = await fetch(acsUrl(), {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { origin: 'http://idp.example', 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ SAMLResponse: tile(`switch@${domain}`), RelayState: '' }).toString(),
+  });
+  const binding = acs.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+  // …and the admin points the connection at another provider before the browser finishes it.
+  await saveConnection(ws.id, owner.id, { protocol: 'saml', enabled: true, idpInitiated: true, samlMetadataXml: other.metadataXml() });
+  expect((await repo.getConnection(ws.id))?.testedAt).toBeNull();
+  await fetch(base + (acs.headers.get('location') ?? ''), { redirect: 'manual', headers: { cookie: binding } });
+
+  // Otherwise "Enforce SSO" would be allowed for a provider no sign-in has gone through.
+  expect((await repo.getConnection(ws.id))?.testedAt).toBeNull();
+  // A sign-in through the new provider is what proves it.
+  expect(await postFromTile(tile(`proof@${domain}`, {}, other))).toMatchObject({ session: true });
+  expect((await repo.getConnection(ws.id))?.testedAt).not.toBeNull();
+  await saveConnection(ws.id, owner.id, { protocol: 'saml', enabled: true, samlMetadataXml: idp.metadataXml() });
+});

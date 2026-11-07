@@ -206,12 +206,19 @@ export async function updateConnection(id: string, patch: ConnectionPatch, at = 
   return r ? toConnection(r) : null;
 }
 
-/** Status after a call: only written when it changes (every sync would otherwise write the row). */
-export async function noteConnectionStatus(id: string, status: StoredConnection['status'], lastError: string | null): Promise<void> {
+/**
+ * Status after a call made with the credentials `calledWith` (the sealed value the caller read):
+ * written only while the connection still holds exactly those. A call says nothing about
+ * credentials revoked meanwhile (signed out everywhere: they stay NULL and 'needs_auth' until
+ * someone connects again) or replaced while it ran. Only written when it changes (every sync would
+ * otherwise write the row).
+ */
+export async function noteConnectionStatus(id: string, calledWith: string | null, status: StoredConnection['status'], lastError: string | null): Promise<void> {
+  if (!calledWith) return;
   await query(
-    `UPDATE tracker_connections SET status = $2, last_error = $3, updated_at = now()
-      WHERE id = $1 AND (status IS DISTINCT FROM $2 OR last_error IS DISTINCT FROM $3)`,
-    [id, status, lastError],
+    `UPDATE tracker_connections SET status = $3, last_error = $4, updated_at = now()
+      WHERE id = $1 AND credentials_sealed = $2 AND (status IS DISTINCT FROM $3 OR last_error IS DISTINCT FROM $4)`,
+    [id, calledWith, status, lastError],
   );
 }
 
@@ -234,9 +241,12 @@ export async function revokePersonalCredentials(ownerId: string): Promise<number
   return rows.length;
 }
 
-/** Replaces a stale-sealed value only if it is still the one read (another writer wins otherwise). */
-export async function resealCredentials(id: string, before: string, after: string): Promise<void> {
-  await query(`UPDATE tracker_connections SET credentials_sealed = $3 WHERE id = $1 AND credentials_sealed = $2`, [id, before, after]);
+/**
+ * Replaces the sealed credentials only if they are still the ones read (another writer wins
+ * otherwise, and credentials revoked meanwhile stay revoked); true when it did.
+ */
+export async function resealCredentials(id: string, before: string, after: string): Promise<boolean> {
+  return (await query(`UPDATE tracker_connections SET credentials_sealed = $3 WHERE id = $1 AND credentials_sealed = $2 RETURNING id`, [id, before, after])).length > 0;
 }
 
 /** Deletes a connection (its links go with it); returns the boards that had links and their link ids. */
@@ -278,7 +288,11 @@ export interface StoredLink {
   appOrigin: string;
   base: SyncBase;
   backlinks: string[];
-  state: 'ok' | 'error' | 'paused';
+  /**
+   * 'pending': made by a request that hasn't finished (a send holding its items before the issue
+   * exists, an import before its cards are on the board): nothing syncs it meanwhile.
+   */
+  state: 'pending' | 'ok' | 'error' | 'paused';
   lastError: string | null;
   attempts: number;
   retryAt: number | null;
@@ -333,13 +347,16 @@ const LINK_SELECT = `SELECT l.*, (SELECT array_agg(s.element_id ORDER BY s.posit
 export class ItemAlreadyLinkedError extends Error {}
 export class IssueAlreadyLinkedError extends Error {}
 
-/** A new link with its items, in one transaction. An item already in another link refuses it. */
-export async function insertLink(l: Omit<StoredLink, 'state' | 'lastError' | 'attempts' | 'retryAt'>): Promise<void> {
+/**
+ * A new link with its items, in one transaction ('pending' while the request making it isn't done).
+ * An item already in another link refuses it, and so does an issue already linked on the board.
+ */
+export async function insertLink(l: Omit<StoredLink, 'state' | 'lastError' | 'attempts' | 'retryAt'>, state: 'ok' | 'pending' = 'ok'): Promise<void> {
   try {
     await tx(async (t) => {
       await t.query(
-        `INSERT INTO tracker_links (id, connection_id, board_id, external_id, external_key, external_url, created_by, app_origin, base, backlinks, synced_at, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO tracker_links (id, connection_id, board_id, external_id, external_key, external_url, created_by, app_origin, base, backlinks, synced_at, created_at, state)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           l.id,
           l.connectionId,
@@ -353,6 +370,7 @@ export async function insertLink(l: Omit<StoredLink, 'state' | 'lastError' | 'at
           l.backlinks,
           l.syncedAt ? new Date(l.syncedAt) : null,
           new Date(l.createdAt),
+          state,
         ],
       );
       if (l.sources.length)
@@ -431,7 +449,20 @@ export async function boardHasLinks(boardId: string): Promise<boolean> {
   return !!(await one(`SELECT 1 FROM tracker_links WHERE board_id = $1 LIMIT 1`, [boardId]));
 }
 
-/** After a sync: what both sides agree on now, the items whose backlink the tracker holds. */
+/**
+ * A send's reservation becomes the link of the issue it created: false when the reservation is
+ * gone (unlinked, its connection removed) or no longer pending.
+ */
+export async function activateLink(id: string, issue: Pick<StoredLink, 'externalId' | 'externalKey' | 'externalUrl' | 'base' | 'backlinks'>, at = Date.now()): Promise<boolean> {
+  const r = await query(
+    `UPDATE tracker_links SET external_id = $2, external_key = $3, external_url = $4, base = $5, backlinks = $6, synced_at = $7, state = 'ok'
+      WHERE id = $1 AND state = 'pending' RETURNING id`,
+    [id, issue.externalId, issue.externalKey, issue.externalUrl, JSON.stringify(issue.base), issue.backlinks, new Date(at)],
+  );
+  return r.length > 0;
+}
+
+/** After a sync (or once an import's cards are on the board): what both sides agree on now, the items whose backlink the tracker holds. */
 export async function markSynced(id: string, base: SyncBase, backlinks: string[], at = Date.now()): Promise<void> {
   await query(`UPDATE tracker_links SET base = $2, backlinks = $3, state = 'ok', last_error = NULL, attempts = 0, retry_at = NULL, synced_at = $4 WHERE id = $1`, [
     id,
@@ -441,9 +472,9 @@ export async function markSynced(id: string, base: SyncBase, backlinks: string[]
   ]);
 }
 
-/** A failed sync: why, and when to try again (null: not until something changes). */
+/** A failed sync: why, and when to try again (null: not until something changes). A pending link is its request's to settle. */
 export async function markFailed(id: string, state: 'error' | 'paused', error: string, retryAt: number | null): Promise<number> {
-  const r = await one<{ attempts: number }>(`UPDATE tracker_links SET state = $2, last_error = $3, attempts = attempts + 1, retry_at = $4 WHERE id = $1 RETURNING attempts`, [
+  const r = await one<{ attempts: number }>(`UPDATE tracker_links SET state = $2, last_error = $3, attempts = attempts + 1, retry_at = $4 WHERE id = $1 AND state <> 'pending' RETURNING attempts`, [
     id,
     state,
     error,
@@ -459,6 +490,31 @@ export async function removeSources(linkId: string, elementIds: string[]): Promi
 
 export async function deleteLink(id: string): Promise<void> {
   await query(`DELETE FROM tracker_links WHERE id = $1`, [id]);
+}
+
+/** A claim its request gave up (no issue was made for it): its items are free again. */
+export async function deletePendingLink(id: string): Promise<void> {
+  await query(`DELETE FROM tracker_links WHERE id = $1 AND state = 'pending'`, [id]);
+}
+
+/** A send reservation's issue id until the issue exists (unique per link, never a tracker's). */
+export const RESERVED_ISSUE = 'freero-reserved:';
+
+/**
+ * Pending links whose request died (a crash, a deploy) before `before`: a send's reservation is
+ * removed (nothing of it reached the board), an import's link is handed to a sync now, which brings
+ * its card in step or, with no card on the board, removes it. Returns the links to sync.
+ */
+export async function settleStalePending(before: number, now = Date.now()): Promise<string[]> {
+  return tx(async (t) => {
+    await t.query(`DELETE FROM tracker_links WHERE state = 'pending' AND created_at < $1 AND starts_with(external_id, $2)`, [new Date(before), RESERVED_ISSUE]);
+    const rows = await t.query<{ id: string }>(
+      `UPDATE tracker_links SET state = 'error', last_error = 'The import that made this link didn’t finish.', retry_at = $2
+        WHERE state = 'pending' AND created_at < $1 RETURNING id`,
+      [new Date(before), new Date(now)],
+    );
+    return rows.map((r) => r.id);
+  });
 }
 
 /** Links whose retry is due, taken (their retry cleared) so the job queues each once. */
@@ -677,8 +733,18 @@ export async function keepHookSecret(id: string, sealed: string, notBefore: numb
   return r.length > 0;
 }
 
-export async function activateHook(id: string, externalId: string, at = Date.now()): Promise<void> {
-  await query(`UPDATE tracker_webhooks SET state = 'active', external_id = $2, last_error = NULL, updated_at = $3 WHERE id = $1`, [id, externalId, new Date(at)]);
+/**
+ * The tracker answered a registration: active only while it is still pending under this id. False
+ * when it was dropped meanwhile (the connection switched to polling, was removed, got a new secret)
+ * or replaced by a newer registration: the caller unregisters what it made.
+ */
+export async function activateHook(id: string, externalId: string, at = Date.now()): Promise<boolean> {
+  const r = await query(`UPDATE tracker_webhooks SET state = 'active', external_id = $2, last_error = NULL, updated_at = $3 WHERE id = $1 AND state = 'pending' RETURNING id`, [
+    id,
+    externalId,
+    new Date(at),
+  ]);
+  return r.length > 0;
 }
 
 export async function failHook(id: string, error: string, externalId: string | null = null, at = Date.now()): Promise<void> {

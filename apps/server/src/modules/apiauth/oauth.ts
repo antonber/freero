@@ -38,6 +38,14 @@ export { cleanRedirectUri, redirectMatches } from './redirects';
 export const CODE_TTL_MS = 10 * 60_000;
 export const ACCESS_TTL_MS = 60 * 60_000;
 export const REFRESH_TTL_MS = 30 * 86_400_000;
+/**
+ * How long after a rotation the app that rotated may present the old refresh token again and get a
+ * fresh pair, instead of that counting as a replay: an MCP client whose access token expired fires
+ * several tool calls at once and each refreshes, or a response is lost and the client retries (HTTP
+ * clients time out after 5–30 s, then retry with a backoff). Only while the app hasn't used a
+ * refresh token issued in place of it: once it has, the old one can only be a copy.
+ */
+export const REFRESH_RETRY_WINDOW_MS = 60_000;
 export const MAX_CLIENTS_PER_USER = 20;
 /** The resource an app gets when it names none: the REST API. */
 export const DEFAULT_RESOURCE = '/api/v1';
@@ -356,7 +364,12 @@ async function authenticateClient(req: Request, body: Record<string, unknown>): 
   return client;
 }
 
-async function issueTokens(grant: repo.GrantRow, scopes: string[], issuedVia: string, clientName: string) {
+/** What the consent allows of `scopes` (a newer consent may have narrowed it); never more. */
+const allowedBy = (grant: repo.GrantRow, scopes: string[]) => [...new Set(scopes.filter((s) => grant.scopes.includes(s)))];
+
+/** Issues an access and refresh token pair; call it holding the consent's lock (repo.lockGrant). */
+async function issueTokens(grant: repo.GrantRow, scopes: string[], issuedVia: string, clientName: string, rotatedFrom: string | null = null) {
+  if (!scopes.length) throw new OAuthError('invalid_grant', 'The person no longer allows this app anything it asked for here; connect it again');
   const access = newSecret(ACCESS_PREFIX);
   const refresh = newSecret(REFRESH_PREFIX);
   const now = Date.now();
@@ -377,8 +390,47 @@ async function issueTokens(grant: repo.GrantRow, scopes: string[], issuedVia: st
       issuedVia,
       createdAt: now,
       expiresAt: now + ttl,
+      rotatedFrom: kind === 'refresh' ? rotatedFrom : null,
     });
   return { access_token: access, token_type: 'Bearer', expires_in: ACCESS_TTL_MS / 1000, refresh_token: refresh, scope: scopes.join(' ') };
+}
+
+/**
+ * The refresh step, in one transaction under the consent's lock: a fresh refresh token is used up
+ * and its successor pair issued together (a failure leaves the old one fresh). The same app showing
+ * it again within REFRESH_RETRY_WINDOW_MS, before using a successor, gets another pair; any other
+ * second use is a replay (someone holds a copy) and ends the whole consent. Null: refused, nothing
+ * changed. OAuthErrors thrown inside roll everything back.
+ */
+async function rotateRefreshToken(client: repo.ClientRow, presented: string, asked: string, now: number) {
+  const grantId = (await repo.tokenByHash(presented))?.grantId;
+  if (!grantId) return null;
+  return repo.transaction(async (): Promise<{ tokens: Awaited<ReturnType<typeof issueTokens>> } | { replayed: repo.TokenRow } | null> => {
+    const grant = await repo.lockGrant(grantId);
+    const token = grant && (await repo.lockRefreshToken(presented));
+    // Another app's token never touches this consent, used or not.
+    if (!grant || !token || token.grantId !== grant.id || token.clientId !== client.id) return null;
+    if (token.expiresAt !== null && token.expiresAt <= now) return null;
+    if (token.usedAt !== null) {
+      const retry = now - token.usedAt < REFRESH_RETRY_WINDOW_MS && !(await repo.successorUsed(token.id));
+      if (!retry) {
+        await repo.deleteGrantById(grant.id);
+        return { replayed: token };
+      }
+    }
+    // The consent was given again for another resource since: this chain belongs to the old one.
+    if (token.resource !== grant.resource) return null;
+    // A refresh keeps or narrows the scopes, and never exceeds the consent as it stands now. Asking
+    // for more never fails: some clients (Gemini CLI) resend every scope they want on each refresh;
+    // they get what was granted, and the response's `scope` says so (RFC 6749 §5.1).
+    let scopes = allowedBy(grant, token.scopes);
+    if (asked.trim()) {
+      const kept = asked.split(' ').filter((s) => scopes.includes(s));
+      if (kept.length) scopes = [...new Set(kept)];
+    }
+    if (token.usedAt === null) await repo.markRefreshTokenUsed(token.id, now);
+    return { tokens: await issueTokens(grant, scopes, token.issuedVia, client.name, token.id) };
+  });
 }
 
 const s256 = (verifier: string) => createHash('sha256').update(verifier).digest('base64url');
@@ -398,36 +450,21 @@ export async function tokenRequest(req: Request, body: Record<string, unknown>) 
       const verifier = typeof body.code_verifier === 'string' ? body.code_verifier : '';
       if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !safeEqual(s256(verifier), code.codeChallenge)) throw new OAuthError('invalid_grant', 'PKCE verification failed');
     }
-    const grants = await repo.grantsOf(code.userId);
-    const grant = grants.find((g) => g.clientId === client.id);
-    if (!grant) throw new OAuthError('invalid_grant', 'The person revoked this app’s access');
-    return issueTokens(grant, code.scopes, code.issuedVia, client.name);
+    // The consent is the source of truth: a code from an earlier consent gets no more than the current one.
+    return repo.transaction(async () => {
+      const grant = await repo.lockGrantOf(client.id, code.userId);
+      if (!grant) throw new OAuthError('invalid_grant', 'The person revoked this app’s access');
+      if (grant.resource !== code.resource) throw new OAuthError('invalid_grant', 'The person connected this app again since; use the newer code');
+      return issueTokens(grant, allowedBy(grant, code.scopes), code.issuedVia, client.name);
+    });
   }
   if (body.grant_type === 'refresh_token') {
     const presented = typeof body.refresh_token === 'string' ? hashSecret(body.refresh_token) : '';
-    const used = presented ? await repo.useRefreshToken(presented, now) : null;
-    if (!used) {
-      // A refresh token used twice was copied: end the whole consent (every token of it).
-      const replayed = presented ? await repo.tokenByHash(presented) : null;
-      if (replayed?.kind === 'refresh' && replayed.grantId && replayed.clientId === client.id) {
-        await repo.deleteGrantById(replayed.grantId);
-        await recordAuditQuietly({ action: 'api.app_revoked', accountId: replayed.userId, actorId: null, target: { type: 'oauth_app', id: client.id, label: client.name }, metadata: { reason: 'refresh_token_replayed' } });
-      }
-      throw new OAuthError('invalid_grant', 'The refresh token is invalid, expired or already used');
-    }
-    if (used.clientId !== client.id || !used.grantId || (used.expiresAt !== null && used.expiresAt <= now)) throw new OAuthError('invalid_grant', 'The refresh token is invalid or expired');
-    const grant = await repo.getGrant(used.grantId);
-    if (!grant) throw new OAuthError('invalid_grant', 'The person revoked this app’s access');
-    // A refresh keeps or narrows the scopes. Asking for more never fails: the refresh token is already
-    // used up here, so refusing would sign the app out (and its retry would read as a replay). Some
-    // clients (Gemini CLI) resend every scope they want on each refresh; they get what was granted,
-    // and the response's `scope` says so (RFC 6749 §5.1).
-    let scopes = used.scopes;
-    if (typeof body.scope === 'string' && body.scope.trim()) {
-      const kept = body.scope.split(' ').filter((s) => used.scopes.includes(s));
-      if (kept.length) scopes = [...new Set(kept)];
-    }
-    return issueTokens(grant, scopes, used.issuedVia, client.name);
+    const outcome = presented ? await rotateRefreshToken(client, presented, typeof body.scope === 'string' ? body.scope : '', now) : null;
+    if (outcome && 'replayed' in outcome)
+      await recordAuditQuietly({ action: 'api.app_revoked', accountId: outcome.replayed.userId, actorId: null, target: { type: 'oauth_app', id: client.id, label: client.name }, metadata: { reason: 'refresh_token_replayed' } });
+    if (!outcome || 'replayed' in outcome) throw new OAuthError('invalid_grant', 'The refresh token is invalid, expired or already used');
+    return outcome.tokens;
   }
   throw new OAuthError('unsupported_grant_type', 'grant_type must be authorization_code or refresh_token');
 }

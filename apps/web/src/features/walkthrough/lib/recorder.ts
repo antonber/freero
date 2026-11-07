@@ -150,7 +150,41 @@ function hostPresence(g: GroupState, title: string, ended?: RecordingPresence['e
   return { session: g.session, title, startedAt: g.startedAtServer, host: g.role === 'host', ...(g.role === 'host' ? { invited: g.invited } : {}), ...(ended ? { ended } : {}) };
 }
 
-/** Asks for the devices and starts recording: as the host of a new session, or joining `join`. */
+/** The start in progress: its board may close before the browser hands over the devices. */
+let starting: { editor: Editor; abandoned: boolean } | null = null;
+
+const release = (stream: MediaStream | null) => {
+  for (const t of stream?.getTracks() ?? []) t.stop();
+};
+
+/** How long MediaRecorder may take to start before the attempt counts as failed. */
+const START_TIMEOUT_MS = 10_000;
+
+/** Starts the recorder: it fires `start`, or it threw, fired `error` or never started. */
+function startRecorder(recorder: MediaRecorder): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  return new Promise((resolve) => {
+    const done = (r: { ok: true } | { ok: false; error: unknown }) => {
+      clearTimeout(timer);
+      recorder.onstart = null;
+      recorder.onerror = null;
+      resolve(r);
+    };
+    const timer = setTimeout(() => done({ ok: false, error: null }), START_TIMEOUT_MS);
+    recorder.onstart = () => done({ ok: true });
+    recorder.onerror = (e) => done({ ok: false, error: (e as Event & { error?: unknown }).error ?? e });
+    try {
+      recorder.start(1000);
+    } catch (error) {
+      done({ ok: false, error });
+    }
+  });
+}
+
+/**
+ * Asks for the devices and starts recording: as the host of a new session, or joining `join`.
+ * Every way out but a running recording gives the devices back and returns to idle, and so does
+ * the board closing meanwhile (endRecordingWithBoard).
+ */
 async function begin(editor: Editor, opts: { title: string; camera: boolean; join?: { session: string; hostId: string; hostName: string; startedAt: number } }): Promise<boolean> {
   if (state.phase !== 'idle') return false;
   if (!canRecord()) {
@@ -158,69 +192,94 @@ async function begin(editor: Editor, opts: { title: string; camera: boolean; joi
     return false;
   }
   set({ ...IDLE, phase: 'starting', camera: opts.camera, title: opts.title });
-  let stream: MediaStream;
+  const attempt = { editor, abandoned: false };
+  starting = attempt;
+  let stream: MediaStream | null = null;
+  let recorder: MediaRecorder | null = null;
   let camera = opts.camera;
+  // Gone back to idle without recording: nothing keeps the devices. No message once the board is gone.
+  const fail = (error: string | null): false => {
+    try {
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+    } catch {
+      // Already stopping: ending its tracks ends it either way.
+    }
+    release(stream);
+    set({ ...IDLE, error: attempt.abandoned ? null : error });
+    return false;
+  };
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
-      video: camera ? { width: { ideal: 480 }, height: { ideal: 480 }, facingMode: 'user' } : false,
-    });
-  } catch (e) {
-    // The camera alone may be the problem: the voice is what matters.
-    if (camera) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+        video: camera ? { width: { ideal: 480 }, height: { ideal: 480 }, facingMode: 'user' } : false,
+      });
+    } catch (e) {
+      // The camera alone may be the problem: the voice is what matters.
+      if (!camera || attempt.abandoned) return fail(message(e, false));
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         camera = false;
-        editor.host.notify(tr('theCameraIsnTAvailable'), 'info');
+        if (!attempt.abandoned) editor.host.notify(tr('theCameraIsnTAvailable'), 'info');
       } catch (e2) {
-        set({ ...IDLE, error: message(e2, false) });
-        return false;
+        return fail(message(e2, false));
       }
-    } else {
-      set({ ...IDLE, error: message(e, false) });
-      return false;
     }
-  }
-  const mimeType = pick(camera ? VIDEO_TYPES : AUDIO_TYPES);
-  let recorder: MediaRecorder;
-  try {
-    recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 64_000, ...(camera ? { videoBitsPerSecond: 350_000 } : {}) });
+    if (attempt.abandoned) return fail(null);
+    const mimeType = pick(camera ? VIDEO_TYPES : AUDIO_TYPES);
+    const rec = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 64_000, ...(camera ? { videoBitsPerSecond: 350_000 } : {}) });
+    recorder = rec;
+    const timeline = new TimelineRecorder();
+    const speech = new SpeechTracker();
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    const started = await startRecorder(rec);
+    if (!started.ok) return fail(message(started.error, camera));
+    if (attempt.abandoned) return fail(null);
+    const startedAt = now();
+    const serverStart = editor.host.serverNow();
+    const group: GroupState = opts.join
+      ? {
+          session: opts.join.session,
+          role: 'guest',
+          hostId: opts.join.hostId,
+          hostName: opts.join.hostName,
+          startedAtServer: opts.join.startedAt,
+          invited: [],
+          offsetMs: Math.max(0, Math.round(serverStart - opts.join.startedAt)),
+        }
+      : { session: nanoid(16), role: 'host', hostId: editor.user.id, hostName: editor.user.name, startedAtServer: serverStart, invited: [], offsetMs: 0 };
+    timeline.view(0, viewRectOf(editor));
+    const off = editor.on('camera', () => timeline.view(now() - startedAt, viewRectOf(editor)));
+    const limit = setTimeout(() => void stopRecording(true), Math.max(1000, MAX_WALKTHROUGH_MS - group.offsetMs));
+    const stopLevels = trackLevels(stream, speech, () => startedAt);
+    session = { editor, recorder: rec, chunks, timeline, speech, stopLevels, off, limit };
+    // A track ending (camera unplugged, permission revoked) or the recorder failing ends the
+    // recording, kept so far.
+    for (const t of stream.getTracks()) t.addEventListener('ended', () => void stopRecording(true), { once: true });
+    rec.onerror = () => void stopRecording(true);
+    set({ phase: 'recording', stream, camera, startedAt, group });
+    publish(editor, hostPresence(group, opts.title));
+    return true;
   } catch (e) {
-    for (const t of stream.getTracks()) t.stop();
-    set({ ...IDLE, error: message(e, camera) });
-    return false;
+    return fail(message(e, camera));
+  } finally {
+    if (starting === attempt) starting = null;
   }
-  const timeline = new TimelineRecorder();
-  const speech = new SpeechTracker();
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  await new Promise<void>((resolve) => {
-    recorder.onstart = () => resolve();
-    recorder.start(1000);
-  });
-  const startedAt = now();
-  const serverStart = editor.host.serverNow();
-  const group: GroupState = opts.join
-    ? {
-        session: opts.join.session,
-        role: 'guest',
-        hostId: opts.join.hostId,
-        hostName: opts.join.hostName,
-        startedAtServer: opts.join.startedAt,
-        invited: [],
-        offsetMs: Math.max(0, Math.round(serverStart - opts.join.startedAt)),
-      }
-    : { session: nanoid(16), role: 'host', hostId: editor.user.id, hostName: editor.user.name, startedAtServer: serverStart, invited: [], offsetMs: 0 };
-  timeline.view(0, viewRectOf(editor));
-  const off = editor.on('camera', () => timeline.view(now() - startedAt, viewRectOf(editor)));
-  const limit = setTimeout(() => void stopRecording(true), Math.max(1000, MAX_WALKTHROUGH_MS - group.offsetMs));
-  const stopLevels = trackLevels(stream, speech, () => startedAt);
-  session = { editor, recorder, chunks, timeline, speech, stopLevels, off, limit };
-  // The track ending (camera unplugged, permission revoked) ends the recording, kept so far.
-  for (const t of stream.getTracks()) t.addEventListener('ended', () => void stopRecording(true), { once: true });
-  set({ phase: 'recording', stream, camera, startedAt, group });
-  publish(editor, hostPresence(group, opts.title));
-  return true;
+}
+
+/**
+ * The board this recording is on is closing (its recording overlay unmounts with it): the
+ * recording ends with it and nothing is kept. Keeping is a choice the person makes with "Stop and
+ * save"; leaving is not that choice, and nothing may go on listening, or be published to the
+ * board, once its controls are gone. A start still waiting for the devices hands them back as soon
+ * as they arrive. A recording on another board (another editor) is left alone.
+ */
+export function endRecordingWithBoard(editor: Editor): void {
+  if (starting?.editor === editor) starting.abandoned = true;
+  if (session?.editor !== editor) return;
+  editor.host.notify(tr('youLeftTheBoardSoThe'), 'info');
+  void stopRecording(false);
 }
 
 /** Starts recording as the host of a new session (others can be invited while it runs). */
@@ -266,21 +325,26 @@ export async function stopRecording(save: boolean): Promise<void> {
   clearTimeout(s.limit);
   const group = state.group;
   const durationMs = Math.min(MAX_WALKTHROUGH_MS, Math.round(now() - state.startedAt));
-  const { title, camera } = state;
-  const stopped = new Promise<void>((resolve) => {
-    s.recorder.onstop = () => resolve();
-  });
-  if (s.recorder.state !== 'inactive') s.recorder.stop();
-  await stopped;
-  for (const t of state.stream?.getTracks() ?? []) t.stop();
+  const { title, camera, stream } = state;
   const kept = save && durationMs >= 500;
-  // The others recording with the host stop with it (and keep their voice only if the host kept theirs).
+  // The others recording with the host stop with it (and keep their voice only if the host kept
+  // theirs). Said before waiting for the recorder: the board may be closing.
   if (group?.role === 'host') {
     publish(s.editor, hostPresence(group, title, kept ? 'saved' : 'discarded'));
     setTimeout(() => {
       if (state.phase !== 'recording') publish(s.editor, null); // unless a new recording has started since
     }, ENDED_NOTICE_MS);
   } else publish(s.editor, null);
+  // A recorder that already stopped by itself (it failed, or every track ended) fires no more `stop`.
+  const stopped = new Promise<void>((resolve) => {
+    s.recorder.onstop = () => resolve();
+    if (s.recorder.state === 'inactive') resolve();
+  });
+  s.recorder.onerror = null;
+  if (s.recorder.state !== 'inactive') s.recorder.stop();
+  if (!kept) release(stream); // nothing to wait for: the devices go now
+  await stopped;
+  release(stream);
   if (!kept) {
     set(IDLE);
     if (save) s.editor.host.notify(tr('thatWasTooShortTo'), 'info');

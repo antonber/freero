@@ -2,7 +2,7 @@
 // code and refresh rules, and a team's API switch.
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request } from 'express';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { MCP_SCOPES } from '@freero/shared';
 import { drainOutbox, registerOutboxConsumer } from '../../platform/outbox';
 import { closeTestDb, openTestDb } from '../../platform/testing';
@@ -11,8 +11,9 @@ import { createBoard } from '../boards/index';
 import { proposeSuggestions, readBoardView, SUGGESTION_WITHDRAWALS_CONSUMER, suggestionWithdrawalsConsumer } from '../realtime/index';
 import { createTeamWorkspace, ensurePersonalWorkspace } from '../workspaces/index';
 import { authenticate, createPersonalToken, registerProtectedResource, revokePersonalToken, setTokenPaused, useInWorkspace } from './credentials';
+import { authenticateEmbed, mintEmbedTicket, redeemEmbedTicket } from './embed';
 import initApiAuth from './init';
-import { authorizationServerMetadata, checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, registerClient, registerDynamicClient, revokeApp, tokenRequest } from './oauth';
+import { authorizationServerMetadata, checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, REFRESH_RETRY_WINDOW_MS, registerClient, registerDynamicClient, revokeApp, tokenRequest } from './oauth';
 import { setCredentialBlocked, setWorkspaceApiAccess } from './workspacePolicy';
 
 const R = '/api/v1';
@@ -94,20 +95,86 @@ it('signing an account out everywhere also ends its tokens and the apps it autho
   await expect(exchange({ grant_type: 'refresh_token', client_id: app.clientId, refresh_token: issued.refresh_token })).rejects.toMatchObject({ error: 'invalid_grant' });
 });
 
-it('an authorization code works once and only with its PKCE verifier; a replayed refresh token ends the app’s access', async () => {
+it('an authorization code works once and only with its PKCE verifier; a refresh token replayed after the app moved on, or after the retry window, ends the app’s access', async () => {
   const app = await authorizeApp(alice.id);
   await expect(exchange({ grant_type: 'authorization_code', client_id: app.clientId, code: app.code, code_verifier: randomBytes(32).toString('base64url') })).rejects.toMatchObject({ error: 'invalid_grant' });
   // The failed attempt used the code up: a stolen code can't be retried with guesses.
   await expect(exchange({ grant_type: 'authorization_code', client_id: app.clientId, code: app.code, code_verifier: app.verifier })).rejects.toMatchObject({ error: 'invalid_grant' });
 
+  const refresh = (clientId: string, t: { refresh_token: string }) => exchange({ grant_type: 'refresh_token', client_id: clientId, refresh_token: t.refresh_token });
+  const replayEndsConsent = async (clientId: string, old: { refresh_token: string }, live: { access_token: string; refresh_token: string }) => {
+    await expect(refresh(clientId, old)).rejects.toMatchObject({ error: 'invalid_grant' });
+    expect(await refusal(live.access_token)).toEqual({ status: 401, code: 'invalid_token' });
+    await expect(refresh(clientId, live)).rejects.toMatchObject({ error: 'invalid_grant' });
+  };
+
+  // Within seconds, but the app already refreshed with its new token: the old one can only be a copy.
   const again = await authorizeApp(alice.id);
   const first = await exchange({ grant_type: 'authorization_code', client_id: again.clientId, code: again.code, code_verifier: again.verifier, redirect_uri: again.redirectUri });
-  const second = await exchange({ grant_type: 'refresh_token', client_id: again.clientId, refresh_token: first.refresh_token });
-  expect(await refusal(second.access_token)).toBeNull();
-  // Someone replays the first refresh token: the whole consent ends, the legitimate tokens too.
-  await expect(exchange({ grant_type: 'refresh_token', client_id: again.clientId, refresh_token: first.refresh_token })).rejects.toMatchObject({ error: 'invalid_grant' });
-  expect(await refusal(second.access_token)).toEqual({ status: 401, code: 'invalid_token' });
-  await expect(exchange({ grant_type: 'refresh_token', client_id: again.clientId, refresh_token: second.refresh_token })).rejects.toMatchObject({ error: 'invalid_grant' });
+  const second = await refresh(again.clientId, first);
+  const third = await refresh(again.clientId, second);
+  expect(await refusal(third.access_token)).toBeNull();
+  await replayEndsConsent(again.clientId, first, third);
+
+  // The new token never used, but the old one comes back after the retry window: a copy too.
+  const later = await authorizeApp(alice.id);
+  const one = await exchange({ grant_type: 'authorization_code', client_id: later.clientId, code: later.code, code_verifier: later.verifier });
+  const two = await refresh(later.clientId, one);
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + REFRESH_RETRY_WINDOW_MS + 1000 });
+  try {
+    await replayEndsConsent(later.clientId, one, two);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('an app’s own refreshes sent at once with the same refresh token (parallel calls, or a retry after a lost response) keep it connected', async () => {
+  const app = await authorizeApp(alice.id);
+  const first = await exchange({ grant_type: 'authorization_code', client_id: app.clientId, code: app.code, code_verifier: app.verifier });
+  const both = await Promise.all([1, 2].map(() => exchange({ grant_type: 'refresh_token', client_id: app.clientId, refresh_token: first.refresh_token })));
+  for (const t of both) expect(await refusal(t.access_token)).toBeNull();
+  // Whichever response the app kept, it goes on refreshing.
+  const next = await exchange({ grant_type: 'refresh_token', client_id: app.clientId, refresh_token: both[1].refresh_token });
+  expect(await refusal(next.access_token)).toBeNull();
+});
+
+it('reconnecting an app with less (fewer permissions, another resource) takes the rest away from the tokens and codes it already holds', async () => {
+  const reg = (await registerDynamicClient({ client_name: 'Agent', redirect_uris: ['http://127.0.0.1:7777/cb'] })) as { client_id: string };
+  const consent = async (grant: string[], resource = '/mcp') => {
+    const verifier = randomBytes(32).toString('base64url');
+    const checked = await checkAuthorizeRequest(
+      {
+        response_type: 'code',
+        client_id: reg.client_id,
+        redirect_uri: 'http://127.0.0.1:41000/cb',
+        scope: 'boards:read boards:write',
+        resource,
+        code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+        code_challenge_method: 'S256',
+      },
+      AT,
+    );
+    if (!('ok' in checked)) throw new Error(JSON.stringify(checked));
+    const code = new URL(await decide(alice.id, 'password', checked.ok, true, grant)).searchParams.get('code')!;
+    return () => exchange({ grant_type: 'authorization_code', client_id: reg.client_id, code, code_verifier: verifier });
+  };
+  const mcpScopes = (secret: string) => authenticate(bearer(secret), '/mcp').then((c) => c.scopes);
+  const wide = await (await consent(['boards:write']))();
+  const unredeemed = await consent(['boards:write']); // a code from the wide consent, not exchanged yet
+  const board = await createBoard(alice.id, 'Plans', '');
+  const view = await redeemEmbedTicket((await mintEmbedTicket(await authenticate(bearer(wide.access_token), '/mcp'), board.id)).ticket);
+  expect(view?.session.maxRole).toBe('editor');
+  // The person reconnects the app and turns "write boards" off.
+  await (await consent([]))();
+  expect(await mcpScopes(wide.access_token)).not.toContain('boards:write');
+  expect(await authenticateEmbed(view!.token)).toBeNull(); // the live board view it opened as an editor
+  const refreshed = await exchange({ grant_type: 'refresh_token', client_id: reg.client_id, refresh_token: wide.refresh_token });
+  expect(refreshed.scope.split(' ')).not.toContain('boards:write');
+  expect((await unredeemed()).scope.split(' ')).not.toContain('boards:write');
+  // Then reconnects it for the REST API only: what it held for the MCP server stops.
+  await (await consent([], R))();
+  await expect(mcpScopes(refreshed.access_token)).rejects.toMatchObject({ status: 401 });
+  await expect(exchange({ grant_type: 'refresh_token', client_id: reg.client_id, refresh_token: refreshed.refresh_token })).rejects.toMatchObject({ error: 'invalid_grant' });
 });
 
 it('a refresh asking for more scopes than were granted keeps the app signed in with what was granted, and never widens it', async () => {

@@ -295,6 +295,10 @@ export async function startMockGithub({ port = 0, host = '127.0.0.1', token = 'g
       Object.assign(i, changes);
       touch(i);
     },
+    /** Someone deleted the issue on GitHub: it answers 404 from now on. */
+    remove(repo, n) {
+      issues.delete(`${repo}#${n}`);
+    },
     /** A GitHub account; `email` shows on its public profile (null: hidden). */
     addUser: (login, email = null) => users.set(login, { login, email }),
     /** A milestone of `repo` due on `due` (YYYY-MM-DD); its number. */

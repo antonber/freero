@@ -31,6 +31,18 @@ export const RESET_TTL_MS = 30 * 60_000;
 export const CHANGE_EMAIL_TTL_MS = 24 * HOUR;
 const REVERT_EMAIL_DAYS = 7;
 
+/**
+ * The pending links that would change the account (its address, its password) and could be in
+ * someone else's hands: the email change's link goes to the NEW address. A new password (reset or
+ * changed) means the old one may have leaked — what the "your email is changing" notice tells the
+ * owner to do about a change that wasn't theirs — so these die with it. The owner's ways back stay
+ * (the "this wasn't me" links to the previous address, the two-step links to this one).
+ */
+async function cancelAccountChanges(userId: string): Promise<void> {
+  await repo.deleteTokens(userId, 'change_email');
+  await repo.deleteTokens(userId, 'reset_password');
+}
+
 const invalidLink = () => badRequest('This link is invalid or has expired. Request a new one.', 'link_invalid');
 
 async function issue(userId: string, purpose: repo.TokenPurpose, email: string, ttlMs: number): Promise<string> {
@@ -95,7 +107,10 @@ export function requestPasswordReset(req: Request | null, emailIn: unknown): voi
   })().catch((e) => logError('auth: password reset request failed', e));
 }
 
-/** Sets a new password from a reset link and ends every session of the account. Returns the account. */
+/**
+ * Sets a new password from a reset link, cancels pending account changes and ends every session of
+ * the account. Returns the account.
+ */
 export async function resetPassword(req: Request | null, tokenIn: unknown, passwordIn: unknown): Promise<Account> {
   const password = validatePassword(passwordIn);
   const token = typeof tokenIn === 'string' ? tokenIn : '';
@@ -103,6 +118,7 @@ export async function resetPassword(req: Request | null, tokenIn: unknown, passw
   if (!t) throw invalidLink();
   // The mailbox, not the old password, chose it: it can't start a two-step recovery (recovery.ts).
   await repo.setPasswordHash(t.userId, await hashPassword(password), { viaLink: true });
+  await cancelAccountChanges(t.userId);
   await endSessionsOf(t.userId);
   // Reading the reset mail proves the address.
   await markEmailVerified(t.userId, t.email);
@@ -115,7 +131,7 @@ export async function resetPassword(req: Request | null, tokenIn: unknown, passw
 /**
  * Changes the password of a signed-in user — or sets the first one of an account that signed up
  * through a provider (then a recent sign-in stands in for the current password, `sessionAuthAt`).
- * Every other session of theirs ends.
+ * Pending account changes are cancelled and every other session of theirs ends.
  */
 export async function changePassword(
   req: Request | null,
@@ -128,7 +144,7 @@ export async function changePassword(
   const password = validatePassword(next);
   const user = await confirmPassword(userId, current, sessionAuthAt);
   await repo.setPasswordHash(userId, await hashPassword(password));
-  await repo.deleteTokens(userId, 'reset_password');
+  await cancelAccountChanges(userId);
   await endSessionsOf(userId, currentSessionKey);
   await auditOwnAccount('auth.password_changed', userId, { firstPassword: !user.passwordHash });
   sendSecurityNotice(req, user.email, { kind: user.passwordHash ? 'password_changed' : 'password_set' });

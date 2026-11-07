@@ -118,14 +118,19 @@ export async function insertUser(u: Omit<ScimUser, 'createdAt' | 'updatedAt'>, n
   }
 }
 
-export async function updateUser(u: Omit<ScimUser, 'createdAt' | 'updatedAt'>, now: number): Promise<boolean> {
+/**
+ * Replaces the record; returns whether it WAS active (the row locked, so of two concurrent updates
+ * the second sees the first's value), or null when there is no such record.
+ */
+export async function updateUser(u: Omit<ScimUser, 'createdAt' | 'updatedAt'>, now: number): Promise<{ wasActive: boolean } | null> {
   try {
-    const rows = await query(
-      `UPDATE scim_users SET user_name = $3, external_id = $4, email = $5, given_name = $6, family_name = $7, display_name = $8, active = $9, updated_at = $10
-       WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`,
+    const r = await one<{ was_active: boolean }>(
+      `UPDATE scim_users s SET user_name = $3, external_id = $4, email = $5, given_name = $6, family_name = $7, display_name = $8, active = $9, updated_at = $10
+       FROM (SELECT active FROM scim_users WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE) old
+       WHERE s.workspace_id = $1 AND s.user_id = $2 RETURNING old.active AS was_active`,
       [u.workspaceId, u.userId, u.userName, u.externalId, u.email, u.givenName, u.familyName, u.displayName, u.active, new Date(now)],
     );
-    return rows.length > 0;
+    return r ? { wasActive: r.was_active } : null;
   } catch (e) {
     if (isUniqueViolation(e, 'scim_users_user_name_key')) throw new UserNameTakenError();
     throw e;
