@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { routePress, type PressInput } from '../interaction/touch';
 
-const press = (p: Partial<PressInput>) => routePress({ pointerType: 'touch', pensDown: 0, penSeen: false, toolId: 'select', onItem: false, ...p });
+const press = (p: Partial<PressInput>) => routePress({ pointerType: 'touch', pensDown: 0, penSeen: false, toolId: 'select', onItem: false, phoneView: false, ...p });
 
 describe('fingers and pens on the canvas', () => {
   it('a palm resting on the screen while a pen draws never pans, selects or draws', () => {
@@ -24,6 +24,6 @@ describe('fingers and pens on the canvas', () => {
   it('with the select tool a finger pans empty canvas but still drags items, and the mouse is never affected', () => {
     expect(press({ toolId: 'select', onItem: false })).toBe('pan');
     expect(press({ toolId: 'select', onItem: true })).toBe('tool');
-    expect(routePress({ pointerType: 'mouse', pensDown: 1, penSeen: true, toolId: 'select', onItem: false })).toBe('tool');
+    expect(routePress({ pointerType: 'mouse', pensDown: 1, penSeen: true, toolId: 'select', onItem: false, phoneView: true })).toBe('tool');
   });
 });

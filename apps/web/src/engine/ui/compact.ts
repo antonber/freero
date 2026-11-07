@@ -15,6 +15,11 @@ function subscribe(cb: () => void): () => void {
   return () => q.removeEventListener('change', cb);
 }
 
+/** True on a phone-sized window right now: for event handlers, which read it when they run. */
+export function isCompactLayout(): boolean {
+  return !!query()?.matches;
+}
+
 /** True on a phone-sized window (re-renders when it crosses the breakpoint). */
 export function useCompactLayout(): boolean {
   return useSyncExternalStore(subscribe, () => !!query()?.matches, () => false);

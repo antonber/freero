@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -456,12 +456,6 @@ const KanbanView = memo(function KanbanView(props: ElementRenderProps<KanbanElem
   const tabId = shownTabId(k, usePersonalView(k.id, MY_TAB_KEY));
   const tab = viewTabs(k).find((t) => t.id === tabId)!;
   const lod = zoom < LOD_ZOOM;
-  // On a phone (viewing, not editing the board) a kanban opens in focus mode: its cards as a list.
-  const wasSelected = useRef(selected);
-  useEffect(() => {
-    if (selected && !wasSelected.current && phone === 'phone' && !exporting) editor.openPanel(FOCUS_PANEL, { id: k.id });
-    wasSelected.current = selected;
-  }, [selected, phone, exporting, editor, k.id]);
   if (tab.layout !== 'board')
     return (
       <div className="fr-kanban is-table">
@@ -716,6 +710,9 @@ const kanban = defineElement({
   // the fields chosen, drawn by the card itself. Density changes their height (re-normalised).
   presentChild: (k, child, { editor, personal }) => presentCard(k, child, editor, personal),
   presentationKey,
+  // On a phone (viewing, not editing the board) a tap on a kanban opens focus mode: its cards as a
+  // list. Only a tap: a pan, pinch or long press that starts on it never does.
+  onPhoneTap: (k, { editor }) => editor.openPanel(FOCUS_PANEL, { id: k.id }),
 });
 
 /**
