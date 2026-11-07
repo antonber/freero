@@ -5,16 +5,24 @@ import http from 'node:http';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { apiNotFound, createApp, errorHandler } from '../../platform/http';
 import { initStorage } from '../../platform/storage';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { completeSignIn, createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { uploadBytesUsed } from '../uploads/index';
+import * as repo from './repo';
 import figmaRoutes from './routes';
 
-type MockFigma = { url: string; renders: string; revokeAll(): void; expireAccess(): void; close(): Promise<void> };
+type MockFigma = {
+  url: string;
+  renders: string;
+  revokeAll(): void;
+  expireAccess(): void;
+  holdRefreshes(): { readonly waiting: number; release(o?: { refuse?: boolean }): void };
+  close(): Promise<void>;
+};
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 
 let figma: MockFigma;
@@ -51,13 +59,16 @@ async function connected(name: string) {
   const user = await createUser({ name, email: `${name.toLowerCase()}-${++people}@figma.test.freero.app`, password: 'password-123' }, { emailVerified: true });
   const session = cookiesOf(await fetch(`${base}/test/sign-in/${user.id}`, { method: 'POST', headers: { origin: base } }));
   const board = await createBoard(user.id, 'Checkout review', '');
-  const start = await fetch(`${base}/api/integrations/figma/oauth/start?return=${encodeURIComponent(`/board/${board.id}`)}`, { headers: { cookie: session.join('; ') }, redirect: 'manual' });
+  await connect(session.join('; '), board.id);
+  return { user, board, cookie: session.join('; ') };
+}
+async function connect(session: string, boardId: string) {
+  const start = await fetch(`${base}/api/integrations/figma/oauth/start?return=${encodeURIComponent(`/board/${boardId}`)}`, { headers: { cookie: session }, redirect: 'manual' });
   const consent = await fetch(start.headers.get('location')!, { redirect: 'manual' });
   const callback = new URL(consent.headers.get('location')!);
-  const cookie = [...session, ...cookiesOf(start)].join('; ');
+  const cookie = [session, ...cookiesOf(start)].join('; ');
   const done = await fetch(`${base}${callback.pathname}${callback.search}`, { headers: { cookie }, redirect: 'manual' });
-  expect(done.headers.get('location')).toBe(`/board/${board.id}?figma=connected`);
-  return { user, board, cookie: session.join('; ') };
+  expect(done.headers.get('location')).toBe(`/board/${boardId}?figma=connected`);
 }
 
 const place = (cookie: string, boardId: string, nodeId: string) =>
@@ -97,4 +108,20 @@ it('Figma access that lapsed is renewed without asking the person again; access 
   expect(res.status).toBe(409);
   expect(((await res.json()) as { code: string }).code).toBe('figma_reconnect');
   expect(await (await fetch(`${base}/api/integrations/figma/me`, { headers: { cookie } })).json()).toEqual({ connected: null });
+});
+
+it('a Figma connection made while an older one’s token refresh was in flight stays as it was, whether Figma then renews the old tokens or refuses them', async () => {
+  const { user, board, cookie } = await connected('Lin');
+  for (const refuse of [false, true]) {
+    figma.expireAccess();
+    const refreshes = figma.holdRefreshes();
+    const placing = place(cookie, board.id, '1:2');
+    await vi.waitFor(() => expect(refreshes.waiting).toBe(1));
+    // Meanwhile the person connects Figma again.
+    await connect(cookie, board.id);
+    const fresh = await repo.account(user.id);
+    refreshes.release({ refuse });
+    await placing;
+    expect(await repo.account(user.id)).toEqual(fresh);
+  }
 });
