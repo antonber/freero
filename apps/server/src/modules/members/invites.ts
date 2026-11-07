@@ -7,12 +7,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request } from 'express';
 import type { InvitePreview, PendingInvite, Role, User } from '@freero/shared';
-import { notFound } from '../../platform/http';
+import { HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { getUser, getUsers, localeOfEmail, localesOf, markEmailVerified } from '../auth/index';
-import { getBoardAccess, getBoardTitle } from '../boards/index';
+import { getBoardAccess, getBoardTitle, lockBoardSharing, requireBoardAccess } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
 import { inviteAccepted } from './events';
 import { t } from './messages';
@@ -55,14 +55,19 @@ async function sendInviteMail(req: Request | null, to: string, token: string, bo
   }
 }
 
+/** A pending invite just saved, with the link to mail (only its hash is stored). */
+export interface SavedInvite {
+  invite: PendingInvite;
+  token: string;
+  role: MemberRole;
+}
+
 /**
- * Invites an address without an account (or renews its pending invite: new link, new expiry).
- * Returns null when an editor tried to change the role of an existing invite.
+ * Saves the invite of an address without an account (or renews its pending invite: new link, new
+ * expiry), without mailing it: the caller mails it (`mailInvite`) once its transaction committed.
+ * 'role-conflict' when an editor tried to change the role of an existing invite.
  */
-export async function inviteByEmail(
-  req: Request | null,
-  a: { boardId: string; boardTitle: string; email: string; role: MemberRole; inviter: User; mayChangeRole: boolean },
-): Promise<PendingInvite | 'role-conflict' | 'board-gone'> {
+export async function saveInviteByEmail(a: { boardId: string; email: string; role: MemberRole; inviter: User; mayChangeRole: boolean }): Promise<SavedInvite | 'role-conflict' | 'board-gone'> {
   const token = randomBytes(32).toString('base64url');
   const now = Date.now();
   const saved = await repo.saveInvite(
@@ -70,42 +75,98 @@ export async function inviteByEmail(
     a.mayChangeRole,
   );
   if (typeof saved === 'string') return saved;
-  await sendInviteMail(req, a.email, token, a.boardTitle, a.inviter, saved.role);
-  return toPending(saved, a.inviter.name);
+  return { invite: toPending(saved, a.inviter.name), token, role: saved.role };
 }
 
-/** Sends a pending invite again with a fresh link (the old one stops working). */
+export function mailInvite(req: Request | null, saved: SavedInvite, boardTitle: string, inviter: User): Promise<void> {
+  return sendInviteMail(req, saved.invite.email, saved.token, boardTitle, inviter, saved.role);
+}
+
+/** `saveInviteByEmail`, then the mail. */
+export async function inviteByEmail(
+  req: Request | null,
+  a: { boardId: string; boardTitle: string; email: string; role: MemberRole; inviter: User; mayChangeRole: boolean },
+): Promise<PendingInvite | 'role-conflict' | 'board-gone'> {
+  const saved = await saveInviteByEmail(a);
+  if (typeof saved === 'string') return saved;
+  await mailInvite(req, saved, a.boardTitle, a.inviter);
+  return saved.invite;
+}
+
+/**
+ * Sends a pending invite again with a fresh link (the old one stops working), in the name of `by`
+ * (whom the caller checked may invite people to the board): it is theirs from now on.
+ */
 export async function resendInvite(req: Request | null, boardId: string, boardTitle: string, inviteId: string, by: User): Promise<PendingInvite> {
   const token = randomBytes(32).toString('base64url');
   const now = Date.now();
-  const row = await repo.renewInvite(boardId, inviteId, hash(token), now, now + INVITE_TTL_MS);
+  const row = await repo.renewInvite(boardId, inviteId, hash(token), now, now + INVITE_TTL_MS, by.id);
   if (!row) throw notFound('That invite was already used or revoked');
-  const inviter = (await getUser(row.invitedBy)) ?? by;
   await sendInviteMail(req, row.email, token, boardTitle, by, row.role);
-  return toPending(row, inviter.name);
+  return toPending(row, by.name);
 }
 
 const deadLink = () => notFound('This invite link is no longer valid. Ask for a new invite.');
+
+/**
+ * May the person who sent this invite still send it? An invite carries its inviter's authority: it
+ * opens the board only while they may still invite people to it (editor or more there, and the
+ * owner, a co-owner or an editor of a board that lets editors share) and, for an invitee outside
+ * the board's workspace (`inviteeId` null: not known yet), may still share outside it. So removing
+ * or demoting an inviter, on the board or in its workspace, ends the invites they sent.
+ */
+async function inviterStillVouches(row: repo.InviteRow, inviteeId: string | null): Promise<boolean> {
+  try {
+    const access = await requireBoardAccess(row.boardId, row.invitedBy, 'editor');
+    if (!access.manages && !access.editorsCanShare) return false;
+    return access.canShareExternally || (inviteeId !== null && (await access.inWorkspace(inviteeId)));
+  } catch (e) {
+    if (e instanceof HttpError) return false;
+    throw e;
+  }
+}
+
+/**
+ * Uses one live invite for `user` (single use: of two concurrent uses one gets it) under the board's
+ * sharing lock, only while its inviter still vouches for it; `tokenHash`: the link it was opened
+ * with (null: the address was proved). 'granted', 'owner' (the board is theirs: used, nothing to
+ * grant) or null when it can't be used: the invite is then left as it was.
+ */
+async function useInvite(row: repo.InviteRow, user: { id: string; email: string }, tokenHash: string | null): Promise<'granted' | 'owner' | null> {
+  const used = await repo
+    .transaction(async () => {
+      await lockBoardSharing(row.boardId);
+      const taken = await repo.takeInvite(row.id, Date.now(), tokenHash);
+      if (!taken) return null;
+      const access = await getBoardAccess(taken.boardId, user.id);
+      // Unusable: rolled back, so the invite stays (it works again if its inviter regains the right).
+      if (!access.exists || !(await inviterStillVouches(taken, user.id))) throw UNUSABLE;
+      if (access.ownerId === user.id) return 'owner' as const;
+      if (!(await repo.grantAtLeast(taken.boardId, user.id, taken.role, Date.now(), { actorId: taken.invitedBy }))) throw UNUSABLE;
+      return 'granted' as const;
+    })
+    .catch((e: unknown) => {
+      if (e === UNUSABLE) return null;
+      throw e;
+    });
+  if (used === 'granted') await refreshBoardAccess(row.boardId);
+  return used;
+}
+const UNUSABLE = Symbol('unusable invite');
 
 /** What the link is for, without using it (the invite page shows it before sign-up). */
 export async function previewInvite(token: string): Promise<InvitePreview> {
   const row = token ? await repo.findLiveInvite(hash(token), Date.now()) : null;
   const title = row ? await getBoardTitle(row.boardId) : null;
-  if (!row || title === null) throw deadLink();
+  if (!row || title === null || !(await inviterStillVouches(row, null))) throw deadLink();
   const inviter = await getUser(row.invitedBy);
   return { boardTitle: title, inviterName: inviter?.name ?? 'Someone', email: row.email, role: row.role, expiresAt: row.expiresAt };
 }
 
 /** Uses the invite for the signed-in user. Single use: a second call (or a concurrent one) gets 404. */
 export async function acceptInvite(token: string, user: { id: string; email: string }): Promise<{ boardId: string; role: Role }> {
-  const row = token ? await repo.takeInvite(hash(token), Date.now()) : null;
-  if (!row) throw deadLink();
-  const access = await getBoardAccess(row.boardId, user.id);
-  if (!access.exists) throw deadLink();
-  if (access.ownerId !== user.id) {
-    if (!(await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now(), { actorId: row.invitedBy }))) throw deadLink();
-    await refreshBoardAccess(row.boardId);
-  }
+  const row = token ? await repo.findLiveInvite(hash(token), Date.now()) : null;
+  if (!row || !(await useInvite(row, user, hash(token)))) throw deadLink();
   // The link was mailed to that address: following it proves the address (and converts the
   // other invites sent to it).
   if (row.email === user.email) await markEmailVerified(user.id, user.email);
@@ -115,15 +176,17 @@ export async function acceptInvite(token: string, user: { id: string; email: str
   return { boardId: row.boardId, role };
 }
 
-/** The user just proved `email`: every live invite sent to it becomes a membership. */
+/** The user just proved `email`: every live invite sent to it, that its inviter may still send, becomes a membership. */
 export async function convertInvitesFor(user: { id: string; email: string }): Promise<void> {
-  for (const row of await repo.takeInvitesForEmail(user.email, Date.now())) {
-    const access = await getBoardAccess(row.boardId, user.id);
-    if (!access.exists || access.ownerId === user.id) continue;
-    if (!(await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now(), { actorId: row.invitedBy }))) continue;
-    await refreshBoardAccess(row.boardId);
-    await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
+  for (const row of await repo.liveInvitesFor(user.email, Date.now())) {
+    if ((await useInvite(row, user, null)) === 'granted') await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
   }
+}
+
+/** Whether a live invite someone may still send was sent to `email` (an invite-only server lets that address sign up). */
+export async function hasUsableInviteFor(email: string): Promise<boolean> {
+  for (const row of await repo.liveInvitesFor(email, Date.now())) if (await inviterStillVouches(row, null)) return true;
+  return false;
 }
 
 /** Which of `emails` have a live (unexpired) invite to the board. */

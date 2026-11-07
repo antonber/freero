@@ -343,32 +343,33 @@ export async function findLiveInvite(tokenHash: string, now: number): Promise<In
   return r ? toInvite(r) : null;
 }
 
-/** Uses a live invite: deletes and returns it. Two concurrent uses: exactly one gets it. */
-export async function takeInvite(tokenHash: string, now: number): Promise<InviteRow | null> {
-  const r = await one<InviteDbRow>(`DELETE FROM board_invites WHERE token_hash = $1 AND expires_at > $2 RETURNING *`, [
-    tokenHash,
-    new Date(now),
-  ]);
+/**
+ * Uses a live invite: deletes and returns it. Two concurrent uses: exactly one gets it. With
+ * `tokenHash`, only while that is still its link (a resent invite's old link is dead).
+ */
+export async function takeInvite(id: string, now: number, tokenHash: string | null): Promise<InviteRow | null> {
+  const r = await one<InviteDbRow>(
+    `DELETE FROM board_invites WHERE id = $1 AND expires_at > $2 AND ($3::text IS NULL OR token_hash = $3) RETURNING *`,
+    [id, new Date(now), tokenHash],
+  );
   return r ? toInvite(r) : null;
 }
 
-/** Whether a live invite was sent to `email` (an invite-only server lets that address sign up). */
-export async function hasLiveInviteFor(email: string, now: number): Promise<boolean> {
-  return (await query(`SELECT 1 FROM board_invites WHERE email = $1 AND expires_at > $2 LIMIT 1`, [email, new Date(now)])).length > 0;
-}
-
-/** Uses every live invite sent to `email` (the address was just proven). */
-export async function takeInvitesForEmail(email: string, now: number): Promise<InviteRow[]> {
+/** The live invites sent to `email`, oldest first. */
+export async function liveInvitesFor(email: string, now: number): Promise<InviteRow[]> {
   return (
-    await query<InviteDbRow>(`DELETE FROM board_invites WHERE email = $1 AND expires_at > $2 RETURNING *`, [email, new Date(now)])
+    await query<InviteDbRow>(`SELECT * FROM board_invites WHERE email = $1 AND expires_at > $2 ORDER BY created_at`, [email, new Date(now)])
   ).map(toInvite);
 }
 
-/** New token + expiry for an existing invite (resend). Null if it was revoked or used meanwhile. */
-export async function renewInvite(boardId: string, id: string, tokenHash: string, now: number, expiresAt: number): Promise<InviteRow | null> {
+/**
+ * New token + expiry for an existing invite (resend), now sent by `resenderId`. Null if it was
+ * revoked or used meanwhile.
+ */
+export async function renewInvite(boardId: string, id: string, tokenHash: string, now: number, expiresAt: number, resenderId: string): Promise<InviteRow | null> {
   const r = await one<InviteDbRow>(
-    `UPDATE board_invites SET token_hash = $3, created_at = $4, expires_at = $5 WHERE board_id = $1 AND id = $2 RETURNING *`,
-    [boardId, id, tokenHash, new Date(now), new Date(expiresAt)],
+    `UPDATE board_invites SET token_hash = $3, created_at = $4, expires_at = $5, invited_by = $6 WHERE board_id = $1 AND id = $2 RETURNING *`,
+    [boardId, id, tokenHash, new Date(now), new Date(expiresAt), resenderId],
   );
   return r ? toInvite(r) : null;
 }
