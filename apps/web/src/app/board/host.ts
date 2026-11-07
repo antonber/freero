@@ -194,7 +194,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
         }
       : {}),
     // #62: a Miro board read with the person's own token (the server keeps neither).
-    ...(board.permissions.miroImport ? { boardImport: { miro: (b: string, token: string) => api.importFromMiro(board.id, b, token) } } : {}),
+    ...(board.permissions.miroImport ? { boardImport: { miro: (b: string, token: string, signal?: AbortSignal) => api.importFromMiro(board.id, b, token, signal) } } : {}),
     shapePacks: shapePacksOf(board.id),
     // #162: publish this board to the community template gallery (reviewed before it is public).
     gallery: {

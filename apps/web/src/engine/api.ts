@@ -189,9 +189,10 @@ export interface HostBoardImport {
   /**
    * Reads a Miro board (its link or id) with the person's own Miro token, through the server, which
    * keeps neither: pictures come back already copied into their uploads. Rejects with a showable
-   * message (token refused, no such board, Miro slowing down).
+   * message (token refused, no such board, Miro slowing down). Aborting `signal` (the person
+   * cancelled) stops the read, and the server stops copying pictures.
    */
-  miro(board: string, token: string): Promise<MiroImportResponse>;
+  miro(board: string, token: string, signal?: AbortSignal): Promise<MiroImportResponse>;
 }
 
 /** [additive, #4] See `Host.shapePacks` (wire: @freero/shared `ShapePacksResponse`). */
