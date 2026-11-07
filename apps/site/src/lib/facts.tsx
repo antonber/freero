@@ -95,7 +95,7 @@ export const FACTS: Fact[] = [
   {
     id: 'self-host',
     topic: 'Self-hosting',
-    text: 'Freero ships as one Docker image that serves the app, real-time collaboration, the REST API, the MCP server and the marketing pages. It needs PostgreSQL 15 or newer; Redis and S3-compatible storage let it run as more than one instance.',
+    text: 'Freero ships as one Docker image, ghcr.io/antonber/freero, that serves the app, real-time collaboration, the REST API, the MCP server and the marketing pages. It needs PostgreSQL 15 or newer; Redis and S3-compatible storage let it run as more than one instance.',
     source: { label: 'Deployment guide', href: docsUrl('docs/deployment.md') },
   },
   {
