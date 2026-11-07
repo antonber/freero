@@ -87,11 +87,16 @@ export async function markRead(userId: string, ids: string[] | null, now: number
 
 // ---- email digests ----
 
-/** People with notifications not yet dealt with by the digest job that are older than `cutoff`. */
-export async function usersWithEmailDue(cutoff: number, limit: number): Promise<string[]> {
+/**
+ * People with notifications not yet dealt with by the digest job that are older than `cutoff` and
+ * not waiting for a retry, the longest waiting first (a full batch never keeps anyone out for good).
+ */
+export async function usersWithEmailDue(cutoff: number, now: number, limit: number): Promise<string[]> {
   const rows = await query<{ user_id: string }>(
-    `SELECT DISTINCT user_id FROM notifications WHERE emailed_at IS NULL AND created_at <= $1 LIMIT $2`,
-    [new Date(cutoff), limit],
+    `SELECT user_id FROM notifications
+      WHERE emailed_at IS NULL AND created_at <= $1 AND (email_retry_at IS NULL OR email_retry_at <= $2)
+      GROUP BY user_id ORDER BY min(created_at) LIMIT $3`,
+    [new Date(cutoff), new Date(now), limit],
   );
   return rows.map((r) => r.user_id);
 }
@@ -105,9 +110,28 @@ export async function claimForEmail(userId: string, now: number): Promise<Notifi
   return rows.map(toRow).sort((a, b) => a.createdAt - b.createdAt);
 }
 
-/** Hands claimed notifications back to the next run (the mail could not be sent). */
+/** Hands claimed notifications back to the next run (their digest failed before it was sent). */
 export async function unclaim(ids: string[]): Promise<void> {
   if (ids.length) await query(`UPDATE notifications SET emailed_at = NULL WHERE id = ANY($1::text[])`, [ids]);
+}
+
+/** How many times a digest carrying these notifications was refused so far (the most of them). */
+export async function emailAttempts(ids: string[]): Promise<number> {
+  return Number((await one<{ n: number | null }>(`SELECT max(email_attempts) AS n FROM notifications WHERE id = ANY($1::text[])`, [ids]))?.n ?? 0);
+}
+
+/**
+ * A digest the mail server refused: its notifications record the attempts and are handed back for a
+ * run from `retryAt` on, or, with null, given up on (left as dealt with; they stay in the inbox).
+ */
+export async function emailRefused(ids: string[], attempts: number, retryAt: number | null): Promise<void> {
+  if (!ids.length) return;
+  await query(
+    `UPDATE notifications SET email_attempts = $2, email_retry_at = $3,
+            emailed_at = CASE WHEN $3::timestamptz IS NULL THEN emailed_at ELSE NULL END
+      WHERE id = ANY($1::text[])`,
+    [ids, attempts, retryAt === null ? null : new Date(retryAt)],
+  );
 }
 
 // ---- Slack direct messages (#105) ----
