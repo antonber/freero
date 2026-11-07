@@ -11,7 +11,8 @@
 //   GET /cdn/:res.png                                     the picture itself (no token needed, like a signed link)
 //
 // Tests steer it: `requests` (method, path, whether a token was sent), `hugeBoard(n)` (a board of n
-// stickies), `rateLimited = true` (every API call answers 429).
+// stickies), `rateLimited = true` (every API call answers 429), `hold('items')` (that listing waits
+// until `.release()`).
 //
 //   node scripts/lib/mock-miro.mjs --port 4472
 
@@ -76,9 +77,13 @@ export async function startMockMiro({ port = 0, host = '127.0.0.1', tokens = [MO
     return { data, total: list.length, size: data.length, limit, ...(next ? { cursor: next } : {}), links: {} };
   };
 
-  const server = http.createServer((req, res) => {
+  const holding = new Map(); // 'items' | 'connectors' | 'tags' -> answers waiting for release()
+
+  const server = http.createServer(async (req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     requests.push({ method: req.method, path: u.pathname, authorized: !!req.headers.authorization });
+    const kind = /^\/v2\/boards\/[^/]+\/(items|connectors|tags)$/.exec(u.pathname)?.[1];
+    if (kind && holding.has(kind)) await new Promise((r) => holding.get(kind).push(r));
     if (req.method === 'GET' && u.pathname.startsWith('/cdn/')) {
       res.writeHead(200, { 'Content-Type': 'image/png' });
       return res.end(solidPng(32, 24, [240, 180, 40]));
@@ -112,6 +117,20 @@ export async function startMockMiro({ port = 0, host = '127.0.0.1', tokens = [MO
     requests,
     set rateLimited(v) {
       state.rateLimited = v;
+    },
+    /** A slow Miro: listing `kind` ('items', 'connectors', 'tags') waits until `release()`. */
+    hold(kind) {
+      const waiting = [];
+      holding.set(kind, waiting);
+      return {
+        get waiting() {
+          return waiting.length;
+        },
+        release() {
+          holding.delete(kind);
+          for (const answer of waiting.splice(0)) answer();
+        },
+      };
     },
     /** A board of `n` stickies (and n connectors between them), at a new id. */
     hugeBoard(n) {

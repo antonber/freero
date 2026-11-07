@@ -5,6 +5,9 @@ export { sendSlackDm, type SlackDm, type SlackDmOutcome } from './dm';
 export { slackConnectOffered, slackLinked } from './links';
 // Team workspace policies (API access, the app blocked, IP allowlist): what may go to Slack at all.
 export { slackMayReach } from './links';
+// The account purge disconnects the person's Slack account first, so the app's token in that Slack
+// workspace goes with the last link there (#193) rather than with the row's cascade.
+export { unlinkSlack } from './links';
 import * as repo from './repo';
 
 /** For a person's data export: their Slack link (ids and names), never a token. */

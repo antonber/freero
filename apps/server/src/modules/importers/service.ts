@@ -77,7 +77,24 @@ async function eachLimited<T>(list: T[], limit: number, run: (t: T) => Promise<v
   );
 }
 
-export async function importFromMiro(boardId: string, userId: string, body: { board?: unknown; token?: unknown } | undefined): Promise<MiroImportResponse> {
+/** The person cancelled (their browser went away): nothing more is read or copied. Nobody gets this answer. */
+class ImportCancelled extends HttpError {
+  constructor() {
+    super(400, 'The import was cancelled.', 'import_cancelled');
+  }
+}
+
+/**
+ * `cancelled`: aborted when the person cancels (the request's connection closes) — the read stops
+ * between Miro calls and before each picture, so a cancelled import copies nothing more into their
+ * uploads (#193).
+ */
+export async function importFromMiro(
+  boardId: string,
+  userId: string,
+  body: { board?: unknown; token?: unknown } | undefined,
+  cancelled?: AbortSignal,
+): Promise<MiroImportResponse> {
   apiUrl(); // 404 where the operator turned it off
   const access = await requireBoardAccess(boardId, userId, 'editor');
   const miroId = miroBoardId(body?.board);
@@ -85,16 +102,24 @@ export async function importFromMiro(boardId: string, userId: string, body: { bo
   const token = typeof body?.token === 'string' ? body.token.trim() : '';
   if (!/^[\x21-\x7e]{8,2048}$/.test(token)) throw badRequest('Miro didn’t accept that token. Check it and try again.', 'miro_token_refused');
   const deadline = Date.now() + DEADLINE_MS;
+  const stopIfCancelled = () => {
+    if (cancelled?.aborted) throw new ImportCancelled();
+  };
   try {
     const name = await boardName(miroId, token, deadline);
+    stopIfCancelled();
     const items = await boardItems(miroId, token, deadline);
+    stopIfCancelled();
     const connectors = await boardConnectors(miroId, token, deadline);
+    stopIfCancelled();
     const tags = await boardTags(miroId, token, deadline).catch(() => []);
     const pictures = items.list.filter((r) => r.imageUrl);
     const copied = pictures.slice(0, MIRO_MAX_IMAGES);
     await eachLimited(copied, IMAGE_CONCURRENCY, async (r) => {
+      stopIfCancelled();
       r.item.image = await copyPicture(r.imageUrl!, token, userId, access.workspaceId ?? null, deadline);
     });
+    stopIfCancelled();
     for (const r of pictures.slice(MIRO_MAX_IMAGES)) r.item.image = null;
     return {
       board: { name },

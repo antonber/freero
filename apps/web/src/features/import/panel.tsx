@@ -1,7 +1,7 @@
 // "Import…" (KAI-138, #116, #62): pick a file — or read a Miro board with your own Miro token — and
 // afterwards the report of what could not be mapped. Dropping a file on the board does the same
 // without the dialog; its toast opens the report here ("Details").
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { FileInput, KeyRound } from 'lucide-react';
 import { definePanel, type PanelProps } from '@engine';
 import { Button, Input, Modal, SegmentedControl } from '@ui';
@@ -43,7 +43,19 @@ function ReportList({ report }: { report: ImportReport }) {
 type Source = 'file' | 'miro';
 
 function ImportDialog({ editor, props }: PanelProps) {
-  const close = () => editor.closePanel(IMPORT_DIALOG);
+  // The import running now. Cancel, Esc or the dialog going away aborts it: a file or board still
+  // being read is never placed afterwards, and the server stops copying a Miro board's pictures.
+  const running = useRef<AbortController | null>(null);
+  useEffect(() => () => running.current?.abort(), []);
+  const begin = () => {
+    running.current?.abort();
+    running.current = new AbortController();
+    return running.current.signal;
+  };
+  const close = () => {
+    running.current?.abort();
+    editor.closePanel(IMPORT_DIALOG);
+  };
   const [report, setReport] = useState<ImportReport | null>((props?.report as ImportReport | undefined) ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,12 +74,13 @@ function ImportDialog({ editor, props }: PanelProps) {
 
   const pick = async (file: File | undefined) => {
     if (!file) return;
+    const signal = begin();
     setBusy(true);
     setError(null);
     try {
-      done(await importFile(editor, file));
+      done(await importFile(editor, file, undefined, signal));
     } catch (e) {
-      failed(e);
+      if (!signal.aborted) failed(e);
     } finally {
       setBusy(false);
     }
@@ -76,14 +89,15 @@ function ImportDialog({ editor, props }: PanelProps) {
   const readMiro = async (e: FormEvent) => {
     e.preventDefault();
     if (!board.trim() || !token.trim()) return;
+    const signal = begin();
     setBusy(true);
     setError(null);
     try {
-      done(await importMiro(editor, board.trim(), token.trim()));
+      done(await importMiro(editor, board.trim(), token.trim(), undefined, signal));
       // The token is the person's: forgotten as soon as the board has been read.
       setToken('');
     } catch (err) {
-      failed(err);
+      if (!signal.aborted) failed(err);
     } finally {
       setBusy(false);
     }
