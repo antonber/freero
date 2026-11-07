@@ -95,7 +95,9 @@ export async function attachScreenshot(userId: string, id: string, data: Uint8Ar
   const saved = await savePrivateImage(data);
   if (!saved) throw new HttpError(415, 'The screenshot must be a PNG, JPEG or WebP image');
   if (!(await repo.attachScreenshot(id, userId, saved.key, madeAfter))) {
-    await deletePrivateImage(saved.key); // attached concurrently, or the report went meanwhile
+    // Attached concurrently, or the report went meanwhile: this file belongs to nothing.
+    await repo.listScreenshotsToDelete([saved.key], Date.now());
+    await deleteScreenshots([saved.key]);
     throw noSuchReport();
   }
   return own((await repo.get(id))!);
@@ -189,15 +191,37 @@ export async function updateProblem(operatorId: string, id: string, body: Record
 
 // ---- retention, accounts ----
 
-/** Deletes closed reports (screenshot first) closed longer ago than PROBLEM_RETENTION_DAYS. Returns how many. */
+/**
+ * Deletes screenshot files whose report is gone. Each was listed in `problem_screenshot_deletions`
+ * with its report's deletion and leaves the list only once its file is deleted, so a storage error
+ * (logged) never leaves a screenshot behind for good: the retention job tries again (#192).
+ */
+async function deleteScreenshots(keys: string[]): Promise<void> {
+  for (const key of keys) {
+    try {
+      await deletePrivateImage(key);
+      await repo.screenshotDeleted(key);
+    } catch (e) {
+      logError('problems: could not delete a screenshot (the retention job tries again)', e);
+    }
+  }
+}
+
+/**
+ * Deletes closed reports closed longer ago than PROBLEM_RETENTION_DAYS, with their screenshots, and
+ * the screenshots an earlier deletion couldn't delete. Returns how many reports.
+ */
 export async function purgeClosedProblems(now = Date.now()): Promise<number> {
+  // Left over from earlier runs (a batch per run: the storage may still be failing).
+  await deleteScreenshots(await repo.screenshotsToDelete(RETENTION_BATCH));
   const due = now - getConfig().problemRetentionMs;
   let deleted = 0;
   for (;;) {
     const batch = await repo.closedBefore(due, RETENTION_BATCH);
     for (const r of batch) {
-      if (!(await repo.deleteIfStillDue(r.id, due))) continue; // reopened meanwhile
-      await deletePrivateImage(r.screenshotKey).catch((e) => logError(`problems: could not delete the screenshot of ${r.id}`, e));
+      const gone = await repo.deleteIfStillDue(r.id, due, now);
+      if (!gone) continue; // reopened meanwhile
+      if (gone.screenshotKey) await deleteScreenshots([gone.screenshotKey]);
       deleted++;
     }
     if (batch.length < RETENTION_BATCH) return deleted;
@@ -206,8 +230,8 @@ export async function purgeClosedProblems(now = Date.now()): Promise<number> {
 
 /** The account purge: every report of the person and their screenshots. */
 export async function deleteProblemsOf(userId: string): Promise<number> {
-  const keys = await repo.deleteOfUser(userId);
-  for (const key of keys) await deletePrivateImage(key);
+  const keys = await repo.deleteOfUser(userId, Date.now());
+  await deleteScreenshots(keys);
   return keys.length;
 }
 

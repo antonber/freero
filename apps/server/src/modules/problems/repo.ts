@@ -1,4 +1,4 @@
-// The only writer of `problem_reports` ("Report a problem").
+// The only writer of `problem_reports` ("Report a problem") and `problem_screenshot_deletions`.
 import type { ProblemDiagnostics, ProblemStatus } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
 
@@ -126,10 +126,20 @@ export async function update(
   });
 }
 
-/** Deletes every report of the person; returns their screenshots' keys (the caller deletes the files). */
-export async function deleteOfUser(userId: string): Promise<string[]> {
-  const rows = await query<{ screenshot_key: string | null }>(`DELETE FROM problem_reports WHERE user_id = $1 RETURNING screenshot_key`, [userId]);
-  return rows.flatMap((r) => (r.screenshot_key ? [r.screenshot_key] : []));
+/**
+ * Deletes every report of the person and, in the same statement, lists their screenshots as files
+ * to delete (`problem_screenshot_deletions`); returns those keys (the caller deletes the files).
+ */
+export async function deleteOfUser(userId: string, now: number): Promise<string[]> {
+  const rows = await query<{ key: string }>(
+    `WITH gone AS (DELETE FROM problem_reports WHERE user_id = $1 RETURNING screenshot_key)
+     INSERT INTO problem_screenshot_deletions (key, since)
+     SELECT screenshot_key, $2 FROM gone WHERE screenshot_key IS NOT NULL
+     ON CONFLICT (key) DO UPDATE SET since = problem_screenshot_deletions.since
+     RETURNING key`,
+    [userId, new Date(now)],
+  );
+  return rows.map((r) => r.key);
 }
 
 /** Closed reports closed before `closedBefore` (the oldest first). */
@@ -141,7 +151,36 @@ export async function closedBefore(closedBefore: number, limit: number): Promise
   return rows.map((r) => ({ id: r.id, screenshotKey: r.screenshot_key }));
 }
 
-/** Deletes a report if it is still closed since before `closedBefore` (a reopened one stays). */
-export async function deleteIfStillDue(id: string, closedBefore: number): Promise<boolean> {
-  return (await one(`DELETE FROM problem_reports WHERE id = $1 AND closed_at IS NOT NULL AND closed_at < $2 RETURNING id`, [id, new Date(closedBefore)])) !== null;
+/**
+ * Deletes a report if it is still closed since before `closedBefore` (a reopened one stays) and, in
+ * the same statement, lists its screenshot as a file to delete. Returns whether it was deleted and
+ * that screenshot's key (the caller deletes the file).
+ */
+export async function deleteIfStillDue(id: string, closedBefore: number, now: number): Promise<{ screenshotKey: string | null } | null> {
+  const r = await one<{ screenshot_key: string | null }>(
+    `WITH gone AS (DELETE FROM problem_reports WHERE id = $1 AND closed_at IS NOT NULL AND closed_at < $2 RETURNING screenshot_key),
+     listed AS (
+       INSERT INTO problem_screenshot_deletions (key, since)
+       SELECT screenshot_key, $3 FROM gone WHERE screenshot_key IS NOT NULL ON CONFLICT (key) DO NOTHING
+     )
+     SELECT screenshot_key FROM gone`,
+    [id, new Date(closedBefore), new Date(now)],
+  );
+  return r ? { screenshotKey: r.screenshot_key } : null;
+}
+
+/** Lists screenshot files to delete that no report holds (an attach that lost its race). */
+export async function listScreenshotsToDelete(keys: string[], now: number): Promise<void> {
+  if (!keys.length) return;
+  await query(`INSERT INTO problem_screenshot_deletions (key, since) SELECT unnest($1::text[]), $2 ON CONFLICT (key) DO NOTHING`, [keys, new Date(now)]);
+}
+
+/** Screenshot files still to delete, the oldest first. */
+export async function screenshotsToDelete(limit: number): Promise<string[]> {
+  return (await query<{ key: string }>(`SELECT key FROM problem_screenshot_deletions ORDER BY since, key LIMIT $1`, [limit])).map((r) => r.key);
+}
+
+/** The screenshot's file is deleted: nothing is left to do for it. */
+export async function screenshotDeleted(key: string): Promise<void> {
+  await query(`DELETE FROM problem_screenshot_deletions WHERE key = $1`, [key]);
 }
