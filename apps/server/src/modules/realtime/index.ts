@@ -96,7 +96,7 @@ export { storedBoardView, storedDocContent } from './stored';
 export { COMMENTS_COLLECTION };
 export { BOARD_CONTENT_TOPIC } from './repo';
 // Workspace encryption keys (#159, modules/keys): stored content sealed again for its workspace's current key.
-export { boardsNeedingReseal, resealBoard } from './reseal';
+export { boardsNeedingReseal, boardsSealedForAnotherWorkspace, resealBoard } from './reseal';
 // The uploads board documents reference (the uploads sweep keeps those files).
 export { boardUploadReferences, storedBoardContent, storedBoardSizes } from './uploadRefs';
 // Blueprints (#161): a board's content as a blueprint keeps it, and links pointed at the copies.
