@@ -606,6 +606,25 @@ export interface CardElement extends BaseElement {
   back?: CardBack | null;
   /** [additive, #142] The back is the side showing, for everyone (shared state; exports show it too). */
   flipped?: boolean;
+  /**
+   * [additive, #197] Where a kanban's layout last put the card (fields.ts `stalePlacement`):
+   * written with the move, by the layout and by a regroup, never on its own.
+   */
+  placed?: CardPlacement | null;
+}
+
+/**
+ * Where a kanban put a card: the kanban, its grouping then (`rev`: the kanban's `groupRev`), and the
+ * column's group key under that grouping's field (`field`, by id). A card of that kanban whose `rev`
+ * isn't the kanban's current one was written by someone who hadn't seen the latest regroup (a drag
+ * racing it, one element being one value): its x means a value of `field`, not of the field the
+ * board is grouped by now, so it is read and laid out by its values instead of by where it stands.
+ */
+export interface CardPlacement {
+  kanban: string;
+  rev: string;
+  field: string;
+  key: string;
 }
 
 /** [#142] The back of a two-sided card. */
@@ -853,6 +872,12 @@ export interface KanbanElement extends BaseElement {
    * absent: no swimlanes.
    */
   lanes?: KanbanLane[] | null;
+  /**
+   * [additive, #197] The grouping's revision, '<n>:<field id>': a regroup (`planGroupBy`) writes the
+   * next one, and the cards it moves record it (`CardElement.placed`). Absent: not regrouped since.
+   * Older clients regroup without it; their cards keep their positions as values, as before.
+   */
+  groupRev?: string;
 }
 
 /**
