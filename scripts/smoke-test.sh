@@ -20,12 +20,13 @@ fail() {
   [ -s "$BODY" ] && { echo "--- response:" >&2; head -c 2000 "$BODY" >&2; echo >&2; }
   exit 1
 }
-# req METHOD PATH [curl args...] -> prints the status code, body in $BODY
+# req METHOD PATH [curl args...] -> prints the status code, body in $BODY. Every request sends Global
+# Privacy Control, so the throwaway account never reaches product analytics (and the opt-out is exercised).
 req() {
   method="$1"
   path="$2"
   shift 2
-  curl -sS -o "$BODY" -w '%{http_code}' -b "$JAR" -c "$JAR" -X "$method" -H "Origin: $BASE" "$@" "$BASE$path"
+  curl -sS -o "$BODY" -w '%{http_code}' -b "$JAR" -c "$JAR" -X "$method" -H "Origin: $BASE" -H "Sec-GPC: 1" "$@" "$BASE$path"
 }
 
 echo "smoke: waiting for $BASE/readyz"
