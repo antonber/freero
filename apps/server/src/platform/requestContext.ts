@@ -15,19 +15,44 @@ export interface RequestContext {
    * allowlist then lets it through wherever the workspace's admins exempted that credential.
    */
   apiCredentialId?: string;
+  /**
+   * The browser asks not to be tracked: `Sec-GPC: 1` (Global Privacy Control), `DNT: 1`, or the
+   * cookie "Turn off analytics" sets (`freero_analytics_off=1`, web app/analytics/runtime.ts).
+   * Product analytics (modules/analytics) sends no event while handling such a request.
+   */
+  privacySignal?: boolean;
+  /** Which door an HTTP request came through: the app's own API, the public REST API, the MCP server, or anything else. */
+  surface?: 'app' | 'api' | 'mcp' | 'other';
+}
+
+function surfaceOf(url: string | undefined): NonNullable<RequestContext['surface']> {
+  const path = (url ?? '').split('?')[0];
+  if (path === '/mcp' || path.startsWith('/mcp/')) return 'mcp';
+  if (path === '/api/v1' || path.startsWith('/api/v1/')) return 'api';
+  if (path.startsWith('/api/')) return 'app';
+  return 'other';
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
 const byRequest = new WeakMap<IncomingMessage, RequestContext>();
 
 const INCOMING_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+/** The browser's "Turn off analytics" (web app/analytics/runtime.ts `OPT_OUT_COOKIE`). */
+const ANALYTICS_OFF_COOKIE = /(?:^|;\s*)freero_analytics_off=1(?:;|$)/;
 
 /** Creates the context for a request (honouring a well-formed X-Request-Id from the proxy). */
 export function createRequestContext(req: IncomingMessage): RequestContext {
   const incoming = req.headers['x-request-id'];
   const reqId = typeof incoming === 'string' && INCOMING_ID_RE.test(incoming) ? incoming : randomUUID();
   const ua = req.headers['user-agent'];
-  const ctx: RequestContext = { reqId, userId: null, ip: null, userAgent: typeof ua === 'string' ? ua.slice(0, 400) : null };
+  const ctx: RequestContext = {
+    reqId,
+    userId: null,
+    ip: null,
+    userAgent: typeof ua === 'string' ? ua.slice(0, 400) : null,
+    privacySignal: req.headers['sec-gpc'] === '1' || req.headers.dnt === '1' || ANALYTICS_OFF_COOKIE.test(req.headers.cookie ?? ''),
+    surface: surfaceOf(req.url),
+  };
   byRequest.set(req, ctx);
   return ctx;
 }

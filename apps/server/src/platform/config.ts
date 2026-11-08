@@ -58,7 +58,8 @@ export type RateLimitName =
   | 'boardRender'
   | 'gifSearch'
   | 'figma'
-  | 'boardImport';
+  | 'boardImport'
+  | 'productEvents';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -342,6 +343,14 @@ export interface Config {
    */
   googleAnalyticsId: string | null;
   /**
+   * PostHog product analytics (POSTHOG_KEY, a project API key `phc_…`; POSTHOG_HOST): the server
+   * sends a closed list of product events (sign-ups, boards created, invites…) under a pseudonym,
+   * unless the account turned analytics off or the request sends GPC / Do Not Track
+   * (modules/analytics; ARCHITECTURE.md "Analytics"). Server-side only: no script, no CSP change.
+   * Null: no client, nothing sent, the events endpoint answers 404.
+   */
+  posthog: { key: string; host: string } | null;
+  /**
    * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
    * marketing page is served and robots.txt keeps crawlers off the whole instance.
    */
@@ -615,6 +624,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   gifSearch: '60/1m', // per person: GIF searches (each one calls the operator's GIF provider, #139)
   figma: '60/10m', // per person: Figma files read and frames rendered through the operator's Figma app (#171; Figma limits each app per person too)
   boardImport: '20/1h', // per person: boards read from another whiteboard's API with the person's own token (#62; each reads up to 2,000 items and copies up to 100 pictures)
+  productEvents: '120/1h', // per person: product events the app reports for PostHog (POST /api/analytics/events; only with POSTHOG_KEY)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -668,6 +678,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   gifSearch: 'RATE_LIMIT_GIF_SEARCH',
   figma: 'RATE_LIMIT_FIGMA',
   boardImport: 'RATE_LIMIT_BOARD_IMPORT',
+  productEvents: 'RATE_LIMIT_PRODUCT_EVENTS',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -866,6 +877,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const gaId = str('GA_MEASUREMENT_ID')?.toUpperCase() ?? null;
   if (gaId !== null && !isGaMeasurementId(gaId))
     problems.push(`GA_MEASUREMENT_ID must be a Google Analytics 4 measurement id such as G-AB12CD34EF (got "${gaId.slice(0, 40)}"; Universal Analytics UA-… ids no longer work)`);
+  // POSTHOG_KEY=phc_…: a PostHog project API key (the write-only key PostHog shows in the project's
+  // settings; never a personal `phx_` key, which reads the whole project). POSTHOG_HOST: where the
+  // events go (PostHog Cloud US by default; EU or a reverse proxy otherwise): https only, except a
+  // loopback address outside production (tests and `npm run verify` use a local stand-in).
+  const posthogKey = str('POSTHOG_KEY');
+  if (posthogKey !== null && !/^phc_[A-Za-z0-9]{20,80}$/.test(posthogKey))
+    problems.push('POSTHOG_KEY must be a PostHog project API key (phc_ followed by letters and digits; never a personal phx_ key)');
+  const posthogHost = (() => {
+    const v = str('POSTHOG_HOST');
+    if (v === null) return 'https://us.i.posthog.com';
+    try {
+      const u = new URL(v);
+      const loopback = u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) && env.NODE_ENV !== 'production';
+      if ((u.protocol !== 'https:' && !loopback) || u.username || u.password || u.search || u.hash) throw new Error();
+      return v.replace(/\/+$/, '');
+    } catch {
+      problems.push('POSTHOG_HOST must be an https URL such as https://eu.i.posthog.com');
+      return null;
+    }
+  })();
   // IndexNow's own rule for a key: 8 to 128 characters of a-z, A-Z, 0-9 and dashes. Anything else
   // would make every submission fail later, far from the cause.
   const indexNowKey = str('SITE_INDEXNOW_KEY');
@@ -1281,6 +1312,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     openaiAppsChallenge: str('OPENAI_APPS_CHALLENGE'),
     oauthClientMetadataLoopback: bool('OAUTH_CLIENT_METADATA_LOOPBACK', false),
     googleAnalyticsId: gaId !== null && isGaMeasurementId(gaId) ? gaId : null,
+    posthog: posthogKey !== null && /^phc_[A-Za-z0-9]{20,80}$/.test(posthogKey) && posthogHost ? { key: posthogKey, host: posthogHost } : null,
     site: {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),
