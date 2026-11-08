@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { analyticsEventParams, analyticsPage } from '@freero/shared';
-import { reportPage, resetAppAnalytics, startAppAnalytics, track } from './bridge';
+import { noteSignedIn, reportPage, resetAppAnalytics, startAppAnalytics, track } from './bridge';
 import { setOptedOut, startSite } from './runtime';
 
 const googleScripts = () => [...document.querySelectorAll('script')].filter((s) => s.src.includes('googletagmanager.com'));
@@ -49,7 +49,7 @@ describe('marketing pages (the runtime as /analytics.js)', () => {
     expect(googleScripts()).toHaveLength(0);
   });
 
-  it('turning analytics off from the footer stops measuring, deletes Google’s cookies (not the app’s) and offers to turn it back on', () => {
+  it('turning analytics off from the footer stops measuring, deletes Google’s cookies (not the app’s), tells the server with its own cookie and offers to turn it back on', () => {
     document.body.innerHTML = '<footer><ul><li hidden><button data-freero-analytics-toggle>Turn off analytics</button></li></ul></footer>';
     startSite('G-TEST123');
     document.cookie = '_ga=GA1.1.123.456; path=/';
@@ -59,7 +59,8 @@ describe('marketing pages (the runtime as /analytics.js)', () => {
     expect(control.closest('li')!.hidden).toBe(false);
 
     control.click();
-    expect(document.cookie).toBe('freero_device=keep');
+    // freero_analytics_off: the server sends no product event for this browser's requests (a sign-up included).
+    expect(document.cookie).toBe('freero_device=keep; freero_analytics_off=1');
     expect(dataLayer().at(-1)).toEqual(['consent', 'update', { analytics_storage: 'denied' }]);
     expect(control.textContent).toBe('Turn on analytics');
   });
@@ -97,6 +98,28 @@ describe('the app (the bridge to the analytics frame)', () => {
     track({ name: 'board_created' });
     await settle();
     expect(frame()).toBeNull();
+  });
+
+  it('with product analytics on, a template used goes to the server; a signed-in browser sending GPC records the opt-out on the account and reports nothing', async () => {
+    const calls: Array<[string, string, unknown]> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push([init?.method ?? 'GET', url, init?.body ? JSON.parse(String(init.body)) : null]);
+        return url === '/api/analytics' ? new Response(JSON.stringify({ enabled: false, productAnalytics: true })) : new Response(null, { status: 204 });
+      }),
+    );
+    startAppAnalytics();
+    noteSignedIn('u1');
+    await settle();
+    track({ name: 'template_used', template: 'kanban' });
+    expect(calls.filter(([m]) => m !== 'GET')).toEqual([['POST', '/api/analytics/events', { name: 'template_used', template: 'kanban' }]]);
+
+    calls.length = 0;
+    setPrivacySignal(true);
+    noteSignedIn('u2');
+    track({ name: 'template_used', template: 'kanban' });
+    expect(calls).toEqual([['PUT', '/api/analytics/opt-out', { optedOut: true }]]);
   });
 
   it('never measures an embedded board (an assistant’s live view, another site’s or Teams’ embed and their sign-in pages), the operators’ console or the OAuth consent screen', async () => {

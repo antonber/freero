@@ -9,7 +9,10 @@
 //   Help menu, the privacy policy) or sends Global Privacy Control / Do Not Track.
 // - Consent Mode v2: analytics_storage granted; ad_storage, ad_user_data and ad_personalization
 //   always denied, Google signals and ad personalisation off.
-// - Opting out deletes Google's cookies and is remembered in this browser until turned back on.
+// - Opting out deletes Google's cookies and is remembered in this browser until turned back on:
+//   in local storage, and as the `freero_analytics_off` cookie so the server sends no product
+//   event (PostHog, POSTHOG_KEY) for this browser's requests either; a signed-in person's choice is
+//   also recorded on their account (PUT /api/analytics/opt-out).
 // - Pages pass the address and title to report (page_location / page_title / page_referrer); the
 //   tag never falls back to the document's own (a board's tab shows its title).
 
@@ -20,6 +23,10 @@ const LEGACY_KEY = 'freero:analytics-consent';
 /** Google's cookies last at most this long (13 months). */
 const COOKIE_SECONDS = 395 * 86_400;
 const CHANGE_EVENT = 'freero:analytics-change';
+/** The opt-out as a cookie the server reads (platform/requestContext.ts `privacySignal`); kept like Google's, at most 13 months. */
+export const OPT_OUT_COOKIE = 'freero_analytics_off';
+/** Where a signed-in person's choice is recorded on their account (modules/analytics). */
+const ACCOUNT_OPT_OUT_PATH = '/api/analytics/opt-out';
 const GTAG_ORIGIN = 'https://www.googletagmanager.com';
 
 // ---- On or off ---------------------------------------------------------------------------------
@@ -71,8 +78,31 @@ export function setOptedOut(off: boolean): void {
   } catch {
     // not remembered
   }
+  syncOptOutCookie();
   if (off) clearAnalyticsCookies();
+  // The server's product events (PostHog, where the operator set it up): recorded on the signed-in
+  // account, so no browser, app or assistant acting for it is measured until it is turned back on.
+  // Answered 401 when signed out and 404 where the server has no product analytics: nothing to do.
+  void fetch(ACCOUNT_OPT_OUT_PATH, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    keepalive: true,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ optedOut: off }),
+  }).catch(() => undefined);
   window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+/**
+ * Keeps the opt-out cookie in step with this browser's choice: a browser that turned analytics off
+ * sends `freero_analytics_off=1` with every request, and the server sends no product event while
+ * handling it (modules/analytics), signed in or not — a sign-up included.
+ */
+export function syncOptOutCookie(): void {
+  const has = document.cookie.split(';').some((c) => c.trim() === `${OPT_OUT_COOKIE}=1`);
+  const secure = location.protocol === 'https:' ? '; Secure' : '';
+  if (optedOut() && !has) document.cookie = `${OPT_OUT_COOKIE}=1; path=/; max-age=${COOKIE_SECONDS}; SameSite=Lax${secure}`;
+  else if (!optedOut() && has) document.cookie = `${OPT_OUT_COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${secure}`;
 }
 
 /** Calls `cb` when the opt-out changes here or in another tab (or the analytics frame). */
@@ -214,6 +244,7 @@ export function startSite(id: string): void {
     }
   };
   if (!analyticsAllowed()) clearAnalyticsCookies();
+  syncOptOutCookie();
   for (const c of controls()) {
     c.closest('[hidden]')?.removeAttribute('hidden');
     c.addEventListener('click', (e) => {
