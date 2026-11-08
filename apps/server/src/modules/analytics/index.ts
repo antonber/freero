@@ -1,8 +1,13 @@
-// Google Analytics 4 (GA_MEASUREMENT_ID; ARCHITECTURE.md "Analytics"). This module decides
-// whether a page loads the analytics runtime (/analytics.js, built from the web app's
-// app/analytics/runtime.ts) at all: with no id set nothing here exists — no script tag, no frame,
-// no loader, no CSP change — so a self-hosted server sends nobody to Google.
+// Analytics (ARCHITECTURE.md "Analytics"), both off unless the operator sets them:
+// - Google Analytics 4 (GA_MEASUREMENT_ID). This module decides whether a page loads the analytics
+//   runtime (/analytics.js, built from the web app's app/analytics/runtime.ts) at all: with no id
+//   set nothing here exists — no script tag, no frame, no loader, no CSP change — so a
+//   self-hosted server sends nobody to Google.
+// - PostHog product events (POSTHOG_KEY), sent by the server only (productEvents.ts). The module
+//   that is the single writer of a fact counts it with trackProductEvent.
 import type { Config } from '../../platform/config';
+
+export { trackProductEvent, productAnalyticsOn } from './productEvents';
 
 /** Where the runtime is served from (the web build writes it there). */
 export const RUNTIME_PATH = '/analytics.js';

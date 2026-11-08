@@ -17,6 +17,7 @@ import { applyLinkProtection, checkVisitorPassword, cleanLinkProtection, hasLink
 import * as repo from './repo';
 import {
   BOARD_FILTERS,
+  boardOpened,
   boardTarget,
   recordExport,
   type BoardFilter,
@@ -97,7 +98,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const user = currentUser(req);
       const { board, role, access } = await requireAccess(req.params.id, user.id);
-      await repo.recordOpen(board.id, user.id, Date.now());
+      await boardOpened(board, user.id);
       res.json({ board: await toSummary(board, user.id, role, access) } satisfies Out);
     }),
   );

@@ -1389,7 +1389,7 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   server with a real session and with `SITE=false`, and fetches every sitemap URL (200, no
   redirect, no noindex, its own canonical).
 
-## Analytics (Google Analytics 4, `GA_MEASUREMENT_ID`; server `modules/analytics`, web `app/analytics`)
+## Analytics (Google Analytics 4, `GA_MEASUREMENT_ID`, and PostHog, `POSTHOG_KEY`; server `modules/analytics`, web `app/analytics`)
 
 Off unless the operator sets `GA_MEASUREMENT_ID` (the hosted service does; self-hosted servers get
 nothing: no script tag, no frame, `/analytics.js` and `/analytics-frame` answer 404, the CSP is
@@ -1426,6 +1426,58 @@ byte-for-byte what it was). When on:
   `allowFraming`, `frameFromAnySite` — nor on `/embed/*`): `script-src` +
   `https://www.googletagmanager.com`, `connect-src` + Google's collection hosts, `frame-src` +
   `'self'`. The privacy policy's analytics tokens (`modules/site/legal.ts`) describe exactly this.
+
+### Product analytics (PostHog, `POSTHOG_KEY`; `modules/analytics/productEvents.ts`)
+
+GA says where traffic comes from; PostHog answers what happens after sign-up (activation funnels,
+retention, feature use). Off unless the operator sets `POSTHOG_KEY` (a project key, `phc_…`) and
+optionally `POSTHOG_HOST` (default `https://us.i.posthog.com`; https only): without the key no
+client exists, nothing is sent, `PUT /api/analytics/opt-out` and `POST /api/analytics/events`
+answer 404 and `GET /api/analytics` says `productAnalytics: false`.
+
+- **Server-side only** (posthog-node, MIT). No PostHog script in any page, no CSP change, no
+  autocapture, no session replay (boards hold people's content), no cookies. Events are batched
+  (20, or every 10 s) and the shutdown hook (`init.ts`) sends what is queued, waiting at most 5 s.
+- **Pseudonymous.** `distinct_id` is `platform/secrets` `mac('analytics.account:<id>')` (HMAC-SHA256
+  under `SESSION_SECRET`, hex) — never the account id; a workspace is sent as the same HMAC of its
+  id (`workspace` property), not as a PostHog group (a paid add-on). Rotating `SESSION_SECRET`
+  starts new pseudonyms (PostHog then sees new persons). Never an email, name, title, content,
+  link or user agent. PostHog sees only the server's address, and GeoIP is off
+  (`disableGeoip`: every event carries `$geoip_disable: true`, no `$ip` is ever set). posthog-node
+  adds `$lib`, `$lib_version` and `$is_server`.
+- **A closed list**, `@freero/shared` `ProductEvent`, whose values `productEventProperties`
+  validates (anything else is not sent). Each fact is counted by its single writer, with
+  `trackProductEvent(accountId, event, { workspaceId })` from `modules/analytics/index.ts`, which
+  waits for the caller's transaction to commit (`afterCommit`) and never throws:
+  | event | properties | writer |
+  |---|---|---|
+  | `signed_up` | `method` (`password`, provider id, `sso`, `scim`), `discovery_source` | `auth/service.ts` `insertAccount` (every new account) |
+  | `logged_in` | `method` (+ `email_link`) | `auth/signIn.ts` `openSession` (not the sign-in that created the account) |
+  | `board_created` / `doc_created` | `via` (`app`, `api`, `mcp`, `other`: the request's surface; `import`: a `.freero` backup), `copy` | `boards/service.ts` `createBoard` |
+  | `collaborator_joined` | — (for the board's OWNER; the joiner's opt-out also stops it) | `boards/service.ts` `boardOpened` (first open by someone else) |
+  | `invite_sent` | `scope` (`board`/`workspace`), `recipient` (`account`/`address`), `role` | `members/service.ts` `inviteBoardMember`, `workspaces/invites.ts` `inviteToWorkspace` |
+  | `invite_accepted` | `scope`, `via` (`link`/`verified_email`) | `members/invites.ts` `acceptInvite` / `convertInvitesFor`, `workspaces/invites.ts` `useInvite` |
+  | `workspace_created` | — | `workspaces/service.ts` `createTeamWorkspace` |
+  | `app_connected` | `registration` (`manual`/`dynamic`/`metadata`), `resource` (`mcp`/`api`) — never which app | `apiauth/oauth.ts` `decide` |
+  | `tracker_connected` | `provider`, `auth` (`token`/`oauth`), `scope` | `trackers/connections.ts` (both ways a connection is made) |
+  | `integration_connected` | `integration` (`slack`, `figma`) | `slack/links.ts` `linkSlack`, `figma/oauth.ts` callback |
+  | `board_exported` | `format` (the reported browser export, or `freero`) | `boards/service.ts` `recordExport`, `authorizeBackup` |
+  | `board_shared_publicly` | `access` | `boards/service.ts` `linkAccessChanged` (link turned on from off) |
+  | `template_used` | `template_id` (a built-in template's public id) | the app (`CLIENT_PRODUCT_EVENTS`): `Host.track` → bridge → `POST /api/analytics/events`, checked by `parseClientProductEvent` (exactly these fields; anything else 400) |
+  Not counted: workspace members added other ways (admin add, SCIM groups, domain capture: no
+  single writer; `invite_sent` / `invite_accepted` cover activation), a board's built-in template
+  on the server (the app inserts templates through the Editor; the API's templates are saved ones).
+- **Opt-outs.** Nothing is sent while handling a request whose browser opted out — the runtime's
+  `setOptedOut` mirrors `freero:analytics-off` into the `freero_analytics_off` cookie — or sends
+  `Sec-GPC: 1` / `DNT: 1` (`platform/requestContext.ts` `privacySignal`), signed in or not, a
+  sign-up included. A signed-in person's choice is also recorded on the account
+  (`analytics_opt_outs`, analytics' repo.ts): the controls PUT it, and the bridge records it when
+  the app loads signed in in a browser that is off or signals (`noteSignedIn`); only turning
+  analytics back on clears it, and never from a browser that still signals. Opted-out accounts get
+  no event from any browser, the API, MCP or a background job.
+- **Single writers:** the account opt-out — `PUT /api/analytics/opt-out` (analytics' repo.ts);
+  events — the table above. The privacy policy, subprocessor list and security overview describe
+  it only when `POSTHOG_KEY` is set (`modules/site/legal.ts` `productAnalytics*` tokens).
 
 ## Interface languages (#5; docs/design/i18n.md)
 
@@ -1569,8 +1621,8 @@ see "Issue trackers" below), `search` (search_entries, search_sources: the searc
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
 document realtime stores; see "Docs and native live embeds"), `site` (no table: serves the built
-marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
-endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+marketing site at `/`; see "Marketing site"), `analytics` (analytics_opt_outs: accounts that turned
+analytics off; Google Analytics' settings endpoint, runtime and frame; PostHog product events; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
 "Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (slack_teams, slack_user_links, slack_oauth_flows: the operator's Slack app — link unfurls, and personal Slack: people's linked Slack accounts, direct messages, `/freero`; see "Integrations" below), `teams` (no table: the

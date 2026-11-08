@@ -5,9 +5,25 @@
 // first page reported (unless this browser opted out or sends GPC / Do Not Track), and feeds with
 // the redacted page (@freero/shared `analyticsPage`) and the allowed events
 // (`analyticsEventParams`) only.
+//
+// Product events (PostHog, POSTHOG_KEY) are the server's: the bridge only reports what the server
+// can't see (CLIENT_PRODUCT_EVENTS, POST /api/analytics/events) and records a signed-in person's
+// opt-out — including one their browser signals with GPC / Do Not Track — on their account.
 import { useSyncExternalStore } from 'react';
-import { analyticsEventParams, analyticsPage, campaignQuery, type AnalyticsEvent, type AnalyticsSettings } from '@freero/shared';
-import { analyticsAllowed, analyticsState, onAnalyticsChange, optedOut, originReferrer, privacySignal, setOptedOut, type AnalyticsState, type FrameMessage, type PageFields } from './runtime';
+import { analyticsEventParams, analyticsPage, campaignQuery, type AnalyticsEvent, type AnalyticsSettings, type ClientProductEvent } from '@freero/shared';
+import {
+  analyticsAllowed,
+  analyticsState,
+  onAnalyticsChange,
+  optedOut,
+  originReferrer,
+  privacySignal,
+  setOptedOut,
+  syncOptOutCookie,
+  type AnalyticsState,
+  type FrameMessage,
+  type PageFields,
+} from './runtime';
 
 const FRAME_PATH = '/analytics-frame';
 /** A sign-in through a provider's pages: what was started, settled when the app is back (sessionStorage). */
@@ -26,17 +42,22 @@ let ready = false;
 let queue: FrameMessage[] = [];
 let started = false;
 let unlisten: (() => void) | null = null;
+/** The account whose opt-out was recorded in this page (once per account). */
+let recordedFor: string | null = null;
+let signedIn: string | null = null;
 
 /** Starts the bridge once: asks the server whether this instance measures, and follows the visitor's opt-out. */
 export function startAppAnalytics(): void {
   if (started) return;
   started = true;
+  syncOptOutCookie(); // an opt-out from before the cookie existed
   fetch('/api/analytics', { credentials: 'same-origin' })
     .then((r) => (r.ok ? (r.json() as Promise<AnalyticsSettings>) : null))
     .catch(() => null)
     .then((s) => {
-      settings = s ?? { enabled: false };
+      settings = s ?? { enabled: false, productAnalytics: false };
       for (const l of listeners) l();
+      recordAccountOptOut();
       const waiting = early;
       early = [];
       if (!settings.enabled) return;
@@ -62,6 +83,8 @@ export function resetAppAnalytics(): void {
   currentPath = null;
   previous = '';
   started = false;
+  recordedFor = null;
+  signedIn = null;
 }
 
 const subscribe = (l: () => void) => {
@@ -69,7 +92,8 @@ const subscribe = (l: () => void) => {
   return () => void listeners.delete(l);
 };
 /** Analytics in this browser ('on', 'off', 'signal'), or null where this server doesn't measure (no control then). */
-export const useAnalyticsState = (): AnalyticsState | null => useSyncExternalStore(subscribe, () => (settings?.enabled ? analyticsState() : null));
+export const useAnalyticsState = (): AnalyticsState | null =>
+  useSyncExternalStore(subscribe, () => (settings?.enabled || settings?.productAnalytics ? analyticsState() : null));
 
 /** "Turn off / on analytics" (the Help menu): flips this browser's opt-out; a GPC / Do Not Track signal can't be overridden here. */
 export function toggleAnalytics(): void {
@@ -93,9 +117,42 @@ export function reportPage(pathname: string, search: string): void {
 
 /** A product event (Host.track, the auth flows, board creation). Values an event may not carry are dropped. */
 export function track(event: AnalyticsEvent): void {
+  if (event.name === 'template_used') reportProductEvent({ name: 'template_used', template: event.template });
   const params = analyticsEventParams(event);
   if (!params || !current) return;
   send({ freeroAnalytics: 1, kind: 'event', fields: current, name: event.name, params });
+}
+
+/** One of the events only the app sees, to the server's product analytics (it checks it against the closed list). */
+function reportProductEvent(event: ClientProductEvent): void {
+  if (!settings?.productAnalytics || !signedIn || !analyticsAllowed()) return;
+  void fetch('/api/analytics/events', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(event),
+  }).catch(() => undefined);
+}
+
+/**
+ * Who is signed in (AppAnalytics). A browser that opted out or sends GPC / Do Not Track records
+ * that on the account, so the server stops counting it wherever it acts from; only turning
+ * analytics back on (toggleAnalytics) clears it.
+ */
+export function noteSignedIn(userId: string | null): void {
+  signedIn = userId;
+  recordAccountOptOut();
+}
+
+function recordAccountOptOut(): void {
+  if (!settings?.productAnalytics || !signedIn || recordedFor === signedIn || analyticsState() === 'on') return;
+  recordedFor = signedIn;
+  void fetch('/api/analytics/opt-out', {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ optedOut: true }),
+  }).catch(() => undefined);
 }
 
 /** A sign-in that leaves for a provider's pages (Google, Microsoft, SSO): counted when the app is back signed in. */

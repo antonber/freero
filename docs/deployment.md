@@ -223,4 +223,5 @@ migrations ahead of a deploy, start one instance of the new version first.
 - [ ] `/metrics` protected (`METRICS_TOKEN` or `METRICS_PORT`) and scraped; alerts set up
 - [ ] `ERROR_REPORTING_DSN` set (optional)
 - [ ] `GA_MEASUREMENT_ID` set only if you want Google Analytics (optional; on by default with an opt-out, see docs/configuration.md), and the privacy policy reviewed for it
+- [ ] `POSTHOG_KEY` (a `phc_` project key) and `POSTHOG_HOST` (default PostHog Cloud US; `https://eu.i.posthog.com` for EU) set only if you want PostHog product analytics (optional; server-side, pseudonymous, same opt-out, see docs/configuration.md); the privacy policy and subprocessor list reviewed for it, and the subprocessor change announced as `/subprocessors` says
 - [ ] Readiness/liveness probes, SIGTERM grace period configured

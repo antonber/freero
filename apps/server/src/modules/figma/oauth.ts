@@ -10,6 +10,7 @@ import { getConfig } from '../../platform/config';
 import { HttpError, notFound, parseCookies } from '../../platform/http';
 import { logger } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
+import { trackProductEvent } from '../analytics/index';
 import { recordAudit } from '../audit/index';
 import { safeReturnPath } from '../auth/index';
 import { FigmaApiError, figmaMe, redeemCode } from './api';
@@ -81,6 +82,7 @@ export async function finishFigmaConnect(req: Request, res: Response, userId: st
       now,
     );
     await recordAudit({ action: 'figma.account_linked', accountId: userId, fanOut: false, target: { type: 'figma_account', id: me.id, label: me.handle } });
+    trackProductEvent(userId, { name: 'integration_connected', integration: 'figma' });
   } catch (e) {
     if (!(e instanceof FigmaApiError)) throw e;
     logger.warn({ figma: { connect: 'refused', status: e.status } }, 'figma connect failed');

@@ -11,6 +11,7 @@ import { HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
+import { trackProductEvent } from '../analytics/index';
 import { getUser, getUsers, localeOfEmail, localesOf, markEmailVerified } from '../auth/index';
 import { getBoardAccess, getBoardTitle, lockBoardSharing, requireBoardAccess } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
@@ -173,13 +174,16 @@ export async function acceptInvite(token: string, user: { id: string; email: str
   const { role } = await getBoardAccess(row.boardId, user.id);
   if (!role) throw deadLink();
   await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
+  trackProductEvent(user.id, { name: 'invite_accepted', scope: 'board', via: 'link' });
   return { boardId: row.boardId, role };
 }
 
 /** The user just proved `email`: every live invite sent to it, that its inviter may still send, becomes a membership. */
 export async function convertInvitesFor(user: { id: string; email: string }): Promise<void> {
   for (const row of await repo.liveInvitesFor(user.email, Date.now())) {
-    if ((await useInvite(row, user, null)) === 'granted') await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
+    if ((await useInvite(row, user, null)) !== 'granted') continue;
+    await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
+    trackProductEvent(user.id, { name: 'invite_accepted', scope: 'board', via: 'verified_email' });
   }
 }
 

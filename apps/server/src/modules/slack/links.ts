@@ -9,6 +9,7 @@ import { getConfig } from '../../platform/config';
 import { logger } from '../../platform/log';
 import { currentRequestContext, runWithRequestContext } from '../../platform/requestContext';
 import { seal, unseal } from '../../platform/secrets';
+import { trackProductEvent } from '../analytics/index';
 import { integrationCredentialId, integrationMayReach } from '../apiauth/index';
 import { recordAudit } from '../audit/index';
 import { callSlack } from './api';
@@ -87,6 +88,7 @@ export async function linkSlack(link: repo.SlackLink, token: string, claimId: st
   const r = await repo.linkAndStoreToken(link, seal(TOKEN_PURPOSE, token), claimId);
   if (r === 'expired') return false;
   if (r.previousTeam && r.previousTeam !== link.teamId) await releaseSlackTeam(r.previousTeam);
+  trackProductEvent(link.userId, { name: 'integration_connected', integration: 'slack' });
   return true;
 }
 

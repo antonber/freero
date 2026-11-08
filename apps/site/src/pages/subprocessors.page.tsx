@@ -9,7 +9,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs, docsUrl } from '../lib/site';
 
-const UPDATED = '2026-11-03';
+const UPDATED = '2026-11-08';
 
 /** A provider's name with where it processes the data under it. */
 function Provider({ name, where }: { name: ReactNode; where: ReactNode }) {
@@ -54,7 +54,7 @@ export default definePage({
     >
       <h2 id="list">Subprocessors</h2>
       <p>
-        The first six rows are filled in from this server’s own configuration when the page is served, so they always name what the service really uses.
+        The first seven rows are filled in from this server’s own configuration when the page is served, so they always name what the service really uses.
       </p>
       <Table
         caption="Subprocessors of the hosted service"
@@ -89,6 +89,7 @@ export default definePage({
           ],
           [<Provider name="Error tracking" where="Where that service runs" />, L('errorReporting'), 'When on: the error, the request’s method and path, and the account id'],
           [<Provider name="Analytics" where="Google may process it in the United States and elsewhere" />, L('analyticsProvider'), L('analyticsData')],
+          [<Provider name="Product analytics" where={L('productAnalyticsWhere')} />, L('productAnalyticsProvider'), L('productAnalyticsData')],
           [
             <Provider name="Porkbun (domain and DNS)" where="United States" />,
             'Registrar and DNS host of the service’s domain name. It answers DNS queries and does not carry or store the service’s traffic.',

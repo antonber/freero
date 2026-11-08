@@ -9,7 +9,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs, docsUrl, SOURCE_REPO } from '../lib/site';
 
-const UPDATED = '2026-11-06';
+const UPDATED = '2026-11-08';
 
 export default definePage({
   path: '/security',
@@ -108,6 +108,7 @@ export default definePage({
       <ul>
         <li>Email: {L('mailProvider')}.</li>
         <li>Analytics: {L('analytics')}</li>
+        <li>Product analytics: {L('productAnalyticsProvider')}.</li>
         <li>AI: {L('aiProvider')}. {L('aiWorkspaces')}</li>
         <li>Error tracking: {L('errorReporting')}</li>
         <li>

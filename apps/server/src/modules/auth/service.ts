@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, COLOR_THEME_PREFERENCES, isDiscoverySource, isLocale, LOCALES, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type ColorThemePreference, type DiscoverySource, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, COLOR_THEME_PREFERENCES, isDiscoverySource, isLocale, LOCALES, productSignInMethod, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type ColorThemePreference, type DiscoverySource, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -9,6 +9,7 @@ import { publish, subscribe } from '../../platform/pubsub';
 import { clientIp } from '../../platform/rateLimit';
 import { setRequestUser } from '../../platform/requestContext';
 import { canonicalTimeZone } from '../../platform/time';
+import { trackProductEvent } from '../analytics/index';
 import { recordAuditQuietly, type AuditInput } from '../audit/index';
 import { randomCursorColor } from './colors';
 import { maskIp } from './geoip';
@@ -109,6 +110,10 @@ export async function insertAccount(
     if (e instanceof repo.EmailTakenError) throw emailTaken();
     throw e;
   }
+  // The one place every new account passes: a provider's (`sso:<workspace>` reported as `sso`), a
+  // password, or neither (provisioned by a workspace's directory over SCIM).
+  const method = identity ? productSignInMethod(identity.provider) : input.passwordHash ? 'password' : 'scim';
+  trackProductEvent(user.id, { name: 'signed_up', method, discoverySource: user.discoverySource });
   // Born verified (a provider or the organization's directory vouched for the address): that proves
   // the address like a verification link would — pending invites convert, a verified domain's
   // workspace may take the account in (sso domain control, #64).

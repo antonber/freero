@@ -25,14 +25,18 @@ afterAll(async () => {
   for (const s of [off, on]) await new Promise((r) => s.server.close(r));
 });
 
-it('without GA_MEASUREMENT_ID a server offers nothing of Google Analytics: the app is told it is off, and neither the runtime nor the frame is served', async () => {
-  expect(await (await fetch(`${off.base}/api/analytics`)).json()).toEqual({ enabled: false });
+it('without GA_MEASUREMENT_ID or POSTHOG_KEY a server offers no analytics: the app is told both are off, and neither the runtime, the frame nor the product-event endpoints exist', async () => {
+  expect(await (await fetch(`${off.base}/api/analytics`)).json()).toEqual({ enabled: false, productAnalytics: false });
   expect((await fetch(`${off.base}/analytics.js`)).status).toBe(404);
   expect((await fetch(`${off.base}/analytics-frame`)).status).toBe(404);
+  const post = (path: string, method: string, body: unknown) =>
+    fetch(`${off.base}${path}`, { method, headers: { origin: off.base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  expect((await post('/api/analytics/events', 'POST', { name: 'template_used', template: 'kanban' })).status).toBe(404);
+  expect((await post('/api/analytics/opt-out', 'PUT', { optedOut: true })).status).toBe(404);
 });
 
 it('with it, the analytics frame runs the runtime in frame mode and only this origin may frame it', async () => {
-  expect(await (await fetch(`${on.base}/api/analytics`)).json()).toEqual({ enabled: true });
+  expect(await (await fetch(`${on.base}/api/analytics`)).json()).toEqual({ enabled: true, productAnalytics: false });
   expect(await (await fetch(`${on.base}/analytics.js`)).text()).toBe('/* runtime */');
   const res = await fetch(`${on.base}/analytics-frame`);
   expect(await res.text()).toContain('<script src="/analytics.js" data-freero-ga="G-TEST123" data-mode="frame"></script>');

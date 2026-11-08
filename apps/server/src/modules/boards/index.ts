@@ -11,6 +11,7 @@ import * as repo from './repo';
 import { boardLifecycle } from './events';
 import {
   boardLetsCopy,
+  boardOpened,
   cleanDescription,
   linkProblems,
   cleanTitle,
@@ -341,9 +342,10 @@ export async function deleteBoardsOwnedBy(userId: string): Promise<number> {
   return thumbnails.length;
 }
 
-/** Records that the user opened the board (recent lists; a link-only board becomes discoverable to them). */
+/** Records that the user opened the board, as GET /boards/:id does (boardOpened). */
 export async function recordBoardOpen(boardId: string, userId: string, at = Date.now()): Promise<void> {
-  await repo.recordOpen(boardId, userId, at);
+  const board = await repo.getBoardIncludingTrash(boardId);
+  if (board) await boardOpened(board, userId, at);
 }
 
 /** The account purge: which protected board links the account unlocked (KAI-145) is forgotten. */

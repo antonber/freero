@@ -4,12 +4,13 @@
 // step. Also the provider (OIDC) browser flow: start -> provider -> callback.
 import { timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
-import type { Account, LoginResponse, OidcErrorCode } from '@freero/shared';
+import { productSignInMethod, type Account, type LoginResponse, type OidcErrorCode } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { log, logError } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
+import { trackProductEvent } from '../analytics/index';
 import { recordAuditQuietly } from '../audit/index';
 import { sendVerification } from './emails';
 import { authorizationUrl, newAuthorizationChecks, OidcUnavailableError, redeemAuthorizationCode } from './oidc';
@@ -89,6 +90,8 @@ async function openSession(
     actorId: userId,
     metadata: { method: how.method, twoFactor: how.twoFactor ?? false, newDevice: !knownDevice },
   });
+  // A sign-in that created the account was counted as its sign-up (insertAccount).
+  if (!how.newAccount) trackProductEvent(userId, { name: 'logged_in', method: productSignInMethod(how.method) });
   if (knownDevice || how.newAccount || how.method === 'email_link') return;
   const user = await getAccount(userId);
   sendSecurityNotice(req, user.email, { kind: 'new_sign_in', method: how.method === 'password' ? 'password' : providerLabel(how.method) });

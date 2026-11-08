@@ -30,6 +30,7 @@ import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
 import { seal, unseal } from '../../platform/secrets';
 import { requireAdmin } from '../admin/index';
+import { trackProductEvent } from '../analytics/index';
 import { recordAudit } from '../audit/index';
 import { findUserByEmail, getAccount, getUser } from '../auth/index';
 import { workspaceRole } from '../workspaces/index';
@@ -507,6 +508,7 @@ export async function createConnection(userId: string, body: unknown, req: Reque
         scope: workspaceId ? 'workspace' : 'personal',
       },
     });
+    connected(userId, stored);
   });
   return { connection: info(stored, 0, req, true), webhookSecret };
 }
@@ -561,8 +563,18 @@ export async function createOAuthConnection(
         scope: p.workspaceId ? 'workspace' : 'personal',
       },
     });
+    connected(userId, stored);
   });
   return stored;
+}
+
+/** Product analytics: a connection was made (which tracker and how, never its site or account). */
+function connected(userId: string, c: StoredConnection): void {
+  trackProductEvent(
+    userId,
+    { name: 'tracker_connected', provider: c.provider, auth: c.auth === 'oauth' ? 'oauth' : 'token', scope: c.workspaceId ? 'workspace' : 'personal' },
+    { workspaceId: c.workspaceId },
+  );
 }
 
 export async function updateConnection(id: string, userId: string, body: unknown, req: Request | null): Promise<TrackerConnectionInfo> {

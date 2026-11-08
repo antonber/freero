@@ -21,6 +21,8 @@ import { badRequest, forbidden, HttpError, notFound } from '../../platform/http'
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
 import { log, logError } from '../../platform/log';
+import { currentRequestContext } from '../../platform/requestContext';
+import { trackProductEvent } from '../analytics/index';
 import { hasKey, KeyUnavailableError, keysInUse } from '../keys/index';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
@@ -169,9 +171,20 @@ export function linkProblems(board: Board, policies: Pick<WorkspacePolicies, 'li
   return out;
 }
 
+/**
+ * Someone opened the board (GET /boards/:id): its recent lists, and a link-only board becomes
+ * discoverable to them. The first time someone other than its owner opens it, a collaborator
+ * joined: counted for the owner, unless either of them turned analytics off.
+ */
+export async function boardOpened(board: Pick<Board, 'id' | 'ownerId' | 'workspaceId'>, userId: string, at = Date.now()): Promise<void> {
+  const first = await repo.recordOpen(board.id, userId, at);
+  if (first && userId !== board.ownerId) trackProductEvent(board.ownerId, { name: 'collaborator_joined' }, { workspaceId: board.workspaceId, alsoRespect: [userId] });
+}
+
 /** After a stored link change: audited, and every live socket's access re-resolved. */
 export async function linkAccessChanged(board: Board, actorId: string, to: LinkAccess): Promise<void> {
   await recordAuditQuietly({ action: 'board.link_sharing_changed', workspaceId: board.workspaceId, actorId, target: boardTarget(board), metadata: { from: board.linkAccess, to } });
+  if (board.linkAccess === 'none' && to !== 'none') trackProductEvent(actorId, { name: 'board_shared_publicly', access: to }, { workspaceId: board.workspaceId });
   await refreshBoardAccess(board.id);
 }
 
@@ -204,6 +217,7 @@ export async function recordExport(boardId: string, userId: string, format: unkn
   await requireDownload(board, userId, access, 'export', role);
   const f = (EXPORT_FORMATS as readonly unknown[]).includes(format) ? (format as string) : 'other';
   await recordAudit({ action: board.kind === 'doc' ? 'doc.exported' : 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
+  trackProductEvent(userId, { name: 'board_exported', format: f }, { workspaceId: board.workspaceId });
 }
 
 /**
@@ -253,8 +267,10 @@ export async function authorizeBackup(
   return {
     role,
     board: { id: board.id, title: board.title, description: board.description, createdAt: board.createdAt },
-    record: (meta) =>
-      recordAudit({ action: 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: 'freero', ...meta } }),
+    record: async (meta) => {
+      await recordAudit({ action: 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: 'freero', ...meta } });
+      trackProductEvent(userId, { name: 'board_exported', format: 'freero' }, { workspaceId: board.workspaceId });
+    },
   };
 }
 
@@ -732,6 +748,8 @@ export async function createBoard(
   copyOf?: string,
   /** What it holds (KAI-162): a board, or a doc (modules/docs). Same quota, same rules. */
   kind: ObjectKind = 'board',
+  /** 'import': made from a .freero backup (restoreBoard); otherwise counted by the door the request came through. */
+  via?: 'import',
 ): Promise<Board> {
   const workspaceId = place.workspaceId || (await ensurePersonalWorkspace(ownerId));
   const projectId = place.projectId || null;
@@ -781,6 +799,8 @@ export async function createBoard(
       if (kind === 'board' && !copyOf) await initNewBoardDoc(board.id);
       await recordAudit({ action: kind === 'doc' ? 'doc.created' : 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
       await repo.appendBoardEvent({ type: 'board.created', boardId: board.id, workspaceId, actorId: ownerId, title, ...(copyOf ? { copyOf } : {}), ...(kind === 'doc' ? { kind } : {}) });
+      const door = via ?? currentRequestContext()?.surface ?? 'other';
+      trackProductEvent(ownerId, kind === 'doc' ? { name: 'doc_created', via: door } : { name: 'board_created', via: door, copy: !!copyOf }, { workspaceId });
       return board;
     },
   );
@@ -1303,7 +1323,7 @@ export async function restoreBoard(
   source: { boardId: string; title: string; origin: string | null; formatVersion: number; files: number; missingFiles: number },
 ): Promise<Board> {
   const made = await repo.transaction(async () => {
-    const board = await createBoard(userId, cleanTitle(fields.title), cleanDescription(fields.description), 'none', fields.place);
+    const board = await createBoard(userId, cleanTitle(fields.title), cleanDescription(fields.description), 'none', fields.place, undefined, 'board', 'import');
     await recordAudit({
       action: 'board.backup_restored',
       workspaceId: board.workspaceId,
