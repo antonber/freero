@@ -4,12 +4,21 @@
 // its route with every id and token taken out (/board/<id> → /board), with a generic title, and
 // without its query string (UTM campaign tags excepted). Pure: used by the web app's bridge and
 // its tests.
-import { isDiscoverySource, type DiscoverySource } from './api';
+import { isDiscoverySource, type DiscoverySource, type LinkAccess } from './api';
 import { integrationById } from './integrations';
+import { TRACKER_PROVIDERS, type TrackerProviderKind } from './trackers';
 
-/** What `GET /api/analytics` answers: whether this server measures with Google Analytics. */
+/** What `GET /api/analytics` answers. */
 export interface AnalyticsSettings {
+  /** This server measures with Google Analytics (GA_MEASUREMENT_ID). */
   enabled: boolean;
+  /**
+   * This server sends product events to PostHog (POSTHOG_KEY): the app then offers the analytics
+   * control even without Google Analytics, records a signed-in person's opt-out on their account
+   * (PUT /api/analytics/opt-out) and reports `CLIENT_PRODUCT_EVENTS` (POST /api/analytics/events).
+   * Absent (a server from before it): off.
+   */
+  productAnalytics?: boolean;
 }
 
 /** A GA4 web stream's measurement id (`G-` and letters / digits). Universal Analytics ids (`UA-…`) stopped working in 2023. */
@@ -127,4 +136,113 @@ export function campaignQuery(search: string): string {
   for (const [k, v] of new URLSearchParams(search)) if (/^utm_(source|medium|campaign|term|content|id)$/.test(k)) kept.append(k, v.slice(0, 100));
   const q = kept.toString();
   return q ? `?${q}` : '';
+}
+
+// ---- Product events (PostHog, POSTHOG_KEY; ARCHITECTURE.md "Analytics") ------------------------
+//
+// What happens after sign-up — activation, retention, which features are used — sent by the server
+// (never a script in a page) under a pseudonym: an HMAC of the account id, never the id, an email,
+// a name, a title, content, a link or an IP address. The closed list below is all PostHog can
+// receive; each event has one writer on the server (ARCHITECTURE.md lists them), except
+// CLIENT_PRODUCT_EVENTS, which the app reports through POST /api/analytics/events.
+
+/** Which door an action came through (the request's surface; `import`: a .freero backup restored). */
+export type ProductEventVia = 'app' | 'api' | 'mcp' | 'other' | 'import';
+
+export type ProductEvent =
+  /** A new account. `method`: `password`, a sign-in provider's id, `sso` (a workspace's identity provider) or `scim` (provisioned by one). */
+  | { name: 'signed_up'; method: string; discoverySource?: DiscoverySource | null }
+  /** A completed sign-in (not the one that created the account). `method`: as above, or `email_link`. */
+  | { name: 'logged_in'; method: string }
+  | { name: 'board_created'; via: ProductEventVia; copy: boolean }
+  | { name: 'doc_created'; via: ProductEventVia }
+  /** Someone other than its owner opened a board for the first time: counted for the board's OWNER. */
+  | { name: 'collaborator_joined' }
+  | { name: 'invite_sent'; scope: 'board' | 'workspace'; recipient: 'account' | 'address'; role: string }
+  | { name: 'invite_accepted'; scope: 'board' | 'workspace'; via: 'link' | 'verified_email' }
+  | { name: 'workspace_created' }
+  /** An app or assistant authorised over OAuth: how it registered and what it reaches, never which app. */
+  | { name: 'app_connected'; registration: 'manual' | 'dynamic' | 'metadata'; resource: 'mcp' | 'api' }
+  | { name: 'tracker_connected'; provider: TrackerProviderKind; auth: 'token' | 'oauth'; scope: 'workspace' | 'personal' }
+  | { name: 'integration_connected'; integration: 'slack' | 'figma' }
+  | { name: 'board_exported'; format: string }
+  /** A board's link opened to people who have it (it was off). */
+  | { name: 'board_shared_publicly'; access: Exclude<LinkAccess, 'none'> }
+  /** A built-in template by its public catalog id (reported by the app). */
+  | { name: 'template_used'; template: string };
+
+export type ProductEventName = ProductEvent['name'];
+
+/** The events the app may report itself (POST /api/analytics/events): what only the browser sees. */
+export const CLIENT_PRODUCT_EVENTS = ['template_used'] as const;
+export type ClientProductEvent = Extract<ProductEvent, { name: (typeof CLIENT_PRODUCT_EVENTS)[number] }>;
+
+/** How a sign-in method is reported: a workspace's identity provider (`sso:<workspace>`) as `sso`, never which workspace. */
+export const productSignInMethod = (method: string): string => (method.startsWith('sso:') ? 'sso' : method);
+
+const METHOD_RE = /^[a-z][a-z0-9_-]{1,23}$/;
+const TEMPLATE_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const FORMAT_RE = /^[a-z][a-z0-9]{1,15}$/;
+const VIAS: readonly ProductEventVia[] = ['app', 'api', 'mcp', 'other', 'import'];
+const ROLES = ['owner', 'coowner', 'admin', 'member', 'guest', 'editor', 'commenter', 'viewer'] as const;
+const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): v is T => typeof v === 'string' && (allowed as readonly string[]).includes(v);
+
+/**
+ * The PostHog properties of an event, or null when a value isn't one the event may carry (it is
+ * then not sent). Only these keys ever leave the server, besides a hashed `workspace` and the
+ * pseudonymous distinct id (modules/analytics).
+ */
+export function productEventProperties(e: ProductEvent): Record<string, string | boolean> | null {
+  switch (e.name) {
+    case 'signed_up': {
+      if (!METHOD_RE.test(e.method)) return null;
+      if (e.discoverySource === undefined || e.discoverySource === null) return { method: e.method };
+      return isDiscoverySource(e.discoverySource) ? { method: e.method, discovery_source: e.discoverySource } : null;
+    }
+    case 'logged_in':
+      return METHOD_RE.test(e.method) ? { method: e.method } : null;
+    case 'board_created':
+      return oneOf(e.via, VIAS) && typeof e.copy === 'boolean' ? { via: e.via, copy: e.copy } : null;
+    case 'doc_created':
+      return oneOf(e.via, VIAS) ? { via: e.via } : null;
+    case 'collaborator_joined':
+    case 'workspace_created':
+      return {};
+    case 'invite_sent':
+      return oneOf(e.scope, ['board', 'workspace'] as const) && oneOf(e.recipient, ['account', 'address'] as const) && oneOf(e.role, ROLES)
+        ? { scope: e.scope, recipient: e.recipient, role: e.role }
+        : null;
+    case 'invite_accepted':
+      return oneOf(e.scope, ['board', 'workspace'] as const) && oneOf(e.via, ['link', 'verified_email'] as const) ? { scope: e.scope, via: e.via } : null;
+    case 'app_connected':
+      return oneOf(e.registration, ['manual', 'dynamic', 'metadata'] as const) && oneOf(e.resource, ['mcp', 'api'] as const)
+        ? { registration: e.registration, resource: e.resource }
+        : null;
+    case 'tracker_connected':
+      return Object.hasOwn(TRACKER_PROVIDERS, e.provider) && oneOf(e.auth, ['token', 'oauth'] as const) && oneOf(e.scope, ['workspace', 'personal'] as const)
+        ? { provider: e.provider, auth: e.auth, scope: e.scope }
+        : null;
+    case 'integration_connected':
+      return oneOf(e.integration, ['slack', 'figma'] as const) ? { integration: e.integration } : null;
+    case 'board_exported':
+      return FORMAT_RE.test(e.format) ? { format: e.format } : null;
+    case 'board_shared_publicly':
+      return oneOf(e.access, ['viewer', 'commenter', 'editor'] as const) ? { access: e.access } : null;
+    case 'template_used':
+      return TEMPLATE_RE.test(e.template) ? { template_id: e.template } : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * A body POSTed to /api/analytics/events, or null unless it is exactly one of the events the app
+ * may report with exactly its fields (an unknown event, an extra field or a bad value is refused).
+ */
+export function parseClientProductEvent(body: unknown): ClientProductEvent | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const b = body as Record<string, unknown>;
+  if (b.name !== 'template_used' || Object.keys(b).length !== 2 || typeof b.template !== 'string') return null;
+  const e: ClientProductEvent = { name: 'template_used', template: b.template };
+  return productEventProperties(e) ? e : null;
 }
