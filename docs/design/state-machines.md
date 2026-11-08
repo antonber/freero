@@ -245,6 +245,17 @@ name the regression test that guards them.
 - Access requests: none → **pending** → approved or denied; a denied request can be refiled after a one-hour cooldown, an approved one at any time (`members/repo.ts:436-459`). A decision is a single `UPDATE … WHERE status='pending'` inside a transaction together with the grant (`members/accessRequests.ts:155-160`, `members/repo.ts:480-492`).
 - The effective role is resolved on every read: workspace blocked, outsider blocked, link capped by policy, link expiry and passwords (`members/roles.ts:61-79`, `boards/repo.ts:96`, `boards/service.ts:266-315`).
 
+#### ID-M20. Analytics opt-out of an account (`analytics_opt_outs`) and of a browser (`freero_analytics_off`)
+- Where: `analytics/migrations/202612051200_analytics_opt_outs.sql`; the browser side is `freero:analytics-off` in local storage mirrored as the `freero_analytics_off` cookie (web `app/analytics/runtime.ts`). Only matters with `POSTHOG_KEY` (the PUT answers 404 without it).
+- States: account **measured** (no row) or **opted out** (row); browser **on**, **off** (its own choice) or **signal** (GPC / Do Not Track, not ours to override).
+- Invariants: no product event is sent for an opted-out account (checked when each event is sent, `analytics/productEvents.ts` `capture`), nor while handling a request whose browser is off or signals (`platform/requestContext.ts` `privacySignal`). A browser that signals can't clear the account's opt-out.
+- Transitions:
+  | from → to | trigger | guard | file:line |
+  |---|---|---|---|
+  | measured → opted out | "Turn off analytics" while signed in; the app loading signed in in a browser that is off or signals | signed in | `analytics/routes.ts` (PUT `/api/analytics/opt-out`), web `analytics/bridge.ts` `recordAccountOptOut` |
+  | opted out → measured | "Turn on analytics" while signed in | the request carries no privacy signal | `analytics/routes.ts` |
+  | opted out → (gone) | account purged | `ON DELETE CASCADE` | migration |
+
 ---
 
 #### Changes made by the fixes
