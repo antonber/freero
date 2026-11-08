@@ -13,17 +13,17 @@ name the regression test that guards them.
 
 | ID | Finding | Evidence | Impact | Tracked in | Fix |
 |---|---|---|---|---|---|
-| ID-1 | Directory provisioning hands a company's workspace to whoever squatted the employee's address | Confirmed | High | security advisory | fixed: auth/providers.test.ts "a workspace's directory (provisioning or single sign-on) never takes over an account whose address was never verified with what its creator set up" |
+| ID-1 | Directory provisioning hands a company's workspace to whoever squatted the employee's address | Confirmed | High | [GHSA-r52x-62gm-fqxw](https://github.com/antonber/freero/security/advisories/GHSA-r52x-62gm-fqxw) | fixed: auth/providers.test.ts "a workspace's directory (provisioning or single sign-on) never takes over an account whose address was never verified with what its creator set up" |
 | DATA-2 | Export jobs that crash their instance are retried forever (privacy and eDiscovery) | Confirmed | Medium–High | [#186](https://github.com/antonber/freero/issues/186) | fixed: privacy/exportJobs.test.ts, ediscovery/exportJobs.test.ts "… fails after three attempts and no longer blocks a new one" |
-| ID-2 | A retried or concurrent refresh with the same refresh token disconnects the app (and the winning refresh fails with a 500) | Confirmed | Medium | security advisory | fixed: apiauth.test.ts "an app's own refreshes sent at once with the same refresh token (parallel calls, or a retry after a lost response) keep it connected" and "… a refresh token replayed after the app moved on, or after the retry window, ends the app's access" |
-| ID-3 | Re-consenting an app with fewer permissions doesn't take them away from tokens it already holds | Confirmed | Medium | security advisory | fixed: apiauth.test.ts "reconnecting an app with less (fewer permissions, another resource) takes the rest away from the tokens and codes it already holds" |
-| ID-4 | Two owners deactivating each other at once leaves the workspace with no active owner (unrecoverable without an operator) | Confirmed | Medium | security advisory | fixed: workspaces/membershipGuards.test.ts "a workspace keeps an active owner when its two owners deactivate each other at the same moment" (+ transfer to a deactivated member refused; last-owner leave answers 409, not a crash) |
-| ID-6 | An email change someone else started survives the password reset the notice tells the owner to do | Confirmed | Medium | security advisory | fixed: auth/emails.test.ts "an email change someone else started can not be confirmed once the owner reset (or changed) the password" |
+| ID-2 | A retried or concurrent refresh with the same refresh token disconnects the app (and the winning refresh fails with a 500) | Confirmed | Medium | [GHSA-jr6r-fv35-w6p8](https://github.com/antonber/freero/security/advisories/GHSA-jr6r-fv35-w6p8) | fixed: apiauth.test.ts "an app's own refreshes sent at once with the same refresh token (parallel calls, or a retry after a lost response) keep it connected" and "… a refresh token replayed after the app moved on, or after the retry window, ends the app's access" |
+| ID-3 | Re-consenting an app with fewer permissions doesn't take them away from tokens it already holds | Confirmed | Medium | [GHSA-jr6r-fv35-w6p8](https://github.com/antonber/freero/security/advisories/GHSA-jr6r-fv35-w6p8) | fixed: apiauth.test.ts "reconnecting an app with less (fewer permissions, another resource) takes the rest away from the tokens and codes it already holds" |
+| ID-4 | Two owners deactivating each other at once leaves the workspace with no active owner (unrecoverable without an operator) | Confirmed | Medium | [GHSA-wpr8-2wp8-v938](https://github.com/antonber/freero/security/advisories/GHSA-wpr8-2wp8-v938) | fixed: workspaces/membershipGuards.test.ts "a workspace keeps an active owner when its two owners deactivate each other at the same moment" (+ transfer to a deactivated member refused; last-owner leave answers 409, not a crash) |
+| ID-6 | An email change someone else started survives the password reset the notice tells the owner to do | Confirmed | Medium | [GHSA-r52x-62gm-fqxw](https://github.com/antonber/freero/security/advisories/GHSA-r52x-62gm-fqxw) | fixed: auth/emails.test.ts "an email change someone else started can not be confirmed once the owner reset (or changed) the password" |
 | DATA-1 | A board its owner restored from the trash is trashed again by the next retention round | Confirmed | Medium | [#187](https://github.com/antonber/freero/issues/187) | fixed: boards/retention.test.ts "a board its owner restored after a trash rule removed it is not trashed again until it is idle for the period again …" |
 | DATA-3 | An export archive is left in storage forever when the build fails after the file is written | Confirmed | Medium | [#186](https://github.com/antonber/freero/issues/186) | fixed: same files, "… archive stored by a build that never became ready is deleted from storage once its export fails" |
 | DATA-5 | Destroying a workspace key can shred content a legal hold placed concurrently keeps | Confirmed | Medium | [#188](https://github.com/antonber/freero/issues/188) | fixed: keys/destroyUnderHold.test.ts "a legal hold placed while the owner is destroying the workspace key stops the destroy, and the held board stays readable" |
-| RT-1 | A socket admitted while access is ending joins with the role it had (removal, trash, takedown) | Confirmed | Medium | security advisory | fixed: realtime/accessRevocation.test.ts "a member removed while their socket is being admitted is not let in with the role they had" and "a board trashed while a socket is being admitted does not let that socket into a fresh room" |
-| RT-2 | Access revocation is one-shot: a refresh that fails, or a lost control message, leaves a removed member connected | Confirmed | Medium | security advisory | fixed: accessRevocation.test.ts "a removed member's open socket is closed even when the access refresh hits a database error once" and "… even when this instance never heard of the removal" |
+| RT-1 | A socket admitted while access is ending joins with the role it had (removal, trash, takedown) | Confirmed | Medium | [GHSA-g744-qqqx-fvh8](https://github.com/antonber/freero/security/advisories/GHSA-g744-qqqx-fvh8) | fixed: realtime/accessRevocation.test.ts "a member removed while their socket is being admitted is not let in with the role they had" and "a board trashed while a socket is being admitted does not let that socket into a fresh room" |
+| RT-2 | Access revocation is one-shot: a refresh that fails, or a lost control message, leaves a removed member connected | Confirmed | Medium | [GHSA-g744-qqqx-fvh8](https://github.com/antonber/freero/security/advisories/GHSA-g744-qqqx-fvh8) | fixed: accessRevocation.test.ts "a removed member's open socket is closed even when the access refresh hits a database error once" and "… even when this instance never heard of the removal" |
 | RT-4 | Undo after a collaborator overwrote my last edit takes back half of an earlier two-doc action, and the dragged sticky disappears for everyone | Confirmed | Medium | [#198](https://github.com/antonber/freero/issues/198) | fixed: engine/__tests__/undoAcrossRemote.test.ts "undo after a collaborator overwrote my last edit never deletes the sticky I dragged out of a hidden frame before it" (+ redo and cancel variants) |
 | RT-5 | A server close after the upgrade (1009 too large, 4429 too many connections, 1011 load failed) puts the client in a ~100 ms reconnect loop | Confirmed | Medium | [#199](https://github.com/antonber/freero/issues/199) | fixed: engine/__tests__/reconnect.test.ts (quick server closes are retried less and less often; 1009 stops reconnecting, says why and forgets the device copy) |
 | RT-7 | A Redis outage on one instance's publishing side leaves the other instances' copies behind for the room's lifetime | Confirmed | Medium | [#199](https://github.com/antonber/freero/issues/199) | fixed: realtime/peerResync.test.ts "an instance whose publishes were lost for a while still gets the other copy of the board in step once it is back" |
@@ -43,8 +43,8 @@ name the regression test that guards them.
 | FAC-6 | Leaving the board while recording a walkthrough keeps the microphone recording with no visible control, then auto-saves it to the board you left | Confirmed | Medium | [#194](https://github.com/antonber/freero/issues/194) | fixed: walkthrough/recorder.test.tsx "closing the board while recording turns the microphone off and keeps nothing" |
 | FAC-8 | Ending a sealed vote (or revealing an estimate, or ending private mode) while not synced: the end reaches the server before the reveal, and is never followed by it if the tab closes | Confirmed | Medium | [#195](https://github.com/antonber/freero/issues/195) | fixed: engine/store/layerOpsOffline.test.ts "a sealed vote ended offline is revealed before the server reads it as ended, also when the tab was closed before reconnecting" |
 | DATA-7 | The trash purge can delete a board restored while the purge waits on its row | Suspected | Medium | [#187](https://github.com/antonber/freero/issues/187) | fixed; confirmed and checked on real Postgres with two connections (no committed test: the test database has one connection) |
-| ID-5 | A just-demoted owner or admin's in-flight request still runs with the old role | Confirmed | Low–Medium | security advisory | fixed: workspaces/membershipGuards.test.ts "an owner demoted a moment ago can no longer demote the other owners"; members/sharingGuards.test.ts "a co-owner demoted a moment ago can't make themselves co-owner again" |
-| ID-7 | Invitations sent by an admin keep working after that admin is removed (or demoted) | Confirmed | Low–Medium | security advisory | fixed: membershipGuards.test.ts "the invitations an admin sent stop working once that admin is removed from the workspace" (+ demotion and resend cases); sharingGuards.test.ts "the invitations a co-owner sent stop working once they are removed from the board" |
+| ID-5 | A just-demoted owner or admin's in-flight request still runs with the old role | Confirmed | Low–Medium | [GHSA-wpr8-2wp8-v938](https://github.com/antonber/freero/security/advisories/GHSA-wpr8-2wp8-v938) | fixed: workspaces/membershipGuards.test.ts "an owner demoted a moment ago can no longer demote the other owners"; members/sharingGuards.test.ts "a co-owner demoted a moment ago can't make themselves co-owner again" |
+| ID-7 | Invitations sent by an admin keep working after that admin is removed (or demoted) | Confirmed | Low–Medium | [GHSA-wpr8-2wp8-v938](https://github.com/antonber/freero/security/advisories/GHSA-wpr8-2wp8-v938) | fixed: membershipGuards.test.ts "the invitations an admin sent stop working once that admin is removed from the workspace" (+ demotion and resend cases); sharingGuards.test.ts "the invitations a co-owner sent stop working once they are removed from the board" |
 | DATA-4 | A KEK-changing rotation can mark the workspace's key `unavailable` from a stale cache | Confirmed | Low–Medium | [#188](https://github.com/antonber/freero/issues/188) | fixed: keys/kms.test.ts "an instance still caching the key row from before another instance moved the key to a KMS key opens the board and never marks the key unavailable" |
 | DATA-9 | Export archives are stored in the public storage area | Confirmed | Low–Medium | [#186](https://github.com/antonber/freero/issues/186) | fixed: uploads/privateFiles.test.ts "an export archive is never stored where the public URL serves files …" |
 | RT-3 | One editor rejects while another accepts the same suggestion → the record says rejected and the change is on the board | Confirmed | Low–Medium | [#200](https://github.com/antonber/freero/issues/200) | fixed: realtime/suggestionRace.test.ts "an accept that reaches the server after a rejection of the same suggestion changes nothing on the board, live or sent from offline" (+ the reverse direction) |
@@ -55,7 +55,7 @@ name the regression test that guards them.
 | FAC-9 | A client whose clock measurement failed writes deadlines in its own skewed clock for the life of the page | Confirmed | Low–Medium | [#196](https://github.com/antonber/freero/issues/196) | fixed: app/board/serverClock.test.ts "a page whose clock measurement failed (opened offline) measures again, and has no time for a deadline until it has" |
 | DATA-6 | "Delete forever" racing a new hold answers 500 and reveals the hold | Confirmed | Low | [#187](https://github.com/antonber/freero/issues/187) | fixed: boards/legalHolds.test.ts "“delete forever” racing a legal hold placed after its check keeps the board as silently as an earlier hold" |
 | DATA-8 | A board moved into a workspace without a key can keep rows sealed under the source's key, and no job repairs them | Confirmed | Low | [#188](https://github.com/antonber/freero/issues/188) | fixed: boards/keyedMove.test.ts "a save made during a move into a workspace without a key, left under the source's key when the reseal after the move failed, is opened by the background job …" |
-| RT-6 | A person demoted below editor keeps (and keeps seeing) pending suggestions when the board has no hidden items | Confirmed | Low | security advisory | fixed: engine/__tests__/demotedSuggestions.test.ts "someone made a commenter no longer holds the pending suggestions of a board without hidden frames" |
+| RT-6 | A person demoted below editor keeps (and keeps seeing) pending suggestions when the board has no hidden items | Confirmed | Low | [GHSA-g744-qqqx-fvh8](https://github.com/antonber/freero/security/advisories/GHSA-g744-qqqx-fvh8) | fixed: engine/__tests__/demotedSuggestions.test.ts "someone made a commenter no longer holds the pending suggestions of a board without hidden frames" |
 | RT-8 | A request write that lands while its board is being trashed is reported as saved but lost | Confirmed | Low | [#200](https://github.com/antonber/freero/issues/200) | fixed: realtime/rooms.test.ts "an app's proposal that lands while its board is being moved to the trash is kept with the board, never reported made and lost" |
 | RT-9 | Following someone stops for good after a blip in one's own connection | Confirmed | Low | [#199](https://github.com/antonber/freero/issues/199) | fixed: engine camera.test.ts "keeps following through a blip of your own connection, and lets go only if they are still gone once it is back" |
 | INT-7 | A personal tracker connection whose credentials were revoked ("signed out everywhere") goes back to `active`, or to `error`, while it still has no credentials | Confirmed | Low | [#191](https://github.com/antonber/freero/issues/191) | fixed: trackers/links.test.ts "a personal connection signed out everywhere still says to connect it again after a sync that was in flight finishes and after a later sync" |
@@ -69,9 +69,9 @@ name the regression test that guards them.
 | INT-202 | A Slack bot token outlives every link on paths other than Disconnect, so "forgotten when nobody is linked" holds on one path only | Confirmed | Low | [#193](https://github.com/antonber/freero/issues/193) | fixed: slack/slack.test.ts "the app’s token in a Slack workspace goes when its last link does, whichever way …" |
 | FAC-7 | A recorder that fails to start stays in "starting" for the life of the tab, with the microphone open | Confirmed | Low | [#194](https://github.com/antonber/freero/issues/194) | fixed: walkthrough/recorder.test.tsx "when MediaRecorder throws/fires error on start, the microphone is given back" |
 | ID-8 | A verified domain never expires or re-verifies | Suspected | Low | [#202](https://github.com/antonber/freero/issues/202) | open: needs a periodic re-check (enhancement) |
-| ID-9 | Concurrent SCIM `active:false` and `active:true` for one person can leave the record active while the member stays deactivated | Suspected | Low | security advisory | fixed: scim/users.test.ts "a deprovisioning and a reactivation the directory sends at once never leave the person active in the directory but locked out of the workspace" |
-| ID-10 | `markTested` is unconditional, so a sign-in validated against the old provider can mark a just-changed provider "tested" | Suspected | Low | security advisory | fixed: sso/idpInitiated.test.ts "a sign-in the previous identity provider answered does not count as proving the one an admin switched to meanwhile" |
-| RT-10 | A proposal racing a revocation or another instance's room load loses its KAI-224 hint, so a revoked app's suggestions stay pending | Suspected | Low | security advisory | fixed (confirmed by test): realtime/suggestionAuthors.test.ts "an app's proposal made while another app's suggestions are withdrawn is still withdrawn when that app is revoked" |
+| ID-9 | Concurrent SCIM `active:false` and `active:true` for one person can leave the record active while the member stays deactivated | Suspected | Low | [GHSA-r52x-62gm-fqxw](https://github.com/antonber/freero/security/advisories/GHSA-r52x-62gm-fqxw) | fixed: scim/users.test.ts "a deprovisioning and a reactivation the directory sends at once never leave the person active in the directory but locked out of the workspace" |
+| ID-10 | `markTested` is unconditional, so a sign-in validated against the old provider can mark a just-changed provider "tested" | Suspected | Low | [GHSA-r52x-62gm-fqxw](https://github.com/antonber/freero/security/advisories/GHSA-r52x-62gm-fqxw) | fixed: sso/idpInitiated.test.ts "a sign-in the previous identity provider answered does not count as proving the one an admin switched to meanwhile" |
+| RT-10 | A proposal racing a revocation or another instance's room load loses its KAI-224 hint, so a revoked app's suggestions stay pending | Suspected | Low | [GHSA-g744-qqqx-fvh8](https://github.com/antonber/freero/security/advisories/GHSA-g744-qqqx-fvh8) | fixed (confirmed by test): realtime/suggestionAuthors.test.ts "an app's proposal made while another app's suggestions are withdrawn is still withdrawn when that app is revoked" |
 | INT-107 | Moderation `act` is not atomic: the target changes but the action record, appeal link or notice can be missing | Suspected | Low | [#192](https://github.com/antonber/freero/issues/192) | partly fixed: listing and template decisions are atomic (listings.test.ts "a listing decision that can't be recorded doesn't happen …"); board, upload and user actions still record after their effect — open in #192 |
 | INT-108 | A digest the SMTP server refuses permanently is retried every interval, forever, and can starve others | Suspected | Low | [#189](https://github.com/antonber/freero/issues/189) | fixed: notifications/digestJob.test.ts "a digest the mail server refuses for good is not tried again every run and is given up on, while other people's digests still go out" |
 | INT-204 | A Figma token refresh or drop in flight can overwrite or delete a connection made after it started | Suspected | Low | [#193](https://github.com/antonber/freero/issues/193) | fixed: figma/figma.test.ts "a Figma connection made while an older one’s token refresh was in flight stays as it was …" |
@@ -262,32 +262,98 @@ These supersede the machine descriptions above where they differ.
 ### Findings
 
 #### ID-1: Directory provisioning hands a company's workspace to whoever squatted the employee's address
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: auth/providers.test.ts "a workspace's directory (provisioning or single sign-on) never takes over an account whose address was never verified with what its creator set up"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** for SCIM (failing test). **CONFIRMED by trace** for the SSO path in (b).
+- **Evidence:**
+  - (a) **SCIM.** `scim/service.ts:206-221` → `auth/providers.ts:119-123`: `provisionDirectoryAccount` returns any existing account with that address (`if (user) return { userId: user.id, created: false }`), verified or not. Then `syncPerson` makes it a member (`scim/service.ts:139-147`). Nothing wipes the password or sessions the account's creator set up, unlike `connectIdentity` (`auth/providers.ts:154-160`).
+    - Sequence:
+      1. An attacker signs up `alice@corp.com` (no verification needed; signup is refused only while SSO is *enforced*, `auth/routes.ts:65`).
+      2. Corp verifies `corp.com` and its directory provisions Alice.
+      3. The attacker's password (and any live session) now opens an account that is an editor on Corp's boards.
+    - Test `scim/stateAudit.test.ts` › "provisioning an address someone else signed up with (never verified) does not hand that person the workspace" fails: `expected { squatterPasswordWorks: true, boardRole: 'editor' } to not deeply equal …`.
+  - (b) **SSO just-in-time sign-in.** `sso/signIn.ts:333-349`: `resolveDirectoryLogin` returns the existing account plus a pending `link` (`auth/providers.ts:99-100`). `applyDirectoryMembership` then adds it to the workspace **before** `completeSignIn`. If the squatter turned on two-step verification (allowed on an unverified account, `auth/twoFactor.ts:155-191`), `completeSignIn` stops at the challenge (`auth/signIn.ts:61-67`), and `connectIdentity` (the wipe) only runs after a second step the real person can't pass (`auth/signIn.ts:131`). The squatter's account stays a workspace member with its password intact.
+- **Impact: High.** Account pre-hijacking that grants a company workspace. It needs only a guessable work address and an attacker who signs up before the company rolls out SCIM or SSO. Signup at the domain stays open until SSO is enforced.
+- **Security-sensitive:** yes.
+- **Fix:** treat "the directory vouches for an address whose account was never verified" exactly like `connectIdentity` does: wipe the password, cancel pending links, end sessions, mark it verified and drop two-step verification set up before verification. Do this in `provisionDirectoryAccount`, and in the SSO path before membership is granted (or grant membership only after `completeSignIn` has connected the identity).
+  - Regression tests: the failing SCIM test above, plus an SSO variant where the squatter has two-step verification on.
 
 #### ID-2: A retried or concurrent refresh with the same refresh token disconnects the app (and the winning refresh fails with a 500)
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: apiauth.test.ts "an app's own refreshes sent at once with the same refresh token (parallel calls, or a retry after a lost response) keep it connected" and "… a refresh token replayed after the app moved on, or after the retry window, ends the app's access"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** (failing test).
+- **Evidence:** `apiauth/oauth.ts:406-431`.
+  - Request 1 marks the token used (`apiauth/repo.ts:174-182`). Request 2 finds it used, treats it as a replay and deletes the whole grant (`apiauth/oauth.ts:409-416`).
+  - Request 1 then reaches `issueTokens`, and `insertToken` violates `api_tokens_grant_id_fkey` because the grant is gone. That raw database error surfaces as a 500, not an OAuth error.
+  - Rotation is also not atomic. The refresh token is used up in its own statement before the new pair is inserted (`apiauth/oauth.ts:359-381`, no transaction), so a failure in between, or a response lost on the network, leaves the client holding only a used token. Its retry is then treated as a replay and ends the consent.
+  - Test `apiauth/stateAudit.test.ts` › "two refreshes the same app sends at once with its current refresh token do not disconnect the app" fails. Observed results: `["insert or update on table \"api_tokens\" violates foreign key constraint \"api_tokens_grant_id_fkey\"", "The refresh token is invalid, expired or already used"]`, so both requests fail.
+- **Impact: Medium.** MCP clients and agents that fire parallel tool calls when the access token expires (or retry after a timeout) are disconnected and the person must reconnect the app. A replay alarm is audited for a non-attack. This is likely in practice for busy MCP clients.
+- **Security-sensitive:** yes (token lifecycle), but the harm is availability. Replay detection itself is correct.
+- **Fix:**
+  - Rotate in one transaction: lock the refresh row (`SELECT … FOR UPDATE`), mark it used, insert the pair, commit.
+  - Give a just-rotated token a short grace window (for example 30–60 s) in which presenting it again from the same client returns, or re-issues, the successor instead of revoking the grant. Revoke only for presentations after the window or from a different client.
+  - Regression test: the failing test above, plus "a refresh whose response was lost can be retried once within the grace window".
 
 #### ID-3: Re-consenting an app with fewer permissions doesn't take them away from tokens it already holds
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: apiauth.test.ts "reconnecting an app with less (fewer permissions, another resource) takes the rest away from the tokens and codes it already holds"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** (failing test).
+- **Evidence:**
+  - A new consent updates the grant row **in place, keeping its id** (`apiauth/repo.ts:350-360`). The old access and refresh tokens (same `grant_id`) survive.
+  - Refresh copies the scopes of the used token (`apiauth/oauth.ts:425`, `let scopes = used.scopes`) and never intersects them with `grant.scopes`. Bearer authentication trusts `token.scopes` (`apiauth/credentials.ts:236`).
+  - So the old refresh chain keeps an opt-in scope (for example MCP `boards:write`) that the person turned off, for as long as the app keeps refreshing (every 30 days, indefinitely).
+  - Related: code redemption issues `code.scopes` under `grant.resource` (`apiauth/oauth.ts:401-404`, `:375`). A code from an earlier consent for another resource yields a token for the current grant's resource with the earlier consent's scopes.
+  - Test `apiauth/stateAudit.test.ts` › "re-consenting an app with fewer permissions takes the dropped scope away from the tokens it already holds" fails: `expected [ 'boards:read', 'boards:write' ] to not include 'boards:write'`.
+- **Impact: Medium.** The person believes they narrowed an agent to read-only, but it keeps write access to boards. It needs the person to reconnect with narrower choices, which the consent screen invites.
+- **Security-sensitive:** yes.
+- **Fix:** the grant is the source of truth. On re-consent, either delete the grant's existing tokens (and give the grant a new id) or, at minimum, intersect scopes with the current `grant.scopes` (and use `code.resource` ⊆ grant) at refresh and redemption time. Authentication could also check `token.scopes ⊆ grant.scopes`.
+  - Regression test: the failing test above.
 
 #### ID-4: Two owners deactivating each other at once leaves the workspace with no active owner (unrecoverable without an operator)
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: workspaces/membershipGuards.test.ts "a workspace keeps an active owner when its two owners deactivate each other at the same moment" (+ transfer to a deactivated member refused; last-owner leave answers 409, not a crash); the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** (failing test).
+- **Evidence:**
+  - `setMemberDeactivated` (`workspaces/service.ts:778-799`) checks only `mayRemove(actor, target.role)`. It has no last-active-owner check (compare `changeRole`, `:686`, and `removeMember`, `:727`).
+  - The actor's own role and active status come from `requireWorkspace` **before** the lock (`:779`, `workspaces/service.ts:239-245`) and are not re-checked inside it.
+  - Owners A and B each pass `requireWorkspace`. Under the lock, A deactivates B, then B's request (actor still read as an active owner) deactivates A. Both owners end up deactivated.
+  - Afterwards nobody can reactivate them: a deactivated actor is refused, and admins may not touch owners. When the second deactivated owner tries to leave, `heir = …find(m.role==='owner')!.userId` dereferences undefined and returns a 500 (`:730`).
+  - Test `workspaces/stateAudit.test.ts` › "a workspace keeps an active owner when its two owners deactivate each other at the same moment" fails: `expected [] to have a length of 1 but got +0`.
+- **Impact: Medium.** The workspace has no administration at all. It needs two owners acting within the same moment, which is unlikely but permanent.
+- **Security-sensitive:** yes (access control invariant).
+- **Fix:** inside the locked transaction, re-read the actor's membership (role and `deactivated_at`) and refuse deactivating an owner when `isLastActiveOwner(target)`. Handle "no heir" in `removeMember`.
+  - Regression test: the failing test above.
 
 #### ID-5: A just-demoted owner or admin's in-flight request still runs with the old role
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: workspaces/membershipGuards.test.ts "an owner demoted a moment ago can no longer demote the other owners"; members/sharingGuards.test.ts "a co-owner demoted a moment ago can't make themselves co-owner again"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** (failing test).
+- **Evidence:** `changeRole`, `removeMember` and `setMemberDeactivated` authorise the actor in `requireWorkspace` (`workspaces/service.ts:671`, `:715`, `:779`) **outside** the transaction. Inside `lockWorkspace(… 'update')` they re-check only the target. Only `transferWorkspace` re-checks the actor under the lock (`:600`).
+  - Interleaving with owners A, B, C:
+    1. Both requests pass `requireWorkspace`.
+    2. A's transaction demotes B.
+    3. B's transaction, with its stale `actor='owner'`, demotes C.
+  - Test `workspaces/stateAudit.test.ts` › "an owner demoted a moment ago can no longer demote the other owners" fails: in the audit chain, B's role change commits after B's demotion.
+  - The same pattern exists for board co-owners (`members/service.ts:116-148`, `requireBoardAccess` before an unconditional write), by trace.
+- **Impact: Low–Medium.** A narrow window, but it is exactly the moment someone is being demoted in a dispute. A demoted owner can still demote, remove or deactivate others.
+- **Security-sensitive:** yes.
+- **Fix:** take the workspace lock first, then authorise (re-read the actor's role, `deactivated_at` and admin scopes inside the transaction). The same applies to board co-owner actions, for example by locking the board row.
+  - Regression test: the failing test above.
 
 #### ID-6: An email change someone else started survives the password reset the notice tells the owner to do
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: auth/emails.test.ts "an email change someone else started can not be confirmed once the owner reset (or changed) the password"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** (failing test).
+- **Evidence:**
+  - `requestEmailChange` emails a 24 h `change_email` link to the new address (`auth/emails.ts:139-170`) and tells the current address "If this was not you, change your password now" (`auth/locales/en.json:20`).
+  - `resetPassword` (`auth/emails.ts:96-109`) cancels no pending links. `changePassword` cancels only `reset_password` (`:131`).
+  - `confirmEmailChange` needs no session, only the link (`:178-207`). The thief confirms after the owner has reset the password: the account moves to the thief's address, and the thief can then reset the password from it.
+  - Mitigation: the previous address gets a 7-day "revert" link, but only if it was verified (`:193`).
+  - Test `auth/stateAudit.test.ts` › "resetting the password (what the "email is changing" notice tells the owner to do) cancels an email change someone else started" fails: `expected 'thief@…' to be 'vic@…'`.
+- **Impact: Medium.** Account takeover after the owner did what the notice told them. It needs the attacker to have had the password or a recently authenticated session once. Accounts with an unverified address have no revert path.
+- **Security-sensitive:** yes.
+- **Fix:** a password reset or change (and any "signed out everywhere") should cancel every pending account-changing link (`change_email`, `reset_password`, the two-factor links as appropriate) in the same step.
+  - Regression test: the failing test above (plus the `changePassword` variant).
 
 #### ID-7: Invitations sent by an admin keep working after that admin is removed (or demoted)
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: membershipGuards.test.ts "the invitations an admin sent stop working once that admin is removed from the workspace" (+ demotion and resend cases); sharingGuards.test.ts "the invitations a co-owner sent stop working once they are removed from the board"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** (failing test) for workspace invites. Board invites behave the same by trace.
+- **Evidence:**
+  - `removeMember` and `changeRole` (`workspaces/service.ts:668-740`) never touch `workspace_invites`. Its `invited_by` FK only cascades on account deletion (`workspaces/migrations/202610291000_workspaces.sql`). `acceptInvite` checks only that the token is live (`workspaces/invites.ts:148-158`).
+  - So an admin can invite a second address of their own, get removed, and join again through that invite for up to 14 days. The same holds for an invite with `role: 'admin'` sent before a demotion.
+  - Board invites behave the same: `removeBoardMember` and `setBoardMemberRole` leave the inviter's `board_invites` live (`members/service.ts:116-148`, `members/invites.ts:100-116`).
+  - Test `workspaces/stateAudit.test.ts` › "the invitations an admin sent stop working once that admin is removed from the workspace" fails: `promise resolved "{ workspaceId: … }" instead of rejecting`.
+- **Impact: Low–Medium.** A removed insider keeps a way back in. Admins can revoke pending invites in the console, but nothing prompts them to.
+- **Security-sensitive:** yes.
+- **Fix:** when a member is removed, demoted below the invite's role, or deactivated, delete (or re-attribute to the remover) the pending workspace and board invites they sent. Alternatively, re-check at acceptance that `invited_by` may still invite at that role (`mayInvite`).
+  - Regression test: the failing test above.
 
 #### ID-8: A verified domain never expires or re-verifies
 - **Status: SUSPECTED.** This is a missing transition rather than a code race, so it is reachable only when a domain changes hands.
@@ -299,12 +365,23 @@ Security-sensitive. The evidence is kept in a private security advisory until it
   - Regression test: "a domain whose TXT record is gone for N checks stops routing and provisioning".
 
 #### ID-9: Concurrent SCIM `active:false` and `active:true` for one person can leave the record active while the member stays deactivated
-
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: scim/users.test.ts "a deprovisioning and a reactivation the directory sends at once never leave the person active in the directory but locked out of the workspace"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: SUSPECTED** (traced; IdPs usually serialise per user).
+- **Evidence:** `replaceUser` reads `prev` (`scim/service.ts:226`), writes `active` (`:234`) and branches on `prev.active` (`:242-252`).
+  - Two PATCHes both read `prev.active = true`. The false one deprovisions. The true one only calls `syncPerson`, which "never reactivates" (`:131-136`). If the true update lands last, `scim_users.active = true` but the member stays deactivated.
+  - Further `active:true` PATCHes see `prev.active = true` and never reactivate. The member stays stuck until the directory sends false then true again.
+- **Impact: Low.**
+- **Security-sensitive:** no (it fails closed).
+- **Fix:** make the transition a compare-and-set (`UPDATE scim_users SET active=$x WHERE … RETURNING (old) active`) and branch on what the update actually changed. Alternatively, reconcile deactivation from the record state in `syncPerson`.
 
 #### ID-10: `markTested` is unconditional, so a sign-in validated against the old provider can mark a just-changed provider "tested"
+- **Status: SUSPECTED** (narrow window).
+- **Evidence:** `completeDirectorySignIn` validates against the connection read at callback time (`sso/signIn.ts:280-306`) and ends with `repo.markTested(workspaceId, now)` (`sso/signIn.ts:359`, `sso/repo.ts:227-229`).
+  - If an admin saves a new provider in between (which clears `tested_at`, `sso/repo.ts:194`), `markTested` re-sets it for a provider no sign-in has proven. Enforcing is then allowed (`sso/repo.ts:218-222`), which can lock everyone but the break-glass owner out.
+- **Impact: Low.**
+- **Security-sensitive:** no (availability).
+- **Fix:** mark tested only if the connection still has the provider fields (or `updated_at`) that the sign-in was validated against (`UPDATE … WHERE updated_at = $seen`).
 
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: sso/idpInitiated.test.ts "a sign-in the previous identity provider answered does not count as proving the one an admin switched to meanwhile"; the machine's current behaviour is under "Changes made by the fixes" above.
+---
 
 ### Checked and fine
 
@@ -786,11 +863,32 @@ These supersede the machine descriptions above where they differ.
 
 #### RT-1. A socket admitted while access is ending joins with the role it had (removal, trash, takedown)
 
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: realtime/accessRevocation.test.ts "a member removed while their socket is being admitted is not let in with the role they had" and "a board trashed while a socket is being admitted does not let that socket into a fresh room"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED.** Failing tests in `apps/server/src/modules/realtime/accessRace.test.ts`:
+  - "a member removed while their socket is being admitted is not let in with the role they had" → `expected 'open' to be 4403`.
+  - "a board closed for everyone (trashed, taken down) while a socket is being admitted does not keep that socket in a fresh room" → `expected 'open' not to be 'open'`.
+- **Evidence:**
+  - Member removal. `admitSocket` reads the per-board access epoch *after* `await authorize()` (rooms.ts:1626-1629). The real authorize reads the role (ws.ts:67, `getBoardAccess`) and then awaits one more DB call (`authorNamesOf`, ws.ts:83). The interleaving:
+    1. authorize reads role = editor.
+    2. The removal commits, and `refreshRoomAccess` → `refreshAccessHere` bumps the epoch (rooms.ts:1710) and refreshes the room, which does not contain the socket yet.
+    3. authorize returns, and the epoch is read already bumped.
+    4. The socket joins.
+    5. `epoch !== current` is false (rooms.ts:1646), so there is no re-check.
+
+    The socket stays an editor until some later access change on that board.
+  - Trash / takedown. `closeKeepingContent` (boards/service.ts:984-990) → `closeBoardDoc` → `closeBoardHere` removes the room from `rooms` (rooms.ts:2155). It does not bump `accessEpochs`. A socket whose authorize already passed then calls `getRoom` → a fresh Room is loaded from the DB → it joins and keeps editing a trashed or taken-down board. Its writes are saved, because the board row still exists. A deleted board self-heals: the next save throws `BoardGoneError` → `dropRoom`.
+- **Impact: Medium.** A removed member, or someone on a board taken down for review, keeps live edit/read access until they disconnect. The window is one DB round trip, but it is hit whenever a removal or trash coincides with a (re)connect, for example a reconnect storm after a deploy. Edits to a trashed board after its content snapshot are kept, because log rows merge with the snapshot.
+- **Security-sensitive: yes.**
+- **Suggested fix:** Read the epoch before `authorize()` starts, keyed on the board id parsed from the URL, or keep a global counter. Bump it in `closeBoardHere` too. Better still, have `join` re-check "room still current and not closed" and run one refresh after join whenever the epoch moved since before authorize. Regression tests: the two above.
 
 #### RT-2. Access revocation is one-shot: a refresh that fails, or a lost control message, leaves a removed member connected
 
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: accessRevocation.test.ts "a removed member's open socket is closed even when the access refresh hits a database error once" and "… even when this instance never heard of the removal"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED** for the DB-failure path. Failing test "a removed member's open socket is closed even when the access refresh hits a database error once" (accessRace.test.ts) → `expected 'open' to be 4403`. The lost-control-message path is CONFIRMED by trace.
+- **Evidence:**
+  - `doRefreshAccess` resolves every socket with `Promise.all` (rooms.ts:1372-1381). One rejected read (DB blip, pool timeout) rejects the whole refresh. `refreshAccess` only logs it (rooms.ts:1367). Nothing retries, and no periodic re-check exists for board access. Sessions do have `recheckLiveSessions`, but board roles do not.
+  - The `refresh-access` control message is published fire-and-forget (rooms.ts:1680-1684, pubsub.ts:147-157). The control channel subscriber has no `resubscribed` catch-up (rooms.ts:1725-1740). An instance that misses it (Redis gap, publisher reconnecting) keeps the old roles for good.
+- **Impact: Medium.** Every socket on that board keeps its old role (also after demotions), until that person reconnects or some later access change succeeds. Likelihood is low per removal, but the failure is silent.
+- **Security-sensitive: yes.**
+- **Suggested fix:** Use `Promise.allSettled` and retry failed sockets with backoff, closing on repeated failure. Add a periodic re-check of live board sockets, like `recheckLiveSessions` (for example every N minutes per room, or on control-channel `resubscribed`). Regression test: the one above, plus a "control message missed → periodic recheck closes" test.
 
 #### RT-3. One editor rejects while another accepts the same suggestion → the record says rejected and the change is on the board
 
@@ -827,7 +925,11 @@ Security-sensitive. The evidence is kept in a private security advisory until it
 
 #### RT-6. A person demoted below editor keeps (and keeps seeing) pending suggestions when the board has no hidden items
 
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed: engine/__tests__/demotedSuggestions.test.ts "someone made a commenter no longer holds the pending suggestions of a board without hidden frames"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: CONFIRMED.** Failing test `apps/web/src/engine/__tests__/demotedSuggestions.test.ts` "someone made a commenter no longer holds the pending suggestions of a board without hidden frames" → `expected [ … ] to have a length of +0 but got 1`.
+- **Evidence:** On a role drop, core.ts:233-234 resets the editors layer only `if (store.layers.editors.elements.size)`. Suggestions live in that layer's `suggestions` map, not in `elements`. The panel still lists them read-only for non-editors ("youCanReviewTheseHere", features/suggestions/panel.tsx:201-213), along with canvas ghosts. After the demotion the server stops sending that layer, so the copy goes stale and stays frozen.
+- **Impact: Low.** No new data leaks (the server sends no more), but it breaks the rule "a viewer, commenter or guest never holds a suggestion", and the commenter sees stale proposals.
+- **Security-sensitive: yes** (access-scoped data kept after access loss), low severity.
+- **Suggested fix:** Reset the editors layer on any role drop below editor when the doc holds anything (`doc.share` non-empty), not only elements. Regression test: the one above.
 
 #### RT-7. A Redis outage on one instance's publishing side leaves the other instances' copies behind for the room's lifetime
 
@@ -864,7 +966,16 @@ Security-sensitive. The evidence is kept in a private security advisory until it
 
 #### RT-10 (SUSPECTED). A proposal racing a revocation or another instance's room load loses its KAI-224 hint, so a revoked app's suggestions stay pending
 
-Security-sensitive. The evidence is kept in a private security advisory until it is published. Fix: fixed (confirmed by test): realtime/suggestionAuthors.test.ts "an app's proposal made while another app's suggestions are withdrawn is still withdrawn when that app is revoked"; the machine's current behaviour is under "Changes made by the fixes" above.
+- **Status: SUSPECTED.** The read-then-write across `await` is certain, but the window is one DB round trip and needs a proposing request authorized before the revocation, or a second instance loading the board.
+- **Evidence:**
+  - `proposeSuggestions` inserts the hint (`noteSuggestionAuthor`, rooms.ts:1867) and *then* writes the records (rooms.ts:1874).
+  - `withdrawSuggestionsOn` (rooms.ts:1945-1958) and `Room.load` on another instance (rooms.ts:522-523) both run `keepSuggestionAuthors(board, pendingNow)`, which DELETEs every hint not in their in-memory pending set (repo.ts:605-612).
+  - If either runs between the hint insert and the records becoming visible to it, the hint row for the new proposal is deleted. A later (or the concurrent) revocation finds no board, and the revoked app's suggestions stay pending and can be accepted.
+- **Impact: Low.** The suggestions are still human-reviewed.
+- **Security-sensitive: yes** (revocation not fully enforced).
+- **Suggested fix:** Never delete hints from an in-memory view that can be stale. Delete only hints whose author has no pending record in the *saved* layer, inside the same transaction as the layer save, or re-check the hint after the room's own save. Regression test: two rooms (or a gated `noteSuggestionAuthor`) with a withdrawal in between.
+
+---
 
 ### Checked and fine
 
