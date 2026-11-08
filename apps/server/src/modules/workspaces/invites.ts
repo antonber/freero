@@ -9,6 +9,7 @@ import { badRequest, forbidden, HttpError, notFound } from '../../platform/http'
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
+import { trackProductEvent } from '../analytics/index';
 import { findUserByEmail, getUser, getUsers, localeOfEmail, localesOf, markEmailVerified, normalizeEmail } from '../auth/index';
 import { recordAudit } from '../audit/index';
 import { notify } from '../notifications/index';
@@ -106,6 +107,7 @@ export async function inviteToWorkspace(
     await recordAudit({ action: 'member.invited', workspaceId, actorId: inviter.id, target: { type: 'email', id: email, label: email }, metadata: { role, added: false } });
     return { workspace, saved };
   });
+  trackProductEvent(inviter.id, { name: 'invite_sent', scope: 'workspace', recipient: invitee ? 'account' : 'address', role }, { workspaceId });
 
   if (invitee) {
     await refreshWorkspaceBoards(workspaceId); // they may have had some of its boards open
@@ -181,7 +183,10 @@ async function useInvite(row: repo.InviteRow, user: { id: string; email: string 
       if (e === UNUSABLE) return false;
       throw e;
     });
-  if (used) await refreshWorkspaceBoards(row.workspaceId);
+  if (used) {
+    await refreshWorkspaceBoards(row.workspaceId);
+    trackProductEvent(user.id, { name: 'invite_accepted', scope: 'workspace', via: tokenHash ? 'link' : 'verified_email' }, { workspaceId: row.workspaceId });
+  }
   return used;
 }
 const UNUSABLE = Symbol('unusable invite');

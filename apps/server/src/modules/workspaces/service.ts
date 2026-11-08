@@ -30,6 +30,7 @@ import { ipAllowed, MAX_RANGES, parseRange } from './ipAllowlist';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
+import { trackProductEvent } from '../analytics/index';
 import { recordAudit } from '../audit/index';
 import { getUser, getUsers, hasTwoFactor } from '../auth/index';
 import { creationRefusal } from './creation';
@@ -300,6 +301,7 @@ export async function createTeamWorkspace(userId: string, name: string): Promise
     if ((await repo.countOwnedTeams(userId)) >= max) throw forbidden(`You can own at most ${max} team workspaces.`);
     await repo.insertTeam(id, name, userId, Date.now());
     await recordAudit({ action: 'workspace.created', workspaceId: id, actorId: userId, target: { type: 'workspace', id, label: name } });
+    trackProductEvent(userId, { name: 'workspace_created' }, { workspaceId: id });
   });
   return workspaceSummary(id, userId);
 }

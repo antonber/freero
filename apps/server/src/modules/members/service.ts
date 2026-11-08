@@ -3,6 +3,7 @@
 import type { Request } from 'express';
 import { BOARD_SHARING_RESTRICTED, type Account, type BoardMember, type InviteResponse, type Role, type User } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
+import { trackProductEvent } from '../analytics/index';
 import { recordAuditQuietly } from '../audit/index';
 import { findUserByEmail, getUser, getUsers, normalizeEmail } from '../auth/index';
 import { lockBoardSharing, requireBoardAccess, teamAccessMembers } from '../boards/index';
@@ -116,6 +117,7 @@ export async function inviteBoardMember(req: Request | null, boardId: string, me
   });
   const { title, workspaceId, role, invitee } = done;
   const board = { type: 'board', id: boardId, label: title };
+  trackProductEvent(me.id, { name: 'invite_sent', scope: 'board', recipient: invitee ? 'account' : 'address', role }, { workspaceId });
   if (!invitee) {
     await mailInvite(req, done.pending!, title, me);
     await recordAuditQuietly({ action: 'board.member_invited', workspaceId, actorId: me.id, target: board, metadata: { email, role, pending: true } });

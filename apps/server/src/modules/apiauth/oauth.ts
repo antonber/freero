@@ -27,6 +27,7 @@ import {
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
+import { trackProductEvent } from '../analytics/index';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { ACCESS_PREFIX, hashSecret, newSecret, protectedResources, REFRESH_PREFIX } from './credentials';
 import { isMetadataClientId, MetadataError, resolveMetadataClient } from './clientMetadata';
@@ -336,6 +337,8 @@ export async function decide(userId: string, issuedVia: string, asked: ValidRequ
       target: { type: 'oauth_app', id: v.client.id, label: v.client.name },
       metadata: { scopes: v.scopes, resource: v.resource, registration: registrationOf(v.client) },
     });
+    // How the app registered and what it reaches, never which app (a name or address could point at a person).
+    trackProductEvent(userId, { name: 'app_connected', registration: registrationOf(v.client), resource: v.resource === '/mcp' ? 'mcp' : 'api' });
   });
   return authorizationResponse(v.redirectUri, v.issuer, { code, state: v.state });
 }

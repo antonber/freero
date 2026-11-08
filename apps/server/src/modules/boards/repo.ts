@@ -862,12 +862,15 @@ export async function isStarred(boardId: string, userId: string): Promise<boolea
 }
 
 // ---- opens ----
-export async function recordOpen(boardId: string, userId: string, now: number): Promise<void> {
-  await query(
+/** Records that the user opened the board; true when it is the first time they did. */
+export async function recordOpen(boardId: string, userId: string, now: number): Promise<boolean> {
+  const r = await one<{ first: boolean }>(
     `INSERT INTO board_opens (board_id, user_id, opened_at) VALUES ($1, $2, $3)
-     ON CONFLICT (board_id, user_id) DO UPDATE SET opened_at = excluded.opened_at`,
+     ON CONFLICT (board_id, user_id) DO UPDATE SET opened_at = excluded.opened_at
+     RETURNING (xmax = 0) AS first`,
     [boardId, userId, new Date(now)],
   );
+  return r?.first === true;
 }
 
 /** boardId -> lastOpenedAt for a user. */
