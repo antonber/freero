@@ -39,6 +39,11 @@ export type LegalKey =
   | 'analyticsData'
   | 'analyticsPurpose'
   | 'analyticsBasis'
+  // PostHog product events (POSTHOG_KEY): empty / "none" text on a server without them.
+  | 'productAnalytics'
+  | 'productAnalyticsProvider'
+  | 'productAnalyticsData'
+  | 'productAnalyticsWhere'
   | 'status';
 
 /** A token in running text (a fragment, so pages can write `<p>Run by {L('operator')}.</p>`). */

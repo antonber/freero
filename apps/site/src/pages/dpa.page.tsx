@@ -6,7 +6,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs } from '../lib/site';
 
-const UPDATED = '2026-11-03';
+const UPDATED = '2026-11-08';
 
 export default definePage({
   path: '/dpa',
@@ -95,7 +95,7 @@ export default definePage({
       <p>
         We are a controller, not your processor, of the personal data we need to run and protect the service itself, as the{' '}
         <a href="/privacy">privacy policy</a> describes: account sign-in and security records, request logs, abuse reports and moderation, problem reports
-        people send us, analytics of our own pages and app (which visitors can turn off), and what the law requires us to keep. We use that data only for those purposes.
+        people send us, analytics of our own pages and app (which visitors and signed-in people can turn off), and what the law requires us to keep. We use that data only for those purposes.
       </p>
       <p>
         You are responsible for having a lawful basis for the processing you ask of us, for the instructions you give, and for what your workspaces contain.

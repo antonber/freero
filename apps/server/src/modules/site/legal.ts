@@ -94,20 +94,49 @@ export function legalFill(config: Config): LegalFill {
   };
 }
 
+type AnalyticsToken =
+  | 'analytics'
+  | 'analyticsCookies'
+  | 'analyticsProvider'
+  | 'analyticsData'
+  | 'analyticsPurpose'
+  | 'analyticsBasis'
+  | 'productAnalytics'
+  | 'productAnalyticsProvider'
+  | 'productAnalyticsData'
+  | 'productAnalyticsWhere';
+
+/** Where PostHog keeps the events, from the host the server sends them to (POSTHOG_HOST). */
+function posthogWhere(host: string): string {
+  const name = hostOf(host) ?? host;
+  if (/(^|\.)us\.(i\.)?posthog\.com$/.test(name)) return 'the United States';
+  if (/(^|\.)eu\.(i\.)?posthog\.com$/.test(name)) return 'the European Union (Germany)';
+  return `wherever the service at ${code(name)} runs`;
+}
+
 /**
- * What the privacy policy says about analytics: Google Analytics (GA_MEASUREMENT_ID, only with
- * consent) and an operator's own marketing-page script (SITE_ANALYTICS_SRC), as configured.
+ * What the privacy policy says about analytics: Google Analytics (GA_MEASUREMENT_ID), PostHog
+ * product events (POSTHOG_KEY; modules/analytics productEvents.ts and @freero/shared
+ * `productEventProperties` are what it describes) and an operator's own marketing-page script
+ * (SITE_ANALYTICS_SRC), as configured.
  */
-function analyticsText(config: Config): Record<'analytics' | 'analyticsCookies' | 'analyticsProvider' | 'analyticsData' | 'analyticsPurpose' | 'analyticsBasis', string> {
+function analyticsText(config: Config): Record<AnalyticsToken, string> {
   const ga = config.googleAnalyticsId;
+  const ph = config.posthog;
   const site = config.site.analytics
     ? `These marketing pages also load an analytics script from ${code(new URL(config.site.analytics.src).origin)}, which counts page visits under its own privacy terms.`
     : '';
   const cookieName = ga ? `_ga_${ga.replace(/^G-/, '')}` : '';
+  const where = ph ? posthogWhere(ph.host) : '';
   return {
-    analytics: ga
-      ? `We use Google Analytics to count visits and a few actions; you can turn it off (see <a href="#cookies">Cookies</a>). ${site}`.trim()
-      : site || 'These pages load no analytics script, and the app has none.',
+    analytics:
+      ga && ph
+        ? `We use Google Analytics to count visits and a few actions, and PostHog to see how the app is used after sign-up, under a pseudonym; you can turn both off (see <a href="#cookies">Cookies</a>). ${site}`.trim()
+        : ga
+          ? `We use Google Analytics to count visits and a few actions; you can turn it off (see <a href="#cookies">Cookies</a>). ${site}`.trim()
+          : ph
+            ? `Our server tells PostHog about a few actions in the app, under a pseudonym, to see how it is used after sign-up; you can turn it off (see <a href="#cookies">Cookies</a>). ${site}`.trim()
+            : site || 'These pages load no analytics script, and the app has none.',
     // Paragraphs and a list (the page puts this token in a <div>).
     analyticsCookies: ga
       ? [
@@ -120,18 +149,45 @@ function analyticsText(config: Config): Record<'analytics' | 'analyticsCookies' 
           `<p>We rely on our legitimate interest in understanding and improving the service. You can opt out at any time with <a href="#cookies" data-freero-analytics-toggle>Turn off analytics</a> (also at the bottom of our pages and in the app’s Help menu): measuring stops in that browser, its analytics cookies are deleted, and the choice is remembered there. If your browser sends Global Privacy Control or Do Not Track, analytics stays off.</p>`,
         ].join('')
       : '<p>The app uses only cookies it needs to work. None are for advertising or analytics. The marketing pages set no cookies.</p>',
-    analyticsProvider: ga ? 'Google Analytics (Google LLC); you can turn it off' : config.site.analytics ? `The analytics service at ${code(new URL(config.site.analytics.src).origin)} (marketing pages only)` : 'None: this service uses no analytics',
+    analyticsProvider: ga
+      ? 'Google Analytics (Google LLC); you can turn it off'
+      : config.site.analytics
+        ? `The analytics service at ${code(new URL(config.site.analytics.src).origin)} (marketing pages only)`
+        : ph
+          ? 'None for page visits (product analytics: see the next row)'
+          : 'None: this service uses no analytics',
     analyticsData: ga
       ? 'The kind of page you visit (no board or doc ids or titles), the referring domain, browser and device details, an approximate location from your IP address, and the events listed under Cookies'
       : config.site.analytics
         ? 'Page visits on the marketing pages'
         : '—',
-    analyticsPurpose: ga
-      ? 'Counting visits to our pages and the app, and a few actions such as sign-ups, with Google Analytics (you can opt out)'
-      : config.site.analytics
-        ? 'Counting visits to the marketing pages'
-        : 'Not done on this service',
-    analyticsBasis: ga ? 'Legitimate interests (understanding and improving the service); you can object by opting out' : '—',
+    analyticsPurpose:
+      [
+        ga ? 'Counting visits to our pages and the app, and a few actions such as sign-ups, with Google Analytics' : config.site.analytics ? 'Counting visits to the marketing pages' : '',
+        ph ? 'Seeing how the app is used after sign-up (for example whether new accounts create a board, invite someone or come back) with PostHog, under a pseudonym' : '',
+      ]
+        .filter(Boolean)
+        .map((s, i) => (i > 0 ? s[0].toLowerCase() + s.slice(1) : s))
+        .join('; ')
+        .concat(ga || ph ? ' (you can opt out)' : '') || 'Not done on this service',
+    analyticsBasis: ga || ph ? 'Legitimate interests (understanding and improving the service); you can object by opting out' : '—',
+    // Paragraphs and a list (the page puts this token in a <div>), like analyticsCookies.
+    productAnalytics: ph
+      ? [
+          `<p>We also use PostHog, provided by PostHog, Inc. as our processor, to see how the app is used after sign-up: for example, whether new accounts create a board, invite someone or come back. It is on by default${ga ? ' and works differently from Google Analytics' : ''}:</p><ul>`,
+          `<li>Our server sends the events. No PostHog script runs in your browser, and PostHog sets no cookies.</li>`,
+          `<li>PostHog knows you only by a keyed hash of your account id, not the id itself, and a workspace only by the same kind of hash of its id.</li>`,
+          `<li>It receives these events, each with its time: signing up (the method, such as password, Google or your organization’s single sign-on, and how you found Freero if you answered); logging in (the method); creating a board or doc (whether in the app, through the API, through a connected assistant or from a backup file, and whether it is a copy); someone else opening one of your boards for the first time; sending or accepting an invitation to a board or workspace (the role, and whether the person invited already had an account); creating a team workspace; connecting an app or assistant (how it was registered and whether it uses MCP or the API, never which app); connecting an issue tracker (which one), Slack or Figma; exporting a board (the format); turning on a board’s link (the access it gives); and using one of Freero’s public templates (its id).</li>`,
+          `<li>It never receives your name, email address or account id, the titles or content of your boards, docs or workspaces, links, your IP address (the events come from our server, and PostHog’s location lookup is off) or details of your browser or device.</li>`,
+          `<li>PostHog processes this data in ${where}.</li></ul>`,
+          `<p>${ga ? '<strong>Turn off analytics</strong> stops this too' : '<strong>Turn off analytics</strong> in the app’s Help menu stops it'}: if you are signed in, the choice is recorded on your account, so nothing is sent for your account from any browser, app or assistant until you turn analytics back on. If your browser sends Global Privacy Control or Do Not Track, nothing is sent for what you do in it, and the choice is recorded on your account when you sign in there.</p>`,
+        ].join('')
+      : '',
+    productAnalyticsProvider: ph ? `PostHog, Inc. (events sent by our server to ${code(hostOf(ph.host) ?? ph.host)}); you can turn it off` : 'None: this service sends no product analytics',
+    productAnalyticsData: ph
+      ? 'A keyed hash of the account id (and of a workspace’s id) and the events listed under Cookies, with their method, format or role; never names, email addresses, titles, content, links or IP addresses'
+      : '—',
+    productAnalyticsWhere: ph ? where : 'Not used',
   };
 }
 

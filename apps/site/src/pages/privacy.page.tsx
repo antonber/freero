@@ -7,7 +7,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs } from '../lib/site';
 
-const UPDATED = '2026-11-06';
+const UPDATED = '2026-11-08';
 
 export default definePage({
   path: '/privacy',
@@ -179,6 +179,7 @@ export default definePage({
           ['AI model provider', L('aiProvider'), 'Prompts and board content of AI actions you run'],
           ['Error tracking', L('errorReporting'), 'Error details, request method and path, account id'],
           ['Analytics', L('analyticsProvider'), L('analyticsData')],
+          ['Product analytics', L('productAnalyticsProvider'), L('productAnalyticsData')],
           [
             'Sorting problem reports',
             'Anthropic, PBC (Claude Code), under Anthropic’s commercial terms, which don’t let it train its models on the content',
@@ -222,6 +223,8 @@ export default definePage({
       <h2 id="cookies">5. Cookies and browser storage</h2>
       {/* Google Analytics (GA_MEASUREMENT_ID): consent, cookies, what Google receives, how to withdraw. */}
       <div>{L('analyticsCookies')}</div>
+      {/* PostHog (POSTHOG_KEY): server-side product events, what PostHog receives, how to turn it off. */}
+      <div>{L('productAnalytics')}</div>
       <Table
         caption="Cookies"
         stack
@@ -231,6 +234,7 @@ export default definePage({
           ['freero_device', 'Recognises this browser, so a sign-in from a new one can be reported to you', '400 days'],
           ['freero_2fa, freero_oidc, freero_sso, freero_tracker_oauth', 'Hold a sign-in or connection step in progress', '10 minutes'],
           ['freero_guest', 'Your guest session on a board, without an account', '12 hours'],
+          ['freero_analytics_off', 'Set only if you turn analytics off: tells our server not to send analytics events for this browser', '13 months, or until you turn analytics back on'],
         ]}
       />
       <p>
