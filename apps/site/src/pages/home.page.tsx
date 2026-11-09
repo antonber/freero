@@ -1,5 +1,6 @@
 import { HeroArt } from '../components/HeroArt';
 import { ButtonLink, Card, Cards, Hero, Section, Shot } from '../components/ui';
+import { publishedComparisons } from '../lib/compare';
 import { definePage } from '../lib/define';
 import { softwareApplication } from '../lib/seo';
 import { APP, MCP_URL } from '../lib/site';
@@ -44,7 +45,7 @@ export default definePage({
       a: 'Yes. Freero connects to Jira Cloud and to Jira Data Center or Server with a personal access token, as well as to Linear, GitHub and GitHub Enterprise Server. Changes flow both ways: from the board to the issue and from the issue back to the board.',
     },
   ],
-  body: () => (
+  body: ({ pages }) => (
     <>
       <Hero
         title="The whiteboard for teams of people and AI agents."
@@ -266,6 +267,18 @@ export default definePage({
         </Cards>
         <p>
           <a href="/security">Security details</a> · <a href="/open-source">Open source and self-hosting</a> · <a href="/pricing">What free means</a>
+        </p>
+      </Section>
+
+      <Section id="compare" tone="tint" title="Coming from another whiteboard?" lead="Side-by-side comparisons, capability by capability, with every fact about the other product sourced and dated.">
+        <p>
+          {publishedComparisons(pages).map((c, i) => (
+            <span key={c.path}>
+              {i > 0 && ' · '}
+              <a href={c.path}>{c.name}</a>
+            </span>
+          ))}{' '}
+          · <a href="/vs">All comparisons</a>
         </p>
       </Section>
     </>
