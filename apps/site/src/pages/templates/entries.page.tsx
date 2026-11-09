@@ -21,7 +21,7 @@ import {
 import { useCasePath, useCasesFor } from '../../lib/useCases';
 
 /** When the content of these pages last changed meaningfully (their sitemap lastmod). */
-const UPDATED = '2026-10-30';
+const UPDATED = '2026-11-09';
 
 const baseName = (t: SiteTemplate) => (/template$/i.test(t.name) ? t.name : `${t.name} template`);
 
@@ -60,9 +60,23 @@ function stepsOf(t: SiteTemplate): Array<{ name: string; text: string }> {
     { name: 'Start a board from it', text: `Use this template opens a new Freero board with the ${t.name} template on it (sign up free first). On a board you already have, open Templates in the toolbar and search for “${t.name}”.` },
     ...(t.hint ? [{ name: 'Follow the instruction on the board', text: t.hint }] : []),
     ...(t.parts.length ? [{ name: 'Fill in each part', text: t.parts.map((p) => (p.detail ? `${p.title}: ${p.detail}` : p.title)).join(' · ') }] : []),
+  ];
+}
+
+/** Two things to ask an agent on this board, written from the template's own parts, so no two template pages read alike. */
+function agentPrompts(t: SiteTemplate): Array<{ prompt: string; outcome: string }> {
+  // Only short, plain part titles read well inside a prompt.
+  const usable = t.parts.map((p) => p.title).filter((x) => x.length <= 40 && !/[…?(]/.test(x));
+  const [first, ...rest] = usable;
+  const last = rest.at(-1);
+  return [
     {
-      name: 'Bring your team and your agents',
-      text: 'Invite people to the board or share a link, and work on it together live. The timer is in the top bar, private mode and voting in the board menu, and Claude or ChatGPT can join through Freero’s MCP server.',
+      prompt: first ? `Fill in ‘${first}’ on the ${t.name} board from these notes.` : `Fill in the ${t.name} board from these notes.`,
+      outcome: 'It proposes sticky notes for that part; nothing lands until someone accepts them.',
+    },
+    {
+      prompt: last ? `Turn what we wrote under ‘${last}’ into task cards.` : 'Group what we wrote into themes and list the actions.',
+      outcome: 'It proposes the cards, labelled with its name and yours.',
     },
   ];
 }
@@ -101,7 +115,7 @@ const page = (t: SiteTemplate): PageDef => {
           aside={
             <figure className="tpl-hero">
               <TemplatePreviewImage t={t} eager />
-              <figcaption>The template as it lands on your board, drawn from the template itself. Every part is editable.</figcaption>
+              <figcaption>The {t.name} template as it lands on your board.</figcaption>
             </figure>
           }
         >
@@ -147,21 +161,10 @@ const page = (t: SiteTemplate): PageDef => {
           </p>
         </Section>
 
-        <Section id="agents" title="Work on it with an AI agent" lead="Connect an assistant once and it works on the board with you, with your permissions: by default it reads and proposes, and people decide." narrow>
-          <Prompts
-            items={[
-              {
-                prompt: `Fill in the ${t.name} board from these notes.`,
-                outcome: 'It reads the board, then proposes sticky notes for it. Nothing changes until someone on the board accepts them.',
-              },
-              {
-                prompt: 'Group what we wrote into themes and list the actions.',
-                outcome: 'It proposes clusters with a title each and task cards for the actions, labelled with its name and yours.',
-              },
-            ]}
-          />
+        <Section id="agents" title={`The ${t.name} template with an AI agent`} narrow>
+          <Prompts items={agentPrompts(t)} />
           <p>
-            Set it up for <a href="/claude">Claude</a>, <a href="/chatgpt">ChatGPT</a> or <a href="/agents">any MCP client</a>.
+            Connect <a href="/claude">Claude</a>, <a href="/chatgpt">ChatGPT</a> or <a href="/agents">any MCP client</a>; invite people or share a link to work on it live.
           </p>
         </Section>
 
