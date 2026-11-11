@@ -84,8 +84,9 @@ export type { DocThread, DocCommentMessage, CommentAuthor } from './docs/comment
 
 // Renders an element's rich-text field; switches to the shared editor while editing.
 export { ElementText } from './text/ElementText';
-// [additive] Dark mode at paint time (canvas/theme.ts): default inks light on the live canvas.
-export { canvasInk, canvasPaper, isLightSurface } from './canvas/theme';
+// [additive] Dark mode at paint time (canvas/theme.ts): default inks light on the live canvas;
+// an item's inks follow what is shown behind it (useCanvasInk, canvas/backdrop.ts).
+export { canvasInk, canvasPaper, isLightSurface, isDefaultInk, useCanvasInk } from './canvas/theme';
 export type { ElementTextProps } from './text/ElementText';
 // [additive] Rich text outside the canvas (a card's details): shown formatted, or edited in place
 // with ElementText's editing stack (+ Markdown-style typing).

@@ -15,7 +15,8 @@ import type { ChildPresentation, LowDetailPaint, Rect } from '../api';
 import { useCore } from '../context';
 import { elementAABB, rectContainsRect, rectsIntersect, rectUnion } from '../geometry/geometry';
 import { pictureColor } from './pictureColor';
-import { darkFiltered, isLightSurface, useDocumentTheme } from './theme';
+import { darkFiltered, inkOn, isLightSurface, useDocumentTheme, type Backdrop } from './theme';
+import { backdrops } from './backdrop';
 
 /** At most this many canvas pixels (a zoomed-out view on a large, dense screen draws a little softer). */
 const MAX_PIXELS = 12_000_000;
@@ -50,8 +51,8 @@ interface Painted {
   area: Rect;
   /** Canvas pixels per world unit. */
   px: number;
-  /** Each item as last painted, where, and its container as it was then (it may present it). */
-  items: Map<string, { el: BoardElement; box: Rect; container?: BoardElement }>;
+  /** Each item as last painted, where, its container as it was then (it may present it), and what was shown behind it. */
+  items: Map<string, { el: BoardElement; box: Rect; container?: BoardElement; backdrop: Backdrop | null }>;
 }
 
 export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cull: Rect; zoom: number }) {
@@ -65,10 +66,11 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
     const canvas = ref.current;
     if (!canvas) return;
     const { store, registry } = core;
-    const els: Array<{ el: BoardElement; box: Rect; container?: BoardElement }> = [];
+    const shown = backdrops(core);
+    const els: Array<{ el: BoardElement; box: Rect; container?: BoardElement; backdrop: Backdrop | null }> = [];
     for (const id of ids) {
       const el = store.getElement(id);
-      if (el) els.push({ el, box: paintedBox(el), container: registry.presents && el.frameId ? store.getElement(el.frameId) : undefined });
+      if (el) els.push({ el, box: paintedBox(el), container: registry.presents && el.frameId ? store.getElement(el.frameId) : undefined, backdrop: shown.get(id) });
     }
     const union = rectUnion(els.map((e) => e.box));
     const want = union && intersection(union, cull);
@@ -99,10 +101,10 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
     let dirty: Rect | null = null;
     if (!all) {
       const now = new Set<string>();
-      for (const { el, box, container } of els) {
+      for (const { el, box, container, backdrop } of els) {
         now.add(el.id);
         const was = last.items.get(el.id);
-        if (was?.el === el && was.container === container) continue;
+        if (was?.el === el && was.container === container && was.backdrop === backdrop) continue;
         dirty = grow(grow(dirty, box), was?.box ?? null);
       }
       for (const [id, was] of last.items) if (!now.has(id)) dirty = grow(dirty, was.box);
@@ -130,6 +132,7 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
 
     // The painter draws in the item's own units: (ox, oy) is its top left (0, 0 while turned).
     let el: BoardElement = els[0].el;
+    let backdrop: Backdrop | null = null;
     let ox = 0;
     let oy = 0;
     let queued = false;
@@ -150,6 +153,7 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
       selectionColor: resolve('var(--fr-select, #5b3ff0)'),
       zoom,
       surface: (color) => (theme === 'dark' && isLightSurface(color) ? darkFiltered(color) : color),
+      ink: (color) => inkOn(color, backdrop),
       box({ fill, stroke, strokeWidth = 0, radius, round, alpha = 1, strokeAlpha = 1 }) {
         const sw = stroke && stroke !== 'transparent' ? Math.max(0, strokeWidth) : 0;
         const w = Math.max(0, el.w - sw);
@@ -203,6 +207,7 @@ export function LowDetailLayer({ ids, cull, zoom }: { ids: readonly string[]; cu
       const def = registry.elements.get(item.el.type)?.def;
       if (!def?.lowDetail) continue;
       el = item.el;
+      backdrop = item.backdrop;
       // Outside the item this viewer focuses on: faded, or not drawn ("hide the rest"), as the DOM item would be.
       const outside = !!focusId && !core.editor.inFocus(el);
       if (outside && focusHide) continue;

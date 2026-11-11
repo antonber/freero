@@ -1,6 +1,7 @@
 // React contexts: the engine core for a mounted board, and the feature scope of the subtree.
 import { createContext, useContext, type ReactNode } from 'react';
 import type { EngineCore } from './runtime/core';
+import type { Backdrop } from './canvas/theme';
 
 export const EngineContext = createContext<EngineCore | null>(null);
 
@@ -22,3 +23,9 @@ export const AppChromeContext = createContext<{ topbarAccessory?: ReactNode; tit
 
 /** 'export' while rendering offscreen for images/thumbnails: no editors, no selection UI. */
 export const RenderModeContext = createContext<'live' | 'export'>('live');
+
+/**
+ * [additive] What a dark page shows behind the item being drawn (canvas/backdrop.ts): set around
+ * each item on the live canvas only, null elsewhere (exports, previews, a light page).
+ */
+export const BackdropContext = createContext<Backdrop | null>(null);

@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { CHART_COLORS, readChart, type ChartElement } from '@freero/shared';
-import { canvasInk, defineElement, useCollection, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
+import { defineElement, useCollection, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
 import { CELLS, gridRows, readContent, writeContent } from './lib/data';
 import { ChartView } from './lib/ChartView';
 import { DATA_PANEL } from './lib/constants';
@@ -32,7 +32,7 @@ function paintChart(el: ChartElement, p: LowDetailPaint) {
   const y1 = el.h - 20;
   if (y1 <= top) return;
   p.rect(x0, top, el.w - x0, y1 - top, el.series[0]?.color || CHART_COLORS[0], 0.18);
-  p.line([{ x: x0, y: top }, { x: x0, y: y1 }, { x: el.w, y: y1 }], canvasInk('#17162B'), 2);
+  p.line([{ x: x0, y: top }, { x: x0, y: y1 }, { x: el.w, y: y1 }], p.ink('#17162B'), 2);
 }
 
 export default defineElement({

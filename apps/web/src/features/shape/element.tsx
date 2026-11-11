@@ -1,7 +1,7 @@
 import { Shapes as ShapesIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { looksLikeMermaid, looksLikePlantUml, type ShapeElement, type ShapeKind } from '@freero/shared';
-import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
+import { canvasInk, defineElement, ElementText, useCanvasInk, richTextToPlain, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
 import { anchorOnOutline, classDividers, ENTITY_FONT, ENTITY_LINE, ENTITY_PAD, entityDivider, hitShape, insetPaths, outlineToward, textBox } from './lib/geometry';
 import { DEFAULT_SIZE } from './lib/constants';
 import { shapeDefaults } from './lib/actions';
@@ -30,13 +30,14 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
   const entity = shape === 'erdEntity' || classTable;
   const pad = entity ? ENTITY_PAD + sw / 2 : Math.max(4, Math.min(tb.w, tb.h) * 0.07) + sw / 2;
   const transparent = fill === 'transparent';
-  // Unfilled, the outline and text lie on the canvas: their default ink turns light on a dark page
-  // (painted through `color` + currentColor; the doc keeps the authored colour).
+  // Unfilled, the outline and text lie on what is behind the shape: their ink follows what a dark
+  // page shows there (painted through `color` + currentColor; the doc keeps the authored colour).
   // A mark without text filled with the default ink (a state diagram's start dot, a fork bar) is
   // ink too: it would vanish on a dark page.
-  const inkMark = !transparent && !element.text && canvasInk(fill) !== fill;
-  const ink = transparent || inkMark ? canvasInk(stroke) : stroke;
-  const textInk = transparent ? canvasInk(element.textColor) : undefined;
+  const canvas = useCanvasInk();
+  const inkMark = isInkMark(element);
+  const ink = transparent || inkMark ? canvas(stroke) : stroke;
+  const textInk = transparent ? canvas(element.textColor) : undefined;
   // An entity is a table: title line, a divider, then one attribute per line. A class adds a
   // divider above its operations.
   const plain = classTable ? richTextToPlain(element.text) : '';
@@ -50,7 +51,7 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
         <path
           d={paths.outline}
           fill={transparent ? 'none' : fill}
-          style={inkMark ? { fill: canvasInk(fill) } : undefined}
+          style={inkMark ? { fill: canvas(fill) } : undefined}
           fillOpacity={fillOpacity}
           stroke={sw > 0 && !paths.open ? 'currentColor' : 'none'}
           strokeWidth={sw}
@@ -95,6 +96,9 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
   );
 });
 
+/** Filled with a default ink and no text: a mark drawn as ink (light on a dark canvas), not a surface. */
+const isInkMark = (el: ShapeElement) => el.fill !== 'transparent' && !el.text && canvasInk(el.fill) !== el.fill;
+
 /** Outlines low detail draws round (a circle in its box) or as a pill. */
 const ROUND = new Set<ShapeKind>(['ellipse', 'summingJunction', 'orJunction', 'cloud']);
 const PILL = new Set<ShapeKind>(['terminator', 'delay', 'display', 'storedData']);
@@ -113,9 +117,9 @@ const SILHOUETTE: Partial<Record<ShapeKind, ReadonlyArray<readonly [number, numb
 function paintShape(el: ShapeElement, p: LowDetailPaint) {
   const { shape, w, h, fill, fillOpacity, stroke } = el;
   const transparent = fill === 'transparent';
-  const inkMark = !transparent && !el.text && canvasInk(fill) !== fill;
-  const ink = transparent || inkMark ? canvasInk(stroke) : stroke;
-  const paint = inkMark ? canvasInk(fill) : fill;
+  const inkMark = isInkMark(el);
+  const ink = transparent || inkMark ? p.ink(stroke) : stroke;
+  const paint = inkMark ? p.ink(fill) : fill;
   const silhouette = SILHOUETTE[shape];
   // A silhouette has no outline at this size: filled (with its ink, faint, when it has no fill).
   if (silhouette) p.polygon(silhouette, transparent ? ink : paint, transparent ? 0.35 : fillOpacity);
@@ -157,6 +161,8 @@ export default defineElement({
   }),
   Component: ShapeView,
   lowDetail: paintShape,
+  // Filled (mostly opaque), its fill is what items placed over it lie on.
+  surface: (el) => (el.fill !== 'transparent' && el.fillOpacity >= 0.5 && !isInkMark(el) ? { color: el.fill } : null),
   toPlainText: (el) => richTextToPlain(el.text),
   // Unfilled outlines are thin targets: half the stroke plus the engine's screen tolerance.
   hitTest(el, local, { tolerance }) {

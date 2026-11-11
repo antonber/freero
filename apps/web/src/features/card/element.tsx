@@ -312,6 +312,8 @@ export default defineElement({
   // A few pixels big (a large board's thumbnail) a card reads as white paper with lines of text:
   // a light grey (white would vanish on a kanban's white columns); the accent stripe is too thin.
   swatch: () => '#e3e2ec',
+  // The side that shows is what items placed over it lie on (white, or a turned card's back).
+  surface: (el) => ({ color: el.back && el.flipped ? el.back.color || BACK_COLORS[0] : '#FFFFFF' }),
   textField: 'title',
   defaults: (): Omit<NewElement<'card'>, 'x' | 'y'> => ({
     type: 'card',

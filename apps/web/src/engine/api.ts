@@ -941,6 +941,11 @@ export interface LowDetailPaint {
    * dark page, as the full drawing's `fr-canvas-surface` does (engine/canvas/theme.ts).
    */
   surface(color: string): string;
+  /**
+   * [additive] An ink (text bars, an outline, a line) as the full drawing's `useCanvasInk()` paints
+   * it for this item: by what is shown behind it on a dark page (engine/canvas/theme.ts `inkOn`).
+   */
+  ink(color: string): string;
   /** Fills a rectangle (bars standing for lines of text). */
   rect(x: number, y: number, w: number, h: number, color: string, alpha?: number): void;
   /** Fills a polygon given in fractions of the box (0–1): a diamond's silhouette. */
@@ -1189,6 +1194,15 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * Default: its `fill`, else `color`, else `stroke`, else a neutral grey.
    */
   swatch?(element: ElementOf<T>): string | null;
+  /**
+   * [additive] The opaque surface this item paints under whatever lies on it (a filled shape's
+   * fill, a sticky's paper, a card's face, a frame's fill); null / undefined when it has none
+   * (text without a highlight, lines, an unfilled outline). A dark page paints the ink of items
+   * placed over it by what it shows (engine/canvas/backdrop.ts): over a surface shown as authored
+   * they keep their authored colours. `darkens`: a light one is shown dark on a dark page, as the
+   * item draws it with the `fr-canvas-surface` class (frame fills).
+   */
+  surface?(element: ElementOf<T>): { color: string; darkens?: boolean } | null;
   /**
    * [additive] false = the engine draws no bounding-box selection frame, resize/rotate handles
    * or hover outline for this type; the feature draws its own (connectors: endpoint handles).

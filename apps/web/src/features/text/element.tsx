@@ -1,7 +1,7 @@
 import { Type as TypeIcon } from 'lucide-react';
 import { memo, type CSSProperties } from 'react';
 import type { TextElement } from '@freero/shared';
-import { canvasInk, defineElement, ElementText, richTextToPlain, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
+import { defineElement, ElementText, useCanvasInk, richTextToPlain, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
 import { layoutText, measureTextBox, textPadding } from './lib/layout';
 import { pastedTextToRich, textBlockAt, textDefaults } from './lib/actions';
 import { t } from './messages';
@@ -9,6 +9,7 @@ import './text.css';
 
 const TextView = memo(function TextView({ element }: ElementRenderProps<TextElement>) {
   const pad = textPadding(element.fontSize);
+  const ink = useCanvasInk();
   const style: CSSProperties | undefined =
     element.background && element.background !== 'transparent' ? { background: element.background } : undefined;
   return (
@@ -21,8 +22,9 @@ const TextView = memo(function TextView({ element }: ElementRenderProps<TextElem
       placeholder={t('typeSomething')}
       className={`fr-textbox${element.autoWidth ? ' fr-textbox--auto' : ''}${style ? ' fr-textbox--hl' : ''}`}
       style={style}
-      // On the canvas (no highlight of its own) the default ink turns light on a dark page.
-      color={style ? element.textColor : canvasInk(element.textColor)}
+      // No highlight of its own: its ink follows what a dark page shows behind it (default ink
+      // light on the canvas, as authored over a white box).
+      color={style ? element.textColor : ink(element.textColor)}
     />
   );
 });
@@ -34,7 +36,7 @@ const TextView = memo(function TextView({ element }: ElementRenderProps<TextElem
 function paintText(el: TextElement, p: LowDetailPaint) {
   const highlighted = !!el.background && el.background !== 'transparent';
   if (highlighted) p.box({ fill: el.background, radius: 4 });
-  const ink = highlighted ? el.textColor : canvasInk(el.textColor);
+  const ink = highlighted ? el.textColor : p.ink(el.textColor);
   const pad = textPadding(el.fontSize);
   const line = el.fontSize * 1.4;
   const bar = el.fontSize * 0.7;
@@ -61,6 +63,8 @@ export default defineElement({
   defaults: (): Omit<NewElement<'text'>, 'x' | 'y'> => textDefaults(),
   Component: TextView,
   lowDetail: paintText,
+  // A highlight is a paper of its own: what is placed over it keeps its authored inks.
+  surface: (el) => (el.background && el.background !== 'transparent' ? { color: el.background } : null),
   toPlainText: (el) => richTextToPlain(el.text),
   normalize: (el, prev) => layoutText(el, prev, (wrap) => measureTextBox(el.text, el.fontFamily, el.fontSize, wrap)),
   // Double-click a side handle: back from a fixed wrapping width to hugging the text.

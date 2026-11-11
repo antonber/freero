@@ -1,7 +1,7 @@
 import { PenLine as PenLineIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import type { PenElement } from '@freero/shared';
-import { canvasInk, defineElement, type ElementRenderProps, type NewElement } from '@engine';
+import { defineElement, useCanvasInk, type ElementRenderProps, type NewElement } from '@engine';
 import { HIGHLIGHTER_OPACITY, PEN_COLORS, PEN_WIDTHS } from './lib/constants';
 import { strokeDistance, strokePath, strokePoints, unpack } from './lib/stroke';
 import { t } from './messages';
@@ -11,14 +11,15 @@ const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement
   const { points, strokeWidth, highlighter, baseW, baseH, stroke } = element;
   // The outline only depends on the recorded points; resizing just changes the viewBox scale.
   const d = useMemo(() => strokePath(unpack(points), strokeWidth, highlighter), [points, strokeWidth, highlighter]);
+  const ink = useCanvasInk();
   return (
     <svg
       className={`fr-pen${highlighter ? ' fr-pen--highlighter' : ''}`}
       viewBox={`0 0 ${baseW || 1} ${baseH || 1}`}
       preserveAspectRatio="none"
       aria-hidden
-      // Default ink turns light on a dark page (theme.ts canvasInk); the doc keeps the colour.
-      style={{ color: canvasInk(stroke) }}
+      // Its ink follows what a dark page shows behind it (theme.ts inkOn); the doc keeps the colour.
+      style={{ color: ink(stroke) }}
     >
       <path d={d} fill="currentColor" fillOpacity={highlighter ? HIGHLIGHTER_OPACITY : 1} />
     </svg>

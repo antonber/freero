@@ -4,7 +4,7 @@ import type { BoardElement, ConnectorElement } from '@freero/shared';
 import {
   defineElement,
   ElementText,
-  canvasInk,
+  useCanvasInk,
   canvasPaper,
   richTextToPlain,
   useCanEdit,
@@ -134,6 +134,7 @@ function Cap({ parts, color, paper, width }: { parts: CapShape[]; color: string;
 }
 
 const ConnectorView = memo(function ConnectorView({ element: c, selected, editing, zoom }: ElementRenderProps<ConnectorElement>) {
+  const ink = useCanvasInk();
   const editor = useEditor();
   // Subscribing to the attached elements is what keeps the line glued to them, for local and
   // remote moves alike, whatever the stored cache says.
@@ -185,7 +186,7 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
   const labelProps = { c, poly, editor, background, draggable: selected && canEdit && !editing };
   return (
     <>
-      <svg className="fr-cx" width="1" height="1" aria-hidden style={{ color: canvasInk(c.stroke) }}>
+      <svg className="fr-cx" width="1" height="1" aria-hidden style={{ color: ink(c.stroke) }}>
         <g transform={`translate(${-c.x} ${-c.y})`}>
           {selected && <path className="fr-cx__halo" d={d} strokeWidth={sw + 8} />}
           <path
@@ -232,6 +233,7 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
 });
 
 function LabelText(props: { c: ConnectorElement; part?: string; value?: string; onCommit?(html: string): void }) {
+  const ink = useCanvasInk();
   return (
     <ElementText
       element={props.c}
@@ -243,7 +245,7 @@ function LabelText(props: { c: ConnectorElement; part?: string; value?: string; 
       align="center"
       vAlign="middle"
       padding={0}
-      color={canvasInk('#17162B')}
+      color={ink('#17162B')}
       placeholder={tr('addText')}
       style={{ position: 'relative', inset: 'auto', overflow: 'visible' }}
     />
@@ -320,7 +322,7 @@ function Label(props: {
  */
 function paintConnector(c: ConnectorElement, p: LowDetailPaint) {
   const pts = [c.start, ...(c.waypoints ?? []), c.end].map((q) => ({ x: q.x - c.x, y: q.y - c.y }));
-  p.line(pts, p.selected ? p.selectionColor : canvasInk(c.stroke), c.strokeWidth);
+  p.line(pts, p.selected ? p.selectionColor : p.ink(c.stroke), c.strokeWidth);
 }
 
 export default defineElement({

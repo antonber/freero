@@ -81,6 +81,8 @@ const stickyDefinition = defineElement({
   applySharedStyle: (_el, { fill, ...rest }) => ({ ...rest, ...(fill ? { color: nearestColor(fill) } : {}) }),
   // A few pixels big (a large board's thumbnail): its paper.
   swatch: (el) => STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow,
+  // Its paper is what items placed over it lie on (they keep their authored inks on a dark page).
+  surface: (el) => ({ color: STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow }),
   textField: 'text',
   defaults: (): Omit<NewElement<'sticky'>, 'x' | 'y'> => ({
     type: 'sticky',

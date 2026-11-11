@@ -5,7 +5,7 @@
 import { memo } from 'react';
 import { Focus, Layers, Workflow } from 'lucide-react';
 import { DIAGRAM_LAYOUT, DIAGRAM_LAYOUT_NAMES, diagramLayers, hiddenByLayer, planDiagram, type DiagramElement } from '@freero/shared';
-import { canvasInk, defineElement, ElementText, richTextToPlain, sanitizeRichText, useEditor, useFocus, type ElementRenderProps, type NewElement } from '@engine';
+import { defineElement, ElementText, richTextToPlain, sanitizeRichText, useEditor, useFocus, type ElementRenderProps, type NewElement } from '@engine';
 import { activeLayer, addStep, focusDiagram } from './lib/actions';
 import { t as tr } from './messages';
 import './diagram.css';
@@ -87,7 +87,7 @@ export default defineElement({
   // Zoomed out to low detail (#185): its faint body and outline on the shared canvas (as its far-away
   // drawing: no title band text); its members paint themselves there too.
   lowDetail(d, p) {
-    const ink = canvasInk('#4B4A63');
+    const ink = p.ink('#4B4A63');
     p.box({ fill: ink, alpha: 0.04, stroke: ink, strokeAlpha: 0.45, strokeWidth: 1.5, radius: 12 });
     p.rect(0, DIAGRAM_LAYOUT.headerH, d.w, 1 / p.zoom, ink, 0.35);
   },

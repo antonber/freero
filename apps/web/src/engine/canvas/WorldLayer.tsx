@@ -4,7 +4,7 @@ import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRe
 import { useStore } from 'zustand';
 import { EyeOff } from 'lucide-react';
 import type { BoardElement } from '@freero/shared';
-import { useCore, RenderModeContext, ScopeContext } from '../context';
+import { useCore, BackdropContext, RenderModeContext, ScopeContext } from '../context';
 import { useElement } from '../hooks';
 import { quantizeZoom, viewportRect } from '../camera/camera';
 import { elementAABB, expandRect, rectContainsRect, rectsIntersect } from '../geometry/geometry';
@@ -13,6 +13,8 @@ import type { EngineCore } from '../runtime/core';
 import type { UiState } from '../state/uiStore';
 import { drawsLowDetail } from './detail';
 import { LowDetailLayer } from './LowDetailLayer';
+import { backdrops } from './backdrop';
+import type { Backdrop } from './theme';
 import { personalViews } from '../runtime/personalViews';
 
 import { t as tr } from '../messages';
@@ -353,11 +355,17 @@ export const ElementView = memo(function ElementView({ id }: { id: string }) {
   const shownAt = useSyncExternalStore(subscribe, () => items.shownAt(id));
   const sliding = useSyncExternalStore(subscribe, () => items.isSliding(id));
   const { zoom, focusId, focusHide } = useContext(WorldViewContext);
+  // [additive] What a dark page shows behind it: its inks follow (canvas/backdrop.ts, theme.ts).
+  const shown = backdrops(core);
+  const backdrop = useSyncExternalStore(
+    useCallback((cb: () => void) => shown.subscribe(id, cb), [shown, id]),
+    () => shown.get(id),
+  );
   // [additive, #117] Outside the item this viewer focuses on (Editor.setFocus): faded and inert.
   // [#135] or, with "hide the rest", not drawn at all.
   const unfocused = useMemo(() => (!!focusId && !!el && !core.editor.inFocus(el) ? (focusHide ? 'hidden' : 'faded') : null), [core, focusId, focusHide, el]);
   if (!el) return null;
-  return <ElementFrame element={el} selected={selected} editing={editing} hovered={hovered} zoom={zoom} shownAt={shownAt} sliding={sliding} unfocused={unfocused} />;
+  return <ElementFrame element={el} selected={selected} editing={editing} hovered={hovered} zoom={zoom} shownAt={shownAt} sliding={sliding} unfocused={unfocused} backdrop={backdrop} />;
 });
 
 /**
@@ -379,6 +387,8 @@ export function ElementFrame(props: {
   sliding?: boolean;
   /** [additive] Outside this viewer's focus (Editor.setFocus): drawn faded, or [#135] not at all. */
   unfocused?: 'faded' | 'hidden' | null;
+  /** [additive] What the live canvas shows behind it on a dark page (canvas/backdrop.ts); none in exports. */
+  backdrop?: Backdrop | null;
 }) {
   const core = useCore();
   const { element: el } = props;
@@ -410,20 +420,34 @@ export function ElementFrame(props: {
       className={`fr-el${props.editing ? ' fr-el--editing' : ''}${props.hovered ? ' fr-el--hover' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}${props.unfocused === 'faded' ? ' fr-el--unfocused' : props.unfocused === 'hidden' ? ' fr-el--outside' : ''}`}
       data-id={props.preview ? undefined : el.id}
       data-type={el.type}
-      style={{ ...reg?.def.wrapperStyle?.(el as never), left: at.x, top: at.y, width: el.w, height: el.h, transform }}
+      style={{ ...reg?.def.wrapperStyle?.(el as never), ...backdropStyle(props.backdrop), left: at.x, top: at.y, width: el.w, height: el.h, transform }}
     >
-      {content}
-      {decorations.map(({ def, feature }) => (
-        <ScopeContext.Provider key={def.id} value={feature}>
-          <def.Component element={el} zoom={props.zoom} />
-        </ScopeContext.Provider>
-      ))}
+      <BackdropContext.Provider value={props.backdrop ?? null}>
+        {content}
+        {decorations.map(({ def, feature }) => (
+          <ScopeContext.Provider key={def.id} value={feature}>
+            <def.Component element={el} zoom={props.zoom} />
+          </ScopeContext.Provider>
+        ))}
+      </BackdropContext.Provider>
       {isPrivate && (
         <span className="fr-el-private-chip" title={tr('onlyYouCanSeeThis')} style={{ transform: `scale(${1 / Math.max(props.zoom, 0.5)})` }}>
           <EyeOff size={11} strokeWidth={2.5} aria-hidden />{tr('onlyYou')}</span>
       )}
     </div>
   );
+}
+
+/**
+ * For what reads the canvas inks from CSS (`var(--fr-canvas-ink…)`, `canvasPaper`) inside an item:
+ * what shows through is its backdrop, and over a surface shown as authored the default inks are
+ * too (an unset variable falls back to the authored colour).
+ */
+function backdropStyle(b: Backdrop | null | undefined): Record<string, string> | undefined {
+  if (!b) return undefined;
+  return b.invert === null
+    ? { '--fr-canvas-paper': b.shown, '--fr-canvas-ink': 'initial', '--fr-canvas-ink-2': 'initial' }
+    : { '--fr-canvas-paper': b.shown };
 }
 
 /**

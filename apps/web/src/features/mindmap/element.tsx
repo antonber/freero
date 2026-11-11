@@ -2,7 +2,7 @@ import { Network as NetworkIcon } from 'lucide-react';
 import { memo, type CSSProperties, type KeyboardEvent } from 'react';
 import type { MindmapElement } from '@freero/shared';
 import {
-  canvasInk,
+  useCanvasInk,
   defineElement,
   ElementText,
   richTextToPlain,
@@ -40,6 +40,7 @@ type Side = 'left' | 'right' | 'down';
 
 /** Smooth edge from the parent's hub to this node, in this node's local coordinates. */
 function Edge({ node, parent, depth, down }: { node: MindmapElement; parent: MindmapElement; depth: number; down: boolean }) {
+  const ink = useCanvasInk();
   let d: string;
   if (down) {
     // A top-down map: from the hub under the parent to the top of this node.
@@ -58,7 +59,7 @@ function Edge({ node, parent, depth, down }: { node: MindmapElement; parent: Min
     d = `M ${x0} ${py} C ${x0 + dx} ${py}, ${x1 - dx} ${y1}, ${x1} ${y1}`;
   }
   return (
-    <svg className="fr-mm__edge" width="1" height="1" aria-hidden style={{ color: canvasInk(node.color) }}>
+    <svg className="fr-mm__edge" width="1" height="1" aria-hidden style={{ color: ink(node.color) }}>
       <path
         d={d}
         // Presentation attributes and inline style, not CSS: export clones (html-to-image) don't

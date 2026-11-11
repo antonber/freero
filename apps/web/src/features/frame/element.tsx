@@ -160,6 +160,8 @@ export default defineElement({
   // which you drag it by, is too small to show (under 70 px wide). A hidden frame keeps its DOM:
   // viewers see a cover there, and editors the "Hidden from viewers" tag.
   lowDetail: (el, p) => p.box({ fill: p.surface(el.fill || DEFAULT_FILL), stroke: '#17162B', strokeAlpha: 0.14, strokeWidth: 1 / p.zoom, radius: 2 }),
+  // Its fill is what its items lie on; a light one is shown dark on a dark page (fr-canvas-surface).
+  surface: (el) => ({ color: el.fill || DEFAULT_FILL, darkens: true }),
   lowDetailMaxPx: (el) => (el.hidden ? 0 : TITLE_MIN_PX / 0.1),
   // Hidden: its contents live in the editors layer, which the server sends to owners/editors only.
   hidesContents: (el) => !!el.hidden,
