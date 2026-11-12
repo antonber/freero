@@ -3,11 +3,12 @@
 // indexes — boards (access, the downloads policy, the new board row + audit), realtime (content
 // as the exporter may read it, a fresh document from JSON), uploads (files read and re-uploaded
 // under the restorer's quota) and workspaces (where the restorer may create boards).
-import type { RestoreBackupResponse } from '@freero/shared';
+import { isProductItemType, type ProductItemType, type RestoreBackupResponse } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { log } from '../../platform/log';
+import { trackProductEvent } from '../analytics/index';
 import { authorizeBackup, boardSummaryFor, restoreBoard } from '../boards/index';
 import { boardBackupContent, encodeBoardContent, withoutLeftOutFields } from '../realtime/index';
 import { deleteUpload, readUpload, restoreUploadFile, uploadNamesIn } from '../uploads/index';
@@ -61,6 +62,17 @@ export async function downloadBackup(boardId: string, userId: string, origin: st
   });
   await auth.record({ files: files.length, missingFiles: missingFiles.length, hiddenContent: content.editors !== null, bytes: data.byteLength });
   return { data, filename: `${slug(auth.board.title)}-${new Date().toISOString().slice(0, 10)}.freero` };
+}
+
+/** Product analytics' items_added for a restored board: how many items of each type it brought, never what they hold. */
+function countRestoredItems(userId: string, workspaceId: string, ...docs: Array<ContentJson | null>): void {
+  const counts = new Map<ProductItemType, number>();
+  for (const d of docs)
+    for (const el of Object.values(d?.elements ?? {})) {
+      const type = (el as { type?: unknown } | null)?.type;
+      if (isProductItemType(type)) counts.set(type, (counts.get(type) ?? 0) + 1);
+    }
+  for (const [type, count] of counts) trackProductEvent(userId, { name: 'items_added', type, count, via: 'import' }, { workspaceId });
 }
 
 /**
@@ -117,6 +129,7 @@ export async function restoreBackup(
       },
     );
     log(`backup: restored board ${board.id} for ${userId} (${uploaded.size} files)`);
+    countRestoredItems(userId, board.workspaceId, docOut, editorsOut);
     return {
       board: await boardSummaryFor(board.id, userId),
       report: {
