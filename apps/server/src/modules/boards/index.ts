@@ -89,7 +89,8 @@ export { authorizeBackup, restoreBoard } from './service';
 export { recordExport as recordBoardExport } from './service';
 // An app's "Share with team" (MCP Apps, KAI-171): the share dialog's link rules, same audit.
 export { shareByLink as shareBoardByLink } from './service';
-// Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
+// Operators (modules/moderation): take down / restore, block / unblock the link, who may report, and
+// the boards shared by link right now (the console's "Public links").
 export {
   boardForModeration,
   reportableBoard,
@@ -100,6 +101,8 @@ export {
   liveBoardsOwnedBy,
   blockBoardLink,
   unblockBoardLink,
+  boardsSharedByLink,
+  type LinkSharedBoard,
   type ModerationBoardState,
 } from './moderation';
 
