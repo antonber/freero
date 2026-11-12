@@ -1464,13 +1464,25 @@ answer 404 and `GET /api/analytics` says `productAnalytics: false`.
   | `board_exported` | `format` (the reported browser export, or `freero`) | `boards/service.ts` `recordExport`, `authorizeBackup` |
   | `board_shared_publicly` | `access` | `boards/service.ts` `linkAccessChanged` (link turned on from off) |
   | `template_used` | `template_id` (a built-in template's public id) | the app (`CLIENT_PRODUCT_EVENTS`): `Host.track` → bridge → `POST /api/analytics/events`, checked by `parseClientProductEvent` (exactly these fields; anything else 400) |
+  | `board_opened` | `kind` (`board`/`doc`), `role` (the opener's access: `owner`/`editor`/`commenter`/`viewer`) — for the person who opened it, at most once per account, board and UTC day; never which board | `boards/service.ts` `boardOpened` (GET /boards/:id; the day's first is the open whose `board_opens` update still found an earlier day: one per day whichever instance serves it) |
+  | `items_added` | `type` (an element type of the closed list `PRODUCT_ITEM_TYPES`; anything else is not sent), `count`, `via` | `analytics/usage.ts` (live changes, from realtime `onBoardChange`: net items added to the shared board per account, workspace and door, sent every 5 min and at shutdown — one event per type, never per item; items added inside a hidden frame are not counted, since they can't be told from a frame being hidden); `backup/service.ts` `restoreBackup` (`via: 'import'`: the restored board's items) |
+  | `comment_added` | `count` (new messages, not edits; none on private drafts), `via` | `analytics/usage.ts` (realtime `onCommentMessage`, gathered like `items_added`) |
+  | `agent_proposal_resolved` | `outcome` (`accepted`/`rejected`), `proposer` (`app`: an app or token; `ai`: Freero's AI), `count` (per decision) — for the person who decided; withdrawals of a revoked app's are not counted | `analytics/usage.ts` (realtime `onSuggestionsDecided`: a socket's or the API's decision) |
+  | `doc_edited` | `via` (of the day's first edit) — at most once per account, doc and UTC day | `analytics/usage.ts` (realtime `onDocEdited`: a socket's or request's change of the doc's text; once a day per instance, in memory) |
   Not counted: workspace members added other ways (admin add, SCIM groups, domain capture: no
   single writer; `invite_sent` / `invite_accepted` cover activation), a board's built-in template
   on the server (the app inserts templates through the Editor; the API's templates are saved ones).
+  Never a board's or doc's id (not even hashed: daily/weekly actives, retention and agent-versus-person
+  use need none). `via` on the activity events is the door of the change: a board socket is `app`;
+  a request its surface; a change made on no request (a background job acting for someone) `other`.
+  `analytics/usage.ts` keeps its windows and the doc_edited day in memory: a crash loses the window
+  being gathered (never counts it twice), and with several instances, or after a restart, a doc can
+  be counted as edited twice the same day by the same person.
 - **Opt-outs.** Nothing is sent while handling a request whose browser opted out — the runtime's
   `setOptedOut` mirrors `freero:analytics-off` into the `freero_analytics_off` cookie — or sends
   `Sec-GPC: 1` / `DNT: 1` (`platform/requestContext.ts` `privacySignal`), signed in or not, a
-  sign-up included. A signed-in person's choice is also recorded on the account
+  sign-up included. A board socket keeps its upgrade request's signal (realtime `ChangeDoor`, on
+  every change, comment, decision and doc edit it reports), so nothing it does is counted either. A signed-in person's choice is also recorded on the account
   (`analytics_opt_outs`, analytics' repo.ts): the controls PUT it, and the bridge records it when
   the app loads signed in in a browser that is off or signals (`noteSignedIn`); only turning
   analytics back on clears it, and never from a browser that still signals. Opted-out accounts get

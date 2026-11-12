@@ -174,11 +174,13 @@ export function linkProblems(board: Board, policies: Pick<WorkspacePolicies, 'li
 /**
  * Someone opened the board (GET /boards/:id): its recent lists, and a link-only board becomes
  * discoverable to them. The first time someone other than its owner opens it, a collaborator
- * joined: counted for the owner, unless either of them turned analytics off.
+ * joined: counted for the owner, unless either of them turned analytics off. Their first open of
+ * the UTC day is counted for them (board_opened, with `role`: their access, when the caller knows it).
  */
-export async function boardOpened(board: Pick<Board, 'id' | 'ownerId' | 'workspaceId'>, userId: string, at = Date.now()): Promise<void> {
-  const first = await repo.recordOpen(board.id, userId, at);
+export async function boardOpened(board: Pick<Board, 'id' | 'ownerId' | 'workspaceId' | 'kind'>, userId: string, at = Date.now(), role?: Role): Promise<void> {
+  const { first, firstToday } = await repo.recordOpen(board.id, userId, at);
   if (first && userId !== board.ownerId) trackProductEvent(board.ownerId, { name: 'collaborator_joined' }, { workspaceId: board.workspaceId, alsoRespect: [userId] });
+  if (firstToday) trackProductEvent(userId, { name: 'board_opened', kind: board.kind, ...(role ? { role } : {}) }, { workspaceId: board.workspaceId });
 }
 
 /** After a stored link change: audited, and every live socket's access re-resolved. */

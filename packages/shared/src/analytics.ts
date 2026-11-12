@@ -4,7 +4,8 @@
 // its route with every id and token taken out (/board/<id> → /board), with a generic title, and
 // without its query string (UTM campaign tags excepted). Pure: used by the web app's bridge and
 // its tests.
-import { isDiscoverySource, type DiscoverySource, type LinkAccess } from './api';
+import { isDiscoverySource, type DiscoverySource, type LinkAccess, type ObjectKind, type Role } from './api';
+import type { ElementType } from './elements';
 import { integrationById } from './integrations';
 import { TRACKER_PROVIDERS, type TrackerProviderKind } from './trackers';
 
@@ -169,7 +170,26 @@ export type ProductEvent =
   /** A board's link opened to people who have it (it was off). */
   | { name: 'board_shared_publicly'; access: Exclude<LinkAccess, 'none'> }
   /** A built-in template by its public catalog id (reported by the app). */
-  | { name: 'template_used'; template: string };
+  | { name: 'template_used'; template: string }
+  /**
+   * Someone opened a board or doc in the app: at most once per account, board and UTC day, for the
+   * person who opened it. `role`: their access to it. Never which board.
+   */
+  | { name: 'board_opened'; kind: ObjectKind; role?: Role }
+  /**
+   * Items added to boards, `count` of one `type`, gathered per account, workspace and door over a
+   * few minutes (never one event per item; added and removed again in the window: not counted).
+   */
+  | { name: 'items_added'; type: ProductItemType; count: number; via: ProductEventVia }
+  /** Comment messages written (new ones, not edits), gathered like items_added. */
+  | { name: 'comment_added'; count: number; via: ProductEventVia }
+  /**
+   * People decided on changes an app or assistant (`proposer: 'app'`) or Freero's AI (`'ai'`)
+   * proposed: `count` of them accepted or rejected in one decision. Never what they changed.
+   */
+  | { name: 'agent_proposal_resolved'; outcome: 'accepted' | 'rejected'; proposer: 'app' | 'ai'; count: number }
+  /** Someone changed a doc's text: at most once per account, doc and UTC day. Never which doc. */
+  | { name: 'doc_edited'; via: ProductEventVia };
 
 export type ProductEventName = ProductEvent['name'];
 
@@ -180,19 +200,38 @@ export type ClientProductEvent = Extract<ProductEvent, { name: (typeof CLIENT_PR
 /** How a sign-in method is reported: a workspace's identity provider (`sso:<workspace>`) as `sso`, never which workspace. */
 export const productSignInMethod = (method: string): string => (method.startsWith('sso:') ? 'sso' : method);
 
+/**
+ * The item types items_added may name: every board element type and nothing else (a client
+ * writes an element's type, so anything outside this list is not sent).
+ */
+export const PRODUCT_ITEM_TYPES = [
+  'sticky', 'shape', 'text', 'connector', 'pen', 'frame', 'image', 'card', 'emoji', 'mindmap', 'table', 'embed', 'icon', 'kanban', 'pdf',
+  'swimlane', 'media', 'file', 'objectlink', 'activity', 'code', 'timeline', 'timelinebar', 'doc', 'kanbanview', 'diagram', 'chart', 'stickypad', 'icebreaker',
+] as const satisfies readonly ElementType[];
+export type ProductItemType = (typeof PRODUCT_ITEM_TYPES)[number];
+// A new element type must be added above (this fails to compile until it is).
+const everyElementType: Record<Exclude<ElementType, ProductItemType>, never> = {};
+void everyElementType;
+export const isProductItemType = (v: unknown): v is ProductItemType => oneOf(v, PRODUCT_ITEM_TYPES);
+
 const METHOD_RE = /^[a-z][a-z0-9_-]{1,23}$/;
 const TEMPLATE_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const FORMAT_RE = /^[a-z][a-z0-9]{1,15}$/;
 const VIAS: readonly ProductEventVia[] = ['app', 'api', 'mcp', 'other', 'import'];
 const ROLES = ['owner', 'coowner', 'admin', 'member', 'guest', 'editor', 'commenter', 'viewer'] as const;
-const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): v is T => typeof v === 'string' && (allowed as readonly string[]).includes(v);
+function oneOf<T extends string>(v: unknown, allowed: readonly T[]): v is T {
+  return typeof v === 'string' && (allowed as readonly string[]).includes(v);
+}
+/** A count an event may carry: a whole number from 1 to a million. */
+const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 1_000_000;
+const BOARD_ROLES = ['owner', 'editor', 'commenter', 'viewer'] as const;
 
 /**
  * The PostHog properties of an event, or null when a value isn't one the event may carry (it is
  * then not sent). Only these keys ever leave the server, besides a hashed `workspace` and the
  * pseudonymous distinct id (modules/analytics).
  */
-export function productEventProperties(e: ProductEvent): Record<string, string | boolean> | null {
+export function productEventProperties(e: ProductEvent): Record<string, string | boolean | number> | null {
   switch (e.name) {
     case 'signed_up': {
       if (!METHOD_RE.test(e.method)) return null;
@@ -230,6 +269,20 @@ export function productEventProperties(e: ProductEvent): Record<string, string |
       return oneOf(e.access, ['viewer', 'commenter', 'editor'] as const) ? { access: e.access } : null;
     case 'template_used':
       return TEMPLATE_RE.test(e.template) ? { template_id: e.template } : null;
+    case 'board_opened':
+      if (!oneOf(e.kind, ['board', 'doc'] as const)) return null;
+      if (e.role === undefined) return { kind: e.kind };
+      return oneOf(e.role, BOARD_ROLES) ? { kind: e.kind, role: e.role } : null;
+    case 'items_added':
+      return isProductItemType(e.type) && isCount(e.count) && oneOf(e.via, VIAS) ? { type: e.type, count: e.count, via: e.via } : null;
+    case 'comment_added':
+      return isCount(e.count) && oneOf(e.via, VIAS) ? { count: e.count, via: e.via } : null;
+    case 'agent_proposal_resolved':
+      return oneOf(e.outcome, ['accepted', 'rejected'] as const) && oneOf(e.proposer, ['app', 'ai'] as const) && isCount(e.count)
+        ? { outcome: e.outcome, proposer: e.proposer, count: e.count }
+        : null;
+    case 'doc_edited':
+      return oneOf(e.via, VIAS) ? { via: e.via } : null;
     default:
       return null;
   }

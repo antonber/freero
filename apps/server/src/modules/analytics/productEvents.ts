@@ -67,7 +67,7 @@ export function trackProductEvent(accountId: string, event: ProductEvent, opts: 
   });
 }
 
-async function capture(accountId: string, name: string, properties: Record<string, string | boolean>, opts: { workspaceId?: string | null; alsoRespect?: string[] }): Promise<void> {
+async function capture(accountId: string, name: string, properties: Record<string, string | boolean | number>, opts: { workspaceId?: string | null; alsoRespect?: string[] }): Promise<void> {
   if (await repo.anyOptedOut([accountId, ...(opts.alsoRespect ?? [])])) return;
   client?.capture({
     distinctId: pseudonym('account', accountId),

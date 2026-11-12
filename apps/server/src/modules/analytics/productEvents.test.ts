@@ -6,12 +6,16 @@ import { gunzipSync } from 'node:zlib';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createContext } from '../../platform/context';
 import { createApp, errorHandler, handle } from '../../platform/http';
+import { runWithRequestContext, type RequestContext } from '../../platform/requestContext';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { completeSignIn, createUser, currentUser, requireUser } from '../auth/index';
 import { createBoard, recordBoardOpen } from '../boards/index';
+import { appendMarkdown, createDoc } from '../docs/index';
+import { changeBoard, decideSuggestions, proposeSuggestions } from '../realtime/index';
 import init from './init';
 import { flushProductEvents, pseudonym } from './productEvents';
 import analyticsRoutes, { mountPath } from './routes';
+import { flushUsage, noteBoardChange, noteComment } from './usage';
 
 interface Captured {
   event: string;
@@ -137,6 +141,120 @@ it('a collaborator joining is counted once, for the board’s owner, the first t
   await flushProductEvents();
   expect(eventsOf(owner.id, 'collaborator_joined')).toHaveLength(1);
   expect(eventsOf(guest.id, 'collaborator_joined')).toHaveLength(0);
+});
+
+const DAY = 86_400_000;
+/** `fn` as if handling a request through `surface` (whose browser sends GPC when `privacySignal`). */
+const onRequest = <T>(surface: NonNullable<RequestContext['surface']>, fn: () => Promise<T>, privacySignal = false) =>
+  runWithRequestContext({ reqId: 'test', userId: null, ip: null, userAgent: null, surface, privacySignal }, fn);
+const sticky = (id: string, text: string) => ({ id, type: 'sticky', x: 0, y: 0, w: 200, h: 200, rotation: 0, text, color: 'yellow' }) as never;
+/** A change from a board socket, as realtime reports one (the socket's door: the app). */
+const socketChange = (boardId: string, actorId: string, changes: Array<[string, 'add' | 'remove', string]>, privacySignal = false) => ({
+  boardId,
+  actorId,
+  actorName: 'Someone',
+  layer: 'shared' as const,
+  changes: changes.map(([id, op, type]) => ({ id, op, type, frameId: null })),
+  frameTitles: {},
+  door: { surface: 'app' as const, privacySignal },
+});
+const socketComment = (boardId: string, authorId: string, messageId: string, privacySignal = false) => ({
+  boardId,
+  authorId,
+  threadId: 't1',
+  messageId,
+  text: 'Our Q3 pricing',
+  previousText: null,
+  participantIds: [],
+  layer: 'shared' as const,
+  door: { surface: 'app' as const, privacySignal },
+});
+
+it('opening the same board twice in a day sends one board_opened, for the person who opened it — the next day one more — and never says which board', async () => {
+  const [owner, reader] = [await person('Owner'), await person('Reader')];
+  const board = await createBoard(owner.id, 'Acme roadmap', '', 'viewer');
+  const morning = Math.floor(Date.now() / DAY) * DAY + 3_600_000;
+  await recordBoardOpen(board.id, reader.id, morning);
+  await recordBoardOpen(board.id, reader.id, morning + 5 * 3_600_000);
+  await recordBoardOpen(board.id, reader.id, morning + DAY);
+  await flushProductEvents();
+  expect(eventsOf(reader.id, 'board_opened').map((e) => e.properties.kind)).toEqual(['board', 'board']);
+  expect(eventsOf(owner.id, 'board_opened')).toHaveLength(0);
+  const everything = bodies.join('\n');
+  for (const secret of [board.id, 'Acme']) expect(everything).not.toContain(secret);
+});
+
+it('items added are sent per type and door once the window closes — one event for many items, none for an item removed again — never the board, the items or their text', async () => {
+  const ann = await person('Ann');
+  const board = await createBoard(ann.id, 'Acme launch plan', '', 'none');
+  const actor = { userId: ann.id, role: 'owner' as const, name: ann.name, via: { kind: 'app' as const, id: 'frc_claude', name: 'Claude' } };
+  await onRequest('mcp', () => changeBoard(board.id, actor, () => ({ change: { create: [sticky('s1', 'Secret pricing'), sticky('s2', 'b'), sticky('gone', 'c')] } })));
+  await onRequest('mcp', () => changeBoard(board.id, actor, () => ({ change: { remove: ['gone'] } })));
+  await flushProductEvents();
+  expect(eventsOf(ann.id, 'items_added')).toHaveLength(0); // still gathering
+  await flushUsage();
+  await flushProductEvents();
+  expect(eventsOf(ann.id, 'items_added').map((e) => e.properties)).toEqual([
+    expect.objectContaining({ type: 'sticky', count: 2, via: 'mcp', workspace: expect.stringMatching(/^[0-9a-f]{64}$/) }),
+  ]);
+  const everything = bodies.join('\n');
+  for (const secret of [board.id, 'Secret pricing', 'Acme', 'Claude']) expect(everything).not.toContain(secret);
+});
+
+it('items and comments from a request or a socket whose browser sends GPC or the opt-out cookie are not counted at all', async () => {
+  const bo = await person('Bo');
+  const board = await createBoard(bo.id, 'Plan', '', 'none');
+  await onRequest('api', () => changeBoard(board.id, { userId: bo.id, role: 'owner' }, () => ({ change: { create: [sticky('r1', 'a')] } })), true);
+  noteBoardChange(socketChange(board.id, bo.id, [['w1', 'add', 'shape']], true));
+  noteComment(socketComment(board.id, bo.id, 'm1', true));
+  await flushUsage();
+  await flushProductEvents();
+  expect(events().filter((e) => e.distinct_id === pseudonym('account', bo.id) && ['items_added', 'comment_added'].includes(e.event))).toEqual([]);
+
+  // The same from a socket that sends no signal is counted.
+  noteBoardChange(socketChange(board.id, bo.id, [['w2', 'add', 'shape']]));
+  noteComment(socketComment(board.id, bo.id, 'm2'));
+  noteComment(socketComment(board.id, bo.id, 'm3'));
+  await flushUsage();
+  await flushProductEvents();
+  expect(eventsOf(bo.id, 'items_added').map((e) => [e.properties.type, e.properties.count, e.properties.via])).toEqual([['shape', 1, 'app']]);
+  expect(eventsOf(bo.id, 'comment_added').map((e) => [e.properties.count, e.properties.via])).toEqual([[2, 'app']]);
+  expect(bodies.join('\n')).not.toContain('Q3 pricing');
+});
+
+it('an item type outside the element types (a client writes it) is dropped, never sent', async () => {
+  const cy = await person('Cy');
+  const board = await createBoard(cy.id, 'Plan', '', 'none');
+  noteBoardChange(socketChange(board.id, cy.id, [['a', 'add', 'sticky'], ['b', 'add', 'Q3 plan for Initech']]));
+  await flushUsage();
+  await flushProductEvents();
+  expect(eventsOf(cy.id, 'items_added').map((e) => [e.properties.type, e.properties.count])).toEqual([['sticky', 1]]);
+  expect(bodies.join('\n')).not.toContain('Initech');
+});
+
+it('accepting an app’s proposed changes sends one agent_proposal_resolved with how many, for the person who decided', async () => {
+  const dee = await person('Dee');
+  const board = await createBoard(dee.id, 'Plan', '', 'none');
+  const editor = { userId: dee.id, role: 'owner' as const };
+  const author = { kind: 'app' as const, name: 'Planner bot', userId: dee.id, userName: dee.name, credentialId: 'tok1' };
+  const { records } = await proposeSuggestions(board.id, editor, { author, description: 'Ideas' }, () => ({ change: { create: [sticky('p1', 'x'), sticky('p2', 'y'), sticky('p3', 'z')] } }));
+  await onRequest('api', () => decideSuggestions(board.id, editor, { groupId: records[0].groupId, status: 'accepted' }));
+  await flushUsage();
+  await flushProductEvents();
+  expect(eventsOf(dee.id, 'agent_proposal_resolved').map((e) => [e.properties.outcome, e.properties.proposer, e.properties.count])).toEqual([['accepted', 'app', 3]]);
+});
+
+it('editing the same doc twice in a day sends one doc_edited, never which doc', async () => {
+  const eve = await person('Eve');
+  const doc = await createDoc(eve.id, { title: 'Initech notes' });
+  const actor = { userId: eve.id, role: 'owner' as const, name: eve.name };
+  await onRequest('api', () => appendMarkdown(doc.id, actor, 'First line'));
+  await onRequest('api', () => appendMarkdown(doc.id, actor, 'Second line'));
+  await flushUsage();
+  await flushProductEvents();
+  expect(eventsOf(eve.id, 'doc_edited').map((e) => e.properties.via)).toEqual(['api']);
+  const everything = bodies.join('\n');
+  for (const secret of [doc.id, 'Initech', 'First line']) expect(everything).not.toContain(secret);
 });
 
 it('events still queued when the server shuts down are sent before it stops', async () => {

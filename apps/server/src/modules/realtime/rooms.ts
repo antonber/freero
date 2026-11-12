@@ -98,7 +98,7 @@ import { getUser, noteSessionActivity } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
 import { cardAssignments, emitCardAssignments, hasCardListeners } from './cards';
-import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
+import { elementChanges, ELEMENTS, emitBoardChange, emitDocEdited, hasBoardChangeListeners, requestDoor, socketDoor } from './changes';
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents, type CommentLayer, type CommentMessageEvent } from './comments';
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
@@ -251,6 +251,11 @@ export interface Admission {
    */
   ip?: string | null;
   /**
+   * The socket's upgrade asked not to be tracked (GPC, DNT, the opt-out cookie; its request
+   * context's `privacySignal`): product analytics counts nothing this socket does.
+   */
+  privacySignal?: boolean;
+  /**
    * An anonymous visitor of a board embedded on another site (#2): it publishes no presence (a
    * public page's readers never crowd the board's people) and has no private layer.
    */
@@ -284,6 +289,8 @@ interface Conn {
   ownAccess: Role;
   /** See Admission.ip. */
   ip: string | null;
+  /** See Admission.privacySignal. */
+  privacySignal: boolean;
   /**
    * The role the socket READS the board's layers with: `ownAccess` as limited by the facilitation
    * session. Equal to `role` except on a capped socket (#89): a live view in an AI assistant shows
@@ -530,7 +537,8 @@ class Room {
     for (const name of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) this.doc.getMap<unknown>(name);
     // A doc's document (KAI-162; @freero/shared docs.ts): typed up front, so nothing ever reads
     // the fragment as a map (restore, readers) and every room — board or doc — is the same room.
-    this.doc.getXmlFragment(DOC_FRAGMENT);
+    // Its text changed by a socket or a request on this instance (product analytics' doc_edited).
+    this.doc.getXmlFragment(DOC_FRAGMENT).observeDeep((_events, tr) => this.reportDocEdit(tr.origin));
 
     this.ready = this.open();
   }
@@ -586,7 +594,8 @@ class Room {
       const conn = tr.origin instanceof WebSocket ? this.conns.get(tr.origin) : undefined;
       if (!conn || !hasCommentListeners()) return;
       const keys = new Map([...event.changes.keys].filter(([key, c]) => !(c.action === 'add' && this.commentMovedIn(doc, key, now))));
-      emitCommentMessages(messageEvents(this.id, comments, keys, conn.userId, layer));
+      const door = socketDoor(conn.privacySignal);
+      emitCommentMessages(messageEvents(this.id, comments, keys, conn.userId, layer).map((e) => ({ ...e, door })));
     });
   }
 
@@ -621,11 +630,12 @@ class Room {
   }
 
   /** Comment messages a socket wrote that the placement guard moved to their thread's layer. */
-  private reportMovedComments(moved: MovedEntry[], authorId: string): void {
+  private reportMovedComments(moved: MovedEntry[], conn: Conn): void {
     const keys = new Map(
       moved.filter((m) => m.name === COMMENTS_COLLECTION).map((m) => [m.key, { action: m.before === undefined ? ('add' as const) : ('update' as const), oldValue: m.before }]),
     );
-    if (keys.size && hasCommentListeners()) emitCommentMessages(this.commentEvents(keys, authorId));
+    const door = socketDoor(conn.privacySignal);
+    if (keys.size && hasCommentListeners()) emitCommentMessages(this.commentEvents(keys, conn.userId).map((e) => ({ ...e, door })));
   }
 
   private placingServerContent = false;
@@ -688,9 +698,25 @@ class Room {
     const request = origin instanceof RequestOrigin ? origin.actor : undefined;
     if ((!conn && !request) || !hasBoardChangeListeners()) return;
     const { changes, frameTitles } = elementChanges(layer, elements, this.doc.getMap<unknown>(ELEMENTS), keys);
-    if (conn) emitBoardChange({ boardId: this.id, actorId: conn.userId, actorName: conn.identity.value.name, layer, changes, frameTitles });
+    if (conn) emitBoardChange({ boardId: this.id, actorId: conn.userId, actorName: conn.identity.value.name, layer, changes, frameTitles, door: socketDoor(conn.privacySignal) });
     else if (request)
-      emitBoardChange({ boardId: this.id, actorId: request.userId, actorName: request.name ?? '', ...(request.via ? { via: request.via } : {}), layer, changes, frameTitles });
+      emitBoardChange({
+        boardId: this.id,
+        actorId: request.userId,
+        actorName: request.name ?? '',
+        ...(request.via ? { via: request.via } : {}),
+        layer,
+        changes,
+        frameTitles,
+        door: requestDoor(),
+      });
+  }
+
+  /** A change of a doc's text (any room has the fragment; only a doc's ever changes). */
+  private reportDocEdit(origin: unknown): void {
+    const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
+    if (conn) emitDocEdited({ docId: this.id, actorId: conn.userId, door: socketDoor(conn.privacySignal) });
+    else if (origin instanceof RequestOrigin) emitDocEdited({ docId: this.id, actorId: origin.actor.userId, door: requestDoor() });
   }
 
   /**
@@ -818,7 +844,7 @@ class Room {
       }
       if (decided.length) {
         void auditDecisions(this.id, conn.userId, decided, 'board');
-        emitSuggestionsDecided(this.id, conn.userId, decided);
+        emitSuggestionsDecided(this.id, conn.userId, decided, socketDoor(conn.privacySignal));
       }
     }
   }
@@ -1160,6 +1186,7 @@ class Room {
       coOwner: a.coOwner === true,
       ownAccess: a.role,
       ip: a.ip ?? null,
+      privacySignal: a.privacySignal === true,
       readRole: access === a.role ? eff.role : effectiveAccess(a.role, a.userId, session).role,
       limits: eff.limits,
       participant: (a.kind ?? 'board') === 'board' && isParticipant(eff.role, participationIsOpen(this.doc)),
@@ -1292,7 +1319,7 @@ class Room {
         fixed = moved.length > 0 || fixed;
         if (syncType === syncProtocol.messageYjsSyncStep2) conn.offlineWrites = { writes: elementWritesIn(tr, this.doc), at: Date.now() };
       }, conn.ws);
-      this.reportMovedComments(moved, conn.userId);
+      this.reportMovedComments(moved, conn);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
       return;
@@ -1320,7 +1347,7 @@ class Room {
         }
         moved = guardContentPlacement(tr, this.doc, { editors: this.layers.get(EDITORS_LAYER)?.doc, own: undefined }, SERVER_ORIGIN);
       }, conn.ws);
-      this.reportMovedComments(moved, conn.userId);
+      this.reportMovedComments(moved, conn);
       if (moved.length || fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
       // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
@@ -1382,7 +1409,7 @@ class Room {
       fixed = guardAttribution(tr, elements, conn.userId, known, conn.guestName ?? undefined) > 0 || fixed;
       moved = guardContentPlacement(tr, this.doc, { editors: this.layers.get(EDITORS_LAYER)?.doc, own: undefined }, SERVER_ORIGIN);
     }, conn.ws);
-    this.reportMovedComments(moved, conn.userId);
+    this.reportMovedComments(moved, conn);
     if (fixed || moved.length) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
     if (refused) this.tellGuest(conn, refused, now);
     return true;
@@ -1773,10 +1800,11 @@ export async function admitSocket(
   const entry = { ws, sessionKey };
   admitting.add(entry);
   const ip = currentRequestContext()?.ip ?? null; // the upgrade's address (#156)
+  const privacySignal = currentRequestContext()?.privacySignal === true; // and whether it asked not to be tracked
   try {
     let since = accessVersion; // before authorizing: a change from here on makes its answer stale
     const authorized = await authorize();
-    let a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip };
+    let a = 'code' in authorized ? authorized : { ...authorized, ip: authorized.ip ?? ip, privacySignal };
     if ('code' in a) return ws.close(a.code, a.reason);
     for (let rechecks = 0; ; rechecks++) {
       const room = getRoom(a.boardId);
@@ -2022,7 +2050,7 @@ export async function changeBoard<T extends { change: BoardChange }>(
     const applied = applyChange(room.doc, docs, planned.change, actor, new RequestOrigin(actor));
     // A comment written on a request is the actor's, like one from their socket (mentions, replies).
     if (before.size && hasCommentListeners())
-      emitCommentMessages(room.commentEvents(before, actor.userId).map((e) => (actor.via ? { ...e, via: actor.via } : e)));
+      emitCommentMessages(room.commentEvents(before, actor.userId).map((e) => ({ ...e, ...(actor.via ? { via: actor.via } : {}), door: requestDoor() })));
     await room.saveNow();
     return { ...planned, applied };
   });
@@ -2106,7 +2134,7 @@ export async function decideSuggestions(
   });
   const steps = out.records.map((record) => ({ record, from: undefined, to: out.decision }));
   await auditDecisions(boardId, actor.userId, steps, 'api');
-  emitSuggestionsDecided(boardId, actor.userId, steps);
+  emitSuggestionsDecided(boardId, actor.userId, steps, requestDoor());
   return out;
 }
 
