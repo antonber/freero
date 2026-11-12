@@ -6,6 +6,7 @@
 // can be featured or removed (and a removal appealed), with the same record and audit trail.
 // "Templates" (#162): boards submitted to the public community template gallery (GalleryView).
 // "Problems": what people sent with "Report a problem" (bugs, not abuse; ProblemsView).
+// "Public links": boards whose link opens them right now, to spot-check (PublicLinksView).
 // "Microsoft 365 apps" (#112, #114): this instance's Teams app and Copilot agent packages, to upload
 // in Teams (docs/integrations/teams.md).
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -34,6 +35,7 @@ import { relativeTime } from '../../lib/time';
 import { NotFoundPage } from '../NotFoundPage';
 import { GalleryView } from './GalleryView';
 import { ProblemsView } from './ProblemsView';
+import { PublicLinksView } from './PublicLinksView';
 import { t as tr } from './messages';
 import './operator.css';
 
@@ -63,7 +65,7 @@ const ACTION_LABEL: Record<ModerationActionKind, string> = {
 const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'board.delete', 'upload.remove', 'upload.purge', 'user.suspend', 'listing.reject', 'listing.remove', 'gallery.reject', 'gallery.remove'];
 /** Reviews of a listing, not findings of abuse: no report reason to pick. */
 const NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature', 'gallery.approve', 'gallery.reject', 'gallery.restore'];
-type View = 'open' | 'closed' | 'listings' | 'gallery' | 'problems';
+type View = 'open' | 'closed' | 'listings' | 'gallery' | 'problems' | 'public-links';
 const LISTING_STATUSES: Array<{ value: ListingStatus; label: string }> = [
   { value: 'pending', label: tr('waitingForReview') },
   { value: 'approved', label: tr('live') },
@@ -86,9 +88,10 @@ export function OperatorPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [params, setParams] = useSearchParams();
   const asked = params.get('view');
-  const view: View = asked === 'listings' || asked === 'closed' || asked === 'problems' || asked === 'gallery' ? asked : 'open';
+  const view: View = asked === 'listings' || asked === 'closed' || asked === 'problems' || asked === 'gallery' || asked === 'public-links' ? asked : 'open';
   const [problemsVersion, setProblemsVersion] = useState(0);
   const [galleryVersion, setGalleryVersion] = useState(0);
+  const [publicLinksVersion, setPublicLinksVersion] = useState(0);
   const setView = (v: View) => setParams(v === 'open' ? {} : { view: v }, { replace: true });
   const status = view === 'closed' ? 'closed' : 'open';
   const [listingStatus, setListingStatus] = useState<ListingStatus>('pending');
@@ -109,6 +112,7 @@ export function OperatorPage() {
   const load = useCallback(() => {
     if (view === 'problems') return setProblemsVersion((v) => v + 1);
     if (view === 'gallery') return setGalleryVersion((v) => v + 1);
+    if (view === 'public-links') return setPublicLinksVersion((v) => v + 1);
     if (view === 'listings') {
       setListings(null);
       api.moderationListings(listingStatus).then(
@@ -164,6 +168,7 @@ export function OperatorPage() {
             { value: 'listings', label: tr('listings') },
             { value: 'gallery', label: tr('templatesTab') },
             { value: 'problems', label: tr('problems') },
+            { value: 'public-links', label: tr('publicLinks') },
           ]}
         />
         <Button variant="ghost" size="sm" icon={RefreshCw} onClick={load}>{tr('refresh')}</Button>
@@ -171,6 +176,10 @@ export function OperatorPage() {
       {view === 'problems' ? (
         <div className="fr-op__body fr-op__body--single">
           <ProblemsView version={problemsVersion} />
+        </div>
+      ) : view === 'public-links' ? (
+        <div className="fr-op__body fr-op__body--single fr-op__body--wide">
+          <PublicLinksView version={publicLinksVersion} onAct={setPending} />
         </div>
       ) : (
       <div className="fr-op__body">
