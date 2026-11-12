@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "Moldura sem título",
   "couldNotChangeEmbedding": "Não foi possível alterar a incorporação",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "{name} agora tem acesso ({role})",
   "declinedNameSRequest": "Pedido de {name} recusado",
   "couldNotAnswerTheRequest": "Não foi possível responder ao pedido",
-  "yourInbox": "sua caixa de entrada",
-  "checkValueForTheConfirmation": "Procure o link de confirmação em {value}",
   "couldNotSendTheLink": "Não foi possível enviar o link",
   "youLeftTheBoard": "Você saiu do quadro",
   "couldNotLeaveTheBoard": "Não foi possível sair do quadro",
@@ -869,7 +866,6 @@
   "openInFreero": "Abrir no Freero",
   "aNewVersionOfFreero": "Uma nova versão do Freero está pronta.",
   "reload": "Recarregar",
-  "sentOpenTheLinkWe": "Enviado! Abra o link que enviamos para {email}.",
   "confirmYourEmailAddressEmail": "Confirme seu endereço de e-mail ({email}) para convidar pessoas e compartilhar quadros.",
   "help": "Ajuda",
   "reportAProblem2": "Relatar um problema…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "O proprietário do quadro removeu você como convidado, então este navegador não pode entrar de novo por enquanto.",
   "errors.guest_editing_off": "Convidados não podem editar quadros neste espaço de trabalho.",
   "errors.guest_editing_needs_edit_link": "Defina primeiro o link como “Pode editar”: convidados só editam por um link de edição.",
-  "errors.guest_removed": "O proprietário do quadro removeu você deste quadro."
+  "errors.guest_removed": "O proprietário do quadro removeu você deste quadro.",
+  "verifyEmail.sent": "Enviado para {email}. Pode levar alguns minutos para chegar. Não está na caixa de entrada? Verifique o spam ou lixo eletrônico. Endereços de trabalho às vezes retêm em quarentena e-mails de remetentes novos: procure lá uma mensagem do Freero ou peça à equipe de TI para liberá-la.",
+  "verifyEmail.limited": "Já enviamos vários links para você, e só o mais recente funciona. Procure uma mensagem do Freero no spam ou na quarentena, ou tente de novo {unit, select, minutes {em {count, plural, one {# minuto} other {# minutos}}} seconds {em {count, plural, one {# segundo} other {# segundos}}} other {mais tarde}}."
 }

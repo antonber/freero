@@ -152,8 +152,6 @@
   "emailASummaryOfChanges": "Email a summary of changes on your boards",
   "showNotificationsOnThisDevice": "Show notifications on this device",
   "notificationsAreBlockedForFreero": "Notifications are blocked for Freero. Allow them in your system or browser settings, then try again.",
-  "confirmationLinkSentToEmail": "Confirmation link sent to {email}",
-  "couldNotSendTheLink": "Could not send the link",
   "couldNotStartTheChange": "Could not start the change",
   "emailAddress": "Email address",
   "usedToLogInAnd": "Used to log in and to receive invites.",

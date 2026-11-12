@@ -5,6 +5,7 @@ import type { BoardAccessRequest, BoardMember, BoardMemberRole, BoardSummary, Li
 import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { useVerificationResend } from '../auth/verificationResend';
 import { copyText } from '../lib/hooks';
 import { EmbedSettings } from './EmbedSettings';
 import { LinkedFrom } from './LinkedFrom';
@@ -148,6 +149,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
   const editorKeptOut = !canInvite && myRole === 'editor' && board?.sharing?.editorsCanShare === false;
   const linkPolicy = board?.permissions.linkPolicy;
   const verified = user?.emailVerified !== false;
+  const verification = useVerificationResend(user?.email ?? '');
   // People with team access are the "Everyone in <team>" row below, not one row each (and have no
   // board membership to leave).
   const isMember = !!members?.some((m) => m.userId === user?.id && !m.team);
@@ -246,15 +248,6 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     }
   };
 
-  const resendVerification = async () => {
-    try {
-      await api.resendVerification();
-      notify(t('checkValueForTheConfirmation', { value: user?.email ?? t('yourInbox') }), 'success');
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : t('couldNotSendTheLink'), 'error');
-    }
-  };
-
   const leave = async () => {
     if (!user) return;
     setLeaving(true);
@@ -318,7 +311,9 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
         ) : (
           <div className="fr-share">
             {canInvite && !verified ? (
-              <div className="fr-share__note fr-share__note--verify" role="status">{t('confirmYourEmailAddressTo')}<Button variant="ghost" size="sm" icon={Mail} onClick={resendVerification}>{t('resendLink')}</Button>
+              <div className="fr-share__note fr-share__note--verify" role="status">
+                <span>{verification.notice ? verification.notice.text : t('confirmYourEmailAddressTo')}</span>
+                <Button variant="ghost" size="sm" icon={Mail} onClick={verification.resend} disabled={verification.busy}>{t('resendLink')}</Button>
               </div>
             ) : canInvite ? (
               <form className="fr-share__invite" onSubmit={invite} noValidate>

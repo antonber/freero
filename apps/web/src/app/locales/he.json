@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "מסגרת ללא שם",
   "couldNotChangeEmbedding": "לא ניתן לשנות את ההטמעה",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "ל־{name} יש עכשיו גישה ({role})",
   "declinedNameSRequest": "הבקשה של {name} נדחתה",
   "couldNotAnswerTheRequest": "לא ניתן להשיב לבקשה",
-  "yourInbox": "תיבת הדואר הנכנס",
-  "checkValueForTheConfirmation": "קישור האישור נמצא ב{value}",
   "couldNotSendTheLink": "לא ניתן לשלוח את הקישור",
   "youLeftTheBoard": "יצאת מהלוח",
   "couldNotLeaveTheBoard": "לא ניתן לצאת מהלוח",
@@ -869,7 +866,6 @@
   "openInFreero": "פתיחה ב־Freero",
   "aNewVersionOfFreero": "גרסה חדשה של Freero מוכנה.",
   "reload": "טעינה מחדש",
-  "sentOpenTheLinkWe": "נשלח! יש לפתוח את הקישור ששלחנו אל {email}.",
   "confirmYourEmailAddressEmail": "יש לאשר את כתובת האימייל ({email}) כדי להזמין אנשים ולשתף לוחות.",
   "help": "עזרה",
   "reportAProblem2": "דיווח על בעיה…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "בעל הלוח הסיר אתכם כאורחים, ולכן הדפדפן הזה לא יכול להצטרף שוב בינתיים.",
   "errors.guest_editing_off": "אורחים לא יכולים לערוך לוחות בסביבת העבודה הזו.",
   "errors.guest_editing_needs_edit_link": "הגדירו קודם את הקישור ל\"יכול לערוך\": אורחים עורכים רק דרך קישור עריכה.",
-  "errors.guest_removed": "בעל הלוח הסיר אתכם מהלוח הזה."
+  "errors.guest_removed": "בעל הלוח הסיר אתכם מהלוח הזה.",
+  "verifyEmail.sent": "נשלח אל {email}. ייתכן שיעברו כמה דקות עד שיגיע. לא בתיבת הדואר הנכנס? כדאי לבדוק בתיקיית הספאם או דואר הזבל. כתובות בעבודה מעכבות לפעמים בהסגר דואר משולחים חדשים: אפשר לחפש שם הודעה מ-Freero, או לבקש מצוות ה-IT לאשר אותה.",
+  "verifyEmail.limited": "כבר שלחנו לך כמה קישורים, ורק החדש ביותר עובד. אפשר לחפש הודעה מ-Freero בספאם או בהסגר, או לנסות שוב {unit, select, minutes {בעוד {count, plural, one {דקה} two {שתי דקות} other {# דקות}}} seconds {בעוד {count, plural, one {שנייה} two {שתי שניות} other {# שניות}}} other {מאוחר יותר}}."
 }

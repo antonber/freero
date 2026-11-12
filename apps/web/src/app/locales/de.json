@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "Unbenannter Rahmen",
   "couldNotChangeEmbedding": "Einbettung konnte nicht geändert werden",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "{name} hat jetzt Zugriff ({role})",
   "declinedNameSRequest": "Anfrage von {name} abgelehnt",
   "couldNotAnswerTheRequest": "Anfrage konnte nicht beantwortet werden",
-  "yourInbox": "Ihr Postfach",
-  "checkValueForTheConfirmation": "Prüfen Sie {value} auf den Bestätigungslink",
   "couldNotSendTheLink": "Link konnte nicht gesendet werden",
   "youLeftTheBoard": "Sie haben das Board verlassen",
   "couldNotLeaveTheBoard": "Board konnte nicht verlassen werden",
@@ -869,7 +866,6 @@
   "openInFreero": "In Freero öffnen",
   "aNewVersionOfFreero": "Eine neue Version von Freero ist verfügbar.",
   "reload": "Neu laden",
-  "sentOpenTheLinkWe": "Gesendet! Öffnen Sie den Link, den wir an {email} geschickt haben.",
   "confirmYourEmailAddressEmail": "Bestätigen Sie Ihre E-Mail-Adresse ({email}), um Personen einzuladen und Boards zu teilen.",
   "help": "Hilfe",
   "reportAProblem2": "Problem melden …",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "Der Eigentümer des Boards hat Sie als Gast entfernt, daher kann dieser Browser vorerst nicht wieder beitreten.",
   "errors.guest_editing_off": "Gäste können in diesem Workspace keine Boards bearbeiten.",
   "errors.guest_editing_needs_edit_link": "Stellen Sie den Link zuerst auf „Kann bearbeiten“: Gäste bearbeiten nur über einen Bearbeitungslink.",
-  "errors.guest_removed": "Der Eigentümer des Boards hat Sie von diesem Board entfernt."
+  "errors.guest_removed": "Der Eigentümer des Boards hat Sie von diesem Board entfernt.",
+  "verifyEmail.sent": "An {email} gesendet. Es kann ein paar Minuten dauern. Nicht im Posteingang? Sehen Sie im Spam- oder Junk-Ordner nach. Geschäftliche Adressen halten Mails von neuen Absendern manchmal in Quarantäne: Suchen Sie dort nach einer Nachricht von Freero, oder bitten Sie Ihre IT, sie freizugeben.",
+  "verifyEmail.limited": "Wir haben Ihnen bereits mehrere Links geschickt, und nur der neueste funktioniert. Sehen Sie im Spam-Ordner oder in der Quarantäne nach einer Nachricht von Freero, oder versuchen Sie es {unit, select, minutes {in {count, plural, one {# Minute} other {# Minuten}}} seconds {in {count, plural, one {# Sekunde} other {# Sekunden}}} other {später}} erneut."
 }
