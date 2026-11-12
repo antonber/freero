@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "Cadre sans titre",
   "couldNotChangeEmbedding": "Impossible de modifier l’intégration",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "{name} a désormais accès ({role})",
   "declinedNameSRequest": "Demande de {name} refusée",
   "couldNotAnswerTheRequest": "Impossible de répondre à la demande",
-  "yourInbox": "votre boîte de réception",
-  "checkValueForTheConfirmation": "Consultez {value} pour trouver le lien de confirmation",
   "couldNotSendTheLink": "Impossible d’envoyer le lien",
   "youLeftTheBoard": "Vous avez quitté le tableau",
   "couldNotLeaveTheBoard": "Impossible de quitter le tableau",
@@ -869,7 +866,6 @@
   "openInFreero": "Ouvrir dans Freero",
   "aNewVersionOfFreero": "Une nouvelle version de Freero est disponible.",
   "reload": "Recharger",
-  "sentOpenTheLinkWe": "Envoyé ! Ouvrez le lien que nous avons envoyé à {email}.",
   "confirmYourEmailAddressEmail": "Confirmez votre adresse e-mail ({email}) pour inviter des personnes et partager des tableaux.",
   "help": "Aide",
   "reportAProblem2": "Signaler un problème…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "Le propriétaire du tableau vous a retiré en tant qu’invité : ce navigateur ne peut pas le rejoindre pour l’instant.",
   "errors.guest_editing_off": "Les invités ne peuvent pas modifier les tableaux de cet espace de travail.",
   "errors.guest_editing_needs_edit_link": "Réglez d’abord le lien sur « Peut modifier » : les invités ne modifient que par un lien de modification.",
-  "errors.guest_removed": "Le propriétaire du tableau vous a retiré de ce tableau."
+  "errors.guest_removed": "Le propriétaire du tableau vous a retiré de ce tableau.",
+  "verifyEmail.sent": "Envoyé à {email}. L’arrivée peut prendre quelques minutes. Pas dans votre boîte de réception ? Vérifiez les spams ou courriers indésirables. Les adresses professionnelles mettent parfois en quarantaine les messages de nouveaux expéditeurs : cherchez-y un message de Freero, ou demandez à votre service informatique de le laisser passer.",
+  "verifyEmail.limited": "Nous vous avons déjà envoyé plusieurs liens, et seul le plus récent fonctionne. Cherchez un message de Freero dans les spams ou la quarantaine, ou réessayez {unit, select, minutes {dans {count, plural, one {# minute} other {# minutes}}} seconds {dans {count, plural, one {# seconde} other {# secondes}}} other {plus tard}}."
 }

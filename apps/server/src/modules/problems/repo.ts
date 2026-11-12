@@ -1,4 +1,5 @@
-// The only writer of `problem_reports` ("Report a problem") and `problem_screenshot_deletions`.
+// The only writer of `problem_reports` ("Report a problem"), `problem_screenshot_deletions` and
+// `problem_alerts`.
 import type { ProblemDiagnostics, ProblemStatus } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
 
@@ -183,4 +184,38 @@ export async function screenshotsToDelete(limit: number): Promise<string[]> {
 /** The screenshot's file is deleted: nothing is left to do for it. */
 export async function screenshotDeleted(key: string): Promise<void> {
   await query(`DELETE FROM problem_screenshot_deletions WHERE key = $1`, [key]);
+}
+
+// ---- operator alerts (problem_alerts) ----
+
+/**
+ * Claims the alert for `email` at `now`, when a report still `new` arrived since its last alert
+ * and that alert was sent at or before `sentBefore` (never sent counts as long ago). One statement:
+ * the conflict's WHERE is re-checked on the row as it is after a concurrent claim, so of two claims
+ * at once (two reports, two instances) only one returns true.
+ */
+export async function claimAlert(email: string, now: number, sentBefore: number): Promise<boolean> {
+  const r = await one(
+    `INSERT INTO problem_alerts AS a (email, sent_at)
+     SELECT $1, $2
+     WHERE EXISTS (
+       SELECT 1 FROM problem_reports p
+       WHERE p.status = 'new'
+         AND p.created_at > COALESCE((SELECT sent_at FROM problem_alerts WHERE email = $1), '-infinity'::timestamptz))
+     ON CONFLICT (email) DO UPDATE SET sent_at = EXCLUDED.sent_at WHERE a.sent_at <= $3
+     RETURNING email`,
+    [email, new Date(now), new Date(sentBefore)],
+  );
+  return r !== null;
+}
+
+/** How many reports wait untriaged (status `new`). */
+export async function countNew(): Promise<number> {
+  const r = await one<{ n: string | number }>(`SELECT COUNT(*) AS n FROM problem_reports WHERE status = 'new'`);
+  return Number(r?.n ?? 0);
+}
+
+/** Forgets the alerts of addresses that aren't operators any more. */
+export async function forgetAlertsExcept(emails: string[]): Promise<void> {
+  await query(`DELETE FROM problem_alerts WHERE NOT (email = ANY($1::text[]))`, [emails]);
 }

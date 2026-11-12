@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "Marco sin título",
   "couldNotChangeEmbedding": "No se pudo cambiar la inserción",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "{name} ahora tiene acceso ({role})",
   "declinedNameSRequest": "Se rechazó la solicitud de {name}",
   "couldNotAnswerTheRequest": "No se pudo responder a la solicitud",
-  "yourInbox": "tu bandeja de entrada",
-  "checkValueForTheConfirmation": "Busca el enlace de confirmación en {value}",
   "couldNotSendTheLink": "No se pudo enviar el enlace",
   "youLeftTheBoard": "Has salido del tablero",
   "couldNotLeaveTheBoard": "No se pudo salir del tablero",
@@ -869,7 +866,6 @@
   "openInFreero": "Abrir en Freero",
   "aNewVersionOfFreero": "Hay una nueva versión de Freero lista.",
   "reload": "Recargar",
-  "sentOpenTheLinkWe": "¡Enviado! Abre el enlace que enviamos a {email}.",
   "confirmYourEmailAddressEmail": "Confirma tu dirección de correo ({email}) para invitar a personas y compartir tableros.",
   "help": "Ayuda",
   "reportAProblem2": "Informar de un problema…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "El propietario del tablero te quitó como invitado, así que este navegador no puede volver a unirse por ahora.",
   "errors.guest_editing_off": "Los invitados no pueden editar tableros en este espacio de trabajo.",
   "errors.guest_editing_needs_edit_link": "Primero configura el enlace como «Puede editar»: los invitados solo editan mediante un enlace de edición.",
-  "errors.guest_removed": "El propietario del tablero te quitó de este tablero."
+  "errors.guest_removed": "El propietario del tablero te quitó de este tablero.",
+  "verifyEmail.sent": "Enviado a {email}. Puede tardar unos minutos en llegar. ¿No está en tu bandeja de entrada? Revisa spam o correo no deseado. Las direcciones de trabajo a veces retienen en cuarentena el correo de remitentes nuevos: busca ahí un mensaje de Freero o pide a tu equipo de TI que lo deje pasar.",
+  "verifyEmail.limited": "Ya te hemos enviado varios enlaces y solo funciona el más reciente. Busca un mensaje de Freero en spam o en cuarentena, o vuelve a intentarlo {unit, select, minutes {en {count, plural, one {# minuto} other {# minutos}}} seconds {en {count, plural, one {# segundo} other {# segundos}}} other {más tarde}}."
 }

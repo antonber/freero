@@ -7,6 +7,7 @@ import { describeDevice, REAUTH_REQUIRED, type SecurityInfo, type SessionInfo, t
 import { Button, Input, Modal, Spinner, useToast } from '@ui';
 import { api, ApiError, providerUrl } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { useVerificationResend } from '../../auth/verificationResend';
 import { relativeTime } from '../../lib/time';
 import { ProviderMark, providerErrorText } from '../auth/ProviderButtons';
 import { SettingsSection } from './Section';
@@ -458,7 +459,7 @@ export function TwoFactorSection({
 
 export function EmailSection({ security }: { security: SecurityInfo | null }) {
   const { user } = useAuth();
-  const notify = useToast();
+  const verification = useVerificationResend(user?.email ?? '');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -468,15 +469,6 @@ export function EmailSection({ security }: { security: SecurityInfo | null }) {
   if (!user) return null;
   // Accounts without a password confirm with a recent provider sign-in instead.
   const askPassword = security?.hasPassword ?? true;
-
-  const resend = async () => {
-    try {
-      await api.resendVerification();
-      notify(t('confirmationLinkSentToEmail', { email: user.email }), 'success');
-    } catch (err) {
-      notify(errorText(err, t('couldNotSendTheLink')), 'error');
-    }
-  };
 
   const change = async (e: FormEvent) => {
     e.preventDefault();
@@ -507,10 +499,15 @@ export function EmailSection({ security }: { security: SecurityInfo | null }) {
           <>
             <span className="fr-acct-badge fr-acct-badge--warn">
               <CircleAlert size={14} aria-hidden />{' '}{t('notVerified')}</span>
-            <Button variant="ghost" size="sm" onClick={resend}>{t('resendLink')}</Button>
+            <Button variant="ghost" size="sm" onClick={verification.resend} disabled={verification.busy}>{t('resendLink')}</Button>
           </>
         )}
       </div>
+      {!user.emailVerified && verification.notice ? (
+        <p className={verification.notice.kind === 'failed' ? 'fr-acct__error' : 'fr-acct__p'} role={verification.notice.kind === 'failed' ? 'alert' : 'status'}>
+          {verification.notice.text}
+        </p>
+      ) : null}
       <form className="fr-acct-form" onSubmit={change} noValidate>
         <div className="fr-acct-form__grid">
           <Input label={t('newEmail')} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />

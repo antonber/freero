@@ -29,6 +29,7 @@ import { logError } from '../../platform/log';
 import { getUsers } from '../auth/index';
 import { notify } from '../notifications/index';
 import { deletePrivateImage, openPrivateImage, savePrivateImage } from '../uploads/index';
+import { alertOperatorsOfNewProblems } from './alerts';
 import * as repo from './repo';
 
 const MAX_OWN_LISTED = 100;
@@ -79,6 +80,8 @@ export async function createProblem(userId: string, body: Record<string, unknown
   // Never the app's copy as sent: only known fields, scrubbed again here, and this server's release.
   const diagnostics = { ...cleanProblemDiagnostics(body.diagnostics), release: getConfig().release };
   const row = await repo.insert({ id: newId(16), userId, note, contactOk: body.contactOk === true, diagnostics, createdAt: Date.now() });
+  // The report is filed whatever happens to the operators' email (the job tries again).
+  await alertOperatorsOfNewProblems().catch((e) => logError('problems: could not alert the operators', e));
   return own(row);
 }
 

@@ -1,37 +1,23 @@
-import { useState } from 'react';
 import { MailWarning } from 'lucide-react';
-import { Button, useToast } from '@ui';
-import { api, ApiError } from '../api/client';
+import { Button } from '@ui';
 import { useAuth } from '../auth/AuthContext';
+import { useVerificationResend } from '../auth/verificationResend';
 import { t } from '../messages';
 import '../pages/account/account.css';
 
 /** "Confirm your email" until the account's address is verified (inviting and sharing need it). */
 export function VerifyEmailBanner() {
   const { user } = useAuth();
-  const notify = useToast();
-  const [sent, setSent] = useState(false);
+  const { notice, busy, resend } = useVerificationResend(user?.email ?? '');
   if (!user || user.emailVerified) return null;
-
-  const resend = async () => {
-    try {
-      await api.resendVerification();
-      setSent(true);
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : t('couldNotSendTheLink'), 'error');
-    }
-  };
 
   return (
     <div className="fr-acct-verify" role="status">
       <MailWarning size={18} aria-hidden />
-      <span>
-        {sent
-          ? t('sentOpenTheLinkWe', { email: user.email })
-          : t('confirmYourEmailAddressEmail', { email: user.email })}
-      </span>
-      {sent ? null : (
-        <Button size="sm" variant="secondary" onClick={resend}>{t('resendLink')}</Button>
+      <span>{notice ? notice.text : t('confirmYourEmailAddressEmail', { email: user.email })}</span>
+      {/* Sent, or refused because links were sent already: another click wouldn't help. */}
+      {notice && notice.kind !== 'failed' ? null : (
+        <Button size="sm" variant="secondary" onClick={resend} disabled={busy}>{t('resendLink')}</Button>
       )}
     </div>
   );

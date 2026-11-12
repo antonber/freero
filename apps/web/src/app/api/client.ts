@@ -204,6 +204,8 @@ export class ApiError extends Error {
     message: string,
     /** Machine-readable reason, when the server sends one (e.g. ACCOUNT_PENDING_DELETION). */
     public code?: string,
+    /** The values the server's message names (`params`, only with a code), e.g. a 429's `{ unit, count }`. */
+    public params?: Record<string, string | number>,
   ) {
     super(message);
   }
@@ -212,15 +214,18 @@ export class ApiError extends Error {
 async function failure(res: Response): Promise<ApiError> {
   let message = res.statusText;
   let code: string | undefined;
+  let params: Record<string, string | number> | undefined;
   try {
     const body = await res.json();
     code = typeof body.code === 'string' ? body.code : undefined;
+    if (code && body.params && typeof body.params === 'object')
+      params = Object.fromEntries(Object.entries(body.params as Record<string, unknown>).filter((e): e is [string, string | number] => typeof e[1] === 'string' || typeof e[1] === 'number'));
     // The reader's language when the app knows the code (#5); the server's English otherwise.
     message = serverErrorText(code, body.params, body.error ?? message);
   } catch {
     // non-JSON error body
   }
-  return new ApiError(res.status, message, code);
+  return new ApiError(res.status, message, code, params);
 }
 
 async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {

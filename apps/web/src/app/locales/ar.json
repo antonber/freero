@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "إطار بلا عنوان",
   "couldNotChangeEmbedding": "تعذّر تغيير إعداد التضمين",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "أصبح لدى {name} صلاحية الوصول ({role})",
   "declinedNameSRequest": "تم رفض طلب {name}",
   "couldNotAnswerTheRequest": "تعذّر الرد على الطلب",
-  "yourInbox": "صندوق الوارد لديك",
-  "checkValueForTheConfirmation": "تحقق من {value} للعثور على رابط التأكيد",
   "couldNotSendTheLink": "تعذّر إرسال الرابط",
   "youLeftTheBoard": "غادرت اللوحة",
   "couldNotLeaveTheBoard": "تعذّرت مغادرة اللوحة",
@@ -869,7 +866,6 @@
   "openInFreero": "فتح في Freero",
   "aNewVersionOfFreero": "يتوفر إصدار جديد من Freero.",
   "reload": "إعادة التحميل",
-  "sentOpenTheLinkWe": "تم الإرسال! افتح الرابط الذي أرسلناه إلى {email}.",
   "confirmYourEmailAddressEmail": "أكّد عنوان بريدك الإلكتروني ({email}) لدعوة الأشخاص ومشاركة اللوحات.",
   "help": "المساعدة",
   "reportAProblem2": "الإبلاغ عن مشكلة…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "أزالك مالك اللوحة بصفتك ضيفًا، لذا لا يمكن لهذا المتصفح الانضمام إليها مجددًا حاليًا.",
   "errors.guest_editing_off": "لا يمكن للضيوف تعديل اللوحات في مساحة العمل هذه.",
   "errors.guest_editing_needs_edit_link": "اضبط الرابط أولًا على «يمكنه التعديل»: يعدّل الضيوف عبر رابط التعديل فقط.",
-  "errors.guest_removed": "أزالك مالك اللوحة من هذه اللوحة."
+  "errors.guest_removed": "أزالك مالك اللوحة من هذه اللوحة.",
+  "verifyEmail.sent": "أُرسل إلى {email}. قد يستغرق وصوله بضع دقائق. ليس في صندوق الوارد؟ تحقّق من مجلد الرسائل غير المرغوب فيها. قد تحتجز عناوين العمل البريد الوارد من مرسلين جدد في الحجر: ابحث هناك عن رسالة من Freero، أو اطلب من فريق تقنية المعلومات السماح بها.",
+  "verifyEmail.limited": "أرسلنا إليك عدة روابط بالفعل، والرابط الأحدث فقط هو الذي يعمل. ابحث عن رسالة من Freero في الرسائل غير المرغوب فيها أو الحجر، أو حاول مجددًا {unit, select, minutes {بعد {count, plural, zero {# دقيقة} one {دقيقة} two {دقيقتين} few {# دقائق} many {# دقيقة} other {# دقيقة}}} seconds {بعد {count, plural, zero {# ثانية} one {ثانية} two {ثانيتين} few {# ثوانٍ} many {# ثانية} other {# ثانية}}} other {لاحقًا}}."
 }

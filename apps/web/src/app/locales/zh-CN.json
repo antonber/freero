@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "未命名框架",
   "couldNotChangeEmbedding": "无法更改嵌入设置",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "{name} 现在拥有访问权限（{role}）",
   "declinedNameSRequest": "已拒绝 {name} 的请求",
   "couldNotAnswerTheRequest": "无法回复该请求",
-  "yourInbox": "你的收件箱",
-  "checkValueForTheConfirmation": "请在{value}中查收确认链接",
   "couldNotSendTheLink": "无法发送链接",
   "youLeftTheBoard": "你已离开白板",
   "couldNotLeaveTheBoard": "无法离开白板",
@@ -869,7 +866,6 @@
   "openInFreero": "在 Freero 中打开",
   "aNewVersionOfFreero": "Freero 新版本已就绪。",
   "reload": "重新加载",
-  "sentOpenTheLinkWe": "已发送！请打开我们发送到 {email} 的链接。",
   "confirmYourEmailAddressEmail": "请确认你的邮箱地址（{email}），以便邀请他人和分享白板。",
   "help": "帮助",
   "reportAProblem2": "报告问题…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "白板所有者已将你作为访客移除，此浏览器暂时无法再次加入。",
   "errors.guest_editing_off": "此工作区不允许访客编辑白板。",
   "errors.guest_editing_needs_edit_link": "请先将链接设为“可编辑”：访客只能通过编辑链接进行编辑。",
-  "errors.guest_removed": "白板所有者已将你移出此白板。"
+  "errors.guest_removed": "白板所有者已将你移出此白板。",
+  "verifyEmail.sent": "已发送到 {email}。可能需要几分钟才能收到。收件箱里没有？请查看垃圾邮件文件夹。工作邮箱有时会隔离新发件人的邮件：请在隔离区查找来自 Freero 的邮件，或请 IT 部门放行。",
+  "verifyEmail.limited": "我们已经给你发送了多个链接，只有最新的一个有效。请在垃圾邮件或隔离区查找来自 Freero 的邮件，或{unit, select, minutes {在 {count, plural, other {# 分钟}}后} seconds {在 {count, plural, other {# 秒}}后} other {稍后}}重试。"
 }

@@ -594,7 +594,11 @@ what they saw (private storage area, never under `/uploads/`), and diagnostics t
 (scrubbed of query strings, tokens and email addresses, in the browser and again on the server).
 Operators triage them in `/operator` → **Problems**: set the status (new, triaged, fixed, won't fix,
 duplicate), an internal note and the issue it became; **fixed** puts a notification in the
-reporter's inbox (once per report). Viewing a screenshot and every change is an audit event of the
+reporter's inbox (once per report). A new report emails every `OPERATOR_EMAILS` address “N new
+problem reports” (N = those still **new**) with a link to `/operator?view=problems`, at most once
+per address per 15 minutes; reports sent during those 15 minutes are counted in one email once
+they pass, and triaging everything stops them. The email never carries the note, the reporter's
+address, the diagnostics or the screenshot. Viewing a screenshot and every change is an audit event of the
 reporter's account (`problems.screenshot_viewed`, `problems.updated`). Rate limit
 `RATE_LIMIT_PROBLEM_REPORT` (10 an hour per person); the screenshot is capped at 2 MB, the
 diagnostics at 32 KB. Closed reports and their screenshots are deleted `PROBLEM_RETENTION_DAYS`

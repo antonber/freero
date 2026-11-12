@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "無題のフレーム",
   "couldNotChangeEmbedding": "埋め込み設定を変更できませんでした",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "{name}さんがアクセスできるようになりました（{role}）",
   "declinedNameSRequest": "{name}さんのリクエストを拒否しました",
   "couldNotAnswerTheRequest": "リクエストに応答できませんでした",
-  "yourInbox": "受信トレイ",
-  "checkValueForTheConfirmation": "{value}で確認リンクをご確認ください",
   "couldNotSendTheLink": "リンクを送信できませんでした",
   "youLeftTheBoard": "ボードから退出しました",
   "couldNotLeaveTheBoard": "ボードから退出できませんでした",
@@ -869,7 +866,6 @@
   "openInFreero": "Freeroで開く",
   "aNewVersionOfFreero": "Freeroの新しいバージョンが利用可能です。",
   "reload": "再読み込み",
-  "sentOpenTheLinkWe": "送信しました。{email}宛てのメールにあるリンクを開いてください。",
   "confirmYourEmailAddressEmail": "ユーザーを招待したりボードを共有したりするには、メールアドレス（{email}）を確認してください。",
   "help": "ヘルプ",
   "reportAProblem2": "問題を報告…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "ボードの所有者があなたをゲストから削除したため、このブラウザからは当面参加できません。",
   "errors.guest_editing_off": "このワークスペースではゲストはボードを編集できません。",
   "errors.guest_editing_needs_edit_link": "先にリンクを「編集可」にしてください。ゲストは編集用リンクからのみ編集できます。",
-  "errors.guest_removed": "ボードの所有者があなたをこのボードから削除しました。"
+  "errors.guest_removed": "ボードの所有者があなたをこのボードから削除しました。",
+  "verifyEmail.sent": "{email} に送信しました。届くまで数分かかることがあります。受信トレイにない場合は、迷惑メールフォルダーを確認してください。勤務先のアドレスでは、新しい送信者からのメールが検疫（隔離）されることがあります。そこで Freero からのメールを探すか、IT 担当者に受信の許可を依頼してください。",
+  "verifyEmail.limited": "すでに複数のリンクを送信しています。有効なのは最新のリンクだけです。迷惑メールや検疫（隔離）フォルダーで Freero からのメールを確認するか、{unit, select, minutes {{count, plural, other {#分}}後に} seconds {{count, plural, other {#秒}}後に} other {しばらくしてから}}もう一度お試しください。"
 }

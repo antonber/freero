@@ -91,8 +91,6 @@
   "nameNowHasAccessRole": "{name} now has access ({role})",
   "declinedNameSRequest": "Declined {name}’s request",
   "couldNotAnswerTheRequest": "Could not answer the request",
-  "yourInbox": "your inbox",
-  "checkValueForTheConfirmation": "Check {value} for the confirmation link",
   "couldNotSendTheLink": "Could not send the link",
   "youLeftTheBoard": "You left the board",
   "couldNotLeaveTheBoard": "Could not leave the board",
@@ -272,7 +270,6 @@
   "openInFreero": "Open in Freero",
   "aNewVersionOfFreero": "A new version of Freero is ready.",
   "reload": "Reload",
-  "sentOpenTheLinkWe": "Sent! Open the link we emailed to {email}.",
   "confirmYourEmailAddressEmail": "Confirm your email address ({email}) to invite people and share boards.",
   "help": "Help",
   "reportAProblem2": "Report a problem…",
@@ -593,5 +590,7 @@
   "theBoardSOwnerRemovedYou": "The board’s owner removed you as a guest, so this browser can’t join it again for now.",
   "errors.guest_editing_off": "Guests can’t edit boards in this workspace.",
   "errors.guest_editing_needs_edit_link": "Set the link to “Can edit” first: guests edit only through an edit link.",
-  "errors.guest_removed": "The board’s owner removed you from this board."
+  "errors.guest_removed": "The board’s owner removed you from this board.",
+  "verifyEmail.sent": "Sent to {email}. It can take a few minutes to arrive. Not in your inbox? Check spam or junk. Work addresses may hold mail from new senders in quarantine: look there for a message from Freero, or ask IT to let it through.",
+  "verifyEmail.limited": "We’ve already sent you several links, and only the newest one works. Check spam or quarantine for a message from Freero, or try again {unit, select, minutes {in {count, plural, one {# minute} other {# minutes}}} seconds {in {count, plural, one {# second} other {# seconds}}} other {later}}."
 }

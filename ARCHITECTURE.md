@@ -1648,7 +1648,7 @@ and decision snapshots" below, `marketplace` (marketplace_listings: community li
 agents; see "Apps & agents" below), `gallery` (gallery_templates: the community template gallery,
 #162; see "Community template gallery" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), `keys` (workspace_keys, workspace_data_keys: workspace
-encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports, problem_screenshot_deletions: “Report a problem”, see "Problem
+encryption keys, see "Workspace encryption keys" below), `ediscovery` (legal_cases, legal_case_workspaces, legal_case_subjects, legal_case_exports: eDiscovery cases and their legal holds, see "Legal holds and classification labels" below), and `problems` (problem_reports, problem_screenshot_deletions, problem_alerts: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
@@ -1931,6 +1931,12 @@ reports" below).
   `isOperator`: OPERATOR_EMAILS, verified — moved out of moderation so apiauth can ask it too) read
   and triage everything at `/api/operator/problems` and in `/operator` → Problems; everyone else gets
   404 there. Marking one `fixed` adds a `problem.fixed` notification (once, `dedupe_key`).
+- **Alerts** (`problems/alerts.ts`). A new report emails each OPERATOR_EMAILS address “N new problem
+  reports” (N = reports still `new`) with a link to `/operator?view=problems`, at most once per
+  address per 15 minutes: the first report of a quiet spell at once, later ones by the
+  `problems:alerts` job (every minute) once the window has passed. Nothing the reporter sent goes in
+  it (the mail provider is a third party). The window is `problem_alerts.sent_at`, claimed with one
+  conditional upsert (`claimAlert`), so two reports at once or two instances send one email.
 - **Machine access** (an automated morning review): `/api/v1/operator/problems` in modules/api, scope
   `problems:triage` (`OPERATOR_SCOPES` in `@freero/shared`). apiauth refuses to put an operator
   scope on anyone else's token and on OAuth/MCP consents (not in `OAUTH_SCOPES`), and `authenticate`

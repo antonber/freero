@@ -92,8 +92,6 @@
     "nameNowHasAccessRole",
     "declinedNameSRequest",
     "couldNotAnswerTheRequest",
-    "yourInbox",
-    "checkValueForTheConfirmation",
     "couldNotSendTheLink",
     "youLeftTheBoard",
     "couldNotLeaveTheBoard",
@@ -273,7 +271,6 @@
     "openInFreero",
     "aNewVersionOfFreero",
     "reload",
-    "sentOpenTheLinkWe",
     "confirmYourEmailAddressEmail",
     "help",
     "reportAProblem2",
@@ -594,7 +591,9 @@
     "theBoardSOwnerRemovedYou",
     "errors.guest_editing_off",
     "errors.guest_editing_needs_edit_link",
-    "errors.guest_removed"
+    "errors.guest_removed",
+    "verifyEmail.sent",
+    "verifyEmail.limited"
   ],
   "untitledFrame": "제목 없는 프레임",
   "couldNotChangeEmbedding": "임베드 설정을 바꾸지 못했어요",
@@ -688,8 +687,6 @@
   "nameNowHasAccessRole": "이제 {name} 님이 액세스할 수 있어요({role})",
   "declinedNameSRequest": "{name} 님의 요청을 거절했어요",
   "couldNotAnswerTheRequest": "요청에 응답하지 못했어요",
-  "yourInbox": "받은편지함",
-  "checkValueForTheConfirmation": "{value}에서 확인 링크를 확인하세요",
   "couldNotSendTheLink": "링크를 보내지 못했어요",
   "youLeftTheBoard": "보드에서 나갔어요",
   "couldNotLeaveTheBoard": "보드에서 나가지 못했어요",
@@ -869,7 +866,6 @@
   "openInFreero": "Freero에서 열기",
   "aNewVersionOfFreero": "Freero의 새 버전이 준비되었어요.",
   "reload": "새로고침",
-  "sentOpenTheLinkWe": "보냈어요! {email}(으)로 보낸 링크를 여세요.",
   "confirmYourEmailAddressEmail": "사람을 초대하고 보드를 공유하려면 이메일 주소({email})를 확인하세요.",
   "help": "도움말",
   "reportAProblem2": "문제 신고…",
@@ -1190,5 +1186,7 @@
   "theBoardSOwnerRemovedYou": "보드 소유자가 게스트인 회원님을 제거했기 때문에 이 브라우저에서는 당분간 다시 참여할 수 없습니다.",
   "errors.guest_editing_off": "이 워크스페이스에서는 게스트가 보드를 편집할 수 없습니다.",
   "errors.guest_editing_needs_edit_link": "먼저 링크를 “편집 가능”으로 설정하세요. 게스트는 편집 링크로만 편집할 수 있습니다.",
-  "errors.guest_removed": "보드 소유자가 회원님을 이 보드에서 제거했습니다."
+  "errors.guest_removed": "보드 소유자가 회원님을 이 보드에서 제거했습니다.",
+  "verifyEmail.sent": "{email}(으)로 보냈어요. 도착하기까지 몇 분 걸릴 수 있어요. 받은편지함에 없다면 스팸함을 확인하세요. 회사 주소는 새 발신자의 메일을 격리할 수 있어요. 격리함에서 Freero가 보낸 메일을 찾거나 IT 담당자에게 허용을 요청하세요.",
+  "verifyEmail.limited": "이미 링크를 여러 번 보냈고, 가장 최근 링크만 작동해요. 스팸함이나 격리함에서 Freero가 보낸 메일을 확인하거나, {unit, select, minutes {{count, plural, other {#분}} 후에} seconds {{count, plural, other {#초}} 후에} other {잠시 후}} 다시 시도하세요."
 }
