@@ -1899,6 +1899,13 @@ reports" below).
   (`gallery.approve` / `reject` / `remove` / `restore`; a removal is appealable), the console's
   Templates view (`GET /api/moderation/gallery`) and reports (`target.kind: 'gallery'`, signed in,
   public templates only, else 404). gallery imports nothing from moderation.
+- Public links (the console's spot-check view): `GET /api/moderation/public-links?before=&limit=`
+  lists boards whose link grants access right now, through boards' `boardsSharedByLink` (the
+  same rule as `repo.toBoard`: set, not blocked, not expired; and in service; boards, not docs),
+  newest update first. The cursor is the last row's exact `updated_at` (microseconds) and id, so a
+  board edited between pages is neither skipped nor repeated. Each page read is a platform audit
+  event `moderation.public_links.viewed` with no account (Freero's own chain): it lists many
+  people's boards. Its "Turn off link" is the ordinary `board.disable_link` action.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.

@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import type { ServerContext } from '../../platform/context';
 import { getConfig } from '../../platform/config';
 import { handle, notFound } from '../../platform/http';
+import { appUrl } from '../../platform/mail';
 import { clientIp, consumeRateLimit, rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser, userFromCookieHeader } from '../auth/index';
 import {
@@ -12,6 +13,7 @@ import {
   isOperator,
   galleryQueue,
   listingQueue,
+  publicLinks,
   queue,
   resolve,
   submitAppeal,
@@ -140,6 +142,13 @@ export default function moderationRoutes(_ctx: ServerContext): Router {
     '/gallery',
     handle(async (req, res) => {
       res.json({ templates: await galleryQueue(req.query.status) });
+    }),
+  );
+  // Boards whose link grants access right now (spot-checks): newest update first, by pages.
+  ops.get(
+    '/public-links',
+    handle(async (req, res) => {
+      res.json(await publicLinks(currentUser(req).id, req.query, (id) => appUrl(req, `/board/${encodeURIComponent(id)}`)));
     }),
   );
   ops.get(

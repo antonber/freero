@@ -180,5 +180,22 @@
   "galleryItems": "Items",
   "gallerySuspendSubmitter": "Suspend submitter",
   "previewOfName": "Preview of “{name}”",
-  "noTemplateIsWaiting": "No template is waiting for review."
+  "noTemplateIsWaiting": "No template is waiting for review.",
+  "publicLinks": "Public links",
+  "publicLinksIntro": "Boards whose link opens them right now, most recently changed first. Preview shows a board as its collaborators see it without joining it; following the board’s own link would put you on it.",
+  "publicLinksNone": "No board’s link opens it right now.",
+  "publicLinksBoard": "Board",
+  "publicLinksAccess": "Link",
+  "publicLinksUpdated": "Updated",
+  "publicLinksOwner": "Owner and workspace",
+  "publicLinksLink": "Board link",
+  "publicLinksCanView": "Can view",
+  "publicLinksCanComment": "Can comment",
+  "publicLinksCanEdit": "Can edit",
+  "publicLinksPassword": "Password",
+  "publicLinksExpires": "Until {when}",
+  "publicLinksPersonalWorkspace": "Personal workspace",
+  "publicLinksCopy": "Copy the board’s link",
+  "publicLinksCopied": "Link copied",
+  "publicLinksMore": "Older boards"
 }

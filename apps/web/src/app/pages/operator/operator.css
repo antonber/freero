@@ -325,6 +325,15 @@
     flex-wrap: wrap;
     padding: 10px 16px;
   }
+  /* Six views don't fit a phone's width: the tabs scroll sideways, the page doesn't. */
+  .fr-op__bar .fr-seg {
+    max-inline-size: 100%;
+    overflow-x: auto;
+  }
+  .fr-op__bar .fr-seg__item {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
   .fr-op-card__facts {
     grid-template-columns: 1fr;
   }
@@ -418,4 +427,113 @@
 .fr-op-problem__row > :nth-child(2) {
   flex: 1 1 220px;
   min-width: 0;
+}
+
+/* Public links: boards whose link opens them right now, one row each. */
+.fr-op__body--wide {
+  max-width: 1240px;
+}
+
+.fr-op-links__intro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-op-links {
+  overflow-x: auto;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow-sm);
+}
+
+.fr-op-links__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fr-op-links__table th {
+  padding: 10px 14px;
+  text-align: start;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+  border-bottom: 1px solid var(--fr-line);
+  white-space: nowrap;
+}
+
+.fr-op-links__table td {
+  padding: 10px 14px;
+  vertical-align: middle;
+  color: var(--fr-ink-2);
+  border-bottom: 1px solid var(--fr-line);
+}
+
+.fr-op-links__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.fr-op-links__title {
+  min-inline-size: 140px;
+  font-weight: 650;
+  color: var(--fr-ink);
+  overflow-wrap: anywhere;
+}
+
+.fr-op-links__when {
+  white-space: nowrap;
+  color: var(--fr-ink-3);
+}
+
+.fr-op-links__owner {
+  min-inline-size: 180px;
+  overflow-wrap: anywhere;
+}
+
+.fr-op-links__email {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.fr-op-links__workspace {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: var(--fr-ink-3);
+  font-size: 12px;
+}
+
+.fr-op-links__url {
+  white-space: nowrap;
+}
+
+.fr-op-links__url code {
+  display: inline-block;
+  max-inline-size: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  font-size: 12px;
+  color: var(--fr-ink-2);
+  user-select: all;
+}
+
+.fr-op-links__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.fr-op-links__sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

@@ -572,6 +572,59 @@ export async function liveOwnedBy(userId: string): Promise<Array<{ id: string; t
   ).map((r) => ({ id: r.id, title: r.title, linkShared: r.link_shared }));
 }
 
+/** A board whose link grants access at `now` (the operators' "Public links" view, moderation). */
+export interface LinkSharedRow {
+  id: string;
+  title: string;
+  ownerId: string;
+  workspaceId: string;
+  linkAccess: Exclude<LinkAccess, 'none'>;
+  linkExpiresAt: number | null;
+  passwordProtected: boolean;
+  updatedAt: number;
+  /** updated_at in whole microseconds (the page cursor: exact, unlike milliseconds). */
+  updatedUs: string;
+}
+
+/**
+ * Boards (not docs) whose link grants access at `now` — link access set, not blocked by an operator,
+ * not expired, not trashed, not taken down — newest update first, after the cursor `before`
+ * (updated_at in microseconds and the id of the last board of the previous page).
+ */
+export async function linkShared(f: { before: { us: string; id: string } | null; limit: number; now: number }): Promise<LinkSharedRow[]> {
+  const rows = await query<{
+    id: string;
+    title: string;
+    owner_id: string;
+    workspace_id: string;
+    link_access: Exclude<LinkAccess, 'none'>;
+    link_expires_at: Date | null;
+    password: boolean;
+    updated_at: Date;
+    updated_us: string;
+  }>(
+    `SELECT id, title, owner_id, workspace_id, link_access, link_expires_at, link_password_hash IS NOT NULL AS password, updated_at,
+       (extract(epoch FROM updated_at) * 1000000)::bigint::text AS updated_us
+     FROM boards
+     WHERE kind = 'board' AND link_access <> 'none' AND link_blocked_at IS NULL AND (link_expires_at IS NULL OR link_expires_at > $1)
+       AND deleted_at IS NULL AND removed_at IS NULL
+       AND ($2::bigint IS NULL OR ((extract(epoch FROM updated_at) * 1000000)::bigint, id) < ($2::bigint, $3::text))
+     ORDER BY updated_at DESC, id DESC LIMIT $4`,
+    [new Date(f.now), f.before?.us ?? null, f.before?.id ?? null, f.limit],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    ownerId: r.owner_id,
+    workspaceId: r.workspace_id,
+    linkAccess: r.link_access,
+    linkExpiresAt: r.link_expires_at ? r.link_expires_at.getTime() : null,
+    passwordProtected: r.password,
+    updatedAt: r.updated_at.getTime(),
+    updatedUs: r.updated_us,
+  }));
+}
+
 /**
  * Deletes (up to `limit`) trashed boards deleted before their workspace's cutoff: `before` by
  * default, the `byWorkspace` cutoff for the workspaces listed there — and boards deleted forever

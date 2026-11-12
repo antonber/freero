@@ -108,6 +108,7 @@ import type {
   ModerationActionRecord,
   ModerationActionRequest,
   ModerationItem,
+  PublicLinksResponse,
   ReportRequest,
   CommunityListing,
   ListingForReview,
@@ -823,6 +824,9 @@ export const api = {
   moderationUploadFileUrl: (name: string) => `/api/moderation/uploads/${encodeURIComponent(name)}/file`,
   moderationUser: (email: string) => request<{ user: ModeratedUser }>('GET', `/api/moderation/users?email=${encodeURIComponent(email)}`),
   moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
+  /** Boards whose link grants access right now, newest update first (operators only; each page audited). */
+  moderationPublicLinks: (before: string | null) =>
+    request<PublicLinksResponse>('GET', `/api/moderation/public-links${before ? `?before=${encodeURIComponent(before)}` : ''}`),
   resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>
     request<{ item: ModerationItem }>('POST', `/api/moderation/items/${encodeURIComponent(id)}/resolve`, { outcome, note }),
 

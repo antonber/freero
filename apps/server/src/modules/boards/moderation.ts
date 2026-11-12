@@ -3,7 +3,7 @@
 // idempotent — false when the board already was in that state — so a retried or doubled request
 // changes nothing twice.
 import type { LinkAccess } from '@freero/shared';
-import { HttpError } from '../../platform/http';
+import { badRequest, HttpError } from '../../platform/http';
 import { closeBoardDoc, refreshBoardAccess } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
 import * as repo from './repo';
@@ -116,4 +116,37 @@ export async function unblockBoardLink(boardId: string): Promise<boolean> {
   if (!(await repo.setLinkBlocked(boardId, null))) return false;
   await refreshBoardAccess(boardId);
   return true;
+}
+
+/** A board whose link grants access right now, for the operators' "Public links" view. */
+export type LinkSharedBoard = Omit<repo.LinkSharedRow, 'updatedUs'>;
+
+const LINK_SHARED_CURSOR = /^(\d{1,20})\.([\w-]{1,64})$/;
+
+/**
+ * Boards whose link grants access at `now` (the same rule `repo.toBoard` applies: set, not blocked,
+ * not expired; and in service: not trashed, not taken down), newest update first, `limit` at a
+ * time. `before` is the previous page's `nextBefore`: the last board's exact update time and id, so
+ * pages neither skip nor repeat boards while others are edited meanwhile (an edited board moves to
+ * the top, onto a page already read).
+ */
+export async function boardsSharedByLink(q: { before: string | null; limit: number }, now = Date.now()): Promise<{ boards: LinkSharedBoard[]; nextBefore: string | null }> {
+  const m = q.before === null ? null : LINK_SHARED_CURSOR.exec(q.before);
+  if (q.before !== null && !m) throw badRequest('before must be the nextBefore of the previous page');
+  const rows = await repo.linkShared({ before: m ? { us: m[1], id: m[2] } : null, limit: q.limit + 1, now });
+  const page = rows.slice(0, q.limit);
+  const last = page[page.length - 1];
+  return {
+    boards: page.map((b) => ({
+      id: b.id,
+      title: b.title,
+      ownerId: b.ownerId,
+      workspaceId: b.workspaceId,
+      linkAccess: b.linkAccess,
+      linkExpiresAt: b.linkExpiresAt,
+      passwordProtected: b.passwordProtected,
+      updatedAt: b.updatedAt,
+    })),
+    nextBefore: rows.length > q.limit && last ? `${last.updatedUs}.${last.id}` : null,
+  };
 }
