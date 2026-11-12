@@ -11,6 +11,7 @@
 import type * as Y from 'yjs';
 import { mentionedUserIds, type ActingApp } from '@freero/shared';
 import { logError } from '../../platform/log';
+import type { ChangeDoor } from './changes';
 
 /** The comments feature's collection. */
 export const COMMENTS_COLLECTION = 'comments';
@@ -30,6 +31,8 @@ export interface CommentMessageEvent {
   newThread?: boolean;
   /** The app or token that wrote it for the author, on a request (the API, MCP; KAI-168). */
   via?: ActingApp;
+  /** How it reached the board (product analytics). */
+  door?: ChangeDoor;
   /**
    * Where the thread lives: 'shared' (everyone with access reads it), 'editors' (on an item in a
    * hidden frame: owners/editors only), 'private' (on the author's private draft: nobody else).

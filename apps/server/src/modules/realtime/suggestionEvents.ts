@@ -5,8 +5,9 @@
 //
 // Decisions (#82) are reported too, for a module that proposed something and acts once it is
 // accepted (the trackers module links accepted proposed imports to their issues).
-import type { ActingApp, SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
+import type { ActingApp, SuggestionAuthor, SuggestionAuthorKind, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 import { logError } from '../../platform/log';
+import type { ChangeDoor } from './changes';
 
 export interface SuggestionsProposedEvent {
   boardId: string;
@@ -48,6 +49,8 @@ export interface SuggestionsDecidedEvent {
   boardId: string;
   /** Who decided (the socket's or request's user; for a withdrawal, the person it acted for). */
   actorId: string;
+  /** How the decision reached the board (product analytics); absent for a withdrawal. */
+  door?: ChangeDoor;
   decisions: Array<{
     suggestionId: string;
     groupId: string;
@@ -56,6 +59,10 @@ export interface SuggestionsDecidedEvent {
     itemId: string | null;
     /** reopened: an accept or a reject undone (pending again). */
     status: 'accepted' | 'rejected' | 'reopened';
+    /** Who proposed it: a person, an app or token acting for one, or Freero's AI. */
+    author: SuggestionAuthorKind;
+    /** Rejected by Freero, not a person: the app or token that proposed it was revoked (KAI-224). */
+    withdrawn: boolean;
   }>;
 }
 
@@ -68,17 +75,25 @@ export function onSuggestionsDecided(fn: DecidedListener): () => void {
 }
 
 /** Reports decision steps (each record and its decision now; undefined: pending again). */
-export function emitSuggestionsDecided(boardId: string, actorId: string, steps: ReadonlyArray<{ record: SuggestionRecord; to: SuggestionDecision | undefined }>): void {
+export function emitSuggestionsDecided(
+  boardId: string,
+  actorId: string,
+  steps: ReadonlyArray<{ record: SuggestionRecord; to: SuggestionDecision | undefined }>,
+  door?: ChangeDoor,
+): void {
   if (!steps.length || !decidedListeners.size) return;
   const e: SuggestionsDecidedEvent = {
     boardId,
     actorId,
+    ...(door ? { door } : {}),
     decisions: steps.map(({ record: r, to }) => ({
       suggestionId: r.id,
       groupId: r.groupId,
       op: r.op,
       itemId: (r.op === 'create' ? r.element?.id : r.targetId) ?? null,
       status: to ? to.status : 'reopened',
+      author: r.author.kind,
+      withdrawn: to?.withdrawn === true,
     })),
   };
   for (const fn of decidedListeners) {

@@ -13,8 +13,29 @@
 import type * as Y from 'yjs';
 import type { ActingApp } from '@freero/shared';
 import { logError } from '../../platform/log';
+import { currentRequestContext } from '../../platform/requestContext';
 
 export const ELEMENTS = 'elements';
+
+/**
+ * How a change reached the board, for product analytics (modules/analytics), which counts these
+ * events later, outside the request: the door (a board socket is the app's) and whether the
+ * browser behind it asked not to be tracked — GPC, DNT or the opt-out cookie, on the request or
+ * on the socket's upgrade (platform/requestContext `privacySignal`).
+ */
+export interface ChangeDoor {
+  surface: 'app' | 'api' | 'mcp' | 'other';
+  privacySignal: boolean;
+}
+
+/** A board socket's door: the app, with what its upgrade request said. */
+export const socketDoor = (privacySignal: boolean): ChangeDoor => ({ surface: 'app', privacySignal });
+
+/** The door of the request being handled (a change made on no request — a job — is 'other'). */
+export function requestDoor(): ChangeDoor {
+  const ctx = currentRequestContext();
+  return { surface: ctx?.surface ?? 'other', privacySignal: ctx?.privacySignal === true };
+}
 
 export interface ElementChange {
   id: string;
@@ -38,6 +59,7 @@ export interface BoardChangeEvent {
   changes: ElementChange[];
   /** Titles of the frames the changes are in (frames live in the shared doc). */
   frameTitles: Record<string, string>;
+  door?: ChangeDoor;
 }
 
 type Listener = (e: BoardChangeEvent) => void;
@@ -101,4 +123,33 @@ export function elementChanges(
     if (isObj(f) && typeof f.title === 'string') frameTitles[c.frameId] = f.title;
   }
   return { changes, frameTitles };
+}
+
+// ---- docs (KAI-162) ----
+
+/** Someone changed a doc's text, through their socket or on a request (the API, MCP), on this instance. */
+export interface DocEditedEvent {
+  docId: string;
+  /** The socket's user (a guest's id for a guest), or the request's actor. */
+  actorId: string;
+  door: ChangeDoor;
+}
+
+type DocListener = (e: DocEditedEvent) => void;
+const docListeners = new Set<DocListener>();
+
+/** Called synchronously for every change of a doc's text applied on this instance. Keep it cheap. */
+export function onDocEdited(fn: DocListener): () => void {
+  docListeners.add(fn);
+  return () => docListeners.delete(fn);
+}
+
+export function emitDocEdited(e: DocEditedEvent): void {
+  for (const fn of docListeners) {
+    try {
+      fn(e);
+    } catch (err) {
+      logError('realtime: a doc-edit listener failed', err);
+    }
+  }
 }
