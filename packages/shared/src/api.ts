@@ -2881,6 +2881,7 @@ export interface WorkspaceAiAdmin {
 // POST /api/moderation/items/:id/resolve body { outcome, note? } -> { item: ModerationItem }
 // GET  /api/moderation/listings?status=pending|approved|rejected|removed -> { listings: ListingForReview[] } (#87, integrations.ts)
 // GET  /api/moderation/gallery?status=pending|approved|rejected|removed -> { templates: GalleryForReview[] } (#162)
+// GET  /api/moderation/public-links?before=&limit= -> PublicLinksResponse (boards whose link grants access now, newest update first)
 // GET  /.well-known/security.txt (RFC 9116, from SECURITY_CONTACT / ABUSE_CONTACT_EMAIL)
 export type ReportReason = 'spam' | 'phishing' | 'malware' | 'harassment' | 'violence' | 'sexual' | 'illegal' | 'copyright' | 'other';
 export const REPORT_REASONS: ReadonlyArray<{ id: ReportReason; label: string }> = [
@@ -3037,6 +3038,32 @@ export interface ModeratedUpload {
   restorable: boolean;
 }
 export interface ModeratedUser { id: string; name: string; email: string; suspended: boolean }
+/**
+ * A board whose link grants access right now (the console's "Public links" view): link access other
+ * than 'none', not blocked by an operator, not expired, not in the trash, not taken down. Boards
+ * only (docs are left out: the preview draws a canvas). The item count isn't listed: it would mean
+ * loading every board's document.
+ */
+export interface PublicLinkBoard {
+  id: string;
+  title: string;
+  /** The board's address (PUBLIC_URL + /board/<id>). */
+  url: string;
+  linkAccess: Exclude<LinkAccess, 'none'>;
+  /** The owner's expiry (still ahead), or null. */
+  linkExpiresAt: number | null;
+  /** The link asks for a password (KAI-145). */
+  passwordProtected: boolean;
+  updatedAt: number;
+  owner: ModeratedUser | null;
+  /** The workspace it is in (a personal workspace is its owner's). */
+  workspace: { id: string; name: string; personal: boolean } | null;
+}
+export interface PublicLinksResponse {
+  boards: PublicLinkBoard[];
+  /** Pass as `before` for the next (older) page; null at the end. */
+  nextBefore: string | null;
+}
 /** What an appeal link shows (no session needed). */
 export interface AppealInfo {
   action: ModerationActionKind;
@@ -3212,6 +3239,7 @@ export const AUDIT_ACTIONS = {
   'moderation.upload.restore': 'Freero restored a file (moderation)',
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',
   'moderation.upload.download': 'A Freero operator downloaded a file to review it (moderation)',
+  'moderation.public_links.viewed': 'A Freero operator listed the boards shared by link (moderation)',
   'problems.screenshot_viewed': 'A Freero operator looked at the screenshot of a problem you reported',
   'problems.updated': 'A Freero operator updated a problem you reported',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
