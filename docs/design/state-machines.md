@@ -1192,6 +1192,7 @@ Single use: `DELETE … WHERE state_hash AND expires_at > now() RETURNING` (`rep
 | → fixed (first time) | same | `before.status !== 'fixed'` + dedupe `problem.fixed:<id>` | `service.ts:178-186` |
 | closed → ∅ | `problems:retention` job | `DELETE … WHERE closed_at < due` (a reopened report survives) | `service.ts:193-205`, `repo.ts:145` |
 | any → ∅ | account purge | none (INT-105) | `service.ts:208-212` |
+| operator alert: `problem_alerts.sent_at` ∅ / old → now (one email) | a report filed, or the `problems:alerts` job | a report still `new` created after `sent_at`, and `sent_at` ≤ now − 15 min, in one conditional upsert (two claims at once: one wins) | `problems/repo.ts` `claimAlert`, `alerts.ts` |
 
 #### INT-M16. Notification delivery: `notifications.read_at`, `emailed_at`, `slacked_at` (`modules/notifications/migrations/202610291000_notifications.sql`, `202611291050_notifications_slack.sql`)
 - **Invariants:** each notification goes by one channel; `UNIQUE (user_id, dedupe_key)`.
