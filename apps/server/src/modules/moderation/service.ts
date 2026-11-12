@@ -25,6 +25,8 @@ import {
   type ModerationActionKind,
   type ModerationActionRecord,
   type ModerationItem,
+  type PublicLinkBoard,
+  type PublicLinksResponse,
   type ReportReason,
   type ReportTargetKind,
   type SuspensionBoards,
@@ -41,6 +43,7 @@ import { findUserByEmail, getUsers, isOperator, normalizeEmail, suspendedUserIds
 import {
   blockBoardLink,
   boardForModeration,
+  boardsSharedByLink,
   deleteTakenDownBoard,
   liveBoardsOwnedBy,
   reportableBoard,
@@ -52,6 +55,7 @@ import {
 import { decideGalleryTemplate, galleryForModeration, galleryForReview, moderatedGalleryTemplates, reportableGalleryTemplate, type GalleryDecision } from '../gallery/index';
 import { decideListing, listingForModeration, listingsForReview, moderatedListings, reportableListing, type ListingDecision } from '../marketplace/index';
 import { notify } from '../notifications/index';
+import { getWorkspaceInfo } from '../workspaces/index';
 import { snapshotBoardDoc } from '../realtime/index';
 import { keptCopiesRemovedBefore, openUploadForModeration, purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
 import { alertOperators, isAdverse, sendActionNotice, sendAppealUpheld, sendReportOutcome } from './notices';
@@ -374,6 +378,51 @@ export async function uploadFileForReview(operatorId: string, nameOrUrl: string)
     detail: { upload: name },
   });
   return { name, body: file.body, size: file.size };
+}
+
+const PUBLIC_LINKS_PAGE = 50;
+const PUBLIC_LINKS_MAX_PAGE = 100;
+
+/**
+ * The "Public links" view: boards whose link grants access right now, newest update first, for
+ * spot-checks (Preview, Turn off link). Each page an operator reads is in Freero's own audit log
+ * (`moderation.public_links.viewed`, no account: it lists many people's boards at once).
+ */
+export async function publicLinks(
+  operatorId: string,
+  q: { before?: unknown; limit?: unknown },
+  boardUrl: (boardId: string) => string,
+): Promise<PublicLinksResponse> {
+  const n = q.limit === undefined || q.limit === '' ? PUBLIC_LINKS_PAGE : Number(q.limit);
+  if (!Number.isInteger(n) || n < 1 || n > PUBLIC_LINKS_MAX_PAGE) throw badRequest(`limit must be a whole number from 1 to ${PUBLIC_LINKS_MAX_PAGE}`);
+  const before = typeof q.before === 'string' && q.before ? q.before : null;
+  const { boards, nextBefore } = await boardsSharedByLink({ before, limit: n });
+  const p = await people(boards.map((b) => b.ownerId));
+  const workspaces = new Map<string, PublicLinkBoard['workspace']>();
+  for (const id of new Set(boards.map((b) => b.workspaceId))) {
+    const w = await getWorkspaceInfo(id);
+    workspaces.set(id, w ? { id: w.id, name: w.name, personal: w.kind === 'personal' } : null);
+  }
+  await audit({
+    action: 'moderation.public_links.viewed',
+    actor: { kind: 'user', userId: operatorId },
+    userId: '',
+    detail: { listed: boards.length, before },
+  });
+  return {
+    boards: boards.map((b) => ({
+      id: b.id,
+      title: b.title,
+      url: boardUrl(b.id),
+      linkAccess: b.linkAccess,
+      linkExpiresAt: b.linkExpiresAt,
+      passwordProtected: b.passwordProtected,
+      updatedAt: b.updatedAt,
+      owner: moderatedUser(p.users.get(b.ownerId), p.suspended),
+      workspace: workspaces.get(b.workspaceId) ?? null,
+    })),
+    nextBefore,
+  };
 }
 
 export async function userByEmail(email: unknown): Promise<ModeratedUser> {
