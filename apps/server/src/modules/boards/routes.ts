@@ -98,7 +98,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const user = currentUser(req);
       const { board, role, access } = await requireAccess(req.params.id, user.id);
-      await boardOpened(board, user.id);
+      await boardOpened(board, user.id, Date.now(), role);
       res.json({ board: await toSummary(board, user.id, role, access) } satisfies Out);
     }),
   );

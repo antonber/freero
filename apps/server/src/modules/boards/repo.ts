@@ -862,15 +862,23 @@ export async function isStarred(boardId: string, userId: string): Promise<boolea
 }
 
 // ---- opens ----
-/** Records that the user opened the board; true when it is the first time they did. */
-export async function recordOpen(boardId: string, userId: string, now: number): Promise<boolean> {
+/**
+ * Records that the user opened the board: `first` when it is the first time they did, `firstToday`
+ * when it is their first open of the UTC day `now` falls on (product analytics' board_opened).
+ * Exactly one of several concurrent opens, on any instance, gets either: the day's first is the
+ * one whose update still found the previous open before today (the row is locked meanwhile).
+ */
+export async function recordOpen(boardId: string, userId: string, now: number): Promise<{ first: boolean; firstToday: boolean }> {
+  const dayStart = new Date(Math.floor(now / 86_400_000) * 86_400_000);
+  const newDay = await one(`UPDATE board_opens SET opened_at = $3 WHERE board_id = $1 AND user_id = $2 AND opened_at < $4 RETURNING 1`, [boardId, userId, new Date(now), dayStart]);
   const r = await one<{ first: boolean }>(
     `INSERT INTO board_opens (board_id, user_id, opened_at) VALUES ($1, $2, $3)
      ON CONFLICT (board_id, user_id) DO UPDATE SET opened_at = excluded.opened_at
      RETURNING (xmax = 0) AS first`,
     [boardId, userId, new Date(now)],
   );
-  return r?.first === true;
+  const first = r?.first === true;
+  return { first, firstToday: first || newDay !== null };
 }
 
 /** boardId -> lastOpenedAt for a user. */
