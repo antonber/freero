@@ -518,6 +518,18 @@ Operators get an email when a board gets its first open report and for every app
   verified address and are limited per person (`RATE_LIMIT_GALLERY_SUBMIT`, at most 20 waiting or
   public at once). Decisions are audited as `moderation.gallery.*` and emailed to the submitter.
   Nothing is public on a server whose operators never approve anything (no `OPERATOR_EMAILS`).
+- **Public links** (`/operator?view=public-links`): every board whose link opens it right now —
+  link access set (view, comment or edit), not turned off by an operator, not past the owner's
+  expiry, not in the trash, not taken down — most recently changed first, 50 at a time (**Older
+  boards** for the next page). Each row shows the title, what the link allows (and whether it asks
+  for a password or expires), when the board last changed, its owner and workspace, and its link
+  to copy. Docs aren't listed. **Preview** opens the read-only snapshot (above: you never join the
+  board — don't follow the board's own link, which would); **Turn off link** is the action below,
+  with its reason, statement and email to the owner. Each page you read is recorded in Freero's
+  own audit log (`moderation.public_links.viewed`, with you as the actor and how many boards it
+  listed, and the `"audit"` log line; `npm run admin -- audit:verify freero` checks that chain). The console reads it from
+  `GET /api/moderation/public-links?before=<nextBefore>&limit=50` (a signed-in operator's session;
+  404 for everyone else, like every `/api/moderation/` route).
 
 ### Actions
 
