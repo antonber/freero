@@ -25,7 +25,7 @@ export interface AuthValue {
   /** Re-fetches the session. */
   refresh(): Promise<Account | null>;
   /** Saves name/color/time zone/theme; every open tab (boards included) picks the change up. */
-  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }): Promise<Account>;
+  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string; discoverySource?: DiscoverySource }): Promise<Account>;
   /**
    * Adopts an account the server just returned (avatar change, password reset sign-in, restore)
    * — or null after it signed this tab out (deletion) — and tells the other tabs.
@@ -148,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (next && /^https?:\/\//i.test(next)) window.location.assign(next);
   }, [announce]);
 
-  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }) => {
+  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string; discoverySource?: DiscoverySource }) => {
     const { user } = await api.updateMe(patch);
     setUser(user);
     announce();

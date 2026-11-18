@@ -1,5 +1,6 @@
 import type {
   Account,
+  DiscoverySource,
   AdminBoardSort,
   AdminBoardsResponse,
   AdminScope,
@@ -274,7 +275,7 @@ export const api = {
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   /** `redirect` (#13): the identity provider's single logout, to visit once signed out here. */
   logout: () => request<{ ok: true; redirect?: string }>('POST', '/api/auth/logout'),
-  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string }) =>
+  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme' | 'locale'>> & { timeZone?: string; discoverySource?: DiscoverySource }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
     const res = await fetch('/api/auth/me/avatar', {

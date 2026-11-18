@@ -11,7 +11,7 @@ import {
 } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
-import { track } from '../analytics/bridge';
+import { reportProductEvent, track } from '../analytics/bridge';
 import { api, wsBase } from '../api/client';
 import {
   deleteTemplate,
@@ -56,7 +56,7 @@ export interface HostDeps {
   user: HostUser;
   navigate(path: string): void;
   notify: Host['notify'];
-  openShareDialog(): void;
+  openShareDialog(from?: 'nudge'): void;
   onTitleChange(title: string): void;
   /** The board's team workspace, when the user is a full member of it (templates can be shared there). */
   team?: { id: string; name: string; company?: { id: string; name: string } | null } | null;
@@ -166,6 +166,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       id: board.id,
       title: board.title,
       role: board.role,
+      shared: board.linkAccess !== 'none' || board.team !== null,
       canExport: board.permissions.canExport,
       canCopy: board.permissions.canCopy !== false,
       coOwner: board.coOwner === true,
@@ -226,6 +227,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     navigate: deps.navigate,
     notify: deps.notify,
     track,
+    trackProduct: reportProductEvent,
     serverNow,
     measuredServerNow,
     onConnected: remeasureServerClock,

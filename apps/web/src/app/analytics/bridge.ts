@@ -123,8 +123,12 @@ export function track(event: AnalyticsEvent): void {
   send({ freeroAnalytics: 1, kind: 'event', fields: current, name: event.name, params });
 }
 
-/** One of the events only the app sees, to the server's product analytics (it checks it against the closed list). */
-function reportProductEvent(event: ClientProductEvent): void {
+/**
+ * One of the events only the app sees (the share dialog, the share nudge, the get-started card;
+ * CLIENT_PRODUCT_EVENTS), to the server's product analytics, which checks it against the closed
+ * list. PostHog only: Google never gets these.
+ */
+export function reportProductEvent(event: ClientProductEvent): void {
   if (!settings?.productAnalytics || !signedIn || !analyticsAllowed()) return;
   void fetch('/api/analytics/events', {
     method: 'POST',

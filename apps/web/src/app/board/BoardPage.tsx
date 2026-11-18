@@ -195,7 +195,11 @@ function ServerBoard({ id }: { id: string }) {
       setState((s) => ({ status: 'ready', board: b, team: s.status === 'ready' ? s.team : null, ai: s.status === 'ready' ? s.ai : null, trackers: s.status === 'ready' ? s.trackers : undefined })),
     [],
   );
-  const openShare = useCallback(() => setShareOpen(true), []);
+  const [shareFrom, setShareFrom] = useState<'board' | 'nudge'>('board');
+  const openShare = useCallback((from?: 'nudge') => {
+    setShareFrom(from ?? 'board');
+    setShareOpen(true);
+  }, []);
   const go = useCallback((path: string) => navigate(path), [navigate]);
   const toast = useMemo(() => toastNotify(notify), [notify]);
   // Report a problem (app/problems): the board and the person's role go with it; the shortcut is the board command's here.
@@ -243,6 +247,7 @@ function ServerBoard({ id }: { id: string }) {
       <ShareDialog
         boardId={board.id}
         open={shareOpen}
+        source={shareFrom}
         onClose={() => {
           setShareOpen(false);
           if (new URLSearchParams(location.search).has('share')) navigate(location.pathname, { replace: true });

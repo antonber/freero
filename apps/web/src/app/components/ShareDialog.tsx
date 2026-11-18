@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Globe, Link2, Lock, LogOut, Mail, RotateCw, Users, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { BoardAccessRequest, BoardMember, BoardMemberRole, BoardSummary, LinkAccess, PendingInvite, Role } from '@freero/shared';
+import type { BoardAccessRequest, BoardMember, BoardMemberRole, BoardSummary, LinkAccess, PendingInvite, Role, ShareSource } from '@freero/shared';
 import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useVerificationResend } from '../auth/verificationResend';
+import { reportProductEvent } from '../analytics/bridge';
 import { copyText } from '../lib/hooks';
 import { EmbedSettings } from './EmbedSettings';
 import { LinkedFrom } from './LinkedFrom';
@@ -83,13 +84,15 @@ export interface ShareDialogProps {
   onBoardChange?: (board: BoardSummary) => void;
   /** Called after the current user left the board. Default: go to the dashboard. */
   onLeft?: () => void;
+  /** What opened it, for product analytics (default: the board's Share button). */
+  source?: ShareSource;
 }
 
 export function boardUrl(boardId: string): string {
   return `${location.origin}/board/${boardId}`;
 }
 
-export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoardChange, onLeft }: ShareDialogProps) {
+export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoardChange, onLeft, source = 'board' }: ShareDialogProps) {
   const { user } = useAuth();
   const notify = useToast();
   const navigate = useNavigate();
@@ -279,7 +282,13 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     }
   };
 
+  // Counted once each time it opens (product analytics: does sharing start from the board, the nudge or the dashboard?).
+  useEffect(() => {
+    if (open) reportProductEvent({ name: 'share_dialog_opened', source });
+  }, [open, source]);
+
   const copy = async () => {
+    reportProductEvent({ name: 'share_link_copied', access: board?.linkAccess ?? 'none' });
     const ok = await copyText(boardUrl(boardId));
     notify(ok ? t('boardLinkCopied') : t('couldNotCopyTheLink'), ok ? 'success' : 'error');
   };
