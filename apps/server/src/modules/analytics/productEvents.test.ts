@@ -8,7 +8,7 @@ import { createContext } from '../../platform/context';
 import { createApp, errorHandler, handle } from '../../platform/http';
 import { runWithRequestContext, type RequestContext } from '../../platform/requestContext';
 import { closeTestDb, openTestDb } from '../../platform/testing';
-import { completeSignIn, createUser, currentUser, requireUser } from '../auth/index';
+import { completeSignIn, createUser, currentUser, getAccount, noteAppOpened, requireUser, updateProfile } from '../auth/index';
 import { createBoard, recordBoardOpen } from '../boards/index';
 import { appendMarkdown, createDoc } from '../docs/index';
 import { changeBoard, decideSuggestions, proposeSuggestions } from '../realtime/index';
@@ -47,6 +47,7 @@ beforeAll(async () => {
   const config = await openTestDb({
     POSTHOG_KEY: 'phc_testtesttesttesttesttest1234',
     POSTHOG_HOST: `http://127.0.0.1:${(posthog.address() as AddressInfo).port}`,
+    OPERATOR_EMAILS: 'ops@product-events.test.freero.app',
   });
   ctx = createContext(config);
   init(ctx);
@@ -96,6 +97,19 @@ it('a sign-up reaches PostHog under a pseudonym: no email, name or account id an
   for (const secret of [ada.id, ada.email, 'Lovelace']) expect(everything).not.toContain(secret);
 });
 
+it('the deploy smoke test’s account (example.com) counts nothing, and an operator’s events are marked internal while everyone else’s are not', async () => {
+  const smoke = await createUser({ name: 'Smoke Test', email: `smoke-${Date.now()}@example.com`, password: 'password-123' });
+  await createBoard(smoke.id, 'Smoke board', '', 'none');
+  const ops = await createUser({ name: 'Ops', email: 'ops@product-events.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  await createBoard(ops.id, 'Dogfood', '', 'none');
+  const someone = await person('Someone');
+  await createBoard(someone.id, 'Plan', '', 'none');
+  await flushProductEvents();
+  expect(events().filter((e) => e.distinct_id === pseudonym('account', smoke.id))).toEqual([]);
+  expect(eventsOf(ops.id, 'board_created').map((e) => e.properties.internal)).toEqual([true]);
+  expect(eventsOf(someone.id, 'board_created').map((e) => e.properties.internal)).toEqual([undefined]);
+});
+
 it('an account that turned analytics off sends nothing from any request, a request whose browser says "don’t track" (GPC, the opt-out cookie) sends nothing, and turning it back on resumes', async () => {
   const kai = await person('Kai');
   const boards = () => eventsOf(kai.id, 'board_created').length;
@@ -124,12 +138,15 @@ it('the app can report only an event of the closed list, with exactly its fields
     { name: 'template_used', template: 'kanban', board: 'b1' }, // a field it doesn't carry
     { name: 'template_used', template: 'Q3 plan for Acme' }, // not a public template id
     { name: 'page_viewed', path: '/board/b1' },
+    { name: 'share_link_copied', access: 'everyone' }, // not a link access
+    { name: 'toString', template: 'kanban' },
   ])
     expect((await send(lin, 'POST', '/api/analytics/events', body)).status).toBe(400);
   expect((await send(lin, 'POST', '/api/analytics/events', { name: 'template_used', template: 'kanban' })).status).toBe(204);
+  expect((await send(lin, 'POST', '/api/analytics/events', { name: 'share_link_copied', access: 'editor' })).status).toBe(204);
   await flushProductEvents();
   const reported = events().filter((e) => e.distinct_id === pseudonym('account', lin.id) && e.event !== 'signed_up' && e.event !== 'logged_in');
-  expect(reported.map((e) => [e.event, e.properties.template_id])).toEqual([['template_used', 'kanban']]);
+  expect(reported.map((e) => [e.event, e.properties.template_id ?? e.properties.access])).toEqual([['template_used', 'kanban'], ['share_link_copied', 'editor']]);
 });
 
 it('a collaborator joining is counted once, for the board’s owner, the first time someone else opens it', async () => {
@@ -255,6 +272,20 @@ it('editing the same doc twice in a day sends one doc_edited, never which doc', 
   expect(eventsOf(eve.id, 'doc_edited').map((e) => e.properties.via)).toEqual(['api']);
   const everything = bodies.join('\n');
   for (const secret of [doc.id, 'Initech', 'First line']) expect(everything).not.toContain(secret);
+});
+
+it('opening the app twice in a day sends one app_opened, the next day one more; answering "How did you find Freero?" later sends it once', async () => {
+  const fay = await person('Fay');
+  const account = await getAccount(fay.id);
+  const morning = Math.floor(Date.now() / DAY) * DAY + 3_600_000;
+  await noteAppOpened(account, morning);
+  await noteAppOpened(account, morning + 5 * 3_600_000);
+  await noteAppOpened(account, morning + DAY);
+  await updateProfile(fay.id, { discoverySource: 'ai_assistant' });
+  await updateProfile(fay.id, { discoverySource: 'search' });
+  await flushProductEvents();
+  expect(eventsOf(fay.id, 'app_opened')).toHaveLength(2);
+  expect(eventsOf(fay.id, 'discovery_answered').map((e) => e.properties.discovery_source)).toEqual(['ai_assistant']);
 });
 
 it('events still queued when the server shuts down are sent before it stops', async () => {

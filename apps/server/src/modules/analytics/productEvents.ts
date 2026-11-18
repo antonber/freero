@@ -8,7 +8,11 @@
 //   distinct_id  HMAC-SHA256 of the account id under SESSION_SECRET (platform/secrets `mac`),
 //                never the id itself; rotating SESSION_SECRET starts new pseudonyms
 //   workspace    the same HMAC of a workspace id, when the event has one
+//   internal     true on an operator's events (OPERATOR_EMAILS, verified; auth `analyticsAudienceOf`),
+//                so reports can leave Freero's own use out
 //   $lib, $lib_version, $is_server, $geoip_disable: true  (added by posthog-node)
+// An account at an address reserved for tests (example.com, .test …: the deploy smoke test) sends
+// nothing at all.
 // Never an email, a name, a title, content, a link, a user agent or an IP address: the events
 // leave from the server, so the only address PostHog sees is the server's own, and GeoIP is off.
 //
@@ -21,6 +25,7 @@ import type { Config } from '../../platform/config';
 import { logError, logger } from '../../platform/log';
 import { currentRequestContext } from '../../platform/requestContext';
 import { mac } from '../../platform/secrets';
+import { analyticsAudienceOf } from '../auth/index';
 import * as repo from './repo';
 
 let client: PostHog | null = null;
@@ -69,10 +74,16 @@ export function trackProductEvent(accountId: string, event: ProductEvent, opts: 
 
 async function capture(accountId: string, name: string, properties: Record<string, string | boolean | number>, opts: { workspaceId?: string | null; alsoRespect?: string[] }): Promise<void> {
   if (await repo.anyOptedOut([accountId, ...(opts.alsoRespect ?? [])])) return;
+  const audience = await analyticsAudienceOf(accountId);
+  if (audience === 'test') return;
   client?.capture({
     distinctId: pseudonym('account', accountId),
     event: name,
-    properties: opts.workspaceId ? { ...properties, workspace: pseudonym('workspace', opts.workspaceId) } : properties,
+    properties: {
+      ...properties,
+      ...(opts.workspaceId ? { workspace: pseudonym('workspace', opts.workspaceId) } : {}),
+      ...(audience === 'internal' ? { internal: true } : {}),
+    },
   });
 }
 
