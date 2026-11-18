@@ -13,6 +13,7 @@ import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   ActivityAnswer,
   AnalyticsEvent,
+  ClientProductEvent,
   ActivityEntry,
   CatchUpChanges,
   CatchUpSummary,
@@ -279,6 +280,12 @@ export interface Host {
      */
     signedIn?: boolean;
     /**
+     * [additive] Someone besides its owner can already open the board: its link is on, or it is in a
+     * team workspace. Absent: not known here (embeds, the offline sandbox) — features that suggest
+     * sharing stay quiet.
+     */
+    shared?: boolean;
+    /**
      * [additive] The board's call link when the board was opened (KAI-134): a meeting URL its
      * editors set, or its own Jitsi room. Read the live value with `call.get()`.
      */
@@ -435,7 +442,8 @@ export interface Host {
    * Absent where the page follows something else (the live view in an AI assistant).
    */
   colorTheme?: HostColorTheme;
-  openShareDialog(): void;
+  /** Opens the board's share dialog. [additive] `from`: what offered it (the share nudge), for product analytics. */
+  openShareDialog(from?: 'nudge'): void;
   navigate(path: string): void;
   /**
    * Lightweight toast from anywhere. [additive] `opts.action` adds one button (e.g. "Go"); toasts
@@ -449,6 +457,12 @@ export interface Host {
    * content, name or id. Absent (offline sandbox, embeds, tests): nothing is counted.
    */
   track?(event: AnalyticsEvent): void;
+  /**
+   * [additive] Counts one of the events only the app sees (`ClientProductEvent`, @freero/shared: the
+   * share nudge) in the server's product analytics; same rules and opt-outs as `track`. Absent:
+   * nothing is counted.
+   */
+  trackProduct?(event: ClientProductEvent): void;
   /**
    * Current time on the SERVER's clock (ms). Use it for anything shared that is time-based
    * (timers, deadlines) so clients with skewed clocks agree. Falls back to the local clock
