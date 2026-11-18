@@ -637,6 +637,35 @@ async function run() {
           for (const p of procs) await stopProc(p);
         }
       });
+
+      await check('a pool of two connections: the jobs and outbox consumers that hold advisory locks at once leave the pool to queries — requests answer and nothing waits out the checkout timeout (each lock used to take a pooled connection, so they starved one another and every request)', async () => {
+        const url = await createDatabase();
+        const proc = await spawnServer(path.join(dataDir, 'small-pool'), { DATABASE_URL: url, DATABASE_POOL_MAX: '2' });
+        try {
+          await waitUp(proc);
+          const base = `http://127.0.0.1:${proc.port}`;
+          const u = new User('Pool');
+          const r = await fetch(`${base}/api/auth/signup`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', origin: base },
+            body: JSON.stringify({ name: 'Pool', email: u.email, password: 'password-123' }),
+          });
+          assert(r.status === 201, `signup: ${r.status}`);
+          const cookie = r.headers.getSetCookie().map((c) => /^freero_session=[^;]*/.exec(c)?.[0]).find(Boolean);
+          // Every consumer and job ticks within these seconds (the outbox every second).
+          const until = Date.now() + 8_000;
+          while (Date.now() < until) {
+            const started = Date.now();
+            const res = await fetch(`${base}/api/boards`, { headers: { cookie } });
+            assert(res.status === 200 && Date.now() - started < 3_000, `GET /api/boards -> ${res.status} after ${Date.now() - started} ms`);
+            await sleep(250);
+          }
+          const log = proc.log.join('');
+          assert(!log.includes('timeout exceeded when trying to connect'), `a checkout timed out: ${log.split(String.fromCharCode(10)).find((l) => l.includes('timeout exceeded'))?.slice(0, 400)}`);
+        } finally {
+          await stopProc(proc);
+        }
+      });
     }
 
     // ---- auth ----

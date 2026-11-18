@@ -125,6 +125,7 @@ async function openPg(url: string, poolSize: number): Promise<Driver> {
     },
   });
   const poolQ = q(pool);
+  const locks = new LockSession(url);
   const checkout = () => pool.connect().catch((e: unknown) => Promise.reject(withPoolState(e, pool, poolSize)));
   return {
     kind: 'pg',
@@ -149,33 +150,70 @@ async function openPg(url: string, poolSize: number): Promise<Driver> {
         client.release(broken);
       }
     },
-    async tryLock(key) {
-      // A session lock lives on one connection: keep a dedicated client until it is released.
-      const client = await checkout();
-      try {
-        const r = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [key]);
-        if (r.rows[0]?.ok === true) {
-          return async () => {
-            try {
-              await client.query('SELECT pg_advisory_unlock($1)', [key]);
-              client.release();
-            } catch (e) {
-              client.release(e as Error); // the lock dies with the connection
-            }
-          };
-        }
-      } catch (e) {
-        client.release(e as Error);
-        throw e;
-      }
-      client.release();
-      return null;
-    },
-    close: () => {
+    tryLock: (key) => locks.tryLock(key),
+    close: async () => {
       if (livePool === pool) livePool = null;
-      return pool.end();
+      await locks.close();
+      await pool.end();
     },
   };
+}
+
+/**
+ * The session-level advisory locks of withAdvisoryLock (scheduled jobs, outbox consumers) live on
+ * ONE connection of their own, outside the pool. Each lock used to take a pool connection for as
+ * long as its job ran, and the job then needed another for its queries: a dozen consumers and jobs
+ * ticking together held every pooled connection while each waited for one more, and every query of
+ * the process — requests too — timed out ("timeout exceeded when trying to connect", 10/10 open, 0
+ * idle). A session may hold any number of locks, and this process never asks for a key it already
+ * holds (withAdvisoryLock's heldLocks), so one connection serves them all. If it drops, Postgres
+ * releases its locks — as when a lock's own connection died before — and the next tryLock opens
+ * another; a release meant for the lost connection does nothing.
+ */
+class LockSession {
+  private client: pg.Client | null = null;
+  private opening: Promise<pg.Client> | null = null;
+
+  constructor(private readonly url: string) {}
+
+  private connection(): Promise<pg.Client> {
+    if (this.client) return Promise.resolve(this.client);
+    this.opening ??= (async () => {
+      const c = new pg.Client({ connectionString: this.url, connectionTimeoutMillis: 5000 });
+      const lost = () => {
+        if (this.client === c) this.client = null;
+      };
+      c.on('error', (err) => {
+        console.error('[freero db] the advisory lock connection was lost (its locks with it):', err.message);
+        lost();
+      });
+      c.on('end', lost);
+      await c.connect();
+      this.client = c;
+      return c;
+    })().finally(() => (this.opening = null));
+    return this.opening;
+  }
+
+  async tryLock(key: number): Promise<(() => Promise<void>) | null> {
+    const c = await this.connection();
+    const r = await c.query('SELECT pg_try_advisory_lock($1) AS ok', [key]);
+    if (r.rows[0]?.ok !== true) return null;
+    return async () => {
+      if (this.client !== c) return; // that connection is gone, and its locks with it
+      try {
+        await c.query('SELECT pg_advisory_unlock($1)', [key]);
+      } catch {
+        // Lost meanwhile: the lock went with it.
+      }
+    };
+  }
+
+  async close(): Promise<void> {
+    const c = this.client;
+    this.client = null;
+    await c?.end().catch(() => {});
+  }
 }
 
 function pidAlive(pid: number): boolean {
