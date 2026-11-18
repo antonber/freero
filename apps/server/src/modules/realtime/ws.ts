@@ -5,7 +5,7 @@ import { checkRateLimit } from '../../platform/rateLimit';
 import type { WsRoute } from '../../platform/ws';
 import { guestDisplayName } from '@freero/shared';
 import { authorNamesOf, guestFromCookieHeader, guestKeyFromCookieHeader, onProfileChanged, onSessionEnd, sessionKeyFromCookieHeader, trackLiveSessions, userFromCookieHeader } from '../auth/index';
-import { getBoardAccess } from '../boards/index';
+import { getBoardAccess, visitsBoardUnseen } from '../boards/index';
 import { admitSocket, endSessionSockets, flushAllRooms, listenToOtherInstances, liveSessionKeys, loadedRoomCount, pendingPersistCount, profileChanged } from './rooms';
 
 /**
@@ -72,7 +72,10 @@ function objectDocRoute(kind: ObjectKind, PREFIX: string): WsRoute {
         // The other kind's id reads like no access: a socket never learns what a container is.
         const role = access.kind === kind ? access.role : null;
         if (!role) return { code: 4403, reason: kind === 'doc' ? 'No access to this doc' : 'No access to this board' };
+        // One of Freero's operators on a board only its link opens to them: no presence, reads only.
+        const unseen = account ? await visitsBoardUnseen(boardId, user.id) : false;
         return {
+          ...(unseen ? { unseen: true, maxRole: 'viewer' as const } : {}),
           boardId,
           kind,
           userId: user.id,

@@ -261,6 +261,12 @@ export interface Admission {
    * public page's readers never crowd the board's people) and has no private layer.
    */
   visitor?: boolean;
+  /**
+   * One of Freero's operators on a board only its link opens to them (boards' visitsUnseen): like a
+   * visitor it publishes no presence, and its closing records no last visit (board_seen). Admit it
+   * with `maxRole: 'viewer'` too.
+   */
+  unseen?: boolean;
   /** #97: a guest's name as it gave it (stamped on what it adds as `guestName`). */
   guestName?: string;
   /** #97: this guest may edit (boards' describeAccess `guestEdit`); re-resolved on every access refresh. */
@@ -322,7 +328,10 @@ interface Conn {
   held: Uint8Array[] | null;
   /** See Admission.resolveRole / Admission.visitor. */
   resolveRole?: () => Promise<Role | null>;
+  /** Publishes no presence: Admission.visitor or Admission.unseen. */
   visitor: boolean;
+  /** See Admission.unseen. */
+  unseen: boolean;
   /** See Admission.guestName (null: an account). */
   guestName: string | null;
   /** See Admission.guestEdit (the guest's access; `guestGrant` is what it may do now). */
@@ -1198,7 +1207,8 @@ class Room {
       lastResync: 0,
       held: null,
       resolveRole: a.resolveRole,
-      visitor: a.visitor === true,
+      visitor: a.visitor === true || a.unseen === true,
+      unseen: a.unseen === true,
       guestName: a.guestName ?? null,
       guestEdit: a.guestEdit === true,
       guestGrant: null,
@@ -1461,7 +1471,7 @@ class Room {
 
   leave(conn: Conn): void {
     if (!this.conns.delete(conn.ws)) return;
-    if (conn.kind === 'board') emitBoardLeft({ boardId: this.id, userId: conn.userId, at: Date.now() });
+    if (conn.kind === 'board' && !conn.unseen) emitBoardLeft({ boardId: this.id, userId: conn.userId, at: Date.now() });
     if (conn.awarenessIds.size > 0)
       awarenessProtocol.removeAwarenessStates(this.awareness, [...conn.awarenessIds], null);
     this.checkFacilitator();
