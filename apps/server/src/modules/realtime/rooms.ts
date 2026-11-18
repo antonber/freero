@@ -150,6 +150,7 @@ import { emitSuggestionsDecided, emitSuggestionsProposed } from './suggestionEve
 import { emitBoardLeft } from './visits';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
+import { applyThenGuard } from './applyWithGuards';
 import { applyDocEdit, docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
 import type { DocBlock, DocEdit } from '@freero/shared';
 import type { SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
@@ -807,7 +808,7 @@ class Room {
       for (const n of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) doc.getMap<unknown>(n);
       const overrides = mayProtectOn(conn);
       doc.transact((tr) => {
-        Y.applyUpdate(doc, update);
+        applyThenGuard(tr, doc, update);
         fixed = guardVotes(tr, doc, this.doc, { userId: conn.userId, participant });
         fixed = guardServerCollections(tr, doc) || fixed;
         if (participant) {
@@ -1301,7 +1302,7 @@ class Room {
       const lost = conn.lostAccepts && Date.now() - conn.lostAccepts.at <= LOST_ACCEPT_WINDOW_MS ? conn.lostAccepts.records : [];
       conn.lostAccepts = null;
       this.doc.transact((tr) => {
-        Y.applyUpdate(this.doc, update);
+        applyThenGuard(tr, this.doc, update);
         fixed = revertLostAccepts(tr, this.doc, [...lost, ...rejectedCreatesAdded(tr, this.doc, this.layers.get(EDITORS_LAYER)?.doc)]) > 0;
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access }) || fixed;
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
@@ -1339,7 +1340,7 @@ class Room {
       let fixed = false;
       if (conn.participant) for (const name of PARTICIPANT_WRITABLE) this.doc.getMap<unknown>(name);
       this.doc.transact((tr) => {
-        Y.applyUpdate(this.doc, update);
+        applyThenGuard(tr, this.doc, update);
         // A participant's own ballot and pick only (participation.ts).
         if (conn.participant) {
           fixed = guardVotes(tr, this.doc, this.doc, { userId: conn.userId, participant: true });
@@ -1397,7 +1398,7 @@ class Room {
     let refused: GuestEditNoticeCode | null = null;
     let moved: MovedEntry[] = [];
     this.doc.transact((tr) => {
-      Y.applyUpdate(this.doc, update);
+      applyThenGuard(tr, this.doc, update);
       if (conn.participant) {
         fixed = guardVotes(tr, this.doc, this.doc, { userId: conn.userId, participant: true });
         fixed = guardParticipantEstimates(tr, this.doc, this.doc, conn.userId) || fixed;
