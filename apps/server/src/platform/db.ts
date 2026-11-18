@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
 import type { PGlite, Transaction as PGliteTx } from '@electric-sql/pglite';
+import { gaugeFn } from './metrics';
 
 export type Row = Record<string, unknown>;
 
@@ -82,8 +83,27 @@ export function redactUrl(url: string): string {
   }
 }
 
+/** The pg pool of this process (for the pool gauges and checkout-timeout errors). */
+let livePool: pg.Pool | null = null;
+
+/**
+ * A pool checkout that timed out says what the pool held at that moment, so a log tells "all
+ * connections busy" from "Postgres unreachable".
+ */
+function withPoolState(e: unknown, pool: pg.Pool, max: number): unknown {
+  if (e instanceof Error && /timeout exceeded when trying to connect/.test(e.message))
+    e.message += ` (pool: ${pool.totalCount}/${max} open, ${pool.idleCount} idle, ${pool.waitingCount} waiting)`;
+  return e;
+}
+
 async function openPg(url: string, poolSize: number): Promise<Driver> {
   const pool = new pg.Pool({ connectionString: url, max: poolSize, connectionTimeoutMillis: 5000, types: pgTypes });
+  livePool = pool;
+  // A checkout that times out ("timeout exceeded when trying to connect") is either every
+  // connection busy (waiting > 0 at the limit) or Postgres not answering: these tell them apart.
+  gaugeFn('freero_db_pool_connections', 'Postgres connections this process holds open (busy and idle)', () => livePool?.totalCount ?? 0);
+  gaugeFn('freero_db_pool_idle', 'Postgres connections open and idle', () => livePool?.idleCount ?? 0);
+  gaugeFn('freero_db_pool_waiting', 'Queries waiting for a free Postgres connection', () => livePool?.waitingCount ?? 0);
   // An idle client losing its connection (Postgres restart) must not crash the process; the pool
   // replaces it on the next checkout.
   pool.on('error', (err) => console.error('[freero db] idle Postgres connection error:', err.message));
@@ -105,12 +125,13 @@ async function openPg(url: string, poolSize: number): Promise<Driver> {
     },
   });
   const poolQ = q(pool);
+  const checkout = () => pool.connect().catch((e: unknown) => Promise.reject(withPoolState(e, pool, poolSize)));
   return {
     kind: 'pg',
-    query: poolQ.query,
-    exec: poolQ.exec,
+    query: (sql, params) => poolQ.query(sql, params).catch((e: unknown) => Promise.reject(withPoolState(e, pool, poolSize))),
+    exec: (sql) => poolQ.exec(sql).catch((e: unknown) => Promise.reject(withPoolState(e, pool, poolSize))),
     async transaction(fn) {
-      const client = await pool.connect();
+      const client = await checkout();
       let broken: Error | undefined;
       try {
         await client.query('BEGIN');
@@ -130,7 +151,7 @@ async function openPg(url: string, poolSize: number): Promise<Driver> {
     },
     async tryLock(key) {
       // A session lock lives on one connection: keep a dedicated client until it is released.
-      const client = await pool.connect();
+      const client = await checkout();
       try {
         const r = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [key]);
         if (r.rows[0]?.ok === true) {
@@ -150,7 +171,10 @@ async function openPg(url: string, poolSize: number): Promise<Driver> {
       client.release();
       return null;
     },
-    close: () => pool.end(),
+    close: () => {
+      if (livePool === pool) livePool = null;
+      return pool.end();
+    },
   };
 }
 
