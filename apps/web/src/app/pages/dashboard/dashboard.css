@@ -860,3 +860,147 @@
     grid-template-columns: 64px minmax(0, 1fr) 110px 140px;
   }
 }
+
+/* Get started (GetStarted.tsx): an account's first two weeks. */
+.fr-dash-start {
+  margin-bottom: 28px;
+  padding: 18px 20px;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-lg);
+}
+
+.fr-dash-start__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.fr-dash-start__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--fr-ink);
+}
+
+.fr-dash-start__sub {
+  margin: 4px 0 0;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-start__starts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fr-dash-start__start {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  color: var(--fr-ink);
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  cursor: pointer;
+  transition: border-color 0.15s var(--fr-ease), background 0.15s var(--fr-ease);
+}
+
+.fr-dash-start__start:hover {
+  border-color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+.fr-dash-start__start:focus-visible,
+.fr-dash-start__link:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-dash-start__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 14px;
+}
+
+.fr-dash-start__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  color: var(--fr-primary);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.fr-dash-start__link:hover {
+  text-decoration: underline;
+}
+
+.fr-dash-start__source {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-start__thanks {
+  color: var(--fr-ink-2);
+}
+
+/* Jump back in (JumpBackIn.tsx). */
+.fr-dash-jump {
+  margin-bottom: 24px;
+}
+
+.fr-dash-jump__title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-jump__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fr-dash-jump__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(320px, 100%);
+  padding: 9px 14px;
+  color: var(--fr-ink);
+  text-decoration: none;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+}
+
+.fr-dash-jump__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-dash-jump__item:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-dash-jump__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

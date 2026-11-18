@@ -15,6 +15,8 @@ import { onLaunchedBackup, takeBackup } from '../../lib/pendingBackup';
 import { BoardItem, type BoardActions } from './BoardItem';
 import { ContentSearch, useContentSearch } from './ContentSearch';
 import { RecentActivity } from './RecentActivity';
+import { GetStarted } from './GetStarted';
+import { JumpBackIn } from './JumpBackIn';
 import { BoardPlaceDialog } from './BoardPlaceDialog';
 import { RestoreBackupDialog } from './RestoreBackupDialog';
 import { GalleryDialog } from './GalleryDialog';
@@ -451,6 +453,10 @@ export function DashboardPage() {
               onChanged={() => void ws.reloadProjects()}
             />
           ) : null}
+          {view === 'home' && !searching && mayCreate ? (
+            <GetStarted boards={boards} onTemplate={(id) => setParams({ template: id })} onBlank={() => void create('blank')} onInvite={setSharing} />
+          ) : null}
+          {view === 'home' && !searching ? <JumpBackIn boards={boards} /> : null}
           {showCreate && !searching ? (
             <section className="fr-create" aria-label={tr('create')}>
               <button type="button" className="fr-create__tile fr-create__tile--blank" onClick={() => create('blank')} disabled={!!creating}>
@@ -790,6 +796,7 @@ export function DashboardPage() {
       ) : null}
       {sharing ? (
         <ShareDialog
+          source="dashboard"
           boardId={sharing.id}
           board={sharing}
           open
