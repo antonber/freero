@@ -29,8 +29,19 @@ export function analyticsScriptTag(config: Config, mode: 'site' | 'frame' = 'sit
   return `<script src="${RUNTIME_PATH}" data-freero-ga="${id}"${mode === 'frame' ? ' data-mode="frame"' : ' defer'}></script>`;
 }
 
-/** `html` with the runtime added at the end of its head (unchanged without GA_MEASUREMENT_ID). */
+/** Where the marketing pages' PostHog runtime is served from (the web build writes it there; POSTHOG_BROWSER). */
+export const POSTHOG_RUNTIME_PATH = '/posthog.js';
+
+/** The PostHog runtime's script tag for a marketing page, or '' unless POSTHOG_BROWSER is on. */
+export function posthogScriptTag(config: Config): string {
+  const ph = config.posthog;
+  if (!ph?.browser) return '';
+  // The key is checked against /^phc_[A-Za-z0-9]+$/ and the host is an https URL: nothing to escape but quotes, which they can't hold.
+  return `<script src="${POSTHOG_RUNTIME_PATH}" data-freero-ph-key="${ph.key}" data-freero-ph-host="${ph.host}" defer></script>`;
+}
+
+/** `html` with the runtimes added at the end of its head (unchanged without GA_MEASUREMENT_ID or POSTHOG_BROWSER). */
 export function withAnalyticsRuntime(html: string, config: Config): string {
-  const tag = analyticsScriptTag(config);
+  const tag = analyticsScriptTag(config) + posthogScriptTag(config);
   return tag ? html.replace('</head>', `${tag}</head>`) : html;
 }

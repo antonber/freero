@@ -15,9 +15,10 @@ import { badRequest, handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentRequestContext } from '../../platform/requestContext';
 import { contentSecurityPolicy } from '../../platform/security';
-import { currentUser, requireUser } from '../auth/index';
-import { analyticsScriptTag, FRAME_PATH, RUNTIME_PATH } from './index';
-import { productAnalyticsOn, setAccountOptedOut, trackProductEvent } from './productEvents';
+import { currentUser, requireUser, userFromCookieHeader } from '../auth/index';
+import { analyticsScriptTag, FRAME_PATH, POSTHOG_RUNTIME_PATH, RUNTIME_PATH } from './index';
+import { productAnalyticsOn, pseudonym, setAccountOptedOut, trackProductEvent } from './productEvents';
+import { anyOptedOut } from './repo';
 
 // /api/analytics and the two root paths: the module serves at the root (like modules/site).
 export const mountPath = '/';
@@ -27,14 +28,27 @@ export default function analyticsRoutes({ config }: ServerContext): Router {
   const on = !!config.googleAnalyticsId;
   const notFound = (res: import('express').Response) => res.status(404).type('text/plain').send('Not found');
 
-  r.get('/api/analytics', (_req, res) => {
-    const body: AnalyticsSettings = { enabled: on, productAnalytics: productAnalyticsOn() };
-    res.setHeader('Cache-Control', 'no-cache');
-    res.json(body);
-  });
+  r.get(
+    '/api/analytics',
+    handle(async (req, res) => {
+      const browser = config.posthog?.browser ? config.posthog : null;
+      // The signed-in account's pseudonym: the page's PostHog events join the server's under it. An
+      // account that turned analytics off gets no PostHog in any browser.
+      const user = browser ? await userFromCookieHeader(req.headers.cookie) : null;
+      const ph = browser && !(user && (await anyOptedOut([user.id]))) ? browser : null;
+      const body: AnalyticsSettings = {
+        enabled: on,
+        productAnalytics: productAnalyticsOn(),
+        ...(ph ? { posthog: { key: ph.key, host: ph.host, ...(user ? { distinctId: pseudonym('account', user.id) } : {}) } } : {}),
+      };
+      res.setHeader('Cache-Control', 'private, no-cache');
+      res.json(body);
+    }),
+  );
 
   // Served by the web build's static files (main.ts) only while analytics is on.
   r.get(RUNTIME_PATH, (_req, res, next) => (on ? next() : notFound(res)));
+  r.get(POSTHOG_RUNTIME_PATH, (_req, res, next) => (config.posthog?.browser ? next() : notFound(res)));
 
   r.get(FRAME_PATH, (req, res) => {
     if (!on) return notFound(res);

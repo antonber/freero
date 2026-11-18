@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createApp } from '../../platform/http';
 import { loadConfig, type Config } from '../../platform/config';
+import { withAnalyticsRuntime } from './index';
 import analyticsRoutes, { mountPath } from './routes';
 
 /** The module's routes with a stand-in for the web build's static files behind them. */
@@ -10,6 +11,7 @@ async function serve(config: Config) {
   const app = createApp(config);
   app.use(mountPath, analyticsRoutes({ config, onShutdown: () => undefined }));
   app.get('/analytics.js', (_req, res) => res.type('text/javascript').send('/* runtime */'));
+  app.get('/posthog.js', (_req, res) => res.type('text/javascript').send('/* posthog */'));
   const server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   return { server, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
@@ -33,6 +35,23 @@ it('without GA_MEASUREMENT_ID or POSTHOG_KEY a server offers no analytics: the a
     fetch(`${off.base}${path}`, { method, headers: { origin: off.base, 'content-type': 'application/json' }, body: JSON.stringify(body) });
   expect((await post('/api/analytics/events', 'POST', { name: 'template_used', template: 'kanban' })).status).toBe(404);
   expect((await post('/api/analytics/opt-out', 'PUT', { optedOut: true })).status).toBe(404);
+});
+
+it('PostHog runs in pages only with POSTHOG_BROWSER: then the app is told its key and host and the marketing pages get its runtime; with POSTHOG_KEY alone neither, and /posthog.js is a 404', async () => {
+  const key = { NODE_ENV: 'test', FREERO_DATA_DIR: 'memory', POSTHOG_KEY: 'phc_testtesttesttesttesttest1234' };
+  const serverOnly = await serve(loadConfig(key));
+  const browser = await serve(loadConfig({ ...key, POSTHOG_BROWSER: 'true' }));
+  try {
+    expect((await (await fetch(`${serverOnly.base}/api/analytics`)).json()).posthog).toBeUndefined();
+    expect((await fetch(`${serverOnly.base}/posthog.js`)).status).toBe(404);
+    expect(withAnalyticsRuntime('<head></head>', loadConfig(key))).toBe('<head></head>');
+    // Signed out: no pseudonym to identify with.
+    expect((await (await fetch(`${browser.base}/api/analytics`)).json()).posthog).toEqual({ key: key.POSTHOG_KEY, host: 'https://us.i.posthog.com' });
+    expect(await (await fetch(`${browser.base}/posthog.js`)).text()).toBe('/* posthog */');
+    expect(withAnalyticsRuntime('<head></head>', loadConfig({ ...key, POSTHOG_BROWSER: 'true' }))).toContain(`<script src="/posthog.js" data-freero-ph-key="${key.POSTHOG_KEY}" data-freero-ph-host="https://us.i.posthog.com" defer></script>`);
+  } finally {
+    for (const s of [serverOnly, browser]) await new Promise((r) => s.server.close(r));
+  }
 });
 
 it('with it, the analytics frame runs the runtime in frame mode and only this origin may frame it', async () => {

@@ -48,6 +48,7 @@ beforeAll(async () => {
     POSTHOG_KEY: 'phc_testtesttesttesttesttest1234',
     POSTHOG_HOST: `http://127.0.0.1:${(posthog.address() as AddressInfo).port}`,
     OPERATOR_EMAILS: 'ops@product-events.test.freero.app',
+    POSTHOG_ERRORS: 'true',
   });
   ctx = createContext(config);
   init(ctx);
@@ -60,6 +61,10 @@ beforeAll(async () => {
     handle(async (req, res) => res.json(await createBoard(currentUser(req).id, 'Plan', '', 'none'))),
   );
   app.use(mountPath, analyticsRoutes(ctx));
+  // A request that fails on the server (a 500): reported like any (platform/errorReporting).
+  app.get('/api/test/boom', requireUser, () => {
+    throw new Error('the database hiccuped');
+  });
   app.use(errorHandler());
   server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -286,6 +291,15 @@ it('opening the app twice in a day sends one app_opened, the next day one more; 
   await flushProductEvents();
   expect(eventsOf(fay.id, 'app_opened')).toHaveLength(2);
   expect(eventsOf(fay.id, 'discovery_answered').map((e) => e.properties.discovery_source)).toEqual(['ai_assistant']);
+});
+
+it('with POSTHOG_ERRORS, an error on the server reaches PostHog error tracking as $exception, under the pseudonym of the account whose request failed', async () => {
+  const gil = await person('Gil');
+  expect((await send(gil, 'GET', '/api/test/boom')).status).toBe(500);
+  await flushProductEvents();
+  const [exception] = eventsOf(gil.id, '$exception');
+  expect(exception.properties).toMatchObject({ $request_method: 'GET', $request_path: '/api/test/boom', $geoip_disable: true });
+  expect(JSON.stringify(exception.properties.$exception_list)).toContain('the database hiccuped');
 });
 
 it('events still queued when the server shuts down are sent before it stops', async () => {

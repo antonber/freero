@@ -22,6 +22,7 @@
 import { PostHog } from 'posthog-node';
 import { productEventProperties, type ProductEvent } from '@freero/shared';
 import type { Config } from '../../platform/config';
+import { onErrorReported } from '../../platform/errorReporting';
 import { logError, logger } from '../../platform/log';
 import { currentRequestContext } from '../../platform/requestContext';
 import { mac } from '../../platform/secrets';
@@ -109,6 +110,29 @@ export async function stopProductAnalytics(timeoutMs = 5_000): Promise<void> {
   clearTimeout(timer);
   client = null;
   await c.shutdown(Math.max(100, deadline - Date.now()));
+}
+
+/**
+ * POSTHOG_ERRORS: every error the server reports (platform/errorReporting: a 500, a crash) goes to
+ * PostHog error tracking as `$exception` — under the account's pseudonym when it happened in one's
+ * request (and that account counts: not opted out, not a test address), else as the server.
+ * Returns the unsubscribe.
+ */
+export function reportErrorsToPostHog(): () => void {
+  return onErrorReported((e) => {
+    void (async () => {
+      const c = client;
+      if (!c) return;
+      const counted = e.userId !== null && !(await repo.anyOptedOut([e.userId])) && (await analyticsAudienceOf(e.userId)) !== 'test';
+      c.captureException(e.error, counted ? pseudonym('account', e.userId!) : 'freero-server', {
+        $geoip_disable: true,
+        environment: e.environment,
+        ...(e.release ? { release: e.release } : {}),
+        ...(e.request ? { $request_method: e.request.method, $request_path: e.request.url } : {}),
+        ...(counted ? {} : { $process_person_profile: false }),
+      });
+    })().catch((err: unknown) => logError('analytics: could not send an error to PostHog', err));
+  });
 }
 
 /** The account turned analytics off (or back on): PUT /api/analytics/opt-out. */
