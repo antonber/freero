@@ -1,6 +1,7 @@
 import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
 import { logError } from '../../platform/log';
+import { onAccountCreated } from '../auth/index';
 import { onAccessDecided, onAccessRequested, onBoardShared, onInviteAccepted } from '../members/index';
 import { onCardAssignment, onCommentMessage } from '../realtime/index';
 import * as boardChanges from './boardChanges';
@@ -37,6 +38,10 @@ export default function initNotifications(ctx: ServerContext): void {
     onAccessDecided(service.onAccessDecided),
     // Task cards (KAI-135): settled for a moment, then the assignee hears about it.
     onCardAssignment((e) => cards.onCardAssignment(e, () => cardChangesSettled.inc())),
+    // New accounts start with "Changes on your boards" daily: it is sent only on a day when someone
+    // ELSE changed a board they own or starred, so a board they shared brings them back to it.
+    // Turned off in account settings or by its own unsubscribe link.
+    onAccountCreated((userId) => boardChanges.setBoardChangesFrequency(userId, 'daily')),
   ];
   ctx.onShutdown(async () => {
     stops.forEach((stop) => stop());

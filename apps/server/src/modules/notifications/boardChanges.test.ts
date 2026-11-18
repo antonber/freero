@@ -3,12 +3,14 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
+import { createContext } from '../../platform/context';
 import { closeTestDb, openTestDb, outboxMails } from '../../platform/testing';
 import { flushActivityBursts as flushBursts, recordBoardChanges as recordChanges } from '../activity/index';
 import { createUser, getAccount, markEmailVerified, updateProfile } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { inviteBoardMember } from '../members/index';
 import { sendBoardChangeDigests, setBoardChangesFrequency } from './boardChanges';
+import initNotifications from './init';
 import { prefsFor, unsubscribe, unsubscribeToken } from './service';
 
 beforeAll(() => openTestDb());
@@ -57,4 +59,22 @@ it('the daily summary of changes on your boards arrives once, on your morning �
   const prefs = await prefsFor(ann.id);
   expect(prefs.boardChanges).toBe('off');
   expect(prefs.emailAll).toBe(true);
+});
+
+it('a new account starts with the daily summary on: the first change a collaborator makes on the board they shared reaches them the next morning', async () => {
+  const ctx = createContext(getConfig());
+  initNotifications(ctx);
+  try {
+    const t0 = Date.now();
+    const [cleo, dan] = [await person('Cleo'), await person('Dan')];
+    expect((await prefsFor(cleo.id)).boardChanges).toBe('daily');
+    const board = await createBoard(cleo.id, 'Launch', '', 'none');
+    await inviteBoardMember(null, board.id, await getAccount(cleo.id), { email: dan.email, role: 'editor' });
+    recordChanges({ boardId: board.id, actorId: dan.id, actorName: dan.name, layer: 'shared', changes: [{ id: 'd1', op: 'add', type: 'sticky', frameId: null }], frameTitles: {} }, t0 + HOUR);
+    await flushBursts(t0 + HOUR + getConfig().activityIdleMs, true);
+    await sendBoardChangeDigests(t0 + 2 * 24 * HOUR);
+    expect(mailsTo(cleo.email).map((m) => m.text).join('\n')).toContain('“Launch”: Dan added 1 item');
+  } finally {
+    await ctx.shutdown();
+  }
 });

@@ -1,4 +1,5 @@
-// "Changes on your boards" (#46): an email, off unless chosen, summarising what OTHER people did on
+// "Changes on your boards" (#46): an email (daily for new accounts, see init.ts; off unless chosen
+// for accounts from before), summarising what OTHER people did on
 // the boards someone owns or starred — each morning (daily) or on Monday morning (weekly), in their
 // time zone. What changed comes from the activity feed by the catch-up's rules (activity's
 // `boardChangesSince`: attributed changes only, hidden frames' contents for owners and editors,
