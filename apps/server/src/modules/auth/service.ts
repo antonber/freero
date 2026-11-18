@@ -37,7 +37,7 @@ export function publicUser(u: User): User {
 }
 
 export function toAccount(u: Account): Account {
-  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor, timeZone: u.timeZone ?? null, theme: u.theme ?? 'system', locale: u.locale ?? null };
+  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor, timeZone: u.timeZone ?? null, theme: u.theme ?? 'system', locale: u.locale ?? null, discoveryAnswered: !!(u as { discoverySource?: unknown }).discoverySource };
 }
 
 export function normalizeEmail(email: unknown): string {
@@ -114,6 +114,7 @@ export async function insertAccount(
   // password, or neither (provisioned by a workspace's directory over SCIM).
   const method = identity ? productSignInMethod(identity.provider) : input.passwordHash ? 'password' : 'scim';
   trackProductEvent(user.id, { name: 'signed_up', method, discoverySource: user.discoverySource });
+  for (const fn of accountCreatedListeners) await Promise.resolve(fn(user.id)).catch((e) => logError('auth: a new-account listener failed', e));
   // Born verified (a provider or the organization's directory vouched for the address): that proves
   // the address like a verification link would — pending invites convert, a verified domain's
   // workspace may take the account in (sso domain control, #64).
@@ -185,6 +186,13 @@ export async function updateProfile(userId: string, body: Record<string, unknown
     if (!isLocale(body.locale)) throw badRequest(`locale must be one of ${LOCALES.join(', ')}`, 'locale_unknown');
     patch.locale = body.locale;
   }
+  // "How did you find Freero?" for an account made without the sign-up form (a provider): once.
+  // A later answer is ignored, not refused: the first one stands and the app stops asking.
+  if (body.discoverySource !== undefined) {
+    const source = body.discoverySource;
+    if (!isDiscoverySource(source)) throw badRequest('discoverySource is not one of the answers', 'discovery_source_unknown');
+    if (await repo.setDiscoverySourceOnce(userId, source)) trackProductEvent(userId, { name: 'discovery_answered', discoverySource: source });
+  }
   await repo.updateUserProfile(userId, patch);
   // A theme or language alone is the person's own: open boards have nothing to take up.
   if (Object.keys(patch).every((k) => k === 'theme' || k === 'locale')) return getAccount(userId);
@@ -193,6 +201,17 @@ export async function updateProfile(userId: string, body: Record<string, unknown
     [...profileListeners].map((fn) => Promise.resolve(fn(userId)).catch((e) => logError('auth: a profile listener failed', e))),
   );
   return getAccount(userId);
+}
+
+const accountCreatedListeners = new Set<(userId: string) => Promise<void> | void>();
+
+/**
+ * Called for every new account, in the transaction that creates it when there is one (a failing
+ * listener is logged, never fails the sign-up). Notifications turns on its defaults here.
+ */
+export function onAccountCreated(fn: (userId: string) => Promise<void> | void): () => void {
+  accountCreatedListeners.add(fn);
+  return () => accountCreatedListeners.delete(fn);
 }
 
 const profileListeners = new Set<(userId: string) => Promise<void> | void>();
@@ -677,6 +696,19 @@ async function sessionFromKey(key: string): Promise<{ user: Account; key: string
   }
   touch(key, now);
   return { user: toAccount(found.user), key, sessionId: found.sessionId, authAt: found.authAt, method: found.method };
+}
+
+/**
+ * The app's startup check found this account signed in: its first open of the UTC day counts
+ * app_opened (product analytics' daily actives, whatever page it opened). Never throws.
+ */
+export async function noteAppOpened(user: Account, now = Date.now()): Promise<void> {
+  if (user.deletionScheduledFor !== null) return;
+  try {
+    if (await repo.markAppOpened(user.id, now)) trackProductEvent(user.id, { name: 'app_opened' });
+  } catch (e) {
+    logError('auth: could not note an app open', e);
+  }
 }
 
 /** The signed-in user of a cookie, or null — also null while the account awaits deletion. */

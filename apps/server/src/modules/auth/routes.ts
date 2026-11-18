@@ -46,6 +46,7 @@ import {
   RECENT_AUTH_MS,
   requireSession,
   requireUser,
+  noteAppOpened,
   sessionFromCookieHeader,
   sessionsEnded,
   startSession,
@@ -155,7 +156,9 @@ export default function authRoutes(_ctx: ServerContext): Router {
   r.get(
     '/auth/session',
     handle(async (req, res) => {
-      res.json({ user: (await sessionFromCookieHeader(req.headers.cookie))?.user ?? null } satisfies SessionResponse);
+      const user = (await sessionFromCookieHeader(req.headers.cookie))?.user ?? null;
+      if (user) await noteAppOpened(user);
+      res.json({ user } satisfies SessionResponse);
     }),
   );
 

@@ -32,6 +32,7 @@ export {
   // when it ended in another process or silently (KAI-146).
   onSessionEnd,
   trackLiveSessions,
+  onAccountCreated,
   onProfileChanged,
   // A person's own profile change (name, colour, photo, time zone), validated as PATCH /auth/me.
   updateProfile,
@@ -90,6 +91,10 @@ export { currentSessionMethod, onSignedOutEverywhere } from './service';
 export { exportAccountData, type AccountDataExport } from './dataExport';
 // Operators (OPERATOR_EMAILS, verified): moderation, problem reports, the problems:triage scope.
 export { isOperator } from './operators';
+// Product analytics leaves out test addresses and marks operators internal (modules/analytics).
+export { analyticsAudienceOf } from './operators';
+// The app's startup check counts the day's first open (product analytics' app_opened).
+export { noteAppOpened } from './service';
 
 /** Ids of the accounts whose address is at `domain` (exactly). */
 export function userIdsAtDomain(domain: string): Promise<string[]> {

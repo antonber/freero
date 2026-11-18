@@ -1,7 +1,7 @@
 import { DISCOVERY_SOURCES } from '@freero/shared';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { closeTestDb, openTestDb } from '../../platform/testing';
-import { createUser } from './service';
+import { createUser, getAccount, updateProfile } from './service';
 import { discoverySourceCounts } from './signups';
 
 beforeAll(() => openTestDb());
@@ -40,4 +40,14 @@ it('the sign-up sources count every answer the form offers, each under its own a
   expect(now).toMatchObject({ none: 1, total: DISCOVERY_SOURCES.length + 2 });
   // A period that ended before these sign-ups doesn't see them.
   expect(await discoverySourceCounts(0, since)).toEqual(before);
+});
+
+it('someone who signed up without the form (a provider) can answer once afterwards: the answer is counted, the app stops asking, and a second answer changes nothing', async () => {
+  const since = freshStart();
+  const viaGoogle = await signUp('provider');
+  expect((await getAccount(viaGoogle.id)).discoveryAnswered).toBe(false);
+  expect((await updateProfile(viaGoogle.id, { discoverySource: 'ai_assistant' })).discoveryAnswered).toBe(true);
+  await updateProfile(viaGoogle.id, { discoverySource: 'search' });
+  await expect(updateProfile(viaGoogle.id, { discoverySource: 'a blog' })).rejects.toMatchObject({ status: 400 });
+  expect((await discoverySourceCounts(since, Date.now() + DAY)).answers).toMatchObject({ ai_assistant: 1, search: 0 });
 });

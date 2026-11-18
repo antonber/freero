@@ -99,6 +99,20 @@ export async function countDiscoverySources(since: number, until: number): Promi
   return rows.map((r) => ({ source: r.source, count: Number(r.n) }));
 }
 
+/**
+ * Records "How did you find Freero?" for an account that has no answer yet; false when it already
+ * had one (the first answer stands) or there is no such account.
+ */
+export async function setDiscoverySourceOnce(id: string, source: DiscoverySource): Promise<boolean> {
+  return (await query(`UPDATE users SET discovery_source = $2 WHERE id = $1 AND discovery_source IS NULL RETURNING 1`, [id, source])).length > 0;
+}
+
+/** Marks that the account opened the app on the UTC day of `now`; true only for the day's first open. */
+export async function markAppOpened(id: string, now: number): Promise<boolean> {
+  const day = new Date(now).toISOString().slice(0, 10);
+  return (await query(`UPDATE users SET app_opened_on = $2::date WHERE id = $1 AND (app_opened_on IS NULL OR app_opened_on < $2::date) RETURNING 1`, [id, day])).length > 0;
+}
+
 /** Changes only the given fields, in one statement (no read-modify-write that could drop a concurrent edit). */
 export async function updateUserProfile(
   id: string,
