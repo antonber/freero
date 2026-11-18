@@ -189,12 +189,31 @@ export type ProductEvent =
    */
   | { name: 'agent_proposal_resolved'; outcome: 'accepted' | 'rejected'; proposer: 'app' | 'ai'; count: number }
   /** Someone changed a doc's text: at most once per account, doc and UTC day. Never which doc. */
-  | { name: 'doc_edited'; via: ProductEventVia };
+  | { name: 'doc_edited'; via: ProductEventVia }
+  /** A signed-in person opened the app (any page of it): at most once per account and UTC day. */
+  | { name: 'app_opened' }
+  /** "How did you find Freero?" answered after sign-up (accounts made without the form: a provider). */
+  | { name: 'discovery_answered'; discoverySource: DiscoverySource }
+  /** The share dialog opened: from the board's Share button, the share nudge or the get-started card. */
+  | { name: 'share_dialog_opened'; source: ShareSource }
+  /** "Copy link" in the share dialog, with what the link lets people do at that moment. */
+  | { name: 'share_link_copied'; access: LinkAccess }
+  /** A board's "invite people" nudge was shown (once per board), or the person chose Invite from it. */
+  | { name: 'share_nudge'; action: 'shown' | 'clicked' }
+  /** A step of the dashboard's get-started card: what was chosen there, never anything typed. */
+  | { name: 'get_started'; step: GetStartedStep };
+
+/** Where the share dialog was opened from. */
+export const SHARE_SOURCES = ['board', 'nudge', 'dashboard'] as const;
+export type ShareSource = (typeof SHARE_SOURCES)[number];
+/** What the get-started card reports: shown, dismissed, and which starting point was taken. */
+export const GET_STARTED_STEPS = ['shown', 'dismissed', 'template', 'blank', 'connect_agent', 'invite'] as const;
+export type GetStartedStep = (typeof GET_STARTED_STEPS)[number];
 
 export type ProductEventName = ProductEvent['name'];
 
 /** The events the app may report itself (POST /api/analytics/events): what only the browser sees. */
-export const CLIENT_PRODUCT_EVENTS = ['template_used'] as const;
+export const CLIENT_PRODUCT_EVENTS = ['template_used', 'share_dialog_opened', 'share_link_copied', 'share_nudge', 'get_started'] as const;
 export type ClientProductEvent = Extract<ProductEvent, { name: (typeof CLIENT_PRODUCT_EVENTS)[number] }>;
 
 /** How a sign-in method is reported: a workspace's identity provider (`sso:<workspace>`) as `sso`, never which workspace. */
@@ -283,6 +302,18 @@ export function productEventProperties(e: ProductEvent): Record<string, string |
         : null;
     case 'doc_edited':
       return oneOf(e.via, VIAS) ? { via: e.via } : null;
+    case 'app_opened':
+      return {};
+    case 'discovery_answered':
+      return isDiscoverySource(e.discoverySource) ? { discovery_source: e.discoverySource } : null;
+    case 'share_dialog_opened':
+      return oneOf(e.source, SHARE_SOURCES) ? { source: e.source } : null;
+    case 'share_link_copied':
+      return oneOf(e.access, ['none', 'viewer', 'commenter', 'editor'] as const) ? { access: e.access } : null;
+    case 'share_nudge':
+      return oneOf(e.action, ['shown', 'clicked'] as const) ? { action: e.action } : null;
+    case 'get_started':
+      return oneOf(e.step, GET_STARTED_STEPS) ? { step: e.step } : null;
     default:
       return null;
   }
@@ -295,7 +326,18 @@ export function productEventProperties(e: ProductEvent): Record<string, string |
 export function parseClientProductEvent(body: unknown): ClientProductEvent | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const b = body as Record<string, unknown>;
-  if (b.name !== 'template_used' || Object.keys(b).length !== 2 || typeof b.template !== 'string') return null;
-  const e: ClientProductEvent = { name: 'template_used', template: b.template };
+  if (typeof b.name !== 'string' || !Object.hasOwn(CLIENT_EVENT_FIELD, b.name)) return null;
+  const field = CLIENT_EVENT_FIELD[b.name as ClientProductEvent['name']];
+  if ( Object.keys(b).length !== 2 || typeof b[field] !== 'string') return null;
+  const e = { name: b.name, [field]: b[field] } as ClientProductEvent;
   return productEventProperties(e) ? e : null;
 }
+
+/** The one field each event the app may report carries. */
+const CLIENT_EVENT_FIELD: Record<ClientProductEvent['name'], string> = {
+  template_used: 'template',
+  share_dialog_opened: 'source',
+  share_link_copied: 'access',
+  share_nudge: 'action',
+  get_started: 'step',
+};

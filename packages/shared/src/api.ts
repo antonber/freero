@@ -987,6 +987,12 @@ export interface Account extends User {
   timeZone: string | null;
   /** Set while the account is scheduled for deletion: it is purged at this instant unless restored. */
   deletionScheduledFor: number | null;
+  /**
+   * [additive] They answered "How did you find Freero?" (on the sign-up form, or once afterwards:
+   * `PATCH /auth/me` `discoverySource`, accepted only while there is no answer). Never the answer.
+   * Absent (a server from before it): treat as answered, so the app doesn't ask.
+   */
+  discoveryAnswered?: boolean;
 }
 export interface AuthResponse { user: Account }
 export interface SessionResponse { user: Account | null }
