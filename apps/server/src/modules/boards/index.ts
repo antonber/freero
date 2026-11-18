@@ -6,12 +6,14 @@ import { callToken } from './callRoom';
 import { closeBoardDoc, initBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
+import { isOperatorAccount } from '../auth/index';
 import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayInviteToWorkspace, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
 import { boardLifecycle } from './events';
 import {
   boardLetsCopy,
   boardOpened,
+  visitsUnseen,
   cleanDescription,
   linkProblems,
   cleanTitle,
@@ -119,6 +121,15 @@ export async function getBoardAccess(
   const { role, coOwner, guestEdit } = await describeAccess(board, userId);
   // #97 guestEdit: a guest (role commenter) whose board socket may also edit what it adds.
   return { exists: true, role, ownerId: board.ownerId, removed: false, kind: board.kind, coOwner, guestEdit: guestEdit === true };
+}
+
+/**
+ * Whether this account's socket on the board leaves no trace (boards' visitsUnseen: one of Freero's
+ * operators on a board only its link opens to them): no presence, read-only.
+ */
+export async function visitsBoardUnseen(boardId: string, userId: string): Promise<boolean> {
+  const board = await repo.getBoard(boardId);
+  return !!board && (await visitsUnseen(board, userId, await isOperatorAccount(userId)));
 }
 
 /**

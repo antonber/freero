@@ -934,6 +934,11 @@ export async function recordOpen(boardId: string, userId: string, now: number): 
   return { first, firstToday: first || newDay !== null };
 }
 
+/** Forgets that the user opened the board (an operator's unseen visit, boards' visitsUnseen). */
+export async function forgetOpen(boardId: string, userId: string): Promise<void> {
+  await query(`DELETE FROM board_opens WHERE board_id = $1 AND user_id = $2`, [boardId, userId]);
+}
+
 /** boardId -> lastOpenedAt for a user. */
 export async function opensOf(userId: string): Promise<Map<string, number>> {
   const rows = await query<{ board_id: string; opened_at: Date }>(

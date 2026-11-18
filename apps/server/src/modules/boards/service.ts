@@ -172,6 +172,21 @@ export function linkProblems(board: Board, policies: Pick<WorkspacePolicies, 'li
 }
 
 /**
+ * Freero's operators looking at a board that only its LINK opens to them (a public board they spot
+ * check, a reported board's link) leave no trace on it: the open isn't recorded (the board doesn't
+ * join their lists, its inactivity clock and its workspace's active people don't move, its owner
+ * isn't counted a collaborator), their socket shows no presence (no avatar, cursor or selection)
+ * and reads only (an edit or a comment would name them). On a board they own, were invited to or
+ * reach through their team they are anyone else. `operator`: the caller's isOperator for this user.
+ */
+export async function visitsUnseen(board: Board, userId: string, operator: boolean): Promise<boolean> {
+  if (!operator || userId === board.ownerId || isGuestId(userId)) return false;
+  const [membership, access] = await Promise.all([getMembership(board.id, userId), boardAccess(userId, board)]);
+  if (membership) return false;
+  return resolveRole({ ...board, linkAccess: 'none' }, userId, null, access) === null;
+}
+
+/**
  * Someone opened the board (GET /boards/:id): its recent lists, and a link-only board becomes
  * discoverable to them. The first time someone other than its owner opens it, a collaborator
  * joined: counted for the owner, unless either of them turned analytics off. Their first open of

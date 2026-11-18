@@ -5,7 +5,7 @@ import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAuditQuietly } from '../audit/index';
-import { actorId, currentActor, currentUser, endGuestSession, guestFromCookieHeader, removedGuestBoard, requireUser, requireUserOrGuest, startGuestSession } from '../auth/index';
+import { actorId, currentActor, currentUser, endGuestSession, guestFromCookieHeader, isOperator, removedGuestBoard, requireUser, requireUserOrGuest, startGuestSession } from '../auth/index';
 import { listBoardGuests, removeBoardGuest, undoGuestEdits } from './guests';
 import { isLinkAccess, managesSharing } from '../members/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
@@ -18,6 +18,7 @@ import * as repo from './repo';
 import {
   BOARD_FILTERS,
   boardOpened,
+  visitsUnseen,
   boardTarget,
   recordExport,
   type BoardFilter,
@@ -98,8 +99,12 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const user = currentUser(req);
       const { board, role, access } = await requireAccess(req.params.id, user.id);
-      await boardOpened(board, user.id, Date.now(), role);
-      res.json({ board: await toSummary(board, user.id, role, access) } satisfies Out);
+      // An operator on a board only its link opens to them leaves no trace and reads only (visitsUnseen).
+      const unseen = await visitsUnseen(board, user.id, isOperator(user));
+      // An earlier visit (before visits were unseen) is forgotten: the board leaves their lists.
+      if (unseen) await repo.forgetOpen(board.id, user.id);
+      else await boardOpened(board, user.id, Date.now(), role);
+      res.json({ board: await toSummary(board, user.id, unseen ? 'viewer' : role, access) } satisfies Out);
     }),
   );
 
