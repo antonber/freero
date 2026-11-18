@@ -1872,6 +1872,12 @@ reports" below).
   unknown id. Rate-limited per IP and per user; one open report per reporter and target.
 - Operators: a VERIFIED address in `OPERATOR_EMAILS` (`isOperator`), never a database flag. The
   operator API answers 404 to everyone else.
+- An operator on a board only its LINK opens to them (not its owner, no membership, not through
+  their team: boards' `visitsUnseen`) leaves no trace: GET /boards/:id records no open (the board
+  joins none of their lists, its inactivity clock and its workspace's active people don't move, its
+  owner isn't counted a collaborator; an open recorded before is deleted) and answers role
+  `viewer`; the board socket is admitted `unseen` with `maxRole: 'viewer'` (realtime: no presence,
+  no last visit on leaving). The console's Preview never joins the board at all.
 - The moderated STATE lives in the owning modules, written only through their indexes [S4]:
   boards `removed_at` (taken down: `repo.getBoard` and lists treat it as gone like the trash;
   `requireAccess` answers 451 `board_removed` only to someone who could open it otherwise;
