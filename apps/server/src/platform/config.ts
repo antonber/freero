@@ -348,8 +348,13 @@ export interface Config {
    * unless the account turned analytics off or the request sends GPC / Do Not Track
    * (modules/analytics; ARCHITECTURE.md "Analytics"). Server-side only: no script, no CSP change.
    * Null: no client, nothing sent, the events endpoint answers 404.
+   * `browser` (POSTHOG_BROWSER, off by default): PostHog ALSO runs in pages — the marketing site's
+   * and the app's (not embeds, the assistants' live view, the operator console or OAuth consent) —
+   * recording page views with their full address and title, clicks and browser errors, under the
+   * same opt-outs, the CSP widened by PostHog's hosts (`assets`: where its extensions load from).
+   * `errors` (POSTHOG_ERRORS, off by default): the server's errors go to PostHog error tracking.
    */
-  posthog: { key: string; host: string } | null;
+  posthog: { key: string; host: string; assets: string; browser: boolean; errors: boolean } | null;
   /**
    * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
    * marketing page is served and robots.txt keeps crawlers off the whole instance.
@@ -897,6 +902,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       return null;
     }
   })();
+  /** PostHog Cloud serves its scripts from `<region>-assets.i.posthog.com`; any other host serves its own. */
+  const posthogAssetsHost = (host: string): string => host.replace(/^https:\/\/(us|eu)\.i\.posthog\.com$/, 'https://$1-assets.i.posthog.com');
   // IndexNow's own rule for a key: 8 to 128 characters of a-z, A-Z, 0-9 and dashes. Anything else
   // would make every submission fail later, far from the cause.
   const indexNowKey = str('SITE_INDEXNOW_KEY');
@@ -1312,7 +1319,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     openaiAppsChallenge: str('OPENAI_APPS_CHALLENGE'),
     oauthClientMetadataLoopback: bool('OAUTH_CLIENT_METADATA_LOOPBACK', false),
     googleAnalyticsId: gaId !== null && isGaMeasurementId(gaId) ? gaId : null,
-    posthog: posthogKey !== null && /^phc_[A-Za-z0-9]{20,80}$/.test(posthogKey) && posthogHost ? { key: posthogKey, host: posthogHost } : null,
+    posthog:
+      posthogKey !== null && /^phc_[A-Za-z0-9]{20,80}$/.test(posthogKey) && posthogHost
+        ? { key: posthogKey, host: posthogHost, assets: posthogAssetsHost(posthogHost), browser: bool('POSTHOG_BROWSER', false), errors: bool('POSTHOG_ERRORS', false) }
+        : null,
     site: {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),

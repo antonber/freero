@@ -196,12 +196,16 @@ export function contentSecurityPolicy(
   // app's same-origin analytics frame. Never on a page another site may frame (the assistants'
   // live view, a board embedded anywhere) nor on the embeds' own pages: they load no analytics.
   const ga = !!config.googleAnalyticsId && !opts.framable && !opts.ancestors && opts.analytics !== false;
+  // PostHog in pages (POSTHOG_BROWSER), on the same pages: posthog-js is served by us (/posthog.js,
+  // the app's own bundle) and loads its extensions from PostHog's assets host; what it sends goes
+  // to an https: host, which connect-src allows already.
+  const ph = !!config.posthog?.browser && !opts.framable && !opts.ancestors && opts.analytics !== false;
   // #149: calls docked on the board talk to the operator's own media server — a Jitsi deployment's
   // IFrame API script and meeting frame, or a LiveKit server's signalling socket.
   const calls = callOrigins(config);
   return [
     "default-src 'self'",
-    `script-src ${["'self'", ...(ga ? [GA_SCRIPT_ORIGIN] : []), ...calls.scripts, ...(opts.scripts ?? [])].join(' ')}`,
+    `script-src ${["'self'", ...(ga ? [GA_SCRIPT_ORIGIN] : []), ...(ph && config.posthog ? [config.posthog.assets] : []), ...calls.scripts, ...(opts.scripts ?? [])].join(' ')}`,
     // React style attributes. Fonts are self-hosted (scripts/fonts.mjs); data: is an export's
     // inlined faces.
     "style-src 'self' 'unsafe-inline'",

@@ -50,6 +50,16 @@ describe('frames the CSP allows (live embeds, KAI-127)', () => {
   });
 });
 
+it('PostHog in pages (POSTHOG_BROWSER) adds only its assets host to script-src, and nothing without it, with POSTHOG_KEY alone, or on a page another site may frame', () => {
+  const key = { POSTHOG_KEY: 'phc_testtesttesttesttesttest1234' };
+  const plain = contentSecurityPolicy(loadConfig({}), 'app.test', true);
+  expect(contentSecurityPolicy(loadConfig(key), 'app.test', true)).toBe(plain);
+  const browser = contentSecurityPolicy(loadConfig({ ...key, POSTHOG_BROWSER: 'true' }), 'app.test', true);
+  expect(browser).toBe(plain.replace("script-src 'self'", "script-src 'self' https://us-assets.i.posthog.com"));
+  for (const opts of [{ framable: true }, { ancestors: ['*'] }, { analytics: false }])
+    expect(contentSecurityPolicy(loadConfig({ ...key, POSTHOG_BROWSER: 'true' }), 'app.test', true, opts)).toBe(contentSecurityPolicy(loadConfig({}), 'app.test', true, opts));
+});
+
 it('Google Analytics widens the CSP only by Google’s hosts and the app’s own analytics frame, and not at all when unset, on any page another site may frame, or on the embeds’ pages', () => {
   const directives = (csp: string) => new Map(csp.split('; ').map((d) => [d.split(' ')[0], new Set(d.split(' ').slice(1))]));
   const unset = contentSecurityPolicy(loadConfig({}), 'app.test', true);

@@ -51,15 +51,43 @@ function frames(stack: string | undefined) {
     .reverse(); // Sentry wants the innermost frame last
 }
 
-/** Reports an error (no-op without a DSN). Never throws. */
+export interface ReportedError {
+  error: Error;
+  /** The account of the request it happened in, if any. */
+  userId: string | null;
+  request?: { method?: string; url?: string };
+  release: string | null;
+  environment: string;
+}
+const reporters = new Set<(e: ReportedError) => void>();
+
+/**
+ * Called for every error reported (after the same per-message throttle), besides the DSN:
+ * modules/analytics sends them to PostHog error tracking (POSTHOG_ERRORS). A throwing reporter is
+ * ignored.
+ */
+export function onErrorReported(fn: (e: ReportedError) => void): () => void {
+  reporters.add(fn);
+  return () => reporters.delete(fn);
+}
+
+/** Reports an error (no-op without a DSN or a reporter). Never throws. */
 export function reportError(err: unknown, extra: { message?: string; request?: { method?: string; url?: string } } = {}): void {
-  if (!target) return;
+  if (!target && !reporters.size) return;
   const e = err instanceof Error ? err : new Error(String(err));
   const fingerprint = `${e.name}:${e.message}`;
   const now = Date.now();
   if ((recent.get(fingerprint) ?? 0) > now - THROTTLE_MS) return;
   recent.set(fingerprint, now);
   if (recent.size > 500) recent.clear();
+  for (const fn of reporters) {
+    try {
+      fn({ error: e, userId: currentRequestContext()?.userId ?? null, request: extra.request, release: meta.release, environment: meta.environment });
+    } catch {
+      /* a reporter must never take the app down */
+    }
+  }
+  if (!target) return;
 
   const ctx = currentRequestContext();
   const eventId = randomUUID().replace(/-/g, '');
