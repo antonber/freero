@@ -8,6 +8,9 @@
 import type { Config } from '../../platform/config';
 
 export { trackProductEvent, productAnalyticsOn } from './productEvents';
+export { mcpAnalyticsFor } from './mcpAnalytics';
+// For tests of the modules that count (a stand-in PostHog: start the client, flush, read pseudonyms).
+export { startProductAnalytics, stopProductAnalytics, flushProductEvents, pseudonym, setAccountOptedOut } from './productEvents';
 
 /** Where the runtime is served from (the web build writes it there). */
 export const RUNTIME_PATH = '/analytics.js';

@@ -46,6 +46,9 @@ export function startProductAnalytics(config: Config): void {
   client.on('error', (e: unknown) => logError('analytics: PostHog did not take a batch of product events', e));
 }
 
+/** The PostHog client (null without POSTHOG_KEY): MCP analytics sends through it (mcpAnalytics.ts). */
+export const productAnalyticsClient = (): PostHog | null => client;
+
 /** Whether product events go anywhere on this server. */
 export const productAnalyticsOn = (): boolean => client !== null;
 
