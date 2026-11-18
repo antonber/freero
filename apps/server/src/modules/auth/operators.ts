@@ -11,6 +11,13 @@ export function isOperator(user: Pick<Account, 'email' | 'emailVerified'>): bool
   return user.emailVerified && getConfig().operatorEmails.includes(user.email.toLowerCase());
 }
 
+/** Whether this account is one of Freero's operators (for callers that have only its id). */
+export async function isOperatorAccount(userId: string): Promise<boolean> {
+  if (!getConfig().operatorEmails.length) return false;
+  const user = await repo.findUserById(userId);
+  return !!user && isOperator(user);
+}
+
 /**
  * An address under a name reserved for tests and documentation (RFC 2606, RFC 6761): example.com,
  * .net and .org and the .test, .example, .invalid and .localhost top-level names. No person's
