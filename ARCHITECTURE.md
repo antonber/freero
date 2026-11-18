@@ -1435,8 +1435,21 @@ optionally `POSTHOG_HOST` (default `https://us.i.posthog.com`; https only): with
 client exists, nothing is sent, `PUT /api/analytics/opt-out` and `POST /api/analytics/events`
 answer 404 and `GET /api/analytics` says `productAnalytics: false`.
 
-- **Server-side only** (posthog-node, MIT). No PostHog script in any page, no CSP change, no
-  autocapture, no session replay (boards hold people's content), no cookies. Events are batched
+- **Server-side, unless POSTHOG_BROWSER** (posthog-node, MIT). By default no PostHog script in
+  any page, no CSP change, no autocapture, no session replay, no cookies. With `POSTHOG_BROWSER`
+  (the owner's decision for the hosted service, 2026-11-18) posthog-js ALSO runs in pages
+  (`app/analytics/posthog.ts`: the marketing pages load it as `/posthog.js`, built alone by vite's
+  `freero-posthog`; the app imports it lazily from the bridge once `GET /api/analytics` names
+  `posthog`): page views with their full address and title, page leaves, autocapture (clicks,
+  with the clicked element's text) and the page's errors (exception autocapture) — not on
+  `/embed`, `/teams`, `/operator`, `/oauth` (`before_send` drops them), never session replay. The
+  same opt-outs stop it (this browser's, GPC / Do Not Track, and the signed-in account's: the
+  settings name no `posthog` for an account that opted out), and a signed-in person is identified
+  by the account's pseudonym (`posthog.distinctId` in the settings), so page and server events are
+  one person. The CSP adds PostHog's assets host to `script-src` (its extensions load from there)
+  on the pages Google's tag may run on. `POSTHOG_ERRORS` sends the server's reported errors
+  (`platform/errorReporting` `onErrorReported`: a 500, a crash) to PostHog error tracking as
+  `$exception` (`reportErrorsToPostHog`), under the pseudonym of the account whose request failed. Events are batched
   (20, or every 10 s) and the shutdown hook (`init.ts`) sends what is queued, waiting at most 5 s.
 - **Pseudonymous.** `distinct_id` is `platform/secrets` `mac('analytics.account:<id>')` (HMAC-SHA256
   under `SESSION_SECRET`, hex) — never the account id; a workspace is sent as the same HMAC of its
