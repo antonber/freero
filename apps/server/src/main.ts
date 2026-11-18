@@ -70,8 +70,10 @@ async function main(): Promise<void> {
     app.use('/assets', express.static(path.join(config.webDist, 'assets'), { index: false, immutable: true, maxAge: '1y' }));
     app.use(express.static(config.webDist, { index: false, maxAge: 0 }));
     // App pages (boards, share and invite links, sign-in) are never search results: the marketing
-    // site (modules/site) is what search engines index.
-    app.get(/^(?!\/(api|uploads|ws)(\/|$)).*/, (_req, res) => {
+    // site (modules/site) is what search engines index. /.well-known/* is never the app: a
+    // discovery document no module serves (openid-configuration, oauth-authorization-server/mcp)
+    // must be a 404, or an OAuth client that falls back to it parses the app's HTML.
+    app.get(/^(?!\/(api|uploads|ws|\.well-known)(\/|$)).*/, (_req, res) => {
       res.setHeader('X-Robots-Tag', 'noindex, nofollow');
       res.sendFile(indexHtml);
     });
