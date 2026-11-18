@@ -45,6 +45,8 @@ let unlisten: (() => void) | null = null;
 /** The account whose opt-out was recorded in this page (once per account). */
 let recordedFor: string | null = null;
 let signedIn: string | null = null;
+/** PostHog in the app's own document (POSTHOG_BROWSER, ./posthog.ts), once loaded. */
+let pagePostHog: typeof import('./posthog') | null = null;
 
 /** Starts the bridge once: asks the server whether this instance measures, and follows the visitor's opt-out. */
 export function startAppAnalytics(): void {
@@ -58,6 +60,13 @@ export function startAppAnalytics(): void {
       settings = s ?? { enabled: false, productAnalytics: false };
       for (const l of listeners) l();
       recordAccountOptOut();
+      const ph = settings.posthog;
+      if (ph)
+        void import('./posthog').then((m) => {
+          pagePostHog = m;
+          m.startPagePostHog(ph.key, ph.host);
+          m.identifyPagePostHog(signedIn ? (ph.distinctId ?? null) : null);
+        });
       const waiting = early;
       early = [];
       if (!settings.enabled) return;
@@ -144,8 +153,23 @@ export function reportProductEvent(event: ClientProductEvent): void {
  * analytics back on (toggleAnalytics) clears it.
  */
 export function noteSignedIn(userId: string | null): void {
+  const changed = signedIn !== userId;
   signedIn = userId;
   recordAccountOptOut();
+  if (changed && pagePostHog) identifyPostHogAgain();
+}
+
+/** The account changed in this page: PostHog follows it under its pseudonym (asked of the server again). */
+function identifyPostHogAgain(): void {
+  if (!signedIn) return pagePostHog?.identifyPagePostHog(null);
+  void fetch('/api/analytics', { credentials: 'same-origin' })
+    .then((r) => (r.ok ? (r.json() as Promise<AnalyticsSettings>) : null))
+    .then((s) => {
+      if (!s) return;
+      if (!s.posthog) return pagePostHog?.stopPagePostHog(); // this account turned analytics off
+      pagePostHog?.identifyPagePostHog(signedIn ? (s.posthog.distinctId ?? null) : null);
+    })
+    .catch(() => undefined);
 }
 
 function recordAccountOptOut(): void {

@@ -1,4 +1,4 @@
-import { createLogger, defineConfig, transformWithEsbuild, type Plugin } from 'vite';
+import { build, createLogger, defineConfig, transformWithEsbuild, type Plugin, type Rollup } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -77,6 +77,33 @@ function freeroAnalytics(): Plugin {
 }
 
 /**
+ * Builds PostHog's page runtime (src/app/analytics/posthog.ts, with posthog-js bundled in) into
+ * dist/posthog.js for the marketing pages; the app imports the same module lazily. The server serves
+ * it only while POSTHOG_BROWSER is on (modules/analytics).
+ */
+function freeroPostHog(): Plugin {
+  return {
+    name: 'freero-posthog',
+    apply: 'build',
+    async generateBundle() {
+      const out = (await build({
+        configFile: false,
+        logLevel: 'warn',
+        build: {
+          write: false,
+          minify: true,
+          emptyOutDir: false,
+          lib: { entry: src('app/analytics/posthog.ts'), formats: ['iife'], name: 'freeroPostHog', fileName: () => 'posthog.js' },
+        },
+      })) as Rollup.RollupOutput[] | Rollup.RollupOutput;
+      const chunk = [out].flat().flatMap((o) => o.output).find((o) => o.type === 'chunk');
+      if (!chunk || chunk.type !== 'chunk') throw new Error('freero-posthog: no bundle');
+      this.emitFile({ type: 'asset', fileName: 'posthog.js', source: chunk.code });
+    },
+  };
+}
+
+/**
  * Translations ship without their bookkeeping (docs/design/i18n.md): a catalogue's "@@unreviewed"
  * list is for reviewers, not for the page that downloads it.
  */
@@ -94,7 +121,7 @@ function freeroCatalogs(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [freeroCatalogs(), react(), freeroServiceWorker(), freeroAnalytics()],
+  plugins: [freeroCatalogs(), react(), freeroServiceWorker(), freeroAnalytics(), freeroPostHog()],
   customLogger: logger,
   resolve: {
     // Layer entry points. Features/app import '@engine' and '@ui' only — see ARCHITECTURE.md.
