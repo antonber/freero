@@ -166,7 +166,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
-| "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
+| "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`; a new account's daily default from auth's `onAccountCreated`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
 | "New comments on your boards" (#104: `notification_prefs` key `board-comments`, off unless set) | server `modules/notifications` (`updatePrefs`) | `PUT /notifications/prefs` `boardComments` (account settings) |
 | The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
 | Who presents a board (`presentation` key `session`, #146) | server `modules/presentations` (realtime `updateServerEntry`: start, hand off, end; a socket's write is undone) | `Host.presentation` (`features/present`) |
@@ -1445,6 +1445,11 @@ answer 404 and `GET /api/analytics` says `productAnalytics: false`.
   link or user agent. PostHog sees only the server's address, and GeoIP is off
   (`disableGeoip`: every event carries `$geoip_disable: true`, no `$ip` is ever set). posthog-node
   adds `$lib`, `$lib_version` and `$is_server`.
+- **Who counts** (auth `analyticsAudienceOf`, looked up when an event is sent): an account at an
+  address reserved for tests (RFC 2606 / 6761: example.com / .net / .org, .test, .example,
+  .invalid, .localhost — the deploy smoke test's `smoke-…@example.com`) sends nothing; one of the
+  operators (OPERATOR_EMAILS, verified) is sent with `internal: true` on every event, so the
+  PostHog project's test-account filter (`internal` is not `true`) leaves Freero's own use out.
 - **A closed list**, `@freero/shared` `ProductEvent`, whose values `productEventProperties`
   validates (anything else is not sent). Each fact is counted by its single writer, with
   `trackProductEvent(accountId, event, { workspaceId })` from `modules/analytics/index.ts`, which
@@ -1469,6 +1474,12 @@ answer 404 and `GET /api/analytics` says `productAnalytics: false`.
   | `comment_added` | `count` (new messages, not edits; none on private drafts), `via` | `analytics/usage.ts` (realtime `onCommentMessage`, gathered like `items_added`) |
   | `agent_proposal_resolved` | `outcome` (`accepted`/`rejected`), `proposer` (`app`: an app or token; `ai`: Freero's AI), `count` (per decision) — for the person who decided; withdrawals of a revoked app's are not counted | `analytics/usage.ts` (realtime `onSuggestionsDecided`: a socket's or the API's decision) |
   | `doc_edited` | `via` (of the day's first edit) — at most once per account, doc and UTC day | `analytics/usage.ts` (realtime `onDocEdited`: a socket's or request's change of the doc's text; once a day per instance, in memory) |
+  | `app_opened` | — (a signed-in account opened the app, any page: daily actives that don't depend on opening a board) — at most once per account and UTC day | `auth/service.ts` `noteAppOpened` (the app's startup check, GET /auth/session; the day's first is the conditional UPDATE of `users.app_opened_on`) |
+  | `discovery_answered` | `discovery_source` — "How did you find Freero?" answered after sign-up (accounts made without the form: a provider), once | `auth/service.ts` `updateProfile` (`PATCH /auth/me` `discoverySource`, kept only while there is no answer) |
+  | `share_dialog_opened` | `source` (`board`, `nudge`, `dashboard`) | the app (`CLIENT_PRODUCT_EVENTS`): `ShareDialog` when it opens |
+  | `share_link_copied` | `access` (what the link allows at that moment, `none` included) | the app: the share dialog's "Copy link" |
+  | `share_nudge` | `action` (`shown`, `clicked`) | the app: `features/share-nudge` through `Host.trackProduct` |
+  | `get_started` | `step` (`shown`, `dismissed`, `template`, `blank`, `connect_agent`, `invite`) | the app: the dashboard's get-started card (`pages/dashboard/GetStarted.tsx`) |
   Not counted: workspace members added other ways (admin add, SCIM groups, domain capture: no
   single writer; `invite_sent` / `invite_accepted` cover activation), a board's built-in template
   on the server (the app inserts templates through the Editor; the API's templates are saved ones).
@@ -1700,8 +1711,10 @@ reports" below).
   claimed first (`slacked_at`, only while `emailed_at` is null too), so it is one direct message
   at most and the digest leaves it out; a refused message is unclaimed (both columns) and goes into
   the next digest. A notification is delivered by Slack or by email, never both.
-  "Changes on your boards" (`notifications/boardChanges.ts`, #46): opt-in per person, daily or
-  weekly (Monday), sent from 08:00 in their time zone (`next_at` is worked out when the window
+  "Changes on your boards" (`notifications/boardChanges.ts`, #46): per person, daily or
+  weekly (Monday) — new accounts start daily (notifications' init on auth's `onAccountCreated`):
+  it is sent only on a day someone ELSE changed a board they own or starred, so a board they shared
+  brings them back to it; accounts from before keep what they chose (off unless chosen) — sent from 08:00 in their time zone (`next_at` is worked out when the window
   moves; `nextDigestAt` steps by quarter hours so half-hour zones work). It summarises what OTHERS
   did on boards they own or starred and can open, through activity's `boardChangesSince` (the
   catch-up's rules; counts, people and board titles, never item content), each board linking to

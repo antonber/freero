@@ -1207,7 +1207,7 @@ Single use: `DELETE … WHERE state_hash AND expires_at > now() RETURNING` (`rep
 
 #### INT-M17. Due reminder and board-change digest window
 - **Due reminder:** `card_due_watch.reminded_for` is reset when the due date or assignee changes (`notifications/repo.ts:241-242`) and marked after each candidate (`cards.ts:135`).
-- **Board-change digest window:** `board_change_digests.last_sent_at` is moved by a compare-and-set (`repo.ts:323-331`) and moved back if the send fails (`boardChanges.ts:97-99`).
+- **Board-change digest window:** a new account starts with a `daily` row (notifications on auth's `onAccountCreated`, in the account's transaction; off = no row, as before). `board_change_digests.last_sent_at` is moved by a compare-and-set (`repo.ts:323-331`) and moved back if the send fails (`boardChanges.ts:97-99`).
 - **The `notifications:digest` job** (lock `7_202_610_291`, `init.ts:36-50`) runs four steps in sequence with no isolation between them (INT-101).
 
 #### INT-M18. Fire-and-forget mail
