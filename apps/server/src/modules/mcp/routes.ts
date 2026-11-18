@@ -20,6 +20,7 @@ import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { allowCrossSiteApi } from '../../platform/security';
 import { authenticate, registerProtectedResource, sendAuthError, type ApiCredential } from '../apiauth/index';
+import { mcpAnalyticsFor } from '../analytics/index';
 import { requireUser } from '../auth/index';
 import { buildServer } from './server';
 
@@ -90,12 +91,12 @@ export default function mcpRoutes({ config }: ServerContext): Router {
   // One handler for both protocol eras (the SDK's per-request serving): 2026-07-28 requests carry
   // their own envelope, 2025-era ones are served by a fresh stateless transport — either way a
   // fresh server per request, built for that request's credential (looked up by its web Request).
-  const pending = new WeakMap<globalThis.Request, { req: Request; cred: ApiCredential }>();
+  const pending = new WeakMap<globalThis.Request, { req: Request; cred: ApiCredential; analytics: ((server: unknown) => void) | null }>();
   const handler = createMcpHandler(
     (ctx) => {
       const p = ctx.requestInfo ? pending.get(ctx.requestInfo) : undefined;
       if (!p) throw new Error('mcp: a request without its credential');
-      return buildServer(p.req, p.cred);
+      return buildServer(p.req, p.cred, p.analytics);
     },
     { legacy: 'stateless', responseMode: 'json', onerror: (e) => logError('mcp: request failed', e) },
   );
@@ -115,7 +116,7 @@ export default function mcpRoutes({ config }: ServerContext): Router {
       }
       try {
         const web = toWebRequest(req);
-        pending.set(web, { req, cred });
+        pending.set(web, { req, cred, analytics: await mcpAnalyticsFor(cred.account.id) });
         const answer = await handler.fetch(web, { parsedBody: req.body });
         res.status(answer.status);
         answer.headers.forEach((value, name) => res.setHeader(name, value));

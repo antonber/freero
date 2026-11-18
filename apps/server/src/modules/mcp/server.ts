@@ -122,8 +122,11 @@ export function mcpToolDescriptions(names?: readonly string[]): McpToolDescripti
   });
 }
 
-export function buildServer(req: Request, cred: ApiCredential): McpServer {
+/** `analytics`: modules/analytics' mcpAnalyticsFor for this request (null: nothing is counted). */
+export function buildServer(req: Request, cred: ApiCredential, analytics: ((server: unknown) => void) | null = null): McpServer {
   const server = new McpServer({ name: SERVER_NAME, title: 'Freero', version: SERVER_VERSION }, { instructions: INSTRUCTIONS, capabilities: { logging: {} } });
+  // Before any tool is registered (PostHog MCP analytics: names, timings and outcomes only).
+  analytics?.(server);
 
   for (const t of TOOLS) {
     if (t.available && !t.available()) continue;
