@@ -3959,6 +3959,11 @@ P / M / F terms, and add their row.
   duplicate = board row + realtime's doc row). Rule: never await, inside `fn`, work that was
   started outside it and queries the db (on PGlite, one connection, that deadlocks) — read first,
   then open the transaction (see `duplicateBoard`).
+- Session advisory locks (`withAdvisoryLock`: scheduled jobs, outbox consumers) are all held on
+  ONE connection of their own, outside the pool (`LockSession`); a job's queries use the pool. A
+  lock that took a pooled connection for the job's whole run starved the pool: a dozen jobs ticking
+  together each held one and waited for another, so every query of the process waited out the 5 s
+  checkout timeout. Never hold a pooled connection while waiting for another one.
 - Every route/service is async; express handlers go through `handle(async (req, res) => …)`. The
   shape of reserved files does not change. Async opens races the sync driver hid: write single
   statements instead of read-modify-write (`UPDATE … SET x = COALESCE($2, x)`), let constraints

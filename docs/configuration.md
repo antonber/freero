@@ -40,7 +40,7 @@ installed. Copy [`.env.example`](../.env.example) as a starting point.
 | Variable | Default | Required in prod | Description |
 |---|---|---|---|
 | `DATABASE_URL` | — | **yes** | `postgres://user:password@host:5432/db` (add `?sslmode=require` for managed Postgres). Unset: PGlite (in-process Postgres) under `FREERO_DATA_DIR/pg`, single process only. |
-| `DATABASE_POOL_MAX` | `10` | | Max Postgres connections per app instance. Keep `instances × pool` below the server's `max_connections`. Every running scheduled job holds one connection for its lock besides the ones its queries use: `/metrics` `freero_db_pool_waiting` above 0 (and "timeout exceeded when trying to connect (pool: 10/10 open, 0 idle, N waiting)" in the log) says the pool is too small; the same error with idle connections or fewer than the maximum open says Postgres was unreachable. |
+| `DATABASE_POOL_MAX` | `10` | | Max Postgres connections per app instance. Keep `instances × (pool + 1)` below the server's `max_connections`. Each instance opens one more connection besides the pool, which holds the scheduled jobs' and outbox consumers' advisory locks (`instances × (pool + 1)`). `/metrics` `freero_db_pool_waiting` above 0 for long (and "timeout exceeded when trying to connect (pool: 10/10 open, 0 idle, N waiting)" in the log) says the pool is too small; the same error with idle connections or fewer than the maximum open says Postgres was unreachable. |
 
 Migrations run automatically at startup (see [deployment.md](deployment.md#migrations)).
 
