@@ -97,9 +97,17 @@ Status: **live** = on freero.app; **new** = built in this branch, live after the
 | MCP whiteboards (answer) | which whiteboard works with claude / chatgpt, mcp whiteboard, whiteboard mcp server compared | commercial / informational | `/answers/mcp-whiteboard` | new |
 | No board limit (answer) | free whiteboard unlimited boards, miro alternative no board limit, free whiteboard no 3 board limit | commercial | `/answers/free-whiteboard-without-board-limit` | new |
 | Answers hub | freero answers, whiteboard questions | navigational | `/answers` | new |
+| Roundup: Miro alternatives | best miro alternatives 2026, miro alternatives compared | commercial | `/answers/best-miro-alternatives` (lib/lists.tsx) | new |
+| Roundup: AI whiteboards | best ai whiteboard, ai whiteboard tools 2026 | commercial | `/answers/best-ai-whiteboards` | new |
+| Roundup: free whiteboards | best free online whiteboard, free whiteboard apps compared | commercial | `/answers/best-free-online-whiteboards` | new |
 | Key facts | freero licence, is freero open source, freero mcp endpoint, freero languages | navigational / informational | `/facts` | new |
 | Integrations | whiteboard slack integration, jira whiteboard integration, n8n whiteboard | commercial | `/integrations/<id>` | live |
 | Templates | "[name] template", "free [name] template" | commercial | `/templates/<id>`, `/templates/category/<slug>`, `/templates` | live (584) |
+
+Roundups (`/answers/best-<topic>`, `lib/lists.tsx`) answer "what are the best X" as a shortlist: Freero first and
+said so, with its own "look elsewhere if"; every other pick is a published `/vs` page, its "choose it if" lines
+picked from that page's reviewed list and its facts that page's sourced rows. A roundup needs a `/vs` page for
+each product it names, so a new product is a new comparison first.
 
 Answer pages (`/answers/<slug>`, `lib/answers.tsx`) take a question people put to an assistant;
 the next candidates, in order: "does Notion have a whiteboard?" (informational and large; needs a
