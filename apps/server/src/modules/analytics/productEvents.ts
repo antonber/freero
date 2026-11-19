@@ -135,6 +135,23 @@ export function reportErrorsToPostHog(): () => void {
   });
 }
 
+/** How an agent got a page as Markdown (modules/site served.ts). */
+export type AgentFetchVia = 'user-agent' | 'accept' | 'md-url' | 'llms';
+
+/**
+ * An AI agent read a page of the marketing site (modules/site): which agent (its User-Agent name,
+ * or `other` for a client that only asked for Markdown), which page, and how. No person is behind
+ * it, so there is nothing to opt out of and no profile: the event is `agent_page_fetched` under
+ * `agent:<name>`, never with an address. The measure of whether answer engines read the site.
+ */
+export function trackAgentFetch(agent: string, path: string, via: AgentFetchVia): void {
+  client?.capture({
+    distinctId: `agent:${agent}`,
+    event: 'agent_page_fetched',
+    properties: { agent, path, via, $process_person_profile: false, $geoip_disable: true },
+  });
+}
+
 /** The account turned analytics off (or back on): PUT /api/analytics/opt-out. */
 export function setAccountOptedOut(userId: string, optedOut: boolean): Promise<void> {
   return repo.setOptedOut(userId, optedOut);
