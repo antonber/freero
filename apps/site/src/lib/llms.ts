@@ -23,6 +23,14 @@ const connection = (): string[] => [
   `- People connect a client from inside Freero, with this address filled in: ${abs(CONNECT_PAGE)} (needs a Freero account).`,
 ];
 
+/** Where the site's own pages are as Markdown (modules/site on the server: markdown.ts). */
+const asMarkdown = (): string[] => [
+  '## This site as Markdown',
+  '',
+  `- Every page here is also served as Markdown, the same text without the styling: its address followed by \`.md\` (${abs('/claude.md')}; ${abs('/index.md')} for the home page), or its own address requested with \`Accept: text/markdown\`.`,
+  '',
+];
+
 const NEEDS: Record<string, string> = { read: 'boards:read', suggest: 'boards:suggest', write: 'boards:write', comment: 'comments:write' };
 
 const href = (h: string) => (h.startsWith('/') ? abs(h) : h);
@@ -71,6 +79,7 @@ export function llmsTxt(pages: PageDef[]): string {
     '',
     ...MCP_PROMPTS.map(([name, summary]) => `- \`${name}\`: ${summary}`),
     '',
+    ...asMarkdown(),
     '## Docs',
     '',
     `- [MCP server guide](${docsUrl('docs/mcp.md')}): connecting clients, permissions, safety, every tool, how sign-in works`,
@@ -145,6 +154,7 @@ export function llmsFullTxt(pages: PageDef[]): string {
     '## Answers',
     '',
     ...answerPages(pages).flatMap((p) => [`### ${p.ogTitle ?? p.name}`, '', `${p.description} Full answer, comparison and sources: ${abs(p.path)}`, '', ...(p.faq ?? []).flatMap((f) => [`**${f.q}** ${f.a}`, '']), ]),
+    ...asMarkdown(),
     '## Docs',
     '',
     `- [MCP server guide](${docsUrl('docs/mcp.md')})`,
