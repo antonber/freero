@@ -1377,6 +1377,19 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata,
   the key facts, the answer pages (llms-full.txt with their FAQ) and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
   tests fail when it drifts from the MCP server's `tools.ts` / `prompts.ts`.
+- **Pages as Markdown, for agents** (server `modules/site` `markdown.ts`, `agents.ts`): AI agents —
+  model crawlers, AI search indexers and the fetchers an assistant sends for a person (GPTBot,
+  OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-User, PerplexityBot…, by User-Agent) — get each page
+  as Markdown at its own address, as does any client sending `Accept: text/markdown`, and every page
+  has a copy at its address + `.md` (`/index.md` for `/`; `noindex`, `Link: rel=canonical` to the
+  page), named in the HTML's head (`rel="alternate" type="text/markdown"`). It is converted on the
+  server from the very HTML people get (origin, legal facts, community data filled in), from its
+  `<main>`: the same text, a fifth of the bytes, nothing written for agents only. Search engines
+  (Googlebot, Bingbot, Applebot…) are deliberately not on the list: they get the HTML, so no search
+  engine sees a page that differs from what its visitors see. Responses `Vary: Accept, User-Agent`.
+  Each agent visit (and each read of /llms.txt) is counted in PostHog as `agent_page_fetched`
+  under `agent:<name>` (analytics `trackAgentFetch`; no person, no profile, no address): which
+  answer engines read which pages.
 - **Screenshots** are real: `scripts/site-shots.mjs` drives the built app on a throwaway server
   (accounts, a board, a personal token proposing changes as an agent, a mock Jira) and writes WebP
   files to `apps/site/src/assets/shots/`; `<Shot>` gives them `srcset`, `width` and `height`.
