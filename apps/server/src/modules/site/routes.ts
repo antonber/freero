@@ -4,8 +4,10 @@
 import express, { Router } from 'express';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
+import { trackAgentFetch } from '../analytics/index';
 import { userFromCookieHeader } from '../auth/index';
 import type { SiteLegal } from '@freero/shared';
+import { aiAgentOf } from './agents';
 import { servedSite } from './served';
 import { ROBOTS_NO_SITE } from './site';
 
@@ -62,6 +64,8 @@ export default function siteRoutes({ config }: ServerContext): Router {
     const p = req.path;
     const file = site.files.get(p);
     if (file) {
+      // /llms.txt and /llms-full.txt are read by agents alone: count who reads them.
+      if (p.startsWith('/llms')) trackAgentFetch(aiAgentOf(req.get('user-agent')) ?? 'other', p, 'llms');
       res.setHeader('Cache-Control', 'no-cache');
       return res.type(file.type).send(textFor(req, p, file.text));
     }
@@ -72,6 +76,12 @@ export default function siteRoutes({ config }: ServerContext): Router {
     }
     const page = site.pages.get(p);
     if (page !== undefined) return sendPage(req, res, p, page);
+    // A page's Markdown copy at its address + .md (the llms.txt convention): /claude.md, /index.md for /.
+    if (p.endsWith('.md')) {
+      const pagePath = p === '/index.md' ? '/' : p.slice(0, -'.md'.length);
+      const raw = site.pages.get(pagePath);
+      if (raw !== undefined) return sendPage(req, res, pagePath, raw, 200, { markdownUrl: true });
+    }
     if (site.prefixes.some((prefix) => p.startsWith(prefix))) return sendPage(req, res, '404', site.notFound, 404);
     next();
   });
