@@ -177,39 +177,46 @@ export function defineAnswer(a: AnswerDef): PageDef {
             </Section>
           ) : null}
 
-          <Section id="more" tone="tint" title="Keep reading">
-            <div className="columns-2">
-              <div>
-                <h3>On this site</h3>
-                <ul>
-                  {a.related.map(([href, label]) => (
-                    <li key={href}>
-                      <a href={href}>{label}</a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              {others.length ? (
-                <div>
-                  <h3>Other questions</h3>
-                  <ul>
-                    {others.map((p) => (
-                      <li key={p.path}>
-                        <a href={p.path}>{p.ogTitle ?? p.name}</a>
-                      </li>
-                    ))}
-                    <li>
-                      <a href={ANSWERS_PATH}>All answers</a>
-                    </li>
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          </Section>
+          <KeepReading related={a.related} others={others} />
         </>
       );
     },
   });
+}
+
+/** Where to go next: the page's own links, then the other answer pages and the hub. */
+export function KeepReading({ related, others }: { related: Array<[string, string]>; others: PageDef[] }) {
+  return (
+    <Section id="more" tone="tint" title="Keep reading">
+      <div className="columns-2">
+        <div>
+          <h3>On this site</h3>
+          <ul>
+            {related.map(([href, label]) => (
+              <li key={href}>
+                <a href={href}>{label}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {others.length ? (
+          <div>
+            <h3>Other questions</h3>
+            <ul>
+              {others.map((p) => (
+                <li key={p.path}>
+                  <a href={p.path}>{p.ogTitle ?? p.name}</a>
+                </li>
+              ))}
+              <li>
+                <a href={ANSWERS_PATH}>All answers</a>
+              </li>
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </Section>
+  );
 }
 
 /** The hub's cards: every answer page, its question and its short answer. */

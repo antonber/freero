@@ -1175,6 +1175,36 @@ tbody th code {
 .matrix__none {
   color: var(--fr-ink-3);
 }
+/* Roundup picks (lib/lists.tsx): one card per product, in a single column. */
+.picks {
+  display: grid;
+  gap: 20px;
+}
+.pick {
+  background: var(--fr-surface);
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow-sm);
+  padding: 22px 24px 18px;
+}
+.pick h4 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+  color: var(--fr-ink-2);
+}
+.pick h3 {
+  margin-bottom: 8px;
+}
+.pick h4 + ul {
+  margin-top: 0;
+}
+.pick ul {
+  margin-bottom: 0;
+}
+.pick__more {
+  margin: 14px 0 0;
+  font-size: 15px;
+  color: var(--fr-ink-3);
+}
 .table-wrap--stack td {
   min-width: 13em;
 }
