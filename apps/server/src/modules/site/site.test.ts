@@ -261,7 +261,7 @@ describe('pages as Markdown for AI agents', () => {
       });
     });
     await new Promise<void>((r) => posthog.listen(0, '127.0.0.1', r));
-    const withPostHog: Config = { ...config, posthog: { key: 'phc_testtesttesttesttesttest1234', host: `http://127.0.0.1:${(posthog.address() as AddressInfo).port}`, assets: '', browser: false, errors: false } };
+    const withPostHog: Config = { ...config, posthog: { key: 'phc_testtesttesttesttesttest1234', host: `http://127.0.0.1:${(posthog.address() as AddressInfo).port}`, browserHost: '', uiHost: '', assets: '', browser: false, errors: false } };
     startProductAnalytics(withPostHog);
     try {
       await fetch(`${base}/claude`, as(CLAUDEBOT));

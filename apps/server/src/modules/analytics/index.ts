@@ -36,8 +36,8 @@ export const POSTHOG_RUNTIME_PATH = '/posthog.js';
 export function posthogScriptTag(config: Config): string {
   const ph = config.posthog;
   if (!ph?.browser) return '';
-  // The key is checked against /^phc_[A-Za-z0-9]+$/ and the host is an https URL: nothing to escape but quotes, which they can't hold.
-  return `<script src="${POSTHOG_RUNTIME_PATH}" data-freero-ph-key="${ph.key}" data-freero-ph-host="${ph.host}" defer></script>`;
+  // The key is checked against /^phc_[A-Za-z0-9]+$/ and the hosts are https URLs: nothing to escape but quotes, which they can't hold.
+  return `<script src="${POSTHOG_RUNTIME_PATH}" data-freero-ph-key="${ph.key}" data-freero-ph-host="${ph.browserHost}" data-freero-ph-ui="${ph.uiHost}" defer></script>`;
 }
 
 /** `html` with the runtimes added at the end of its head (unchanged without GA_MEASUREMENT_ID or POSTHOG_BROWSER). */

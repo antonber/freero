@@ -64,7 +64,7 @@ export function startAppAnalytics(): void {
       if (ph)
         void import('./posthog').then((m) => {
           pagePostHog = m;
-          m.startPagePostHog(ph.key, ph.host);
+          m.startPagePostHog(ph.key, ph.host, ph.uiHost);
           m.identifyPagePostHog(signedIn ? (ph.distinctId ?? null) : null);
         });
       const waiting = early;

@@ -37,7 +37,7 @@ it('without GA_MEASUREMENT_ID or POSTHOG_KEY a server offers no analytics: the a
   expect((await post('/api/analytics/opt-out', 'PUT', { optedOut: true })).status).toBe(404);
 });
 
-it('PostHog runs in pages only with POSTHOG_BROWSER: then the app is told its key and host and the marketing pages get its runtime; with POSTHOG_KEY alone neither, and /posthog.js is a 404', async () => {
+it('PostHog runs in pages only with POSTHOG_BROWSER: then the app is told its key, where to send (POSTHOG_BROWSER_HOST, a proxy, when set) and PostHog’s own app for links, and the marketing pages get its runtime; with POSTHOG_KEY alone neither, and /posthog.js is a 404', async () => {
   const key = { NODE_ENV: 'test', FREERO_DATA_DIR: 'memory', POSTHOG_KEY: 'phc_testtesttesttesttesttest1234' };
   const serverOnly = await serve(loadConfig(key));
   const browser = await serve(loadConfig({ ...key, POSTHOG_BROWSER: 'true' }));
@@ -46,9 +46,13 @@ it('PostHog runs in pages only with POSTHOG_BROWSER: then the app is told its ke
     expect((await fetch(`${serverOnly.base}/posthog.js`)).status).toBe(404);
     expect(withAnalyticsRuntime('<head></head>', loadConfig(key))).toBe('<head></head>');
     // Signed out: no pseudonym to identify with.
-    expect((await (await fetch(`${browser.base}/api/analytics`)).json()).posthog).toEqual({ key: key.POSTHOG_KEY, host: 'https://us.i.posthog.com' });
+    expect((await (await fetch(`${browser.base}/api/analytics`)).json()).posthog).toEqual({ key: key.POSTHOG_KEY, host: 'https://us.i.posthog.com', uiHost: 'https://us.posthog.com' });
     expect(await (await fetch(`${browser.base}/posthog.js`)).text()).toBe('/* posthog */');
-    expect(withAnalyticsRuntime('<head></head>', loadConfig({ ...key, POSTHOG_BROWSER: 'true' }))).toContain(`<script src="/posthog.js" data-freero-ph-key="${key.POSTHOG_KEY}" data-freero-ph-host="https://us.i.posthog.com" defer></script>`);
+    expect(withAnalyticsRuntime('<head></head>', loadConfig({ ...key, POSTHOG_BROWSER: 'true' }))).toContain(`<script src="/posthog.js" data-freero-ph-key="${key.POSTHOG_KEY}" data-freero-ph-host="https://us.i.posthog.com" data-freero-ph-ui="https://us.posthog.com" defer></script>`);
+    // Behind a proxy, pages send to it while links still open PostHog's app for POSTHOG_HOST's region.
+    const proxied = loadConfig({ ...key, POSTHOG_BROWSER: 'true', POSTHOG_BROWSER_HOST: 'https://t.app.test/' });
+    expect(proxied.posthog).toMatchObject({ host: 'https://us.i.posthog.com', browserHost: 'https://t.app.test', uiHost: 'https://us.posthog.com' });
+    expect(withAnalyticsRuntime('<head></head>', proxied)).toContain('data-freero-ph-host="https://t.app.test" data-freero-ph-ui="https://us.posthog.com"');
   } finally {
     for (const s of [serverOnly, browser]) await new Promise((r) => s.server.close(r));
   }

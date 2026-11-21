@@ -50,12 +50,16 @@ describe('frames the CSP allows (live embeds, KAI-127)', () => {
   });
 });
 
-it('PostHog in pages (POSTHOG_BROWSER) adds only its assets host to script-src, and nothing without it, with POSTHOG_KEY alone, or on a page another site may frame', () => {
+it('PostHog in pages (POSTHOG_BROWSER) adds only its assets host (or the proxy pages send to) to script-src, and nothing without it, with POSTHOG_KEY alone, or on a page another site may frame', () => {
   const key = { POSTHOG_KEY: 'phc_testtesttesttesttesttest1234' };
   const plain = contentSecurityPolicy(loadConfig({}), 'app.test', true);
   expect(contentSecurityPolicy(loadConfig(key), 'app.test', true)).toBe(plain);
   const browser = contentSecurityPolicy(loadConfig({ ...key, POSTHOG_BROWSER: 'true' }), 'app.test', true);
   expect(browser).toBe(plain.replace("script-src 'self'", "script-src 'self' https://us-assets.i.posthog.com"));
+  // Behind a proxy (POSTHOG_BROWSER_HOST) the proxy serves PostHog's scripts too.
+  expect(contentSecurityPolicy(loadConfig({ ...key, POSTHOG_BROWSER: 'true', POSTHOG_BROWSER_HOST: 'https://t.app.test' }), 'app.test', true)).toBe(
+    plain.replace("script-src 'self'", "script-src 'self' https://t.app.test"),
+  );
   for (const opts of [{ framable: true }, { ancestors: ['*'] }, { analytics: false }])
     expect(contentSecurityPolicy(loadConfig({ ...key, POSTHOG_BROWSER: 'true' }), 'app.test', true, opts)).toBe(contentSecurityPolicy(loadConfig({}), 'app.test', true, opts));
 });

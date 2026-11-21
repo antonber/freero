@@ -23,9 +23,11 @@ export interface AnalyticsSettings {
   /**
    * PostHog also runs in the app's pages (POSTHOG_BROWSER): page views with their full address and
    * title, clicks and browser errors, unless this browser opted out or sends GPC / Do Not Track.
+   * `host`: where the page sends (a reverse proxy on this domain, or PostHog's own). `uiHost`:
+   * PostHog's app, which its links point to (absent from a server before it: derived from `host`).
    * `distinctId`: the signed-in account's pseudonym (the server's product events use it too).
    */
-  posthog?: { key: string; host: string; distinctId?: string };
+  posthog?: { key: string; host: string; uiHost?: string; distinctId?: string };
 }
 
 /** A GA4 web stream's measurement id (`G-` and letters / digits). Universal Analytics ids (`UA-…`) stopped working in 2023. */

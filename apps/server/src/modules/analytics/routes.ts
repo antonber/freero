@@ -39,7 +39,7 @@ export default function analyticsRoutes({ config }: ServerContext): Router {
       const body: AnalyticsSettings = {
         enabled: on,
         productAnalytics: productAnalyticsOn(),
-        ...(ph ? { posthog: { key: ph.key, host: ph.host, ...(user ? { distinctId: pseudonym('account', user.id) } : {}) } } : {}),
+        ...(ph ? { posthog: { key: ph.key, host: ph.browserHost, uiHost: ph.uiHost, ...(user ? { distinctId: pseudonym('account', user.id) } : {}) } } : {}),
       };
       res.setHeader('Cache-Control', 'private, no-cache');
       res.json(body);

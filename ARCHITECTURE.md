@@ -1460,7 +1460,10 @@ answer 404 and `GET /api/analytics` says `productAnalytics: false`.
   settings name no `posthog` for an account that opted out), and a signed-in person is identified
   by the account's pseudonym (`posthog.distinctId` in the settings), so page and server events are
   one person. The CSP adds PostHog's assets host to `script-src` (its extensions load from there)
-  on the pages Google's tag may run on. `POSTHOG_ERRORS` sends the server's reported errors
+  on the pages Google's tag may run on. `POSTHOG_BROWSER_HOST` sends pages through a reverse
+  proxy on the instance's domain (hosted: PostHog's managed proxy `t.freero.app`, since
+  2026-11-20, so ad blockers don't drop events); the proxy then serves those scripts too, the
+  server keeps `POSTHOG_HOST`, and links open PostHog's app for its region. `POSTHOG_ERRORS` sends the server's reported errors
   (`platform/errorReporting` `onErrorReported`: a 500, a crash) to PostHog error tracking as
   `$exception` (`reportErrorsToPostHog`), under the pseudonym of the account whose request failed. Events are batched
   (20, or every 10 s) and the shutdown hook (`init.ts`) sends what is queued, waiting at most 5 s.

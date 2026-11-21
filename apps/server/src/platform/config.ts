@@ -352,9 +352,11 @@ export interface Config {
    * and the app's (not embeds, the assistants' live view, the operator console or OAuth consent) —
    * recording page views with their full address and title, clicks and browser errors, under the
    * same opt-outs, the CSP widened by PostHog's hosts (`assets`: where its extensions load from).
+   * `browserHost` (POSTHOG_BROWSER_HOST, default `host`): where the pages send, such as a reverse
+   * proxy on the instance's domain; `uiHost`: PostHog's app for `host`, which links point to.
    * `errors` (POSTHOG_ERRORS, off by default): the server's errors go to PostHog error tracking.
    */
-  posthog: { key: string; host: string; assets: string; browser: boolean; errors: boolean } | null;
+  posthog: { key: string; host: string; browserHost: string; uiHost: string; assets: string; browser: boolean; errors: boolean } | null;
   /**
    * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
    * marketing page is served and robots.txt keeps crawlers off the whole instance.
@@ -889,19 +891,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const posthogKey = str('POSTHOG_KEY');
   if (posthogKey !== null && !/^phc_[A-Za-z0-9]{20,80}$/.test(posthogKey))
     problems.push('POSTHOG_KEY must be a PostHog project API key (phc_ followed by letters and digits; never a personal phx_ key)');
-  const posthogHost = (() => {
-    const v = str('POSTHOG_HOST');
-    if (v === null) return 'https://us.i.posthog.com';
+  const posthogUrl = (name: string, fallback: string | null): string | null => {
+    const v = str(name);
+    if (v === null) return fallback;
     try {
       const u = new URL(v);
       const loopback = u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) && env.NODE_ENV !== 'production';
       if ((u.protocol !== 'https:' && !loopback) || u.username || u.password || u.search || u.hash) throw new Error();
       return v.replace(/\/+$/, '');
     } catch {
-      problems.push('POSTHOG_HOST must be an https URL such as https://eu.i.posthog.com');
+      problems.push(`${name} must be an https URL such as https://eu.i.posthog.com`);
       return null;
     }
-  })();
+  };
+  const posthogHost = posthogUrl('POSTHOG_HOST', 'https://us.i.posthog.com');
+  // POSTHOG_BROWSER_HOST: where browsers send (POSTHOG_BROWSER), when not POSTHOG_HOST: a reverse
+  // proxy on the instance's own domain (PostHog's managed proxy, t.example.com), which ad blockers
+  // don't stop. The server keeps sending to POSTHOG_HOST, which also names the region.
+  const posthogBrowserHost = posthogUrl('POSTHOG_BROWSER_HOST', posthogHost);
+  /** PostHog Cloud's app for its ingestion host (`us.i.posthog.com` → `us.posthog.com`); another host serves both. */
+  const posthogUiHost = (host: string): string => host.replace(/^https:\/\/(us|eu)\.i\.posthog\.com$/, 'https://$1.posthog.com');
   /** PostHog Cloud serves its scripts from `<region>-assets.i.posthog.com`; any other host serves its own. */
   const posthogAssetsHost = (host: string): string => host.replace(/^https:\/\/(us|eu)\.i\.posthog\.com$/, 'https://$1-assets.i.posthog.com');
   // IndexNow's own rule for a key: 8 to 128 characters of a-z, A-Z, 0-9 and dashes. Anything else
@@ -1320,8 +1329,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     oauthClientMetadataLoopback: bool('OAUTH_CLIENT_METADATA_LOOPBACK', false),
     googleAnalyticsId: gaId !== null && isGaMeasurementId(gaId) ? gaId : null,
     posthog:
-      posthogKey !== null && /^phc_[A-Za-z0-9]{20,80}$/.test(posthogKey) && posthogHost
-        ? { key: posthogKey, host: posthogHost, assets: posthogAssetsHost(posthogHost), browser: bool('POSTHOG_BROWSER', false), errors: bool('POSTHOG_ERRORS', false) }
+      posthogKey !== null && /^phc_[A-Za-z0-9]{20,80}$/.test(posthogKey) && posthogHost && posthogBrowserHost
+        ? {
+            key: posthogKey,
+            host: posthogHost,
+            browserHost: posthogBrowserHost,
+            uiHost: posthogUiHost(posthogHost),
+            assets: posthogAssetsHost(posthogBrowserHost),
+            browser: bool('POSTHOG_BROWSER', false),
+            errors: bool('POSTHOG_ERRORS', false),
+          }
         : null,
     site: {
       enabled: bool('SITE', true),

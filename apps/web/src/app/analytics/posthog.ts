@@ -15,20 +15,20 @@ import { analyticsAllowed, onAnalyticsChange } from './runtime';
 /** Where analytics never runs (keep in step with @freero/shared analyticsPage's NEVER; this file is also built alone). */
 const NEVER = /^\/(embed|teams|operator|oauth)(\/|$)/;
 
-/** PostHog Cloud's app for an ingestion host (`us.i.posthog.com` → `us.posthog.com`); another host serves both. */
+/** PostHog Cloud's app for an ingestion host (`us.i.posthog.com` → `us.posthog.com`), for a server that doesn't say (`uiHost`). */
 const uiHostOf = (host: string): string => host.replace(/^https:\/\/(us|eu)\.i\.posthog\.com$/, 'https://$1.posthog.com');
 
 let started = false;
 
 /** Starts PostHog in this document unless this browser opted out (and starts it later if it turns analytics on). */
-export function startPagePostHog(key: string, host: string): void {
+export function startPagePostHog(key: string, host: string, uiHost?: string): void {
   const begin = () => {
     if (!analyticsAllowed()) return;
     if (started) return void posthog.opt_in_capturing();
     started = true;
     posthog.init(key, {
       api_host: host,
-      ui_host: uiHostOf(host),
+      ui_host: uiHost ?? uiHostOf(host),
       capture_pageview: 'history_change',
       capture_pageleave: true,
       autocapture: true,
@@ -59,7 +59,7 @@ export function identifyPagePostHog(distinctId: string | null): void {
   } else if (posthog.get_distinct_id() && posthog._isIdentified?.()) posthog.reset();
 }
 
-// Run when loaded as /posthog.js on a marketing page (`<script data-freero-ph-key=… data-freero-ph-host=…>`);
+// Run when loaded as /posthog.js on a marketing page (`<script data-freero-ph-key=… data-freero-ph-host=… data-freero-ph-ui=…>`);
 // imported by the app, it does nothing.
 const script = typeof document !== 'undefined' ? (document.currentScript as HTMLScriptElement | null) : null;
-if (script?.dataset.freeroPhKey && script.dataset.freeroPhHost) startPagePostHog(script.dataset.freeroPhKey, script.dataset.freeroPhHost);
+if (script?.dataset.freeroPhKey && script.dataset.freeroPhHost) startPagePostHog(script.dataset.freeroPhKey, script.dataset.freeroPhHost, script.dataset.freeroPhUi);
