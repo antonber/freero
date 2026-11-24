@@ -9,13 +9,29 @@
 // ($mcp_response), the agent's stated intent, error messages and stack traces by default — on
 // Freero that is board and doc content — so every event is cut down to KEPT before it leaves
 // (beforeSend: an allowlist, so a property a later SDK version adds stays out too), and the SDK
-// adds no arguments to Freero's tools (`context`, `conversation_id`, `llm_model` off).
+// adds no arguments to Freero's tools (`context`, `conversation_id`, `llm_model` off). How a call
+// failed leaves only as one of MCP_FAILURES and its HTTP-like status, which the MCP server puts in
+// the failed result's `_meta` (the SDK itself knows every answered refusal just as "Error").
 import { instrument } from '@posthog/mcp';
 import { getConfig } from '../../platform/config';
 import { currentRequestContext } from '../../platform/requestContext';
 import { analyticsAudienceOf } from '../auth/index';
 import { productAnalyticsClient, pseudonym } from './productEvents';
 import * as repo from './repo';
+
+/** How a tool call can fail, as counted: whose move it is, never what was asked. */
+export const MCP_FAILURES = ['missing_scope', 'permission', 'not_found', 'confirm_required', 'validation', 'conflict', 'rate_limited', 'internal'] as const;
+export type McpFailure = (typeof MCP_FAILURES)[number];
+/** Where a failed result says which (`_meta`): { kind, status }. */
+export const MCP_FAILURE_META = 'app.freero/failure';
+
+/** $mcp_error_type / $mcp_error_status of a failed call: the server's own word for it, else (arguments the SDK refused before any tool ran) validation. */
+function failureOf(properties: Record<string, unknown>): Record<string, unknown> {
+  const meta = (properties.$mcp_response as { _meta?: Record<string, unknown> } | undefined)?._meta?.[MCP_FAILURE_META] as { kind?: unknown; status?: unknown } | undefined;
+  const kind = MCP_FAILURES.find((k) => k === meta?.kind);
+  if (kind) return { $mcp_error_type: kind, ...(Number.isInteger(meta?.status) ? { $mcp_error_status: meta?.status } : {}) };
+  return String(properties.$mcp_error_message ?? '').startsWith('Input validation error') ? { $mcp_error_type: 'validation' satisfies McpFailure } : {};
+}
 
 /** The events that may leave: calls, listings and the handshake. */
 const EVENTS = new Set(['$mcp_tool_call', '$mcp_initialize', '$mcp_tools_list', '$mcp_resources_list', '$mcp_resource_read', '$mcp_prompts_list', '$mcp_prompt_get']);
@@ -69,6 +85,7 @@ export async function mcpAnalyticsFor(accountId: string): Promise<((server: unkn
         if (!EVENTS.has(event.event)) return null;
         const properties: Record<string, unknown> = { $geoip_disable: true };
         for (const [k, v] of Object.entries(event.properties)) if (KEPT.has(k)) properties[k] = v;
+        if (event.properties.$mcp_is_error) Object.assign(properties, failureOf(event.properties));
         if (audience === 'internal') properties.internal = true;
         return { ...event, distinct_id: distinctId, properties };
       },

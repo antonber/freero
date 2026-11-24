@@ -8,7 +8,7 @@
 import type { Config } from '../../platform/config';
 
 export { trackProductEvent, productAnalyticsOn, trackAgentFetch, type AgentFetchVia } from './productEvents';
-export { mcpAnalyticsFor } from './mcpAnalytics';
+export { mcpAnalyticsFor, MCP_FAILURE_META, type McpFailure } from './mcpAnalytics';
 // For tests of the modules that count (a stand-in PostHog: start the client, flush, read pseudonyms).
 export { startProductAnalytics, stopProductAnalytics, flushProductEvents, pseudonym, setAccountOptedOut } from './productEvents';
 

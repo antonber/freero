@@ -10,6 +10,7 @@ import { API_SCOPES, CONFIRM_REQUIRED, LayoutError, type ApiScope } from '@freer
 import { HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
 import { newApiCall, readOutline, recordApiCall, type ApiCall } from '../api/index';
+import type { McpFailure } from '../analytics/index';
 import type { ApiCredential } from '../apiauth/index';
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { registerViews } from './apps';
@@ -28,6 +29,9 @@ const INSTRUCTIONS = [
   'Deleting needs the person’s explicit agreement: ask first, then call delete_items with confirm: true.',
   'If a tool says this connection lacks a permission, tell the person which one (they can reconnect Freero and turn it on).',
 ].join('\n');
+
+/** The code of a refusal for a permission the connection wasn't granted. */
+const INSUFFICIENT_SCOPE = 'insufficient_scope';
 
 const SCOPE_LABEL: Record<ApiScope, string> = {
   'boards:read': 'read boards',
@@ -68,12 +72,23 @@ function nextStep(e: HttpError): string {
   return '';
 }
 
+const FAILURE_OF_STATUS: Record<number, McpFailure> = { 401: 'permission', 403: 'permission', 404: 'not_found', 409: 'conflict', 429: 'rate_limited' };
+const FAILURE_OF_CODE: Record<string, McpFailure> = { [INSUFFICIENT_SCOPE]: 'missing_scope', [CONFIRM_REQUIRED]: 'confirm_required' };
+
+/** How a failure is counted (modules/analytics mcpAnalytics.ts). */
+function failureKind(e: unknown, status: number): McpFailure {
+  const coded = e instanceof HttpError && e.code ? FAILURE_OF_CODE[e.code] : undefined;
+  return coded ?? FAILURE_OF_STATUS[status] ?? (status < 500 ? 'validation' : 'internal');
+}
+
 /** A failure in words the model can act on; Freero's own text only (never board content). */
 function failure(e: unknown): CallToolResult {
-  if (e instanceof HttpError) return toolError(`${e.message}${e.code ? ` (${e.code})` : ''}. Nothing was changed.${nextStep(e)}`);
-  if (e instanceof ArgumentError || e instanceof LayoutError) return toolError(`${e.message} Nothing was changed.`);
+  const status = statusOf(e);
+  const refused = (text: string) => toolError(text, failureKind(e, status), status);
+  if (e instanceof HttpError) return refused(`${e.message}${e.code ? ` (${e.code})` : ''}. Nothing was changed.${nextStep(e)}`);
+  if (e instanceof ArgumentError || e instanceof LayoutError) return refused(`${e.message} Nothing was changed.`);
   logError('mcp: a tool failed', e);
-  return toolError('Freero could not do that right now (a server error). Nothing was changed; try again later.');
+  return refused('Freero could not do that right now (a server error). Nothing was changed; try again later.');
 }
 
 /** Runs one tool or resource read for the credential, audited (`onError` answers, or rethrows, a failure). */
@@ -151,7 +166,7 @@ export function buildServer(req: Request, cred: ApiCredential, analytics: ((serv
           throw new HttpError(
             403,
             `This connection can’t ${scopes.map((s) => SCOPE_LABEL[s]).join(' or ')}: it needs the ${scopes.map((s) => `${s} permission (“${API_SCOPES[s]}”)`).join(' or the ')}. Tell the person: they can reconnect Freero and turn it on, or use a token that has it`,
-            'insufficient_scope',
+            INSUFFICIENT_SCOPE,
           );
         }, failure);
       return audited(req, cred, t.name, boardId, (call) => t.run(call, args), failure);

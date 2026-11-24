@@ -104,6 +104,25 @@ it('a tool call reaches PostHog as $mcp_tool_call under the account’s pseudony
   for (const secret of ['Secret launch price', 'Acme', boardId, user.id, user.email]) expect(everything).not.toContain(secret);
 });
 
+it('a refused call says in PostHog how it failed — a permission never granted, a wrong id, bad arguments, a delete to confirm — and still nothing of what it carried', async () => {
+  const { user, client } = await connected(['boards:read', 'boards:write']);
+  const boardId = await boardOf(user.id, 'Failing board text');
+  const failing: Array<[tool: string, args: Record<string, unknown>, type: string, status: number | undefined]> = [
+    ['add_comment', { boardId, text: 'Hidden comment words' }, 'missing_scope', 403],
+    ['get_board_outline', { boardId: 'no-such-board-77' }, 'not_found', 404],
+    ['delete_items', { boardId, itemIds: ['s1'] }, 'confirm_required', 400],
+    ['add_diagram', { boardId, mermaid: 'flowchart LR', outline: { text: 'Hidden outline words' } }, 'validation', 400],
+    // Refused by the SDK before the tool ran: it has no status of Freero's.
+    ['add_stickies', { boardId, stickies: [{ words: 'Hidden sticky words' }] }, 'validation', undefined],
+  ];
+  for (const [name, args] of failing) expect((await client.callTool({ name, arguments: args })).isError, name).toBe(true);
+  await flushProductEvents();
+
+  const calls = events().filter((e) => e.event === '$mcp_tool_call' && e.distinct_id === pseudonym('account', user.id));
+  expect(calls.map((c) => [c.properties.$mcp_tool_name, c.properties.$mcp_error_type, c.properties.$mcp_error_status])).toEqual(failing.map(([name, , type, status]) => [name, type, status]));
+  for (const secret of ['Hidden', 'no-such-board-77', boardId]) expect(bodies.join('\n')).not.toContain(secret);
+});
+
 it('an account that turned analytics off sends no MCP events at all', async () => {
   const { user, client } = await connected(['boards:read'], { optedOut: true });
   const boardId = await boardOf(user.id, 'Quiet');

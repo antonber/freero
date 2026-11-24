@@ -6,6 +6,7 @@
 // error messages are Freero's own text and never carry board content.
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import { UNTRUSTED_CONTENT_NOTICE } from '@freero/shared';
+import { MCP_FAILURE_META, type McpFailure } from '../analytics/index';
 
 export const ENVELOPE_TAG = 'untrusted_board_content';
 
@@ -31,5 +32,9 @@ export const plain = (text: string, structured?: Record<string, unknown>): CallT
   ...(structured ? { structuredContent: structured } : {}),
 });
 
-/** A refusal or failure the model should read and act on (nothing was changed). */
-export const toolError = (text: string): CallToolResult => ({ content: [{ type: 'text', text }], isError: true });
+/** A refusal or failure the model should read and act on (nothing was changed); `kind` and `status` are for counting it (modules/analytics). */
+export const toolError = (text: string, kind: McpFailure, status: number): CallToolResult => ({
+  content: [{ type: 'text', text }],
+  isError: true,
+  _meta: { [MCP_FAILURE_META]: { kind, status } },
+});
