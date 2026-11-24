@@ -203,6 +203,12 @@ cluster / kanban column (one for a sticky grid or an item list), with its title'
 | `items` | `items: [{ type: 'sticky' \| 'card', text, description?, color?, tags?, status?, assigneeId?, dueDate?, link?, fields? }]` (`fields`: a card's values of the kanban it is placed into, by field name), `layout?: 'grid' \| 'kanban'`, `title?` | work items (a CSV import's rows) as stickies or task cards in a grid, or on a kanban with a column per status; a card's `description` is Markdown, as in `kanban` |
 | `meeting` | `source` (the notes or transcript as exported, up to 1 000 000 characters), `format?: 'markdown' \| 'text' \| 'vtt' \| 'srt'` (default: recognised), `title?` (when the notes have none), `date?` (YYYY-MM-DD, the meeting's when the notes don't say), `speakers?` (default true) | ONE frame titled like the meeting: a *Summary* note (date, attendees, prose), a *Speakers* note for transcripts (turns, talk time), a *Decisions* cluster, *Action items* as task cards (owner in the description, due date), each other section's points as a cluster under its heading. Read as written, no AI ([integrations/README.md](integrations/README.md)). `parts`: the frame (its `titleId`, the notes' ids), then Decisions, Action items and each section, whichever there are |
 
+A kind's content may also come under the kind's own name or the MCP add tools' (`readStructure`, #93):
+`{ kind: 'stickies', stickies: ['a', 'b'] }`, kanban `columns: [{ title, cards }]`, `{ kind: 'items', cards }`,
+`{ kind: 'mermaid', mermaid }`, `{ kind: 'mindmap', outline }`, `{ kind: 'graph', graph: { nodes, edges } }`; a card's
+text as `title`, a graph node's as `label`. The field in the table wins when both are there. A graph
+node without a text is refused, and so are card fields in a new kanban.
+
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
 of the board's content — keeping 80 units clear of every element the caller can see
 (`findFreeSpot`; `APART_GAP`, more than the widest gap the outline still reads as one cluster, 64),

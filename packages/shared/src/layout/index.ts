@@ -16,6 +16,7 @@ import { flowLayout, wrapInDiagram, type DiagramWrap } from './diagram';
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
 
 export * from './types';
+export { readStructure, STRUCTURE_KINDS } from './names';
 export * from './diagram';
 export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
 export type { UmlDiagram } from './uml';
@@ -125,6 +126,8 @@ function layoutLoose(input: StructureInput, ctx: LayoutContext): LaidOut {
       return layoutClusters(input.clusters, ctx);
     case 'graph':
       if (!Array.isArray(input.nodes) || !Array.isArray(input.edges ?? [])) throw new LayoutError('graph needs nodes and edges');
+      // A node whose text came under a name nobody reads would be drawn as a blank box.
+      if (input.nodes.some((n) => !n || typeof n !== 'object' || typeof n.text !== 'string')) throw new LayoutError('Every graph node needs an id and a text');
       if (!isDirection(input.direction)) throw new LayoutError('direction must be TB, BT, LR or RL');
       return layoutGraph(input.nodes, input.edges ?? [], input.direction ?? 'TB', input.groups ?? [], ctx);
     case 'mermaid': {

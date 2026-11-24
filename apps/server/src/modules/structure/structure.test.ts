@@ -189,6 +189,9 @@ it('refuses malformed structure with a clear error and writes nothing', async ()
     [{ kind: 'graph', nodes: [{ id: 'a', text: 'A' }], edges: [{ from: 'a', to: 'ghost' }] }, /isn't listed/],
     [{ kind: 'graph', nodes: [{ id: 'a', text: 'A' }], edges: [], groups: [{ id: 'g1', title: 'x', nodes: ['a'], parent: 'g2' }, { id: 'g2', title: 'y', nodes: [], parent: 'g1' }] }, /contain each other/],
     [{ kind: 'clusters', clusters: [{ items: [{ id: 'not-here' }] }] }, /No item not-here/],
+    // Drawn as a blank box, and card fields dropped, if they were let through.
+    [{ kind: 'graph', nodes: [{ id: 'a', name: 'A' } as never], edges: [] }, /needs an id and a text/],
+    [{ kind: 'kanban', columns: [{ title: 'To do', items: [{ text: 'A', fields: { Priority: 'P0' } } as never] }] }, /no fields yet/],
     [{ kind: 'orgchart', people: [{ name: 'Ann' }, { name: 'Bo', manager: 'Ghost' }] }, /manager "Ghost" isn't in the list/],
     [{ kind: 'orgchart', people: [{ name: 'Ann', manager: 'Bo' }, { name: 'Bo', manager: 'Ann' }] }, /in a circle/],
     [{ kind: 'mermaid', source: 'mindmap\n  Root\n  Second root' }, /line 3: a mind map has one root/],

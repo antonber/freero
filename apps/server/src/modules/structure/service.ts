@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import {
   LayoutError,
   MAX_SUGGESTION_DESCRIPTION,
+  readStructure,
   type InsertStructureRequest,
   type InsertStructureResponse,
   type StructurePlacement,
@@ -36,7 +37,7 @@ function parseRequest(body: unknown): InsertStructureRequest {
     throw badRequest(`description must be text of at most ${MAX_SUGGESTION_DESCRIPTION} characters`);
   // No placement: absent, null, or one that names nothing (automation tools send every optional field, empty).
   const placement = b.placement === undefined || b.placement === null ? null : readPlacement(b.placement);
-  return { structure: b.structure, near: b.near, at: b.at, target: b.target, description: b.description, ...(placement && Object.keys(placement).length ? { placement } : {}) };
+  return { structure: readStructure(b.structure), near: b.near, at: b.at, target: b.target, description: b.description, ...(placement && Object.keys(placement).length ? { placement } : {}) };
 }
 
 /** `placement` as sent: one of into (with column) / newFrame / newKanban, each a short text (empty: not given). */

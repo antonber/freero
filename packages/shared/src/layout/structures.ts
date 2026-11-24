@@ -717,6 +717,8 @@ export function layoutKanban(title: string | undefined, columnsIn: KanbanColumnI
   for (const c of columnsIn)
     if (!c || typeof c.title !== 'string' || !Array.isArray(c.items) || c.items.some((i) => typeof i !== 'string' && (!i || typeof i !== 'object' || typeof i.text !== 'string')))
       throw new LayoutError('Every kanban column needs a title and a list of cards (a text, or { text, … })');
+  if (columnsIn.some((c) => c.items.some((i) => typeof i !== 'string' && Object.keys((i as { fields?: object | null }).fields ?? {}).length)))
+    throw new LayoutError('A new kanban has no fields yet: add the cards, then define_fields');
   if (columnsIn.reduce((s, c) => s + c.items.length, 0) + 1 > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
   const K = KANBAN;
   const inner = K.colW - 2 * K.pad;
