@@ -20,6 +20,7 @@ import {
   type DocEditOp,
   FILTER_OPS,
   LAYOUT_LIMITS,
+  STRUCTURE_KINDS,
   STICKY_COLORS,
   STICKY_SHAPES,
   STICKY_SIZES,
@@ -175,6 +176,82 @@ const OUTLINE_DEPTH = 8;
 const outlineLevel = (depth: number): z.ZodTypeAny =>
   depth >= OUTLINE_DEPTH ? z.object({ text }) : z.object({ text, children: z.array(outlineLevel(depth + 1)).max(500).optional() });
 const outlineRoot = outlineLevel(1) as z.ZodType<OutlineNode>;
+
+/** What add_diagram draws besides Mermaid and outlines (propose_changes takes the same). */
+const orgchart = z
+  .array(
+    z.object({
+      name: z.string().min(1).max(200),
+      title: z.string().max(200).optional(),
+      manager: z.string().max(200).nullable().optional().describe('The name (or id) of the person they report to; none for the top of the chart.'),
+      id: z.string().min(1).max(100).optional().describe('Only needed when two people share a name: then managers name this id.'),
+    }),
+  )
+  .min(1)
+  .max(1000)
+  .optional()
+  .describe('People for an org chart: a top-down tree of name / title boxes.');
+const graph = z
+  .object({
+    nodes: z.array(z.object({ id: z.string().min(1).max(100), text: z.string().max(LAYOUT_LIMITS.text) })).min(1).max(1000),
+    edges: z
+      .array(z.object({ from: z.string().max(100), to: z.string().max(100), label: z.string().max(500).optional(), style: z.enum(['solid', 'dashed', 'thick']).optional() }))
+      .max(2000),
+    direction: z.enum(['TB', 'BT', 'LR', 'RL']).optional(),
+  })
+  .optional();
+const chart = z
+  .object({
+    type: z.enum(CHART_KINDS as unknown as [string, ...string[]]).optional().describe('bar (default), stackedBar, line, area or pie (a pie shows the first series).'),
+    title: z.string().max(200).optional(),
+    rows: z
+      .array(z.array(z.string().max(CHART_LIMITS.cell)).min(2).max(CHART_LIMITS.series + 1))
+      .min(2)
+      .max(CHART_LIMITS.rows + 1)
+      .describe('The data grid: the first row is a corner cell then the series names, e.g. [["", "2025", "2026"], ["Q1", "12", "18"], ["Q2", "15", "21"]]; every other row is a category then its numbers ("" for none).'),
+  })
+  .optional()
+  .describe('A chart drawn from a small data grid.');
+
+const cluster = z.object({
+  title: z.string().max(200).optional(),
+  color,
+  items: z.array(z.union([z.object({ id: z.string().min(1).max(200) }).strict(), stickyItem])).min(1).max(API_MAX_ITEMS_PER_CALL),
+});
+
+/**
+ * What propose_changes proposes: the add tools' own arguments under a kind (readStructure gives them
+ * the structure's names). Loose, so a structure in the REST API's names (docs/board-outline.md:
+ * `root`, `source`, `people` …) is taken as well.
+ */
+const proposedStructure = z
+  .looseObject({
+    kind: z
+      .enum(STRUCTURE_KINDS)
+      .describe(
+        'What to propose, with the field it needs: stickies → stickies; clusters → clusters; kanban → columns; items (task cards) → cards; mermaid → mermaid; mindmap or tree → outline; orgchart → orgchart; graph → graph; chart → chart; table → rows; note or outline (an indented list) → text; plantuml or meeting (notes as exported) → source.',
+      ),
+    title: z.string().max(200).optional().describe('With stickies, kanban, note or meeting: its title.'),
+    stickies: z.array(stickyItem).min(1).max(API_MAX_ITEMS_PER_CALL).optional().describe('kind stickies: the notes, as for add_stickies.'),
+    color,
+    clusters: z.array(cluster).min(1).max(50).optional().describe('kind clusters: as for add_clusters.'),
+    columns: z
+      .array(z.looseObject({ title: z.string().min(1).max(200), cards: z.array(z.union([text, cardItem])).max(API_MAX_ITEMS_PER_CALL).optional() }))
+      .min(1)
+      .max(40)
+      .optional()
+      .describe('kind kanban: its columns, left to right, as for add_cards.'),
+    cards: z.array(cardItem).min(1).max(API_MAX_ITEMS_PER_CALL).optional().describe('kind items: task cards, as for add_cards.'),
+    mermaid: z.string().min(1).max(LAYOUT_LIMITS.source).optional().describe('kind mermaid: the source, as for add_diagram.'),
+    outline: outlineRoot.optional().describe('kind mindmap or tree: the root, { text, children: [ … ] }.'),
+    orgchart,
+    graph,
+    chart,
+    rows: z.array(z.array(z.string())).min(1).optional().describe('kind table: rows of cells, the first one the header.'),
+    text: z.string().min(1).optional().describe('kind note: what it says. kind outline: an indented list.'),
+    source: z.string().min(1).optional().describe('kind plantuml or meeting: the text as written.'),
+  })
+  .describe('What to propose: a kind and its field, e.g. { "kind": "stickies", "stickies": ["Faster search", "Dark mode"] }.');
 
 // Every tool states all three hints explicitly (the Claude and ChatGPT directories require it):
 // readOnlyHint, destructiveHint (true for anything that overwrites, deletes or sends something it
@@ -656,13 +733,7 @@ export const TOOLS: McpTool[] = [
     input: {
       boardId,
       clusters: z
-        .array(
-          z.object({
-            title: z.string().max(200).optional(),
-            color,
-            items: z.array(z.union([z.object({ id: z.string().min(1).max(200) }).strict(), stickyItem])).min(1).max(API_MAX_ITEMS_PER_CALL),
-          }),
-        )
+        .array(cluster)
         .min(1)
         .max(50),
       near,
@@ -917,40 +988,9 @@ export const TOOLS: McpTool[] = [
         .describe('Mermaid source: `flowchart LR` / `graph TD` …, `sequenceDiagram`, `classDiagram`, `erDiagram`, `stateDiagram-v2` or `mindmap`.'),
       outline: outlineRoot.optional().describe('The root of a nested outline: { text, children: [ … ] }.'),
       outlineAs: z.enum(['mindmap', 'tree']).optional().describe('How to draw `outline` (default mindmap).'),
-      orgchart: z
-        .array(
-          z.object({
-            name: z.string().min(1).max(200),
-            title: z.string().max(200).optional(),
-            manager: z.string().max(200).nullable().optional().describe('The name (or id) of the person they report to; none for the top of the chart.'),
-            id: z.string().min(1).max(100).optional().describe('Only needed when two people share a name: then managers name this id.'),
-          }),
-        )
-        .min(1)
-        .max(1000)
-        .optional()
-        .describe('People for an org chart: a top-down tree of name / title boxes.'),
-      graph: z
-        .object({
-          nodes: z.array(z.object({ id: z.string().min(1).max(100), text: z.string().max(LAYOUT_LIMITS.text) })).min(1).max(1000),
-          edges: z
-            .array(z.object({ from: z.string().max(100), to: z.string().max(100), label: z.string().max(500).optional(), style: z.enum(['solid', 'dashed', 'thick']).optional() }))
-            .max(2000),
-          direction: z.enum(['TB', 'BT', 'LR', 'RL']).optional(),
-        })
-        .optional(),
-      chart: z
-        .object({
-          type: z.enum(CHART_KINDS as unknown as [string, ...string[]]).optional().describe('bar (default), stackedBar, line, area or pie (a pie shows the first series).'),
-          title: z.string().max(200).optional(),
-          rows: z
-            .array(z.array(z.string().max(CHART_LIMITS.cell)).min(2).max(CHART_LIMITS.series + 1))
-            .min(2)
-            .max(CHART_LIMITS.rows + 1)
-            .describe('The data grid: the first row is a corner cell then the series names, e.g. [["", "2025", "2026"], ["Q1", "12", "18"], ["Q2", "15", "21"]]; every other row is a category then its numbers ("" for none).'),
-        })
-        .optional()
-        .describe('A chart drawn from a small data grid.'),
+      orgchart,
+      graph,
+      chart,
       near,
       into: z.string().min(1).max(200).optional().describe('A diagram on the board (its id from the outline) to draw into: the new steps join it and its layout makes room for them.'),
     },
@@ -1002,14 +1042,14 @@ export const TOOLS: McpTool[] = [
     name: 'propose_changes',
     title: 'Propose changes',
     description:
-      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes the same structures as the add_ tools: { "kind": "stickies" | "clusters" | "kanban" | "items" | "note" | "table" | "chart" | "mermaid" | "mindmap" | "tree" | "orgchart" | "graph", … } (docs/board-outline.md), and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
+      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes what the add_ tools take, under a kind — { "kind": "stickies", "stickies": […] }, { "kind": "kanban", "columns": [{ "title", "cards" }] }, { "kind": "mermaid", "mermaid": "flowchart LR …" } — and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
     scope: 'boards:suggest',
     annotations: ADD,
     // The suggestions layer (KAI-169) is a structure sink; offered once the server has it.
     available: () => structureTargets().includes('suggestions'),
     input: {
       boardId,
-      structure: z.record(z.string(), z.unknown()).describe('A structure: { kind, … } as for insert structure (docs/board-outline.md).'),
+      structure: proposedStructure,
       near,
       placement,
       description: z.string().max(500).optional().describe('One line for the reviewers: what this proposal does and why.'),

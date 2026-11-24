@@ -348,6 +348,34 @@ it('import_meeting_notes from a connection that may only suggest proposes the me
   await writer.close();
 });
 
+it('propose_changes takes the add tools’ own arguments under a kind, and the REST API’s names, on the first call (#93): what is proposed carries the words it was given', async () => {
+  const boardId = await boardWith('Proposals', [sticky('a', 'Here', 0)]);
+  const client = await connect(['boards:read', 'boards:suggest']);
+  const proposals: Array<Record<string, unknown>> = [
+    { kind: 'stickies', stickies: ['Sticky one', { text: 'Sticky two', color: 'blue' }] },
+    { kind: 'kanban', columns: [{ title: 'To do', cards: [{ title: 'Kanban card' }] }] },
+    { kind: 'items', cards: [{ title: 'Loose card', status: 'doing' }] },
+    { kind: 'mermaid', mermaid: 'flowchart LR\n  A[Mermaid box] --> B' },
+    { kind: 'mindmap', outline: { text: 'Mind root', children: [{ text: 'Mind leaf' }] } },
+    { kind: 'orgchart', orgchart: [{ name: 'Org Ann' }, { name: 'Org Bo', manager: 'Org Ann' }] },
+    { kind: 'graph', graph: { nodes: [{ id: 'x', text: 'Graph node' }], edges: [] } },
+    { kind: 'graph', nodes: [{ id: 'x', label: 'Labelled node' }], edges: [] },
+    { kind: 'chart', chart: { rows: [['', 'Chart series'], ['Q1', '3']] } },
+    { kind: 'stickies', items: ['Rest sticky'] },
+    { kind: 'mindmap', root: { text: 'Rest root' } },
+    { kind: 'kanban', columns: [{ title: 'Doing', items: [{ text: 'Rest card' }] }] },
+  ];
+  for (const structure of proposals) {
+    const res = (await client.callTool({ name: 'propose_changes', arguments: { boardId, structure } })) as CallToolResult;
+    expect(res.isError, `${JSON.stringify(structure)}: ${textOf(res)}`).toBeFalsy();
+  }
+  const { suggestions } = await readBoardView(boardId, { userId: ownerId, role: 'owner' });
+  const proposed = JSON.stringify(suggestions);
+  for (const words of ['Sticky one', 'Sticky two', 'Kanban card', 'Loose card', 'Mermaid box', 'Mind leaf', 'Org Bo', 'Graph node', 'Labelled node', 'Chart series', 'Rest sticky', 'Rest root', 'Rest card']) expect(proposed).toContain(words);
+  expect(await idsOn(boardId)).toEqual(['a']);
+  await client.close();
+});
+
 it('no tool, prompt or resource reaches a directory without a title, typed parameters and explicit read-only / destructive / open-world hints, and none claims to be read-only while destructive', async () => {
   // Every tool the server defines, including those offered only when a capability is configured
   // and the live view's own button (share_board).
